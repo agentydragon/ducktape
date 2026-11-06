@@ -60,17 +60,21 @@ async def grocy_client(mock_router: respx.MockRouter) -> AsyncIterator[GrocyClie
         yield client
 
 
-# -- Product resolution ----------------------------------------------------
-
-
-async def test_resolve_product_by_id(grocy_client: GrocyClient) -> None:
-    result = await grocy_client.resolve_entity(EntityType.PRODUCT, 1)
-    assert result == Resolved(id=1, name="Rice")
-
-
-async def test_resolve_product_by_name_case_insensitive(grocy_client: GrocyClient) -> None:
-    result = await grocy_client.resolve_entity(EntityType.PRODUCT, "rice")
-    assert result == Resolved(id=1, name="Rice")
+@pytest.mark.parametrize(
+    ("entity_type", "ref", "expected"),
+    [
+        (EntityType.PRODUCT, 1, Resolved(id=1, name="Rice")),
+        (EntityType.PRODUCT, "rice", Resolved(id=1, name="Rice")),
+        (EntityType.LOCATION, "Fridge", Resolved(id=2, name="Fridge")),
+        (EntityType.QUANTITY_UNIT, "Kilogram", Resolved(id=3, name="Kilogram")),
+        (EntityType.QUANTITY_UNIT, 5, Resolved(id=5, name="Liter")),
+    ],
+    ids=["product-id", "product-name-case-insensitive", "location-name", "qu-name", "qu-id"],
+)
+async def test_resolve_entity(
+    grocy_client: GrocyClient, entity_type: EntityType, ref: int | str, expected: Resolved
+) -> None:
+    assert await grocy_client.resolve_entity(entity_type, ref) == expected
 
 
 async def test_resolve_product_unknown_id(grocy_client: GrocyClient) -> None:
@@ -88,30 +92,9 @@ async def test_resolve_product_unknown_name_suggests_similar(grocy_client: Grocy
     assert "Milk" not in str(exc_info.value)
 
 
-# -- Location resolution ---------------------------------------------------
-
-
-async def test_resolve_location_by_name(grocy_client: GrocyClient) -> None:
-    result = await grocy_client.resolve_entity(EntityType.LOCATION, "Fridge")
-    assert result == Resolved(id=2, name="Fridge")
-
-
 async def test_resolve_location_unknown(grocy_client: GrocyClient) -> None:
     with pytest.raises(ValueError, match="Garage"):
         await grocy_client.resolve_entity(EntityType.LOCATION, "Garage")
-
-
-# -- QU resolution ---------------------------------------------------------
-
-
-async def test_resolve_qu_by_name(grocy_client: GrocyClient) -> None:
-    result = await grocy_client.resolve_entity(EntityType.QUANTITY_UNIT, "Kilogram")
-    assert result == Resolved(id=3, name="Kilogram")
-
-
-async def test_resolve_qu_by_id(grocy_client: GrocyClient) -> None:
-    result = await grocy_client.resolve_entity(EntityType.QUANTITY_UNIT, 5)
-    assert result == Resolved(id=5, name="Liter")
 
 
 # -- QU for product: global conversion -------------------------------------
@@ -165,20 +148,18 @@ async def test_product_specific_conversion_overrides_global(httpx2_mock: respx.R
     assert result.conversion_factor == 0.8
 
 
-# -- Name lookups ----------------------------------------------------------
-
-
-async def test_product_name_lookup(grocy_client: GrocyClient) -> None:
-    assert await grocy_client.entity_name(EntityType.PRODUCT, 1) == "Rice"
-    assert await grocy_client.entity_name(EntityType.PRODUCT, 999) == "id=999"
-
-
-async def test_location_name_lookup(grocy_client: GrocyClient) -> None:
-    assert await grocy_client.entity_name(EntityType.LOCATION, 2) == "Fridge"
-
-
-async def test_qu_name_lookup(grocy_client: GrocyClient) -> None:
-    assert await grocy_client.entity_name(EntityType.QUANTITY_UNIT, 3) == "Kilogram"
+@pytest.mark.parametrize(
+    ("entity_type", "entity_id", "expected"),
+    [
+        (EntityType.PRODUCT, 1, "Rice"),
+        (EntityType.PRODUCT, 999, "id=999"),
+        (EntityType.LOCATION, 2, "Fridge"),
+        (EntityType.QUANTITY_UNIT, 3, "Kilogram"),
+    ],
+    ids=["product", "missing-product", "location", "qu"],
+)
+async def test_entity_name(grocy_client: GrocyClient, entity_type: EntityType, entity_id: int, expected: str) -> None:
+    assert await grocy_client.entity_name(entity_type, entity_id) == expected
 
 
 # -- Freshness -------------------------------------------------------------
