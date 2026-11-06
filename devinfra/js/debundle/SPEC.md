@@ -738,6 +738,13 @@ The receipt retains current-prefix proof dependencies, while receiver, callee,
 argument and RHS evaluation compose their own effects. Accessors, missing or
 inherited slots, unsettled receivers and unproved writable descriptors do not
 receive this coverage.
+A canonical in-range array-index read uses the same own-data transfer when the
+current prefix retains a settled, first-generation dense array-literal witness
+and the actual stored element value. Source operands are not reevaluated to
+recover that value. Holes, unsupported spreads, out-of-range indices, pooled
+allocation reuse, mutation and accessors retain fallback. Provider-only and
+retained queries require their own prefix witness; the read proof grants no
+array-write capability.
 When the same exact root has both a lexical operation receipt and complete
 global/heap/host coverage, its represented effects discharge the relocation
 projection's `opaque_at_init_call` and unattributed `member_write_or_alias`
