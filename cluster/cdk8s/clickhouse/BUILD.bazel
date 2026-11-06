@@ -7,13 +7,7 @@ package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 py_library(
     name = "client",
     srcs = ["client.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/clickhouse:__pkg__",
-        "//cluster/cdk8s/grafana:__pkg__",
-        "//cluster/cdk8s/public_coder:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
