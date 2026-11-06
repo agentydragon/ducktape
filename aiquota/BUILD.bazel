@@ -188,6 +188,7 @@ py_binary(
 py_library(
     name = "server_main",
     srcs = ["server_main.py"],
+    data = ["//aiquota/frontend:bundle"],
     imports = [".."],
     deps = [
         ":api",
@@ -195,14 +196,11 @@ py_library(
         ":config",
         ":settings",
         "@pypi//uvicorn",
-        "@rules_python//python/runfiles",
     ],
 )
 
 py_binary(
     name = "server",
-    data = ["//aiquota/frontend:bundle"],
-    env = {"AIQUOTA_FRONTEND_RLOCATION": "$(rlocationpath //aiquota/frontend:bundle)"},
     imports = [".."],
     main_module = "aiquota.server_main",
     visibility = ["//visibility:public"],
@@ -211,27 +209,8 @@ py_binary(
 
 aspect_py_binary(
     name = "server_bin",
-    data = ["//aiquota/frontend:bundle"],
-    env = {"AIQUOTA_FRONTEND_RLOCATION": "$(rlocationpath //aiquota/frontend:bundle)"},
     main = "server_main.py",
     deps = [":server_main"],
-)
-
-_server_image_env = py_image_env(binary_name = "server_bin")
-
-_server_image_env["AIQUOTA_FRONTEND_RLOCATION"] = "$(rlocationpath //aiquota/frontend:bundle)"
-
-genrule(
-    name = "server_image_env",
-    srcs = ["//aiquota/frontend:bundle"],
-    outs = ["server-image.env"],
-    cmd = "printf '%s\\n' {} > $@".format(" ".join([
-        "'{}={}'".format(
-            key,
-            _server_image_env[key],
-        )
-        for key in sorted(_server_image_env.keys())
-    ])),
 )
 
 # Prints the OpenAPI schema artifact consumed by the frontend's file-input converter.
@@ -262,7 +241,7 @@ oci_image(
     name = "api_image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("server_bin"),
-    env = ":server_image_env",
+    env = py_image_env(binary_name = "server_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":server_layers"],
     user = "1000:1000",
@@ -356,8 +335,6 @@ py_test(
 py_test(
     name = "test_api",
     srcs = ["test_api.py"],
-    data = ["//aiquota/frontend:bundle"],
-    env = {"AIQUOTA_FRONTEND_RLOCATION": "$(rlocationpath //aiquota/frontend:bundle)"},
     imports = [".."],
     deps = [
         ":api",

@@ -1,11 +1,10 @@
 """Executable wiring for the aiquota API and its declared frontend bundle."""
 
-import os
 from datetime import timedelta
+from importlib import resources
 from pathlib import Path
 
 import uvicorn
-from python.runfiles import Runfiles
 
 from aiquota.api import (
     BackgroundCollector,
@@ -22,7 +21,7 @@ from aiquota.settings import Settings
 
 
 def _frontend_dir() -> Path:
-    frontend_dir = Path(str(Runfiles.CreateOrRaise().root() / os.environ["AIQUOTA_FRONTEND_RLOCATION"]))
+    frontend_dir = Path(str(resources.files("aiquota") / "frontend" / "dist"))
     if not (frontend_dir / "index.html").is_file():
         raise FileNotFoundError(frontend_dir / "index.html")
     return frontend_dir
