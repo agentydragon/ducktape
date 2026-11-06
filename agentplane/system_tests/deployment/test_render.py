@@ -101,6 +101,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "test-runner-root",
         "agentplane-runner-ca",
         "agentplane-runner-gateway",
+        "agentplane-egress-proxy",
     }
     assert _resource(docs, "Issuer", "agentplane-runner-ca")["spec"]["ca"]["secretName"] == "agentplane-runner-ca"
     gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
@@ -162,6 +163,12 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert proxy["image"] == fixture_chart.EGRESS_IMAGE
     assert "args" not in proxy
     egress_config = yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    assert egress_config["svid_listen_address"] == "0.0.0.0:8889"
+    proxy_certificate = _resource(docs, "Certificate", "agentplane-egress-proxy")["spec"]
+    assert proxy_certificate["uris"] == ["spiffe://agentplane/egress-proxy"]
+    assert proxy_certificate["secretName"] == "agentplane-egress-proxy-tls"
+    assert proxy_certificate["issuerRef"] == {"name": "agentplane-runner-ca", "kind": "Issuer"}
+    assert any(mount["name"] == "svid" for mount in proxy["volumeMounts"])
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
     assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
     app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]

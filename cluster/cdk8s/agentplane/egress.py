@@ -746,6 +746,20 @@ class Egress(Construct):
             litellm_cluster_internal=litellm_cluster_internal,
         )
 
+        if self.enable_svid_listener:
+            Certificate(
+                self,
+                "svid-listener-certificate",
+                metadata=ApiObjectMetadata(name="agentplane-egress-proxy", namespace=self.env.namespace),
+                secret_name=PROXY_MTLS_SECRET,
+                uris=["spiffe://agentplane/egress-proxy"],
+                duration="24h",
+                renew_before="8h",
+                private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+                usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
+                issuer_ref=CertificateSpecIssuerRef(name=runner_gateway.RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
+            )
+
     def add_platform_resources(self) -> None:
         """Add fleet CA issuance, trust bundle, and Cilium network admission."""
         self._add_certificate_and_bundle()
@@ -815,19 +829,6 @@ class Egress(Construct):
                 pkcs12=BundleSpecTargetAdditionalFormatsPkcs12(key=JAVA_TRUST_STORE_KEY)
             ),
         )
-        if self.enable_svid_listener:
-            Certificate(
-                self,
-                "svid-listener-certificate",
-                metadata=ApiObjectMetadata(name="agentplane-egress-proxy", namespace=self.env.namespace),
-                secret_name=PROXY_MTLS_SECRET,
-                uris=["spiffe://agentplane/egress-proxy"],
-                duration="24h",
-                renew_before="8h",
-                private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-                usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
-                issuer_ref=CertificateSpecIssuerRef(name=runner_gateway.RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
-            )
 
     def _add_upstream_bundle(self) -> Bundle:
         """What this proxy verifies destinations against, as distinct from what a runner trusts.
