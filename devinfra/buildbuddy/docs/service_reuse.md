@@ -140,6 +140,15 @@ uploads before startup and after shutdown, under the same lease; keep only
 content-addressed blobs and repository layer links reusable. Refuse storage
 still attached to another container. A process crash releases a file lock without
 proving that Docker resources are gone. Keep retention off locally by default.
+One recipe in `props/testing/exec_properties.bzl` generates the runtime
+configuration and BuildBuddy family; change that version for incompatible
+storage/reset changes. Image repins and budget changes invalidate both. After
+metadata cleanup at attach and release, discard the owned cache if its allocated
+storage exceeds 2 GiB. This bounds that cache at those boundaries, not peak
+action disk use or total VM storage. HTTP cleanup between test cases cannot
+replace the offline reset: it only discovers tagged manifests, leaving untagged
+manifests and abandoned uploads. Registry GC would remove the unreferenced blobs
+being retained.
 
 The prototype's measured Optimize runs reduced serial image pushes from
 12.6–15.5 s to 0.8–1.0 s, with about 550 MiB of volume data before release.

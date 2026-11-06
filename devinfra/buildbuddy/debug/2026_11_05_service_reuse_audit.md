@@ -367,7 +367,7 @@ no remote eligibility or forced-save override was added. Keep the trial scoped
 to Optimize until normal-CI reuse and storage cost justify wider enrollment.
 No local-host Docker validation or shared-daemon rollout is claimed.
 
-The final prototype head `dd5b32f1f3d57f7b4df377895ada9e1dccf023ef` additionally
+The earlier prototype head `dd5b32f1f3d57f7b4df377895ada9e1dccf023ef` additionally
 refuses reset when another container still references the volume. The
 [lifecycle check](https://app.buildbuddy.io/invocation/f9e16079-18dd-446a-9b6d-7e81204e68d9)
 constructs that leftover mount and verifies it is preserved and rejected;
@@ -376,3 +376,34 @@ it does not claim an exhaustive process-kill test. A separate actual
 passed in 65.8 s, with zero infrastructure imports and the same seed/volume
 recipe. All four candidate receipts name distinct registry containers while
 retaining the same volume and 577,041,306-byte pre-release usage sample.
+
+### Bounded retention and a shared recipe
+
+At `649f86ce9489a9129e8056d846f9ed052755ea44`, the pilot uses one Starlark
+recipe to generate both its BuildBuddy family and runtime configuration. It
+scrubs metadata across all repositories and discards the owned cache if its
+allocated size exceeds 2 GiB at attach or release. Peak action disk use and total
+VM storage remain outside that bound. Cleanup now refuses attached storage at
+release too, including a simulated Docker stop failure.
+
+The [final-head RBE check](https://app.buildbuddy.io/invocation/9b17bbfe-3b42-4137-b2e0-d5574a41e107)
+passed five lifecycle cases and the existing Optimize case. The lifecycle cases
+cover retained blobs, tagged and untagged manifest removal, stale uploads,
+recipe invalidation, ownership/lease conflicts, independent attach/release size
+bounds, and storage preserved after failed shutdown. Manifest checks explicitly
+accept OCI media types and establish successful reads before testing removal.
+The earlier bare HEAD checks could return 404 because of content negotiation,
+even with a present manifest; see the
+[pinned registry handler](https://github.com/distribution/distribution/blob/v3.0.0/registry/handlers/manifests.go#L151).
+The [changed-library build](https://app.buildbuddy.io/invocation/4d16f064-f3a1-4a9c-ac87-2be615c02890)
+also passed at that head, as did changed-file pre-commit and Gazelle drift checks.
+
+Optimize's new family
+[seeded cold](https://app.buildbuddy.io/invocation/a9c3e68a-f1a3-4978-8bd6-57156b94a5b6)
+at `83900b8fa46f44bf3512ac5474cdfcd54146d3ae`, in 107.9 s with three
+infrastructure imports. The final-head repeat took 62.1 s with none. Its VM
+metadata identifies that seed's exact execution as the snapshot origin; recipe,
+volume and the 577,041,306-byte pre-release usage match, while registry container
+IDs differ. This validates cold/warm operation of the bounded recipe, not a new
+controlled performance estimate or snapshot-transfer measurement. Remote-save
+eligibility and save-policy defaults remain unchanged.
