@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, TreeFixture, debundler_path, run_fixture, run_tree_graph_fixture,
+    FixtureOpts, TreeFixture, analyzer_path, debundler_path, run_fixture, run_tree_graph_fixture,
 };
 use tempfile::TempDir;
 
@@ -92,12 +92,81 @@ impl AliasGraphFixture {
         }
     }
 
+    fn stage_analysis(&self) -> std::path::PathBuf {
+        let root = self._root.path();
+        let projection = root.join("edit-analysis.projection");
+        let artifact = root.join("edit-analysis.dba");
+        let project = Command::new(debundler_path())
+            .args(["spec", "project-analysis", "--tree-config"])
+            .arg(root.join("spec_config.yaml"))
+            .arg("--tree-modules")
+            .arg(root.join("modules"))
+            .arg("--tree-vendor-marks")
+            .arg(root.join("vendor_marks.yaml"))
+            .arg("--tree-source-root")
+            .arg(root)
+            .arg("--out-root")
+            .arg(root.join("edit-project-out"))
+            .arg("--out")
+            .arg(&projection)
+            .output()
+            .unwrap();
+        assert!(
+            project.status.success(),
+            "{}",
+            String::from_utf8_lossy(&project.stderr)
+        );
+        let analyze = Command::new(analyzer_path())
+            .arg("--projection")
+            .arg(&projection)
+            .arg("--tree-source-root")
+            .arg(root)
+            .arg("--out")
+            .arg(&artifact)
+            .output()
+            .unwrap();
+        assert!(
+            analyze.status.success(),
+            "{}",
+            String::from_utf8_lossy(&analyze.stderr)
+        );
+        artifact
+    }
+
     fn command(
         &self,
         args: &[&str],
         selector_root: Option<&Path>,
         graph_source_root: Option<&Path>,
     ) -> std::process::Output {
+        self.command_builder(args, selector_root, graph_source_root)
+            .output()
+            .unwrap()
+    }
+
+    fn command_with_assessment(&self, args: &[&str], analysis: &Path) -> Command {
+        let root = self._root.path();
+        self.command_builder(args, None, None)
+            .arg("--tree-config")
+            .arg(root.join("spec_config.yaml"))
+            .arg("--tree-modules")
+            .arg(root.join("modules"))
+            .arg("--tree-vendor-marks")
+            .arg(root.join("vendor_marks.yaml"))
+            .arg("--tree-source-root")
+            .arg(root)
+            .arg("--out-root")
+            .arg(root.join("edit-out"))
+            .arg("--analysis")
+            .arg(analysis)
+    }
+
+    fn command_builder(
+        &self,
+        args: &[&str],
+        selector_root: Option<&Path>,
+        graph_source_root: Option<&Path>,
+    ) -> Command {
         let mut command = Command::new(debundler_path());
         command
             .args(args)
@@ -112,7 +181,7 @@ impl AliasGraphFixture {
         if let Some(graph_source_root) = graph_source_root {
             command.arg("--graph-source-root").arg(graph_source_root);
         }
-        command.output().unwrap()
+        command
     }
 }
 
@@ -173,7 +242,11 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
 #[test]
 fn aliased_source_match_remains_resolvable_by_the_graph_edit_gate() {
     let fixture = AliasGraphFixture::new();
-    let output = fixture.command(&["bindings", "assign", "value:next"], None, None);
+    let analysis = fixture.stage_analysis();
+    let output = fixture
+        .command_with_assessment(&["bindings", "assign", "value:next"], &analysis)
+        .output()
+        .unwrap();
     assert_success(&output);
     assert!(fixture.modules.join("next.yaml").is_file());
 
@@ -498,8 +571,12 @@ fn missing_metadata_cannot_authorize_edit_but_graph_only_read_works() {
 
 #[test]
 fn accepted_edit_uses_baseline_then_old_graph_becomes_stale() {
-    let fixture = GraphFixture::acyclic_pair();
-    let output = fixture.command(&["bindings", "assign", "beta:a"]);
+    let fixture = GraphFixture::acyclic_pair_full_tree();
+    let analysis = fixture.stage_analysis();
+    let output = fixture
+        .process_with_assessment(&["bindings", "assign", "beta:a"], &analysis)
+        .output()
+        .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stderr(&output).contains("pre-edit"));
     assert_mismatch(&fixture, "yaml_membership");
@@ -507,12 +584,16 @@ fn accepted_edit_uses_baseline_then_old_graph_becomes_stale() {
 
 #[test]
 fn preview_and_no_op_keep_graph_compatible() {
-    let fixture = GraphFixture::acyclic_pair();
-    let preview = fixture.command(&["bindings", "assign", "alpha:a", "--dry-run"]);
+    let fixture = GraphFixture::acyclic_pair_full_tree();
+    let analysis = fixture.stage_analysis();
+    let preview = fixture
+        .process_with_assessment(&["bindings", "assign", "alpha:a", "--dry-run"], &analysis)
+        .output()
+        .unwrap();
     assert!(preview.status.success(), "{}", stderr(&preview));
     assert!(!stderr(&preview).contains("pre-edit"));
     fixture.assert_success(&["coverage", "--format", "json"]);
-    fixture.assert_success(&["bindings", "assign", "alpha:a"]);
+    fixture.assert_success_with_assessment(&["bindings", "assign", "alpha:a"], &analysis);
     fixture.assert_success(&["coverage", "--format", "json"]);
 }
 
