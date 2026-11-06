@@ -87,13 +87,13 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/testing:kubernetes_apiserver",
-        "//util/bazel:runfiles",
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//tenacity",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -152,10 +152,10 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/testing:kubernetes_apiserver",
-        "//util/bazel:runfiles",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+        "@rules_python//python/runfiles",
     ],
 )

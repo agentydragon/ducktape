@@ -10,16 +10,16 @@ import pytest_bazel
 import yaml
 from kubernetes_asyncio import client as k8s
 from more_itertools import one
+from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
-from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture(scope="module")
-def manifests() -> dict[str, list[dict[str, Any]]]:
+def manifests(runfiles: Runfiles) -> dict[str, list[dict[str, Any]]]:
     # Read the built layer, rather than rendering another copy disconnected from the image.
-    with tarfile.open(get_required_path(os.environ["INFRASTRUCTURE_LAYER_RLOCATION"])) as layer:
+    with tarfile.open(runfiles.root() / os.environ["INFRASTRUCTURE_LAYER_RLOCATION"]) as layer:
         root = PurePosixPath("opt/agentplane-test-cluster")
         members = {PurePosixPath(member.name): member for member in layer}
         objects = {}
