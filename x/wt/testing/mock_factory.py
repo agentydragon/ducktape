@@ -101,21 +101,16 @@ class MockFactory:
 
 
 class ServiceBuilder:
-    """Builder pattern for creating service instances with configurable dependencies."""
-
     def __init__(self, test_config):
-        """Initialize builder with test configuration."""
         self.config = test_config
         self.mocks = {}
         self._use_real = set()
 
     def with_real_git(self):
-        """Use real GitManager instead of mock."""
         self._use_real.add("git")
         return self
 
     def with_mock_git(self, **behaviors):
-        """Use mock GitManager with specified behaviors."""
         self.mocks["git"] = MockFactory.git_manager(**behaviors)
         return self
 
@@ -125,18 +120,14 @@ class ServiceBuilder:
         return self
 
     def with_mock_github(self, **behaviors):
-        """Use mock GitHub client with specified behaviors."""
         self.mocks["github"] = MockFactory.github_client(**behaviors)
         return self
 
     def with_mock_daemon(self, **behaviors):
-        """Use mock daemon client with specified behaviors."""
         self.mocks["daemon"] = MockFactory.daemon_client(**behaviors)
         return self
 
     def build_worktree_service(self):
-        """Build WorktreeService with configured dependencies."""
-
         # Create real instances for components marked as 'real'
         if "git" in self._use_real:
             git_manager = GitManager(config=self.config)
@@ -153,7 +144,6 @@ class ServiceBuilder:
         return WorktreeService(git_manager, github_client)
 
     def build_cli_dependencies(self):
-        """Build CLI dependencies (config, formatter, daemon_client)."""
         formatter = MockFactory.view_formatter()
         daemon_client = self.mocks.get("daemon", MockFactory.daemon_client())
 

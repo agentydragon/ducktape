@@ -181,37 +181,18 @@ def test_sentinel_current_gate_attempt_is_unknown_instead_of_reusing_older_green
     assert result["at_merge"] == "unknown"
 
 
-def test_completed_gate_with_end_before_start_is_unknown():
+@pytest.mark.parametrize(
+    ("started_at", "completed_at"),
+    [
+        pytest.param("2026-01-10T11:00:00Z", "2026-01-10T10:00:00Z", id="end-before-start"),
+        pytest.param("2026-01-10T10:00:00Z", "0001-01-01T00:00:00Z", id="sentinel-completion"),
+    ],
+)
+def test_completed_gate_with_invalid_clock_is_unknown(started_at: str, completed_at: str) -> None:
     pr = {
         "mergedAt": "2026-01-10T12:00:00Z",
         "statusCheckRollup": [
-            _check(
-                "Required gate",
-                "2026-01-10T11:00:00Z",
-                "2026-01-10T10:00:00Z",
-                status="COMPLETED",
-                conclusion="SUCCESS",
-            )
-        ],
-    }
-
-    result = merge_census.classify_gate(pr, "Required gate")
-
-    assert result["class"] == "unclassifiable_current_rollup"
-    assert result["at_merge"] == "unknown"
-
-
-def test_completed_gate_with_sentinel_completion_clock_is_unknown():
-    pr = {
-        "mergedAt": "2026-01-10T12:00:00Z",
-        "statusCheckRollup": [
-            _check(
-                "Required gate",
-                "2026-01-10T10:00:00Z",
-                "0001-01-01T00:00:00Z",
-                status="COMPLETED",
-                conclusion="SUCCESS",
-            )
+            _check("Required gate", started_at, completed_at, status="COMPLETED", conclusion="SUCCESS")
         ],
     }
 

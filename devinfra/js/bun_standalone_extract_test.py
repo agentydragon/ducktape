@@ -154,36 +154,26 @@ def test_alias_without_filters_a_structural_duplicate_in_binary_cli(tmp_path: Pa
     assert (output / "sharedConfig.js").read_bytes() == shared_config_provider
 
 
-def test_alias_without_rejects_unknown_alias_name(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("flags", "message"),
+    [
+        pytest.param(
+            ["--alias-without", "missing.js=duplicate", "--alias", "provider.js=provider"],
+            r"no --alias or --alias-all selector for 'missing\.js'",
+            id="unknown-alias-name",
+        ),
+        pytest.param(
+            ["--alias", "provider.js=provider", "--alias-without", "provider.js=::duplicate"],
+            "alias-without expects non-empty NAME and MARKER values",
+            id="empty-marker",
+        ),
+    ],
+)
+def test_alias_without_rejects_invalid_configuration(tmp_path: Path, flags: list[str], message: str) -> None:
     binary = tmp_path / "binary"
     binary.write_bytes(synthetic_graph([("/$bunfs/root/a.js", b"provider")]))
-    with pytest.raises(SystemExit, match=r"no --alias or --alias-all selector for 'missing\.js'"):
-        main(
-            [
-                str(binary),
-                str(tmp_path / "extracted"),
-                "--alias-without",
-                "missing.js=duplicate",
-                "--alias",
-                "provider.js=provider",
-            ]
-        )
-
-
-def test_alias_without_rejects_empty_markers(tmp_path: Path) -> None:
-    binary = tmp_path / "binary"
-    binary.write_bytes(synthetic_graph([("/$bunfs/root/a.js", b"provider")]))
-    with pytest.raises(SystemExit, match="alias-without expects non-empty NAME and MARKER values"):
-        main(
-            [
-                str(binary),
-                str(tmp_path / "extracted"),
-                "--alias",
-                "provider.js=provider",
-                "--alias-without",
-                "provider.js=::duplicate",
-            ]
-        )
+    with pytest.raises(SystemExit, match=message):
+        main([str(binary), str(tmp_path / "extracted"), *flags])
 
 
 def test_virtual_source_path_and_stable_alias_are_both_written(tmp_path: Path) -> None:

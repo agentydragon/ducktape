@@ -33,18 +33,7 @@ def render_to_string(
     legacy_windows: bool = False,
     color_system: ColorSystem = "standard",
 ) -> str:
-    """Render a Rich renderable to a string at a specific width.
-
-    Args:
-        renderable: The Rich renderable object to render
-        width: Console width
-        force_terminal: Whether to force terminal mode
-        legacy_windows: Legacy Windows mode setting
-        color_system: Color system to use (e.g., "standard", None)
-
-    Returns:
-        The rendered string output
-    """
+    """Render a Rich object to a string with configurable width and terminal output."""
     output = StringIO()
     console = Console(
         file=output,
@@ -95,43 +84,21 @@ def temp_git_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def create_file(repo_path: Path, file_path: str, content: str) -> None:
-    """
-    Create a file in the repository.
-
-    Args:
-        repo_path: Path to the git repository.
-        file_path: Relative path to the file.
-        content: File content.
-    """
+    """Write content to a repository-relative path, creating parent directories."""
     full_path = repo_path / file_path
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(content)
 
 
 def git_add_commit(run_git) -> None:
-    """
-    Add all files and commit with a default message.
-
-    Args:
-        run_git: Fixture for running git commands.
-    """
+    """Stage all repository changes and create the default test commit."""
     run_git("add", ".")
     run_git("commit", "-m", "test commit")
 
 
 @pytest.fixture
 def run_git(temp_git_repo: Path):
-    """
-    Fixture factory for running git commands in the test repository.
-
-    Returns:
-        Callable that runs git commands with the given arguments.
-
-    Example:
-        def test_foo(run_git):
-            result = run_git("diff", "--numstat")
-            assert "file.py" in result.stdout
-    """
+    """Run checked git commands in temp_git_repo and capture text output."""
 
     def _run_git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["git", *args], cwd=temp_git_repo, capture_output=True, text=True, check=True)

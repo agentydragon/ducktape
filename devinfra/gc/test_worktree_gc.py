@@ -3,6 +3,7 @@ import shutil
 import time
 from enum import StrEnum
 from pathlib import Path
+from typing import cast
 
 import pytest
 import pytest_bazel
@@ -185,33 +186,27 @@ def test_detached_head_with_commit_is_review(repo: GitRepo, proc: Path) -> None:
     assert _classify(repo, path, proc).reason is wg.ReviewWorktreeReason.DETACHED_HEAD
 
 
-def test_merged_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
+@pytest.mark.parametrize(
+    ("pr", "expected_type", "expected_reason"),
+    [
+        pytest.param(PrInfo(42, PrState.MERGED), wg.PrunableWorktree, wg.PrunableWorktreeReason.PR_LANDED, id="merged"),
+        # A closed unmerged PR leaves its branch ref reachable; pruning the tree loses no commits.
+        pytest.param(PrInfo(11, PrState.CLOSED), wg.PrunableWorktree, wg.PrunableWorktreeReason.PR_LANDED, id="closed"),
+        pytest.param(PrInfo(7, PrState.OPEN), wg.RetainedWorktree, wg.RetainedWorktreeReason.OPEN_PR, id="open"),
+    ],
+)
+def test_pr_state_classifies_unmerged_worktree(
+    repo: GitRepo,
+    proc: Path,
+    pr: PrInfo,
+    expected_type: type[wg.PrunableWorktree] | type[wg.RetainedWorktree],
+    expected_reason: wg.PrunableWorktreeReason | wg.RetainedWorktreeReason,
+) -> None:
     wt = repo.worktree("wt", "feature")
-    wt.commit("novel", "unique\n", "landed via squash PR")
-    pr = PrInfo(42, PrState.MERGED)
+    wt.commit("novel", "unique\n", "unmerged work")
     result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
-    assert isinstance(result, wg.PrunableWorktree)
-    assert (result.reason, result.pr) == (wg.PrunableWorktreeReason.PR_LANDED, pr)
-
-
-def test_closed_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
-    # A PR was closed unmerged; the worktree is clean. Nothing is lost by removing the
-    # worktree either way — its branch (whatever it holds) stays reachable through the ref.
-    wt = repo.worktree("wt", "feature")
-    wt.commit("novel", "unique\n", "abandoned attempt")
-    pr = PrInfo(11, PrState.CLOSED)
-    result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
-    assert isinstance(result, wg.PrunableWorktree)
-    assert (result.reason, result.pr) == (wg.PrunableWorktreeReason.PR_LANDED, pr)
-
-
-def test_open_pr_is_kept(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    wt.commit("novel", "unique\n", "work in review")
-    pr = PrInfo(7, PrState.OPEN)
-    result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
-    assert isinstance(result, wg.RetainedWorktree)
-    assert (result.reason, result.pr) == (wg.RetainedWorktreeReason.OPEN_PR, pr)
+    assert isinstance(result, expected_type)
+    assert (result.reason, cast(wg.PrunableWorktree | wg.RetainedWorktree, result).pr) == (expected_reason, pr)
 
 
 def test_live_process_is_kept(repo: GitRepo, proc: Path) -> None:

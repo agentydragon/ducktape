@@ -23,20 +23,6 @@ def _find_tree_pos(line: str) -> int:
     return min(positions) if positions else -1
 
 
-def _assert_column_before(result: str, filename: str, first: str, second: str, first_desc: str, second_desc: str):
-    """Assert that first marker appears before second marker in line containing filename."""
-    line = _find_line_with(result.split("\n"), filename)
-
-    first_pos = line.find(first) if first in line else -1
-
-    second_pos = _find_tree_pos(line) if second == "tree_char" else line.find(second) if second in line else -1
-
-    if first_pos != -1 and second_pos != -1:
-        assert first_pos < second_pos, (
-            f"Expected {first_desc} before {second_desc}, but got {first_desc} at {first_pos}, {second_desc} at {second_pos}"
-        )
-
-
 def test_render_with_max_depth(sample_changes):
     """Test rendering with maximum depth limit."""
     config = replace(DEFAULT_CONFIG, max_depth=1)
@@ -150,33 +136,21 @@ def test_tree_column_never_wraps():
                 pytest.fail(f"Line {i} appears to have wrapped:\n  Line {i}: {line!r}\n  Line {i + 1}: {next_line!r}")
 
 
-def test_column_ordering():
-    """Test that columns appear in the order specified in config."""
+@pytest.mark.parametrize(
+    ("columns", "first", "second"),
+    [
+        ([Column.BARS, Column.TREE, Column.COUNTS], "bars", "tree"),
+        ([Column.TREE, Column.BARS, Column.COUNTS], "tree", "bars"),
+        ([Column.COUNTS, Column.TREE], "counts", "tree"),
+    ],
+)
+def test_column_ordering(columns, first, second):
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
-
-    # Test bars before tree
-    config = RenderConfig(columns=[Column.BARS, Column.TREE, Column.COUNTS])
+    config = RenderConfig(columns=columns)
     result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
-    _assert_column_before(result, "file.py", "█", "tree_char", "bars", "tree")
-
-    # Test tree before bars (standard order)
-    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.COUNTS])
-    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
-
     line = _find_line_with(result.split("\n"), "file.py")
-    tree_pos = _find_tree_pos(line)
-    bar_pos = line.find("█") if "█" in line else -1
-    if bar_pos != -1 and tree_pos != -1:
-        assert tree_pos < bar_pos, f"Expected tree before bars, but got tree at {tree_pos}, bar at {bar_pos}"
-
-
-def test_column_ordering_counts_first():
-    """Test counts column can appear first."""
-    changes = [FileChange(path="file.py", additions=10, deletions=5)]
-
-    config = RenderConfig(columns=[Column.COUNTS, Column.TREE])
-    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
-    _assert_column_before(result, "file.py", "+10", "tree_char", "counts", "tree")
+    positions = {"tree": _find_tree_pos(line), "bars": line.find("█"), "counts": line.find("+10")}
+    assert 0 <= positions[first] < positions[second]
 
 
 def test_bar_proportionality():
