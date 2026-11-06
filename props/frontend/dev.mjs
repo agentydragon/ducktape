@@ -3,15 +3,18 @@
 
 import { spawn } from "child_process";
 import esbuild from "esbuild";
-import tailwindcss from "esbuild-plugin-tailwindcss";
 import { createServer } from "http";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
-import { dirname, extname, join, resolve } from "path";
+import { delimiter, dirname, extname, join, resolve } from "path";
 import { existsSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+// Tailwind's CSS resolver reads NODE_PATH at module load; these are Bazel's linked npm trees.
+const nodePaths = [resolve(__dirname, "node_modules"), resolve(__dirname, "../../node_modules")];
+process.env.NODE_PATH = [...nodePaths, process.env.NODE_PATH].filter(Boolean).join(delimiter);
+const { default: tailwindcss } = await import("esbuild-plugin-tailwindcss");
 
 const FRONTEND_PORT = 5173;
 const BACKEND_PORT = 8000;
@@ -54,6 +57,43 @@ async function waitForBackend(timeoutMs = 30000) {
   }
   return false;
 }
+
+const CONTENT_TYPES = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ico": "image/x-icon",
+};
+
+// Start esbuild in watch mode
+const ctx = await esbuild.context({
+  entryPoints: [resolve(__dirname, "src/main.tsx")],
+  bundle: true,
+  nodePaths,
+  outdir: resolve(__dirname, "dist"),
+  format: "esm",
+  jsx: "automatic",
+  splitting: true,
+  sourcemap: true,
+  target: ["es2022"],
+  plugins: [tailwindcss()],
+  alias: {
+    $lib: resolve(__dirname, "src/lib"),
+    $components: resolve(__dirname, "src/components"),
+  },
+  conditions: ["browser", "module", "import"],
+  logLevel: "info",
+});
+
+await ctx.rebuild();
+await ctx.watch();
+console.log(`${C.yellow}[esbuild]${C.reset} watching for changes...`);
 
 // Start backend process
 let backendProcess = null;
@@ -102,41 +142,6 @@ if (!skipBackend) {
     }
   });
 }
-
-const CONTENT_TYPES = {
-  ".html": "text/html",
-  ".js": "application/javascript",
-  ".css": "text/css",
-  ".json": "application/json",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".svg": "image/svg+xml",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-  ".ico": "image/x-icon",
-};
-
-// Start esbuild in watch mode
-const ctx = await esbuild.context({
-  entryPoints: [resolve(__dirname, "src/main.tsx")],
-  bundle: true,
-  outdir: resolve(__dirname, "dist"),
-  format: "esm",
-  jsx: "automatic",
-  splitting: true,
-  sourcemap: true,
-  target: ["es2022"],
-  plugins: [tailwindcss()],
-  alias: {
-    $lib: resolve(__dirname, "src/lib"),
-    $components: resolve(__dirname, "src/components"),
-  },
-  conditions: ["browser", "module", "import"],
-  logLevel: "info",
-});
-
-await ctx.watch();
-console.log(`${C.yellow}[esbuild]${C.reset} watching for changes...`);
 
 // Wait for backend health (if started)
 let backendHealthy = skipBackend;
