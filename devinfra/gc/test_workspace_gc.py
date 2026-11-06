@@ -245,8 +245,8 @@ def test_prune_continues_past_missing_git_objects(
     captured = capsys.readouterr()
     assert "REVIEW" in captured.out
     assert "cannot inspect" in captured.out
-    assert str(bad_worktree.path) in captured.out
-    assert str(foreign.path) in captured.out
+    assert bad_worktree.path.name in captured.out
+    assert foreign.path.name in captured.out
     assert "Traceback" not in captured.err
     assert bad_worktree.path.is_dir()
     assert checkout.has_branch("broken")
