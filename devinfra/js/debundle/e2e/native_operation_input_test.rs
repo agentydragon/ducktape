@@ -565,14 +565,18 @@ fn certified_spread_keeps_later_alias_mutation_order() {
 
 #[test]
 fn selected_primitive_set_construction_removes_its_opaque_frontier() {
-    const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst made = new Set([1, 2]);\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(made.size, LaterError.name);\nexport { factory, LaterError, reflect };\n";
+    const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nvar firstReason = 'alpha', secondReason = 'beta';\nconst made = new Set([firstReason, secondReason]);\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(made.size, LaterError.name);\nexport { factory, LaterError, reflect };\n";
     let opts = || {
         FixtureOpts::new(
             SOURCE,
             vec![
                 logical_module_with_anon(
                     "made",
-                    &[Member::new("made")],
+                    &[
+                        Member::new("firstReason"),
+                        Member::new("secondReason"),
+                        Member::new("made"),
+                    ],
                     &["globalThis.saved = () => factory();"],
                 ),
                 logical_module("factory", &[Member::new("factory")]),
@@ -766,10 +770,17 @@ fn source_known_set_construction_protocol_writes_reject_the_input() {
         "const made = new Set([1, 2]);\nconst Set = function replacement() {};\nexport {};\n",
         "const made = new Set([...values]);\nexport {};\n",
         "const made = new Set([unknown]);\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n(reason) = {};\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n[reason] = [{}];\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\nfor (reason of [{}]) {}\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\nfor (reason in { changed: true }) {}\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n(reason)++;\nexport {};\n",
     ] {
         expect_rejection_containing_all(
             rejected_opts(source, "made", primitive_set_input(source)),
-            &["direct unshadowed new Set([primitive literals])"],
+            &[
+                "direct unshadowed new Set([primitive literals or earlier stable primitive bindings])",
+            ],
         );
     }
 }

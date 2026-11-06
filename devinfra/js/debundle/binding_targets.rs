@@ -185,8 +185,30 @@ fn record_assign_target_pat(target: &AssignTargetPat, recorder: &mut impl Target
 }
 
 pub fn record_pat_write(pattern: &Pat, recorder: &mut impl TargetAccessRecorder) {
-    for id in binding_names(pattern) {
-        recorder.record_binding_write(&id);
+    match pattern {
+        Pat::Ident(binding) => recorder.record_binding_write(&binding.id.to_id()),
+        Pat::Array(array) => {
+            for element in array.elems.iter().flatten() {
+                record_pat_write(element, recorder);
+            }
+        }
+        Pat::Object(object) => {
+            for property in &object.props {
+                match property {
+                    ObjectPatProp::KeyValue(property) => {
+                        record_pat_write(&property.value, recorder);
+                    }
+                    ObjectPatProp::Assign(property) => {
+                        recorder.record_binding_write(&property.key.to_id());
+                    }
+                    ObjectPatProp::Rest(property) => record_pat_write(&property.arg, recorder),
+                }
+            }
+        }
+        Pat::Assign(assignment) => record_pat_write(&assignment.left, recorder),
+        Pat::Rest(rest) => record_pat_write(&rest.arg, recorder),
+        Pat::Expr(expression) => record_assign_expr_target(expression, recorder),
+        Pat::Invalid(_) => {}
     }
 }
 

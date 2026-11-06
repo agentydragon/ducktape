@@ -879,6 +879,9 @@ For one variable in a large comma-separated declaration, use
 rendering siblings or surrounding items. Its `index` still names the enclosing
 raw item; `declarator_index` names the selected fragment, whose coordinates and
 raw source are exact. Pretty view renders it as a standalone declaration.
+The isolated declarator view omits the enclosing `var`/`let`/`const` kind;
+inspect its returned raw `body[N]` index before claiming that kind for a
+source proof such as a primitive Set operand alias.
 This selector cannot be combined with `--context-statements`.
 For a readable spec name, use `--id NAME` with a matching graph and modules;
 see [name and identifier resolution](#name-and-identifier-resolution).
@@ -1894,6 +1897,11 @@ binding captures an ordinary object (SPEC.md § Bundle-owned globals and §
 Captured ordinary-object values). `native_operation_inputs` applies to one
 selected consuming call; it does not discharge a census witness (SPEC.md §
 Native integrity inputs).
+For `set_from_primitive_array`, a dense array may contain primitive literals
+and earlier direct top-level primitive-literal `var`/`let`/`const` bindings
+whose canonical identities have no other declaration or write. The exact
+constructor site still needs its native protocol input; see
+[the source proof](../SPEC.md#native-integrity-inputs).
 
 `--limit` bounds precision-loss examples **per source unit** and witness rows
 **per slot**. Under `--at`, the line filter is applied before the per-unit

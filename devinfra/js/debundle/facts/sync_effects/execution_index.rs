@@ -1770,34 +1770,48 @@ struct BindingDeclarationWrite {
     initializer: Option<ValueExpr>,
     direct_top_level: bool,
     simple_identifier: bool,
+    primitive_literal_initializer: bool,
     /// Retained from the canonical declaration visitor so native-input
     /// validation need not re-traverse the initializer AST.
-    set_from_primitive_array_shape: bool,
+    /// `Some` is the dense primitive Set array shape; identifiers in the
+    /// array are certified against the completed declaration census below.
+    set_from_primitive_array_aliases: Option<Vec<Id>>,
     /// Source binding of a direct `new Set([...source, primitive literals])`.
     /// The interval and output schedule are certified separately.
     set_from_set_spread_source: Option<(Id, Span, Span)>,
 }
 
-fn set_from_primitive_array_shape(expression: &Expr) -> bool {
+fn set_from_primitive_array_aliases(expression: &Expr) -> Option<Vec<Id>> {
     let Expr::New(construction) = expression else {
-        return false;
+        return None;
     };
     let Expr::Ident(constructor) = construction.callee.as_ref() else {
-        return false;
+        return None;
     };
     let Some([argument]) = construction.args.as_deref() else {
-        return false;
+        return None;
     };
     let Expr::Array(array) = argument.expr.as_ref() else {
-        return false;
+        return None;
     };
-    constructor.sym == "Set"
-        && argument.spread.is_none()
-        && array.elems.iter().all(|element| {
-            element
-                .as_ref()
-                .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
-        })
+    if constructor.sym != "Set" || argument.spread.is_some() {
+        return None;
+    }
+    let mut aliases = Vec::new();
+    for element in &array.elems {
+        let element = element.as_ref()?;
+        if element.spread.is_some() {
+            return None;
+        }
+        if primitive_literal(&element.expr) {
+            continue;
+        }
+        let Expr::Ident(identifier) = element.expr.unwrap_parens() else {
+            return None;
+        };
+        aliases.push(identifier.to_id());
+    }
+    Some(aliases)
 }
 
 fn set_from_set_spread_source(expression: &Expr) -> Option<(Id, Span, Span)> {
@@ -5807,6 +5821,8 @@ struct ExecutionIndex {
     /// single canonical AST walk is complete.
     direct_primitive_const_bindings: BTreeSet<Id>,
     reassigned_bindings: BTreeSet<Id>,
+    /// Complete target-walker writes for primitive Set operand certification.
+    binding_target_writes: BTreeSet<Id>,
     ordinary_input_refs: BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
     value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     resolved_value_inputs: Vec<ResolvedBindingValueInput>,
@@ -6006,6 +6022,7 @@ impl Default for ExecutionIndex {
             variable_kind: None,
             direct_primitive_const_bindings: BTreeSet::new(),
             reassigned_bindings: BTreeSet::new(),
+            binding_target_writes: BTreeSet::new(),
             ordinary_input_refs: BTreeMap::new(),
             value_input_evidence: BTreeMap::new(),
             resolved_value_inputs: Vec::new(),
@@ -6749,6 +6766,33 @@ impl ExecutionIndex {
         self.integrity = self.integrity_flags();
     }
 
+    /// Literal operands are primitive without executing source. An identifier
+    /// operand is admitted only when the completed census proves the same
+    /// canonical binding has one earlier direct primitive initializer, with
+    /// no dynamic-scope access or recorded write. This establishes primitive
+    /// type, not an exact value; ordinary reads still carry order and TDZ.
+    fn has_stable_primitive_set_array(&self, declaration: &BindingDeclarationWrite) -> bool {
+        if !self.dynamic_scope_owners.is_empty() {
+            return false;
+        }
+        declaration
+            .set_from_primitive_array_aliases
+            .as_ref()
+            .is_some_and(|aliases| {
+                aliases.iter().all(|binding| {
+                    !self.reassigned_bindings.contains(binding)
+                        && !self.binding_target_writes.contains(binding)
+                        && matches!(
+                            self.binding_declaration_writes.get(binding).map(Vec::as_slice),
+                            Some([source]) if source.direct_top_level
+                                && source.simple_identifier
+                                && source.primitive_literal_initializer
+                                && source.owner < declaration.owner
+                        )
+                })
+            })
+    }
+
     /// Source-only construction proofs. Every protocol premise comes from the
     /// completed census; this operation must run before its roots seed flow.
     fn infer_set_constructions(
@@ -6795,7 +6839,7 @@ impl ExecutionIndex {
             if !matches!(callee.as_ref(), ValueExpr::Binding(id) if id.0 == "Set") {
                 continue;
             }
-            let operation = if declaration.set_from_primitive_array_shape {
+            let operation = if self.has_stable_primitive_set_array(declaration) {
                 InferredSetOperation::PrimitiveArray
             } else if let Some((source, source_span, spread_token_span)) =
                 &declaration.set_from_set_spread_source
@@ -6829,7 +6873,7 @@ impl ExecutionIndex {
                         valid = false;
                         break;
                     };
-                    if !write.set_from_primitive_array_shape
+                    if !self.has_stable_primitive_set_array(write)
                         || self.original_statement_spans[ordinal]
                             != self.original_statement_spans[owner.0]
                     {
@@ -7604,7 +7648,7 @@ impl ExecutionIndex {
                 if !(if spread {
                     declaration.set_from_set_spread_source.is_some()
                 } else {
-                    declaration.set_from_primitive_array_shape
+                    self.has_stable_primitive_set_array(declaration)
                 }) || constructor.0.as_ref() != "Set"
                     || self.property_key_declarations.contains(constructor)
                     || self.imported_bindings.contains(constructor)
@@ -7612,7 +7656,7 @@ impl ExecutionIndex {
                     let shape = if spread {
                         "a direct unshadowed new Set([...source, primitive literals]) operation with one dense nonspread array literal"
                     } else {
-                        "a direct unshadowed new Set([primitive literals]) operation with one dense nonspread array literal"
+                        "a direct unshadowed new Set([primitive literals or earlier stable primitive bindings]) operation with one dense nonspread array literal"
                     };
                     self.native_operation_input_errors
                         .push(format!("{request} requires {shape}"));
@@ -7892,7 +7936,7 @@ impl ExecutionIndex {
                             },
                         )
                     } else {
-                        declaration.set_from_primitive_array_shape
+                        self.has_stable_primitive_set_array(declaration)
                             && input.spread_source.is_none()
                             && input.spread_source_span.is_none()
                             && input.spread_token_span.is_none()
@@ -10894,6 +10938,7 @@ impl ExecutionIndex {
 
 impl binding_targets::TargetAccessRecorder for ExecutionIndex {
     fn record_binding_write(&mut self, id: &Id) {
+        self.binding_target_writes.insert(id.clone());
         if !self.past_await
             && let Some(callable) = self.current.and_then(|key| self.callables.get(&key))
             && !callable.created_after_parent_await
@@ -12084,10 +12129,14 @@ impl Visit for ExecutionIndex {
                     initializer: initializer.clone(),
                     direct_top_level,
                     simple_identifier: true,
-                    set_from_primitive_array_shape: declarator
+                    primitive_literal_initializer: declarator
                         .init
                         .as_deref()
-                        .is_some_and(set_from_primitive_array_shape),
+                        .is_some_and(primitive_literal),
+                    set_from_primitive_array_aliases: declarator
+                        .init
+                        .as_deref()
+                        .and_then(set_from_primitive_array_aliases),
                     set_from_set_spread_source: declarator
                         .init
                         .as_deref()
@@ -12149,7 +12198,8 @@ impl Visit for ExecutionIndex {
                         initializer: initializer.clone(),
                         direct_top_level,
                         simple_identifier: false,
-                        set_from_primitive_array_shape: false,
+                        primitive_literal_initializer: false,
+                        set_from_primitive_array_aliases: None,
                         set_from_set_spread_source: None,
                     });
                 // A for-of declaration has no initializer: its key fact was

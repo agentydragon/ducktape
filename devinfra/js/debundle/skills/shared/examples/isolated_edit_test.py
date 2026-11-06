@@ -35,13 +35,15 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     assert engine is not None
     assert node is not None
     assert fixture_config is not None
+    evidence = undeclared_outputs_dir() / "delegation"
+    evidence.mkdir()
     original = tmp_path / "original inputs"
     shutil.copytree(Path(fixture_config).parent, original)
     original_output = run([node, str(original / "source/main.js")], tmp_path).stdout
     output = tmp_path / "baseline output"
     packages = tmp_path / "package inputs"
     packages.mkdir()
-    run(
+    recorded_run(
         [
             engine,
             "run",
@@ -60,29 +62,29 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
             str(output),
         ],
         tmp_path,
+        evidence / "initial-run",
     )
     graph = output / "reports/tree/main/dependency_graph.json.gz"
 
-    def snapshot(name: str) -> Snapshot:
+    def snapshot(name: str, record: str) -> Snapshot:
         return cast(
             Snapshot,
             json.loads(
-                run(
+                recorded_run(
                     [engine, "snapshot", "create", "--graph", str(graph), "--destination", str(tmp_path / name)],
                     tmp_path,
-                ).stdout
+                    evidence / record,
+                )
             ),
         )
 
-    worker = snapshot("worker copy")
-    integration = snapshot("integration copy")
+    worker = snapshot("worker copy", "worker-snapshot-create")
+    integration = snapshot("integration copy", "integration-snapshot-create")
     assert "__packages_root__" in worker["graph_package_roots"]
     # Both copies must remain usable without their original spec, source or graph.
     shutil.rmtree(original)
     shutil.rmtree(output)
     shutil.rmtree(packages)
-    evidence = undeclared_outputs_dir() / "delegation"
-    evidence.mkdir()
     worker_records = evidence / "worker"
     merge_and_regenerate(worker, Path("main"), ["values", "calculation"], "arithmetic", worker_records)
     assert json.loads((worker_records / "apply.stdout").read_text())["gate"] == "passed"
