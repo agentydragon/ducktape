@@ -200,6 +200,9 @@ pub(super) enum ClassFieldKey {
 #[derive(Debug, Clone)]
 pub(super) struct ClassConstructorBody {
     pub(super) class: u32,
+    /// Definition itself cannot reenter an importer before the class binding
+    /// initializes. Constructor-body effects are a separate judgment.
+    pub(super) noninvoking_definition: bool,
     pub(super) initializers: LocalBody,
     pub(super) constructor: LocalBody,
 }
@@ -1062,6 +1065,7 @@ impl LocalBody {
         }
 
         let mut constructor = None;
+        let mut noninvoking_definition = true;
         let mut private_fields = BTreeSet::new();
         let mut field_operations = Vec::new();
         for member in &class.body {
@@ -1071,6 +1075,7 @@ impl LocalBody {
                 }
                 ClassMember::Constructor(_) => return None,
                 ClassMember::PrivateProp(field) => {
+                    noninvoking_definition &= !field.is_static;
                     if !field.decorators.is_empty() {
                         return None;
                     }
@@ -1089,6 +1094,7 @@ impl LocalBody {
                     }
                 }
                 ClassMember::ClassProp(field) => {
+                    noninvoking_definition &= !field.is_static;
                     if !field.decorators.is_empty() {
                         return None;
                     }
@@ -1119,6 +1125,14 @@ impl LocalBody {
                 }
                 ClassMember::PrivateMethod(method) if !method.function.decorators.is_empty() => {
                     return None;
+                }
+                ClassMember::Method(method) => {
+                    noninvoking_definition &= !matches!(method.key, PropName::Computed(_));
+                }
+                ClassMember::StaticBlock(_)
+                | ClassMember::AutoAccessor(_)
+                | ClassMember::TsIndexSignature(_) => {
+                    noninvoking_definition = false;
                 }
                 _ => {}
             }
@@ -1185,6 +1199,7 @@ impl LocalBody {
 
         Some(ClassConstructorBody {
             class: class.span.lo.0,
+            noninvoking_definition,
             initializers: Self::from_operations(BTreeMap::new(), Vec::new(), field_operations),
             constructor: Self::from_operations(bindings, local_parameters, constructor_operations),
         })
