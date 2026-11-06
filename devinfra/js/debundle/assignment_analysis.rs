@@ -1,6 +1,6 @@
 use analysis_model::DepKind;
 use source_identity::ChunkId;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 
 use serde::Serialize;
@@ -543,11 +543,21 @@ impl AssignmentAnalysis {
         // source-order slot for emit stability, even singletons that don't
         // participate in any canonical edge.
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
-        let import_order = EsmImportOrder::build(
+        let mut import_order = EsmImportOrder::build(
             &constraining_pairs,
             &canonical_edges.i_successors,
             &emitted_modules(planned_modules.len(), entry_module_id),
         );
+        let mut first_units = BTreeMap::new();
+        for node in dependency_graph.iter_nodes() {
+            first_units
+                .entry(assignment.of(node.id))
+                .and_modify(|first: &mut source_identity::SourceUnitOrdinal| {
+                    *first = (*first).min(node.statement_ordinal);
+                })
+                .or_insert(node.statement_ordinal);
+        }
+        import_order.preserve_isolated_source_order(&canonical_edges.i_successors, &first_units);
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
             dependency_graph,

@@ -14,7 +14,9 @@
 //!   [`EsmImportOrder::sort_entry_imports`] —
 //!   `source_import_position` ascending (docs/design.md "Lemma 2":
 //!   SCC dep rank ascending, intra-SCC linker position descending),
-//!   `ModuleId` ascending on ties.
+//!   `ModuleId` ascending on ties. Assignment analysis interleaves isolated
+//!   entry-only leaves by their earliest source unit; the relative order of
+//!   every I-graph participant stays unchanged.
 //! - **Module imports** (every emitted logical module's intra-chunk
 //!   `import` directives: cross-module binding imports, phantom
 //!   side-effect imports, and the residual-entry import, merged into
@@ -35,6 +37,7 @@ use analysis::graph::{
     chunk_linker_order_from_pairs, chunk_source_import_order_from_adjacency, position_lookup,
 };
 use analysis::ids::ModuleId;
+use source_identity::SourceUnitOrdinal;
 
 /// Sort key for one import target: `(position, target)` with missing
 /// positions falling to `usize::MAX` so unconstrained modules sort
@@ -81,6 +84,41 @@ impl EsmImportOrder {
 
     pub fn linker_order(&self) -> &[ModuleId] {
         &self.linker_order
+    }
+
+    /// Modules outside the full I-graph are entry-only DFS leaves. Interleave
+    /// them by their first source unit without changing the relative order of
+    /// any I-graph participant, including members of a rescued lazy cycle.
+    pub(crate) fn preserve_isolated_source_order(
+        &mut self,
+        i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+        first_units: &BTreeMap<ModuleId, SourceUnitOrdinal>,
+    ) {
+        let connected: BTreeSet<_> = i_successors
+            .iter()
+            .flat_map(|(from, targets)| std::iter::once(*from).chain(targets.iter().copied()))
+            .collect();
+        let mut order: Vec<_> = self.source_import_position.keys().copied().collect();
+        order.sort_by_key(|module| self.source_import_position[module]);
+        let (mut isolated, scheduled): (Vec<_>, Vec<_>) = order
+            .into_iter()
+            .partition(|module| !connected.contains(module) && first_units.contains_key(module));
+        isolated.sort_by_key(|module| (first_units[module], *module));
+        let mut isolated = isolated.into_iter().peekable();
+        let mut ordered = Vec::with_capacity(self.source_import_position.len());
+        for module in scheduled {
+            if let Some(first) = first_units.get(&module) {
+                while isolated
+                    .peek()
+                    .is_some_and(|next| first_units[next] < *first)
+                {
+                    ordered.push(isolated.next().expect("peeked isolated module"));
+                }
+            }
+            ordered.push(module);
+        }
+        ordered.extend(isolated);
+        self.source_import_position = position_lookup(&ordered);
     }
 
     pub fn linker_position(&self, id: ModuleId) -> Option<usize> {

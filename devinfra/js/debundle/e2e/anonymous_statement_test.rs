@@ -55,6 +55,14 @@ console.log("same");"#],
         &["const first", "const second"],
     );
     assert_preserved_entry_output(&fixture, "same\nsame\n");
+    assert_eq!(fixture.effect_translation_validation()["swapped_pairs"], 0);
+    assert_eq!(
+        node_module_evaluation_order(
+            &fixture,
+            &["context", "selected", "residual/unhandled", "entry"],
+        ),
+        ["context", "selected", "residual/unhandled", "entry"],
+    );
 }
 
 #[test]

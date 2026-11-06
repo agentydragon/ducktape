@@ -3978,6 +3978,12 @@ empty.
 
 ## Realizability cut explanations
 
+Modules with no incoming or outgoing intra-chunk import edges are entry-only
+leaves. Entry imports interleave these leaves by their earliest source unit,
+preserving the relative import order of every module participating in the
+intra-chunk graph. The candidate's exact emitted order still requires the
+ordinary relocation assessment.
+
 Each `cycles.json` entry names its `rejection`. `mutual_constraining_cycle`
 is a Pass-1 cycle of constraining edges. `esm_evaluation_tdz` is a Pass-2 TDZ
 proved under the materializer's linker order. Pass 2 runs only when Pass 1
