@@ -1487,12 +1487,17 @@ judgment. Throws, TDZ/const errors and unproved writes refuse certification
 without retrying the legacy source evaluator. Application execution continues
 to supply its ordinary effect/provenance, publication and fallback adapters.
 Base-class provider queries retain the shared constructor body's actual effect
-fragment independently of its fresh-instance and retention judgments. An empty
-constructor body has no operation effects. Field definitions, including those
-with implicit `undefined` initializers, keep their uncovered descriptor/heap
-effects; recording their retained values does not prove those effects. Instance
-private methods remain outside this constructor projection because their
-installation and retained captures are not represented by the shared plan.
+fragment independently of its fresh-instance and retention judgments. The shared
+kernel executes instance initializers before the simple parameter prologue and
+constructor body. Its fresh ordinary receiver starts extensible with no own
+fields or private slots. Public definitions create configurable writable own data
+properties without consulting the prototype; private definitions install distinct
+class-qualified slots, and private assignments require those slots already present.
+Each operation requires a normally completing allocation-only prefix, composes
+its initializer/RHS effects, and weakly stores retained values in the shared heap.
+Neither descriptor/brand state nor weak retained values authorize later field reads,
+strong updates or result-shape proofs. Defaults, heritage, borrowed accesses and
+instance private methods remain outside this constructor projection.
 Retained private captures produce an opaque foreign capability in the returned
 carrier. They may alias actual arguments, so those identities stay retained
 too. Later opaque use conservatively promotes importer reads and rebinds and

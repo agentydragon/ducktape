@@ -8,11 +8,14 @@ use super::array_transfer::ArrayPushSelection;
 use super::descriptor_transfer::NativeObjectPostcondition;
 use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
-    DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCall, LocalCallee,
-    LocalExpression, LocalOperation,
+    ClassConstructorBody, ClassFieldKey, DeferredCallableCreation, LocalArrayElement, LocalBinding,
+    LocalBody, LocalCall, LocalCallee, LocalExpression, LocalOperation,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
-use super::value_model::{AbstractValue, CallSite, Context, PropertyDefinition, ValueExpr, Values};
+use super::property_inference::DescriptorAttributes;
+use super::value_model::{
+    AbstractValue, CallSite, Context, PrivateFieldId, PropertyDefinition, ValueExpr, Values,
+};
 use crate::analysis_inputs::{ForeignInvocation, ProofDependencies};
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -42,6 +45,16 @@ pub(super) struct LocalFrame {
     /// Set only by a checked constructor provider query. Other local calls do
     /// not acquire a receiver just because their syntax mentions `this`.
     pub(super) this_values: Option<Values>,
+    constructor_receiver: Option<ConstructorReceiver>,
+}
+
+/// Per-activation descriptor/brand proof, separate from the pooled weak heap.
+/// Only canonical base-class construction creates this ordinary extensible
+/// receiver; unsupported exterior operations cannot preserve its prefix proof.
+struct ConstructorReceiver {
+    class: u32,
+    public_fields: BTreeMap<String, DescriptorAttributes>,
+    private_fields: BTreeSet<PrivateFieldId>,
 }
 
 impl LocalFrame {
@@ -59,7 +72,22 @@ impl LocalFrame {
             fresh_records: BTreeSet::new(),
             returns: Values::new(),
             this_values: None,
+            constructor_receiver: None,
         }
+    }
+
+    pub(super) fn constructor(body: &ClassConstructorBody) -> Self {
+        let mut frame = Self::new(Context::new());
+        frame.this_values = Some(Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Object,
+            body.class,
+        ))]));
+        frame.constructor_receiver = Some(ConstructorReceiver {
+            class: body.class,
+            public_fields: BTreeMap::new(),
+            private_fields: BTreeSet::new(),
+        });
+        frame
     }
 }
 
@@ -735,6 +763,9 @@ fn expression(
             value: node,
             ..
         } => define_this_field_expression(context, property, node, body, frame, judgment),
+        LocalExpression::AssignPrivateThisField { property, value } => {
+            assign_private_this_field_expression(context, property, value, body, frame, judgment)
+        }
     }
 }
 
@@ -1280,17 +1311,29 @@ fn assign_field_expression(
     Some(selected)
 }
 
+fn constructor_receiver<'a>(
+    frame: &'a mut LocalFrame,
+    judgment: &AllocationJudgment,
+) -> Option<&'a mut ConstructorReceiver> {
+    if !matches!(judgment, AllocationJudgment::CoveredAllocationOnly(_)) {
+        return None;
+    }
+    let receiver = frame.constructor_receiver.as_mut()?;
+    let expected = Values::from([AbstractValue::Value(Value::Alloc(
+        Kind::Object,
+        receiver.class,
+    ))]);
+    (frame.this_values.as_ref() == Some(&expected)).then_some(receiver)
+}
+
 fn define_this_field_expression(
     context: &mut impl LocalContext,
-    property: &str,
+    property: &ClassFieldKey,
     node: &LocalExpression,
     body: &LocalBody,
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
-    frame
-        .effect_coverage
-        .compose(&EffectCoverageFragment::default());
     let selected = expression(context, node, body, frame, judgment)?;
     if selected.values.is_empty() {
         return Some(selected);
@@ -1301,21 +1344,119 @@ fn define_this_field_expression(
     {
         return None;
     }
-    let this_values = frame.this_values.as_ref()?;
-    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) = this_values.first() else {
-        return None;
-    };
-    if this_values.len() != 1 {
+    let receiver = constructor_receiver(frame, judgment)?;
+    let object = receiver.class;
+    match property {
+        ClassFieldKey::Public(property) => {
+            // DefineField uses CreateDataPropertyOrThrow, not [[Set]]. A
+            // fresh base receiver is extensible and every earlier public
+            // definition here remains configurable; inherited setters are
+            // never consulted, including the name __proto__.
+            if receiver
+                .public_fields
+                .get(property)
+                .is_some_and(|attributes| attributes.configurable != Some(true))
+            {
+                return None;
+            }
+            receiver
+                .public_fields
+                .insert(property.clone(), DescriptorAttributes::literal(true));
+            context
+                .heap()
+                .write_property(object, Some(property.clone()), &selected.values);
+            context.record_property_write(crate::facts::EffectCell::OwnProperty {
+                origin: object,
+                property: property.clone(),
+            });
+        }
+        ClassFieldKey::Private(property) => {
+            let property = PrivateFieldId {
+                class: object,
+                name: property.clone(),
+            };
+            // PrivateFieldAdd throws on a duplicate brand/slot. Canonical
+            // definitions establish its absence in this fresh activation.
+            if !receiver.private_fields.insert(property.clone()) {
+                return None;
+            }
+            context
+                .heap()
+                .write_private_property(object, property, &selected.values)?;
+        }
+    }
+    frame
+        .effect_coverage
+        .compose(&EffectCoverageFragment::modeled_own_data_access());
+    Some(selected)
+}
+
+fn assign_private_this_field_expression(
+    context: &mut impl LocalContext,
+    property: &str,
+    node: &LocalExpression,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let selected = expression(context, node, body, frame, judgment)?;
+    if selected.values.is_empty() {
+        return Some(selected);
+    }
+    if selected
+        .values
+        .contains(&AbstractValue::Value(Value::Unavailable))
+    {
         return None;
     }
-    // Constructor summaries use this heap entry only to walk values
-    // retained by the fresh instance. `ordinary_record_shape` remains
-    // the prerequisite for reads, so class slots never become
-    // ordinary data fields by being recorded here.
+    let receiver = constructor_receiver(frame, judgment)?;
+    let object = receiver.class;
+    let property = PrivateFieldId {
+        class: object,
+        name: property.to_owned(),
+    };
+    // This is PrivateSet on an existing field, never private method/accessor
+    // dispatch. Definition order is a runtime prefix proof, not a name census.
+    if !receiver.private_fields.contains(&property) {
+        return None;
+    }
     context
         .heap()
-        .write_property(*object, Some(property.to_owned()), &selected.values);
+        .write_private_property(object, property, &selected.values)?;
+    frame
+        .effect_coverage
+        .compose(&EffectCoverageFragment::modeled_own_data_access());
     Some(selected)
+}
+
+/// Base receivers initialize instance fields before FunctionDeclarationInstantiation.
+/// Defaults remain outside the canonical constructor plan; each simple parameter
+/// still receives actual creation/initialization operations in the body phase.
+pub(super) fn execute_constructor(
+    context: &mut impl LocalContext,
+    body: &ClassConstructorBody,
+    arguments: Vec<SelectedValue>,
+    frame: &mut LocalFrame,
+) -> Option<LocalTransferResult> {
+    if frame.constructor_receiver.as_ref()?.class != body.class
+        || frame.parameter_inputs.is_some()
+        || !frame.environment.is_empty()
+    {
+        return None;
+    }
+    let initializers = execute(context, &body.initializers, frame)?;
+    if !matches!(
+        initializers.allocation,
+        AllocationJudgment::CoveredAllocationOnly(_)
+    ) || frame.returns != Values::from([AbstractValue::UNDEFINED])
+    {
+        return None;
+    }
+    frame.returns = Values::new();
+    frame.parameter_inputs = Some(arguments);
+    let mut result = execute(context, &body.constructor, frame)?;
+    result.allocation.compose(&initializers.allocation);
+    Some(result)
 }
 // Prologue state is gone before the body invokes another callable. Defaults
 // still execute through the same ordered expression transfers.

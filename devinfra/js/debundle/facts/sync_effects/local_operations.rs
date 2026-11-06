@@ -179,14 +179,29 @@ pub(super) enum LocalExpression {
         value: Arc<Self>,
         span: Span,
     },
-    /// Class field definition and declared private-field assignment both
-    /// contribute weak containment to the fresh-instance retention projection.
-    /// This does not model public/private descriptor identity or authorize a
-    /// later field read.
+    /// Own public data definition or private-slot installation, distinct from
+    /// assignment to an already installed private slot.
     DefineThisField {
+        property: ClassFieldKey,
+        value: Arc<Self>,
+    },
+    AssignPrivateThisField {
         property: String,
         value: Arc<Self>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum ClassFieldKey {
+    Public(String),
+    Private(String),
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ClassConstructorBody {
+    pub(super) class: u32,
+    pub(super) initializers: LocalBody,
+    pub(super) constructor: LocalBody,
 }
 
 #[derive(Debug, Clone)]
@@ -621,7 +636,7 @@ impl LocalExpression {
                             && matches!(member.obj.unwrap_parens(), Expr::This(_))
                             && let MemberProp::PrivateName(private) = &member.prop
                         {
-                            return Some(Self::DefineThisField {
+                            return Some(Self::AssignPrivateThisField {
                                 property: private.name.to_string(),
                                 value,
                             });
@@ -734,7 +749,9 @@ impl LocalExpression {
                 reads.insert(receiver.clone());
                 value.reads(reads);
             }
-            Self::DefineThisField { value, .. } => value.reads(reads),
+            Self::DefineThisField { value, .. } | Self::AssignPrivateThisField { value, .. } => {
+                value.reads(reads)
+            }
         }
     }
 
@@ -823,7 +840,9 @@ impl LocalExpression {
                 let local = bindings.contains_key(binding);
                 (local, local)
             }
-            Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
+            Self::AssignField { value, .. }
+            | Self::DefineThisField { value, .. }
+            | Self::AssignPrivateThisField { value, .. } => {
                 let (allocation_only, _) = value.allocation_syntax(bindings, closure_sites);
                 (allocation_only, false)
             }
@@ -859,7 +878,8 @@ impl LocalExpression {
             }
             Self::Assign { value, .. }
             | Self::AssignField { value, .. }
-            | Self::DefineThisField { value, .. } => value.requires_keyed_collection_new(),
+            | Self::DefineThisField { value, .. }
+            | Self::AssignPrivateThisField { value, .. } => value.requires_keyed_collection_new(),
             Self::Call(LocalCall { arguments, .. }) => {
                 arguments.iter().any(Self::requires_keyed_collection_new)
             }
@@ -915,9 +935,9 @@ impl LocalExpression {
                     argument.writes(writes);
                 }
             }
-            Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
-                value.writes(writes)
-            }
+            Self::AssignField { value, .. }
+            | Self::DefineThisField { value, .. }
+            | Self::AssignPrivateThisField { value, .. } => value.writes(writes),
             Self::Value(_)
             | Self::PrimitiveLiteral(_)
             | Self::This
@@ -1036,7 +1056,7 @@ impl LocalBody {
     /// Canonically lower the allocation effects of a base class constructor.
     /// The caller still proves binding stability and native identity; this
     /// collector retains every constructor-time field operation in order.
-    pub(super) fn lower_class_constructor(class: &Class) -> Option<(Self, Vec<Id>)> {
+    pub(super) fn lower_class_constructor(class: &Class) -> Option<ClassConstructorBody> {
         if class.super_class.is_some() || !class.decorators.is_empty() {
             return None;
         }
@@ -1059,7 +1079,7 @@ impl LocalBody {
                         private_fields.insert(property.clone());
                         field_operations.push(LocalOperation::Evaluate(
                             LocalExpression::DefineThisField {
-                                property,
+                                property: ClassFieldKey::Private(property),
                                 value: Arc::new(match field.value.as_deref() {
                                     Some(value) => LocalExpression::lower(value, true)?,
                                     None => LocalExpression::PrimitiveLiteral(PrimKinds::UNDEFINED),
@@ -1081,7 +1101,7 @@ impl LocalBody {
                         }
                         field_operations.push(LocalOperation::Evaluate(
                             LocalExpression::DefineThisField {
-                                property: static_property_name(&field.key)?,
+                                property: ClassFieldKey::Public(static_property_name(&field.key)?),
                                 value: Arc::new(match field.value.as_deref() {
                                     Some(value) => LocalExpression::lower(value, true)?,
                                     None => LocalExpression::PrimitiveLiteral(PrimKinds::UNDEFINED),
@@ -1105,7 +1125,6 @@ impl LocalBody {
         }
 
         let mut bindings = BTreeMap::new();
-        let mut parameters = Vec::new();
         let mut local_parameters = Vec::new();
         let mut constructor_operations = Vec::new();
         if let Some(constructor) = constructor {
@@ -1125,7 +1144,6 @@ impl LocalBody {
                 {
                     return None;
                 }
-                parameters.push(binding.id.to_id());
                 local_parameters.push(LocalParameter {
                     binding: binding.id.to_id(),
                     default: None,
@@ -1145,7 +1163,8 @@ impl LocalBody {
                     }
                     Stmt::Expr(expression) => {
                         let operation = LocalExpression::lower(&expression.expr, true)?;
-                        let LocalExpression::DefineThisField { property, .. } = &operation else {
+                        let LocalExpression::AssignPrivateThisField { property, .. } = &operation
+                        else {
                             return None;
                         };
                         if !private_fields.contains(property) {
@@ -1164,11 +1183,11 @@ impl LocalBody {
             }
         }
 
-        field_operations.extend(constructor_operations);
-        Some((
-            Self::from_operations(bindings, local_parameters, field_operations),
-            parameters,
-        ))
+        Some(ClassConstructorBody {
+            class: class.span.lo.0,
+            initializers: Self::from_operations(BTreeMap::new(), Vec::new(), field_operations),
+            constructor: Self::from_operations(bindings, local_parameters, constructor_operations),
+        })
     }
 
     fn lower_parameters<'a>(

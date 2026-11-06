@@ -5,8 +5,8 @@
 
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{
-    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PropertyDefinition,
-    ProviderScopeId, ValueExpr, Values,
+    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PrivateFieldId,
+    PropertyDefinition, ProviderScopeId, ValueExpr, Values,
 };
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{
@@ -248,6 +248,7 @@ pub(super) fn keyed_collection_new(
 /// The real shared allocation store; neither consumer supplies app/native facts.
 pub(super) struct LiteralHeap<'a> {
     pub(super) properties: &'a mut OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    pub(super) private_properties: Option<&'a mut OrdMap<u32, BTreeMap<PrivateFieldId, Values>>>,
     pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
     pub(super) revision: &'a mut u64,
     pub(super) writable_prefix: Option<&'a mut OrdMap<u32, WritablePrefixState>>,
@@ -363,6 +364,29 @@ impl LiteralHeap<'_> {
         if slot.len() != before {
             *self.revision = self.revision.wrapping_add(1);
         }
+    }
+
+    /// Private names never enter the ordinary own-property namespace. Like
+    /// public slots, pooled source sites retain every stored value.
+    pub(super) fn write_private_property(
+        &mut self,
+        allocation: u32,
+        property: PrivateFieldId,
+        values: &Values,
+    ) -> Option<()> {
+        let slot = self
+            .private_properties
+            .as_deref_mut()?
+            .entry(allocation)
+            .or_default()
+            .entry(property)
+            .or_default();
+        let before = slot.len();
+        slot.extend(values.iter().cloned());
+        if slot.len() != before {
+            *self.revision = self.revision.wrapping_add(1);
+        }
+        Some(())
     }
 
     pub(super) fn invalidate_dense_array(&mut self, allocation: u32) {
@@ -1000,6 +1024,7 @@ mod tests {
         {
             let mut heap = LiteralHeap {
                 properties: &mut properties,
+                private_properties: None,
                 arrays: &mut arrays,
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),
@@ -1023,6 +1048,7 @@ mod tests {
         {
             let mut heap = LiteralHeap {
                 properties: &mut properties,
+                private_properties: None,
                 arrays: &mut arrays,
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),

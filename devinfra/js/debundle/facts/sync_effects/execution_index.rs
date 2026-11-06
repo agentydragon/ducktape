@@ -6038,7 +6038,7 @@ struct ExecutionIndex {
     native_guarded_regions: Vec<callback_arguments::GuardedRegion>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
     /// Source-covered constructor operations for exported provider summaries.
-    class_provider_bodies: BTreeMap<u32, (LocalBody, Vec<Id>)>,
+    class_provider_bodies: BTreeMap<u32, super::local_operations::ClassConstructorBody>,
     local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
     semantic_facts: Option<Arc<SemanticFacts>>,

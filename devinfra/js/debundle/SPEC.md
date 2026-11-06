@@ -804,11 +804,17 @@ tags match; each callable child still supplies its own creation fragment.
 Defining an accessor does not invoke it. Computed keys, opaque definitions and
 the data-property `__proto__` form remain outside this definition proof.
 Base-class provider queries also retain their actual shared constructor-body
-fragment independently of the fresh-instance and retained-argument proof. Empty
-constructors can close that fragment. Field definitions, including implicit
-`undefined` initializers, retain uncovered heap/descriptor effects; fresh-instance
-retention alone cannot cover them. Instance private methods remain unsupported
-by this provider projection.
+fragment independently of the fresh-instance and retained-argument proof. The
+shared kernel executes field initializers, including implicit `undefined`
+definitions, before the simple parameter prologue and constructor body. A fresh
+ordinary receiver and a normally completing allocation-only prefix prove public
+own data definitions, without consulting inherited setters. Private definitions
+install class-qualified slots; a private assignment requires its exact slot
+already present. Public descriptors and private slots remain disjoint, while
+stored values retain weak pooled-allocation semantics and callback reachability.
+Each initializer/RHS and actual parameter operation composes its own effects.
+These proofs grant no field-read, result-shape or prototype guarantee. Heritage,
+defaults, borrowed access and instance private methods remain unsupported.
 Checked array-literal creation also composes the same operation effects in
 both contexts: creating the fresh array and defining its own indices and length
 executes no user code. Each element's effects compose in source order. Holes
