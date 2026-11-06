@@ -86,50 +86,23 @@ def _alertmanager_config() -> dict[str, object]:
             },
             {"target_matchers": ["alertname = InfoInhibitor"]},
         ],
-        # ntfy is the DEFAULT receiver and suppression is an explicit denylist below.
-        #
-        # This used to be an allowlist (`receiver: "null"` by default, one child route
-        # naming the alertnames that page). That fails silently in the direction that
-        # matters: an alert not named in the allowlist is discarded with no signal
-        # anywhere, so a newly added rule looks healthy and fires into nothing. It cost
-        # a 45h haku-console connector outage whose alert had been built, verified
-        # firing, and never routed; and it silently dropped ControlPlaneLeasePutLatency
-        # when that alert was renamed and the allowlist regex kept the old names.
-        # Defaulting to ntfy makes the failure mode "too loud" rather than "silent".
-        #
-        # The denylist started as an exact reproduction of the old delivered set (116
-        # names, 21 of them critical) so the inversion itself was a behavioral no-op.
-        # It is now being pruned deliberately, a batch at a time.
-        #
-        # Every candidate is checked against 7 DAYS of ALERTS history before removal,
-        # not a spot check. A 3h sample said TanaMcpFacadeProbeStale was quiet; over 7d
-        # it fires 7286 min (~72% of the week), and enabling it would have planted a
-        # permanently-firing alert in a channel whose daily quota is the thing that
-        # broke on 2026-08-05. Query:
-        #   max by (alertname) (count_over_time(ALERTS{alertstate="firing"}[7d]))
-        #
-        # Deviation worth knowing: a NEW alertname, from a chart upgrade or a new rule,
-        # is not in the denylist and therefore pages. That asymmetry is the point of the
-        # inversion -- silence is the failure mode that cost a 45h connector outage.
+        # ntfy is the default; the denylist below names explicit suppressions. The old
+        # null-default allowlist silently dropped new or renamed alerts, including a
+        # 45h haku-console connector outage and `ControlPlaneLeasePutLatency`. Unknown
+        # alert names now page; prune this denylist in batches only after reviewing
+        # seven days of `ALERTS` history. A 3h sample missed `TanaMcpFacadeProbeStale`,
+        # which fired 7286 minutes in 7d and would have consumed the daily quota.
+        #   `max by (alertname) (count_over_time(ALERTS{alertstate="firing"}[7d]))`
         "route": {
             "group_wait": "30s",
             "group_interval": "5m",
             "repeat_interval": "2h",
             "receiver": "ntfy",
-            # One alert per ntfy message. ntfy caps a published message at
-            # ~4KB; a group_by of ["namespace"] bundled every flux-system alert
-            # (21+ FluxKustomizationNotReady during a storm) into one notification
-            # that, expanded by the X-Template "alertmanager" renderer, exceeded
-            # the cap and was rejected with HTTP 400 code 40041 ("message or title
-            # is too large after replacing template"). Alertmanager treats 4xx as
-            # unrecoverable, so alerts were silently dropped exactly when many were
-            # firing. group_by ["..."] disables aggregation so each alert is its
-            # own small message.
-            #
-            # Gotcha: this trades a size limit for a rate limit. One message per
-            # alert instance against ntfy.sh's free daily quota is what produced
-            # the 429 (code 42908) outage that took paging down for 23h on
-            # 2026-08-05. The self-hosted instance has no hosted-service quota.
+            # `group_by=["..."]` sends one alert per message, avoiding ntfy's ~4KB
+            # cap: grouping 21+ Flux alerts exceeded it and Alertmanager dropped HTTP 400s.
+            # This trades size failures for rate limits: ntfy.sh's free daily quota
+            # caused the 23h 429 outage on 2026-08-05; our self-hosted ntfy has no such
+            # hosted-service quota.
             "group_by": ["..."],
             "routes": [
                 # PERMANENT. Watchdog fires continuously by design and is the heartbeat
@@ -137,32 +110,17 @@ def _alertmanager_config() -> dict[str, object]:
                 # on it would be backwards. InfoInhibitor exists only to feed the
                 # inhibit_rules above.
                 {"receiver": "null", "matchers": ['alertname =~ "Watchdog|InfoInhibitor"']},
-                # NOT NOISE -- UNFIXED PROBLEMS. Everything below fires ~continuously
-                # because something is genuinely broken and has been for days. Each
-                # line is a to-do, not a policy: fix the cause, delete the entry. The
-                # number is minutes firing over the 7 days to 2026-08-06.
-                #
-                # Do NOT add to this list to quieten a new alert. That is how the
-                # 2026-08-05 paging outage happened -- suppressed alerts for
-                # deliberately-suspended services became a permanent floor that
-                # exhausted the daily quota and took *all* paging down for 23h.
-                # TargetDown is suppressed for ONE job rather than wholesale. Its other
-                # causes are gone: kubelet by the roaming taint exclusion (#3815);
-                # litellm-chatgpt with the suspension (#3812); and seaweedfs-volume-peer
-                # twice over -- #3818 aligned the ssd metricsPort so the scrape would
-                # succeed, then #3819 deleted the ServiceMonitor that was scraping that
-                # topology-less Service at all, which is what actually retired the job.
-                # (The operator does not recreate that ServiceMonitor: it emits them per
-                # volumeTopology group, and the flat spec.volume is deliberately omitted.
-                # #3818 was therefore not required for this alert.) node-exporter is
-                # the last one: its `up` series carry no `node` label, only `instance`, so
-                # excluding roaming nodes there needs an instance -> IP -> node join
-                # through kube_node_status_addresses, which is a lot of dense PromQL
-                # inside a rule that guards every scrape target in the cluster.
-                #
-                # Narrow beats wholesale here: a NEW target going down now pages, which
-                # is the entire point of the alert and was not true while the alertname
-                # was denied outright.
+                # These are unresolved, continuously firing alerts: each suppression is
+                # a TODO to fix its cause and remove the entry. Never add a new alert to
+                # quiet it; suspended-service alerts exhausted the quota on 2026-08-05.
+                # Counts below are firing minutes over the 7d ending 2026-08-06.
+                # `TargetDown` is suppressed only for `node-exporter`. Historical causes:
+                # kubelet was excluded by the taint-based fork (#3815), `litellm-chatgpt`
+                # was suspended (#3812), and #3818 aligned the SSD metrics port for
+                # `seaweedfs-volume-peer`. #3819 removed duplicate Flux YAML; the operator
+                # owns and recreates its topology-less ServiceMonitor.
+                # `node-exporter` has no `node` label, so roaming exclusion needs an
+                # instance-to-IP-to-node join. Other and newly added target failures page.
                 {"receiver": "null", "matchers": ['alertname = "TargetDown"', 'job = "node-exporter"']},
                 {
                     "receiver": "null",
@@ -195,14 +153,11 @@ def _alertmanager_config() -> dict[str, object]:
                         '|KubeDeploymentReplicasMismatch|KubeDeploymentRolloutStuck"'
                     ],
                 },
-                # The pager reporting on its own delivery. These fired for the whole
-                # 23h outage and could not be delivered, because delivery was the
-                # broken thing -- routing them adds quota pressure during exactly the
-                # incident where quota is the problem. The external dead-man's switch
-                # is the real fix. AlertmanagerClusterDown / ...Crashlooping / ...
-                # ConfigInconsistent / ...FailedReload / ...MembersInconsistent DO page
-                # (enabled in #3800/#3802): those describe a broken Alertmanager that
-                # can still send.
+                # Delivery-failure alerts cannot report a broken delivery path and add
+                # quota pressure during that outage; use the external Watchdog dead-man
+                # switch instead (`cluster/docs/plan.md`). AlertmanagerClusterDown,
+                # ClusterCrashlooping, ConfigInconsistent, FailedReload and
+                # MembersInconsistent still page because Alertmanager can still send.
                 {
                     "receiver": "null",
                     "matchers": ['alertname =~ "AlertmanagerClusterFailedToSendAlerts|AlertmanagerFailedToSendAlerts"'],
@@ -242,17 +197,12 @@ def _values() -> dict[str, object]:
         # release manifest — disabling it stops Helm applying them, it does not
         # delete them.
         "crds": {"enabled": False},
-        # Shorten resource names: "kube-prometheus-stack-*" → "monitoring-*"
         "fullnameOverride": "monitoring",
-        # Remove redundant "-prometheus"/"-alertmanager" suffix from CR names
-        # (avoids e.g. "prometheus-monitoring-prometheus" → "prometheus-monitoring")
         "cleanPrometheusOperatorObjectNames": True,
         "defaultRules": {
             "create": True,
-            # Forked into cluster/cdk8s/monitoring/rules.py so
-            # roaming laptops (iguana/rugged) can be excluded by taint. Denying these two by
-            # alertname in the route below would also have silenced them for the
-            # control-plane nodes, which is the opposite of what we want.
+            # Forked in `rules.py` to exclude roaming nodes by taint without silencing
+            # the same alerts for control-plane nodes through the global route.
             "disabled": {
                 # Temporary suppression for the two disabled ServiceMonitors until
                 # issue #8567 restores a valid scrape path. These four rules cover
