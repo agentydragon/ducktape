@@ -838,58 +838,36 @@ it("keeps the open Thread in the list while it is archived and the archived swit
   expect(container.textContent).not.toContain("Open archive");
 });
 
-it("archives an idle Session while its harness process remains running", async () => {
+it.each([
+  {
+    scenario: "an idle Session while its harness process remains running",
+    name: "Live thread",
+    attached: { harnessState: HarnessState.RUNNING },
+  },
+  {
+    scenario: "a reserved dormant Session before its first input",
+    name: "Reserved thread",
+    attached: { harnessState: HarnessState.STOPPED, launchOutcome: LaunchOutcome.PENDING },
+  },
+])("archives $scenario", async ({ name, attached }) => {
   await render(
     [
       thread({
         metadata: {
           threadId: "t-1",
-          name: "Live thread",
+          name,
         },
         summary: {
           sandbox: {
             name: "demo",
           },
-          attached: {
-            harnessState: HarnessState.RUNNING,
-          },
+          attached,
         },
       }),
     ],
     { demo: sandbox("demo") }
   );
-  const archiveButton = container.querySelector('button[aria-label="Archive Live thread"]');
-  if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
-  expect(archiveButton.disabled).toBe(false);
-  await act(async () => archiveButton.click());
-  const archiveCall = fetchMock.mock.calls.find(
-    ([request]) => new URL((request as Request).url).pathname === "/upstream/app/v1/threads/t-1/archive"
-  );
-  expect(archiveCall).toBeDefined();
-});
-
-it("archives a reserved dormant Session before its first input", async () => {
-  await render(
-    [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "Reserved thread",
-        },
-        summary: {
-          sandbox: {
-            name: "demo",
-          },
-          attached: {
-            harnessState: HarnessState.STOPPED,
-            launchOutcome: LaunchOutcome.PENDING,
-          },
-        },
-      }),
-    ],
-    { demo: sandbox("demo") }
-  );
-  const archiveButton = container.querySelector('button[aria-label="Archive Reserved thread"]');
+  const archiveButton = container.querySelector(`button[aria-label="Archive ${name}"]`);
   if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
   expect(archiveButton.disabled).toBe(false);
   await act(async () => archiveButton.click());
