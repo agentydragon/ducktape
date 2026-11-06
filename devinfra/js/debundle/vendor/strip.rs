@@ -536,7 +536,7 @@ fn sweep_unreachable_top_level(
             }
             // Property origins can be shared by repeated factory allocations;
             // source containment alone does not prove their results private.
-            EffectCell::OwnProperty { .. } => false,
+            EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_) => false,
             EffectCell::Binding(id) => {
                 replacement_import_locals.contains(id) || !live_reads.contains(id)
             }
@@ -1177,6 +1177,7 @@ fn format_effect_cell(cell: &EffectCell) -> String {
         EffectCell::GlobalProp(key) => format!("global `{key}`"),
         EffectCell::ArrayContents(origin) => format!("array contents #{origin}"),
         EffectCell::SetContents(origin) => format!("set contents #{origin}"),
+        EffectCell::ObjectShape(origin) => format!("object shape #{}", origin),
         EffectCell::OwnProperty { origin, property } => {
             format!("own property `{property}` of allocation #{origin}")
         }
