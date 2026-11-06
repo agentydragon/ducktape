@@ -778,18 +778,25 @@ pub fn assert_module_source(
     contains: &[&str],
     does_not_contain: &[&str],
 ) {
-    let code = fs::read_to_string(out_root.join(module_path))
-        .unwrap_or_else(|e| panic!("read {module_path}: {e}"));
+    assert_source_file(&out_root.join(module_path), contains, does_not_contain);
+}
+
+pub fn assert_source_file(path: &Path, contains: &[&str], does_not_contain: &[&str]) {
+    let code = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     for needle in contains {
         assert!(
             code.contains(*needle),
-            "{module_path} did not contain {needle:?}\n--- {module_path} ---\n{code}",
+            "{} did not contain {needle:?}\n--- {} ---\n{code}",
+            path.display(),
+            path.display(),
         );
     }
     for needle in does_not_contain {
         assert!(
             !code.contains(*needle),
-            "{module_path} unexpectedly contained {needle:?}\n--- {module_path} ---\n{code}",
+            "{} unexpectedly contained {needle:?}\n--- {} ---\n{code}",
+            path.display(),
+            path.display(),
         );
     }
 }
