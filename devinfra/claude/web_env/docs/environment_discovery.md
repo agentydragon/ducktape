@@ -147,23 +147,11 @@ starts) and inherited by every process in the tree above (`process_api` → `/bi
 
 ## Sandbox Runtime Settings
 
-From `/usr/local/bin/environment-manager print-sandbox-settings`:
-
-```json
-{
-  "network": {
-    "allowedDomains": ["api.anthropic.com", "api-staging.anthropic.com", "*.anthropic.com"],
-    "deniedDomains": []
-  },
-  "filesystem": {
-    "denyRead": ["~/.ssh", "~/.aws", "~/.config/gcloud", "/etc/shadow", "/etc/passwd-", "/secrets"],
-    "allowWrite": ["/tmp", "/tmp/claude", "~", "/workspace"],
-    "denyWrite": [],
-    "allowGitConfig": true
-  },
-  "enableWeakerNestedSandbox": false
-}
-```
+The `print-sandbox-settings` output is captured in
+[`reference/sandbox-settings.json`](../reference/sandbox-settings.json): it allows
+Anthropic API domains, denies reads of credential stores, permits writes under `/tmp`,
+the home directory, and `/workspace`, allows Git config, and disables weaker nested
+sandboxing.
 
 ## Environment Runner
 
@@ -174,187 +162,31 @@ Version: `release-ba76006550-ext`
 
 The environment-runner is an Anthropic-built Go binary that orchestrates Claude Code sessions in containerized environments. It handles the complete lifecycle from session initialization to cleanup.
 
-### Help Output
+### CLI Reference
 
-```
-$ environment-manager --help
-Environment Runner handles the lifecycle of agentic sessions.
+[`reference/subcommands.txt`](../reference/subcommands.txt) preserves the full `--help`
+output and examples for `release-ba76006550-ext`. The
+[setup flag inventory](../re/SETUP_FLAGS_INVENTORY.md) and
+[environment-manager RE guide](../re/environment_manager/README.md) describe earlier
+builds; use this capture for the current command surface.
 
-Usage:
-  environment-runner [command]
+`setup` preinstalls Claude Code and Sandbox Runtime but neither starts a session nor
+disables per-session auto-updates.
+`orchestrator` discovers identity with `whoami`, polls for work, and dispatches it to an
+execute hook (session JSON on stdin) or `task-run --input-format=v1`; the default
+backend is `sandbox-runtime`. `poll` makes one non-blocking request, and `task-run`
+accepts v0/v1 JSON on stdin.
+Self-hosted polling requires `ENVIRONMENT_SERVICE_KEY`; explicit environment and
+organization IDs are checked against `whoami`.
 
-Available Commands:
-  completion             Generate the autocompletion script for the specified shell
-  help                   Help about any command
-  orchestrator           Poll for session tasks and hand off for execution
-  poll                   Make a single poll request for work
-  preload-claude         Pre-boot a Claude Code spare for a later task-run to claim
-  print-sandbox-settings Print the default sandbox runtime settings
-  setup                  Install dependencies for orchestrator mode
-  task-run               Handles execution of a provided session
+### Preloaded Claude Process
 
-Flags:
-  -h, --help      help for environment-runner
-  -v, --version   version for environment-runner
-```
-
-### task-run Subcommand
-
-The primary command for executing a single session:
-
-```
-$ environment-manager task-run --help
-Connects directly to the API to execute an existing session id.
-
-Provide a JSON object via stdin with the following structure:
-{
-  "startup_context": {
-    "sources": [...],
-    "cwd": "..."
-  },
-  "environment": {
-    "environment_type": "...",
-    "version": "...",
-    ...
-  },
-  "auth": [
-    {
-      "type": "github_app",
-      "url": "github.com",
-      "token": "ghs_..."
-    }
-  ]
-}
-
-Flags:
-      --allowed-tools string                    Comma-separated list of allowed tools for Claude
-      --claude-agent-version string             Target Claude Agent version (latest, current, stable, or specific version)
-      --claude-path string                      Path to the Claude CLI executable or a wrapper binary
-      --debug                                   Enable debug mode when executing the Claude Agent
-      --environment-id string                   Environment ID for API calls (required for self-hosted)
-      --input-format string                     Input format: 'v0' or 'v1' (default "v0")
-      --local-append-system-prompt string       Additional system prompt content to append locally
-      --local-testing                           Disable Claude WebSocket connections and git configuration
-      --log-level string                        Log level (debug, info, warn, error) (default "info")
-      --organization-id string                  Organization ID for API calls (required for self-hosted)
-      --print-code-logs                         Print an end-of-session Claude Code summary to console when execution completes or fails (raw log dump requires ENV_MANAGER_PRINT_RAW_CC_LOGS)
-      --session string                          ID of the session to manage (required)
-      --session-mode string                     Session mode: 'new' (default for Cloud), 'resume' (skip git clone and setup scripts), 'resume-cached' (default for first self-hosted runs), 'setup-only' (exit after setup); 'retry' is reserved for the runner and cannot be passed explicitly (default "new")
-      --skip-git-config                         Skip git configuration setup (use container's existing .gitconfig)
-      --upgrade-claude-code                     Deprecated: use --claude-agent-version instead (default true)
-      --verbose-claude-logs                     Enable verbose logging of Claude Agent output to console
-      --working-directory string                Default working directory for the session (default "/root")
-```
-
-### orchestrator Subcommand
-
-For self-hosted environments that poll for work:
-
-```
-$ environment-manager orchestrator --help
-The orchestrator command polls the API for session tasks and handing off work to be executed.
-
-It handles:
-- Discovering environment identity via the /v1/environments/whoami endpoint
-- Polling the environments API work/poll endpoint
-- Executing work:
-  - With --execute-hook: pipes JSON to hook via stdin and exits with hook's exit code
-  - Without --execute-hook: auto-invokes 'task-run --input-format=v1'
-    - With --sandbox-backend=sandbox-runtime (default): wraps execution in sandbox
-    - With --sandbox-backend=none: runs without sandbox (logs warning)
-- Running timeout hooks for periodic maintenance (e.g., monorepo updates)
-- Sleeping with jitter when queue is empty
-- Graceful shutdown on SIGTERM/SIGINT
-
-Required environment variable:
-  ENVIRONMENT_SERVICE_KEY: Service key for the environment
-
-The environment ID and organization ID are discovered automatically via the whoami
-endpoint. You can optionally provide --environment-id and --organization-id flags
-to validate them against the token's identity.
-
-Flags:
-      --api-url string                  API base URL (default "https://api.anthropic.com")
-      --client-id string                Client ID (worker identifier, default: hostname)
-      --environment-id string           Environment ID (find at claude.ai/settings)
-      --execute-hook string             Command to run with session JSON via stdin when task received
-      --execute-hook-timeout duration   Timeout for execute hook (0 = no timeout)
-      --log-level string                Log level (debug, info, warn, error) (default "info")
-      --loop-timeout duration           Loop timeout before triggering timeout hook (default 5m0s)
-      --max-poll-failures int           Maximum consecutive poll failures before exiting (0 = infinite)
-      --organization-id string          Organization ID (find at claude.ai/settings > Account)
-      --poll-hook string                Command to execute for polling instead of built-in Poller
-      --poll-hook-timeout duration      Timeout for poll hook execution (default 30s)
-      --poll-timeout duration           Poll request timeout duration (default 5m0s)
-      --reclaim-older-than-ms int       Reclaim unacknowledged work items older than this many ms (0 = API default)
-      --sandbox-backend string          Sandbox backend: none, sandbox-runtime (default "sandbox-runtime")
-      --sandbox-settings string         Path to custom sandbox-runtime settings JSON file
-      --service-key-file string         Path to file containing the environment service key
-      --skip-container-lock             Skip container-level lock (WARNING: allows multiple sessions)
-      --skip-git-config                 Skip git configuration setup
-      --timeout-hook string             Command to run on loop timeout (e.g., monorepo updates)
-      --timeout-hook-timeout duration   Timeout for timeout hook execution (default 5m0s)
-```
-
-### poll Subcommand
-
-For making a single non-blocking poll request:
-
-```
-$ environment-manager poll --help
-The poll command makes a single non-blocking request to the API for work.
-
-Flags:
-      --api-url string              API base URL (default "https://api.anthropic.com")
-      --environment-id string       Environment ID
-      --log-level string            Log level (debug, info, warn, error) (default "info")
-      --organization-id string      Organization ID
-      --reclaim-older-than-ms int   Reclaim unacknowledged work items older than this many ms (0 = API default)
-      --service-key-file string     Path to file containing the environment service key
-      --worker-id string            Unique worker identifier (defaults to hostname)
-```
-
-### preload-claude Subcommand
-
-Pre-boots a Claude Code process so a later `task-run` can claim it warm rather
-than paying cold-start cost:
-
-```
-$ environment-manager preload-claude --help
-Pre-boot a Claude Code spare for a later task-run to claim
-
-Usage:
-  environment-runner preload-claude [flags]
-
-Flags:
-      --claude-path string   Path to claude binary (default: resolved via GetClaudePath)
-  -h, --help                 help for preload-claude
-```
-
-The spare/claim path is instrumented with `claude_code.spare.claim_miss` ("Cold
-spawn instead of warm-spare claim, attributed by reason") and
-`claude_code.spare.spawn_to_claim_window_ms` ("Wall-clock from spare spawn/adopt
-to Claim (the overlap window W)"). Both metric descriptions were recovered from
-the binary's encrypted literals, not from documentation.
-
-### setup Subcommand
-
-For pre-installing dependencies during container image build:
-
-```
-$ environment-manager setup --help
-The setup command pre-installs all required dependencies for orchestrator mode.
-Installs Claude Code and Sandbox Runtime via npm.
-
-Flags:
-      --api-url string                   API base URL for connectivity healthcheck (default "https://api.anthropic.com")
-      --claude-code-version string       Version of Claude Code to install (default "latest")
-      --log-level string                 Log level (debug, info, warn, error) (default "info")
-      --sandbox-runtime-version string   Version of sandbox-runtime to install (default "latest")
-      --service-key-file string          Path to environment service key file for API healthcheck
-      --skip-claude-code                 Skip Claude Code installation
-      --skip-sandbox-runtime             Skip sandbox-runtime installation
-```
+A warm spare can be claimed by a later `task-run` instead of incurring a cold start.
+The claim path is instrumented with `claude_code.spare.claim_miss` ("Cold spawn instead
+of warm-spare claim, attributed by reason") and
+`claude_code.spare.spawn_to_claim_window_ms` ("Wall-clock from spare spawn/adopt to
+Claim (the overlap window W)"). Both metric descriptions were recovered from the
+binary's encrypted literals, not from documentation.
 
 ### Session Modes
 
@@ -768,79 +600,17 @@ $ curl -s -X POST http://localhost:$CODESIGN_MCP_PORT/mcp \
 
 ## Claude Configuration
 
-### Global Settings (~/.claude/settings.json)
+### Global Settings (`~/.claude/settings.json`)
 
-```json
-{
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/stop-hook-git-check.sh"
-          }
-        ]
-      }
-    ]
-  },
-  "permissions": {
-    "allow": ["Skill"]
-  }
-}
-```
+The image's [settings file](../rootfs/home/claude/.claude/settings.json) registers the
+Stop hook and allows the `Skill` permission.
 
-### Stop Hook (~/.claude/stop-hook-git-check.sh)
+### Stop Hook (`~/.claude/stop-hook-git-check.sh`)
 
-Prevents session end if work isn't saved:
-
-```bash
-#!/bin/bash
-input=$(cat)
-
-# Recursion prevention
-stop_hook_active=$(echo "$input" | jq -r '.stop_hook_active')
-if [[ "$stop_hook_active" = "true" ]]; then exit 0; fi
-
-# Skip if not in a git repo
-if ! git rev-parse --git-dir >/dev/null 2>&1; then exit 0; fi
-
-# Check for uncommitted changes
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "There are uncommitted changes in the repository. Please commit and push these changes to the remote branch." >&2
-  exit 2
-fi
-
-# Check for untracked files
-untracked_files=$(git ls-files --others --exclude-standard)
-if [[ -n "$untracked_files" ]]; then
-  echo "There are untracked files in the repository. Please commit and push these changes to the remote branch." >&2
-  exit 2
-fi
-
-# Check for unpushed commits
-current_branch=$(git branch --show-current)
-if [[ -n "$current_branch" ]]; then
-  if git rev-parse "origin/$current_branch" >/dev/null 2>&1; then
-    unpushed=$(git rev-list "origin/$current_branch..HEAD" --count 2>/dev/null) || unpushed=0
-    if [[ "$unpushed" -gt 0 ]]; then
-      echo "There are $unpushed unpushed commit(s) on branch '$current_branch'. Please push these changes to the remote repository." >&2
-      exit 2
-    fi
-  else
-    # Branch doesn't exist on remote - compare against default branch
-    unpushed=$(git rev-list "origin/HEAD..HEAD" --count 2>/dev/null) || unpushed=0
-    if [[ "$unpushed" -gt 0 ]]; then
-      echo "Branch '$current_branch' has $unpushed unpushed commit(s) and no remote branch. Please push these changes to the remote repository." >&2
-      exit 2
-    fi
-  fi
-fi
-
-exit 0
-```
+The image's [stop-hook script](../rootfs/home/claude/.claude/stop-hook-git-check.sh)
+prevents exit when the repo has staged or unstaged changes, non-ignored untracked files,
+or commits not pushed to its tracking remote (falling back to `origin/HEAD` for a new
+branch). It returns successfully for recursive hook calls and outside Git repositories.
 
 ### Session Start Hook Skill
 
