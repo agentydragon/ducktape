@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CI latency — Rust results and hosted capacity visibility</title>
+    <title>CI latency — service reuse and snapshot lifecycle</title>
     <style>
       :root {
         color-scheme: light;
@@ -278,26 +278,533 @@
   <body>
     <main>
       <header>
-        <div class="eyebrow">Ducktape · CI latency · 5 November 2026 follow-up</div>
-        <h1>Rust builds do less work; the timing win is unproven</h1>
+        <div class="eyebrow">Ducktape · CI latency · 5 November 2026 service-reuse audit</div>
+        <h1>Image reuse is active; registry blobs cut repeated pushes</h1>
         <p>
-          Both dependency changes are merged. Seven controlled E2E runs show fewer compiler actions, but no reliable
-          elapsed improvement. One later CI run has a confirmed 35.6s worker wait on its critical path. The org admin
-          key opens account usage visibility; our hosted capacity ceiling remains unknown.
+          Props and PostgreSQL image families have shipped. A bounded Optimize trial reduced image pushes from
+          12.6–15.5s to 0.8–1.0s while keeping service processes fresh. Keep the provider's default save policy and
+          account for the retained registry data before expanding.
         </p>
         <p class="muted">
-          This is a bounded follow-up, not a new PR-feedback census. The retained mean 6m22s / p90 11m18s describe 247
-          green heads from 3–4 November, before these Rust changes. They have not been remeasured. Follow-up source:
-          <code>7fe51fd3cc159b7cecf1995eee15d5c0b4aa9a73</code>. No new performance experiments or infrastructure
-          changes.
+          Focused source/execution audit, image-family validation and Optimize profiles; no new PR-feedback census.
+          Follow-up source:
+          <code>ed29e38cdbc91bc3b0ccc41e9d8a36546446aebc</code>; the source and clocks for each earlier cohort remain
+          attached to its evidence. Historical findings and unresolved work are retained below.
         </p>
         <nav aria-label="Report sections">
-          <a href="#followup">Latest findings</a><a href="#capacity">Hosted capacity</a
-          ><a href="#current-feedback">Historical PR feedback</a><a href="#bottlenecks">Measured bottlenecks</a
-          ><a href="#selection">Test selection</a><a href="#interventions">Remaining candidates</a
-          ><a href="#continuity">Prior work</a><a href="#method">Evidence &amp; method</a>
+          <a href="#reuse-followup">Image-family follow-up</a><a href="#optimize-profile">Warm Optimize</a
+          ><a href="#registry-experiment">Registry trial</a><a href="#service-reuse">Earlier service evidence</a
+          ><a href="#reuse-model">Reuse model</a> <a href="#service-rollout">Preparation and upgrades</a
+          ><a href="#followup">Earlier Rust findings</a> <a href="#capacity">Historical capacity evidence</a
+          ><a href="#current-feedback">Historical PR feedback</a> <a href="#continuity">Prior work</a
+          ><a href="#method">Earlier method</a>
         </nav>
       </header>
+      <section id="reuse-followup">
+        <h2>Shipped image families; profile the state that still repeats</h2>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/14514">#14514</a>
+          enrolled all ten Props container E2E targets.
+          <a href="https://github.com/agentydragon/ducktape/pull/14516">#14516</a>
+          enrolled twelve stock PostgreSQL consumers, and
+          <a href="https://github.com/agentydragon/ducktape/pull/14524">#14524</a>
+          added four remaining Props SQL tests. All three PRs merged with their build/test checks passing. PostgreSQL,
+          registry processes and test databases retain their fresh fixture lifetimes; save-policy defaults remain
+          unchanged.
+        </p>
+        <h3>Ordinary CI is selecting and reusing these families</h3>
+        <p>
+          A frozen sample of 21 GitHub CI runs created 6 November 01:57:22–02:25:24 UTC yielded fifteen distinct
+          completed NEW test actions in the enrolled families. Their actual Action platforms contain the intended family
+          keys. Cached result links are excluded. Test XML covers 45 passed cases, with no failures or skips.
+        </p>
+        <div class="table-scroll" role="region" aria-label="Ordinary CI image reuse sample" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Observed group</th>
+                <th>NEW actions</th>
+                <th>No infrastructure imports</th>
+                <th>Restore lineage recorded</th>
+                <th>Cases passed</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/8ca1606d-6baa-5d25-b621-ad7ce80116ea"
+                    >Props container E2E</a
+                  >
+                </td>
+                <td>10</td>
+                <td>9 / 10</td>
+                <td>9 / 10</td>
+                <td>13</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/99d11c51-65ca-58e6-a4f4-76dda36792e9"
+                    >Original PostgreSQL profile: session-export web</a
+                  >
+                </td>
+                <td>1</td>
+                <td>1 / 1</td>
+                <td>1 / 1</td>
+                <td>9</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/69dcd2d3-e5d6-5761-8863-0e6172258dd1"
+                    >Four newly added Props SQL targets</a
+                  >
+                </td>
+                <td>4</td>
+                <td>0 / 4</td>
+                <td>0 / 4</td>
+                <td>23</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          One Grader clustering action names a prior Grader sleep/wake action as its snapshot origin: useful reuse
+          crosses target boundaries inside the Props family. The cold Props E2E action imported all three images; each
+          new SQL action imported Ryuk and PostgreSQL. Cold execution remains expected on new placements. Missing
+          lineage alone is classified unknown, not proof of a cold VM.
+        </p>
+        <p class="muted">
+          These are fifteen actions from three invocations, not fifteen independent CI runs. The retained execution
+          lists are an initial snapshot: three partial invocation statuses were later refreshed, but their action lists
+          were not. This is not a final census of every action in the cohort. The cohort contains cancelled,
+          disconnected and absent invocations; the remaining eleven original PostgreSQL-profile labels had no selected
+          fresh execution. This short, sparse sample establishes behavior, not a fleet hit rate, end-to-end saving or
+          quota/capacity diagnosis.
+        </p>
+      </section>
+      <section id="optimize-profile">
+        <h2>Warm Optimize still repeats application-image work</h2>
+        <p>
+          Two actual Optimize executions at
+          <code>c380e6cfd87214ac1b465f285953bafb9d576463</code> restored the same older CI seed and imported no
+          infrastructure images. Both ran the same existing orchestration case, with the same Action digest and three
+          application-image manifest digests. Application pushes still crossed the real authenticated proxy and pulls
+          were already concurrent.
+        </p>
+        <div class="table-scroll" role="region" aria-label="Warm Optimize profile comparison" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Actual execution</th>
+                <th>Process / CPU</th>
+                <th>Infrastructure imports</th>
+                <th>Serial pushes</th>
+                <th>Concurrent pull envelope</th>
+                <th>PostgreSQL ready</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/2adc54ce-9926-422a-b47f-da2e0d264e4c">Warm profile</a>
+                </td>
+                <td>138.3 / 242.3s</td>
+                <td>0</td>
+                <td>16.1s</td>
+                <td>33.2s</td>
+                <td>4.8s</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/d71b44f3-5e9a-4536-982c-eb5d157d2627"
+                    >Same-input repeat</a
+                  >
+                </td>
+                <td>106.1 / 202.2s</td>
+                <td>0</td>
+                <td>17.6s</td>
+                <td>16.6s</td>
+                <td>5.4s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">
+          Process time comes from ExecuteResponse clocks; CPU is consumed CPU, not wall time. Push/pull intervals come
+          from existing INFO records; nested fixture spans are not summed. The first Bazel invocation also rebuilt
+          application-layer Tar prerequisites outside the test process; the repeat had only one remote action. Both
+          tests passed. The elapsed difference is not a measured treatment effect or a PR-feedback improvement.
+        </p>
+        <p>
+          The older seed predates these application images. Repeating this action restored that seed again, so a warm
+          infrastructure family did not refresh its application-image baseline. New family keys for every application
+          revision would add cold families and snapshot writes. Keep application digests current and test a narrower
+          reusable state boundary first.
+        </p>
+      </section>
+      <section id="registry-experiment">
+        <h2>Reuse registry blobs; keep services and manifests fresh</h2>
+        <p>
+          The bounded Optimize-only trial in <a href="https://github.com/agentydragon/ducktape/pull/14548">#14548</a>
+          keeps an owned, leased registry volume. Every attach clears manifests and unfinished uploads before starting a
+          fresh registry; release stops the registry and clears that metadata again. Blobs and repository layer links
+          remain reusable. Real authentication, manifest publication, image-definition recording and fresh test
+          databases remain in the test path.
+        </p>
+        <div class="table-scroll" role="region" aria-label="Registry blob cache controlled comparison" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Warm execution</th>
+                <th>Process</th>
+                <th>CPU consumed</th>
+                <th>Serial pushes</th>
+                <th>Pull envelope</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/73304db2-1ff7-457e-92ff-3ec4381a8be6"
+                    >Strict control 1</a
+                  >
+                </td>
+                <td>74.6s</td>
+                <td>106.4s</td>
+                <td>12.6s</td>
+                <td>0.16s</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/a7092257-0e02-46e3-b54b-a7fcb936743a"
+                    >Strict control 2</a
+                  >
+                </td>
+                <td>80.9s</td>
+                <td>118.6s</td>
+                <td>15.5s</td>
+                <td>0.17s</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/5527b6a1-e857-4cc5-a4d6-ea742fa1ca29"
+                    >Cached registry 1</a
+                  >
+                </td>
+                <td>68.8s</td>
+                <td>75.8s</td>
+                <td>1.0s</td>
+                <td>0.17s</td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://app.buildbuddy.io/invocation/75b82427-628c-41bc-a7fa-572b237632e0"
+                    >Cached registry 2</a
+                  >
+                </td>
+                <td>57.3s</td>
+                <td>65.2s</td>
+                <td>0.8s</td>
+                <td>0.15s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The strict arms have identical Action input roots, test arguments and command environment. Only the platform's
+          recycling key and cache opt-in differ. Application manifests and VM configuration match. Each warm arm
+          restores its own exact seed, imports no infrastructure images and passes the same existing Optimize case. The
+          arms use different workers; these are bounded process/phase observations, not a fleet or PR-feedback estimate.
+          Earlier controls without the new helper ran in 72.0/72.2s and remain in the evidence.
+        </p>
+        <p class="callout">
+          Tradeoff: about <strong>550 MiB</strong> of volume data before release, which can include final-test metadata
+          removed afterward. This is not snapshot-upload bytes. Keep enrollment limited to Optimize while measuring
+          normal-CI reuse and storage cost. No remote-snapshot eligibility or forced-save override was added.
+        </p>
+        <details>
+          <summary>Storage boundary and lifecycle checks</summary>
+          <p>
+            The first split-mount design failed upload commit with <code>invalid cross-device link</code>.
+            <a
+              href="https://github.com/distribution/distribution/blob/v3.0.0/registry/storage/driver/filesystem/driver.go#L242"
+              >Distribution's filesystem driver</a
+            >
+            renames uploads into the blob store, so one filesystem is required. The corrected lifecycle test passed both
+            pytest cases: blobs survived container removal, old manifests were absent by tag and digest, stale uploads
+            were rejected, and manifests could be republished without reuploading blobs. Foreign volumes and lease
+            conflicts were refused. A later guard also refuses reset while any container still references the volume,
+            covering storage left behind after a fixture crash.
+          </p>
+          <p>
+            PostgreSQL startup was only 4–5s in the measured profiles. Keeping its daemon alive would add role, slot,
+            cancellation and reaper ownership work. This trial reuses immutable state while preserving fresh service
+            processes. Local retention stays off by default; no local-host Docker validation is claimed.
+          </p>
+        </details>
+      </section>
+      <section id="service-reuse">
+        <h2>Use useful image families before retaining more live services</h2>
+        <p>
+          Recycling is already enabled. The missing boundary is often the environment being recycled: Props resumed a
+          generic snapshot prepared by an unrelated Python wheel action and then loaded its database images again. A
+          dedicated image family proved reuse without changing its fixtures or opting into remote snapshot publication.
+        </p>
+        <div class="cards">
+          <div class="card">
+            <span class="metric">2,261</span><strong>NEW test actions inspected</strong>
+            <p>377 labels in 27 selected mainline sweeps; 21 had execution records. Slow runs are oversampled.</p>
+          </div>
+          <div class="card">
+            <span class="metric">3 → 0</span><strong>Props Docker imports</strong>
+            <p>Both runs passed the same three cases with identical Action inputs. The second restored the first.</p>
+          </div>
+          <div class="card">
+            <span class="metric">86.1 → 78.0s</span><strong>One action pair</strong>
+            <p>CPU: 164.4 → 84.1 seconds. Local reuse on one executor; no fleet or PR-feedback claim.</p>
+          </div>
+        </div>
+        <p>
+          <a href="https://app.buildbuddy.io/invocation/f7236ffa-da1e-4936-bbfc-eb31eee763d1">Cold seed</a>
+          ·
+          <a href="https://app.buildbuddy.io/invocation/346ef4fc-a92c-4bba-815b-6df9958db156">Warm reuse</a>
+          ·
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/cd8e32fde0355ff4ddd44c1c551eb01cab4f5d50/devinfra/buildbuddy/debug/2026_11_05_service_reuse_audit.md"
+            >Source audit and method</a
+          >
+          ·
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/cd8e32fde0355ff4ddd44c1c551eb01cab4f5d50/devinfra/buildbuddy/docs/service_reuse.md"
+            >Service lifecycle and upgrade workflow</a
+          >
+        </p>
+        <p class="callout">
+          Keep <code>remote-snapshot-save-policy</code> unset. The experiment used an isolated local-only family and
+          retained fresh PostgreSQL. A VM snapshot, cached images, a healthy live daemon and fresh test data are four
+          separate observations.
+        </p>
+        <h3>Recent execution cost, in its own units</h3>
+        <div class="table-scroll" role="region" aria-label="Sampled slow test actions" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Test</th>
+                <th>NEW actions</th>
+                <th>Median process</th>
+                <th>Maximum</th>
+                <th>Process sum</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>App thread browser</td>
+                <td>96 shards</td>
+                <td>87.8s</td>
+                <td>283.3s</td>
+                <td>9,661.2s</td>
+              </tr>
+              <tr>
+                <td>App bridge</td>
+                <td>24 shards</td>
+                <td>112.4s</td>
+                <td>211.7s</td>
+                <td>2,843.6s</td>
+              </tr>
+              <tr>
+                <td>System VM</td>
+                <td>8</td>
+                <td>324.5s</td>
+                <td>383.8s</td>
+                <td>2,631.6s</td>
+              </tr>
+              <tr>
+                <td>System Pod</td>
+                <td>8</td>
+                <td>297.3s</td>
+                <td>416.7s</td>
+                <td>2,314.5s</td>
+              </tr>
+              <tr>
+                <td>Props optimize E2E</td>
+                <td>1</td>
+                <td>190.9s</td>
+                <td>190.9s</td>
+                <td>190.9s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">
+          Enumerated CI-role test invocations updated 4 November 00:55–6 November 00:55:29 UTC. Selected the latest
+          completed mainline sweep in each occupied two-hour creation-time stratum, plus the eight longest sweeps.
+          Ignored 109 non-NEW links. These are overlapping action-seconds; Props has only one originating execution per
+          target in this sample. Cached summaries are excluded.
+        </p>
+        <h3>What the fixtures actually repeat</h3>
+        <ul>
+          <li>
+            <strong>Props:</strong> sampled PostgreSQL image loads took 9.4–36.5s, startup 3.4–4.4s, schema setup
+            0.28–0.48s, and registry startup 1.38–1.72s. Optimize also spent 23.9s pushing three images and a 61.8s
+            envelope pulling them concurrently. Fix image reuse before treating the whole stack as a persistent daemon.
+          </li>
+          <li>
+            <strong>Browser:</strong> the shipped image family was effective on 13/16 sampled placements; three cold
+            placements still loaded images. Sixteen fresh generic PostgreSQL startups summed to 54.3 action-seconds. A
+            distinct logical-WAL database and per-test Electric remain fresh. That sum is not 54 seconds of end-to-end
+            savings.
+          </li>
+          <li>
+            <strong>K3s:</strong> selected Pod and MCP-service receipts were warm and clean with fresh workload
+            identities. Setup remained 99.4/82.7s; PostgreSQL readiness was only 4.25/4.11s. Preserve existing retained
+            infrastructure and investigate remaining image work.
+          </li>
+          <li>
+            <strong>Other PostgreSQL fixtures:</strong> Python and Go helpers already clone migrated templates but stop
+            their servers at action exit. A static BUILD screen finds broad declared reach, while fresh Go observations
+            are sparse. The two complete-graph queries failed on Debian download 504s; no exact runtime-startup census
+            is claimed.
+          </li>
+        </ul>
+      </section>
+      <section id="reuse-model">
+        <h2>The reuse model: stable services, fresh workloads, verified release</h2>
+        <p>
+          Use a versioned infrastructure recipe for compatible services and pinned images. Check actual identity,
+          configuration, health and cleanliness at attach. Build current application inputs and fresh
+          databases/certificates/mock state. Release a clean environment only after all owned mutable resources are
+          gone; rebuild owned dirty or incompatible state cold.
+        </p>
+        <ol>
+          <li>
+            <strong>Family:</strong> recipe version + infrastructure pins/configuration; avoid a new family for every
+            application edit. Effective platform/resource/VM settings still affect matching.
+          </li>
+          <li>
+            <strong>Attach:</strong> prove ownership and health; mark leased/dirty before handing it out. A restored
+            process may be dead or have stale connections.
+          </li>
+          <li>
+            <strong>Test:</strong> current code and isolated state. Migration-from-empty, restart, supervision and
+            recovery scenarios retain their fresh-start coverage.
+          </li>
+          <li>
+            <strong>Release:</strong> stop clients, remove owned databases/roles/slots/credentials, then atomically mark
+            clean. Failed cleanup prevents reuse.
+          </li>
+        </ol>
+        <div class="filter">
+          <label for="reuse-choice"><strong>Compare an execution design</strong></label>
+          <select id="reuse-choice" aria-label="Service reuse design">
+            <option value="images">Local image family — measured</option>
+            <option value="blobs">Registry blobs with fresh services — trial</option>
+            <option value="daemon">Retained daemon lease — proposed</option>
+            <option value="remote">Remote snapshot family — conditional</option>
+          </select>
+        </div>
+        <p id="reuse-choice-detail" aria-live="polite"></p>
+        <p class="muted">This selector explains designs; it does not change repository or executor settings.</p>
+        <p>
+          Local fixtures should call the same setup/reset/cleanup code with retention off by default and fixture-owned
+          temporary state. BuildBuddy permission and invalidation belong in an adapter. Current Docker/browser tests
+          still run on RBE; local-host validation and any policy change are separate. Self-hosted OCI/Docker can retain
+          a paused container on one executor; Firecracker snapshotting needs additional host capabilities and executor
+          configuration.
+        </p>
+      </section>
+      <section id="service-rollout">
+        <h2>Prepare lazily; version layout changes; add a warmer only for a measured need</h2>
+        <p>
+          A normal cold test can prepare a family. Test setup boots or attaches, test teardown proves cleanliness, and
+          BuildBuddy decides whether to save afterward. A service-layout or lifecycle change gets a new compatibility
+          recipe version and all consumers change together. Validate cold, warm and another compatible consumer; an
+          action-cache pass cannot prove warming.
+        </p>
+        <div class="table-scroll" role="region" aria-label="Service reuse recommendations" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Concrete next step</th>
+                <th>Proof / limit</th>
+                <th>Keep</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1 · Props images</td>
+                <td>
+                  Merged #14514: all ten container E2E targets share a family derived from PostgreSQL/registry/Ryuk
+                  pins.
+                </td>
+                <td>
+                  Cold/restored Critic and Grader passed; Optimize profiles are above. Availability still depends on
+                  placement.
+                </td>
+                <td>Current application digests and real proxy/push/auth coverage.</td>
+              </tr>
+              <tr>
+                <td>2 · PostgreSQL image profiles</td>
+                <td>
+                  Merged #14516 and #14524: sixteen stock-image consumers enrolled; pgvector and logical-WAL
+                  configurations remain separate.
+                </td>
+                <td>
+                  12-case session-export seed/reuse pair passed, 37.4/13.9s, with exact snapshot lineage and no repeat
+                  imports. No fleet savings estimate.
+                </td>
+                <td>Migrated templates, fresh clones and cold-start tests.</td>
+              </tr>
+              <tr>
+                <td>3 · Registry blobs</td>
+                <td>Optimize-only prototype #14548: lease content storage and reset manifests/uploads.</td>
+                <td>Pushes 12.6–15.5s → 0.8–1.0s in the bounded comparison; about 550 MiB before release.</td>
+                <td>Fresh services, authenticated pushes, ownership checks and cold fallback.</td>
+              </tr>
+              <tr>
+                <td>4 · Deliberate warming</td>
+                <td>Only if cold bursts or availability justify a serialized preparation target.</td>
+                <td>Same effective family as consumers; one seed does not cover every VM configuration.</td>
+                <td>Default save policy and bounded publication cost.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Upstream <code>d436b0d87bd124235481a3eda45470d94f6cf7f6</code> retains the inspected default: likely-default
+          families refresh by age (one-hour upstream default), non-default runs save if no usable snapshot exists.
+          Branchless test families take the likely-default path. Concurrent cold/stale actions can all write, so this is
+          not an atomic global cap. The hosted revision and provider overrides remain unknown.
+        </p>
+        <p class="callout">
+          Do not set <code>always</code> on a warmer while consumers leave it unset: that can select a different family.
+          The inspected per-action API has no supported read-only-consumer contract. Executor-wide read-only
+          configuration is a different control. Completed publication/transfer counters are still needed to judge
+          snapshot-spam mitigation.
+        </p>
+        <details>
+          <summary>Prior negative results and unchanged work</summary>
+          <p>
+            The K3s PostgreSQL-retention experiment passed but showed no timing win: warm pair 243.2/230.1s versus
+            234.0/220.5s for K3s/PKI-only retention. Reset cost and other readiness work dominated its expected gain. It
+            does not measure standalone fixtures. The paused Pod default-policy experiment and broader latency goal
+            remain separate; this audit did not run them.
+          </p>
+          <p>
+            All prior report sections and the 31-item disposition ledger are retained below with their original dates
+            and evidence. Rust/YAML work, historical feedback distributions, capacity unknowns, failure tails and
+            already-landed image/fixture changes are not recast as new daemon optimizations. At the initial audit
+            cutoff, no deployment, service lifetime, production family or CI warmup had changed. The later profile
+            enrollment and registry trial are documented above.
+          </p>
+        </details>
+      </section>
+
+      <p class="callout">
+        <strong>Historical findings retained below.</strong> The following sections describe the earlier 5 November
+        follow-up and its original measurement windows. Their statements about experiments and cutoff scope refer to
+        that work. The new service-reuse evidence and two Props runs are above; historical feedback percentiles have not
+        been remeasured.
+      </p>
       <section id="followup">
         <h2>What the Rust experiments established</h2>
         <p>
@@ -1557,6 +2064,27 @@
         document.getElementById("model-p90").textContent = clock(row.p90_seconds);
         document.getElementById("model-under").textContent = `${row.green_under_300_count}/247`;
       });
+    </script>
+    <script>
+      (() => {
+        const descriptions = {
+          images:
+            "Measured: retain digest-checked images in a dedicated local family. PostgreSQL, registry fixtures and test data still start fresh. No remote-snapshot opt-in was added in the Props pair.",
+          blobs:
+            "Optimize-only trial: keep registry blobs and repository layer links, reset manifests/uploads under a lease, and start fresh services. Pushes fell to 0.8–1.0s; about 550 MiB of volume data before release. This is not a fleet or uploaded-byte estimate.",
+          daemon:
+            "Proposed: retain an owned healthy daemon behind an exclusive lease, with fresh databases and complete role/slot cleanup. Requires dirty-state, cancellation, restart and cold-fallback tests; no daemon-retention speedup is established here.",
+          remote:
+            "Conditional: a compatible remote snapshot can seed another host, but eligibility, executor flags and VM configuration must match. Publication costs and concurrent cold writers require a provider-supported budget and measurements.",
+        };
+        const choice = document.getElementById("reuse-choice");
+        const detail = document.getElementById("reuse-choice-detail");
+        const render = () => {
+          detail.textContent = descriptions[choice.value];
+        };
+        choice.addEventListener("change", render);
+        render();
+      })();
     </script>
   </body>
 </html>
