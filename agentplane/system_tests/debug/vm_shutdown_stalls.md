@@ -95,6 +95,44 @@ The source checks used systemd `v257.9`, matching the guest's `257.9-1~deb13u1`:
    on a FIFO. ACPI wakes it before changing manager logging. Keeping its FIFO reader open
    also accepts repeated power-button notifications without needing a responsive PID 1.
 
+6. [Host QEMU inspection](https://app.buildbuddy.io/invocation/39f1fe6c-190f-4c91-a58c-e108c93ba9f3):
+   three VM executions using source `b0f6c79819206746b3401a45bea7b2a3fcaf552f`. Restore
+   original ACPI handling and disable the new journal-console and watchdog services;
+   preserve host-side journal, serial and virtiofs retention. A host thread saves QEMU
+   process/thread kernel state, then reads status, vCPU registers and APIC/IRQ state using
+   libvirt's QMP interface. Boot samples validate the probes; shutdown samples begin five
+   seconds after ACPI if proof is absent. QMP can briefly synchronize with vCPUs, so these
+   probes are not assumed to be free of perturbation.
+
+   All three executions passed (409.50, 391.79 and 364.75 seconds), and all nine guests
+   emitted proof and powered down. Boot samples retained host thread stacks and both
+   vCPUs' registers; the session libvirt socket worked without a privileged URI fallback.
+   No guest remained without proof long enough to trigger a shutdown sample. This QEMU
+   supports the register, APIC and IRQ probes but has no `info clocks` command.
+
+7. [Boot debug with host probes](https://app.buildbuddy.io/invocation/6e2cb691-5550-4ee0-98e8-28a65a3c8bc7):
+   ten requested executions using `5ad76994400bcf6705f5aa98428debb683e1f0bd`. Keep the
+   original ACPI path and disabled new guest services from experiment 6; restore experiment
+   1's boot debug arguments. Healthy shutdowns exercised register and APIC probes before
+   the domain disappeared, including a halted CPU 1 that subsequently powered down.
+   A halted vCPU alone therefore does not identify a wedge. One execution failed its first
+   supervision fixture attempt, passed after guest service restart, then surfaced a
+   provisioner API timeout at teardown; all three guests still emitted proof and powerdown.
+   Infrastructure retries also encountered the execution-VM failures recorded below.
+8. [Delayed QMP control](https://app.buildbuddy.io/invocation/8f11029e-2525-49a6-b764-902cdad946dd):
+   five requested executions using `a332a112481b226b0951a9fbc63ecabba864177a`. Remove all
+   boot monitor queries and collect passive host thread state at five seconds after ACPI,
+   then at four-second intervals. Delay QMP until at least 15 seconds without proof. This
+   separates passive observations from monitor queries that may wake QEMU/vCPUs. Completed
+   healthy shutdown samples reached proof without issuing any monitor query.
+
+The journal/serial diagnostics merged in [PR #14629](https://github.com/agentydragon/ducktape/pull/14629).
+The FIFO observer merged in [PR #14633](https://github.com/agentydragon/ducktape/pull/14633)
+at head `78775a077cd7c6fd93f13373b6e43cd47407b0db`. Its CI synthetic merge commit
+`0b601a7f201c9d28fa3fe465a2eb79c96548c10` has the same tree as that head. All three guests
+recorded observer start, FIFO notification, PID 1 samples, shutdown proof and powerdown;
+all three retained native journals passed `journalctl --verify`.
+
 Experiment 1 did reproduce a shutdown failure in its second execution: the Codex OOM guest
 stopped Runtime at 18:55:50 UTC, unmounted `/state/workspaces` by 18:55:52 and stopped journal
 flush at 18:55:53. PID 1's last retained record was `mount-monitor-dispatch` leaving its rate
@@ -115,9 +153,9 @@ and its [file-tail sidecar](https://github.com/kubevirt/kubevirt/blob/3203e9d1ce
 rule out a stopped tail reader imposing pipe backpressure on QEMU: the producer writes a
 regular file. This does not exclude guest UART or host filesystem I/O blocking.
 
-The working-tree patches for these runs were applied over
-`23547bc724049d8d144ba1b2861833b4e91899b6`; these are experiment invocations, not CI proof
-for a committed diagnostic head. No successful retry establishes a functional repair.
+Experiments 1–4 used working-tree patches over `23547bc724049d8d144ba1b2861833b4e91899b6`;
+experiments 5–6 identify their source separately above. Experiment invocations are distinct
+from the diagnostic PR's CI. No successful retry establishes a functional repair.
 
 ## Upstream lead checked
 
@@ -129,3 +167,39 @@ PID 1 block. The v257.9 call starts in D-Bus service setup, outside the mount ca
 failed guest had already stopped `dbus.service` and closed `dbus.socket` approximately two
 seconds before its last record. The superficial log match does not justify applying that
 mitigation as a shutdown repair.
+
+## RBE execution-VM failures
+
+Experiment 7 also encountered failures of the outer BuildBuddy Firecracker VM, whose
+Linux 5.15.0 kernel hosts k3s and QEMU. These are separate from the inner guest's shutdown:
+
+- Run 4's original attempt panicked at kernel uptime 436 seconds on CPU 9 in scheduler
+  softirq processing, at `update_blocked_averages+0x273/0x740`, dereferencing a noncanonical
+  pointer. Its REAPI status was `UNAVAILABLE`, with the Firecracker socket gone.
+- Run 1's original attempt lost its VM health check. Its retained tail contains repeated
+  balloon-stat descriptor errors but no panic record.
+- Run 1's first infrastructure retry panicked at uptime 319 seconds on CPU 8, at
+  `update_load_avg+0x92/0x5c0`, called from `update_blocked_averages+0x577/0x740`.
+  It also dereferenced a noncanonical pointer. Both panic banners identify the same
+  Linux 5.15.0 build from October 15, 2026.
+
+The two panic instruction sequences are consistent with a corrupted scheduler entity's
+child runqueue pointer in upstream [Linux v5.15 scheduler source](https://github.com/torvalds/linux/blob/v5.15/kernel/sched/fair.c).
+They do not identify the corruption writer. Exact mapping requires the deployed kernel's
+binary/checksum and debug information; identifying the writer additionally requires a
+vmcore or equivalent provider-side evidence. No kernel repair follows from these traces.
+
+Those attempts returned empty test output trees, but their REAPI `serverLogs` retain
+`vm_log_tail.txt`; recover it from `bb execution get <executionId> --output=json`. The
+artifact must be distinguished from the inner guest's retained serial file. Infrastructure
+retries are also distinct from pytest/Bazel flaky-test retries.
+
+The original failed invocation and experiment 1 run 2 also retain outer VM log tails.
+Neither tail contains a kernel panic, and their recorded pause/resume events occur after
+KubeVirt forcibly stopped QEMU. Those logs do not establish a link from the provider panics
+to the shutdown stalls, or exclude host scheduling delays.
+
+The historical shutdown failures have no retained PID 1 syscall/kernel-stack or QEMU CPU
+samples from the quiet interval. Their exact blocker remains beyond that evidence. The
+new guest observer and host snapshots are intended to cross that boundary on recurrence;
+passing experiments remain validation of collection rather than a shutdown repair.
