@@ -2627,13 +2627,9 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             .executor
             .foreign_call_summary(CallKind::New, &ValueExpr::Binding(binding.clone()))
             .and_then(|summary| summary.initialized_class);
-        let effects = if normal && initialized_class.is_some() {
+        let effects = if normal && let Some(dependencies) = initialized_class {
             let mut effects = EffectCoverageFragment::initialized_module_read();
-            effects.depend_on(
-                initialized_class
-                    .as_ref()
-                    .expect("checked independent initialization proof"),
-            );
+            effects.depend_on(&dependencies);
             effects
         } else if normal
             && (self.executor.initialized_local_binding(binding)
@@ -2855,10 +2851,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             let terminal_position = match self.scope {
                 LocalExecutionScope::Callable(_) => matches!(
                     self.body.operations.last(),
-                    Some(LocalOperation::Return(Some(LocalExpression::Call {
-                        span: terminal_span,
-                        ..
-                    }))) if *terminal_span == span
+                    Some(LocalOperation::Return(Some(LocalExpression::Call(call)))) if call.span == span
                 ),
                 LocalExecutionScope::Root => self.body.terminal_call_root() == Some(span),
             };

@@ -7,7 +7,7 @@ use super::{
     PrimKinds, SelectedValue, Span, Value, ValueExpr, Values,
 };
 use crate::analysis_inputs::ForeignInvocation;
-use crate::facts::sync_effects::local_operations::LocalCallee;
+use crate::facts::sync_effects::local_operations::{LocalCall, LocalCallee};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
@@ -46,12 +46,12 @@ fn read_only_expression(expression: &LocalExpression) -> bool {
             read_only_expression(left) && read_only_expression(right)
         }
         LocalExpression::Sequence(expressions) => expressions.iter().all(read_only_expression),
-        LocalExpression::Call {
+        LocalExpression::Call(LocalCall {
             invocation: ForeignInvocation::Call,
             callee: LocalCallee::Binding(_),
             arguments,
             ..
-        } => arguments.is_empty(),
+        }) => arguments.is_empty(),
         _ => false,
     }
 }
