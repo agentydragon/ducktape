@@ -1,62 +1,32 @@
-"""The ClusterPolicies that inject an egress proxy's env and CA bundle into every Pod
-created in a sandbox namespace.
+"""Inject proxy environment and CA mounts into Pods in a sandbox namespace.
 
-They use RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
-conflicts with Kyverno autogen + Flux server-side dry-run on Deployments.
+RFC 6902 patches avoid the volume merge conflicts between strategic-merge patches,
+Kyverno autogen and Flux Deployment dry-runs. `add /-` appends unconditionally.
+Disable autogen so Deployment-template and Pod admission cannot both append wiring.
+Restrict to CREATE: reapplying on UPDATE once blocked completed Pods' job-tracking
+finalizer removal and Job completion.
 
-Autogen is disabled: JSON patch "add /-" always appends, so if autogen mutates the
-Deployment template AND the Pod-level rule fires at Pod creation, volumes/env/mounts
-get duplicated. With autogen off, only Pod admission is mutated.
+CREATE-only also needs absence preconditions on every appended volume/mount.
+With `reinvocationPolicy: IfNeeded`, a later webhook can mutate the Pod and rerun
+Kyverno on its own output within the same CREATE. On 2026-08-05, VPA Auto's later
+resource-request patch left haku-ui at 1/2 with an uncreatable Pod due to duplicate
+volume/mount paths. It appeared intermittent because VPA did nothing when requests
+already matched its recommendation. The real-CLI regression
+`//cluster/cdk8s/kyverno:test_proxy_injection` applies each policy twice.
 
-All rules restrict to CREATE operations only. The "add /-" append has no idempotency
-check of its own — if the policy re-evaluates on UPDATE, it appends the same
-volume/env/mount a second time and the API server rejects the request (duplicate
-volume name / mount path / env var). That blocked the Kubernetes Job controller from
-PATCHing completed pods to remove the batch.kubernetes.io/job-tracking finalizer,
-which prevented Jobs from transitioning to Complete.
+NO_PROXY is one flat string for containers and initContainers. Shared entries:
 
-CREATE-only is NOT sufficient on its own, which is why every rule also carries a
-precondition asserting the thing it is about to append is not already there.
-Kyverno's webhook is registered `reinvocationPolicy: IfNeeded`, so a webhook ordered
-after it that mutates the pod causes Kyverno to run AGAIN within the SAME CREATE,
-reading its own output as input. "add /-" appends unconditionally, so the second pass
-duplicated the volume and its mount, and the API server rejects a duplicate volume
-name outright:
+- `127.0.0.1,localhost`: sidecars, health checks and loopback-only helpers.
+- `.svc,.svc.cluster.local,kubernetes.default.svc`: all Service-name forms clients
+  use. Literal suffix matching means the short apiserver URL does not match the
+  fully qualified suffix; omitting it sent in-cluster API traffic to the proxy and
+  hung (observed from a Haku sandbox, 2026-07-24).
+- `10.0.0.0/8`: Pod/Service addresses reached by IP, including ClusterIP kubeconfigs.
+  This intentionally covers cluster addressing beyond enumerated hostnames.
 
-  Pod "haku-ui-0" is invalid: [spec.volumes[3].name: Duplicate value:
-  "haku-egress-proxy-ca-cert", spec.containers[0].volumeMounts[3].mountPath:
-  Invalid value: "/egress-proxy-ca": must be unique]
-
-That was a real outage (2026-08-05): haku-sandbox runs VPA in Auto mode, VPA's webhook
-sorts after Kyverno's and patches resource requests, and haku-ui sat at 1/2 with
-haku-ui-0 permanently uncreatable. It presented as intermittent because VPA patches
-nothing when its recommendation already matches the pod. Pinned by
-//cluster/cdk8s/kyverno:test_proxy_injection, which applies each policy twice.
-
-NO_PROXY is one flat string, injected identically into containers and initContainers.
-Entry by entry, the cluster-addressing set every policy shares:
-
-  127.0.0.1, localhost    Loopback. A pod's own sidecars, health checks and
-                          127.0.0.1-bound helpers must not be shipped to a
-                          proxy living in another pod.
-  .svc                    In-cluster Service names, in all three forms clients
-  .svc.cluster.local      actually construct. Suffix matching is literal: the
-  kubernetes.default.svc  short in-cluster forms do NOT match the fully-qualified
-                          suffix, so `https://kubernetes.default.svc` — the default
-                          apiserver URL every in-cluster client library builds —
-                          went to the proxy and hung until it timed out (found
-                          from a haku sandbox, 2026-07-24).
-  10.0.0.0/8              Pod and Service CIDRs — the same in-cluster
-                          destinations, reached by IP instead of by name (a
-                          kubeconfig with a ClusterIP server, a hard-coded pod
-                          IP). Broadest entry here; it is what makes the list
-                          "all cluster addressing" rather than an enumeration.
-
-Everything on the list reaches its destination with no proxy in the path and no
-egress allowlist applied. That is accepted rather than overlooked: each entry is
-cluster-internal or cluster-published, and those services authenticate their own
-callers (bearer, mTLS, SSO). The fence these policies set up is a fence over the
-public internet.
+Every listed destination bypasses the proxy and its egress allowlist. This is an
+accepted boundary: cluster-internal/published services authenticate their own callers
+(bearer, mTLS or SSO); the proxy allowlist targets public-internet traffic.
 """
 
 from __future__ import annotations
