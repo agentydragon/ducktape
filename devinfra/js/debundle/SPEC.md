@@ -205,6 +205,11 @@ That reports-only action enables typed gate-rejection emission so it can finish
 exporting every configured chunk; exit 3 is accepted only for a gate-only
 rejection. It writes no JavaScript. Other failures still fail the action.
 
+The public `debundle_cli` macro binds a graph-consuming CLI runner to that output
+group and resolves generated graph, source, and package roots through Bazel
+runfiles. Its input paths and invocation are documented in
+<docs/bazel_integration.md>.
+
 The Bazel `native_inputs` output group exposes the rule's declared source,
 package, spec and ownership-subset inputs for native replay. Requesting it alone
 selects their producers. The `analysis` and `debundler` groups supply the
