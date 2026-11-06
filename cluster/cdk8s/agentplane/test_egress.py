@@ -4,16 +4,19 @@ the Kubernetes access every sandbox gets rather than the ones that opted in."""
 from __future__ import annotations
 
 import json
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import App, Testing as Cdk8sTesting
+from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
+from agentplane.crd_group import GROUP
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles
-from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, staging_grants
+from cluster.cdk8s.agentplane import binding_delegation, environment_sandbox, notifications, staging, staging_grants
 from cluster.cdk8s.agentplane.egress import (
     ADMIN_GRPC_AUDIENCE,
     BASIC_POLICY,
@@ -23,12 +26,15 @@ from cluster.cdk8s.agentplane.egress import (
     KUBERNETES_AUDIENCE,
     KUBERNETES_CREDENTIAL,
     KUBERNETES_HOST,
+    PROXY_MTLS_PORT,
     PUBLIC_INTERNET_POLICY,
+    Egress,
     agent_api,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.secret_ref import SecretRef
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K, Provider
 
 
@@ -59,6 +65,79 @@ def test_egress_uses_embedded_migrations_and_startup_probe(staging_manifests: li
     assert config["admin_grpc_audience"] == ADMIN_GRPC_AUDIENCE
     assert config["admin_grpc_callers"] == [f"{staging.ENV.namespace}/app"]
     assert not {"confdir", "decision_flush_seconds"} & config.keys()
+
+
+@pytest.fixture(scope="module")
+def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+    app = scratch_app_factory()
+    chart = Chart(app, "svid-egress")
+    env = staging.ENV
+    Egress(
+        chart,
+        "egress",
+        env,
+        database_url=SecretRef(namespace=env.namespace, name="postgres-egress")
+        .key("uri")
+        .env_value(chart, "test-database-url"),
+        runners=environment_sandbox.pods(env.namespace),
+        admin_grpc_callers=[ServiceAccountRef(namespace=env.namespace, name="app")],
+        placement=None,
+        registry_secret_name=None,
+        enable_svid_listener=True,
+    ).add_platform_resources()
+    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
+
+
+def test_svid_listener_is_disabled_in_the_staging_default(staging_manifests: list[dict[str, Any]]) -> None:
+    deployment = _by_name(staging_manifests, "Deployment", "egress")
+    proxy = one(
+        container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
+    )
+    assert PROXY_MTLS_PORT not in [port["containerPort"] for port in proxy["ports"]]
+    settings = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    assert not {"svid_listen_address", "svid_cert_file", "svid_key_file", "svid_ca_file"} & settings.keys()
+    role = _by_name(staging_manifests, "Role", "egress")
+    assert not any("sandboxes" in rule["resources"] for rule in role["rules"])
+    assert not any(
+        doc["kind"] == "Certificate" and doc["metadata"]["name"] == "agentplane-egress-proxy"
+        for doc in staging_manifests
+    )
+
+
+def test_svid_listener_adds_only_the_sandbox_reader_and_tls_port(svid_egress_manifests: list[dict[str, Any]]) -> None:
+    deployment = _by_name(svid_egress_manifests, "Deployment", "egress")
+    proxy = one(
+        container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
+    )
+    assert [port["containerPort"] for port in proxy["ports"]].count(PROXY_MTLS_PORT) == 1
+    service = _by_name(svid_egress_manifests, "Service", "egress")
+    mtls_ports = [port for port in service["spec"]["ports"] if port["port"] == PROXY_MTLS_PORT]
+    assert len(mtls_ports) == 1
+
+    settings = yaml.safe_load(
+        _by_name(svid_egress_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
+    )
+    assert settings["svid_listen_address"] == f"0.0.0.0:{PROXY_MTLS_PORT}"
+    assert settings["svid_ca_file"] == "/etc/agentplane-egress/svid-ca/ca-certificates.crt"
+
+    role = _by_name(svid_egress_manifests, "Role", "egress")
+    sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
+    assert sandbox_rules == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
+    all_resources = [resource for rule in role["rules"] for resource in rule["resources"]]
+    assert not any(resource.endswith(("/pods", "/serviceaccounts")) for resource in all_resources)
+
+    certificate = _by_name(svid_egress_manifests, "Certificate", "agentplane-egress-proxy")
+    assert certificate["spec"]["uris"] == ["spiffe://agentplane/egress-proxy"]
+    assert "server auth" in certificate["spec"]["usages"]
+
+    policy = _by_name(svid_egress_manifests, "CiliumNetworkPolicy", "egress")["spec"]
+    ingress_ports = {
+        int(port["port"])
+        for rule in policy["ingress"]
+        for port_rule in rule.get("toPorts", [])
+        for port in port_rule["ports"]
+    }
+    assert PROXY_MTLS_PORT in ingress_ports
 
 
 def test_app_projects_egress_admin_audience(staging_manifests: list[dict[str, Any]]) -> None:
