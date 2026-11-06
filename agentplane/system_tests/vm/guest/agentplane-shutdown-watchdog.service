@@ -1,6 +1,7 @@
 [Unit]
 Description=Record pending guest shutdown jobs and PID 1 kernel state
 DefaultDependencies=no
+Before=sysinit.target
 IgnoreOnIsolate=yes
 
 [Service]
