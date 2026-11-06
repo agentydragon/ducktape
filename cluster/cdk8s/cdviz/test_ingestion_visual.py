@@ -365,7 +365,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
     runtime.mkdir()
     client = docker.from_env()
     network_name = f"cdviz-it-{uuid.uuid4().hex[:10]}"
-    network = client.networks.create(network_name, driver="bridge", internal=True)
+    network = client.networks.create(network_name, driver="bridge")
     containers: list[Container] = []
     log_threads: list[Thread] = []
     try:
@@ -472,7 +472,6 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                     str(spool): {"bind": "/var/lib/cdviz/spool", "mode": "rw"},
                 },
                 read_only=True,
-                tmpfs={"/tmp": "rw,noexec,nosuid,size=64m"},
                 detach=True,
             )
             containers.append(collector)

@@ -91,6 +91,7 @@ def timescaledb_postgres(
                 "-D",
                 "/var/lib/postgresql/data",
                 "--username=postgres",
+                "--encoding=UTF8",
                 "--auth-local=trust",
                 "--auth-host=trust",
             )
