@@ -251,7 +251,7 @@ spec:
         }
       }
 
-      # Match the dedicated Flux Receiver in cluster/cdk8s/flux_webhook/chart.py.
+      # Match the dedicated Flux Receiver in cluster/cdk8s/flux_webhook.py.
       # The generic Receiver authenticates by its unguessable token-derived URL, as
       # in haku-state. Keep the token and URL in Terraform state / Kubernetes Secrets.
       resource "random_password" "flux_webhook_token" {
