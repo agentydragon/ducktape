@@ -3003,7 +3003,7 @@ service-owned SVID boundaries.
 **In flight; Codex, 2026-11-05.** The hop implementation is complete and its finished node is
 removed; validation and rollback live in the egress docs and PRs. The Rules API is the first
 service-owned SVID boundary in the flip. History runner ingress now verifies SVIDs directly;
-Notification, Dispatcher and Action also verify SVIDs directly; LLM remains. The whole stack is
+Notification, Dispatcher, Action and LLM also verify SVIDs directly. End-to-end acceptance remains pending. The whole stack is
 operationally held by `NON_SANDBOX_PROXY_AUTH`. Decided 2026-11-05: the proxy tunnels the TLS connection through
 and each of Notification, Dispatcher, runner ingress, the Action Service and LLM ingress verifies
 the client certificate with the shared transport package and resolves the identity through the

@@ -19,6 +19,7 @@ from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
     binding_delegation,
     environment_sandbox,
+    llm_ingress,
     notifications,
     runner_gateway,
     session_dispatcher,
@@ -291,6 +292,45 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(staging_manifests: l
     )
     assert notification_settings["workload_port"] == endpoint.pod_port
     assert notification_settings["workload_tls"]["cert_file"].endswith("/tls.crt")
+
+
+def test_llm_runner_traffic_uses_its_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
+    llm_service = _by_name(staging_manifests, "Service", "llm-ingress")
+    assert {port["port"] for port in llm_service["spec"]["ports"]} == {8080, 8081}
+
+    settings = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    workload = llm_ingress.workload_service(staging.ENV.namespace)
+    assert f"{workload.fqdn}:{workload.pod_port}" in settings["tls_passthrough_targets"]
+
+    llm_settings = yaml.safe_load(
+        _by_name(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"]
+    )
+    assert llm_settings["workload_listen_address"] == "0.0.0.0:8081"
+    assert llm_settings["workload_tls"]["cert_file"].endswith("/tls.crt")
+    assert llm_settings["workload_tls"]["key_file"].endswith("/tls.key")
+    assert llm_settings["workload_tls"]["ca_file"].endswith("/ca-certificates.crt")
+
+    certificate = _by_name(staging_manifests, "Certificate", "llm-ingress-workload")
+    assert certificate["spec"]["uris"] == [llm_ingress.WORKLOAD_URI]
+    assert "server auth" in certificate["spec"]["usages"]
+
+    role = _by_name(staging_manifests, "Role", "llm-ingress-sandbox-reader")
+    assert role["rules"] == [
+        {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list"]},
+        {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get"]},
+    ]
+
+    basic_policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
+    allowed_hosts = [host for rule in basic_policy["spec"]["rules"] for host in rule.get("hosts", [])]
+    assert llm_ingress.service(staging.ENV.namespace).fqdn not in allowed_hosts
+
+    network_policy = _by_name(staging_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"]
+    assert any(
+        int(port["port"]) == workload.pod_port
+        for rule in network_policy["ingress"]
+        for port_rule in rule.get("toPorts", [])
+        for port in port_rule["ports"]
+    )
 
 
 def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(staging_manifests: list[dict[str, Any]]) -> None:

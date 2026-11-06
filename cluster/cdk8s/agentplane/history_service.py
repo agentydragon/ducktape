@@ -182,7 +182,7 @@ class HistoryService(Construct):
             registry_secret_name=registry_secret_name,
         )
         ingress_settings.workload_tls = workload_tls.serving_certificate(
-            self, env, workload=workload, name=NAME, uri=WORKLOAD_URI
+            self, env, container=workload.container, name=NAME, uri=WORKLOAD_URI
         )
         ingress_settings.workload_listen_address = f"0.0.0.0:{workload_ingress.pod_port}"
         config = SettingsFile(

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
@@ -65,29 +66,88 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("could not listen on configured address: %w", err)
 	}
-	defer listener.Close()
-	server := &http.Server{
+	servers := []*http.Server{{
 		Handler:           observability.HTTPHandler(handler),
 		ReadHeaderTimeout: 10 * time.Second,
+	}}
+	listeners := []net.Listener{listener}
+	tlsServers := []bool{false}
+	if c.WorkloadTLS != nil {
+		svidResolver, err := auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces)
+		if err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("could not create workload SVID resolver: %w", err)
+		}
+		tlsConfig, err := c.WorkloadTLS.WorkloadServerTLSConfig(environment_runtime_transport.LLMIngressURI)
+		if err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("could not configure workload SVID listener: %w", err)
+		}
+		workloadListener, err := net.Listen("tcp", c.WorkloadListenAddress)
+		if err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("could not listen on workload SVID address: %w", err)
+		}
+		servers = append(servers, &http.Server{
+			Handler:           observability.HTTPHandler(handler.WorkloadHandler(svidResolver)),
+			ReadHeaderTimeout: 10 * time.Second,
+			TLSConfig:         tlsConfig,
+			ConnState:         environment_runtime_transport.HTTPServerTLSExpiryConnState(nil),
+		})
+		listeners = append(listeners, workloadListener)
+		tlsServers = append(tlsServers, true)
+	}
+	defer func() {
+		for _, listener := range listeners {
+			_ = listener.Close()
+		}
+	}()
+	serveResult := make(chan error, len(servers))
+	for index, server := range servers {
+		listener := listeners[index]
+		serveTLS := tlsServers[index]
+		go func(server *http.Server, listener net.Listener, serveTLS bool) {
+			if serveTLS {
+				serveResult <- server.ServeTLS(listener, "", "")
+				return
+			}
+			serveResult <- server.Serve(listener)
+		}(server, listener, serveTLS)
 	}
 	logger.Info("forwarding authenticated Sandbox model traffic to LiteLLM", "url", c.LiteLLMURL, "address", address)
-	serveResult := make(chan error, 1)
-	go func() { serveResult <- server.Serve(listener) }()
+	if len(servers) > 1 {
+		logger.Info("serving Sandbox SVID listener", "address", c.WorkloadListenAddress)
+	}
+	shutdown := func() error {
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var shutdownErrors []error
+		for _, server := range servers {
+			if err := server.Shutdown(shutdownContext); err != nil {
+				_ = server.Close()
+				shutdownErrors = append(shutdownErrors, err)
+			}
+		}
+		return errors.Join(shutdownErrors...)
+	}
 	select {
 	case err := <-serveResult:
 		if errors.Is(err, http.ErrServerClosed) {
+			if shutdownErr := shutdown(); shutdownErr != nil {
+				return fmt.Errorf("HTTP servers failed to shut down: %w", shutdownErr)
+			}
 			return nil
 		}
-		return fmt.Errorf("HTTP listener failed: %w", err)
+		shutdownErr := shutdown()
+		return errors.Join(fmt.Errorf("HTTP listener failed: %w", err), shutdownErr)
 	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownContext); err != nil {
-			_ = server.Close()
-			return errors.New("HTTP server shutdown exceeded five seconds")
+		if err := shutdown(); err != nil {
+			return fmt.Errorf("HTTP servers failed to shut down: %w", err)
 		}
-		if err := <-serveResult; !errors.Is(err, http.ErrServerClosed) && err != nil {
-			return fmt.Errorf("HTTP listener stopped with an error: %w", err)
+		for range servers {
+			if err := <-serveResult; !errors.Is(err, http.ErrServerClosed) && err != nil {
+				return fmt.Errorf("HTTP listener stopped with an error: %w", err)
+			}
 		}
 		return nil
 	}

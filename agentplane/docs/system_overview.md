@@ -576,6 +576,8 @@ flowchart LR
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|policy-approved requests| other
     egress -.->|opaque TLS; Rules verifies SVID :8443| rules[Rules API TLS]
+    egress -.->|opaque TLS to SVID listener:8081| llm
+    sampler -->|direct TokenReview HTTP:8080| llm
     llm -->|model API + server-held key| litellm
     actions -->|MCP calls| mcp_servers
     actions -->|REST + web push| github
@@ -584,10 +586,10 @@ flowchart LR
 The required runner mTLS hop resolves the SVID's Sandbox UID and accepted credential through
 live status before using that Sandbox's own ServiceAccount as the policy subject. The plaintext
 central token hop is removed. Rules terminates its own SVID TLS through an opaque central tunnel;
-the proxy never asserts the caller. Destination-scoped projected tokens remain for platform routes
-until their separate service migrations. Action/LLM routes depending on the removed hop bearer are
-unavailable in this intermediate draft until those migrations land. Only LLM ingress holds the
-LiteLLM virtual key.
+the proxy never asserts the caller. History runner ingress, Notification, Dispatcher, Action and LLM each terminate and verify their
+own SVID TLS, with the Sandbox's ServiceAccount as the principal. The central sampler retains
+its direct delegated TokenReview path and holds no SVID. Only LLM ingress holds the LiteLLM key.
+Kubernetes retains its destination-scoped projected token until the later impersonation cutover.
 
 The flip remains draft and blocked on separate authentication for non-Sandbox callers: Action
 boxes, Haku UI and future external OpenClaw instances. Their token-mode sidecars cannot authenticate

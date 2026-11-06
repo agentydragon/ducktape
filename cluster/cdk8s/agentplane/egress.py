@@ -912,6 +912,7 @@ class Egress(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 rules_workload_service(namespace).egress(),
                 llm_ingress.service(namespace).egress(),
+                llm_ingress.workload_service(namespace).egress(),
                 actions.service(namespace).egress(),
                 runner_gateway.workload_service(namespace).egress(),
                 forgejo.HTTP.egress(),

@@ -1,11 +1,13 @@
 # Agentplane LLM workload ingress
 
 This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its runtime is a Go binary; Python models remain for deployment
-authoring and the runner-facing model-config contract. The
-central egress proxy substitutes the caller's already-authenticated Pod-bound workload token into
-an ordinary `Authorization: Bearer` header. This service resolves that bearer with the shared
-Go workload-auth resolver, removes it, and forwards the request to LiteLLM with one
-server-held virtual key.
+authoring and the runner-facing model-config contract. It exposes two listeners with separate
+authentication contracts. Sandbox requests use an exact-origin sidecar route through opaque proxy
+CONNECT to the dedicated mTLS listener; that listener resolves the verified Runtime SVID against
+the live Sandbox and accepted credential before deriving the Sandbox's own ServiceAccount and Pod
+principal. It never falls back to a bearer or trusts caller identity headers. The existing HTTP
+listener continues TokenReview authentication for the central sampler's direct requests. Both paths
+forward provider-native requests to LiteLLM with one server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
 identity is attached through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
@@ -53,9 +55,10 @@ headers are removed before this object is stamped. Request bodies remain provide
 never identity evidence; a caller's body `metadata`, Agent, Thread, Pod, or Sandbox fields cannot
 replace the server-stamped object.
 
-The workload bearer is sent only to Kubernetes TokenReview. The LiteLLM virtual key is sent only on
-the internal LiteLLM hop. Neither credential is logged, placed in errors, returned to callers, or
-mounted into a runner or harness container.
+On the legacy HTTP listener, the workload bearer is sent only to Kubernetes TokenReview. The SVID
+listener does not read that bearer. The LiteLLM virtual key is sent only on the internal LiteLLM
+hop. Neither credential is logged, placed in errors, returned to callers, or mounted into a runner
+or harness container.
 
 ## Per-model client configuration
 

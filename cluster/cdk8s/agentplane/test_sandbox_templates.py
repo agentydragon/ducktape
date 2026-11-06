@@ -15,7 +15,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
-from cluster.cdk8s.agentplane import sandbox_pod, staging
+from cluster.cdk8s.agentplane import llm_ingress, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
 
@@ -351,6 +351,21 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
     volumes = inject["mutate"]["patchStrategicMerge"]["spec"]["volumes"]
     assert {"name": "egress-sidecar-settings", "configMap": {"name": "launcher-relay-egress-sidecar"}} in volumes
+
+
+def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
+    settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
+    settings_doc = _by_name(staging_manifests, "ConfigMap", settings_volume["configMap"]["name"])
+    settings = cast(dict[str, Any], yaml.safe_load(settings_doc["data"]["settings.yaml"]))
+    origin = llm_ingress.service(staging.ENV.namespace)
+    destination = llm_ingress.workload_service(staging.ENV.namespace)
+    route = settings["workload_routes"][f"{origin.fqdn}:{origin.port.number}"]
+    assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+    assert route["server_uri"] == llm_ingress.WORKLOAD_URI
+    assert route["tls"]["cert_file"].endswith("/tls.crt")
+    assert route["tls"]["key_file"].endswith("/tls.key")
+    assert route["tls"]["ca_file"].endswith("/ca.crt")
 
 
 def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifests: list[dict[str, Any]]) -> None:
