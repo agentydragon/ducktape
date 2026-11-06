@@ -1,7 +1,8 @@
 """Static OpenClaw's Agentplane egress attachment.
 
-Only the relay holds the Pod-bound token. Credential values stay in the gateway's
-isolated namespace; the app receives canonical placeholders under its existing env names.
+OpenClaw stays paused without a workload credential until its separate authentication design
+is implemented. Credential values stay in the gateway's isolated namespace; the app receives
+canonical placeholders under its existing env names.
 """
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (

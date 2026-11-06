@@ -96,10 +96,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     session_service = _resource(staging_manifests, "Service", session_dispatcher.NAME)
     session_service_port = next(port["port"] for port in session_service["spec"]["ports"] if port["name"] == "grpc")
     sessions_url = f"http://{session_dispatcher.NAME}.{namespace}.svc.cluster.local:{session_service_port}"
-    assert (
-        f"| Sessions and environments | {sessions_url} | "
-        "`agentplane-credential-agentplane-session-dispatcher-workload` is an inert CLI value; the Sandbox sidecar presents its workload SVID |"
-    ) in platform_instructions
+    assert f"| Sessions and environments | {sessions_url} | Authenticated automatically |" in platform_instructions
     props = staging.ENV.central_sampler
     assert props is not None
     assert set(config["connections"]) == {"llm-ingress", "anthropic-api"}

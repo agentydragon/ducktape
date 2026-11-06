@@ -139,22 +139,25 @@ def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[st
     assert not {client.HTTP.fqdn, client.HTTP.host} & set(no_proxy)
 
 
-def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[str, Any]]) -> None:
-    pod = _one(app_objects, "Deployment")["spec"]["template"]["spec"]
+def test_openclaw_stays_paused_without_workload_credentials(app_objects: list[dict[str, Any]]) -> None:
+    deployment = _one(app_objects, "Deployment")
+    assert deployment["spec"]["replicas"] == 0
+    pod = deployment["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == "openclaw"
     assert pod["automountServiceAccountToken"] is False
     account = _one(app_objects, "ServiceAccount", "openclaw")
     assert account["automountServiceAccountToken"] is False
     relay = one(c for c in pod["containers"] if c["name"] == "egress-sidecar")
-    assert "agentplane-egress-token" in {v["name"] for v in relay["volumeMounts"]}
+    assert {v["name"] for v in relay["volumeMounts"]} == {"egress-sidecar-settings"}
+    assert "agentplane-egress-token" not in {v["name"] for v in pod["volumes"]}
     for container in pod["initContainers"] + [c for c in pod["containers"] if c != relay]:
         assert "agentplane-egress-token" not in {v["name"] for v in container["volumeMounts"]}
 
 
 def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, Any]]) -> None:
     rules = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
-    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8888, 4000}
-    gateway = one(r for r in rules if r["ports"] == [{"port": 8888, "protocol": "TCP"}])
+    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8889, 4000}
+    gateway = one(r for r in rules if r["ports"] == [{"port": 8889, "protocol": "TCP"}])
     assert gateway["to"] == [
         {
             "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "agentplane-staging"}},
