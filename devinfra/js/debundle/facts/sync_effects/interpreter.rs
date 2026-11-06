@@ -15647,12 +15647,16 @@ impl Executor<'_, '_> {
             complete: true,
             ..Outcome::default()
         };
-        let ordered_scalar_initializer = matches!(
+        let ordered_scalar_initializer = (matches!(
             initializer_source.and_then(OriginalInitializer::composed_expression),
             Some(ValueExpr::Binding(_) | ValueExpr::Binary(..))
-        ) && calls
-            .iter()
-            .all(|call| call.kind == CallKind::ImplicitCoercion);
+        ) || index
+            .ordered_roots
+            .get(&owner)
+            .is_some_and(|root| root.body.untagged_template_root()))
+            && calls
+                .iter()
+                .all(|call| call.kind == CallKind::ImplicitCoercion);
         let ordered_foreign_initializer = calls.iter().any(|call| {
             matches!(call.kind, CallKind::Call | CallKind::New)
                 && !call.has_spread

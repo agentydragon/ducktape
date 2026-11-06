@@ -779,6 +779,17 @@ pub(super) fn binary_result(
     }
 }
 
+/// For primitive operands only, template ToString has the same completion
+/// and result kinds as concatenation with a String. Objects remain refused:
+/// templates use a string hint, whereas addition uses the default hint.
+pub(super) fn template_substitution_result(operand: &Values) -> PrimitiveOperationResult {
+    binary_result(
+        BinaryOp::Add,
+        &Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]),
+        operand,
+    )
+}
+
 /// Source-ordered composition retains every child's effects and possible
 /// abrupt completion even though only the final completing value survives.
 pub(super) fn sequence<'a, C, E: 'a>(
