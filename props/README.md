@@ -52,9 +52,17 @@ repository layer links survive; authenticated pushes still publish manifests
 and record image definitions for each fresh test database.
 
 The volume must use one filesystem: registry uploads commit by renaming into
-the blob store. A storage/reset change must bump both the runtime recipe in
-`testing/fixtures/registry_blob_cache.py` and its family version in
-`testing/exec_properties.bzl`. Application image changes remain action inputs.
+the blob store. `REGISTRY_CACHE_RECIPE` in `testing/exec_properties.bzl` feeds
+both the BuildBuddy family and generated runtime configuration. Bump its version
+for incompatible storage/reset changes; infrastructure repins and budget changes
+invalidate both automatically. Application image changes remain action inputs.
+
+At attach and release, the stopped registry's cache is cleared completely if its
+allocated storage exceeds 2 GiB after metadata cleanup. It then repopulates from
+current action inputs. This bounds retention at those boundaries, not peak test
+disk use or total VM storage. Per-test HTTP cleanup deletes tagged manifests;
+offline cleanup also removes untagged manifests and interrupted uploads. Registry
+garbage collection would remove the unreferenced blobs we want to retain.
 Local fixtures keep retention off unless `PROPS_E2E_REGISTRY_BLOB_CACHE=1` is
 explicitly set. No BuildBuddy API or warm cache is needed for correctness.
 

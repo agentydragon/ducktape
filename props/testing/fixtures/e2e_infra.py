@@ -27,6 +27,7 @@ from contextlib import ExitStack
 import httpx
 import pytest
 from opentelemetry import trace
+from python.runfiles import Runfiles
 from testcontainers.core import testcontainers_config
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
@@ -36,6 +37,7 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from props.db.models import AgentType
 from props.testing.fixtures.registry_blob_cache import (
     RegistryBlobCacheReceipt,
+    RegistryBlobCacheRecipe,
     cached_registry_container,
     registry_blob_cache_usage_bytes,
 )
@@ -83,8 +85,11 @@ def _e2e_registry_container() -> Generator[DockerContainer]:
                         cached_registry_container(
                             registry,
                             image_ref=registry_image,
-                            repositories=tuple(
-                                agent_type.value for agent_type in AgentType if agent_type is not AgentType.FREEFORM
+                            recipe=RegistryBlobCacheRecipe.model_validate_json(
+                                (
+                                    Runfiles.CreateOrRaise().root()
+                                    / "ducktape/props/testing/registry_cache_recipe.json"
+                                ).read_text()
                             ),
                             namespace="props-e2e",
                         )

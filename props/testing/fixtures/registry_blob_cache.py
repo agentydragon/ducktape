@@ -9,15 +9,17 @@ import logging
 import os
 import re
 import stat
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
+from textwrap import dedent
 
 from docker import DockerClient, from_env
 from docker.errors import APIError
 from docker.models.containers import Container
 from docker.models.volumes import Volume
+from pydantic import BaseModel, ConfigDict, Field
 from testcontainers.core.container import DockerContainer
 
 logger = logging.getLogger(__name__)
@@ -26,9 +28,7 @@ _OWNER_LABEL = "ducktape.props.registry-cache.owner"
 _RECIPE_LABEL = "ducktape.props.registry-cache.recipe"
 _NAMESPACE_LABEL = "ducktape.props.registry-cache.namespace"
 _OWNER = "props.testing.fixtures.registry_blob_cache.v1"
-_LAYOUT_VERSION = "registry-v2-single-volume-repo-metadata-reset-v2"
 _REGISTRY_ROOT = "/var/lib/registry"
-_REGISTRY_STORAGE_ROOT = "/var/lib/registry/docker/registry/v2"
 _NAMESPACE_PATTERN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}\Z")
 
 
@@ -40,6 +40,13 @@ class RegistryBlobCacheOwnershipError(RuntimeError):
     """A deterministic cache volume exists without the expected ownership labels."""
 
 
+class RegistryBlobCacheRecipe(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    key: str = Field(min_length=1)
+    max_bytes: int = Field(ge=1024)
+
+
 @dataclass(frozen=True)
 class RegistryBlobCacheReceipt:
     namespace: str
@@ -48,13 +55,11 @@ class RegistryBlobCacheReceipt:
     container_id: str
 
 
-def _recipe(image_ref: str, repositories: Sequence[str]) -> str:
-    recipe = json.dumps(
-        {"image_ref": image_ref, "layout": _LAYOUT_VERSION, "repositories": sorted(set(repositories))},
-        sort_keys=True,
-        separators=(",", ":"),
+def _recipe(image_ref: str, recipe: RegistryBlobCacheRecipe) -> str:
+    encoded = json.dumps(
+        {"image_ref": image_ref, "recipe": recipe.model_dump()}, sort_keys=True, separators=(",", ":")
     ).encode()
-    return hashlib.sha256(recipe).hexdigest()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _volume_name(namespace: str, recipe: str) -> str:
@@ -118,19 +123,31 @@ def _ensure_volume(docker_client: DockerClient, *, namespace: str, recipe: str) 
     return name
 
 
-def _reset_repository_metadata(
-    docker_client: DockerClient, *, image_ref: str, volume_name: str, repositories: Sequence[str]
-) -> None:
-    script = (
-        "for repository do "
-        f'rm -rf "{_REGISTRY_STORAGE_ROOT}/repositories/${{repository}}/_manifests" '
-        f'"{_REGISTRY_STORAGE_ROOT}/repositories/${{repository}}/_uploads"; '
-        "done"
+def _prepare_registry_cache(docker_client: DockerClient, *, image_ref: str, volume_name: str, max_bytes: int) -> None:
+    # The HTTP API cannot enumerate untagged manifests or abandoned uploads.
+    # Scrub all repositories while the registry is stopped, then bound the bytes
+    # left for recycling. GC would discard our deliberately unreferenced blobs.
+    script = dedent(
+        r"""
+        root="$1"
+        max_kib="$2"
+        repositories="$root/docker/registry/v2/repositories"
+        if [ -d "$repositories" ]; then
+            find "$repositories" -type d \( -name _manifests -o -name _uploads \) \
+                -prune -exec rm -rf '{}' +
+        fi
+        used_kib="$(du -sk "$root")"
+        used_kib="${used_kib%%[!0-9]*}"
+        if [ "$used_kib" -gt "$max_kib" ]; then
+            find "$root" -mindepth 1 -maxdepth 1 -exec rm -rf '{}' +
+        fi
+        printf '%s\n' "$used_kib"
+        """
     )
     reset: Container = docker_client.containers.create(
         image=image_ref,
         entrypoint=["/bin/sh", "-ec"],
-        command=[script, "registry-cache-reset", *sorted(set(repositories))],
+        command=[script, "registry-cache-reset", _REGISTRY_ROOT, str(max_bytes // 1024)],
         volumes={volume_name: {"bind": _REGISTRY_ROOT, "mode": "rw"}},
         network_mode="none",
         detach=True,
@@ -140,29 +157,29 @@ def _reset_repository_metadata(
         status = reset.wait(timeout=10)
         if status.get("StatusCode") != 0:
             output = reset.logs().decode("utf-8", errors="replace")[-2000:]
-            raise RuntimeError(f"registry metadata reset exited {status.get('StatusCode')}: {output}")
+            raise RuntimeError(f"registry cache preparation exited {status.get('StatusCode')}: {output}")
+        previous_bytes = int(reset.logs(stdout=True, stderr=False).decode().strip()) * 1024
+        if previous_bytes > max_bytes:
+            logger.info("Discarded oversized owned registry cache %s (%d bytes)", volume_name, previous_bytes)
     finally:
         reset.remove(force=True)
 
 
 @contextmanager
 def cached_registry_container(
-    registry: DockerContainer, *, image_ref: str, repositories: Sequence[str], namespace: str
+    registry: DockerContainer, *, image_ref: str, recipe: RegistryBlobCacheRecipe, namespace: str
 ) -> Iterator[RegistryBlobCacheReceipt]:
     """Start a fresh registry with only its CAS blobs and repo layer links retained."""
     if not _NAMESPACE_PATTERN.fullmatch(namespace):
         raise ValueError(f"invalid registry cache namespace: {namespace!r}")
     if not image_ref:
         raise ValueError("image_ref must be nonempty")
-    if not repositories or any(not re.fullmatch(r"[a-z0-9]+(?:[._-][a-z0-9]+)*", repo) for repo in repositories):
-        raise ValueError("repositories must contain valid, nonempty OCI repository names")
-
-    recipe = _recipe(image_ref, repositories)
+    recipe_digest = _recipe(image_ref, recipe)
     with ExitStack() as stack:
         stack.enter_context(_registry_blob_cache_lease())
         docker_client: DockerClient = from_env()
         stack.callback(docker_client.close)
-        volume_name = _ensure_volume(docker_client, namespace=namespace, recipe=recipe)
+        volume_name = _ensure_volume(docker_client, namespace=namespace, recipe=recipe_digest)
         # A dead fixture process releases flock but can leave Docker containers.
         # Never reset storage still attached elsewhere, even to a stopped container.
         consumers = docker_client.containers.list(all=True, filters={"volume": volume_name})
@@ -175,21 +192,22 @@ def cached_registry_container(
         # Distribution's filesystem Move uses os.Rename from _uploads into blobs, so both
         # paths must share one mount: https://github.com/distribution/distribution/blob/v3.0.0/registry/storage/driver/filesystem/driver.go
         registry.with_volume_mapping(volume_name, _REGISTRY_ROOT, mode="rw")
-        _reset_repository_metadata(
-            docker_client, image_ref=image_ref, volume_name=volume_name, repositories=repositories
-        )
+        _prepare_registry_cache(docker_client, image_ref=image_ref, volume_name=volume_name, max_bytes=recipe.max_bytes)
         # ExitStack is LIFO: stop the registry before scrubbing metadata for the next attach.
         stack.callback(
-            _reset_repository_metadata,
+            _prepare_registry_cache,
             docker_client,
             image_ref=image_ref,
             volume_name=volume_name,
-            repositories=repositories,
+            max_bytes=recipe.max_bytes,
         )
         stack.callback(registry.stop)
         registry.start()
         yield RegistryBlobCacheReceipt(
-            namespace=namespace, recipe=recipe, volume_names=(volume_name,), container_id=registry.get_container_id()
+            namespace=namespace,
+            recipe=recipe_digest,
+            volume_names=(volume_name,),
+            container_id=registry.get_container_id(),
         )
 
 

@@ -16,10 +16,17 @@ CONTAINER_E2E_EXEC_PROPERTIES = {
     "test.runner-recycling-key": "props-e2e-images-v1-" + _IMAGE_RECIPE,
 }
 
-# The fixture retains blobs but resets manifests/uploads and starts fresh services.
-# Bump this version for incompatible registry_blob_cache.py storage/reset changes.
+# One recipe feeds the generated runtime configuration and the recycling family.
+# Bump v2 for incompatible registry storage/reset changes. Budget changes and
+# infrastructure repins invalidate both automatically.
+_REGISTRY_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024
+REGISTRY_CACHE_RECIPE = {
+    "key": "props-e2e-registry-blobs-v2-" + str(_REGISTRY_CACHE_MAX_BYTES) + "-" + _IMAGE_RECIPE,
+    "max_bytes": _REGISTRY_CACHE_MAX_BYTES,
+}
+
 # Remote-only permission keeps local fixture setup on its normal cold path.
 REGISTRY_CACHE_E2E_EXEC_PROPERTIES = {
-    "test.runner-recycling-key": "props-e2e-registry-blobs-v1-" + _IMAGE_RECIPE,
+    "test.runner-recycling-key": REGISTRY_CACHE_RECIPE["key"],
     "test.env-overrides": "PROPS_E2E_REGISTRY_BLOB_CACHE=1",
 }
