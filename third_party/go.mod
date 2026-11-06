@@ -83,6 +83,9 @@ require (
 // Direct dependencies for agentplane/action_service/policies
 require github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 
+// Direct dependencies for agentplane/action_service/catalog (ECMAScript fallback for JSON Schema `pattern`)
+require github.com/dlclark/regexp2/v2 v2.5.1
+
 // Direct dependencies for agentplane/notification_service/github
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
