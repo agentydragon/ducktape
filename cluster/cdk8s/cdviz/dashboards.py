@@ -23,6 +23,9 @@ from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaD
 _NAMESPACE = grafana_instance.SERVICE.pods.namespace
 _PASSWORD = "cdviz-database"
 DASHBOARD = DashboardFile(source="cluster/cdk8s/cdviz/dashboard.json", config_map="cdviz-ci", namespace=_NAMESPACE)
+FEEDBACK_DASHBOARD = DashboardFile(
+    source="cluster/cdk8s/cdviz/feedback-dashboard.json", config_map="cdviz-ci-feedback", namespace=_NAMESPACE
+)
 
 
 def chart(app: App) -> Chart:
@@ -78,12 +81,13 @@ def chart(app: App) -> Chart:
             )
         ],
     )
-    GrafanaDashboard(
-        chart,
-        DASHBOARD.config_map,
-        metadata=ApiObjectMetadata(name=DASHBOARD.config_map, namespace=_NAMESPACE),
-        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
-        folder="CI",
-        config_map_ref=DASHBOARD.config_map_ref(),
-    )
+    for dashboard in (DASHBOARD, FEEDBACK_DASHBOARD):
+        GrafanaDashboard(
+            chart,
+            dashboard.config_map,
+            metadata=ApiObjectMetadata(name=dashboard.config_map, namespace=_NAMESPACE),
+            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
+            folder="CI",
+            config_map_ref=dashboard.config_map_ref(),
+        )
     return chart

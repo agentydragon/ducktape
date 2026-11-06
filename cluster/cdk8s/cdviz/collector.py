@@ -44,7 +44,14 @@ def _database_env() -> list[k8s.EnvVar]:
 def chart(app: App) -> Chart:
     chart = Chart(app, "cdviz-collector", disable_resource_name_hashes=True)
     root = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/cdviz"
-    files = ["collector.toml", "github_webhook.vrl", "github_workflow_runs.vrl", "grants.sql"]
+    files = [
+        "collector.toml",
+        "github_webhook.vrl",
+        "github_workflow_runs.vrl",
+        "github_policy.vrl",
+        "001_ci_feedback.sql",
+        "grants.sql",
+    ]
     k8s.KubeConfigMap(
         chart,
         "config",
@@ -94,7 +101,12 @@ def chart(app: App) -> Chart:
                             security_context=k8s.SecurityContext(read_only_root_filesystem=True),
                             resources=_MIGRATION_RESOURCES,
                             command=["psql"],
-                            args=["--no-psqlrc", "--set=ON_ERROR_STOP=1", "--file=/etc/cdviz/grants.sql"],
+                            args=[
+                                "--no-psqlrc",
+                                "--set=ON_ERROR_STOP=1",
+                                "--file=/etc/cdviz/001_ci_feedback.sql",
+                                "--file=/etc/cdviz/grants.sql",
+                            ],
                             env=_database_env(),
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG, read_only=True)],
                         ),

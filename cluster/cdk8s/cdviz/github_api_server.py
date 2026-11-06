@@ -24,6 +24,23 @@ class GitHubFixtureHandler(BaseHTTPRequestHandler):
         if parsed.path == "/requests":
             self._send_json(200, server.requested_pages)
             return
+        if parsed.path == "/repos/agentydragon/ducktape/rules/branches/devel":
+            self._send_json(
+                200,
+                [
+                    {
+                        "type": "required_status_checks",
+                        "parameters": {
+                            "required_status_checks": [
+                                {"context": "bazel-ci / Test & Build", "integration_id": 15368},
+                                {"context": "Pre-commit checks", "integration_id": 15368},
+                                {"context": "Build artifacts + imports check", "integration_id": 15368},
+                            ]
+                        },
+                    }
+                ],
+            )
+            return
 
         query = parse_qs(parsed.query)
         if query.get("per_page") != ["100"]:

@@ -57,7 +57,9 @@ py_library(
     name = "collector",
     srcs = ["collector.py"],
     data = [
+        "001_ci_feedback.sql",
         "collector.toml",
+        "github_policy.vrl",
         "grants.sql",
         ":github_webhook_vrl",
         ":github_workflow_runs_vrl",
@@ -85,6 +87,7 @@ py_library(
     srcs = ["dashboards.py"],
     data = [
         "dashboard.json",
+        "feedback-dashboard.json",
         ":license",
     ],
     deps = [
@@ -134,9 +137,12 @@ py_test(
     size = "medium",
     srcs = ["test_ingestion_visual.py"],
     data = [
+        "001_ci_feedback.sql",
         "collector.toml",
         "dashboard.json",
+        "feedback-dashboard.json",
         "github_api_server.py",
+        "github_policy.vrl",
         "grants.sql",
         ":github_webhook_vrl",
         ":github_workflow_runs_vrl",
@@ -146,6 +152,7 @@ py_test(
     requires_docker = True,
     tags = ["visual"],
     deps = [
+        ":feedback_fixture",
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "//devinfra/oci",
@@ -175,4 +182,11 @@ py_library(
     name = "github_api_server",
     testonly = True,
     srcs = ["github_api_server.py"],
+)
+
+py_library(
+    name = "feedback_fixture",
+    testonly = True,
+    srcs = ["feedback_fixture.py"],
+    deps = ["@pypi//psycopg"],
 )

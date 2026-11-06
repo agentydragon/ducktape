@@ -31,6 +31,7 @@ from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 from testcontainers.postgres import PostgresContainer
 
+from cluster.cdk8s.cdviz import feedback_fixture
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -268,9 +269,12 @@ async def _capture_dashboard(
     query_results: list[dict],
     errors: list[str],
     filtered: bool,
+    feedback: bool = False,
 ) -> None:
     page = visual.page
-    panel_by_ref = {target["refId"]: str(panel["id"]) for panel in dashboard["panels"] for target in panel["targets"]}
+    panel_by_ref = {
+        target["refId"]: str(panel["id"]) for panel in dashboard["panels"] for target in panel.get("targets", [])
+    }
 
     async def inspect(route: Route) -> None:
         request_body = route.request.post_data_json
@@ -307,7 +311,9 @@ async def _capture_dashboard(
 
     await page.route("**/api/ds/query*", inspect)
     params = {"orgId": "1", "from": str(FROZEN_NOW_MS - 3 * 3_600_000), "to": str(FROZEN_NOW_MS)}
-    if filtered:
+    if feedback:
+        params.update({"var-scope": "PR", "var-clock": "PR head event" if filtered else "all"})
+    elif filtered:
         params.update(
             {"var-workflow": "agentydragon/ducktape/CDviz integration success", "var-branch": "main", "var-pr": "123"}
         )
@@ -315,19 +321,22 @@ async def _capture_dashboard(
         f"{base_url}/d/{dashboard['uid']}/ci-workflow-and-job-timings?{urlencode(params)}",
         wait_until="domcontentloaded",
     )
-    await expect(page.get_by_text("Workflow attempts", exact=True).first).to_be_visible(timeout=30000)
+    first_panel = next(panel for panel in dashboard["panels"] if panel.get("targets"))
+    await expect(page.get_by_text(first_panel["title"], exact=True).first).to_be_visible(timeout=30000)
     await capture_dashboard(visual, checkpoint=view_name)
     await expect(page.get_by_text("No data", exact=True)).to_have_count(0, timeout=10000)
 
 
-_UNRESOLVED_DASHBOARD_VARIABLE = re.compile(r"\$\{(?:workflow|branch|pr)(?::[^}]+)?\}|\$(?:workflow|branch|pr)\b")
+_UNRESOLVED_DASHBOARD_VARIABLE = re.compile(
+    r"\$\{(?:workflow|branch|pr|scope|clock)(?::[^}]+)?\}|\$(?:workflow|branch|pr|scope|clock)\b"
+)
 
 
 def _panel_results(query_results: list[dict], view_name: str, dashboard: dict) -> dict[str, dict]:
     results = {
         result["panel_id"]: result for result in query_results if result["view"] == view_name and result.get("panel_id")
     }
-    expected_panel_ids = {str(panel["id"]) for panel in dashboard["panels"]}
+    expected_panel_ids = {str(panel["id"]) for panel in dashboard["panels"] if panel.get("targets")}
     assert expected_panel_ids.issubset(results), (
         f"{view_name} missing datasource responses for panels {sorted(expected_panel_ids - results.keys())}; "
         f"received {sorted(results)}"
@@ -463,6 +472,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             _stage("running pinned migration as non-superuser cdviz")
             _run_migration(client, migration_future.result(), network_name)
             with psycopg.connect(owner_url, autocommit=True) as owner:
+                owner.execute((root / "ducktape/cluster/cdk8s/cdviz/001_ci_feedback.sql").read_text())
                 grants = (root / "ducktape/cluster/cdk8s/cdviz/grants.sql").read_text()
                 owner.execute(grants)
                 owner.execute("CALL cdviz.apply_retention(INTERVAL '90 days')")
@@ -534,7 +544,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             )
             config_text = config_text.replace('polling_interval = "15m"', 'polling_interval = "5s"')
             (config_dir / "collector.toml").write_text(config_text)
-            for name in ("github_webhook.vrl", "github_workflow_runs.vrl"):
+            for name in ("github_webhook.vrl", "github_workflow_runs.vrl", "github_policy.vrl"):
                 (config_dir / name).write_bytes((source / name).read_bytes())
             secrets = runtime / "secrets"
             (secrets / "database").mkdir(parents=True)
@@ -716,6 +726,54 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                     _assert_dashboard_responses(query_results, dashboard, "all-runs", filtered=False)
                     _assert_dashboard_responses(query_results, dashboard, "filtered", filtered=True)
                     _diagnostic(f"Grafana rendered all 8 panels in both views; captured {len(query_results)} responses")
+                    with psycopg.connect(owner_url, autocommit=True) as owner:
+                        # The policy poll uses collector time; deterministic dashboard
+                        # histories use the browser fixture's frozen source clock.
+                        policy = owner.execute(
+                            "SELECT payload #> '{customData,ci_policy,contexts}' FROM cdviz.cdevents_lake "
+                            "WHERE payload #> '{customData,ci_policy}' IS NOT NULL LIMIT 1"
+                        ).fetchone()
+                        assert policy is not None
+                        assert set(policy[0]) == set(feedback_fixture.CONTEXTS)
+                        feedback_fixture.seed(owner, _FROZEN)
+                        feedback_fixture.assert_unknown_histories(owner, _FROZEN)
+                    with psycopg.connect(reader_url) as reader:
+                        feedback_fixture.assert_histories(reader, _FROZEN)
+                    feedback = _provision_grafana(grafana_url, source / "feedback-dashboard.json")
+                    async with (
+                        async_playwright() as playwright,
+                        deterministic_browser_context(
+                            playwright,
+                            viewport={"width": 1440, "height": 1200},
+                            frozen_now_ms=FROZEN_NOW_MS,
+                            color_scheme="dark",
+                        ) as context,
+                    ):
+                        for view_name, filtered in (("feedback", False), ("feedback-head-clock", True)):
+                            page = await context.new_page()
+                            with VisualPage(
+                                page, outputs=test_outputs, title=f"Commit to CI feedback ({view_name})"
+                            ) as visual:
+                                await _capture_dashboard(
+                                    visual,
+                                    base_url=grafana_url,
+                                    dashboard=feedback,
+                                    view_name=view_name,
+                                    query_results=query_results,
+                                    errors=errors,
+                                    filtered=filtered,
+                                    feedback=True,
+                                )
+                            await page.close()
+                            panels = _panel_results(query_results, view_name, feedback)
+                            if filtered:
+                                _assert_number(panels["2"], "n", 5)
+                                _assert_number(panels["2"], "p50_seconds", 240)
+                                thresholds = _frame_rows(panels["6"]["result"]["frames"])
+                                assert [row["eligible_heads"] for row in thresholds] == [12, 12, 10]
+                                assert [row["still_observing"] for row in thresholds] == [1, 1, 3]
+                                assert [row["heads_green"] for row in thresholds] == [3, 4, 4]
+                    assert not errors, "; ".join(errors)
                 finally:
                     diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
                     diagnostics_path.write_text(json.dumps({"errors": errors, "queries": query_results}, indent=2))
