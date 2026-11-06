@@ -59,24 +59,11 @@ def _dupes(names: list[str]) -> list[str]:
 
 
 def test_injection_is_idempotent_under_reinvocation(reinvoked: dict) -> None:
-    """Injecting twice must equal injecting once.
+    """Reinvocation must not duplicate volumes, mounts or environment entries.
 
-    The patches are RFC 6902 `add` against `/-`, which appends unconditionally. Applied a
-    second time they append a second copy, and a duplicate volume name or mountPath is
-    rejected outright by the API server:
-
-        Pod "haku-ui-0" is invalid: [spec.volumes[3].name: Duplicate value:
-        "haku-egress-proxy-ca-cert", spec.containers[0].volumeMounts[3].mountPath:
-        Invalid value: "/egress-proxy-ca": must be unique]
-
-    That is a real outage, seen 2026-08-05: `haku-ui` sat at 1/2 with `haku-ui-0`
-    permanently uncreatable, because the namespace runs VPA in `Auto` mode and VPA's
-    webhook mutates resource requests *after* Kyverno — triggering the reinvocation. It is
-    intermittent only because VPA patches nothing when its recommendation already matches
-    the pod, which is what let the surviving replica in.
-
-    Duplicate `env` entries are legal (last wins) and so cannot be caught at admission,
-    but they are the same defect and are asserted here too.
+    See proxy_injection.py for the 2026-08-05 VPA reinvocation outage.
+    Admission rejects duplicate volumes/mount paths, but duplicate env entries
+    are legal (last wins), so assert those explicitly too.
     """
     spec = reinvoked["spec"]
     assert _dupes([v["name"] for v in spec["volumes"]]) == []
