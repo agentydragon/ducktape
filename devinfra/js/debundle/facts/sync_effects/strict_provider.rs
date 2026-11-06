@@ -1529,6 +1529,26 @@ mod tests {
                     "class make { #first; #later = (this.#first = 1); }",
                     BTreeSet::new(),
                 ),
+                (
+                    "class make { field; constructor(value) { this.field = value; } }",
+                    BTreeSet::from([0]),
+                ),
+                (
+                    "class make { field; #field; constructor(value) { this.field = value; this.#field = 1; } }",
+                    BTreeSet::from([0]),
+                ),
+                (
+                    "class make { field; constructor(value) { this.field = value; this.field = 1; } }",
+                    BTreeSet::from([0]),
+                ),
+                (
+                    "class make { field; count; constructor(value) { let count = 0; this.field = (count = count + 1, value); this.count = count; } }",
+                    BTreeSet::from([0]),
+                ),
+                (
+                    "class make { field; later = (this.field = 1); }",
+                    BTreeSet::new(),
+                ),
             ] {
                 let summary = derive_source(source).unwrap_or_else(|| panic!("{source}"));
                 let effects = summary
@@ -1566,6 +1586,13 @@ mod tests {
                 "class make { field = value; constructor() { const value = 1; } }",
                 "class make { field = unknown(); }",
                 "class make { #field; constructor(value) { this.#field = value.field; } }",
+                "class make { constructor(value) { this.field = value; } }",
+                "class make { #field; constructor(value) { this.field = value; } }",
+                "class make { field; constructor(value) { this.other = value; } }",
+                "class make { later = (this.field = 1); field; }",
+                "class make { set field(value) { value(); } constructor(value) { this.field = value; } }",
+                "class make { field; constructor() { this.field = value; let value = 1; } }",
+                "class make { field; constructor(value) { this.field = value.field; } }",
             ] {
                 assert!(derive_source(source).is_none(), "{source}");
             }
@@ -1578,6 +1605,7 @@ mod tests {
             for source in [
                 "class make { constructor() { var value = 1; return value; } }",
                 "class make { field = this; }",
+                "class make { field; constructor() { this.field = this; } }",
             ] {
                 let summary =
                     derive_source(source).expect("allocation projection remains separate");

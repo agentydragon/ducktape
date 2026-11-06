@@ -766,6 +766,9 @@ fn expression(
         LocalExpression::AssignPrivateThisField { property, value } => {
             assign_private_this_field_expression(context, property, value, body, frame, judgment)
         }
+        LocalExpression::AssignPublicThisField { property, value } => {
+            assign_public_this_field_expression(context, property, value, body, frame, judgment)
+        }
     }
 }
 
@@ -1387,6 +1390,47 @@ fn define_this_field_expression(
                 .write_private_property(object, property, &selected.values)?;
         }
     }
+    frame
+        .effect_coverage
+        .compose(&EffectCoverageFragment::modeled_own_data_access());
+    Some(selected)
+}
+
+fn assign_public_this_field_expression(
+    context: &mut impl LocalContext,
+    property: &str,
+    node: &LocalExpression,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    // Capture the receiver reference before the RHS. Resolve [[Set]]'s own
+    // descriptor after the RHS using the same uninterrupted fresh prefix.
+    let object = constructor_receiver(frame, judgment)?.class;
+    let selected = expression(context, node, body, frame, judgment)?;
+    if selected.values.is_empty() {
+        return Some(selected);
+    }
+    if selected
+        .values
+        .contains(&AbstractValue::Value(Value::Unavailable))
+    {
+        return None;
+    }
+    let receiver = constructor_receiver(frame, judgment)?;
+    if receiver.class != object || receiver.public_fields.get(property)?.writable != Some(true) {
+        return None;
+    }
+    // This descriptor came from an actual own data definition. A missing
+    // field, including a same-named private slot, cannot bypass [[Set]]'s
+    // prototype lookup or inherited setter behavior.
+    context
+        .heap()
+        .write_property(object, Some(property.to_owned()), &selected.values);
+    context.record_property_write(crate::facts::EffectCell::OwnProperty {
+        origin: object,
+        property: property.to_owned(),
+    });
     frame
         .effect_coverage
         .compose(&EffectCoverageFragment::modeled_own_data_access());
