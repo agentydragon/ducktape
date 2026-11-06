@@ -31,7 +31,7 @@ from cluster.cdk8s.agentplane.egress import (
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.clickhouse import client
-from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K, Provider
+from model_catalog.catalog import Provider
 
 
 def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -360,18 +360,14 @@ def test_shared_coding_models_preserve_provider_protocols(staging_manifests: lis
             assert model["exec_encoding"] == "json"
 
 
-def test_haku_launches_on_central_sampler_with_the_wider_qwen_context_window(
-    staging_manifests: list[dict[str, Any]],
-) -> None:
-    """Haku's preset remains on the local Qwen route until its Claude path is validated.
+def test_haku_launches_on_an_available_central_sampler_route(staging_manifests: list[dict[str, Any]]) -> None:
+    """Haku's model and effort must be accepted by the selected harness.
 
-    The preset is the only reason a launch form picks a model, so it must name a route the
-    harness accepts and an effort that route declares.
+    Sandbox and Action launches use the same preset, so both must resolve to that harness and model.
     """
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     preset = config["thread_presets"]["haku-codex"]
     assert preset["harness"] == "HARNESS_CENTRAL_SAMPLER"
-    assert preset["model"] == OLLAMA_QWEN_IQ4XS_256K.openai.id
     assert preset["model"] in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"]
     option = one(model for model in config["models"]["models"] if model["model"] == preset["model"])
     assert preset["reasoning_effort"] in option["reasoning_efforts"]
