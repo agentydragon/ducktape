@@ -6,8 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -17,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
@@ -30,21 +29,10 @@ caller_service_account_namespaces: [test-agentplane]
 
 func loadTestConfig(t *testing.T, file string, environ ...string) (config, error) {
 	t.Helper()
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(name, settingPrefix) {
-			t.Setenv(name, "")
-		}
-	}
-	path := filepath.Join(t.TempDir(), "settings.yaml")
-	if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range append([]string{settingPrefix + "CONFIG_FILE=" + path, databaseURLEnv}, environ...) {
-		name, value, _ := strings.Cut(entry, "=")
-		t.Setenv(name, value)
-	}
-	return loadConfig()
+	return configtest.Load(t, settingPrefix, loadConfig, append([]string{
+		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, file),
+		databaseURLEnv,
+	}, environ...))
 }
 
 func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
