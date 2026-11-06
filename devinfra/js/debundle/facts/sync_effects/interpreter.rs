@@ -9408,7 +9408,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 _ => None,
             })
             .collect();
-        let mut outcome = if let Some(body) = self.inputs.index.class_provider_bodies.get(&key) {
+        let canonical_body = self
+            .inputs
+            .index
+            .class_provider_bodies
+            .get(&key)
+            .filter(|body| {
+                // Application closures do not transport lexical this yet. Select
+                // the established source-checked lane before any field executes;
+                // creating a deferred arrow itself does not publish its receiver.
+                // A partial kernel must never be retried through that lane.
+                body.initializers
+                    .closure_sites()
+                    .iter()
+                    .chain(body.constructor.closure_sites())
+                    .all(|site| {
+                        !matches!(
+                            self.inputs.index.callable_creation(*site),
+                            Some(DeferredCallableCreation::Arrow(_))
+                        ) || !self.inputs.index.callables[site].implicit_capture
+                    })
+            });
+        let mut outcome = if let Some(body) = canonical_body {
             self.execute_local_constructor(body, arguments.to_vec())
         } else {
             // Unsupported canonical lowering is selected before any operation.
