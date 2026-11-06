@@ -218,7 +218,11 @@ func (s *sidecar) handle(client net.Conn) {
 			return
 		}
 		if request.Method != http.MethodConnect && request.URL.Scheme == "http" {
-			if route := s.workloadRoutes[request.URL.Host]; route != nil {
+			authority := request.URL.Host
+			if request.URL.Port() == "" {
+				authority = net.JoinHostPort(request.URL.Hostname(), "80")
+			}
+			if route := s.workloadRoutes[authority]; route != nil {
 				if !s.exchangeWorkloadRoute(client, clientReader, request, route) {
 					return
 				}
