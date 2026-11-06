@@ -467,6 +467,9 @@ pub enum EffectCell {
     ArrayContents(u32),
     /// Mutable contents of one proved fresh native Set construction.
     SetContents(u32),
+    /// Own keys and descriptor attributes, shared by every generation of
+    /// this source allocation. Distinct from stored data values.
+    ObjectShape(u32),
     /// One static own property, conservatively shared by every runtime
     /// generation of the source allocation. This supplies no strong update.
     OwnProperty {

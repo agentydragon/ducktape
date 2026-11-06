@@ -2998,9 +2998,16 @@ captured receiver even if an argument rebinds its source cell. Computed or
 dynamic receivers, optional calls, spread arguments and direct eval remain
 outside this ordered grammar.
 Guarded dense-array `push` consumes that captured receiver and evaluated
-primitive arguments. It retains the existing prototype/descriptor checks and
-invalidates precise array contents. Its completing result is numeric, with a
-possible abrupt result for length overflow; no exact length is inferred.
+primitive arguments. An uninterrupted first dense literal allocation without
+spreads supplies a separate descriptor witness: original prototype,
+extensibility, writable own length and no own method replacement. The shared
+transfer rechecks this witness
+and the native prototype guards after argument evaluation, checks the resulting
+length fits `u32`, and records length, shape, index and array-content effects.
+It returns a normally completing Number and composes its operation receipt with
+the caller. A checked push advances the length witness while invalidating exact
+element contents. Reusing the allocation site, escape, skipped execution or
+descriptor changes revoke the witness; no new author premise is introduced.
 An undeclared, unshadowed native global can enter an ordered body only when its
 global slot passes the existing native-integrity guard. Member identity and
 invocation operands retain their separate checks; an unavailable local capture
@@ -4126,6 +4133,9 @@ After a proved push, the array's precise surface is invalidated and cached
 invocations observe a new prefix revision. Its existing contained callbacks
 remain reachable by later reads or opaque consumers. Subsequent array
 operations use the conservative path rather than stale pre-push slots.
+The independent descriptor/length witness can admit subsequent primitive pushes
+through the shared ordered transfer described above; it cannot restore element
+snapshots or certify other array methods.
 
 ## Runtime resource destinations
 

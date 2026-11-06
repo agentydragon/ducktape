@@ -100,6 +100,7 @@ enum SavedEffectCell {
     GlobalProp(String),
     ArrayContents(u32),
     SetContents(u32),
+    ObjectShape(u32),
     OwnProperty { origin: u32, property: String },
 }
 
@@ -110,6 +111,7 @@ impl SavedEffectCell {
             EffectCell::GlobalProp(property) => Self::GlobalProp(property.clone()),
             EffectCell::ArrayContents(origin) => Self::ArrayContents(*origin),
             EffectCell::SetContents(origin) => Self::SetContents(*origin),
+            EffectCell::ObjectShape(origin) => Self::ObjectShape(*origin),
             EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
                 origin: *origin,
                 property: property.clone(),
@@ -123,6 +125,7 @@ impl SavedEffectCell {
             Self::GlobalProp(property) => EffectCell::GlobalProp(property),
             Self::ArrayContents(origin) => EffectCell::ArrayContents(origin),
             Self::SetContents(origin) => EffectCell::SetContents(origin),
+            Self::ObjectShape(origin) => EffectCell::ObjectShape(origin),
             Self::OwnProperty { origin, property } => EffectCell::OwnProperty { origin, property },
         })
     }

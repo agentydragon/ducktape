@@ -3,6 +3,7 @@
 use super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
+use super::array_transfer::ArrayPushSelection;
 use super::effect_coverage::EffectCoverageFragment;
 use super::local_operations::{
     DeferredCallableCreation, LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
@@ -107,6 +108,7 @@ pub(super) enum EvaluatedCallee {
         receiver: Values,
         targets: Values,
         selection_dependencies: Option<Box<ProofDependencies>>,
+        array_push: Option<Box<ArrayPushSelection>>,
     },
 }
 
@@ -157,6 +159,13 @@ pub(super) trait LocalContext: OwnDataContext {
     /// queries keep the default false and require fresh-local ownership.
     fn module_prefix_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
         false
+    }
+    fn array_push_callee(
+        &mut self,
+        _receivers: &Values,
+        _property: &str,
+    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
+        None
     }
     /// Conditions under which the current settled prefix is valid. The
     /// application adapter snapshots these at an actual read/write transfer;
@@ -731,7 +740,19 @@ fn call_expression(
             }
             frame.inputs.extend(receivers.iter().cloned());
             let module_prefix = context.module_prefix_receiver(receiver, &receivers);
-            let result = read_field(context, frame, receiver, &receivers, property, *span)?;
+            let mut array_push = None;
+            let result = if let Some((selection, effects)) =
+                context.array_push_callee(&receivers, property)
+            {
+                array_push = Some(Box::new(selection));
+                LocalValueResult {
+                    allocation: AllocationValue::opaque(Values::new()),
+                    effects,
+                    selection: None,
+                }
+            } else {
+                read_field(context, frame, receiver, &receivers, property, *span)?
+            };
             let selection_dependencies = module_prefix
                 .then(|| result.effects.lexical_selection_dependencies())
                 .flatten();
@@ -744,10 +765,19 @@ fn call_expression(
                 receiver: receivers,
                 targets: completing(result.allocation.values, frame),
                 selection_dependencies,
+                array_push,
             }
         }
     };
-    if callee.targets().is_empty() {
+    if callee.targets().is_empty()
+        && !matches!(
+            &callee,
+            EvaluatedCallee::Member {
+                array_push: Some(_),
+                ..
+            }
+        )
+    {
         return Some(SelectedValue::raw(Values::new()));
     }
     frame.inputs.extend(callee.targets().iter().cloned());

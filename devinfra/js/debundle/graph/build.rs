@@ -1055,7 +1055,12 @@ fn emit_heap_content_order(
                         .iter()
                         .chain(&calls.heap_contents.writes)
                 })
-                .any(|cell| matches!(cell, EffectCell::OwnProperty { .. }))
+                .any(|cell| {
+                    matches!(
+                        cell,
+                        EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_)
+                    )
+                })
     });
     let mut events = Vec::new();
     for stmt in facts {
@@ -1149,6 +1154,7 @@ fn heap_content_cells(
                     cell,
                     EffectCell::ArrayContents(_)
                         | EffectCell::SetContents(_)
+                        | EffectCell::ObjectShape(_)
                         | EffectCell::OwnProperty { .. }
                 )
             })
@@ -1161,6 +1167,7 @@ fn heap_content_cells(
                     cell,
                     EffectCell::ArrayContents(_)
                         | EffectCell::SetContents(_)
+                        | EffectCell::ObjectShape(_)
                         | EffectCell::OwnProperty { .. }
                 )
             })

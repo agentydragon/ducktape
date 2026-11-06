@@ -656,11 +656,102 @@ fn dense_array_primitive_push_does_not_invoke_published_callbacks() {
 }
 
 #[test]
+fn primitive_push_composes_with_callable_effects_and_tracks_later_lengths() {
+    use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
+
+    let source = "const values = [];\nfunction append() { return values.push(1, 2); }\nconst first = append();\nconst second = append();\nconst later = 42;\nconsole.log(first, second, values.join(','), later);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "values",
+                &[
+                    Member::new("values"),
+                    Member::new("append"),
+                    Member::new("first"),
+                    Member::new("second"),
+                ],
+            ),
+            logical_module("later", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "2 4 1,2,1,2 42\n");
+    let graph = fixture.dependency_graph();
+    for binding in ["first", "second"] {
+        let node = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|item| item.binding == binding)
+            })
+            .expect("push result owner");
+        let execution = node
+            .synchronous_execution
+            .as_ref()
+            .expect("execution report");
+        assert!(execution.complete, "{execution:#?}");
+        let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+            &execution.binding_effect_authority
+        else {
+            panic!("missing composed push receipt: {execution:#?}");
+        };
+        assert!(
+            receipt.calls.iter().any(|call| matches!(
+                &call.target,
+                LexicalBindingEffectBody::Native { property: Some(property), .. }
+                    if property == "prototype.push"
+            )),
+            "{receipt:#?}"
+        );
+    }
+}
+
+#[test]
+fn pooled_array_allocations_do_not_restore_descriptor_proofs() {
+    use analysis::reports::schema::BindingEffectAuthorityReport;
+
+    for (extra, covered) in [("", true), ("const second = make();\n", false)] {
+        let source = format!(
+            "function make() {{ return []; }}\nconst values = make();\n{extra}function append() {{ return values.push(1); }}\nconst result = append();\nconsole.log(result, values.join(','));\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "1 1\n");
+        let graph = fixture.dependency_graph();
+        let execution = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|item| item.binding == "result")
+            })
+            .expect("push result owner")
+            .synchronous_execution
+            .as_ref()
+            .expect("execution report");
+        assert_eq!(
+            matches!(
+                execution.binding_effect_authority,
+                Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+            ),
+            covered,
+            "{extra}: {execution:#?}"
+        );
+    }
+}
+
+#[test]
 fn dense_array_push_retains_mutation_argument_and_escape_guards() {
     for operation in [
         "Array.prototype.push = function () { return Later; };\nvalues.push(1);",
         "const alias = values;\nalias.push = () => Later;\nvalues.push(1);",
         "Object.defineProperty(values, 'push', { get() { return () => Later; } });\nvalues.push(1);",
+        "Object.defineProperty(values, 'length', { writable: false });\nvalues.push(1);",
+        "Object.preventExtensions(values);\nvalues.push(1);",
+        "Object.freeze(values);\nvalues.push(1);",
+        "Object.setPrototypeOf(values, { push() { return Later; } });\nvalues.push(1);",
         "Object.defineProperty(Array.prototype, '0', { set(value) { globalThis.observe(); }, configurable: true });\nvalues.push(1);",
         "Object.defineProperty(Object.prototype, '0', { set(value) { globalThis.observe(); }, configurable: true });\nvalues.push(1);",
         "consume(values);\nvalues.push(1);",

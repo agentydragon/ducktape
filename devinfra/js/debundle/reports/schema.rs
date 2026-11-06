@@ -649,6 +649,10 @@ pub enum LexicalBindingEffectBody {
         key: u32,
         owner: SourceUnitOrdinal,
     },
+    Native {
+        intrinsic: crate::analysis_inputs::NativeIntrinsic,
+        property: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

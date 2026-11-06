@@ -144,6 +144,7 @@ pub(super) struct LiteralHeap<'a> {
 pub(super) enum WritablePrefixState {
     InProgress,
     Proven(BTreeSet<String>),
+    DenseArray { length: u32 },
     Unknown,
 }
 
@@ -153,7 +154,7 @@ impl LiteralHeap<'_> {
     /// Reentry, a prior value, or any later execution permanently loses the
     /// per-site proof because the heap does not distinguish allocation
     /// generations.
-    pub(super) fn begin_record(&mut self, allocation: u32) {
+    pub(super) fn begin_literal(&mut self, allocation: u32) {
         let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
             return;
         };
@@ -165,6 +166,19 @@ impl LiteralHeap<'_> {
             WritablePrefixState::Unknown
         };
         if writable_prefix.get(&allocation) != Some(&next) {
+            writable_prefix.insert(allocation, next);
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    pub(super) fn complete_array(&mut self, allocation: u32, length: usize) {
+        let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
+            return;
+        };
+        if writable_prefix.get(&allocation) == Some(&WritablePrefixState::InProgress) {
+            let next = u32::try_from(length)
+                .map(|length| WritablePrefixState::DenseArray { length })
+                .unwrap_or(WritablePrefixState::Unknown);
             writable_prefix.insert(allocation, next);
             *self.revision = self.revision.wrapping_add(1);
         }
@@ -182,6 +196,23 @@ impl LiteralHeap<'_> {
         };
         if writable_prefix.get(&allocation) == Some(&WritablePrefixState::InProgress) {
             writable_prefix.insert(allocation, WritablePrefixState::Proven(writable_properties));
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    pub(super) fn invalidate_writable(&mut self, allocation: u32) {
+        let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
+            return;
+        };
+        if matches!(
+            writable_prefix.get(&allocation),
+            Some(
+                WritablePrefixState::InProgress
+                    | WritablePrefixState::Proven(_)
+                    | WritablePrefixState::DenseArray { .. }
+            )
+        ) {
+            writable_prefix.insert(allocation, WritablePrefixState::Unknown);
             *self.revision = self.revision.wrapping_add(1);
         }
     }
@@ -507,7 +538,7 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
             }
         }
     }
-    context.heap().begin_record(allocation);
+    context.heap().begin_literal(allocation);
     let mut evaluated = BTreeMap::<Option<String>, Values>::new();
     let mut may_throw = false;
     let mut can_complete = true;
@@ -555,6 +586,7 @@ pub(super) fn array<'a, C: AllocationContext, E: 'a>(
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
     context.unmodeled_effect_operation();
+    context.heap().begin_literal(allocation);
     let mut properties = BTreeMap::<Option<String>, Values>::new();
     let mut dense = Vec::new();
     let mut has_hole = false;
@@ -589,8 +621,12 @@ pub(super) fn array<'a, C: AllocationContext, E: 'a>(
         let mut heap = context.heap();
         heap.record(allocation, properties);
         if !has_hole {
+            // This ordered literal has no spread operands, so dense.len() is
+            // the exact ArrayCreate length for its first uninterrupted run.
+            heap.complete_array(allocation, dense.len());
             heap.dense_array(allocation, dense);
         } else {
+            heap.invalidate_writable(allocation);
             heap.invalidate_dense_array(allocation);
         }
         context.array_created(allocation, has_hole);
@@ -648,7 +684,7 @@ mod tests {
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),
             };
-            heap.begin_record(allocation);
+            heap.begin_literal(allocation);
             assert_eq!(
                 heap.writable_prefix.as_deref().unwrap().get(&allocation),
                 Some(&WritablePrefixState::InProgress)
@@ -671,7 +707,7 @@ mod tests {
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),
             };
-            heap.begin_record(allocation);
+            heap.begin_literal(allocation);
             assert_eq!(
                 heap.writable_prefix.as_deref().unwrap().get(&allocation),
                 Some(&WritablePrefixState::Unknown)
