@@ -106,7 +106,7 @@ func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 }
 
 func TestSVIDListenerIsOffByDefaultAndAllOrNothing(t *testing.T) {
-	c, err := loadTestConfig(t, required(t))
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,12 +128,12 @@ func TestSVIDListenerIsOffByDefaultAndAllOrNothing(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := loadTestConfig(t, append(required(t), settings...)); err == nil {
+			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settings...)); err == nil {
 				t.Fatal("accepted incomplete or invalid SVID listener configuration")
 			}
 		})
 	}
-	configured, err := loadTestConfig(t, required(
+	configured, err := configtest.Load(t, settingPrefix, loadConfig, required(
 		t,
 		settingPrefix+"SVID_LISTEN_ADDRESS=127.0.0.1:8889",
 		settingPrefix+"SVID_CERT_FILE=/svid/tls.crt",
