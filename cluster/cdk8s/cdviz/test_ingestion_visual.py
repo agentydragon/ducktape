@@ -383,7 +383,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 owner.execute("CALL cdviz.apply_retention(INTERVAL '90 days')")
             _stage("starting collector and local GitHub polling fixture")
 
-            poll_payload = {
+            poll_payload: dict = {
                 "total_count": 1,
                 "workflow_runs": [
                     {
@@ -406,15 +406,51 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             fixture_dir = runtime / "poll"
             fixture_dir.mkdir()
             (fixture_dir / "payload.json").write_text(json.dumps(poll_payload))
+            # A full first page of distinct, recently queued runs puts the completed
+            # fixture on page two. Recent runs fall outside the frozen dashboard range.
+            recent_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            recent_runs = [
+                {
+                    **poll_payload["workflow_runs"][0],
+                    "id": run_id,
+                    "url": f"https://api.github.com/repos/{_REPO}/actions/runs/{run_id}",
+                    "html_url": f"https://github.com/{_REPO}/actions/runs/{run_id}",
+                    "name": "Recent queued run",
+                    "head_sha": f"{run_id:040x}",
+                    "status": "queued",
+                    "conclusion": None,
+                    "created_at": recent_at,
+                    "run_started_at": None,
+                    "updated_at": recent_at,
+                }
+                for run_id in range(90000, 90100)
+            ]
+            (fixture_dir / "recent.json").write_text(json.dumps({"total_count": 101, "workflow_runs": recent_runs}))
             (fixture_dir / "server.py").write_text(
                 "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
                 "from pathlib import Path\n"
+                "from urllib.parse import parse_qs, urlsplit\n"
+                "import json\n"
+                "pages = []\n"
                 "class Handler(BaseHTTPRequestHandler):\n"
                 "    def do_GET(self):\n"
-                "        body = Path('/fixture/payload.json').read_bytes()\n"
+                "        path = urlsplit(self.path)\n"
+                "        if path.path == '/requests':\n"
+                "            body = json.dumps(pages).encode()\n"
+                "            page = None\n"
+                "        else:\n"
+                "            query = parse_qs(path.query)\n"
+                "            assert query['per_page'] == ['100']\n"
+                "            page = int(query.get('page', ['1'])[0])\n"
+                "            pages.append(page)\n"
+                "            name = 'recent.json' if page == 1 else 'payload.json'\n"
+                "            body = Path('/fixture', name).read_bytes()\n"
                 "        self.send_response(200)\n"
                 "        self.send_header('Content-Type', 'application/json')\n"
                 "        self.send_header('Content-Length', str(len(body)))\n"
+                "        if page is not None:\n"
+                "            url = f'http://{self.headers[\"Host\"]}{path.path}?per_page=100&page={page + 1}'\n"
+                "            self.send_header('Link', f'<{url}>; rel=\"next\"')\n"
                 "        self.end_headers()\n"
                 "        self.wfile.write(body)\n"
                 "HTTPServer(('0.0.0.0', 8081), Handler).serve_forever()\n"
@@ -439,7 +475,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 .read_text()
                 .replace("https://api.github.com", f"http://{poll_server.name}:8081")
             )
-            config_text = config_text.replace('polling_interval = "15m"', 'polling_interval = "1s"')
+            config_text = config_text.replace('polling_interval = "15m"', 'polling_interval = "5s"')
             (config_dir / "collector.toml").write_text(config_text)
             for name in ("github_webhook.vrl", "github_workflow_runs.vrl"):
                 (config_dir / name).write_bytes((source / name).read_bytes())
@@ -527,11 +563,15 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 f"https://api.github.com/repos/{_REPO}/actions/runs/{run_id}/attempts/{attempt}"
                 for run_id, attempt in ((81001, 1), (81002, 1), (81003, 1), (81003, 2), (81004, 1))
             }
+            pipeline_ids.update(
+                f"https://api.github.com/repos/{_REPO}/actions/runs/{run_id}/attempts/1"
+                for run_id in range(90000, 90100)
+            )
             task_ids = {
                 f"https://api.github.com/repos/{_REPO}/actions/jobs/{job_id}" for job_id in (91001, 91002, 91003, 91004)
             }
             pipeline_rows, task_rows = _wait_for_rows(reader_url, pipeline_ids, task_ids)
-            assert len(pipeline_rows) == 5, f"expected five unique run attempts, got {len(pipeline_rows)}"
+            assert len(pipeline_rows) == 105, f"expected 105 unique run attempts, got {len(pipeline_rows)}"
             assert len(task_rows) == 4, f"expected four unique jobs, got {len(task_rows)}"
             success_id = f"https://api.github.com/repos/{_REPO}/actions/runs/81001/attempts/1"
             failed_id = f"https://api.github.com/repos/{_REPO}/actions/runs/81002/attempts/1"
@@ -546,6 +586,13 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             assert pipeline_rows[rerun_failed_id][0]["outcome"] == "failure"
             assert pipeline_rows[rerun_success_id][0]["outcome"] == "success"
             assert pipeline_rows[polled_id][0]["outcome"] == "success"
+            poll_server.reload()
+            poll_port = poll_server.attrs["NetworkSettings"]["Ports"]["8081/tcp"][0]["HostPort"]
+            async with httpx.AsyncClient(timeout=15, trust_env=False) as http:
+                response = await http.get(f"http://127.0.0.1:{poll_port}/requests")
+                response.raise_for_status()
+                pages = response.json()
+            assert set(pages) == {1, 2}, f"pagination must follow page two and stop at the age cutoff: {pages}"
             _stage("checking reader permissions and database extension")
             with psycopg.connect(reader_url, autocommit=True) as reader:
                 count = reader.execute("SELECT count(*) FROM cdviz.cdevents_lake").fetchone()
