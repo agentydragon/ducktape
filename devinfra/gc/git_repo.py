@@ -26,6 +26,11 @@ class GitError(RuntimeError):
     """A git invocation failed in a way that blocks classification."""
 
 
+# libgit2 reports missing objects as KeyError and invalid refs as ValueError, in
+# addition to GitError. Classifiers turn these data/IO failures into REVIEW.
+INSPECTION_ERRORS = (GitError, pygit2.GitError, KeyError, ValueError, OSError, subprocess.SubprocessError)
+
+
 def open_repo(path: Path) -> pygit2.Repository:
     """Open `path` as a repository, normalizing pygit2's own `GitError` (a plain `Exception`,
     so it slips past every `except GitError` here that means this module's `GitError`) into

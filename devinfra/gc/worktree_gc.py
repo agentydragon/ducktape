@@ -22,6 +22,7 @@ from __future__ import annotations
 import enum
 import logging
 import os
+import subprocess
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
@@ -29,7 +30,7 @@ from pathlib import Path
 
 import pygit2
 
-from devinfra.gc.git_repo import Worktree, content_in_main, git, patches_landed_in_main
+from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ class RetainedWorktreeReason(enum.StrEnum):
 
 
 class ReviewWorktreeReason(enum.StrEnum):
+    INSPECTION_FAILED = enum.auto()
     DETACHED_HEAD = enum.auto()
     UNMERGED = enum.auto()
 
@@ -79,6 +81,7 @@ class ReviewWorktree:
     reason: ReviewWorktreeReason
     last_activity: datetime | None
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
+    detail: str | None = None
 
 
 type Classification = PrunableWorktree | RetainedWorktree | ReviewWorktree
@@ -86,6 +89,8 @@ type Classification = PrunableWorktree | RetainedWorktree | ReviewWorktree
 
 def describe_reason(item: Classification) -> str:
     match item:
+        case ReviewWorktree(reason=ReviewWorktreeReason.INSPECTION_FAILED, detail=str() as detail):
+            return f"cannot inspect: {detail}"
         case PrunableWorktree(reason=PrunableWorktreeReason.DIRECTORY_MISSING):
             return "worktree directory is missing"
         case PrunableWorktree(reason=PrunableWorktreeReason.PR_LANDED, pr=PrInfo() as pr):
@@ -191,14 +196,32 @@ def classify_worktree(
     active_path: Path | None,
     live_pids: list[int],
 ) -> Classification:
+    """Classify one worktree; unreadable state requires review and cannot justify pruning."""
+    try:
+        return _classify_worktree(
+            worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
+        )
+    except INSPECTION_ERRORS as error:
+        detail = f"{type(error).__name__}: {error}"
+        logger.warning("Cannot inspect worktree %s: %s", worktree.path, detail)
+        return ReviewWorktree(worktree, ReviewWorktreeReason.INSPECTION_FAILED, None, main, detail=detail)
+
+
+def _classify_worktree(
+    worktree: Worktree,
+    *,
+    main: str,
+    pr_states: dict[str, PrInfo],
+    main_path: Path,
+    active_path: Path | None,
+    live_pids: list[int],
+) -> Classification:
     path = worktree.path
     try:
-        pg = pygit2.Repository(os.fspath(path))
-    except pygit2.GitError:
-        # `git worktree list` still reports an entry whose directory was deleted out from
-        # under it (or whose gitdir link rotted) — nothing to check, and `git worktree
-        # remove` cleans up the administrative files fine even though the directory is gone.
+        path.lstat()
+    except FileNotFoundError:
         return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
+    pg = pygit2.Repository(os.fspath(path))
     logger.info("Scanning worktree %s: reading Git status", path)
     status = _status(pg)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
@@ -269,7 +292,10 @@ def remove_worktree(repo: Path, path: Path) -> RemovalResult:
     losing work. The branch is left intact — its work stays reachable through it (branch GC
     is a separate step). The caller re-scans and only passes still-prunable paths here.
     """
-    outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
+    try:
+        outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        return FailedWorktree(path, str(error))
     if outcome.returncode == 0:
         return RemovedWorktree(path)
     return FailedWorktree(path, outcome.stderr.strip() or "git worktree remove failed")

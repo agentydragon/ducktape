@@ -1,8 +1,10 @@
 from pathlib import Path
 
+import pygit2
+import pytest
 import pytest_bazel
 
-from devinfra.gc import foreign_clone_gc as fcg
+from devinfra.gc import foreign_clone_gc as fcg, worktree_gc
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.pull_request import PrInfo, PrState
 
@@ -96,6 +98,29 @@ def test_classify_foreign_clone_retained_when_a_member_is_dirty(repo: GitRepo) -
 
     assert isinstance(result, fcg.RetainedForeignClone)
     assert str(foreign.path) in result.reason
+
+
+def test_foreign_clone_with_unreadable_process_inventory_is_review(repo: GitRepo, tmp_path: Path) -> None:
+    foreign = _foreign_clone(repo)
+
+    result = fcg.classify_foreign_clone(foreign.path, pr_states={}, proc_root=tmp_path / "missing-proc")
+
+    assert isinstance(result, fcg.ReviewForeignClone)
+    assert "FileNotFoundError" in result.reason
+
+
+def test_foreign_clone_member_inspection_failure_is_review(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+    foreign = _foreign_clone(repo)
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise pygit2.GitError("unreadable member")
+
+    monkeypatch.setattr(worktree_gc, "classify_worktree", fail)
+
+    result = fcg.classify_foreign_clone(foreign.path, pr_states={})
+
+    assert isinstance(result, fcg.ReviewForeignClone)
+    assert "unreadable member" in result.reason
 
 
 def test_classify_foreign_clone_review_when_a_nested_worktree_has_unmerged_work(repo: GitRepo) -> None:

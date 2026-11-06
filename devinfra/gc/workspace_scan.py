@@ -231,7 +231,8 @@ def foreign_clone_branch_candidates(roots: Sequence[Path]) -> set[str]:
     for root in roots:
         try:
             names.update(wt.branch for wt in git_repo.list_worktrees(root) if wt.branch)
-        except OSError, subprocess.CalledProcessError:
+        except (OSError, subprocess.SubprocessError) as error:
+            logger.warning("Cannot read PR branch candidates from %s: %s", root, error)
             continue
     return names
 
