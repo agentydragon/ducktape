@@ -1377,6 +1377,8 @@ fn define_this_field_expression(
             };
             // PrivateFieldAdd throws on a duplicate brand/slot. Canonical
             // definitions establish its absence in this fresh activation.
+            // This ordinary receiver is not host-exotic, so the host's
+            // private-element hook must complete normally without other steps.
             if !receiver.private_fields.insert(property.clone()) {
                 return None;
             }
