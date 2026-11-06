@@ -1,7 +1,7 @@
 load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# The parent package's hand-maintained BUILD is not indexed by Gazelle.
+# CNPG's hand-maintained BUILD is not indexed by Gazelle.
 # gazelle:resolve py cluster.cdk8s.cnpg.cluster //cluster/cdk8s/cnpg:cluster
 # gazelle:resolve py cluster.cdk8s.cnpg.backup //cluster/cdk8s/cnpg:backup
 
