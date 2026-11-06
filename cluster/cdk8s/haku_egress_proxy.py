@@ -10,12 +10,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, egress_fences, node_scheduling
-from cluster.cdk8s.agents import namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.generation import namespace_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "haku-egress-proxy"
@@ -27,6 +27,10 @@ SERVICE = ServiceRef(
     pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _CA_SECRET = "haku-egress-proxy-ca"
+
+
+def _namespace_chart(app: App) -> Chart:
+    return namespace_chart(app, name=NAME, vpa=Vpa.AUTO, labels={"name": NAME})
 
 
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
@@ -242,7 +246,7 @@ def write_manifests(root: Path) -> None:
     write_charts(
         root,
         OUTPUT_DIR,
-        namespaces.haku_egress_proxy,
+        _namespace_chart,
         chart,
         egress_fences.haku_cloud_api,
         # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
