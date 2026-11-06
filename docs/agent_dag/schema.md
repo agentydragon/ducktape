@@ -287,35 +287,6 @@ Runs and snapshots
 }
 ```
 
-**Tool result (exec):**
-
-```json
-{
-  "kind": "tool_result",
-  "event_id": "...",
-  "ts": "...Z",
-  "run_id": "...",
-  "agent_id": "...",
-  "call_id": "exec-42",
-  "status": "ok",
-  "result": { "rc": 0, "stdout": "...", "stderr": "", "duration_ms": 120 }
-}
-```
-
-**Snapshot created:**
-
-```json
-{
-  "kind": "snapshot_created",
-  "event_id": "...",
-  "ts": "...Z",
-  "agent_id": "...",
-  "resource_ref": "res-vol-123",
-  "snapshot_ref": "snap-abc",
-  "outcome": "ok"
-}
-```
-
 **Restore attempted (unsupported):**
 
 ```json
