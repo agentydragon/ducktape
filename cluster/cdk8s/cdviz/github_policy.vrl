@@ -1,0 +1,57 @@
+rules = array!(.body)
+contexts = []
+supported = true
+found_required_checks = false
+
+for_each(rules) -> |_rule_index, raw_rule| {
+  rule = object!(raw_rule)
+  if string!(rule.type) == "required_status_checks" {
+    found_required_checks = true
+    parameters = object!(rule.parameters)
+    checks = array!(parameters.required_status_checks)
+    for_each(checks) -> |_check_index, raw_check| {
+      check = object!(raw_check)
+      contexts = push(contexts, string!(check.context))
+      integration_id = check.integration_id
+      if integration_id != null && integration_id != 0 && integration_id != 15368 {
+        supported = false
+      }
+    }
+  }
+}
+
+if !found_required_checks || length(contexts) == 0 {
+  supported = false
+}
+
+observed_at = format_timestamp!(now(), format: "%+")
+repository = "agentydragon/ducktape"
+repository_id = "https://api.github.com/repos/agentydragon/ducktape"
+policy_url = repository_id + "/rules/branches/devel"
+
+[{
+  "metadata": .metadata,
+  "headers": .headers,
+  "body": {
+    "context": {
+      "specversion": "0.5.0",
+      "type": "dev.cdevents.change.updated.0.3.0",
+      "timestamp": observed_at
+    },
+    "subject": {
+      "id": policy_url,
+      "content": {
+        "repository": {"id": repository_id}
+      }
+    },
+    "customData": {
+      "ci_policy": {
+        "repository": repository,
+        "branch": "devel",
+        "contexts": contexts,
+        "observed_at": observed_at,
+        "supported": supported
+      }
+    }
+  }
+}]
