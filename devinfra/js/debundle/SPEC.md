@@ -739,8 +739,15 @@ not erase the conditions of an absence proof.
 
 An ordered simple variable initializer can separately compose effect-domain
 receipts from exact initialized module-local cell reads, canonical primitive
-literals, and direct ordinary top-level function-declaration calls. Actual
-creation and successful initialization of noncaptured parameter and local
+literals, and direct ordinary top-level function-declaration calls.
+Inline function/arrow callees also use the shared ordered creation and call
+transfers: create the exact canonical closure before evaluating arguments,
+evaluate each argument once, then invoke that selected closure. Creation alone
+does not certify a body, parameter prologue, capture read or completion. Actual
+captured cells retain their independent effects; async, generator, implicit
+receiver and unsupported-body calls cannot acquire coverage from this callee
+form. Provider and retained queries still require their own invocation proof.
+Actual creation and successful initialization of noncaptured parameter and local
 `let`/`const` cells have no global, heap or host effects. Arguments, selected
 defaults and declaration initializers compose their own effects separately.
 Successful static own-data reads and writable own-data writes also compose

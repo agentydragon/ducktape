@@ -11,6 +11,91 @@ const REEXPORT_PEER_SOURCE: &str =
     "console.log('peer'); globalThis.marker = 1; export const shared = 1;\n";
 
 #[test]
+fn immediate_source_callables_compose_creation_arguments_and_body() {
+    for (case, callee) in [
+        ("arrow", "(value => value + 22)"),
+        ("function", "(function (value) { return value + 22; })"),
+        (
+            "named-function",
+            "(function calculate(value) { return value + 22; })",
+        ),
+    ] {
+        let source = format!(
+            "let argumentCalls = 0; function argument() {{ argumentCalls++; return 20; }} const readLater = () => later; const result = {callee}(argument()); const later = 1; console.log(result, argumentCalls, readLater());\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "work",
+                        &[
+                            Member::new("argumentCalls"),
+                            Member::new("argument"),
+                            Member::new("readLater"),
+                            Member::new("result"),
+                        ],
+                    ),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &format!("immediate-callable-{case}"),
+        );
+        assert_preserved_entry_output(&fixture, "42 1 1\n");
+        let report = fixture.effect_translation_validation();
+        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+        assert_operation_receipt(&fixture, "result", 2);
+    }
+}
+
+#[test]
+fn immediate_source_call_keeps_its_actual_captured_cell_read() {
+    let source =
+        "let state = 0; const result = (() => state)(); state = 42; console.log(result, state);\n";
+    let baseline = run_fixture(
+        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "0 42\n");
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("state", &[Member::new("state")], &["state = 42;"]),
+                logical_module("observer", &[Member::new("result")]),
+            ],
+        ),
+        &["--emit-on-rejection"],
+        3,
+    );
+    let report = rejected.candidate_relocation_assessment();
+    assert_eq!(report["status"], "blocked_by_effect", "{report}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_node_output(&rejected.entry_path(), "42 42\n", "");
+}
+
+#[test]
+fn immediate_call_creation_does_not_certify_unsupported_invocations() {
+    for (callee, expected) in [
+        ("(async () => 42)", "object 1\n"),
+        ("(function* () { yield 42; })", "object 1\n"),
+        ("(function () { return this; })", "undefined 1\n"),
+    ] {
+        let source = format!(
+            "const result = {callee}(); const later = 1; console.log(typeof result, later);\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution}"
+        );
+    }
+}
+
+#[test]
 fn binding_updates_compose_read_numeric_conversion_and_store() {
     for (case, body, expected) in [
         (

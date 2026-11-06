@@ -28,8 +28,8 @@ pub(super) enum LocalBinding {
 #[derive(Debug, Clone)]
 pub(super) enum LocalCallee {
     Binding(Id),
-    /// A direct closure expression is created before its arguments are
-    /// evaluated. Creating it does not execute the body or its defaults.
+    /// Evaluated through the same creation transfer as a standalone closure,
+    /// before any argument. Source identity supplies no invocation coverage.
     Creation(DeferredCallableCreation),
     Member {
         receiver: Id,
@@ -745,8 +745,8 @@ impl LocalExpression {
                     } => {
                         reads.insert(binding.clone());
                     }
-                    // Capturing a cell does not GetValue it. The invoked body
-                    // owns its actual reads and effects.
+                    // Capturing a cell does not GetValue it. Invocation owns
+                    // the deferred body's actual reads and effects.
                     LocalCallee::Creation(_) => {}
                 }
                 for argument in arguments.iter() {

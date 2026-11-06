@@ -1117,8 +1117,8 @@ fn call_expression(
         }
     } else {
         match callee {
-            LocalCallee::Creation(callable) => {
-                EvaluatedCallee::Direct(closure_expression(context, callable, frame, judgment)?)
+            LocalCallee::Creation(creation) => {
+                EvaluatedCallee::Direct(closure_expression(context, creation, frame, judgment)?)
             }
             LocalCallee::Binding(binding) => {
                 EvaluatedCallee::Direct(read_binding_selected(context, binding, frame, judgment)?)
