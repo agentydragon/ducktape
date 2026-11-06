@@ -31,7 +31,7 @@ fn opaque_callback_factory_without_initializer_override_has_s_cycle() {
 
 #[test]
 fn initializer_override_keeps_callback_read_dependency() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_rejection_fixture(FixtureOpts::new(
         opaque_factory_source(),
         vec![
             logical_module(
@@ -66,9 +66,28 @@ fn initializer_override_keeps_callback_read_dependency() {
         ],
     ));
 
+    // The source-only assertion removes the initializer's syntactic S edge;
+    // it does not cover the opaque global factory's heap or host operations.
+    let assessment = fixture.candidate_relocation_assessment();
+    assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
     let graph = fixture.dependency_graph();
     let caller_source_unit = source_unit_for_binding(&graph, "A");
     let seed_source_unit = source_unit_for_binding(&graph, "seed");
+    let caller = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == caller_source_unit)
+        .unwrap();
+    assert!(
+        matches!(
+            caller
+                .synchronous_execution
+                .as_ref()
+                .and_then(|execution| execution.binding_effect_authority.as_ref()),
+            Some(analysis::reports::schema::BindingEffectAuthorityReport::AuthorSourceOnly)
+        ),
+        "the initializer assertion remains distinct from operation coverage: {caller:#?}"
+    );
     let promoted_seed_edges: Vec<_> = graph
         .edges
         .iter()
