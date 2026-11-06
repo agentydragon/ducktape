@@ -101,6 +101,7 @@ console.log(names[0], names[1], argumentCalls, getterCalls, argumentThrew);
                 &[
                     Member::new("names"),
                     Member::new("argumentCalls"),
+                    Member::new("makeValue"),
                     Member::new("getterCalls"),
                     Member::new("argumentThrew"),
                 ],
