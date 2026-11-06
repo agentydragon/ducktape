@@ -404,6 +404,9 @@ or stale assertions without silently expanding the promised scope.
   from its analysis inputs. Refresh expensive analysis when those inputs or
   the engine change. Request full graphs and evidence streams when the
   investigation needs them; keep routine output bounded.
+- Before repeating a rejected addition, name the changed input or causal
+  mechanism expected to change its witness. An unrelated chunk's coverage gain
+  alone does not justify rerunning the same failing assignment.
 - Read the complete gate inventory, structured reports and their truncation
   metadata. The first console rejection is not the inventory, and a selected
   cycle cut is not its reciprocal path. Absence of a secondary report does
@@ -426,6 +429,9 @@ or stale assertions without silently expanding the promised scope.
   for their recorded engine; refresh matching analysis and configured-target
   checks when the new revision changes analysis semantics. Keep patch URLs and
   integrity values consistent with the chosen source pin.
+  For routine BuildBuddy polling, prefer `bbapi invocation status` and selected
+  metadata fields. Full invocation records can contain serialized command lines;
+  do not print or commit those payloads wholesale.
 - Prefer direct storage/lifetime improvements when their mechanism is clear.
   Use a real profiler for an unanswered allocation or CPU question when it
   would change the decision. Bound that investigation; do not make every
