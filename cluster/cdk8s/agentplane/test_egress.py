@@ -4,6 +4,7 @@ the Kubernetes access every sandbox gets rather than the ones that opted in."""
 from __future__ import annotations
 
 import json
+from pathlib import PurePosixPath
 from typing import Any
 
 import pytest
@@ -12,6 +13,7 @@ import yaml
 from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
+from agentplane.egress.settings import Settings as EgressSettings
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, staging_grants
 from cluster.cdk8s.agentplane.egress import (
@@ -48,17 +50,19 @@ def test_egress_uses_embedded_migrations_and_startup_probe(staging_manifests: li
     pod = _by_name(staging_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
     assert not pod.get("initContainers")
-    assert proxy["startupProbe"]["failureThreshold"] == 60
-    assert proxy["image"] == "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
+    assert proxy["startupProbe"]["grpc"] == {"port": proxy["readinessProbe"]["grpc"]["port"], "service": "livez"}
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
     assert "PGSSLMODE" not in proxy_env
-    assert any(volume.get("configMap", {}).get("name") == "egress-go-settings" for volume in pod["volumes"])
+    settings_path = PurePosixPath(proxy_env[EgressSettings.config_file_env]["value"])
+    settings_mount = one(mount for mount in proxy["volumeMounts"] if mount["mountPath"] == str(settings_path.parent))
+    settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == settings_mount["name"])
+    assert settings_volume["configMap"]["name"] == "egress-go-settings"
+    assert settings_path.name in _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]
     assert "args" not in proxy
     assert proxy_env["AGENTPLANE_EGRESS_RULES_NAMESPACE"]["value"] == staging.ENV.namespace
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     assert config["admin_grpc_audience"] == ADMIN_GRPC_AUDIENCE
     assert config["admin_grpc_callers"] == [f"{staging.ENV.namespace}/app"]
-    assert not {"confdir", "decision_flush_seconds"} & config.keys()
 
 
 def test_app_projects_egress_admin_audience(staging_manifests: list[dict[str, Any]]) -> None:

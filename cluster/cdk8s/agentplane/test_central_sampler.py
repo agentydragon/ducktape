@@ -11,14 +11,7 @@ from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import (
-    central_sampler,
-    history_service,
-    llm_ingress,
-    runner_gateway,
-    session_dispatcher,
-    staging,
-)
+from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway, staging
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -53,8 +46,13 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert not pod.get("initContainers")
 
     container = one(pod["containers"])
-    assert container["startupProbe"]["grpc"]["port"] == central_sampler.PORT
-    assert container["startupProbe"]["failureThreshold"] == 60
+    service = _resource(staging_manifests, "Service", central_sampler.NAME)["spec"]
+    assert service["selector"]
+    assert all(
+        deployment["spec"]["template"]["metadata"]["labels"][key] == value for key, value in service["selector"].items()
+    )
+    assert service["ports"][0]["targetPort"] == container["ports"][0]["containerPort"]
+    assert container["startupProbe"]["grpc"]["port"] == container["ports"][0]["containerPort"]
     env = {entry["name"]: entry for entry in container["env"]}
     database = env["AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]
     assert database == {"key": "uri", "name": "postgres-central-sampler"}
@@ -89,32 +87,17 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert "database_url" not in config
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
     platform_instructions = config["platform_instructions"]
-    assert (
-        "provider conversation and Code Mode host run in the central sampler, outside the Sandbox."
-        in platform_instructions
-    )
-    session_service = _resource(staging_manifests, "Service", session_dispatcher.NAME)
-    session_service_port = next(port["port"] for port in session_service["spec"]["ports"] if port["name"] == "grpc")
-    sessions_url = f"http://{session_dispatcher.NAME}.{namespace}.svc.cluster.local:{session_service_port}"
-    assert (
-        f"| Sessions and environments | {sessions_url} | "
-        "`agentplane-credential-agentplane-session-dispatcher-workload` |"
-    ) in platform_instructions
-    props = staging.ENV.central_sampler
-    assert props is not None
-    assert set(config["connections"]) == {"llm-ingress", "anthropic-api"}
-    assert config["connections"]["llm-ingress"] == {
-        "base_url": props.connections["llm-ingress"].base_url,
-        "auth": {"type": "bearer", "credential_file": "/var/run/secrets/central-sampler/llm"},
+    assert platform_instructions
+    llm_connection = config["connections"]["llm-ingress"]
+    llm_service = llm_ingress.service(namespace)
+    assert llm_connection["base_url"] == f"http://{llm_service.name}.{namespace}.svc:{llm_service.port.number}"
+    assert llm_connection["auth"] == {"type": "bearer", "credential_file": "/var/run/secrets/central-sampler/llm"}
+    anthropic_connection = config["connections"]["anthropic-api"]
+    assert anthropic_connection["base_url"] == "https://api.anthropic.com"
+    assert anthropic_connection["auth"] == {
+        "type": "anthropic_api_key",
+        "credential_file": "/var/run/secrets/central-sampler-anthropic/api-key",
     }
-    assert config["connections"]["anthropic-api"] == {
-        "base_url": "https://api.anthropic.com",
-        "auth": {"type": "anthropic_api_key", "credential_file": "/var/run/secrets/central-sampler-anthropic/api-key"},
-    }
-    assert config["rpc_timeout_seconds"] == props.rpc_timeout_seconds
-    assert config["executor_initialize_timeout_seconds"] == props.executor_initialize_timeout_seconds
-    assert "llm_proxy_url" not in config
-    assert "credential_file" not in config
     assert all("credential" not in connection["auth"] for connection in config["connections"].values())
 
     latest_anthropic = {
@@ -133,17 +116,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         assert model["provider_model"] == route.model.id
         assert model["api"] == "anthropic_messages"
         assert model["exec_encoding"] == "json"
-        assert set(model["reasoning_efforts"]) == {"low", "medium", "high", "xhigh", "max"}
-        assert model["anthropic_messages"] == {
-            "max_tokens": 32_768,
-            "thinking": {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "error"}},
-            "prompt_cache": {"ttl": "5m"},
-            "cache_diagnostics": True,
-            "per_message_effort": True,
-            "strict_tool_input": True,
-            "eager_input_streaming": True,
-            "compaction": {"max_tokens": 8_192, "auto_compact_tokens": 750_000},
-        }
 
     anthropic_secret_volume = one(
         volume

@@ -78,9 +78,15 @@ def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]
     )
     pod = deployment["spec"]["template"]["spec"]
     app_container = one(container for container in pod["containers"] if container["name"] == "app")
+    service = one(
+        doc
+        for doc in staging_manifests
+        if doc["kind"] == "Service" and doc["metadata"]["name"] == session_dispatcher.NAME
+    )
+    grpc_port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
     assert (
-        f"--session-dispatcher-target={session_dispatcher.service(staging.ENV.namespace).fqdn}:"
-        f"{session_dispatcher.service(staging.ENV.namespace).port.number}"
+        f"--session-dispatcher-target={service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:"
+        f"{grpc_port['port']}"
     ) in app_container["args"]
 
 

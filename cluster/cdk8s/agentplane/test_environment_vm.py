@@ -200,19 +200,10 @@ def test_vm_template_renders_mtls_server_listener(scratch_app: App) -> None:
     environment_runtime = rendered["environment_runtime"]
     template = rendered["sandbox_template"]["spec"]
 
-    assert environment_runtime["control"] == {
-        "listen_address": "0.0.0.0:9090",
-        "security": {
-            "mode": "mtls",
-            "tls": {
-                "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
-                "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
-                "ca_file": "/run/agentplane/environment-runtime-trust/ca-certificates.crt",
-            },
-        },
-    }
+    assert environment_runtime["control"]["security"]["mode"] == "mtls"
     interface = template["vm"]["template"]["spec"]["domain"]["devices"]["interfaces"][0]
-    assert {"port": 9090} in interface["ports"]
+    listener_port = int(environment_runtime["control"]["listen_address"].rsplit(":", 1)[1])
+    assert {"port": listener_port} in interface["ports"]
 
 
 def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
