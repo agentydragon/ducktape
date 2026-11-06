@@ -24,6 +24,7 @@ type proxyTLSConfig struct {
 }
 
 type config struct {
+	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
 	ProxyHost              string                         `yaml:"proxy_host"`
 	ProxyPort              int                            `yaml:"proxy_port"`
 	ProxyMode              string                         `yaml:"proxy_mode"`
@@ -97,6 +98,11 @@ func (c config) validate() error {
 	for name, route := range c.PlatformRoutes {
 		if route.ListenAddress == "" || route.Upstream == "" {
 			return fmt.Errorf("platform route %q requires listen_address and upstream", name)
+		}
+	}
+	for authority, route := range c.WorkloadRoutes {
+		if err := validateWorkloadRoute(authority, route); err != nil {
+			return err
 		}
 	}
 	return nil
