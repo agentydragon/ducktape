@@ -43,6 +43,32 @@ def _session_env_base(tmp_path: Path, workspace: Path) -> Path:
     return make_base(tmp_path / "session-env" / "test-session", workspace, name="bazel-output-base")
 
 
+def test_quarantine_disappearing_during_scan_does_not_abort_other_bases(
+    prunable_base: Path, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    quarantine = prunable_base.parent / ".bazel-output-base-gc-raced"
+    quarantine.mkdir()
+    real_lstat = Path.lstat
+
+    def read_metadata(path: Path) -> os.stat_result:
+        if path == quarantine:
+            raise FileNotFoundError(errno.ENOENT, "concurrent removal", str(path))
+        return real_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", read_metadata)
+
+    inspections = gc.scan_output_user_root(
+        prunable_base.parent, session_bases=(), proc_root=proc, mountinfo_path=mountinfo
+    )
+
+    by_path = {item.path: item for item in inspections}
+    result = by_path[quarantine]
+    assert isinstance(result, gc.ReviewBase)
+    assert result.reason is gc.ReviewBaseReason.CANNOT_STAT
+    assert "concurrent removal" in gc.describe_reason(result)
+    assert isinstance(by_path[prunable_base], gc.PrunableBase)
+
+
 def _reason(inspection: gc.Inspection) -> StrEnum:
     """Why a base is kept or sent to review; a prunable base has no reason to be anything else."""
     assert isinstance(inspection, gc.RetainedBase | gc.ReviewBase)

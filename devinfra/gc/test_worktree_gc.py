@@ -146,6 +146,38 @@ def test_missing_worktree_directory_is_prunable(repo: GitRepo, proc: Path) -> No
     assert result.last_activity is None
 
 
+def test_existing_worktree_with_broken_gitdir_is_review(repo: GitRepo, proc: Path) -> None:
+    wt = repo.worktree("wt", "feature")
+    (wt.path / ".git").write_text("gitdir: /nonexistent/worktree-admin\n")
+
+    result = _classify(repo, wt.path, proc)
+
+    assert isinstance(result, wg.ReviewWorktree)
+    assert result.reason is wg.ReviewWorktreeReason.INSPECTION_FAILED
+    assert "cannot inspect" in wg.describe_reason(result)
+    assert wt.path.is_dir()
+
+
+@pytest.mark.parametrize("stage", ["_status", "_last_activity", "content_in_main", "patches_landed_in_main"])
+@pytest.mark.parametrize("error_type", [KeyError, ValueError, PermissionError])
+def test_worktree_inspection_failure_is_review(
+    repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch, stage: str, error_type: type[Exception]
+) -> None:
+    wt = repo.worktree("wt", "feature")
+    wt.commit("novel", "unique\n", "unmerged work")
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise error_type("unreadable Git state")
+
+    monkeypatch.setattr(wg, stage, fail)
+
+    result = _classify(repo, wt.path, proc)
+
+    assert isinstance(result, wg.ReviewWorktree)
+    assert result.reason is wg.ReviewWorktreeReason.INSPECTION_FAILED
+    assert "unreadable Git state" in wg.describe_reason(result)
+
+
 def test_detached_head_with_commit_is_review(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
@@ -235,7 +267,7 @@ def _populated(reason: StrEnum) -> wg.Classification:
         case wg.RetainedWorktreeReason():
             return wg.RetainedWorktree(worktree, reason, None, _PR, 4242)
         case wg.ReviewWorktreeReason():
-            return wg.ReviewWorktree(worktree, reason, None, _MAIN)
+            return wg.ReviewWorktree(worktree, reason, None, _MAIN, detail="test error")
     raise TypeError(reason)
 
 

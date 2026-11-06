@@ -93,7 +93,8 @@ def _find_repo_root(path: Path) -> tuple[Path, pygit2.Repository] | None:
             continue
         try:
             pg = pygit2.Repository(os.fspath(candidate))
-        except pygit2.GitError:
+        except git_repo.INSPECTION_ERRORS as error:
+            logger.warning("Cannot inspect candidate repository %s: %s", candidate, error)
             continue
         return candidate, pg
     return None
@@ -117,17 +118,29 @@ def discover_foreign_clones(candidate_workspaces: set[Path], *, known_paths: set
         candidate_path, pg = found
         if candidate_path in known_paths:
             continue
-        if not git_repo.remote_urls(pg) & repo_remotes:
-            continue
         try:
+            if not git_repo.remote_urls(pg) & repo_remotes:
+                continue
             roots.add(git_repo.main_worktree(candidate_path))
-        except (OSError, subprocess.CalledProcessError) as error:
-            logger.warning("cannot resolve the main worktree of candidate clone %s: %s", candidate_path, error)
+        except git_repo.INSPECTION_ERRORS as error:
+            logger.warning("Cannot inspect candidate clone %s: %s", candidate_path, error)
     return sorted(roots)
 
 
 def classify_foreign_clone(
     root: Path, *, pr_states: dict[str, PrInfo], active_path: Path | None = None, proc_root: Path = Path("/proc")
+) -> ForeignCloneClassification:
+    """Classify one clone, protecting the entire clone if any inspection fails."""
+    try:
+        return _classify_foreign_clone(root, pr_states=pr_states, active_path=active_path, proc_root=proc_root)
+    except git_repo.INSPECTION_ERRORS as error:
+        detail = f"{type(error).__name__}: {error}"
+        logger.warning("Cannot inspect foreign clone %s: %s", root, detail)
+        return ReviewForeignClone(ForeignClone(root), f"cannot inspect: {detail}")
+
+
+def _classify_foreign_clone(
+    root: Path, *, pr_states: dict[str, PrInfo], active_path: Path | None, proc_root: Path
 ) -> ForeignCloneClassification:
     """Classify one foreign clone: prunable only when every worktree it holds is.
 

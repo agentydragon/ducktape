@@ -465,7 +465,10 @@ def scan_output_user_root(
         logger.info("Scanning output base %d/%d %s", index, len(candidates), base)
         inspection: Inspection
         if base.name.startswith(_QUARANTINE_PREFIX):
-            inspection = ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
+            try:
+                inspection = ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
+            except OSError as error:
+                inspection = ReviewBase(base, ReviewBaseReason.CANNOT_STAT, None, detail=str(error))
         else:
             inspection = inspect_output_base(base, uid=uid, points=points, layout=layout, proc_root=proc_root)
         inspections.append(inspection)

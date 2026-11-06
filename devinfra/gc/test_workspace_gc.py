@@ -195,6 +195,82 @@ def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
         assert not repo_contents_cache_gc.recorded_inputs_of(entry).exists()
 
 
+@pytest.mark.parametrize("workers", [1, 4])
+def test_prune_continues_past_missing_git_objects(
+    repo: GitRepo,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    workers: int,
+) -> None:
+    checkout = repo.clone("checkout")
+    checkout.set_origin("https://github.com/acme/widgets")
+    bad_worktree = checkout.worktree("bad-worktree", "broken")
+    # Create this commit outside libgit2 so its object cache cannot mask removal.
+    bad_worktree.run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "unmerged work")
+    good_worktree = checkout.worktree("good-worktree", "landed")
+    foreign = checkout.clone("bad-clone")
+    foreign.set_origin("https://github.com/acme/widgets")
+    missing_oid = foreign.run("rev-parse", "HEAD").stdout.strip()
+    (foreign.path / ".git" / "objects" / missing_oid[:2] / missing_oid[2:]).unlink()
+    # Exercise libgit2 with a real missing object, alongside the injected status
+    # failures in test_worktree_gc. Status can itself bypass missing HEAD objects.
+    with pytest.raises(KeyError, match=missing_oid):
+        foreign.pg()[missing_oid]
+    missing_oid = bad_worktree.run("rev-parse", "HEAD").stdout.strip()
+    (checkout.path / ".git" / "objects" / missing_oid[:2] / missing_oid[2:]).unlink()
+    with pytest.raises(KeyError, match=missing_oid):
+        bad_worktree.pg()[missing_oid]
+    root = tmp_path / "output"
+    make_base(root, foreign.path)
+    orphan = make_base(root, tmp_path / "gone")
+    monkeypatch.setattr(workspace_gc.output_base_gc, "session_env_output_bases", list)
+
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(
+            [
+                "--repo",
+                str(checkout.path),
+                "--output-user-root",
+                str(root),
+                "--no-prs",
+                "--prune",
+                "--delete-foreign-clones",
+                "--workers",
+                str(workers),
+            ]
+        )
+
+    assert exit_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "REVIEW" in captured.out
+    assert "cannot inspect" in captured.out
+    assert bad_worktree.path.name in captured.out
+    assert foreign.path.name in captured.out
+    assert "Traceback" not in captured.err
+    assert bad_worktree.path.is_dir()
+    assert checkout.has_branch("broken")
+    assert foreign.path.is_dir()
+    assert not good_worktree.path.exists()
+    assert not checkout.has_branch("landed")
+    assert not orphan.exists()
+
+
+@pytest.mark.parametrize("error", [KeyError("missing object"), PermissionError("unreadable repository")])
+def test_main_reports_global_inspection_errors_without_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], error: Exception
+) -> None:
+    def fail(*, args: list[str]) -> None:
+        raise error
+
+    monkeypatch.setattr(workspace_gc, "app", fail)
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main([])
+
+    assert exit_info.value.code == 1
+    assert str(error) in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("verbose", [False, True])
 def test_busy_repo_cache_reports_skipped_entries_compactly(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], verbose: bool

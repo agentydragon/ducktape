@@ -232,7 +232,10 @@ py_test(
         ":conftest",
         ":foreign_clone_gc",
         ":pull_request",
+        ":worktree_gc",
         "//:conftest",
+        "@pypi//pygit2",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

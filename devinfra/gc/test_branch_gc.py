@@ -32,6 +32,20 @@ def test_empty_branch_is_prunable(repo: GitRepo) -> None:
     assert _classify(repo, "feature").reason is bg.PrunableBranchReason.CONTENT_IN_MAIN
 
 
+def test_missing_branch_object_is_review(repo: GitRepo) -> None:
+    repo.branch("broken")
+    missing_oid = "794f4d3258eb250245ed15b44928838ab852e157"
+    (repo.path / ".git" / "refs" / "heads" / "broken").write_text(f"{missing_oid}\n")
+
+    result = _classify(repo, "broken")
+
+    assert isinstance(result, bg.ReviewBranch)
+    assert result.reason is bg.ReviewBranchReason.INSPECTION_FAILED
+    assert "refs/heads/broken" in bg.describe_reason(result)
+    assert repo.has_branch("broken")
+    assert (repo.path / ".git" / "refs" / "heads" / "broken").read_text().strip() == missing_oid
+
+
 def test_squash_merged_branch_is_prunable(repo: GitRepo) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("shared", "same\n", "add on branch")
@@ -192,7 +206,7 @@ def _populated(reason: StrEnum) -> bg.BranchClassification:
         case bg.RetainedBranchReason():
             return bg.RetainedBranch(branch, reason, Path("/wt"), _PR)
         case bg.ReviewBranchReason():
-            return bg.ReviewBranch(branch, reason, _MAIN, _PR)
+            return bg.ReviewBranch(branch, reason, _MAIN, _PR, detail="test error")
     raise TypeError(reason)
 
 

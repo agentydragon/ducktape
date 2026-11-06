@@ -1,7 +1,7 @@
 import errno
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -81,6 +81,28 @@ def _delete(cache: FakeCache, candidates: list[gc.PrunableEntry], mountinfo: Pat
     return gc.delete_prunable_entries(
         candidates, contents=cache.contents, output_user_root=cache.root, session_bases=(), mountinfo_path=mountinfo
     )
+
+
+def test_unreadable_hash_directory_does_not_abort_other_entries(
+    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unreadable = cache.referenced.parent
+    real_iterdir = Path.iterdir
+
+    def list_directory(path: Path) -> Iterator[Path]:
+        if path == unreadable:
+            raise PermissionError(errno.EACCES, "permission denied", str(path))
+        return real_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", list_directory)
+
+    by_path = _scan(cache, proc, mountinfo)
+
+    result = by_path[unreadable]
+    assert isinstance(result, gc.ReviewEntry)
+    assert result.reason is gc.ReviewEntryReason.CANNOT_LIST
+    assert "permission denied" in gc.describe_reason(result)
+    assert isinstance(by_path[cache.unreferenced], gc.PrunableEntry)
 
 
 def test_entries_are_classified_by_who_links_to_them(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
