@@ -1176,6 +1176,7 @@ fn assert_lexical_authority_staged_parity(
     source: &'static str,
     members: &[Member],
     expected_authority: &str,
+    expected_calls: Option<usize>,
 ) {
     let (staged, _fixture) = staged(FixtureOpts::new(
         source,
@@ -1193,6 +1194,9 @@ fn assert_lexical_authority_staged_parity(
         direct_execution["binding_effect_authority"]["authority"], expected_authority,
         "{direct_execution:#}"
     );
+    if let Some(expected_calls) = expected_calls {
+        assert_distinct_root_call_receipts(direct_execution, expected_calls);
+    }
 
     let seed = graph_node_for_binding(&direct_graph, "seed");
     assert!(
@@ -1230,6 +1234,42 @@ fn assert_lexical_authority_staged_parity(
         loaded_execution["binding_effect_authority"]["authority"], expected_authority,
         "the typed authority must survive the validated artifact round-trip: {loaded_execution:#}"
     );
+    if let Some(expected_calls) = expected_calls {
+        assert_distinct_root_call_receipts(loaded_execution, expected_calls);
+    }
+}
+
+fn assert_distinct_root_call_receipts(execution: &Value, expected_calls: usize) {
+    let calls = execution["binding_effect_authority"]["receipt"]["calls"]
+        .as_array()
+        .unwrap();
+    assert_eq!(calls.len(), expected_calls, "{execution:#}");
+    let call_spans = calls
+        .iter()
+        .map(|call| {
+            (
+                call["call_span"]["start"].as_u64().unwrap(),
+                call["call_span"]["end"].as_u64().unwrap(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(call_spans.len(), expected_calls, "{execution:#}");
+    assert!(
+        calls.iter().all(|call| {
+            call["caller"]["kind"] == "root_initializer" && call["target"]["kind"] == "callable"
+        }),
+        "{execution:#}"
+    );
+    let callees = calls
+        .iter()
+        .map(|call| {
+            (
+                call["target"]["key"].as_u64().unwrap(),
+                call["target"]["owner"].as_u64().unwrap(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(callees.len(), 1, "{execution:#}");
 }
 
 #[test]
@@ -1456,6 +1496,7 @@ fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
             Member::new("result"),
         ],
         "operation_receipt",
+        None,
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nconst values = [];\nfunction readSeed() { values.push(seed); return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
@@ -1466,6 +1507,7 @@ fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
             Member::new("result"),
         ],
         "operation_receipt",
+        None,
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
@@ -1475,6 +1517,7 @@ fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
             Member::new("result"),
         ],
         "operation_receipt",
+        None,
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = alias();\nconsole.log(result);\n",
@@ -1486,6 +1529,7 @@ fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
             Member::new("result"),
         ],
         "ordered_root_initializer_uncovered",
+        None,
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
@@ -1495,6 +1539,7 @@ fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
             Member::new("result"),
         ],
         "operation_receipt",
+        Some(2),
     );
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nfunction readSeed() { return seed; }\nconst alias = readSeed;\nvar result = (alias(), alias());\nconsole.log(result);\n",
@@ -1504,7 +1549,8 @@ fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
             Member::new("alias"),
             Member::new("result"),
         ],
-        "ordered_root_initializer_uncovered",
+        "operation_receipt",
+        Some(2),
     );
 }
 
@@ -2232,9 +2278,33 @@ export { Holder1, Holder2, instA, instB };
         .with_trusted_dataflow_summaries(),
     );
     let reused = staged.run(&["--analysis", path(&staged.artifact), "--emit-on-rejection"]);
-    // Syntactic allocation summaries remove legacy sequencing edges but do
-    // not prove complete constructor effects for the actual relocation.
-    assert_incomplete_relocation(&reused);
+    assert_eq!(
+        reused.result.status.code(),
+        Some(0),
+        "{}",
+        reused.result.stderr
+    );
+    assert_accepted_chunk_relocation(&reused, "static/app", json!([0, 2, 1, 3, 4, 5]), 1);
+    let reused_graph: Value = read_gzip_json(
+        &reused
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    assert_class_declaration_receipt(&reused_graph, "Holder1", 0, json!({"start": 1, "end": 54}));
+    assert_class_declaration_receipt(
+        &reused_graph,
+        "Holder2",
+        1,
+        json!({"start": 55, "end": 108}),
+    );
+    assert_class_construction_receipt(&reused_graph, "instA", 2, 1, 0);
+    assert_class_construction_receipt(&reused_graph, "instB", 3, 55, 1);
+    assert_node_output(
+        &reused.output_root().join("app/static/app/entry.js"),
+        "h1 h2\n",
+        "",
+    );
+
     let graph: DependencyGraphReport = read_gzip_json(
         &reused
             .output_root()
@@ -2251,8 +2321,33 @@ export { Holder1, Holder2, instA, instB };
         "trusted syntactic summaries should keep disjoint constructor calls unsequenced"
     );
     let direct = staged.run(&["--emit-on-rejection"]);
-    assert_incomplete_relocation(&direct);
+    assert_eq!(
+        direct.result.status.code(),
+        Some(0),
+        "{}",
+        direct.result.stderr
+    );
+    assert_accepted_chunk_relocation(&direct, "static/app", json!([0, 2, 1, 3, 4, 5]), 1);
+    let direct_graph: Value = read_gzip_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    assert_class_declaration_receipt(&direct_graph, "Holder1", 0, json!({"start": 1, "end": 54}));
+    assert_class_declaration_receipt(
+        &direct_graph,
+        "Holder2",
+        1,
+        json!({"start": 55, "end": 108}),
+    );
+    assert_class_construction_receipt(&direct_graph, "instA", 2, 1, 0);
+    assert_class_construction_receipt(&direct_graph, "instB", 3, 55, 1);
     assert_same_invocation_trees(&reused, &direct);
+    assert_node_output(
+        &direct.output_root().join("app/static/app/entry.js"),
+        "h1 h2\n",
+        "",
+    );
 
     let mut spec: serde_yaml::Value =
         serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
@@ -2580,24 +2675,102 @@ fn full_effect_stream_matches_between_direct_and_staged_runs() {
     );
 }
 
-fn assert_incomplete_relocation(invocation: &StagedInvocation) {
+fn candidate_relocation_report(invocation: &StagedInvocation, chunk: &str) -> Value {
+    read_json(&invocation.output_root().join(format!(
+        "reports/tree/{chunk}/candidate_relocation_assessment.json"
+    )))
+}
+
+fn assert_accepted_chunk_relocation(
+    invocation: &StagedInvocation,
+    chunk: &str,
+    emitted_order: Value,
+    swapped_pairs: u64,
+) {
+    let report = candidate_relocation_report(invocation, chunk);
+    assert_eq!(
+        report["status"], "accepted_within_checked_scope",
+        "{report:#}"
+    );
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["decision"]["scope"], "statement_order_commutation",
+        "{report:#}"
+    );
+    assert_eq!(report["emitted_order"], emitted_order, "{report:#}");
+    assert_eq!(report["swapped_pairs"], swapped_pairs, "{report:#}");
+    assert_eq!(report["counts"]["pairs"], 0, "{report:#}");
+}
+
+fn assert_incomplete_chunk_relocation(invocation: &StagedInvocation, chunk: &str) {
     assert_eq!(
         invocation.result.status.code(),
         Some(3),
-        "expected rejected inspection output: {}",
+        "expected rejected inspection output for {chunk}: {}",
         invocation.result.stderr
     );
-    let report: Value = serde_json::from_slice(
-        &fs::read(
-            invocation
-                .output_root()
-                .join("reports/tree/static/app/candidate_relocation_assessment.json"),
-        )
-        .unwrap(),
-    )
-    .unwrap();
+    let report = candidate_relocation_report(invocation, chunk);
     assert_eq!(report["status"], "incomplete");
     assert_eq!(report["decision"]["uncovered_havoc"], true);
+}
+
+fn assert_incomplete_relocation(invocation: &StagedInvocation) {
+    assert_incomplete_chunk_relocation(invocation, "static/app");
+}
+
+fn assert_class_declaration_receipt(
+    graph: &Value,
+    binding: &str,
+    owner: u64,
+    declaration_span: Value,
+) {
+    let node = graph_node_for_binding(graph, binding);
+    assert_eq!(node["statement_ordinal"], owner, "{node:#}");
+    let execution = &node["synchronous_execution"];
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    let receipt = &authority["receipt"];
+    assert_eq!(receipt["root_kind"], "class_declaration", "{receipt:#}");
+    assert_eq!(receipt["binding"], binding, "{receipt:#}");
+    assert_eq!(receipt["owner"], owner, "{receipt:#}");
+    assert_eq!(receipt["declaration_span"], declaration_span, "{receipt:#}");
+    assert!(receipt.get("initializer_span").is_none(), "{receipt:#}");
+    assert_eq!(receipt["calls"], json!([]), "{receipt:#}");
+}
+
+fn assert_class_construction_receipt(
+    graph: &Value,
+    binding: &str,
+    owner: u64,
+    class: u64,
+    class_owner: u64,
+) {
+    let node = graph_node_for_binding(graph, binding);
+    assert_eq!(node["statement_ordinal"], owner, "{node:#}");
+    let execution = &node["synchronous_execution"];
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    let receipt = &authority["receipt"];
+    assert_eq!(receipt["root_kind"], "binding_initializer", "{receipt:#}");
+    assert_eq!(receipt["binding"], binding, "{receipt:#}");
+    assert_eq!(receipt["owner"], owner, "{receipt:#}");
+    assert!(receipt["initializer_span"].is_object(), "{receipt:#}");
+    let calls = receipt["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 1, "{receipt:#}");
+    assert_eq!(calls[0]["caller"]["kind"], "root_initializer", "{calls:#}");
+    assert_eq!(calls[0]["caller"]["owner"], owner, "{calls:#}");
+    assert_eq!(
+        calls[0]["call_span"], receipt["initializer_span"],
+        "{calls:#}"
+    );
+    assert_eq!(
+        calls[0]["target"],
+        json!({"kind": "construction", "class": class, "owner": class_owner}),
+        "{calls:#}"
+    );
+    assert_eq!(calls[0]["dependencies"], json!({}), "{calls:#}");
 }
 
 fn assert_export_filter_changes_only_sinks(
@@ -2617,10 +2790,10 @@ fn assert_export_filter_changes_only_sinks(
     let mut flags = export_args.to_vec();
     flags.push("--emit-on-rejection");
     let all = staged.run(&flags);
-    assert_incomplete_relocation(&all);
+    assert_export_filter_staged_statuses(&all);
     flags.extend([filter_flag, "static/app"]);
     let filtered = staged.run(&flags);
-    assert_incomplete_relocation(&filtered);
+    assert_export_filter_staged_statuses(&filtered);
     let without_streams = |invocation: &StagedInvocation| {
         invocation_tree(invocation)
             .into_iter()
@@ -2642,14 +2815,71 @@ fn assert_export_filter_changes_only_sinks(
     let mut loaded_flags = flags.to_vec();
     loaded_flags.extend(["--analysis", &artifact]);
     let filtered_loaded = staged.run(&loaded_flags);
-    assert_incomplete_relocation(&filtered_loaded);
+    assert_export_filter_staged_statuses(&filtered_loaded);
     assert_same_invocation_trees(&filtered, &filtered_loaded);
     let mut all_selected = export_args.to_vec();
     all_selected.push("--emit-on-rejection");
     all_selected.extend([filter_flag, "static/app", filter_flag, "static/peer"]);
     let all_selected = staged.run(&all_selected);
-    assert_incomplete_relocation(&all_selected);
+    assert_export_filter_staged_statuses(&all_selected);
     assert_same_invocation_trees(&all, &all_selected);
+}
+
+fn assert_export_filter_staged_statuses(invocation: &StagedInvocation) {
+    assert_eq!(
+        invocation.result.status.code(),
+        Some(3),
+        "{}",
+        invocation.result.stderr
+    );
+    assert_accepted_chunk_relocation(invocation, "static/app", json!([2, 1, 3, 0, 4, 5]), 4);
+    assert_incomplete_chunk_relocation(invocation, "static/peer");
+    let peer_graph: Value = read_gzip_json(
+        &invocation
+            .output_root()
+            .join("reports/tree/static/peer/dependency_graph.json.gz"),
+    );
+    let global_write = peer_graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["statement_ordinal"] == 0)
+        .unwrap();
+    let execution = &global_write["synchronous_execution"];
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_expression_uncovered",
+        "the peer global write remains outside operation coverage: {execution:#}"
+    );
+    assert!(
+        execution["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| {
+                loss["reason"]["code"] == "unsupported_operation"
+                    && loss["reason"]["operation"] == "property_write"
+            }),
+        "{execution:#}"
+    );
+    let conflicts = invocation
+        .output_root()
+        .join("reports/tree/static/peer/effect_conflicts.jsonl");
+    if conflicts.is_file() {
+        let rows = read_jsonl(&conflicts);
+        let conflict = rows
+            .iter()
+            .find(|row| row["runs_first"]["unit"] == 1 && row["runs_later"]["unit"] == 0)
+            .unwrap_or_else(|| {
+                panic!("the exported value still crosses the peer global write: {rows:#?}")
+            });
+        assert_eq!(conflict["runs_first"]["module"], "provider", "{conflict:#}");
+        assert_eq!(
+            conflict["runs_later"]["module"], "anon_residual_sentinel",
+            "{conflict:#}"
+        );
+        assert_eq!(conflict["havoc"], true, "{conflict:#}");
+        assert_eq!(conflict["disposition"], "uncovered", "{conflict:#}");
+    }
 }
 
 #[test]
@@ -5032,10 +5262,11 @@ fn initializer_source_only_uses_resolved_binding_and_keeps_comma_siblings_raw() 
 }
 
 #[test]
-fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
+fn inferred_and_selected_set_spread_bindings_keep_opaque_crossing_rejected() {
     assert_set_spread_saved_replay(
         "console.log('before');\nvar seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);\nconsole.log('after', copied.size);\nexport {};\n",
         "before\nafter 3\n",
+        true,
     );
 }
 
@@ -5044,10 +5275,15 @@ fn set_spread_operation_receipts_survive_saved_relocation() {
     assert_set_spread_saved_replay(
         "0;\nvar seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);\nconsole.log('after', copied.size);\nexport {};\n",
         "after 3\n",
+        false,
     );
 }
 
-fn assert_set_spread_saved_replay(source: &str, expected_stdout: &str) {
+fn assert_set_spread_saved_replay(
+    source: &str,
+    expected_stdout: &str,
+    rejects_opaque_neighbor: bool,
+) {
     const DECLARATION: &str = "var seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);";
     for selected in [false, true] {
         let mut opts = FixtureOpts::new(
@@ -5091,7 +5327,12 @@ fn assert_set_spread_saved_replay(source: &str, expected_stdout: &str) {
             expected_stdout,
             "",
         );
-        let direct = staged.run(&[]);
+        let direct_args = if rejects_opaque_neighbor {
+            vec!["--emit-on-rejection", "--effect-conflicts-jsonl"]
+        } else {
+            Vec::new()
+        };
+        let direct = staged.run(&direct_args);
         if !direct.result.status.success() {
             save_relocation_reports(
                 &direct.output_root().join("reports/tree"),
@@ -5103,8 +5344,14 @@ fn assert_set_spread_saved_replay(source: &str, expected_stdout: &str) {
                 },
             );
         }
-        assert_ok(&direct.result, "direct Set spread run");
-        let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+        if rejects_opaque_neighbor {
+            assert_incomplete_relocation(&direct);
+        } else {
+            assert_ok(&direct.result, "direct Set spread run");
+        }
+        let mut loaded_args = direct_args;
+        loaded_args.extend(["--analysis", path(&staged.artifact)]);
+        let loaded = staged.run(&loaded_args);
         if !loaded.result.status.success() {
             save_relocation_reports(
                 &loaded.output_root().join("reports/tree"),
@@ -5116,7 +5363,11 @@ fn assert_set_spread_saved_replay(source: &str, expected_stdout: &str) {
                 },
             );
         }
-        assert_ok(&loaded.result, "Set spread run from saved analysis");
+        if rejects_opaque_neighbor {
+            assert_incomplete_relocation(&loaded);
+        } else {
+            assert_ok(&loaded.result, "Set spread run from saved analysis");
+        }
         assert_same_invocation_trees(&direct, &loaded);
         for invocation in [&direct, &loaded] {
             assert_node_output(
@@ -5124,73 +5375,181 @@ fn assert_set_spread_saved_replay(source: &str, expected_stdout: &str) {
                 expected_stdout,
                 "",
             );
-        }
-        let graph: Value = read_gzip_json(
-            &loaded
-                .output_root()
-                .join("reports/tree/static/app/dependency_graph.json.gz"),
-        );
-        let execution = &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
-        assert_eq!(execution["complete"], true, "{execution:#}");
-        let receipt = &execution["binding_effect_authority"];
-        assert_eq!(receipt["authority"], "operation_receipt", "{execution:#}");
-        assert!(
-            receipt["receipt"]["calls"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|call| {
-                    call["target"]["kind"] == "native_construction"
-                        && call["target"]["intrinsic"] == "set"
-                }),
-            "{execution:#}"
-        );
-        let report: Value = read_json(
-            &loaded
-                .output_root()
-                .join("reports/tree/static/app/effect_translation_validation.json"),
-        );
-        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
-        if selected {
-            assert!(
-                receipt["receipt"]["calls"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|call| {
-                        call["target"]["kind"] == "native_construction"
-                            && call["target"]["intrinsic"] == "set"
-                            && call["dependencies"]["native_operation_inputs"]
+            let graph: Value = read_gzip_json(
+                &invocation
+                    .output_root()
+                    .join("reports/tree/static/app/dependency_graph.json.gz"),
+            );
+            let copied_execution =
+                &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
+            assert_eq!(copied_execution["complete"], true, "{copied_execution:#}");
+            let receipt = &copied_execution["binding_effect_authority"];
+            assert_eq!(
+                receipt["authority"], "operation_receipt",
+                "{copied_execution:#}"
+            );
+            let calls = receipt["receipt"]["calls"].as_array().unwrap();
+            assert_eq!(calls.len(), 1, "{copied_execution:#}");
+            assert_eq!(
+                calls[0]["target"]["kind"], "native_construction",
+                "{calls:#}"
+            );
+            assert_eq!(calls[0]["target"]["intrinsic"], "set", "{calls:#}");
+
+            if selected {
+                let refs = json!([
+                    {"defining_chunk": "static/app", "input_index": 0},
+                    {"defining_chunk": "static/app", "input_index": 1},
+                    {"defining_chunk": "static/app", "input_index": 2}
+                ]);
+                assert_eq!(
+                    receipt["receipt"]["read_dependencies"]["native_operation_inputs"], refs,
+                    "the inferred Set-spread proof depends on all selected construction sites: {receipt:#}"
+                );
+                assert_eq!(
+                    receipt["receipt"]["rebind_dependencies"]["native_operation_inputs"], refs,
+                    "{receipt:#}"
+                );
+                assert_eq!(
+                    calls[0]["dependencies"]["native_operation_inputs"], refs,
+                    "{calls:#}"
+                );
+                for (binding, input_index, operation) in [
+                    ("seed", 0, "set_from_primitive_array"),
+                    ("sibling", 1, "set_from_primitive_array"),
+                    ("copied", 2, "set_from_set_spread"),
+                ] {
+                    let execution =
+                        &graph_node_for_binding(&graph, binding)["synchronous_execution"];
+                    let uses = execution["native_operation_input_uses"]
+                        .as_array()
+                        .expect("selected Set operation input uses");
+                    assert!(
+                        uses.iter().any(|use_site| {
+                            use_site["evidence"]["reference"]["defining_chunk"] == "static/app"
+                                && use_site["evidence"]["reference"]["input_index"] == input_index
+                                && use_site["evidence"]["operation"] == operation
+                                && use_site["evidence"]["selected_binding"] == binding
+                        }),
+                        "{binding} lost its exact selected native input: {execution:#}"
+                    );
+                }
+            } else {
+                assert_eq!(
+                    receipt["receipt"]["read_dependencies"],
+                    json!({}),
+                    "{receipt:#}"
+                );
+                assert_eq!(
+                    receipt["receipt"]["rebind_dependencies"],
+                    json!({}),
+                    "{receipt:#}"
+                );
+                assert_eq!(calls[0]["dependencies"], json!({}), "{calls:#}");
+                for binding in ["seed", "sibling", "copied"] {
+                    let execution =
+                        &graph_node_for_binding(&graph, binding)["synchronous_execution"];
+                    assert!(
+                        execution["inference_uses"]
+                            .as_array()
+                            .expect("inferred Set operation uses")
+                            .iter()
+                            .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
+                        "{binding} lost primitive Set iteration inference: {execution:#}"
+                    );
+                }
+            }
+
+            let report = candidate_relocation_report(invocation, "static/app");
+            if rejects_opaque_neighbor {
+                assert_eq!(report["status"], "incomplete", "{report:#}");
+                assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
+                assert_eq!(
+                    report["emitted_order"],
+                    json!([1, 2, 3, 0, 4, 5]),
+                    "{report:#}"
+                );
+                assert_eq!(report["swapped_pairs"], 3, "{report:#}");
+                assert_eq!(report["counts"]["havoc_pairs"], 3, "{report:#}");
+                assert_eq!(report["counts"]["uncovered_pairs"], 3, "{report:#}");
+                let rows = read_jsonl(
+                    &invocation
+                        .output_root()
+                        .join("reports/tree/static/app/effect_conflicts.jsonl"),
+                );
+                assert_eq!(rows.len(), 3, "{rows:#?}");
+                for (binding, unit) in [("seed", 1), ("sibling", 2), ("copied", 3)] {
+                    let pair = rows
+                        .iter()
+                        .find(|row| {
+                            row["runs_first"]["unit"] == unit && row["runs_later"]["unit"] == 0
+                        })
+                        .unwrap_or_else(|| {
+                            panic!("{binding} no longer crosses opaque console unit 0: {rows:#?}")
+                        });
+                    assert_eq!(pair["runs_first"]["module"], "sets", "{pair:#}");
+                    assert_eq!(
+                        pair["runs_later"]["module"], "anon_residual_sentinel",
+                        "{pair:#}"
+                    );
+                    assert_eq!(pair["havoc"], true, "{pair:#}");
+                    assert_eq!(pair["disposition"], "uncovered", "{pair:#}");
+                    assert_eq!(
+                        pair["first_opacity"]["unknown_coverage"],
+                        json!([]),
+                        "{pair:#}"
+                    );
+                    assert_eq!(
+                        pair["later_opacity"]["incomplete_execution"], true,
+                        "{pair:#}"
+                    );
+                    assert_eq!(pair["later_opacity"]["opaque_heap"], true, "{pair:#}");
+                    for domain in ["global_properties", "general_heap", "host_effects"] {
+                        assert!(
+                            pair["later_opacity"]["unknown_coverage"]
                                 .as_array()
-                                .is_some_and(|inputs| {
-                                    inputs.iter().any(|input| {
-                                        input["defining_chunk"] == "static/app"
-                                            && input["input_index"] == 2
-                                    })
-                                })
-                    }),
-                "the selected construction receipt must retain its native input: {receipt:#}"
-            );
-            assert!(
-                execution["native_operation_input_uses"]
-                    .as_array()
-                    .expect("selected Set spread input uses")
-                    .iter()
-                    .any(|use_site| {
-                        use_site["evidence"]["operation"] == "set_from_set_spread"
-                            && use_site["evidence"]["selected_binding"] == "copied"
-                    }),
-                "{execution:#}"
-            );
-        } else {
-            assert!(
-                execution["inference_uses"]
-                    .as_array()
-                    .expect("Set spread inference uses")
-                    .iter()
-                    .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
-                "{execution:#}"
-            );
+                                .unwrap()
+                                .contains(&json!(domain)),
+                            "{pair:#}"
+                        );
+                    }
+                    assert_eq!(
+                        pair["later_opacity"]["owner_coverage_refusal"]["reason"],
+                        "unsupported_owner_kind",
+                        "{pair:#}"
+                    );
+                    let losses = pair["later_opacity"]["execution_losses"]
+                        .as_array()
+                        .unwrap();
+                    assert!(
+                        losses.iter().any(|loss| {
+                            loss["reason"]["code"] == "unsupported_operation"
+                                && loss["reason"]["operation"] == "member_read"
+                        }),
+                        "{pair:#}"
+                    );
+                    assert!(
+                        losses
+                            .iter()
+                            .any(|loss| { loss["reason"]["code"] == "unknown_call_target" }),
+                        "{pair:#}"
+                    );
+                    assert!(
+                        losses.iter().all(|loss| {
+                            loss["statement_ordinal"] == 0
+                                && loss["source_location"]["start_line"] == 1
+                        }),
+                        "{pair:#}"
+                    );
+                }
+            } else {
+                assert_eq!(
+                    report["status"], "accepted_within_checked_scope",
+                    "{report:#}"
+                );
+                assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+                assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+            }
         }
     }
 }
