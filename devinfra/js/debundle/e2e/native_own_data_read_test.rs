@@ -246,6 +246,55 @@ fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
 }
 
 #[test]
+fn native_own_data_read_composes_exact_root_effect_coverage() {
+    const SOURCE: &str = "const marker = 1;\nvar alias = Object.defineProperty;\nconst after = alias;\nconsole.log(marker, typeof after);\n";
+    for asserted in [false, true] {
+        let opts = FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module(
+                    "alias_module",
+                    &[Member::new("alias"), Member::new("after")],
+                ),
+                logical_module_with_anon(
+                    "observe",
+                    &[Member::new("marker")],
+                    &["console.log(marker, typeof after);"],
+                ),
+            ],
+        );
+        let opts = if asserted {
+            opts.with_native_operation_inputs(
+                "static/app",
+                vec![input(SOURCE, "var alias = Object.defineProperty;")],
+            )
+        } else {
+            opts
+        };
+        let fixture = run_fixture(opts);
+        assert_preserved_entry_output(&fixture, "1 function\n");
+        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+        let execution = &node(&graph, "alias")["synchronous_execution"];
+        assert_eq!(execution["complete"], true, "{execution:#}");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution:#}"
+        );
+        let report = fixture.effect_translation_validation();
+        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+        assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+        if asserted {
+            assert!(
+                report["relocation_dependencies"]["native_operation_inputs"]
+                    .as_array()
+                    .is_some_and(|inputs| !inputs.is_empty()),
+                "the exact read's author condition survives commutation: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
 fn project_analysis_rejects_missing_and_foreign_resolved_members() {
     let source = format!(
         "{}{}",
