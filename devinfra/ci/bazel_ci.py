@@ -150,7 +150,7 @@ def graph_wide_change_reason(paths: list[str]) -> str | None:
 
     for path in paths:
         basename = Path(path).name
-        if path in exact_paths or basename in manifest_basenames:
+        if path in exact_paths or basename in manifest_basenames or basename.endswith(".MODULE.bazel"):
             return path
         if fnmatch.fnmatch(path, "*.bzl"):
             # Keep this fallback for the gaps in debug/bazel_diff_starlark.md.

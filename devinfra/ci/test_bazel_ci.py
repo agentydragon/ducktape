@@ -61,6 +61,8 @@ def run_ci(tmp_path: Path) -> Callable[[dict[str, str]], subprocess.CompletedPro
     [
         ("devinfra/ci/test_bazel_ci.py", False),
         ("MODULE.bazel", True),
+        ("devinfra/bazel/oci.MODULE.bazel", True),
+        ("devinfra/bazel/oci.MODULE.bazel.notes", False),
         ("third_party/cli_proxy_api/go.mod", True),
         ("third_party/activitywatch/package.json", True),
         ("pnpm-lock.yaml", True),
