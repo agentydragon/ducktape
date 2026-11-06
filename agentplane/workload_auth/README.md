@@ -70,10 +70,11 @@ not install the ordinary Bearer interceptor. Existing direct clients continue us
 Bearer helper.
 
 [`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
-configured for Sandbox workload tokens. Cluster configuration passes the audience to each verifier;
-the Go resolver has no default audience.
+retained by backend callers of LLM ingress and Action Service, including the sampler's delegated
+path. Sandbox templates no longer project it, and the egress proxy does not accept it. Each backend
+verifier receives its audience explicitly; the Go resolver has no default audience.
 
 Operator and browser-session authentication use separate mechanisms and do not produce a workload
 principal. The approved [delegated authorization design](../docs/delegated_authorization.md) records
-the shared protocol. Its Action Service sender and SessionDispatcher receiver integrations remain
-separate work and are prerequisites for an operational delegated call.
+the shared protocol. Action Service's [Session delegation executor](../action_service/session_delegation/README.md)
+uses it for caller-scoped Environment, Dispatcher and History operations.
