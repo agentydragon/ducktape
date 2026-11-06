@@ -531,7 +531,7 @@ fn read_field(
     property: &str,
     span: Span,
 ) -> Option<LocalValueResult> {
-    let slot = own_data_transfer::resolve_slot(
+    let slot = own_data_transfer::resolve_present_read(
         context,
         receivers,
         property,
