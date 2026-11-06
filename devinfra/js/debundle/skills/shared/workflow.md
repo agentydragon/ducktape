@@ -360,10 +360,11 @@ or stale assertions without silently expanding the promised scope.
   For a collision, describe the current full owner path and select the intended
   exported-name row instead of taking the module report's first binding.
   For bulk recovery, prefer the matching native `modules.json` report's aligned
-  input/emitted-name arrays over thousands of individual descriptions. A run
-  rejected before emission may not produce that report; resolve the required
-  endpoints through bounded native `describe` queries on the original authored
-  module and readable name.
+  input/emitted-name arrays and `binding_source_units` rows over thousands of
+  individual descriptions. The latter maps each input name to its declaration
+  source units, including redeclaration sites. A run rejected before emission
+  may not produce that report; resolve the required endpoints through bounded
+  native `describe` queries on the original authored module and readable name.
 - Trace imported callees through the import slot, provider export/re-export
   and provider-local declaration. A raw provider binding with the same spelling
   as the imported export can be unrelated. Record the full chain before choosing

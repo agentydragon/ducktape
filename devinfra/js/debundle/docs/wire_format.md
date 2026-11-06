@@ -606,6 +606,23 @@ a `ModuleRef { chunk_id, path }` object.
 | chunk summary `linker_order`  | `ModulePath`                                                                             |
 | stderr rejection summaries    | every module named in cycle / atom-split / unmatched-claim blocks                        |
 
+## Module binding source-unit associations
+
+Each `modules.json.final_module_contents[]` row has `binding_source_units`,
+an array with one `{binding_name, source_unit_ids}` row per `binding_names`
+entry. Rows follow the same input-binding-name order as `binding_names`;
+`member_names` remains positionally aligned with that array. Each
+`source_unit_ids` value is a sorted, deduplicated list of chunk-local graph IDs
+encoded as `unit:N`, ordered by numeric `SourceUnitId`.
+
+The association lists every graph source unit whose `declared_bindings` contains
+that input binding. It includes every declaration site for redeclared bindings;
+IDs follow the analysis's source-unit boundaries, including units created by
+splitting a comma-list declaration. Reads, writes, and calls do not count as
+declarations. A binding with no declaring source unit has an empty list. The
+existing module-level `source_unit_ids` remains the aggregate of the named
+bindings' declaration IDs and does not pair IDs with individual names.
+
 `CycleEdge` rows in `cycles.json` (`cut[]`, `lazy_closure[]`, and
 `inert_commuting_edges[]`) carry `from_source_unit_id` and
 `to_source_unit_id` as the actual dependency-edge endpoints, using the same
