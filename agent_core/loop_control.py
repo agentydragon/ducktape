@@ -1,17 +1,6 @@
-"""Generic loop-control primitives for Agent agents.
+"""Tool policies and loop decisions used by Agent handlers."""
 
-This module intentionally avoids application-specific concerns. It exposes
-minimal algebraic types used by handlers to influence the agent loop each
-sampling step (e.g., requiring a tool call for the next sampling or aborting
-the turn).
-
-Policies and decisions are expressed as algebraic types to keep them disjoint
-and easy to compose.
-
-Notes / Future work (TODOs):
-- Consider optional injection knobs (for debugging only), e.g., synthesizing
-  transcript messages or function-call outputs; default off to keep core clean.
-"""
+# TODO: Consider optional debug-only injection knobs for synthetic transcript items or tool outputs; default off.
 
 from __future__ import annotations
 
@@ -20,54 +9,31 @@ from dataclasses import dataclass
 
 from openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
 
-# ---------------------------------------------------------------------------
-# Tool policy algebraic types (what the model is allowed/required to do next)
-# ---------------------------------------------------------------------------
-
 
 class ToolPolicy:
-    """Base class for tool-choice policy."""
+    """Base type for tool-choice policies."""
 
 
 @dataclass(frozen=True)
 class AllowAnyToolOrTextMessage(ToolPolicy):
-    """Let the model decide whether to call a tool or not for the next sample."""
+    """Let the model choose between tool calls and ordinary text."""
 
 
 @dataclass(frozen=True)
 class RequireAnyTool(ToolPolicy):
-    """Require the model to call at least one tool for the next sample."""
-
-
-# ---------------------------------------------------------------------------
-# Loop decision algebraic types (continue vs abort the turn)
-# ---------------------------------------------------------------------------
+    """Require at least one tool call on the next sample."""
 
 
 @dataclass(frozen=True)
 class NoAction:
-    """Handler has no opinion; continue to next handler.
-
-    When returned by a handler: "I defer, check the next handler"
-    When all handlers defer: "Sample the LLM normally"
-
-    This replaces both NoLoopDecision and Continue, which had identical
-    semantics in the sequential evaluation model.
-    """
+    """Defer to the next handler; if all defer, sample the model normally."""
 
 
 @dataclass(frozen=True)
 class InjectItems:
-    """Inject items into the agent loop, then skip sampling.
+    """Append items to the transcript and queue FunctionCallItems for execution.
 
-    Supported item types:
-    - SystemMessage: inject system guidance (e.g., warnings, constraints)
-    - UserMessage: inject user input (e.g., notifications)
-    - FunctionCallItem: inject tool calls (e.g., bootstrap)
-
-    All items are appended to transcript. FunctionCallItem objects are
-    added to pending_function_calls for execution. After injection,
-    the loop continues without sampling (handlers run again next iteration).
+    Skip sampling after injection; handlers run again on the next iteration.
     """
 
     items: Sequence[SystemMessage | UserMessage | FunctionCallItem]
@@ -80,17 +46,12 @@ class Abort:
 
 @dataclass(frozen=True)
 class Compact:
-    """Signal that transcript should be compacted before continuing.
+    """Compact earlier transcript items and keep the final keep_recent_turns items verbatim.
 
-    The agent will compact the transcript (keeping keep_recent_turns items),
-    then continue with the agent's configured tool_policy.
-
-    Note: ReasoningItem blocks are never preserved in the recent region,
-    as they cannot be reused outside their original response context.
+    The next iteration uses the configured tool policy.
     """
 
     keep_recent_turns: int = 10
 
 
-# Union type for loop decisions (for static type checking)
 type LoopDecision = NoAction | InjectItems | Abort | Compact

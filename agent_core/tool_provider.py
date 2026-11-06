@@ -1,16 +1,10 @@
-"""Tool provider protocol and types for agent_core.
-
-Defines the interface for tool discovery and execution without MCP dependency.
-MCP integration lives in mcp_provider.py which wraps fastmcp.Client.
-"""
+"""Tool result types and provider protocol; MCP integration lives in mcp_provider.py."""
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
-
-# --- Tool result content types (discriminated union) ---
 
 
 class TextContent(BaseModel):
@@ -30,12 +24,10 @@ class ImageContent(BaseModel):
 
 ResultContent = Annotated[TextContent | ImageContent, Field(discriminator="type")]
 
-# Structured tool output data. Wider than MCP's structuredContent (dict[str, Any] | None)
+# Structured output is wider than MCP's structuredContent (dict[str, Any] | None)
 # because DirectToolProvider bypasses MCP and can return lists directly. OpenAI's tool
 # output is ultimately a JSON string, so any JSON-serializable value works.
 ToolOutputData = dict[str, Any] | list[Any]
-
-# --- Tool result ---
 
 
 class ToolResult(BaseModel):
@@ -47,21 +39,16 @@ class ToolResult(BaseModel):
 
     @classmethod
     def text(cls, text: str, *, is_error: bool = False) -> ToolResult:
-        """Create a text result."""
         return cls(content=[TextContent(text=text)], is_error=is_error)
 
     @classmethod
     def error(cls, message: str) -> ToolResult:
-        """Create an error result."""
         return cls(content=[TextContent(text=message)], is_error=True)
 
     @classmethod
     def structured(cls, data: ToolOutputData, *, is_error: bool = False) -> ToolResult:
-        """Create a structured result with JSON data (dict or list)."""
+        """Create a result with dict-or-list JSON data."""
         return cls(structured_content=data, is_error=is_error)
-
-
-# --- Tool schema ---
 
 
 class ToolSchema(BaseModel):
@@ -72,16 +59,8 @@ class ToolSchema(BaseModel):
     input_schema: dict[str, Any]
 
 
-# --- Tool provider protocol ---
-
-
 class ToolProvider(Protocol):
-    """Protocol for tool discovery and execution.
-
-    Implementations:
-    - MCPToolProvider: Wraps fastmcp.Client for MCP-based tools
-    - DirectToolProvider: Direct function calls without MCP overhead
-    """
+    """Tool discovery and execution interface for MCP-backed or direct providers."""
 
     async def list_tools(self) -> list[ToolSchema]:
         """Return available tools."""

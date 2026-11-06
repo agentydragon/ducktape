@@ -1,7 +1,4 @@
-"""Handler interface and core handlers for the Agent loop.
-
-This module defines the BaseHandler interface and core handlers.
-"""
+"""Event handlers used by the Agent loop."""
 
 from __future__ import annotations
 
@@ -26,31 +23,26 @@ class BaseHandler:
         return
 
     def on_before_sample(self) -> LoopDecision:
-        """Before each sample: default NoAction, or return InjectItems, Abort, Compact."""
+        """Return a decision before sampling; the first non-NoAction decision wins."""
         return NoAction()
 
     def on_system_text_event(self, evt: SystemText) -> None:
-        """Called when a system message is added to the conversation."""
         return
 
     def on_user_text_event(self, evt: UserText) -> None:
-        """Called when user text is added to the conversation."""
         return
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        """Called when assistant generates text."""
         return
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        """Called when the model requests a tool call."""
         return
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        """Called when a tool call completes and returns a result."""
+        """Receive each tool result added to the transcript."""
         return
 
     def on_reasoning(self, item: ReasoningItem) -> None:
-        """Called when the model emits reasoning tokens (extended thinking mode)."""
         return
 
     def on_compaction_complete(self, compacted: bool) -> None:
@@ -59,41 +51,23 @@ class BaseHandler:
 
 
 class RedirectOnTextMessageHandler(BaseHandler):
-    """Redirect agent when it sends text messages instead of using tools.
-
-    For non-interactive agents that should use MCP tools rather than sending
-    conversational text, this handler injects a reminder message when text is
-    detected.
-
-    Usage:
-        reminder = "You are not interactive. Use tools: foo, bar, baz."
-        handlers = [RedirectOnTextMessageHandler(reminder), ...]
-        agent = await Agent.create(..., handlers=handlers, tool_policy=AllowAnyToolOrTextMessage())
-    """
+    """Inject a reminder on the next sample after text without a tool call."""
 
     def __init__(self, reminder_message: str):
-        """Initialize redirect handler.
-
-        Args:
-            reminder_message: Message to inject when assistant sends text instead of using tools
-        """
         self._reminder = reminder_message
         self._text_detected = False
         self._tool_called = False
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        """Mark non-empty assistant text. Empty output_text items (some models emit
-        one on every turn alongside their tool call) are not "text output"."""
+        """Mark nonempty text; models may emit empty output_text with tool calls."""
         if evt.text.strip():
             self._text_detected = True
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        """Mark that a tool was called this turn."""
         self._tool_called = True
 
     def on_before_sample(self) -> LoopDecision:
-        """Inject the reminder only when the previous turn produced text *instead of*
-        tools — i.e. non-empty text with no accompanying tool call."""
+        """Inject after text without a tool call; clear both flags on every poll."""
         redirect = self._text_detected and not self._tool_called
         self._text_detected = False
         self._tool_called = False
