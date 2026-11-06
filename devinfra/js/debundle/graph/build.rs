@@ -1100,8 +1100,8 @@ fn emit_heap_content_order(
     let unique_eager_allocations = OneShotEagerAllocations::from_facts(facts);
 
     // A hoisted or escaped callable can allocate before its lexical statement.
-    // Ordinary own-property cells likewise have no unique eager birth proof.
-    // Array length inherits the array's checked eager birth below.
+    // Own-property cells without a matching one-shot allocation likewise have
+    // no birth proof: an earlier opaque barrier must constrain their reads.
     let mut has_live_heap_contents = facts.iter().any(|stmt| {
         !stmt.deferred_heap_allocations.is_empty()
             || stmt
