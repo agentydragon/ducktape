@@ -317,38 +317,9 @@ class OptimizeArgs:
 
 
 async def optimize_prompts(args: OptimizeArgs) -> Path:
-    """Run the prompt optimisation loop.
+    """Run prompt optimization via `optimize_prompts_mcp`.
 
-    This is the main entry point for running multiple iterations of the algorithm. It
-    repeatedly executes batches of agents on the seed tasks in parallel,
-    grades the generated solutions using OpenAI's Responses API, updates the system
-    prompt using a prompt engineer (OpenAI o3), and logs results to JSONL files.
-
-    Parameters
-    ----------
-    seed_tasks : List[TaskDefinition]
-        The tasks to use as the benchmark for optimisation.
-    criteria : List[Criterion]
-        Grading criteria to evaluate task performance.
-    cfg : OptimizerConfig
-        Configuration for the optimizer.
-    runner_name : str
-        Name of the configured runner (currently "claude").
-    task_types : dict
-        Task type configurations.
-    runner_configs : dict
-        Runner configurations.
-    iterations : int, optional
-        The number of optimisation iterations to perform (default 3).
-    rollouts_per_task : int, optional
-        The number of agents to sample per task in each iteration (default 2).
-    max_parallel_rollouts : int, optional
-        Maximum number of concurrent agent rollouts (default from config).
-    tasks_per_iteration : int, optional
-        Number of tasks to randomly sample (with replacement) per iteration.
-        If None, uses all seed tasks (default None).
-    base_dir : Path
-        Base directory for output.
+    This wrapper ignores `rollouts_per_task`, `max_parallel_rollouts`, and `tasks_per_iteration`.
     """
     # Delegate to MCP-driven implementation (single source of truth)
     return await optimize_prompts_mcp(

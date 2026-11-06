@@ -104,12 +104,7 @@ class TrackingRenderContext(RenderContext):
 
 
 def export_node_with_tracking(store: TrackingGraph, node_id: NodeId) -> tuple[str, set[NodeId]]:
-    """
-    Export a single node as TanaPaste and return the export along with touched node IDs.
-
-    Returns:
-        tuple: (tanapaste_output, set_of_touched_node_ids)
-    """
+    """Return (TanaPaste, accessed IDs plus supertag dependencies) for one node."""
     # Get the target node
     if node_id not in store:
         raise ValueError(f"Node {node_id} not found in store")
