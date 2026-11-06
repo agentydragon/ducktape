@@ -146,7 +146,8 @@ impl AliasGraphFixture {
 
     fn command_with_assessment(&self, args: &[&str], analysis: &Path) -> Command {
         let root = self._root.path();
-        self.command_builder(args, None, None)
+        let mut command = self.command_builder(args, None, None);
+        command
             .arg("--tree-config")
             .arg(root.join("spec_config.yaml"))
             .arg("--tree-modules")
@@ -158,7 +159,8 @@ impl AliasGraphFixture {
             .arg("--out-root")
             .arg(root.join("edit-out"))
             .arg("--analysis")
-            .arg(analysis)
+            .arg(analysis);
+        command
     }
 
     fn command_builder(
