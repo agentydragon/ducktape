@@ -46,7 +46,6 @@ from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
-    cnpg,
     external_creds,
     ha_mcp,
     kubectl_passthrough_mcp,
@@ -98,6 +97,7 @@ from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -656,7 +656,7 @@ def chart(app: App) -> Chart:
         app,
         ENV,
         db=DbProps(
-            instances=2, wal_archive=True, profile=cnpg.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
+            instances=2, wal_archive=True, profile=cluster.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
         ),
         environment_template_name=POD_TEMPLATE,
         environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,

@@ -18,7 +18,8 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cilium, cnpg, cnpg_backup, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.gatus import config
@@ -34,7 +35,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/gatus"
 _NAME = "gatus"
 _NAMESPACE = "gatus"
 _HOSTNAME = "status.allegedly.works"
-DATABASE = cnpg.PostgresRef.generated(name="gatus-db", namespace=_NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="gatus-db", namespace=_NAMESPACE)
 _HELM_REPOSITORY = "twin"
 # The chart's Service: port 80 to the Pods' `http` (8080), selecting `app.kubernetes.io/name`.
 SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=8080)
@@ -46,17 +47,17 @@ def _namespace(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         scope,
         "database",
         ref=DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="2Gi",
         resize_in_use_volumes=False,
-        initdb=cnpg.same_owner_initdb("gatus"),
+        initdb=cluster.same_owner_initdb("gatus"),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _helm_release(scope: Construct, config_map: ConfigMap) -> None:

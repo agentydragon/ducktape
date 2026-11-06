@@ -107,7 +107,7 @@ editing a route.
       (`cluster/k8s/tofu-state/backup/`) was deleted 2026-06-02: it couldn't run with
       wyrm2/Proxmox down and only wrote to a `local-path-proxmox` PVC (same failure
       domain as the DB, not actually offsite). `tofu-state-db-ovh` now has barman-cloud
-      backups in SeaweedFS (`cdk8s/cnpg_backup.py`), which share the OVH failure domain;
+      backups in SeaweedFS (`cdk8s/cnpg/backup.py`), which share the OVH failure domain;
       the off-site copy is the CNPG Backup Strategy item below.
 - [ ] Repoint Talos containerd mirrors (`machine.registries.mirrors` in
       `terraform/main/infrastructure.tf`) at `oci-cache`; machine-config changes reboot nodes,
@@ -309,7 +309,7 @@ Proxmox-only gap.)
       OVH-hosted PVC or object storage. No such CronJob exists today — the one
       precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
       backup" in Next Actions.
-- [ ] Extend barman-cloud backups (`cdk8s/cnpg_backup.py`) to the clusters still
+- [ ] Extend barman-cloud backups (`cdk8s/cnpg/backup.py`) to the clusters still
       without them. `seaweedfs-filer-db-ssd` cannot back up into
       the SeaweedFS it is the filer of, so it waits for an off-site store.
 - [ ] Off-site copy of the CNPG backups: every `CnpgBackup` writes to SeaweedFS on the

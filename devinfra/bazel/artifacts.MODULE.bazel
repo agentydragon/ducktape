@@ -450,7 +450,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cilium/cilium/v1.19.6/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumenvoyconfigs.yaml"],
 )
 
-# CloudNativePG CRDs follow the operator appVersion in cluster/cdk8s/cnpg_operator.py.
+# CloudNativePG CRDs follow the operator appVersion in cluster/cdk8s/cnpg/operator.py.
 http_file(
     name = "cnpg_cluster_crd",
     downloaded_file_path = "postgresql.cnpg.io_clusters.yaml",
@@ -472,7 +472,7 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/v1.30.0/config/crd/bases/postgresql.cnpg.io_scheduledbackups.yaml"],
 )
 
-# Match the plugin-barman-cloud chart 0.8.0 (appVersion v0.15.0) in cluster/cdk8s/cnpg_operator.py;
+# Match the plugin-barman-cloud chart 0.8.0 (appVersion v0.15.0) in cluster/cdk8s/cnpg/operator.py;
 # the chart ships this CRD unchanged.
 http_file(
     name = "barman_cloud_objectstore_crd",

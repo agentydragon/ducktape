@@ -128,7 +128,7 @@ def cluster(
     `size`/`resize_in_use_volumes` (`storage`; `None` leaves CNPG's default, while
     `False` prevents resizing existing PVCs when the template size changes; new claims still use
     `size`), and `wal_archive`, which makes the barman-cloud plugin archive WAL to the ObjectStore named
-    `ref.name` (`cnpg_backup.CnpgBackup` builds it). Our policy: 2 instances
+    `ref.name` (`backup.CnpgBackup` builds it). Our policy: 2 instances
     (cluster/docs/cnpg_conventions.md R2) on `POSTGRES_IMAGE`; `image_name=None` runs the
     operator's default image. Every Cluster disables the liveness isolation check -- CNPG 1.27+
     otherwise kills a primary it considers isolated on a transient network blip -- and enables

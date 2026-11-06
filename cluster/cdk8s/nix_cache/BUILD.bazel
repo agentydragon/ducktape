@@ -27,8 +27,6 @@ py_library(
     deps = [
         ":ci_token",
         "//cluster/cdk8s:api_resource",
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
@@ -38,6 +36,8 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/github_secrets_sync:workspace",

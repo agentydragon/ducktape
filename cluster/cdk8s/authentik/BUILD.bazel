@@ -7,11 +7,11 @@ py_library(
     srcs = ["db.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/cnpg:cluster",
         "@pypi//cdk8s",
     ],
 )
@@ -86,9 +86,9 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":db",
-        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/cnpg:backup",
         "@pypi//cdk8s",
     ],
 )

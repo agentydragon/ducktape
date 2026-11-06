@@ -23,7 +23,8 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
-from cluster.cdk8s import api_resource, cnpg, cnpg_backup, external_creds, namespaces, node_scheduling
+from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.flux import ConfigMapArgs
@@ -55,7 +56,7 @@ SERVICE = ServiceRef(
     port=Port(name="http", number=8080),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", "attic-next"),)),
 )
-DATABASE = cnpg.PostgresRef.generated(name="attic-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="attic-db", namespace=NAMESPACE)
 _GITHUB_PAT = SecretRef(namespace=NAMESPACE, name="github-secrets-sync-pat")
 _ROTATOR = "attic-jwt-rotator"
 # Placeholder tag; image-pins/kustomization.yaml sets the real one.
@@ -152,24 +153,24 @@ ROTATORS_CONFIG_MAP = ConfigMapArgs(
 
 
 def _database(scope: Construct) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         scope,
         "db",
         ref=DATABASE,
         image_name=None,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         # Leave room for the old and replacement cache databases to coexist during migration.
         size="16Gi",
         resize_in_use_volumes=True,
         instances=3,
-        initdb=cnpg.same_owner_initdb("attic"),
+        initdb=cluster.same_owner_initdb("attic"),
         wal_archive=True,
         # Attic autocommits several statements per ~64 KiB chunk. With a commit per fsync on the HDD
         # tier, a large upload saturated the disk until Attic's 10-connection pool timed out (a 500).
         # A crash loses under a second of commits: cache rows a client re-pushes.
         postgresql=ClusterSpecPostgresql(parameters={"synchronous_commit": "off"}),
     )
-    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _service(scope: Construct) -> None:

@@ -25,7 +25,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -41,7 +41,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/tofu-state"
 _DB_DIR = f"{OUTPUT_DIR}/db"
 _NAMESPACE = "tofu-state"
 _CREDENTIALS_FILE = "credentials.sops.yaml"
-DATABASE = cnpg.PostgresRef.generated(name="tofu-state-db-ovh", namespace=_NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="tofu-state-db-ovh", namespace=_NAMESPACE)
 STATE_DATABASE_NAME = "tfstate"
 STATE_PASSWORD = SecretRef(namespace="flux-system", name="tofu-state-db-credentials").key("password")
 STATE_CONNECTION_STRING = (
@@ -51,7 +51,7 @@ STATE_CONNECTION_STRING = (
 
 def chart(app: App) -> Chart:
     chart = Chart(app, DATABASE.name, disable_resource_name_hashes=True)
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "cluster",
         ref=DATABASE,
@@ -72,7 +72,7 @@ def chart(app: App) -> Chart:
         postgresql=ClusterSpecPostgresql(
             parameters={"tcp_keepalives_idle": "60", "tcp_keepalives_interval": "10", "tcp_keepalives_count": "6"}
         ),
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="1Gi",
         resize_in_use_volumes=False,
         # CNPG's default bootstrap: an `app` database and owner. Terraform's `tfstate` role is
@@ -90,7 +90,7 @@ def chart(app: App) -> Chart:
             ]
         ),
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
     return chart
 
 

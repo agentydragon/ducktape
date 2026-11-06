@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg_backup
 from cluster.cdk8s.authentik import db
+from cluster.cdk8s.cnpg import backup
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -16,7 +16,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/authentik/db-backups"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "db-backups", disable_resource_name_hashes=True)
-    cnpg_backup.CnpgBackup(chart, "backup", ref=db.POSTGRES, retention="30d", secret_name="authentik-db-backup-s3")
+    backup.CnpgBackup(chart, "backup", ref=db.POSTGRES, retention="30d", secret_name="authentik-db-backup-s3")
     return chart
 
 

@@ -5,8 +5,6 @@ py_library(
     srcs = ["matrix.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:helm",
@@ -14,6 +12,8 @@ py_library(
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/gateway_api:http_route",

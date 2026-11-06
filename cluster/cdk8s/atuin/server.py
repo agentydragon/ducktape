@@ -7,7 +7,8 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -17,7 +18,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 NAME = "atuin"
 NAMESPACE = "atuin"
 OUTPUT_DIR = f"{GENERATED_ROOT}/atuin"
-DATABASE = cnpg.PostgresRef.generated(name="atuin-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="atuin-db", namespace=NAMESPACE)
 SERVER = ServiceRef(
     name="server",
     port=Port(name="http", number=8888),
@@ -26,17 +27,17 @@ SERVER = ServiceRef(
 
 
 def _database(chart: Chart) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "database",
         ref=DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="2Gi",
         resize_in_use_volumes=False,
-        initdb=cnpg.same_owner_initdb(NAME),
+        initdb=cluster.same_owner_initdb(NAME),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _http_probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:

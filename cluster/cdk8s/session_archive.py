@@ -6,7 +6,8 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, cnpg, cnpg_backup, node_scheduling, pod_policy, session_backup
+from cluster.cdk8s import cilium, node_scheduling, pod_policy, session_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
@@ -22,7 +23,7 @@ NAMESPACE = session_backup.NAMESPACE
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/ai-session-archive-image-pins"
 HOSTNAME = "ai-session-archive.allegedly.works"
-DATABASE = cnpg.PostgresRef.generated(name="session-archive-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="session-archive-db", namespace=NAMESPACE)
 _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
 _MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset"
@@ -44,7 +45,7 @@ _UID = 1000
 
 
 def _database(chart: Chart) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "archive-database",
         ref=DATABASE,
@@ -53,19 +54,19 @@ def _database(chart: Chart) -> None:
                 "Imported workstation AI session history, independently protected by CNPG backups and WAL archive."
             )
         },
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="100Gi",
-        initdb=cnpg.same_owner_initdb("ai_session_archive"),
+        initdb=cluster.same_owner_initdb("ai_session_archive"),
         wal_archive=True,
     )
     # Retain weekly base backups and continuous WAL for 30 days; the imported database can outlive
     # source repository retention and must not rely on Restic replay as its only recovery path.
-    cnpg_backup.CnpgBackup(
+    backup.CnpgBackup(
         chart,
         "archive-database-backup",
         ref=DATABASE,
         retention="30d",
-        cadence=cnpg_backup.Cadence.WEEKLY,
+        cadence=backup.Cadence.WEEKLY,
         adopt_existing=False,
     )
 
@@ -297,7 +298,7 @@ def _network_policies(chart: Chart) -> None:
         egress=[
             cilium.dns_egress(resolves=["*"]),
             cilium.egress_via_gateway("auth.allegedly.works"),
-            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cnpg.PORT.number),
+            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cluster.PORT.number),
         ],
     )
     NetworkPolicy(
@@ -309,7 +310,7 @@ def _network_policies(chart: Chart) -> None:
         egress=[
             cilium.dns_egress(resolves=["*"]),
             session_backup.SERVER.egress(),
-            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cnpg.PORT.number),
+            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cluster.PORT.number),
         ],
     )
 
