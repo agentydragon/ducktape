@@ -41,7 +41,6 @@ async def test_exec_stdout_stderr_timeout(exec_session) -> None:
     # stdout
     r1 = await _call_exec(exec_session, ["/bin/echo", "hello"])
     assert r1.exit == Exited(exit_code=0)
-    assert isinstance(r1.stdout, str)
     assert r1.stdout == "hello\n"
     # stderr and nonzero exit
     r2 = await _call_exec(exec_session, ["sh", "-lc", "echo err 1>&2; exit 3"])
@@ -60,7 +59,6 @@ async def test_persession_exec_timeout_then_next_ok(exec_session) -> None:
     # The session container remains usable.
     r1 = await _call_exec(exec_session, ["/bin/echo", "ok"])
     assert r1.exit == Exited(exit_code=0)
-    assert isinstance(r1.stdout, str)
     assert r1.stdout == "ok\n"
 
 
