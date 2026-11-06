@@ -725,103 +725,28 @@ unsuspending these kustomizations.
 
 ## Current Status: Ready for build and deployment
 
-**Files created:**
+Historical readiness claim from the prototype plan; DevBot remained an
+unreconciled experiment. The [retirement record](../README.md) governs any revival:
+do not restore the archived files directly, and require tool-output bounding
+before history ingestion plus a noisy-MCP end-to-end test.
 
-- `/home/agentydragon/code/cluster/k8s/agents/devbot/`
-  - `namespace.yaml` - agents namespace
-  - `pvcs.yaml` - 20Gi workspace + 5Gi config storage
-  - `externalsecret.yaml` - Vault credentials integration
-  - `deployment.yaml` - Desktop + MCP sidecar containers
-  - `service.yaml` - VNC:5900 + MCP:8080 endpoints
-  - `remotemcpserver.yaml` - RemoteMCPServer CRD for Kagent
-  - `agent.yaml` - Agent CRD with system prompt
-  - `kustomization.yaml` - Resource aggregation
-- `/home/agentydragon/code/cluster/k8s/agents/devbot/docker/`
-  - `desktop/Dockerfile` - Ubuntu + Xfce + VNC + X11
-  - `desktop/xstartup` - VNC startup script
-  - `desktop/entrypoint.sh` - VNC password and server initialization
-  - `mcp-server/Dockerfile` - Python 3.12 + computer-control-mcp with STREAMABLE_HTTP
-  - `build.sh` - Build script (defaults to local, optionally pushes to Harbor)
+Prototype files are preserved under [k8s/devbot](../k8s/devbot/): namespace,
+workspace/config PVCs (20Gi/5Gi), desktop plus MCP-sidecar Deployment, VNC (`5900`)/
+MCP (`8080`) Service, RemoteMCPServer, Agent, ModelConfig and Kustomization. The
+Docker directory contains desktop Dockerfile/xstartup/entrypoint, MCP Dockerfile
+and [build.sh](../k8s/devbot/docker/build.sh); the script defaults to local builds
+and optionally pushes to Harbor. These are artifacts, not instructions to deploy.
 
-**Next Steps:**
+The original bring-up sequence was image build → credentials → deployment →
+Pod/container-log checks → VNC/MCP checks → RemoteMCPServer/controller checks →
+Agent/UI end-to-end checks. It proposed Anthropic, Gitea, Harbor and VNC secrets
+in Vault; Vault was decommissioned and the claimed `externalsecret.yaml` is not
+in the archived Kustomization. Do not reproduce the old credential recipe.
 
-1. **Build images:**
-
-   ```bash
-   cd /home/agentydragon/code/cluster/k8s/agents/devbot/docker
-   ./build.sh
-   ```
-
-2. **Store secrets in Vault:**
-
-   ```bash
-   # Generate secrets
-   ANTHROPIC_KEY="sk-ant-..."  # Your Anthropic API key
-   GITEA_TOKEN=$(openssl rand -base64 32)
-   HARBOR_PASSWORD=$(openssl rand -base64 32)
-   VNC_PASSWORD=$(openssl rand -base64 16)
-
-   # Store in Vault
-   vault kv put secret/agents/devbot \
-     anthropic-key="$ANTHROPIC_KEY" \
-     gitea-token="$GITEA_TOKEN" \
-     harbor-password="$HARBOR_PASSWORD" \
-     vnc-password="$VNC_PASSWORD"
-   ```
-
-3. **Deploy to cluster:**
-
-   ```bash
-   kubectl apply -k /home/agentydragon/code/cluster/k8s/agents/devbot/
-   ```
-
-4. **Check deployment status:**
-
-   ```bash
-   kubectl get pods -n agents -w
-   kubectl logs -n agents deployment/devbot-desktop -c desktop
-   kubectl logs -n agents deployment/devbot-desktop -c mcp-server
-   ```
-
-5. **Test VNC access:**
-
-   ```bash
-   kubectl port-forward -n agents service/devbot-desktop 5900:5900
-   # Connect with VNC client to localhost:5900
-   ```
-
-6. **Test MCP server:**
-
-   ```bash
-   kubectl port-forward -n agents service/devbot-desktop 8080:8080
-   curl http://localhost:8080/health
-   ```
-
-7. **Verify RemoteMCPServer:**
-
-   ```bash
-   kubectl get remotemcpserver -n agents
-   kubectl describe remotemcpserver devbot-computer-control -n agents
-   ```
-
-8. **Deploy Kagent (if not already deployed):**
-   - Follow Kagent installation docs
-   - Ensure ClusterSecretStore for Vault is configured
-
-9. **Test Agent CRD:**
-
-   ```bash
-   kubectl get agent -n agents
-   kubectl describe agent devbot -n agents
-   # Check agent controller logs for connection status
-   ```
-
-10. **Test end-to-end workflow:**
-    - Access Kagent UI
-    - Start chat with devbot agent
-    - Request screenshot: "Take a screenshot of the desktop"
-    - Request mouse action: "Click at coordinates 500, 300"
-    - Verify actions appear in desktop via VNC
+The proposed end-to-end validation opened a Kagent chat, requested a desktop
+screenshot, then a click at `(500, 300)`, and observed both via VNC. It also required
+Kagent installation and its credential backend before checking Agent and
+RemoteMCPServer status. These remain historical test intentions, not pass evidence.
 
 ### Phase 3: Multi-Agent Support
 

@@ -219,201 +219,50 @@ omitting guidance does not change backend RBAC, Action policy or environment iso
 
 ## Proposed workflow A: agent reuses its environment
 
-Platform instructions describe tool/API discovery for the selected runtime and supply the child's
-Session ID. Native runtime configuration also puts that ID in
-`AGENTPLANE_SESSION_ID`. Session IDs are addresses, not credentials; Discovery verifies
-eligibility against the authenticated caller. Direct-tool availability depends on the target's
-configured catalogue and must be discovered rather than assumed from the guide.
+Use the maintained [Session delegation guide](../action_service/docs/agents/session_delegation.md)
+for the current MCP and CLI recipe. It covers schema discovery, exact-target refresh and readiness,
+optional explicit resume, offered runtime settings, separate Session creation and input, retained
+observation/turn reads, and safe recovery. It also distinguishes a completed model turn from proof
+that the requested task succeeded.
 
-The example is a CI-maintenance coordinator delegating investigation of one latency regression.
-The direct MCP contract uses `<group>__<action>`, such as `environments__list` and
-`sessions__create`; their schemas are available through MCP `tools/list`. The CLI exposes the same
-Action schemas and calls through `agentplane --json actions show environments/list` and
-`agentplane --json actions submit environments/list --title ... --arguments JSON --wait`. The
-`agentplane sessions` CLI group also exposes the owning Dispatcher/History APIs. Today's central
-code mode can reach a CLI through `exec`, but has no `sessions` JavaScript global. A scripted MCP
-client verifies protocol behavior; it does not establish that a natural model can discover or use
-these tools unaided.
+Native runtime configuration also exposes the Session ID as `AGENTPLANE_SESSION_ID`; Session IDs
+are addresses, not credentials, and Discovery still verifies caller eligibility. A final assistant
+message is model-authored text: clients that request JSON must parse and validate it themselves.
+Ending a turn does not delete or terminate its Session; the coordinator may keep it as a standing
+worker and submit later work with a fresh command UUID.
 
-The current Session `setup_script` in these workflows is an implemented capability, not a settled
-future ownership boundary. [`SESSION_ENVIRONMENT_SETUP_DESIGN`](task_dag.md#session_environment_setup_design--choose-where-setup-belongs)
-will decide whether Environment or attachment/workspace setup should replace it, including how a
-caller without direct execution access prepares a child workspace.
+Plan-specific implementation notes: central code-mode coordinators can invoke the Agentplane CLI
+through `exec`, but do not have a `sessions` JavaScript global. Session creation may be committed
+before owner materialization finishes; input can queue behind creation, and successful submission
+means stored, not consumed. Observation is a bounded read: it does not cancel work or establish a
+task-completion subscription. The guide is the source for the exact IDs, cursors, schemas, and
+recovery calls.
 
-1. Discover tool schemas through MCP `tools/list`, or inspect the Action schema with
-   `agentplane --json actions show environments/list`. Read `environments__list` and call:
-
-   ```json
-   { "limit": 20 }
-   ```
-
-   The response contains only targets the authenticated account may use. One illustrative entry
-   from the generated [`EnvironmentDescriptor`](../environments/v1/environment_service.proto):
-
-   ```json
-   {
-     "target": {
-       "namespace": "agentplane",
-       "name": "ci-worker",
-       "uid": "51b74ff8-9a36-4b55-a9f5-54806077782a"
-     },
-     "execution_account": {
-       "account": { "namespace": "agentplane", "name": "ci-worker" },
-       "uid": "569f9631-0068-4122-8005-0ae9cf2c7056"
-     },
-     "observed_state": { "readiness": { "state": "READINESS_STATE_READY" } },
-     "configuration": {
-       "workspace": { "availability": "AVAILABILITY_CONFIGURED", "root": "/workspace" },
-       "instructions": { "availability": "AVAILABILITY_CONFIGURED", "value": "Use a separate directory." },
-       "configurations": [
-         { "harness": "HARNESS_CODEX", "model": "offered-model", "reasoning_efforts": ["low", "high"] }
-       ]
-     }
-   }
-   ```
-
-   `offered-model` denotes the actual model ID returned by discovery, not a literal to send or a
-   model guessed from these docs. Discovery's generated descriptor groups configuration, observed
-   state and action preconditions; unavailable fields must not be assumed present. Launch presets
-   alone cannot establish what an existing target supports. Discovery is paginated, and
-   readiness/configuration may change before admission. `cwd` is an absolute path.
-   Native Runner also rejects paths outside or equal to its workspace root when one is configured;
-   the current central sampler does not apply that root restriction. These are existing backend
-   checks, not a new selectable `cwd_policy`. Returned workspace information and environment
-   instructions guide directory selection; admission remains authoritative.
-
-2. Match the full target reference against the agent's supplied destination and choose an offered
-   harness/model/effort. Inspect the existing repository with ordinary execution tools. Prepare a
-   distinct directory or Git worktree under the returned workspace root, for example
-   `/workspace/ci-latency-worker`. Directory preparation is an explicit command, not a hidden copy
-   of the parent's repository. Runtimes already create missing cwd directories; repository setup
-   needs explicit commands. A client without execution access can provide `setup_script` to
-   `sessions__create`; setup completion is observable separately from opening.
-
-3. Mint and retain a child Session UUID **before** sending. Call `sessions__create`:
-
-   ```json
-   {
-     "target": { "namespace": "agentplane", "name": "ci-worker", "uid": "51b74ff8-9a36-4b55-a9f5-54806077782a" },
-     "session_id": "d71434fa-f5ba-4fb4-b152-e31bd4b37c59",
-     "spec": {
-       "harness": "HARNESS_CODEX",
-       "model": "offered-model",
-       "reasoning_effort": "high",
-       "cwd": "/workspace/ci-latency-worker"
-     },
-     "additional_instructions": "Investigate delegated CI latency work. Use this directory; state uncertainty and link evidence."
-   }
-   ```
-
-   Substitute the model discovered in step 1. The result contains the minimal Dispatcher `Session` resource. Its `status.materialization` reports
-   owner progress: a queued creation may be `SESSION_MATERIALIZATION_WAITING`, while an in-flight or
-   accepted owner result is reported separately. A committed Session proves logical existence only;
-   `SESSION_MATERIALIZATION_ACCEPTED` is durable owner admission, not harness readiness or a model turn.
-   The target may be starting or suspended. An authorized wake
-   uses the current wake policy; no promise that every suspended environment wakes automatically.
-   Opening with this briefing does not start a model turn. Send the first task in step 4.
-
-4. Mint and retain a command UUID; call `sessions__submit_input` separately:
-
-   ```json
-   {
-     "target": { "namespace": "agentplane", "name": "ci-worker", "uid": "51b74ff8-9a36-4b55-a9f5-54806077782a" },
-     "session_id": "d71434fa-f5ba-4fb4-b152-e31bd4b37c59",
-     "command_id": "173c7199-ab88-4237-8553-831806e62c3c",
-     "text": "Find the cause of the last 24 hours' CI latency increase. Compare against the preceding day; propose a fix with evidence. Do not open a PR yet."
-   }
-   ```
-
-   The result contains a Dispatcher `dispatch`. Input can queue behind Session creation: the caller
-   need not poll for a History row first. Successful submission says the command is stored, not
-   consumed. The child gets a normal harness input and its usual execution tools. In current
-   central code mode, Actions are available through CLI execution, not direct nested Action tools.
-   Execution uses the target's authority, which this first slice requires to match the caller.
-
-5. Continue independent work, then call `sessions__observe_input`:
-
-   ```json
-   {
-     "session_id": "d71434fa-f5ba-4fb4-b152-e31bd4b37c59",
-     "command_id": "173c7199-ab88-4237-8553-831806e62c3c",
-     "wait_seconds": 30
-   }
-   ```
-
-   An example successful result:
-
-   ```json
-   {
-     "session_id": "d71434fa-f5ba-4fb4-b152-e31bd4b37c59",
-     "command_id": "173c7199-ab88-4237-8553-831806e62c3c",
-     "dispatch": {
-       "kind": "observed",
-       "source": "dispatcher",
-       "observed_at": "2026-10-31T18:05:00Z",
-       "value": {
-         "session_id": "d71434fa-f5ba-4fb4-b152-e31bd4b37c59",
-         "command_id": "173c7199-ab88-4237-8553-831806e62c3c",
-         "sandbox": "ci-worker",
-         "sandbox_uid": "51b74ff8-9a36-4b55-a9f5-54806077782a",
-         "operation": "OPERATION_SUBMIT_INPUT",
-         "state": "DELIVERY_STATE_RUNNER_ADMITTED",
-         "created_at": "2026-10-31T18:01:00Z",
-         "updated_at": "2026-10-31T18:01:01Z"
-       }
-     },
-     "observation": {
-       "kind": "turn_completed",
-       "source": "history",
-       "gaps": [],
-       "resume_token": "opaque-observation-cursor",
-       "turn": {
-         "turn_id": "observed-harness-turn-id",
-         "input_command_ids": ["173c7199-ab88-4237-8553-831806e62c3c"],
-         "status": "TURN_STATUS_COMPLETED",
-         "final_assistant_message": "The queue delay increased after ..."
-       }
-     }
-   }
-   ```
-
-   The envelope is structured; the final assistant message is model-authored content, currently a
-   string. If the coordinator requests JSON, it must parse and validate that content itself. No
-   backend `accepted_task`, `reported` or `blocked_task` state is inferred. The coordinator can
-   send a follow-up with a fresh command UUID, keep using the child as a standing worker, or stop
-   a particular turn. Ending a turn does not delete or terminate the Session.
-
-After discovery/preparation, the ordinary sequence is **open → submit → observe**. Follow-up work
-is **submit → observe**. A bounded observation timeout returns facts so far and a cursor; it does
-not cancel work. Call again with that cursor or end the coordinator's turn if an explicitly
-supported notification route will wake it. This proposal does not invent a Session-completion
-subscription.
+A shared target and separate working directories do not isolate Sessions; repository preparation is
+explicit, not an implicit copy from the parent. `setup_script` is implemented for opening, but its
+future ownership remains open under
+[`SESSION_ENVIRONMENT_SETUP_DESIGN`](task_dag.md#session_environment_setup_design--choose-where-setup-belongs).
+Existing runtimes create a missing working directory; repository setup still needs explicit
+commands, and a caller without an execution channel can use `setup_script` today. Preserve the
+current backend distinction: Native Runner rejects `cwd` outside or equal to a configured workspace
+root, while central sampler currently does not apply that root restriction.
 
 ## Proposed workflow B: external MCP-only coordinator
 
-The coordinator has an authenticated OAuth connection to Agentplane MCP; it has no kubeconfig,
-execution host, parent Session or notification inbox. The acceptance is runnable with
-`bbr test //agentplane/system_tests/suites/mcp:test_delegation`; it uses the MCP SDK and real
-Connection consent, then scales the integration app to zero before any delegation Action call.
+The maintained guide covers the external MCP recipe too. This caller needs no kubeconfig, execution
+host, parent Session, or inbound notification inbox, but still needs an eligible existing target for
+its verified Connection account. An empty list is valid: ask an operator to prepare a target. Fresh
+provisioning remains deferred below; the existing workflow does not create a target or require a
+message delivered back into the external harness.
 
-1. `tools/list` exposes the opted-in direct tools. Call `environments__list({"limit":20})`;
-   it evaluates the connection's verified bound SA, rather than asking the model to provide one.
-   With an eligible target, use the full reference and offered configuration exactly as in workflow A.
-2. Call `environments__get` with the exact discovered target, then `sessions__create` with a retained UUID and usable absolute cwd, respecting the backend's
-   existing path validation. The runtime creates a missing directory. Repository preparation can
-   use an explicit `setup_script`, with its result visible through `sessions__get`; a clone needs
-   an explicit source and authorized credentials. Opening does not implicitly copy another repo.
-3. Call `sessions__submit_input`, retain the command UUID, and use `sessions__observe_input` to read
-   the correlated result. The external caller can reconnect and resume reads with those IDs.
-   Call `sessions__get` for the independently sourced Dispatcher Session and retained History summary, then
-   page `sessions__read_turns` with its Session-scoped `page_cursor`. Returning the result does not
-   require delivering a message into the external harness.
-
-An account can legitimately receive an empty target list. The acceptance fixture creates a
-Sandbox-owned ServiceAccount, marks that exact account eligible for MCP token minting, and completes
-operator Connection consent for it; the chart does not precreate the account. This proves the
-same-SA contract in the disposable fixture. Staging direct-tool activation and the managed-guidance
-rollout are complete.
+The scripted evidence is
+[`//agentplane/system_tests/suites/mcp:test_delegation`](../system_tests/suites/mcp/BUILD.bazel),
+which uses real Connection consent and scales the integration app to zero before delegation calls.
+Its fixture creates a Sandbox-owned ServiceAccount, marks that exact account eligible for MCP token
+minting, and obtains operator consent; the chart does not precreate the account. This proves the
+same-account protocol path in the disposable fixture, not unaided natural-agent discovery. Keep the
+separate usability capstone open. The plan's dated staging observation above predates explicit
+resume; this section makes no newer live-rollout claim.
 
 ### Later: when no eligible environment exists, dedicated provisioning Actions
 
