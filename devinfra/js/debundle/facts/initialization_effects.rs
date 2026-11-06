@@ -177,7 +177,7 @@ impl StatementFacts {
             allocates: self.heap_contents.allocations.clone(),
             coverage_dependencies: None,
             unknown_coverage: BTreeSet::new(),
-            dataflow_opacity: self.havoc.clone(),
+            dataflow_opacity: self.dataflow_opacity(),
             incomplete_execution: false,
             execution_losses: &[],
             opaque_heap: own_heap.opaque,

@@ -282,6 +282,14 @@ allocate before their lexical statement. This ordering also applies to pure read
 call purity does not make an observed array's contents immutable. It is emitted
 in both strict and dataflow-aware S-chain modes.
 
+In dataflow-aware mode, an exact completed initializer's positive operation-domain
+coverage plus its lexical operation receipt may discharge only the
+classifier-derived `opaque_at_init_call` fallback. Canonical primitive literals
+and checked deferred callable creation supply such operation coverage through
+selected local calls. The callable body's later execution is checked separately.
+Other havoc, observed reads/writes, callee heap opacity and strict-mode purity
+remain authoritative; completed timing or an empty access ledger is insufficient.
+
 Statement purity has separate preparatory and completed facts. Current-owner
 proof preparation retains the existing classifier, including enum initializers.
 The final verdict is published after assignment/export evaluation, exact

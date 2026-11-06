@@ -857,6 +857,18 @@ globalThis`) marks the bindings it flows into (transitively,
   incomplete synchronous execution continue to emit their own barriers.
   Purity and synchronous-call completeness alone do not discharge the bit.
 
+  Canonical primitive-literal evaluation and checked deferred callable creation
+  produce positive operation-domain coverage. Creation does not execute the
+  callable body; its existing captured-cell, body and activation guards remain.
+  Selected local calls compose those receipts and their exact prefix prerequisites;
+  only normal completion of the matching root initializer seals owner coverage.
+  When that same owner also has lexical operation-receipt authority, the
+  dataflow summary can discharge its classifier-only `OpaqueAtInitCall` cause.
+  Other havoc causes, observed cells, callee heap opacity and strict S-chain
+  purity remain unchanged. Imported summaries without these operation receipts
+  remain conservative. Neither timing completeness nor an empty ledger supplies
+  this conjunction.
+
   The exact private frozen-namespace shape supplies root-effect coverage only
   with its native slot dependencies and intact Object.prototype. The latter
   excludes inherited descriptor getters during `Object.defineProperty`.
