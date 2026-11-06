@@ -15,6 +15,11 @@ exports_files([
     "perf_wrapper.sh",
 ])
 
+exports_files(
+    ["debundle_cli.sh"],
+    visibility = ["//visibility:public"],
+)
+
 py_binary(
     name = "analysis_identity_hasher_bin",
     main_module = "devinfra.js.debundle.analysis_identity_hasher",

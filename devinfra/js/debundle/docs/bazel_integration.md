@@ -108,6 +108,50 @@ retain their `GATE_REJECTED` marker and exit-3 contract. Without an exported
 graph their diagnostics explain how to request one instead of naming a
 nonexistent graph file.
 
+Use `debundle_cli.bzl` to run graph-backed commands with the graph output and
+relocation roots in runfiles:
+
+```python
+load("@ducktape//devinfra/js/debundle:debundle_cli.bzl", "debundle_cli")
+
+debundle_cli(
+    name = "inspect_graph",
+    debundle = ":debundle",
+    graph_relpath = "reports/tree/main/dependency_graph.json.gz",
+    modules_path = "spec/modules",
+    # Relative to graph_source_data when that tree is set.
+    source_root = "inputs",
+    spec_root = "spec",
+    graph_source_data = ":relocatable_inputs",
+    package_roots = {
+        "//:node_modules/example_package/dir": "example_package",
+    },
+)
+```
+
+`debundle` must expose the `dependency_graphs` output group, normally by setting
+`split_dependency_graphs = True`. `graph_relpath` is within that tree.
+`modules_path` and `spec_root` are workspace-relative. Set either
+`source_root` or `source_data`: `source_root` is workspace-relative unless
+`graph_source_data` is provided, while `source_data` is a generated directory
+used directly as `DEBUNDLE_SOURCE_ROOT`. Each generated source, graph-source,
+and package root must provide exactly one directory artifact. `package_roots`
+uses the same label-to-package-name mapping as `debundle_pipeline`.
+The default `debundler` is the public label flag used by the pipeline, so a
+command-line override selects the same executable. If the pipeline target sets
+its `debundler` attribute directly, pass that same label to `debundle_cli`.
+Set `testonly = True` when the runner depends on test-only graph or root targets.
+
+Run a command by appending it after `bazel run`'s `--` separator:
+
+```sh
+bazel run //path/to:inspect_graph -- graph-summary --format json
+```
+
+The runner uses `rules_shell`'s Bash launcher and `rlocation` for both
+`@ducktape` tools and generated trees, so the same macro works from a consuming
+workspace.
+
 The `native_inputs` output group contains the exact rule inputs needed for a
 native replay: the flat spec or complete tree-shaped spec inputs, `input_data`,
 `tree_source_root`, and every `package_roots` target's `DefaultInfo` files, plus
