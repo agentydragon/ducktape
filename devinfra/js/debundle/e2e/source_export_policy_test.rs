@@ -141,7 +141,7 @@ fn source_markers_are_a_conjunction_and_policy_label_is_not_a_chunk_alias() {
 
 #[test]
 fn source_only_premise_retention_preserves_source_markers_and_emitted_bytes() {
-    const SOURCE: &str = "/* source-provider-purpose */function read(){return 7}export{read};\n";
+    const SOURCE: &str = "/* source-provider-purpose */function read(){return 7}function invoke(target,key){target[key]()}export{read};\n";
     let policy = [ChunkExportPurityBuilder::new("sourceReader")
         .with_source_markers(&["source-provider-purpose", "function read(){return 7}"])
         .with_pure_exports(&["read"])
@@ -159,7 +159,7 @@ fn source_only_premise_retention_preserves_source_markers_and_emitted_bytes() {
         "static/peer",
         vec![NoAccessorInstallCallableContract {
             source_match: serde_yaml::from_str(
-                "match: 'function read() { return 7; }'\nbindings: [read]\n",
+                "match: 'function invoke(target, key) { target[key](); }'\nbindings: [invoke]\n",
             ).unwrap(),
             note: None,
         }],
