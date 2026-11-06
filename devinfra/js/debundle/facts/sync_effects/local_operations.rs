@@ -563,12 +563,15 @@ impl LocalExpression {
                 let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
                     return None;
                 };
-                let MemberProp::Ident(property) = &member.prop else {
+                let property = super::value_model::static_prop(&member.prop)?;
+                if !super::value_model::MemberKey::of(&member.prop)
+                    .supports_own_data_read(&property)
+                {
                     return None;
-                };
+                }
                 Some(Self::ReadField {
                     receiver: receiver.to_id(),
-                    property: property.sym.to_string(),
+                    property,
                     span: member.span,
                 })
             }
