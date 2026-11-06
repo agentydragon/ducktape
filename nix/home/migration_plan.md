@@ -14,19 +14,7 @@ system-level setup on non-NixOS machines (apt packages, services, udev rules).
 
 ### Deployment
 
-For NixOS hosts (`iguana`, `rugged`, `wyrm2`, `gecko`):
-
-```bash
-sudo nixos-rebuild switch --flake ~/code/ducktape#<hostname>
-```
-
-For standalone home-manager configs:
-
-```bash
-home-manager switch --flake ~/code/ducktape#nixos-vm
-home-manager switch --impure --flake ~/code/ducktape#atlas
-home-manager switch --impure --flake ~/code/ducktape#claude-web
-```
+Use the current NixOS and standalone Home Manager switch commands in the [Nix usage guide](../README.md#usage).
 
 ### Per-Host Status
 
@@ -99,11 +87,5 @@ switch`, remove the legacy role from `gpd.yaml` and delete:
 
 ## Rollback
 
-```bash
-# Standalone home-manager configs
-home-manager generations
-home-manager rollback
-
-# NixOS hosts with inline home-manager
-sudo nixos-rebuild switch --rollback
-```
+For standalone Home Manager, see the [generation and rollback commands](../README.md#common-commands).
+For NixOS hosts with inline Home Manager, run `sudo nixos-rebuild switch --rollback`.

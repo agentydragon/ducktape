@@ -307,24 +307,9 @@ Nodes (examples)
 
 Edges (typed)
 
-- `AGENT_HAS_RUN` Agent → Run
-- `RUN_HAS_EVENT` Run → Event (`seq` attribute for order)
-- `EVENT_CONSUMES` Event → Message/Generation/ToolCall/Resource
-- `EVENT_PRODUCES` Event → Message/Generation/ToolResult/Summary/Snapshot
-- `APPENDED_TO_HISTORY` Run/Agent → Message (list name)
-- `CALLS_TOOL` Event/Generation → ToolCall
-- `RETURNS_RESULT` ToolCall → ToolResult
-- `MCP_RESOURCE_UPDATED` Event → Resource (uri)
-- `INTERRUPTS` Event → Event (interrupted)
-- `SUBSTITUTES` Event → Event (replacement_of)
-- `SUMMARIZES` Summary → {Message|Event|Run}
-- `DERIVED_FROM` Derived node → sources
-- `OWNS_RESOURCE` Agent/Run → Resource (ownership)
-- `MOUNTS_RESOURCE` Run/Container → Resource (mountpoint, mode)
-- `FORKED_FROM` AgentFork/Branch → Agent/Run/Event
-- `SPAWNED_FROM` Subagent → Agent
-- `ACTIVATES_POLICY` Event → Policy
-- `PROPOSES_POLICY` Event → Policy
+See the [canonical edge inventory](schema.md#edge-types-typed-relations) for shared relations.
+This graph projection maps `FORKED_FROM` from `AgentFork`/`Branch` to `Agent`/`Run`/`Event`;
+the canonical schema instead starts that relation from `Branch`/`Subagent`.
 
 Time travel and forks
 
