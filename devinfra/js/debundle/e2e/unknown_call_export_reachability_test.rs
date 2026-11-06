@@ -150,6 +150,7 @@ fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
     for initializer in [
         "(() => { throw new TypeError('stopped'); })()",
         "(function () { throw new TypeError('stopped'); })()",
+        "(function stop() { throw new TypeError('stopped'); })()",
         "(() => { while (false) {} throw new TypeError('stopped'); })()",
     ] {
         let source =
