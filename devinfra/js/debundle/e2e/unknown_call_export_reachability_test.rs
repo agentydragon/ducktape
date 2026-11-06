@@ -148,7 +148,28 @@ fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
         let later = binding_execution_report(&fixture, "later");
         assert_ne!(
             later["binding_effect_authority"]["authority"], "operation_receipt",
-            "a throw-only initializer cannot certify its sequel: {later:#}"
+            "{initializer}: a throw-only initializer cannot certify its sequel: {later:#}"
+        );
+    }
+}
+
+#[test]
+fn explicit_empty_return_supplies_a_normal_undefined_value() {
+    for initializer in [
+        "(() => { return; })()",
+        "(function stop() { return; })()",
+        "(() => { return; throw new TypeError('unreachable'); })()",
+        "(function stop() { return; throw new TypeError('unreachable'); })()",
+    ] {
+        let source = format!(
+            "const dynamic = {initializer}; const later = dynamic; console.log(typeof later);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let later = binding_execution_report(&fixture, "later");
+        assert_eq!(
+            later["binding_effect_authority"]["authority"], "operation_receipt",
+            "{initializer}: an explicit normal undefined result stays readable: {later:#}"
         );
     }
 }
