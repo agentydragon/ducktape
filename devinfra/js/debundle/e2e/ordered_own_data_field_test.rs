@@ -10,6 +10,7 @@ use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const ARRAY_LENGTH_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst gamma = read();\nconst anchor = 0;\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
+const ARRAY_LENGTH_INVERSION_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst anchor = 0;\nconst gamma = read();\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
 
 fn array_length_split(invert_read_and_write: bool) -> FixtureOpts<'static> {
     let mut provider_members = vec![
@@ -31,7 +32,15 @@ fn array_length_split(invert_read_and_write: bool) -> FixtureOpts<'static> {
         modules.push(logical_module("observer", &[Member::new("gamma")]));
         modules.push(logical_module("mutator", &mutator_members));
     }
-    FixtureOpts::new(ARRAY_LENGTH_SOURCE, modules)
+    // The first source position of a module selects its order among otherwise
+    // unconstrained destinations. Put anchor before gamma only for the unsafe
+    // candidate, forcing mutator ahead of observer rather than trusting YAML order.
+    let source = if invert_read_and_write {
+        ARRAY_LENGTH_INVERSION_SOURCE
+    } else {
+        ARRAY_LENGTH_SOURCE
+    };
+    FixtureOpts::new(source, modules)
         .with_unassigned_mode(unassigned_mode_inline())
         .with_dataflow_aware_s_chain()
         .with_trusted_dataflow_summaries()
