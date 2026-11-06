@@ -5,6 +5,8 @@ export PATH=/usr/sbin:/usr/bin
 while :; do
 	echo "AGENTPLANE_SHUTDOWN_SNAPSHOT_BEGIN"
 	/usr/bin/busybox cat /proc/uptime
+	echo "AGENTPLANE_SHUTDOWN_PID1_stat"
+	/usr/bin/busybox cat /proc/1/stat
 	for field in wchan syscall stack; do
 		echo "AGENTPLANE_SHUTDOWN_PID1_$field"
 		/usr/bin/busybox cat "/proc/1/$field"

@@ -75,7 +75,16 @@ The source checks used systemd `v257.9`, matching the guest's `257.9-1~deb13u1`:
    separate early-boot failure, not a reproduction of the observed shutdown phase.
 4. [Raw serial retention plus boot-time manager debugging](https://app.buildbuddy.io/invocation/b1161c32-b13a-4109-8ee5-839a3a42120b):
    three VM executions with the watchdog, virtiofs logs and independent raw serial capture.
-   Running. The temporary boot debug arguments are excluded from the proposed diagnostics.
+   All three VM executions passed (508.43, 520.75 and 545.20 seconds), as did all three
+   collector checks. Raw serial files and CRI logs contained proof and final powerdown for
+   every guest; all 27 virtiofs container logs were retained. The temporary boot debug
+   arguments are excluded from the proposed diagnostics.
+5. [Passive watchdog](https://app.buildbuddy.io/invocation/3a213ee3-78ba-4527-9c76-d21778fb2540):
+   five VM executions on diagnostic commit `67f41df08af87a53cc3bd12910152cb5e8d8363c` with
+   manager log-level/target changes and all pending-job RPCs removed. Kernel arguments
+   remain ordinary. The independent sampler adds PID 1 CPU counters, descriptor mappings
+   and a process listing. This tests whether extra manager traffic or debug output changes
+   reproduction. Running.
 
 Experiment 1 did reproduce a shutdown failure in its second execution: the Codex OOM guest
 stopped Runtime at 18:55:50 UTC, unmounted `/state/workspaces` by 18:55:52 and stopped journal
@@ -100,3 +109,14 @@ regular file. This does not exclude guest UART or host filesystem I/O blocking.
 The working-tree patches for these runs were applied over
 `23547bc724049d8d144ba1b2861833b4e91899b6`; these are experiment invocations, not CI proof
 for a committed diagnostic head. No successful retry establishes a functional repair.
+
+## Upstream lead checked
+
+[systemd #30573](https://github.com/systemd/systemd/issues/30573) ends a log gap at a similar
+mount-monitor message, but it has no identified root-cause fix. Its linked
+[mitigation](https://github.com/systemd/systemd/commit/37ce3fd2b7dd8f81f6f4bca2003961a92b2963dc)
+changes handling of an asynchronous bus-match timeout; it does not establish a synchronous
+PID 1 block. The v257.9 call starts in D-Bus service setup, outside the mount callback. Our
+failed guest had already stopped `dbus.service` and closed `dbus.socket` approximately two
+seconds before its last record. The superficial log match does not justify applying that
+mitigation as a shutdown repair.
