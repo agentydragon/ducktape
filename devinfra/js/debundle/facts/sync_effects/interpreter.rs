@@ -11008,18 +11008,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind != CallKind::Call || call.has_spread {
             return None;
         }
-        let (row, NativeIdentitySource::Inferred { premise }) =
-            self.exact_native_call_row(call.kind, &call.callee, call.span.into())?
-        else {
-            return None;
+        let (row, source) =
+            self.exact_native_call_row(call.kind, &call.callee, call.span.into())?;
+        let (premise, native_operation_input) = match source {
+            NativeIdentitySource::Inferred { premise } => (premise, None),
+            NativeIdentitySource::AuthorInput { evidence, premise }
+                if matches!(
+                    (row.op, evidence.operation),
+                    (
+                        IntrinsicOp::Symbol,
+                        NativeInputKind::Operation(spec::NativeOperationKind::Symbol)
+                    ) | (
+                        IntrinsicOp::SymbolFor,
+                        NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
+                    )
+                ) =>
+            {
+                (premise, Some(evidence))
+            }
+            NativeIdentitySource::AuthorInput { .. } => return None,
         };
+        let symbol_registry_input = row.op == IntrinsicOp::SymbolFor
+            && native_operation_input.as_ref().is_some_and(|evidence| {
+                evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
+            });
         (row.body_effects == NativeBodyEffects::NoExteriorAccess
+            || (row.body_effects == NativeBodyEffects::SymbolRegistryReadWrite
+                && symbol_registry_input)
             || descriptor_transfer::supports_native_call(row))
         .then_some(NativeCalleeSelection {
             owner: call.owner,
             site: call.span.into(),
             row,
             premise: *premise,
+            native_operation_input,
         })
     }
 
@@ -11065,6 +11088,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             site: call.span.into(),
             row,
             premise: *premise,
+            native_operation_input: None,
         })
     }
 
@@ -12847,6 +12871,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
                 );
             };
+            if resolution.row.body_effects == NativeBodyEffects::SymbolRegistryReadWrite {
+                let non_assumed = self.state.assumption.is_none();
+                let registry = crate::facts::EffectCell::GlobalSymbolRegistry;
+                outcome
+                    .effects
+                    .record_heap_read(registry.clone(), non_assumed);
+                outcome.effects.record_heap_write(registry, non_assumed);
+            }
             let Some(caller) = self.local_body_identity_for_call(call) else {
                 return CallTransfer::UnsupportedOperands(
                     OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
@@ -13498,9 +13530,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 NativeCallIdentity {
                     row: selection.row,
                     target_postcondition: target_postcondition.clone(),
-                    source: NativeIdentitySource::Inferred {
-                        premise: Box::new(selection.premise.clone()),
-                    },
+                    source: selection.native_operation_input.as_ref().map_or_else(
+                        || NativeIdentitySource::Inferred {
+                            premise: Box::new(selection.premise.clone()),
+                        },
+                        |evidence| NativeIdentitySource::AuthorInput {
+                            evidence: evidence.clone(),
+                            premise: Box::new(selection.premise.clone()),
+                        },
+                    ),
                 },
             )
         } else if !call.has_spread {

@@ -309,6 +309,7 @@ pub enum EffectCellReport {
     GlobalProp { key: String },
     ArrayContents { origin: u32 },
     SetContents { origin: u32 },
+    GlobalSymbolRegistry,
     ObjectShape { origin: u32 },
     DescriptorMapContents { origin: u32 },
     OwnProperty { origin: u32, property: String },
@@ -324,6 +325,7 @@ impl From<&EffectCell> for EffectCellReport {
             EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
             EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
             EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
+            EffectCell::GlobalSymbolRegistry => Self::GlobalSymbolRegistry,
             EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
             EffectCell::DescriptorMapContents(origin) => {
                 Self::DescriptorMapContents { origin: *origin }
@@ -344,6 +346,7 @@ impl fmt::Display for EffectCellReport {
             Self::GlobalProp { key } => write!(f, "global property `{key}`"),
             Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
             Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
+            Self::GlobalSymbolRegistry => write!(f, "global symbol registry"),
             Self::ObjectShape { origin } => write!(f, "object shape #{origin}"),
             Self::DescriptorMapContents { origin } => {
                 write!(f, "descriptor map contents #{origin}")

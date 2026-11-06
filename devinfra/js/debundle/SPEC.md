@@ -4723,8 +4723,9 @@ impure initializer appears in `sequenced_source_unit`. The edge's
   `incomplete_synchronous_execution`, `callee_heap_effects`}. Each conflict is `read_after_write`,
   `write_after_write`, `write_after_read`, `use_after_allocation` or
   `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
-  `array_contents`, `set_contents`, `lexical_cell`, `object_shape`, `descriptor_map_contents`,
-  or `own_property` with `origin` and `property`), or `after_barrier` / `barrier_after_prior`
+  `array_contents`, `set_contents`, `global_symbol_registry`, `lexical_cell`,
+  `object_shape`, `descriptor_map_contents`, or `own_property` with `origin`
+  and `property`), or `after_barrier` / `barrier_after_prior`
   for the opaque-barrier dependence. `source`, `target` and `observation` are
   the provenance of that endpoint's binding effect (§ Commuting statements):
   `{"kind": "observed"}` or `{"kind": "fallback", "reason": {"path": …}}`

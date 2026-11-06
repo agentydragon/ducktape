@@ -531,6 +531,7 @@ fn sweep_unreachable_top_level(
     let private_cell = |cell: &EffectCell| -> bool {
         match cell {
             EffectCell::GlobalProp(_) => false,
+            EffectCell::GlobalSymbolRegistry => false,
             EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
                 born_in_dropped_item(*origin)
             }
@@ -1179,6 +1180,7 @@ fn format_effect_cell(cell: &EffectCell) -> String {
         EffectCell::Binding(id) => format!("binding `{}`", id_name(id)),
         EffectCell::LexicalCell(origin) => format!("lexical cell #{origin}"),
         EffectCell::GlobalProp(key) => format!("global `{key}`"),
+        EffectCell::GlobalSymbolRegistry => "global symbol registry".to_owned(),
         EffectCell::ArrayContents(origin) => format!("array contents #{origin}"),
         EffectCell::SetContents(origin) => format!("set contents #{origin}"),
         EffectCell::ObjectShape(origin) => format!("object shape #{origin}"),

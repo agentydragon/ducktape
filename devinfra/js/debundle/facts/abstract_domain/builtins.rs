@@ -158,6 +158,10 @@ pub enum NativeBodyEffects {
     /// After its listed coercions, the body accesses no application global,
     /// heap or host state. Callee lookup and operand evaluation are separate.
     NoExteriorAccess,
+    /// `%Symbol.for%` reads the agent-local global symbol registry and inserts
+    /// the key when absent. The operation cannot call application code; its
+    /// only source-observable result is the returned key-unique Symbol.
+    SymbolRegistryReadWrite,
 }
 
 /// One builtin's summary.
@@ -335,11 +339,12 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Prim(PrimKinds::SYMBOL),
         throws: Throws::Never,
-        body_effects: NativeBodyEffects::Unknown,
+        body_effects: NativeBodyEffects::NoExteriorAccess,
         assumed_intact: true,
         requires: &[IntrinsicSlot::Global(NativeIntrinsic::Symbol)],
     },
-    // The GlobalSymbolRegistry is agent-local and unobservable from source.
+    // Registry contents are not directly enumerable or removable; the
+    // returned key-unique identity remains observable to the source program.
     Row {
         op: IntrinsicOp::SymbolFor,
         invocation: &[Invocation::Call],
@@ -351,7 +356,7 @@ pub const ROWS: &[Row] = &[
         mutates: &[],
         returns: Return::Prim(PrimKinds::SYMBOL),
         throws: Throws::Never,
-        body_effects: NativeBodyEffects::Unknown,
+        body_effects: NativeBodyEffects::SymbolRegistryReadWrite,
         assumed_intact: false,
         requires: &[
             IntrinsicSlot::Global(NativeIntrinsic::Symbol),

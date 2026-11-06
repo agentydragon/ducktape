@@ -1,7 +1,7 @@
 //! Nonterminal receipts from operations executed by the ordered local kernel.
 
 use super::value_model::CallSite;
-use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
+use crate::analysis_inputs::{NativeIntrinsic, NativeOperationInputEvidence, ProofDependencies};
 use crate::execution_evidence::{ExecutionPrecisionLoss, SkippedCallReason};
 use crate::facts::abstract_domain::builtins::Row;
 use crate::facts::semantic_inference::NativePremise;
@@ -114,6 +114,10 @@ pub(super) struct NativeCalleeSelection {
     pub(super) site: CallSite,
     pub(super) row: &'static Row,
     pub(super) premise: NativePremise,
+    /// Exact-site author input when census integrity is unavailable. It is
+    /// carried across operand evaluation so the row transfer consumes the
+    /// same assertion that selected the original intrinsic.
+    pub(super) native_operation_input: Option<Box<NativeOperationInputEvidence>>,
 }
 
 /// Kept out of every ordinary local edge's inline layout.
@@ -737,9 +741,11 @@ impl EffectCoverageFragment {
         }
     }
 
-    /// Checked native body with no application callback, accessor, host
-    /// operation or exterior write. Callee and operand evaluation remain with
-    /// the caller; this receipt grants no lexical binding-effect authority.
+    /// Complete initialization-domain coverage for a checked native body with
+    /// no application callback or accessor. Concrete shared-cell effects are
+    /// recorded by the runtime transfer. Callee and operand evaluation remain
+    /// with the caller; this receipt grants no lexical binding-effect
+    /// authority.
     pub(super) fn native_operation(dependencies: &ProofDependencies) -> Self {
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
