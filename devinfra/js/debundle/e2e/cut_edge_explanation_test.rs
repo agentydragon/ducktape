@@ -51,6 +51,41 @@ export { alpha, beta, probe, gamma };
     .with_dataflow_aware_s_chain()
 }
 
+fn pure_wrapper_heap_frontier_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        r#"import { observe } from './peer.js';
+const alpha = (globalThis.tag = "first", "a");
+const beta = (globalThis.tag = "second", "b");
+const captured = [];
+const composed = [];
+function touch() { composed.push("local"); }
+const observed = observe(() => captured.push("escaped"), touch());
+const gamma = (globalThis.tag = "third", "g");
+console.log(alpha, beta, observed, gamma, globalThis.tag);
+export { alpha, beta, observed, gamma };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("alpha"), Member::new("gamma")]),
+            logical_module("mod_b", &[Member::new("beta")]),
+            logical_module(
+                "mod_c",
+                &[
+                    Member::new("captured"),
+                    Member::new("composed"),
+                    Member::new("touch"),
+                    Member::new("observe").with_purity(MemberPurity::Pure),
+                    Member::new("observed"),
+                ],
+            ),
+        ],
+    )
+    .with_extra_chunks(&[(
+        "static/peer",
+        "export function observe(callback, value) { return value; }\n",
+    )])
+    .with_dataflow_aware_s_chain()
+}
+
 fn cut_edges(cycles: &[Value]) -> Vec<&Value> {
     cycles
         .iter()
@@ -213,6 +248,63 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
         "{described}"
     );
     assert!(described.contains("array contents #"), "{described}");
+
+    let pure_rejected = run_rejection_fixture(pure_wrapper_heap_frontier_fixture());
+    let pure_cycles = pure_rejected.cycles();
+    assert_eq!(
+        pure_cycles[0]["rejection"], "mutual_constraining_cycle",
+        "adding heap endpoint context must not change the gate verdict: {pure_cycles:#?}"
+    );
+    let pure_endpoint = cut_edges(&pure_cycles)
+        .into_iter()
+        .filter(|edge| edge["kind"] == "sequenced")
+        .find_map(|edge| {
+            [
+                &edge["sequenced_source_unit"],
+                &edge["explanation"]["target_source_unit"],
+            ]
+            .into_iter()
+            .find(|endpoint| endpoint["binding_names"] == json!(["observed"]))
+        })
+        .unwrap_or_else(|| {
+            panic!("pure heap-frontier endpoint missing from cycles.json: {pure_cycles:#?}")
+        });
+    assert_eq!(pure_endpoint["purity"]["kind"], "pure", "{pure_endpoint}");
+    assert_eq!(
+        pure_endpoint["heap_frontier"]["own_at_init"]["opaque"], true,
+        "{pure_endpoint}"
+    );
+    let captured_writes = pure_endpoint["heap_frontier"]["own_at_init"]["writes"]["sample"]
+        .as_array()
+        .expect("captured array writes");
+    assert!(
+        captured_writes
+            .iter()
+            .any(|cell| cell["kind"] == "array_contents"),
+        "pure wrapper call must retain its captured-array cell: {pure_endpoint}"
+    );
+    let pure_graph_path = pure_rejected
+        .report_root
+        .join("static/app/dependency_graph.json.gz");
+    let pure_described = run_debundle(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        pure_graph_path.to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+    assert!(
+        pure_described.status.success(),
+        "{}",
+        String::from_utf8_lossy(&pure_described.stderr)
+    );
+    let pure_described = String::from_utf8_lossy(&pure_described.stdout);
+    assert!(
+        pure_described.contains("heap frontier: own-at-init opaque=true"),
+        "{pure_described}"
+    );
 }
 
 /// Array-content order (emitted in both S-chain modes; this fixture uses

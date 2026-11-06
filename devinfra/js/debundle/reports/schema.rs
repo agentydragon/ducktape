@@ -577,7 +577,9 @@ pub struct HeapContentSummaryReport {
     pub writes: HeapCellSetReport,
 }
 
-/// Heap accesses reached through paths that did not consume an author premise.
+/// Heap accesses recorded outside an active `AssumedEffectReason` path at the
+/// recording or merge point. Other premises, including program and native-input
+/// premises, may still have been consumed.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NonAssumedHeapAccessReport {
     pub reads: HeapCellSetReport,
@@ -1196,7 +1198,9 @@ pub struct SequencedSourceUnitCause {
     /// known ordering fact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub synchronous_execution_complete: Option<bool>,
-    /// The source unit's existing own/composed heap evidence, when non-empty.
+    /// Existing own/composed heap evidence when non-empty. Pure source units
+    /// can have endpoint context when this evidence is available; its absence
+    /// does not prove that the source unit has no heap effects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heap_frontier: Option<HeapFrontierEvidence>,
 }
@@ -1463,17 +1467,21 @@ pub fn sequenced_edge_cause(
     impure_source_unit_cause(dependency_graph, edge.from)
 }
 
-/// The impure-initializer evidence of one source unit; `None` when the
-/// source unit is classified pure (a pure endpoint of a sequencing edge,
-/// e.g. an array allocation or a pure content reader).
+/// Context for one sequencing endpoint: every impure source unit, or a pure
+/// source unit with available non-empty heap evidence. Pure endpoints with no
+/// such evidence are omitted; that absence does not prove zero heap effects.
 pub fn impure_source_unit_cause(
     dependency_graph: &crate::DependencyGraph,
     source_unit: SourceUnitId,
 ) -> Option<SequencedSourceUnitCause> {
     let node = dependency_graph.node(source_unit)?;
-    let Purity::NotPure { .. } = &node.purity else {
+    let heap_frontier = node
+        .synchronous_execution
+        .as_ref()
+        .and_then(|execution| execution.heap_frontier.clone());
+    if matches!(&node.purity, Purity::Pure) && heap_frontier.is_none() {
         return None;
-    };
+    }
     Some(SequencedSourceUnitCause {
         source_unit_id: crate::reports::source_unit_key(source_unit),
         binding_names: node.declared.iter().map(|id| id.0.clone()).collect(),
@@ -1483,10 +1491,7 @@ pub fn impure_source_unit_cause(
             .synchronous_execution
             .as_ref()
             .map(|execution| execution.complete),
-        heap_frontier: node
-            .synchronous_execution
-            .as_ref()
-            .and_then(|execution| execution.heap_frontier.clone()),
+        heap_frontier,
     })
 }
 

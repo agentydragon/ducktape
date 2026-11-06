@@ -4088,20 +4088,26 @@ impure initializer appears in `sequenced_source_unit`. The edge's
   deterministic representative reason; it does not enumerate every path that
   could contribute the same binding effect.
 
-Impure-initializer evidence (`sequenced_source_unit`, `target_source_unit`)
-also carries `synchronous_execution_complete` when synchronous analysis ran;
-`false` marks a statement whose sequencing edges are the conservative flood
-of an incomplete execution rather than a known ordering fact. A `sequenced`
-edge whose endpoint is classified pure (an allocation, a pure content reader)
-has no evidence for that side but keeps its `explanation`.
+Sequenced endpoint context (`sequenced_source_unit`, `target_source_unit`) is
+emitted for every impure initializer and for a pure initializer with available
+non-empty `heap_frontier` evidence. It carries `synchronous_execution_complete`
+when synchronous analysis ran; `false` marks a statement whose sequencing
+edges are the conservative flood of an incomplete execution rather than a known
+ordering fact. A pure endpoint without available non-empty heap evidence has no
+context for that side but keeps its `explanation`. Missing endpoint context or
+`heap_frontier` can mean synchronous evidence was unavailable; it does not
+prove zero heap effects.
 
 When non-empty, `heap_frontier` on a source-unit synchronous report and its
 sequenced endpoint context separates `own_at_init` from
-`composed_synchronous_calls`, and includes `non_assumed_heap_accesses`. Each
-cell set reports its unique count and a stable sample of at most eight exact
-cells. The existing opaque bit has no per-operation provenance; exact escaped
-cells remain independent evidence alongside it. This diagnostic does not
-prove heap locality and changes no ordering or gate verdict.
+`composed_synchronous_calls`, and includes `non_assumed_heap_accesses`. Those
+heap accesses were recorded outside an active `AssumedEffectReason` path at
+the recording or merge point; other premises, including program and
+native-input premises, may still have been consumed. Each cell set reports its
+unique count and a stable sample of at most eight exact cells. The existing
+opaque bit has no per-operation provenance; exact escaped cells remain
+independent evidence alongside it. This diagnostic does not prove heap
+locality and changes no ordering or gate verdict.
 
 The explanation is retained when the dependency graph is built
 (`dependency_graph.json.gz` `edges[].sequenced_cause` for `sequenced` edges; the
