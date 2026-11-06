@@ -1077,6 +1077,17 @@ fn normalize_invocation_spec_location(location: &mut Value, spec_path: &Path) {
     *location = Value::String(format!("<invocation-spec>:{suffix}"));
 }
 
+#[test]
+fn linkage_export_effects_survive_saved_analysis() {
+    assert_staged_run_matches(
+        FixtureOpts::new(
+            "const first = 1;\nexport { first };\nconst second = 2;\nconsole.log(first, second);\n",
+            vec![logical_module("second", &[Member::new("second")])],
+        ),
+        &[],
+    );
+}
+
 fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
     let (staged, _fixture) = staged(opts);
     let direct = staged.run(run_args);

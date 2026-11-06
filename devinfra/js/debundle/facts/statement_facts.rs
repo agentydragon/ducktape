@@ -52,6 +52,9 @@ impl PositionBucketed<BTreeSet<Id>> {
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
+    /// Local linkage executes no value expression. Dependency-bearing
+    /// re-exports additionally require their dependency's evaluation order.
+    pub(crate) export_linkage: Option<ExportLinkage>,
     /// Exact protected iterable producers that must remain in this module.
     pub(crate) stable_iterable_producers: BTreeSet<SourceUnitOrdinal>,
     pub source_location: Option<SourceLocation>,
@@ -712,6 +715,13 @@ pub enum StatementKind {
     SideEffect,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ExportLinkage {
+    Local,
+    Dependency,
+}
+
 /// Policy-independent per-statement facts: everything the analyzer
 /// can compute about a top-level statement from the module text alone,
 /// without consulting `AnalysisInputs`. Produced by
@@ -722,6 +732,7 @@ pub enum StatementKind {
 #[derive(Debug, Clone)]
 pub struct StructuralStatementFacts {
     pub ordinal: SourceUnitOrdinal,
+    pub(crate) export_linkage: Option<ExportLinkage>,
     pub source_location: Option<SourceLocation>,
     pub kind: StatementKind,
     pub declared: BTreeSet<Id>,

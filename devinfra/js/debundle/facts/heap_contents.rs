@@ -78,13 +78,7 @@ pub(crate) fn annotate_heap_contents(
         // A local export list wires live bindings without evaluating their
         // values or executing a heap operation. Export reentry and callback
         // visibility are tracked independently by synchronous execution.
-        if fact.kind == StatementKind::Export
-            && !matches!(item.as_module_item(),
-                ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export))
-                    if export.src.is_none()
-                        && export.specifiers.iter().all(|specifier|
-                            matches!(specifier, ExportSpecifier::Named(_))))
-        {
+        if fact.kind == StatementKind::Export && fact.export_linkage != Some(ExportLinkage::Local) {
             collector.eager.opaque = true;
         }
         fact.heap_one_shot_allocation =

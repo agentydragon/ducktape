@@ -5,6 +5,42 @@ use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+#[test]
+fn linkage_export_does_not_add_runtime_havoc_to_relocation() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const first = 1;\nexport { first };\nconst second = 2;\nconsole.log(first, second);\n",
+        vec![logical_module("second", &[Member::new("second")])],
+    ));
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report}");
+}
+
+#[test]
+fn linkage_reexports_keep_dependency_evaluation_coverage_open() {
+    for linkage in [
+        "export { shared } from './peer.js';",
+        "export * from './peer.js';",
+    ] {
+        let source = format!("{linkage}\nconst second = 2;\nconsole.log(second);\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module("second", &[Member::new("second")])],
+            )
+            .with_extra_chunks(&[(
+                "static/peer",
+                "console.log('peer'); export const shared = 1;\n",
+            )]),
+        );
+        assert_preserved_entry_output(&fixture, "peer\n2\n");
+        let report = fixture.effect_translation_validation();
+        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+        assert_eq!(report["decision"]["status"], "incomplete", "{report}");
+    }
+}
+
 fn native_constructor_input(
     source: &str,
     declaration: &str,

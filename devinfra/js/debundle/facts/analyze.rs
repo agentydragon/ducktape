@@ -179,6 +179,19 @@ where
             });
             StructuralStatementFacts {
                 ordinal: SourceUnitOrdinal(ordinal),
+                export_linkage: match item {
+                    ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => {
+                        Some(if export.src.is_none() {
+                            ExportLinkage::Local
+                        } else {
+                            ExportLinkage::Dependency
+                        })
+                    }
+                    ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => {
+                        Some(ExportLinkage::Dependency)
+                    }
+                    _ => None,
+                },
                 source_location,
                 kind,
                 var_declared: collector
@@ -908,6 +921,7 @@ fn assemble_statement_facts(
 ) -> StatementFacts {
     let StructuralStatementFacts {
         ordinal,
+        export_linkage,
         source_location,
         kind,
         declared,
@@ -959,6 +973,7 @@ fn assemble_statement_facts(
 
     StatementFacts {
         ordinal,
+        export_linkage,
         stable_iterable_producers: BTreeSet::new(),
         source_location,
         callback_factory_barriers: Vec::new(),
