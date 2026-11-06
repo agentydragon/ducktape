@@ -183,6 +183,25 @@ py_test(
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "//props:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_dev_server_integration",
+    srcs = ["test_dev_server_integration.py"],
+    data = [":dev"],
+    env = {"PROPS_DEV_RLOCATION": "$(rlocationpath :dev)"},
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
+        "//props:conftest",
+        "//props/db:database",
+        "//props/testing/fixtures:db",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
