@@ -65,10 +65,9 @@ History journal ingress uses this path. Its projected-token audience is no longe
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior; `authenticatedWorkloadToken`, the
-  legacy hop bearer, unavailable after the TLS-only flip and removed with the last service migration; or
+  `secretRef`, preserving the central-held Secret behavior; or
   `projectedWorkloadToken`, naming the audience of a token the sidecar presented on the hop. The
-  latter two are resolved per request and must still be bound to the caller being decided; absent,
+  projected token is resolved per request and must still be bound to the caller being decided; absent,
   stale, or mismatched context refuses with `credential-unavailable`.
 - **A projected token is the Sandbox account's identity minted for a destination.** The sidecar
   reads one projected token per configured audience and presents it as

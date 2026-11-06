@@ -141,13 +141,21 @@ would remain inert there. Do not configure credentialless `bb remote` until Buil
 runner-side credential reference or Agentplane owns an equivalent broker at that boundary; the
 boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
 
-## Authenticated workload credentials
+## Sandbox SVID routes
 
-The legacy `authenticatedWorkloadToken` API variant remains temporarily while the service PRs
-remove its consumers. It cannot produce a credential after the proxy-audience bearer is removed.
-Those routes are unavailable until their own service-owned SVID boundary lands; this is an explicit
-draft-stack sequencing hold. Destination-scoped projected tokens remain Pod-bound and separately
-reviewed against Sandbox status, including the Kubernetes token retained until the later cutover.
+Sandbox-to-service routes use the Runtime certificate issued for the current Sandbox incarnation.
+The sidecar selects a route by exact destination authority, opens an authorized CONNECT through the
+proxy, and presents the Runtime SVID on the destination TLS connection. It removes caller
+`Authorization`, `Proxy-Authorization`, and projected-token headers before forwarding. The proxy
+authenticates the sidecar's TLS client certificate, resolves its Sandbox UID and credential ID
+against the live Sandbox status, and uses that Sandbox's ServiceAccount as its existing policy subject. Exact first-party TLS
+authorities are admitted independently of egress substitution rules; receivers authorize the request.
+The destination independently verifies the SVID and performs its own live Sandbox lookup. No
+caller-supplied header or HTTP bearer establishes identity on this route.
+
+The central forward listener requires SVID TLS. SVID routes do not use `EgressCredential` substitution.
+The LLM ingress's SVID-only listener and the Sandbox's exact-origin sidecar route are described in
+[`../llm_ingress/README.md`](../llm_ingress/README.md).
 
 Authoritative evidence is pinned to BuildBuddy source commit
 [`6fc01488`](https://github.com/buildbuddy-io/buildbuddy/tree/6fc01488a60d69832f86eff154ac985e1170653e):

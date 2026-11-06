@@ -26,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	corev1 "k8s.io/api/core/v1"
 )
 
 var (
@@ -35,10 +36,6 @@ var (
 	}
 	projectedCredential = resources.Credential{
 		Name: "kube", Source: resources.ProjectedWorkloadToken{Audience: projectedAudience},
-		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
-	}
-	workloadCredential = resources.Credential{
-		Name: "workload", Source: resources.AuthenticatedWorkloadToken{},
 		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
 	}
 	// bearerHeader carries hopToken as a plain proxy request's header, and validBearer as the
@@ -601,22 +598,6 @@ func TestSVIDAuthenticatesProxyRequestsWithoutHopBearerHeaders(t *testing.T) {
 	}
 	if reached.Load() != 3 {
 		t.Errorf("%d requests reached upstream, want three HTTP requests", reached.Load())
-	}
-}
-
-func TestAuthenticatedWorkloadTokenHasNoBearerUnderSVIDAuthentication(t *testing.T) {
-	l := newLab(t)
-	l.index.PutCredential(workloadCredential)
-	l.allow(rule("/workload", workloadCredential.Name))
-	var reached atomic.Int64
-	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) { reached.Add(1) })
-	response := l.send(t, "GET", portOf(upstream), "/workload",
-		header("Proxy-Authorization", "Bearer "+hopToken, "Authorization", "Bearer "+workloadCredential.Placeholder()), nil)
-	if response.StatusCode != http.StatusForbidden || response.Header.Get("x-agentplane-egress") != "denied; reason=credential-unavailable" {
-		t.Fatalf("authenticatedWorkloadToken without a bearer: %d %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
-	}
-	if reached.Load() != 0 {
-		t.Fatalf("request with unresolved authenticatedWorkloadToken reached upstream %d times", reached.Load())
 	}
 }
 

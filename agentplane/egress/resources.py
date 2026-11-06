@@ -125,12 +125,6 @@ Target = Annotated[
 ]
 
 
-class AuthenticatedWorkloadTokenSource(_Wire):
-    """The bearer retained from this request's successful workload authentication."""
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
-
-
 class ProjectedWorkloadTokenSource(_Wire):
     """A token for another audience, projected into the sidecar and presented on the hop.
 
@@ -156,16 +150,13 @@ class CredentialSource(_Wire):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
     secret_ref: SecretKeyRef | None = None
-    authenticated_workload_token: AuthenticatedWorkloadTokenSource | None = None
     projected_workload_token: ProjectedWorkloadTokenSource | None = None
 
     @model_validator(mode="after")
     def _one_source(self) -> CredentialSource:
-        sources = (self.secret_ref, self.authenticated_workload_token, self.projected_workload_token)
+        sources = (self.secret_ref, self.projected_workload_token)
         if sum(source is not None for source in sources) != 1:
-            raise ValueError(
-                "source must set exactly one of secretRef, authenticatedWorkloadToken or projectedWorkloadToken"
-            )
+            raise ValueError("source must set exactly one of secretRef or projectedWorkloadToken")
         return self
 
 

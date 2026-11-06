@@ -1,5 +1,4 @@
-"""What the namespace's egress grants a sandbox: the Actions API's agent-facing surface only, and
-the Kubernetes access every sandbox gets rather than the ones that opted in."""
+"""What the namespace grants a sandbox: SVID-protected service routes and Kubernetes access."""
 
 from __future__ import annotations
 
@@ -234,6 +233,17 @@ def test_rules_tls_is_authorized_by_its_receiver(staging_manifests: list[dict[st
     service = _by_name(staging_manifests, "Service", "egress")
     assert 8443 in {port["port"] for port in service["spec"]["ports"]}
     assert 80 not in {port["port"] for port in service["spec"]["ports"]}
+
+
+def test_legacy_workload_bearer_routes_are_removed_from_basic(staging_manifests: list[dict[str, Any]]) -> None:
+    policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
+    hosts = [host for rule in policy["spec"]["rules"] for host in rule.get("hosts", [])]
+    assert agent_api(staging.ENV.namespace).fqdn not in hosts
+    assert "actions.agentplane-staging.svc.cluster.local" not in hosts
+    assert not any(
+        doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == "agentplane-workload"
+        for doc in staging_manifests
+    )
 
 
 def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_manifests: list[dict[str, Any]]) -> None:

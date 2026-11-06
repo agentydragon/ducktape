@@ -375,7 +375,7 @@ class Actions(Construct):
         workload = self._add_workload(settings_name)
         content["workload_port"] = workload_service(env.namespace).pod_port
         content["workload_tls"] = workload_tls.serving_certificate(
-            self, env, workload=workload, name=NAME, uri=WORKLOAD_URI
+            self, env, container=workload.container, name=NAME, uri=WORKLOAD_URI
         )
         settings = SettingsFile(
             self,

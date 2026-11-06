@@ -94,9 +94,9 @@ _EXECUTOR_URL = "ws://127.0.0.1:4501"
 _EXECUTOR_HEALTH_PORT = 4502
 _EXECUTOR_CONTAINER_NAME = "codex-executor"
 _CONFIG_VOLUME = "environment-runtime-config"
-# The bearers a Session presents: the placeholders the agentplane-workload and the notifications
-# EgressCredentials derive from their names, which the egress proxy substitutes.
-_WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
+# Harness clients require an API-key environment value, but the exact-origin SVID route strips
+# Authorization before the destination sees it.
+_SVID_ROUTE_AUTH_VALUE = "unused"
 
 
 @dataclass(frozen=True)
@@ -489,13 +489,10 @@ class EnvironmentSandboxTemplate(Construct):
                     *sandbox_pod.egress_env(),
                     *(k8s.EnvVar(name=name, value=value) for name, value in self.agent_cli_env.items()),
                     *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if self.disable_otel_sdk else []),
-                    # Neither a workload token nor a LiteLLM key: the placeholder the
-                    # agentplane-workload EgressCredential derives from its name. Central
-                    # substitutes the sidecar-only projected token; the ingress replaces
-                    # that with its server-held LiteLLM virtual key after live
-                    # workload authentication.
-                    k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_WORKLOAD_PLACEHOLDER),
-                    k8s.EnvVar(name="OPENAI_API_KEY", value=_WORKLOAD_PLACEHOLDER),
+                    # Harnesses require these API-key variables, but the sidecar's exact-origin
+                    # SVID route strips Authorization before the LLM ingress receives the request.
+                    k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_SVID_ROUTE_AUTH_VALUE),
+                    k8s.EnvVar(name="OPENAI_API_KEY", value=_SVID_ROUTE_AUTH_VALUE),
                 ],
             ),
             resources=self.environment_runtime_resources

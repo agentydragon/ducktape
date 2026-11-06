@@ -11,8 +11,8 @@ RuntimeDirectory=agentplane-environment-runtime-lifetime
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=no
 EnvironmentFile=/run/agentplane/config/environment-runtime.env
-Environment=ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
-Environment=OPENAI_API_KEY=agentplane-credential-agentplane-workload
+Environment=ANTHROPIC_AUTH_TOKEN=unused
+Environment=OPENAI_API_KEY=unused
 ExecStartPre=/usr/libexec/agentplane/apply-resource-limits
 ExecStart=/run/agentplane/environment/bin/agentplane-environment-runtime --config /run/agentplane/config/environment-runtime.json --launch-file /run/agentplane/sandbox/launch.json
 UMask=0007

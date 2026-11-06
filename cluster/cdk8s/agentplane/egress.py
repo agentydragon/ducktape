@@ -164,46 +164,6 @@ def admin(namespace: str) -> ServiceRef:
     return ServiceRef(name=f"{NAME}-admin", port=Port(name="admin", number=8081), pods=_pods(namespace))
 
 
-def add_runner_egress(
-    scope: Construct, *, policy: str, credential: str, endpoint: ServiceRef, path: str, audience: str, purpose: str
-) -> None:
-    """The path a runner dials `endpoint` on: `policy` admits POSTs to `path` through the proxy, which
-    swaps the `credential` placeholder for the Pod's own token for `audience`, a token no other
-    recipient accepts. `purpose` finishes "minted only for its runner's ..." in the description.
-
-    The fleet chart adds its Cilium policy separately."""
-    namespace = endpoint.pods.namespace
-    EgressCredential(
-        scope,
-        f"{policy}-credential",
-        metadata=ApiObjectMetadata(name=credential, namespace=namespace),
-        description=(
-            f"The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's {purpose}. "
-            "It conveys no other authority."
-        ),
-        source=Source.projected_workload_token(audience=audience),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    add_egress_policy(
-        scope,
-        f"{policy}-policy",
-        metadata=ApiObjectMetadata(name=policy, namespace=namespace),
-        rules=[
-            Rule.egress(
-                hosts=[endpoint.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=[path],
-                credential_ref=PolicySetSpecRulesCredentialRef(name=credential),
-            )
-        ],
-    )
-
-
 def add_runner_egress_network_policy(scope: Construct, *, policy: str, endpoint: ServiceRef) -> None:
     """The fleet proxy fence is additive to the proxy's own network policy."""
     namespace = endpoint.pods.namespace
@@ -219,22 +179,6 @@ def add_runner_egress_network_policy(scope: Construct, *, policy: str, endpoint:
 
 
 def _egress_credentials(scope: Construct, *, namespace: str) -> None:
-    EgressCredential(
-        scope,
-        "egresscredential-agentplane-workload",
-        metadata=ApiObjectMetadata(name="agentplane-workload", namespace=namespace),
-        description=(
-            "The calling Sandbox Pod's short-lived, Pod-bound workload identity for first-party "
-            "Agentplane destinations. It conveys no LiteLLM credential or operator, Agent, or "
-            "Thread authority."
-        ),
-        source=Source.authenticated_workload_token(),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
     EgressCredential(
         scope,
         "egresscredential-github-pat",
@@ -390,14 +334,6 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
             # The proxy matches a request's host on the exact string, so the in-cluster hosts are the
             # full names their clients spell.
             #
-            # Whole services, as for the API server below: each authenticates the workload token the
-            # proxy substitutes and authorizes the caller itself, so a method or path list here would
-            # only be a second copy of their routes to keep in step.
-            Rule.egress(
-                hosts=[llm_ingress.service(namespace).fqdn],
-                cluster_internal=True,
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
             # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
             # effective caller's own authority. The receivers check the caller UID and resource
             # ownership; this exact list grants no provisioning, broker or unrelated Actions.
@@ -887,7 +823,7 @@ class Egress(Construct):
         workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
         workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
-        workload_tls.serving_certificate(self, self.env, workload=workload, name="egress-rules", uri=RULES_WORKLOAD_URI)
+        workload_tls.serving_certificate(self, self.env, container=workload.container, name="egress-rules", uri=RULES_WORKLOAD_URI)
         return workload
 
     def _add_network_policy(self, runners: Pods) -> None:

@@ -19,7 +19,7 @@ from constructs import Construct
 
 from agentplane.egress import sidecar_config
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, egress
+from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.clickhouse import client
@@ -168,29 +168,6 @@ def add_gateway_resources(
                 methods=[PolicySetSpecRulesMethods.POST],
                 paths=["/_matrix/client/v3/login"],
                 credential_ref=PolicySetSpecRulesCredentialRef(name=MATRIX_CREDENTIAL),
-            ),
-            # Discovery only, not the broader basic policy's LLM/Actions/Kubernetes grants.
-            Rule.egress(
-                hosts=[GATEWAY.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/v1/rules", "/openapi.json"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
-            Rule.egress(
-                hosts=[actions.service("agentplane-staging").fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
-                paths=[
-                    "/mcp",
-                    "/openapi.json",
-                    "/v1/action-groups",
-                    "/v1/action-groups/**",
-                    "/v1/action-policy",
-                    "/v1/action-requests",
-                    "/v1/action-requests/**",
-                ],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
         ],
     )

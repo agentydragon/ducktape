@@ -242,7 +242,7 @@ class RunnerGateway(Construct):
                 mode="mtls", tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
             ).model_dump(mode="json"),
             "workload_tls": workload_tls.serving_certificate(
-                self, env, workload=workload, name=runner_gateway.NAME, uri=runner_gateway.WORKLOAD_URI
+                self, env, container=workload.container, name=runner_gateway.NAME, uri=runner_gateway.WORKLOAD_URI
             ).model_dump(mode="json"),
             **central_sampler_settings,
             **(

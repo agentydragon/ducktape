@@ -95,10 +95,10 @@ exactly one of `pod`, `vm`, or `firecracker`.
   when the template includes it, the `egress-sidecar` container. Runtime-only custom templates remain
   valid. The workload and executor containers receive no mount. The
   sidecar uses those files only when its explicit `proxy_mode: mtls` selects the egress proxy's
-  dedicated TLS listener; a handshake or certificate failure never retries in token mode. During
-  the staged migration, the sidecar may also send the old proxy-audience bearer for downstream
-  workload identity context. That bearer is not hop authentication and is removed after dependent
-  services stop relying on `authenticatedWorkloadToken`.
+  dedicated TLS listener; a handshake or certificate failure never retries in token mode. The
+  compatibility token mode remains separate. It may carry projected tokens only for destinations
+  that still use their own bearer audience; an SVID route strips caller Authorization and projected
+  token headers.
 - A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
   first VMI UID is persisted on its VM and in the Sandbox's status. If KubeVirt unexpectedly replaces a VMI while
   the VM still carries the old identity, the controller halts that replacement, rotates to a new

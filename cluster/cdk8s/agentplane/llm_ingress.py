@@ -67,7 +67,7 @@ def workload_service(namespace: str) -> ServiceRef:
     """The separate listener that authenticates live Sandbox SVIDs."""
     return ServiceRef(
         name=_NAME,
-        port=Port(name="workload-ingress", number=8081),
+        port=Port(name="workload", number=8081),
         pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
 

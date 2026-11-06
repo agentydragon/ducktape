@@ -467,11 +467,10 @@ may authenticate callers. `policy_namespace` names where PolicySets and PolicyBi
 namespace can name a ServiceAccount in another caller namespace. Neither setting approves Actions or
 selects an MCP destination.
 
-Sandbox calls use ordinary `Authorization: Bearer <workload token>` at this service. The runner does
-not hold that token: it presents the public
-`agentplane-credential-agentplane-workload` placeholder to the existing pod-local/central egress
-path, whose generic `authenticatedWorkloadToken` source substitutes the already-authenticated
-`agentplane-egress` bearer for the exact first-party destination rule.
+Sandbox calls use the Runtime SVID route. The sidecar establishes the exact-origin TLS connection
+through an authorized CONNECT, removes caller Authorization, and presents the current Sandbox
+certificate to the service. The service resolves that SVID against live Sandbox state before
+authorization. External callers are not admitted by this Sandbox-only route.
 
 At the destination, the [workload resolver](../workload_auth/auth/) performs the TokenReview. Actions
 uses its explicit ServiceAccount-only resolution: the configured audience, allowed namespace and

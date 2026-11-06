@@ -198,17 +198,20 @@ The CLI reads the environment of the harness and of every command it runs. There
 no discovery calls, so no command depends on a service it does not talk to. Actions and Sessions use
 generated gRPC over HTTP/2; Notifications and Egress rules use HTTP.
 
-| Variable                                                                                                                                                                  | Value                                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`                                                                                             | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
-| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                                                                                   | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                              |
-| `AGENTPLANE_SESSION_ID`                                                                                                                                                   | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
+| Variable                                                                                               | Value                                                                                                            |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`                          | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
+| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | an inert compatibility value; the sidecar strips it on Sandbox SVID routes                                       |
+| `AGENTPLANE_SESSIONS_CREDENTIAL`                                                                       | the projected token placeholder for the Session Dispatcher route                                                 |
+| `AGENTPLANE_HISTORY_CREDENTIAL`                                                                        | an inert compatibility value; the sidecar strips it on the History SVID route                                    |
+| `AGENTPLANE_SESSION_ID`                                                                                | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
 
-Managed Pod and VM environments supply the Session Dispatcher URL and inert credential placeholder
-through their shared CLI environment. The egress path holds and substitutes the audience-specific
-token. Custom environments need equivalent configuration; the CLI itself never projects a token
-or adds a route. Retained History reads need their own History configuration and backend authority;
+Managed Pod and VM environments supply service URLs and auth inputs through their shared CLI
+environment. SVID routes strip their inert Authorization value and authenticate from the Runtime
+certificate; the Session Dispatcher path still uses a projected audience-specific token. Custom
+environments need equivalent configuration; the CLI itself never projects a token or adds a route.
+Retained History reads need their own History configuration and backend authority;
 the Action-backed delegation tools use the Actions service's configured peers instead.
 
 New native and central Sessions receive their public ID as `AGENTPLANE_SESSION_ID`. Older central
