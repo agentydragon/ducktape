@@ -1,5 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -67,23 +68,23 @@ genrule(
     visibility = ["//devinfra/claude/session_export/frontend:__pkg__"],
 )
 
-py_binary(
-    name = "export_sessions_bin",
-    data = ["//devinfra/claude/session_export/frontend:bundle"],
-    env = {"SESSION_SYNC_FRONTEND_RLOCATION": "$(rlocationpath //devinfra/claude/session_export/frontend:bundle)"},
-    main_module = "devinfra.claude.session_export.export_sessions",
-    deps = [":export_sessions"],
-)
-
 aspect_py_binary(
-    name = "export_sessions_image_bin",
+    name = "export_sessions_bin",
     data = ["//devinfra/claude/session_export/frontend:bundle"],
     env = {"SESSION_SYNC_FRONTEND_RLOCATION": "$(rlocationpath //devinfra/claude/session_export/frontend:bundle)"},
     main = "export_sessions.py",
     deps = [":export_sessions"],
 )
 
-_image_env = py_image_env(binary_name = "export_sessions_image_bin")
+sh_test(
+    name = "test_cli_launcher",
+    srcs = ["test_cli_launcher.sh"],
+    args = ["$(rlocationpath :export_sessions_bin)"],
+    data = [":export_sessions_bin"],
+    use_bash_launcher = True,
+)
+
+_image_env = py_image_env(binary_name = "export_sessions_bin")
 
 _image_env["SESSION_SYNC_FRONTEND_RLOCATION"] = "$(rlocationpath //devinfra/claude/session_export/frontend:bundle)"
 
@@ -102,7 +103,7 @@ genrule(
 
 py_image_layer(
     name = "image_layers",
-    binary = ":export_sessions_image_bin",
+    binary = ":export_sessions_bin",
     group = "1000",
     owner = "1000",
 )
@@ -110,7 +111,7 @@ py_image_layer(
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("export_sessions_image_bin"),
+    entrypoint = py_image_entrypoint("export_sessions_bin"),
     env = ":image_env",
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":image_layers"],
