@@ -582,6 +582,40 @@ fn direct_callee_heap_contents_win_over_assumed_path_in_both_orders() {
     }
 }
 
+/// A later rebind means a direct-looking suffix call no longer selects the
+/// hoisted function's body. Truncation must not retain that stale body's cell.
+#[test]
+fn suffix_rebind_does_not_retain_stale_direct_callee_heap_contents() {
+    const SOURCE: &str = "const cells = [];\nfunction append() { cells.push(1); }\nfunction replacement() {}\nconst serialize = JSON.stringify;\nconst first = (serialize([append]), append = replacement, append(), 1);\nconst second = (cells.push(2), 2);\nexport { cells, append, replacement, serialize, first, second };\n";
+    let fixture = write_validate_fixture_spec(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("cells"),
+                    Member::new("append"),
+                    Member::new("replacement"),
+                    Member::new("serialize"),
+                    Member::new("first"),
+                    Member::new("second"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_commuting_statements(
+            "static/app",
+            vec![commuting_pair(
+                member_source_unit("all", "first"),
+                member_source_unit("all", "second"),
+            )],
+        ),
+    );
+    let validate = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+    let report: serde_json::Value = serde_json::from_str(&validate.stdout).unwrap();
+    assert_eq!(report["validation"]["success"], true, "{report:#}");
+}
+
 /// A binding's write/read timeline is a derived conflict in either S-chain
 /// mode.
 #[test]

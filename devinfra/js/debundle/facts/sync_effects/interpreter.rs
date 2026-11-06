@@ -1652,6 +1652,39 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         reason: ExecutionPrecisionLossReason,
         span: Span,
     ) {
+        // A stopped ordered frame still has a source-known suffix. Preserve
+        // its direct top-level callees' static heap may-cells when their
+        // bindings cannot be rebound or dynamically resolved. This records
+        // neither execution nor a call receipt; it keeps direct suffix cells
+        // visible alongside the opaque operation's assumed effects.
+        let direct_suffix_heap_contents: Vec<_> =
+            if self.executor.inputs.index.dynamic_scope_owners.is_empty() {
+                self.calls()
+                    .iter()
+                    .filter(|call| {
+                        call.kind == CallKind::Call
+                            && call.owner == self.owner
+                            && call.caller == self.scope.caller()
+                            && call.span.lo >= span.hi
+                    })
+                    .filter_map(|call| {
+                        let ValueExpr::Binding(binding) = &call.callee else {
+                            return None;
+                        };
+                        let index = &self.executor.inputs.index;
+                        if !index.direct_top_level_functions.contains(binding)
+                            || index.reassigned_bindings.contains(binding)
+                        {
+                            return None;
+                        }
+                        let key = index.hoisted_bindings.get(binding)?;
+                        self.executor.inputs.callable_heap_contents.get(key)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
         self.retain_global_fallback_accesses(frame, &reason, span);
         self.executor.local_operation_fallback(
             frame,
@@ -1661,6 +1694,11 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
             span,
             self.outcome,
         );
+        for cells in direct_suffix_heap_contents {
+            self.outcome
+                .effects
+                .record_heap_contents(cells, self.executor.state.assumption.is_none());
+        }
         // The opaque operation can complete and reach later calls. Retain
         // their unknown direct-callee alternatives at their lexical sites,
         // rather than reporting every loss only at the truncation point.
