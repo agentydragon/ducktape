@@ -42,7 +42,7 @@ fn assert_real_reentry_relocation_is_rejected(
             ],
         ),
         &["--emit-on-rejection"],
-        1,
+        3,
     );
     let report = rejected.candidate_relocation_assessment();
     assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
