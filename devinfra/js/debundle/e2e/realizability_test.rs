@@ -763,8 +763,8 @@ export { a1, a2, b1 };
         "cycle report should be written before rejection",
     );
     // Wire-shape check: `cycles.json` is now the trimmed
-    // `BlockingSccEntry` array — each entry has `id`, `modules`, `rejection` and
-    // `cut` and **no `evidence` block** (recoverable on demand via
+    // `BlockingSccEntry` array — each entry has `id`, `modules`, `rejection`,
+    // `cut` and `pass_one_witness`, with no full `evidence` block (recoverable via
     // `debundle gate describe`). See `validation.rs::BlockingSccEntry`
     // and `docs/wire_format.md`.
     let cycles: Vec<serde_json::Value> =
@@ -790,8 +790,8 @@ export { a1, a2, b1 };
         keys.sort();
         assert_eq!(
             keys,
-            vec!["cut", "id", "modules", "rejection"],
-            "trimmed cycles.json entry should have only id/modules/cut/rejection; got {keys:?}",
+            vec!["cut", "id", "modules", "pass_one_witness", "rejection"],
+            "trimmed cycles.json entry should have only id/modules/cut/pass_one_witness/rejection; got {keys:?}",
         );
         assert_eq!(
             obj["id"].as_u64().expect("id is u64"),
