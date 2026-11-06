@@ -78,13 +78,18 @@ fn initializer_override_keeps_callback_read_dependency() {
         .iter()
         .find(|node| node.id == caller_source_unit)
         .unwrap();
+    assert!(caller.purity.is_pure(), "{caller:#?}");
     assert!(
         matches!(
             caller
                 .synchronous_execution
                 .as_ref()
                 .and_then(|execution| execution.binding_effect_authority.as_ref()),
-            Some(analysis::reports::schema::BindingEffectAuthorityReport::AuthorSourceOnly)
+            Some(
+                analysis::reports::schema::BindingEffectAuthorityReport::LegacyExecution {
+                    complete: false
+                }
+            )
         ),
         "the initializer assertion remains distinct from operation coverage: {caller:#?}"
     );
