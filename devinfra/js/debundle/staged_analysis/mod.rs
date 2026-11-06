@@ -8,7 +8,6 @@ use analysis_artifact::{AnalysisArtifactBody, AnalysisArtifactHeader};
 use analysis_codec::ContextOrdinals;
 use analysis_projection::AnalysisSpec;
 use anyhow::{Context, Result, bail, ensure};
-use artifact::paths::normalize_module_path;
 use artifact::reports::{StaticModuleRequest, StaticModuleRequestMode};
 use artifact::{
     ArtifactIndexes, ChunkBundle, JsFile, chunk_runtime_entry, export_policies,
