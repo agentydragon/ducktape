@@ -23,6 +23,15 @@ struct StagedInvocation {
 }
 
 impl StagedInvocation {
+    fn tree_command(args: &[String], outputs: TempDir) -> Self {
+        Self {
+            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+            _outputs: outputs,
+            harness_root: None,
+            invocation_spec: None,
+        }
+    }
+
     fn output_root(&self) -> PathBuf {
         self._outputs.path().join("out")
     }
@@ -187,6 +196,23 @@ struct TreeStaged {
 }
 
 impl TreeStaged {
+    fn analysis_args(&self, analysis: &Path, output_root: &Path) -> [String; 12] {
+        [
+            "--tree-config".to_string(),
+            path(&self.config).to_string(),
+            "--tree-modules".to_string(),
+            path(&self.modules).to_string(),
+            "--tree-vendor-marks".to_string(),
+            path(&self.vendor_marks).to_string(),
+            "--tree-source-root".to_string(),
+            path(self.root()).to_string(),
+            "--out-root".to_string(),
+            path(output_root).to_string(),
+            "--analysis".to_string(),
+            path(analysis).to_string(),
+        ]
+    }
+
     fn root(&self) -> &Path {
         self.run.root()
     }
@@ -219,27 +245,9 @@ impl TreeStaged {
             args.push("--dry-run".to_string());
         }
         if let Some(analysis) = analysis {
-            args.extend([
-                "--tree-config".to_string(),
-                path(&self.config).to_string(),
-                "--tree-modules".to_string(),
-                path(&self.modules).to_string(),
-                "--tree-vendor-marks".to_string(),
-                path(&self.vendor_marks).to_string(),
-                "--tree-source-root".to_string(),
-                path(root).to_string(),
-                "--out-root".to_string(),
-                path(&output_root).to_string(),
-                "--analysis".to_string(),
-                path(analysis).to_string(),
-            ]);
+            args.extend(self.analysis_args(analysis, &output_root));
         }
-        StagedInvocation {
-            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
-            _outputs: outputs,
-            harness_root: None,
-            invocation_spec: None,
-        }
+        StagedInvocation::tree_command(&args, outputs)
     }
 
     fn unassign(&self, sym: &str, analysis: Option<&Path>, dry_run: bool) -> StagedInvocation {
@@ -263,27 +271,9 @@ impl TreeStaged {
             args.push("--dry-run".to_string());
         }
         if let Some(analysis) = analysis {
-            args.extend([
-                "--tree-config".to_string(),
-                path(&self.config).to_string(),
-                "--tree-modules".to_string(),
-                path(&self.modules).to_string(),
-                "--tree-vendor-marks".to_string(),
-                path(&self.vendor_marks).to_string(),
-                "--tree-source-root".to_string(),
-                path(root).to_string(),
-                "--out-root".to_string(),
-                path(&output_root).to_string(),
-                "--analysis".to_string(),
-                path(analysis).to_string(),
-            ]);
+            args.extend(self.analysis_args(analysis, &output_root));
         }
-        StagedInvocation {
-            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
-            _outputs: outputs,
-            harness_root: None,
-            invocation_spec: None,
-        }
+        StagedInvocation::tree_command(&args, outputs)
     }
 
     fn merge(
@@ -315,27 +305,9 @@ impl TreeStaged {
             args.push("--dry-run".to_string());
         }
         if let Some(analysis) = analysis {
-            args.extend([
-                "--tree-config".to_string(),
-                path(&self.config).to_string(),
-                "--tree-modules".to_string(),
-                path(&self.modules).to_string(),
-                "--tree-vendor-marks".to_string(),
-                path(&self.vendor_marks).to_string(),
-                "--tree-source-root".to_string(),
-                path(root).to_string(),
-                "--out-root".to_string(),
-                path(&output_root).to_string(),
-                "--analysis".to_string(),
-                path(analysis).to_string(),
-            ]);
+            args.extend(self.analysis_args(analysis, &output_root));
         }
-        StagedInvocation {
-            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
-            _outputs: outputs,
-            harness_root: None,
-            invocation_spec: None,
-        }
+        StagedInvocation::tree_command(&args, outputs)
     }
 
     fn delete(
@@ -368,27 +340,9 @@ impl TreeStaged {
             args.push("--dry-run".to_string());
         }
         if let Some(analysis) = analysis {
-            args.extend([
-                "--tree-config".to_string(),
-                path(&self.config).to_string(),
-                "--tree-modules".to_string(),
-                path(&self.modules).to_string(),
-                "--tree-vendor-marks".to_string(),
-                path(&self.vendor_marks).to_string(),
-                "--tree-source-root".to_string(),
-                path(root).to_string(),
-                "--out-root".to_string(),
-                path(&output_root).to_string(),
-                "--analysis".to_string(),
-                path(analysis).to_string(),
-            ]);
+            args.extend(self.analysis_args(analysis, &output_root));
         }
-        StagedInvocation {
-            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
-            _outputs: outputs,
-            harness_root: None,
-            invocation_spec: None,
-        }
+        StagedInvocation::tree_command(&args, outputs)
     }
 
     fn apply_args(
@@ -458,12 +412,7 @@ impl TreeStaged {
             partial_context_without_analysis,
             &output_root,
         );
-        StagedInvocation {
-            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
-            _outputs: outputs,
-            harness_root: None,
-            invocation_spec: None,
-        }
+        StagedInvocation::tree_command(&args, outputs)
     }
 
     fn refine(
@@ -509,43 +458,19 @@ impl TreeStaged {
         } else if partial_context_without_analysis {
             args.extend(["--tree-source-root".to_string(), path(root).to_string()]);
         }
-        StagedInvocation {
-            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
-            _outputs: outputs,
-            harness_root: None,
-            invocation_spec: None,
-        }
+        StagedInvocation::tree_command(&args, outputs)
     }
 
     fn run_with_analysis(&self, analysis: &Path, emit_on_rejection: bool) -> StagedInvocation {
         let root = self.root();
         let outputs = TempDir::new_in(root).expect("create per-invocation staged output directory");
         let output_root = outputs.path().join("out");
-        let mut args = vec![
-            "run".to_string(),
-            "--graphs".to_string(),
-            "--tree-config".to_string(),
-            path(&self.config).to_string(),
-            "--tree-modules".to_string(),
-            path(&self.modules).to_string(),
-            "--tree-vendor-marks".to_string(),
-            path(&self.vendor_marks).to_string(),
-            "--tree-source-root".to_string(),
-            path(root).to_string(),
-            "--out-root".to_string(),
-            path(&output_root).to_string(),
-            "--analysis".to_string(),
-            path(analysis).to_string(),
-        ];
+        let mut args = vec!["run".to_string(), "--graphs".to_string()];
+        args.extend(self.analysis_args(analysis, &output_root));
         if emit_on_rejection {
             args.push("--emit-on-rejection".to_string());
         }
-        StagedInvocation {
-            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
-            _outputs: outputs,
-            harness_root: None,
-            invocation_spec: None,
-        }
+        StagedInvocation::tree_command(&args, outputs)
     }
 }
 
