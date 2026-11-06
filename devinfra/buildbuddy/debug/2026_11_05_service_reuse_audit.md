@@ -1,0 +1,193 @@
+# Slow-test service reuse audit
+
+Inspected source: `7fc04701455bc2c47fd6961b0140dce82a94d609`.
+The recommended lifecycle and upgrade workflow are in
+[service reuse](../docs/service_reuse.md). No execution policy, service lifetime,
+pool deployment or CI warming job is changed by this audit.
+
+## Evidence and scope
+
+Read the complete published latency report at gh-pages commit
+`1ead186a30`, its manifest and relevant execution/prior-work evidence. Its earlier
+feedback cohorts and negative experiments remain historical; this audit does
+not refresh PR-feedback percentiles or resume the paused broad latency goal.
+
+Enumerated 389 `ROLE=CI`, `command=test` invocations updated between
+2026-11-04 00:55 UTC and 2026-11-06 00:55:29 UTC. Of these, 256 were completed
+`devel` sweeps with pattern `//...`. Selected the newest sweep in each occupied
+two-hour creation-time stratum, plus the eight longest completed sweeps: 27
+distinct invocations, 21 with execution records. This deliberately oversamples
+slow runs and excludes PRs lacking the CI role. It is not a fleet census.
+
+Their execution records contain 2,261 distinct originating `NEW` TestRunner
+actions across 377 labels. Excluded 109 non-NEW test links; reused target-summary
+durations were not counted as new work. Process totals below are overlapping
+action-seconds, not CI wall time or predicted savings.
+
+| Workload                                            | NEW actions | Median process time | Maximum process time | Summed process time |
+| --------------------------------------------------- | ----------: | ------------------: | -------------------: | ------------------: |
+| `//agentplane/app:test_thread_browser`              |   96 shards |              87.8 s |              283.3 s |           9,661.2 s |
+| `//agentplane/app:test_bridge`                      |   24 shards |             112.4 s |              211.7 s |           2,843.6 s |
+| `//agentplane/system_tests/suites:test_vm`          |           8 |             324.5 s |              383.8 s |           2,631.6 s |
+| `//agentplane/system_tests/suites:test_pod`         |           8 |             297.3 s |              416.7 s |           2,314.5 s |
+| `//agentplane/system_tests/suites/mcp:test_actions` |           6 |             253.6 s |              525.4 s |           1,687.2 s |
+| `//props/agents/critic_dev/optimize:test_e2e`       |           1 |             190.9 s |              190.9 s |             190.9 s |
+
+The Props population is sparse in this sample. Target history contains many
+cached repeats of old durations; those are not additional measurements.
+
+## A. Give Props' image-loading work an appropriate family
+
+In [mainline invocation 7d7bdf6e](https://app.buildbuddy.io/invocation/7d7bdf6e-bcf2-5a31-8e27-466047c5a465)
+at `bedd5792b85e7ec1da7386030fa30032c7467814`, the recorded Props optimize
+Command enabled recycling but had neither a dedicated family nor remote-snapshot
+permission. Its restored snapshot's last task was an October 30
+`PyWheel //finance/plaid/spend/desktop:plaid_spend_desktop_wheel`, resolved from
+the snapshot's recorded origin invocation. Thus a VM restore did not imply a
+useful Props image cache.
+
+Existing OTel spans and setup logs show:
+
+| Props target          | PostgreSQL image load | PostgreSQL readiness | Migration/recreate | Registry startup | Whole action |
+| --------------------- | --------------------: | -------------------: | -----------------: | ---------------: | -----------: |
+| Optimize E2E          |                23.9 s |                4.4 s |             0.31 s |           1.50 s |      190.9 s |
+| Grader report failure |                36.5 s |                4.0 s |             0.48 s |           1.72 s |      158.1 s |
+| Critic E2E            |                 9.4 s |                3.4 s |             0.28 s |           1.38 s |      103.8 s |
+
+These phases are nested in fixture/test spans; do not add both parents and
+children. Optimize also serially pushed three application images in 23.9 s,
+then pulled them concurrently over a 61.8 s envelope, from existing INFO logs.
+The 61.8 s is not the sum of three pulls. Concurrent prefetch and digest-checked
+Docker image lookup already exist in `e2e_container.py` and `docker_executor.py`.
+
+**Concrete next change:** introduce a Props container-test image family from
+the authoritative PostgreSQL, registry and Ryuk pins. Keep application images
+as current action inputs, with the existing digest checks and real authenticated
+proxy/push path. Start with the actual container E2E consumers; a PostgreSQL-only
+target should not accidentally seed a supposedly prepared registry stack.
+
+### Bounded local-snapshot experiment
+
+At the inspected source, temporarily added only
+`test.runner-recycling-key=props-image-audit-20261105-v1` to
+`//props/agents/critic:test_e2e`. Ran that target twice with
+`bbr test //props/agents/critic:test_e2e --nocache_test_results --test_output=errors`.
+Save policy remained unset; remote-snapshot eligibility was not added.
+The temporary BUILD edit was removed after collecting evidence.
+
+| Arm                                                                                | Action process |       CPU | `docker_load` spans | Result              |
+| ---------------------------------------------------------------------------------- | -------------: | --------: | ------------------: | ------------------- |
+| [Seed](https://app.buildbuddy.io/invocation/f7236ffa-da1e-4936-bbfc-eb31eee763d1)  |       86.111 s | 164.421 s |                   3 | All 3 cases passed  |
+| [Reuse](https://app.buildbuddy.io/invocation/346ef4fc-a92c-4bba-815b-6df9958db156) |       78.046 s |  84.062 s |                   0 | Same 3 cases passed |
+
+Both were NEW physical executions with the same Action digest
+`8666d8cc93dfb403550d54156a9c403227875643d63c183b70887feb9ba004b3` and the
+same executor. The second VM metadata names the seed's exact physical execution
+as its snapshot origin. The first action reported local-save intent; no remote
+opt-in was present. The second eliminated all three Docker imports and its first
+application-image pull fell from 10.522 s to 0.115 s, while the real proxy/push
+path still ran. PostgreSQL readiness remained fresh: 2.5 s then 3.5 s.
+
+This proves local image reuse for these inputs and three unchanged cases.
+It does not establish cross-host availability, live-daemon retention, completed
+remote upload counts, all Props coverage or a fleet/gate speedup. The observed
+8.065 s action reduction and 80.360 CPU-second reduction are one pair, not an
+additive forecast for the larger Optimize test.
+
+## B. Reuse PostgreSQL images before retaining live databases broadly
+
+[`util/testing/postgres_fixtures.py`](../../../util/testing/postgres_fixtures.py)
+loads images through the existing digest/daemon-ID cache, starts a fresh
+session container and stops it at teardown. Its migrated templates already
+clone a fresh database for each case. Props uses this fixture plus a migrated
+`props_test_template`; cloning/migration is not its dominant sampled cost.
+
+[`agentplane/testing/postgres/postgres.go`](../../../agentplane/testing/postgres/postgres.go)
+also loads images, starts PostgreSQL, migrates and terminates it in `Close`.
+Its `test_N` clone names are scoped to that fresh server. Keeping the server
+would require explicit cleanup/identity ownership across actions; preserving
+the current process alone is insufficient.
+
+Shared Python consumers include Props, Agentplane service tests, Plaid, budget,
+MCP infrastructure and session export. Indexing overrides the image with
+pgvector, so it needs its own compatibility profile. Use explicit profiles for
+actual fixture consumers rather than changing every `requires_docker` test or
+the global RBE platform. Do not blanket-enable remote snapshots for these tests.
+
+The whole-repository reverse-dependency query hit an unrelated Debian snapshot
+504 while fetching `shared-mime-info`; it produced no complete inventory.
+A narrowed query hit another Debian 504 for `libacl1`. A separate static scan of
+BUILD `deps`/`embed` literals found 215 declared test callers, without macro
+expansion, configuration resolution or proof that every test requests a database.
+Only two Go fixture consumers had NEW actions in the sampled sweeps (36.6 s and
+15.1 s). Source imports establish the listed consumers; the sparse Go timings
+do not establish a repo-wide PostgreSQL startup cost or expected saving.
+
+**Next validation:** a PostgreSQL-only image family across two real consumers,
+with cold/warm fallback and normal schema isolation. Only then compare retaining
+an owned daemon, including roles, connections, replication slots, reset cost,
+idle memory and reaper behavior. Keep migration-from-empty tests fresh.
+
+## C. Browser tests: preserve shipped image reuse; measure remaining server cost
+
+The existing browser family is present in actual Commands, with no remote
+snapshot opt-in. In the cited mainline run, 13/16 generic PostgreSQL setup logs
+had no imports; three cold placements loaded Ryuk/PostgreSQL, totaling 50.4
+action-seconds. The 16 fresh generic PostgreSQL startups summed to 54.3 seconds.
+These are concurrent shard costs, not a 54-second end-to-end opportunity.
+
+The fixture also starts a distinct logical-WAL history PostgreSQL server and
+fresh Electric per test. Their lifetime follows database/replication isolation.
+An earlier [complete fixture profile](../../../agentplane/debug/2026_10_31_thread_browser_compute_profile.md)
+established large first-case setup costs but did not attribute all backend CPU.
+Do not label every setup second as removable PostgreSQL work.
+
+**Candidate after image-family rollout:** lease the two compatible server
+configurations independently, while preserving fresh database clones, restricted
+roles, replication-slot cleanup, Electric state and browser contexts. Starting
+from an empty server remains required where the scenario tests it. A frozen
+Electric bound to the previous database is not a compatible baseline for a new
+test database. Quantitative daemon-retention savings remain unmeasured.
+
+## D. K3s: maintain and verify existing reuse
+
+The cited Pod and MCP-services receipts both report warm, compatible K3s and
+complete cleanup, with fresh application namespace/PostgreSQL/certificate
+identities. Actual Commands have recycling, remote eligibility and `newest`,
+with forced saves absent. Setup still took 99.4/82.7 s, including 58.3/45.7
+summed image-import seconds. The longest environment-tools imports were
+26.1/14.6 s. PostgreSQL deployment readiness was only 4.25/4.11 s.
+
+These observations support preserving image/content reuse and current
+health/cleanliness checks. They do not prove the paused default-policy trial or
+the provider snapshot-volume issue is resolved. The earlier dead-retained-daemon
+observation remains a separate unresolved diagnosis.
+
+The historical live-PostgreSQL experiment retained a server while resetting
+seven service databases. Five actions passed, but a warm pair took
+243.2/230.1 s versus 234.0/220.5 s with K3s/PKI-only retention. Verification
+cost about 1 s and reset 3–4 s; LLM ingress still needed 23–25 s. That scoped
+negative result remains in [K3s persistence evidence](../../../agentplane/debug/k3s_persistence.md#postgresql-reuse-no-measured-benefit-removed).
+It does not measure standalone PostgreSQL fixtures, but it argues against
+reviving K3s PostgreSQL retention as the first optimization.
+
+## Priority and implementation boundary
+
+1. Adopt measured image-family reuse for Props container E2E tests. Validate
+   every intended consumer and isolate image-only PostgreSQL profiles where useful.
+2. Measure the remaining repeated PostgreSQL startup/reset work in browser and
+   Go/Python service tests before choosing live-daemon retention. Keep immutable
+   templates and mutable state as separate compatibility boundaries.
+3. Apply the documented recipe/lease/fresh-state protocol to one daemon only
+   after its benefit justifies the ownership, cancellation, reaper and reset work.
+4. Use lazy normal-action preparation first. A dedicated warmer/publisher needs
+   a measured availability or cold-burst problem and matching consumer keys.
+   A read-only-consumer design additionally needs a supported write-control
+   contract from BuildBuddy.
+
+Other slow paths retain the published report's prior dispositions: cdk8s/YAML and
+Rust compilation are not integration-daemon startup, costly scale tests already
+have manual coverage, and fresh VM supervision/recovery scenarios cannot simply
+be retained away. No claim here shortens every PR's critical path. The proposed
+lifecycle keeps a cold local fixture path; current Docker/browser-on-RBE policy
+and local-host validation remain separate from that portability design.
