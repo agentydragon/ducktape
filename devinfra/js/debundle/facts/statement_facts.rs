@@ -136,9 +136,9 @@ pub struct StatementFacts {
     /// Static-key `globalThis.<prop>` cells the statement reads
     /// at-init.
     pub global_reads: BTreeSet<String>,
-    /// Every reason the statement's cells ([`StatementFacts::effects`]) may
-    /// be incomplete: with any cause it may touch every cell
-    /// ([`StatementFacts::dataflow_summarizable`]), and the graph retains
+    /// Source-classifier reasons the statement's cells may be incomplete.
+    /// `dataflow_summarizable` also checks exact operation authority before
+    /// retaining the every-cell fallback, and the graph retains
     /// the causes on the edges that fallback emits. See `README.md` →
     /// "Conditionally-correct optimizations" for the soundness
     /// precondition.
@@ -757,7 +757,8 @@ pub struct StructuralStatementFacts {
 /// One shape that defeats the dataflow-aware S-chain's cell tracking for
 /// a statement ([`StatementFacts::havoc`]). The first three
 /// are policy-independent source shapes; `OpaqueAtInitCall` consults the
-/// purity classifier, so a declared-pure hint can lift it.
+/// purity classifier, so a declared-pure hint or exact completed operation
+/// coverage can discharge it without erasing the source provenance.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataflowOpacityCause {
@@ -783,6 +784,33 @@ impl StatementFacts {
     /// cell summary instead of the strict every-prior-impure fallback.
     pub fn dataflow_summarizable(&self) -> bool {
         self.havoc.is_empty()
+            || (self.havoc.len() == 1
+                && self.havoc.contains(&DataflowOpacityCause::OpaqueAtInitCall)
+                && self.has_complete_operation_effects())
+    }
+
+    /// Remaining dataflow obligations after applying exact operation authority.
+    /// The source-classifier provenance in `havoc` remains unchanged.
+    pub fn dataflow_opacity(&self) -> BTreeSet<DataflowOpacityCause> {
+        let mut opacity = self.havoc.clone();
+        if self.has_complete_operation_effects() {
+            opacity.remove(&DataflowOpacityCause::OpaqueAtInitCall);
+        }
+        opacity
+    }
+
+    /// Complete lexical effects and initialization domains for this exact
+    /// owner. Neither timing completion nor the source-only initializer proof
+    /// by itself supplies the operation authority needed to refine havoc.
+    fn has_complete_operation_effects(&self) -> bool {
+        self.synchronous_calls.as_ref().is_some_and(|calls| {
+            calls.binding_effect_authority()
+                == super::sync_effects::BindingEffectAuthority::OperationReceipt
+                && calls
+                    .completed_initialization
+                    .as_ref()
+                    .is_some_and(|proof| proof.covers(self.ordinal))
+        })
     }
 
     /// Whether the cells the statement WRITES are all in its summary: no

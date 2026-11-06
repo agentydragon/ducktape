@@ -1832,7 +1832,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .async_callables
                 .contains(&callable)
         {
-            let mut effects = EffectCoverageFragment::lexical_operation();
+            // Creating this checked closure allocates a callable without
+            // evaluating its body or touching exterior state. The prefix
+            // prerequisites still select its exact captured environment.
+            let mut effects = EffectCoverageFragment::no_effects();
             effects.depend_on(&self.executor.settled_prefix_dependencies());
             effects
         } else {

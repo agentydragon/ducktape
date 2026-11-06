@@ -570,10 +570,10 @@ fn hoisted_functions_have_no_evaluation_write_but_function_expressions_do() {
     assert!(
         examples(&report)
             .iter()
-            .any(|pair| pair["runs_first"]["unit"] == 2
+            .all(|pair| !(pair["runs_first"]["unit"] == 2
                 && pair["runs_later"]["unit"] == 1
-                && pair["havoc"] == true),
-        "function-expression initialization remains an evaluation effect: {report:#}"
+                && pair["havoc"] == true)),
+        "covered primitive invocation cannot invent a conflict between distinct binding writes: {report:#}"
     );
 }
 
@@ -1717,7 +1717,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             "object",
             2,
         ),
-        ("function make() { return () => seed; }", "function", 2),
+        ("function make() { return () => seed; }", "function", 1),
         (
             "const make = function self() { return seed; };",
             "number",
@@ -3389,5 +3389,197 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["initializer_result_unproved"], 1,
         "the first declarator's forward read cannot prove its initializer value: {report:#}"
+    );
+}
+
+#[test]
+fn deferred_callable_creation_coverage_composes_through_calls_and_exact_owners() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function factory() { return () => 3; }\nfunction nested() { return factory(); }\nconst selected = nested();\nconst result = selected();\nconsole.log(result);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "3\n");
+    for (binding, owner, call_count) in [("selected", 2, 2), ("result", 3, 1)] {
+        let execution = binding_execution_report(&fixture, binding);
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{execution:#}"
+        );
+        let receipt = &execution["binding_effect_authority"]["receipt"];
+        assert_eq!(receipt["owner"], owner, "{execution:#}");
+        assert_eq!(receipt["binding"], binding, "{execution:#}");
+        let calls = receipt["calls"].as_array().unwrap();
+        assert_eq!(calls.len(), call_count, "{receipt:#}");
+        // These source-only operations consume no author/value/native premise.
+        // Assert the exact dependency set rather than inferring it from an
+        // empty observed-access ledger or timing completeness.
+        assert_eq!(
+            receipt["read_dependencies"],
+            serde_json::json!({}),
+            "{receipt:#}"
+        );
+        assert_eq!(
+            receipt["rebind_dependencies"],
+            serde_json::json!({}),
+            "{receipt:#}"
+        );
+        for call in calls {
+            assert_eq!(call["dependencies"], serde_json::json!({}), "{receipt:#}");
+        }
+    }
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn deferred_callable_creation_does_not_cover_unknown_getter_or_reentry_invocations() {
+    for (prefix, body) in [
+        ("", "return globalThis.read();"),
+        (
+            "const record = { get value() { return 3; } };\n",
+            "return record.value;",
+        ),
+        ("", "globalThis.reenter(); return 3;"),
+    ] {
+        let source = format!(
+            "globalThis.read = () => 3;\nglobalThis.reenter = () => undefined;\n{prefix}function factory() {{ return () => {{ {body} }}; }}\nconst selected = factory();\nconst result = selected();\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "3\n");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "{body}: {execution:#}"
+        );
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert!(
+                report["coverage"]["unknown_coverage"][domain]
+                    .as_u64()
+                    .unwrap()
+                    >= 2,
+                "{body}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn imported_primitive_return_does_not_inherit_local_operation_authority() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { literal } from './peer.js';\nconst result = literal();\nconsole.log(result);\n",
+            vec![],
+        ).with_extra_chunks(&[("static/peer", "export function literal() { return 3; }\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "3\n");
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert!(
+            report["coverage"]["unknown_coverage"][domain]
+                .as_u64()
+                .unwrap()
+                >= 2,
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn deferred_callable_operation_receipts_preserve_exact_native_prefix_dependencies() {
+    const SOURCE: &str = "const cache = new Map();\nfunction factory() { return () => cache; }\nfunction nested() { return factory(); }\nconst selected = nested();\nconst result = selected();\nconsole.log(result === cache);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(SOURCE, vec![]).with_native_operation_inputs(
+            "static/app",
+            vec![native_constructor_input(
+                SOURCE,
+                "const cache = new Map();",
+                "cache",
+                NativeOperationKind::MapEmpty,
+            )],
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "true\n");
+    let dependencies = serde_json::json!({
+        "native_operation_inputs": [{"defining_chunk": "static/app", "input_index": 0}]
+    });
+    for binding in ["selected", "result"] {
+        let execution = binding_execution_report(&fixture, binding);
+        let receipt = &execution["binding_effect_authority"]["receipt"];
+        assert_eq!(
+            receipt["read_dependencies"], dependencies,
+            "{binding}: {execution:#}"
+        );
+        assert_eq!(
+            receipt["rebind_dependencies"], dependencies,
+            "{binding}: {execution:#}"
+        );
+        for call in receipt["calls"].as_array().unwrap() {
+            assert_eq!(
+                call["dependencies"], dependencies,
+                "{binding}: {execution:#}"
+            );
+        }
+    }
+    let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["coverage"]["covered_owner_dependencies"], dependencies,
+        "{report:#}"
+    );
+}
+
+fn returned_callable_commutation_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        "function make() { return () => 3; }\nconst read = make();\nlet marker = 0;\nmarker = 1;\nconst result = read();\nmarker = 2;\nconsole.log(marker, result);\n",
+        vec![
+            logical_module_with_anon(
+                "markers",
+                &[Member::new("marker")],
+                &["marker = 1;", "marker = 2;"],
+            ),
+            logical_module(
+                "result",
+                &[
+                    Member::new("make"),
+                    Member::new("read"),
+                    Member::new("result"),
+                ],
+            ),
+            logical_module_with_anon("observe", &[], &["console.log(marker, result);"]),
+        ],
+    )
+}
+
+#[test]
+fn returned_callable_operation_coverage_discharges_only_its_dataflow_barrier() {
+    let fixture =
+        run_fixture(returned_callable_commutation_fixture().with_dataflow_aware_s_chain());
+    assert_preserved_entry_output(&fixture, "2 3\n");
+}
+
+#[test]
+fn operation_coverage_does_not_change_strict_callable_purity() {
+    let rejected = run_rejection_fixture(returned_callable_commutation_fixture());
+    let graph = rejected.dependency_graph();
+    let result_id = source_unit_for_binding(&graph, "result");
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == result_id)
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&result.purity).unwrap()["kind"],
+        "not_pure"
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            serde_json::to_value(&edge.sequenced_cause).unwrap()["rule"] == "strict_chain"
+        }),
+        "strict-mode rejection must retain the strict chain: {graph:#?}"
     );
 }

@@ -444,9 +444,11 @@ fn expression(
             Some(completing_selected(selected, frame))
         }
         LocalExpression::PrimitiveLiteral(kind) => {
+            // The canonical source literal cannot invoke code, access exterior
+            // state or throw. Its value abstraction is independent evidence.
             frame
                 .effect_coverage
-                .compose(&EffectCoverageFragment::lexical_operation());
+                .compose(&EffectCoverageFragment::no_effects());
             Some(completing_selected(
                 SelectedValue::raw(Values::from([AbstractValue::Value(Value::Prim(*kind))])),
                 frame,

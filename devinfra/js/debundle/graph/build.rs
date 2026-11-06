@@ -1350,7 +1350,7 @@ fn emit_s_chain(
                     SourceUnitId(stmt.ordinal.0),
                     stmt.ordinal,
                     stmt.effects(),
-                    CellOrderBarrier::from_opacity(&stmt.havoc),
+                    CellOrderBarrier::from_opacity(&stmt.dataflow_opacity()),
                 )
             }),
         raw_edges,
