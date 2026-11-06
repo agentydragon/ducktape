@@ -1,10 +1,4 @@
-"""SQLAlchemy models for properties evaluation results.
-
-Database schema documentation:
-- Setup and architecture: db/README.md
-- Access patterns and RLS: AGENTS.md (Database section)
-- Migrations: db/migrations/
-"""
+"""SQLAlchemy evaluation models; see db/README.md and AGENTS.md for setup/RLS."""
 
 from __future__ import annotations
 
@@ -83,49 +77,31 @@ class StatsWithCI(BaseModel):
 
 
 class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
-    """SQLAlchemy column type for stats_with_ci PostgreSQL composite type.
+    """Adapt psycopg2 register_composite() named tuples to StatsWithCI.
 
-    PostgreSQL composite types are returned as named tuples by psycopg2 when
-    registered via register_composite(). This type decorator converts between
-    named tuples and StatsWithCI Pydantic models.
-
-    Note: We use Text as the impl type because PostgreSQL composite types
-    don't have a direct SQLAlchemy type. The actual type coercion is handled
-    by register_composite() in database.py.
+    Text is a placeholder; database.py registers the actual stats_with_ci composite.
     """
 
-    # Use Text as a placeholder - the actual type is stats_with_ci in PostgreSQL
     impl = Text
     cache_ok = True
 
     def process_bind_param(
         self, value: StatsWithCI | None, dialect: Any
     ) -> tuple[int, float, float, float, float | None, float | None] | None:
-        """Convert StatsWithCI to tuple for database storage."""
         if value is None:
             return None
         return (value.n, value.mean, value.min, value.max, value.lcb95, value.ucb95)
 
     def process_result_value(self, value: Any, dialect: Any) -> StatsWithCI | None:
-        """Convert named tuple from database to StatsWithCI.
-
-        psycopg2's register_composite() returns a named tuple with attributes
-        matching the composite type fields (n, mean, min, max, lcb95, ucb95).
-        """
         if value is None:
             return None
-        # Access via named attributes (from register_composite's named tuple)
         return StatsWithCI(
             n=value.n, mean=value.mean, min=value.min, max=value.max, lcb95=value.lcb95, ucb95=value.ucb95
         )
 
 
 class AgentRunStatus(StrEnum):
-    """Unified status for all agent types (critic, grader, prompt_optimizer, etc.).
-
-    Terminal states: EXITED (check container_exit_code for success/failure),
-    TIMED_OUT, CANCELLED, STARTUP_FAILED.
-    """
+    """Terminal states are EXITED (inspect container_exit_code), TIMED_OUT, CANCELLED and STARTUP_FAILED."""
 
     IN_PROGRESS = "in_progress"
     EXITED = "exited"
@@ -139,21 +115,9 @@ class AgentRunStatus(StrEnum):
 
 
 class PydanticColumn[T: BaseModel](TypeDecorator[T]):
-    """SQLAlchemy column type that automatically serializes/deserializes any Pydantic model.
+    """JSONB adapter for Pydantic models or unions; pass the type directly.
 
-    Usage:
-        class MyModel(Base):
-            data: Mapped[MyPydanticType] = mapped_column(PydanticColumn(MyPydanticType))
-
-    Or register in type_annotation_map for automatic mapping:
-        type_annotation_map = {MyPydanticType: PydanticColumn(MyPydanticType)}
-
-    For union types or TypeAliases, pass the type directly (not as a class):
-        source: Mapped[Source] = mapped_column(PydanticColumn(Source))
-
-    TODO: Apply this refactor to other JSONB columns in this file where appropriate.
-    Candidates: fields that are currently Mapped[dict[str, Any]] but represent
-    structured Pydantic models (e.g., input/output fields in CriticRun, GraderRun).
+    TODO: Type the remaining structured dict JSONB columns with PydanticColumn.
     """
 
     impl = JSONB
@@ -177,10 +141,7 @@ class PydanticColumn[T: BaseModel](TypeDecorator[T]):
 
 
 class SnapshotSlugColumn(TypeDecorator[SnapshotSlug]):
-    """SQLAlchemy column type for SnapshotSlug.
-
-    Stores as String in DB, validates and wraps as SnapshotSlug on load.
-    """
+    """Validate stored strings as SnapshotSlug on load."""
 
     impl = String
     cache_ok = True
@@ -198,17 +159,11 @@ class SnapshotSlugColumn(TypeDecorator[SnapshotSlug]):
     def process_result_value(self, value: str | None, dialect: Any) -> SnapshotSlug | None:
         if value is None:
             return None
-        # Validate and wrap in NewType
         validated = self._adapter.validate_python(value)
         return SnapshotSlug(validated)
 
 
 class PathColumn(TypeDecorator[Path]):
-    """SQLAlchemy column type for Path.
-
-    Stores as String in DB, converts to/from Path on load/store.
-    """
-
     impl = String
     cache_ok = True
 
@@ -234,11 +189,7 @@ class Base(DeclarativeBase):
 
 
 class Snapshot(Base):
-    """Code snapshot with split assignment.
-
-    Source of truth for snapshot→split mapping.
-    Issues/false_positives reference snapshots by slug.
-    """
+    """Source of truth for snapshot-to-split assignment."""
 
     __tablename__ = "snapshots"
 
@@ -250,7 +201,6 @@ class Snapshot(Base):
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationships
     true_positives: Mapped[list[TruePositive]] = relationship(
         back_populates="snapshot_obj", cascade="all, delete-orphan"
     )
@@ -267,12 +217,7 @@ class Snapshot(Base):
 
 
 class TruePositive(Base):
-    """True positive (expected findings).
-
-    Composite primary key: (snapshot_slug, tp_id).
-    Each true positive has one or more occurrences stored in true_positive_occurrences.
-    Trigger file sets (critic_scopes_expected_to_recall) are stored in critic_scopes_expected_to_recall M:N table.
-    """
+    """Expected finding; critic_scopes_expected_to_recall supplies its recall scopes."""
 
     __tablename__ = "true_positives"
     __table_args__ = (
@@ -289,7 +234,6 @@ class TruePositive(Base):
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship(back_populates="true_positives")
     occurrences: Mapped[list[TruePositiveOccurrenceORM]] = relationship(
         back_populates="true_positive", cascade="all, delete-orphan"
@@ -306,12 +250,7 @@ class TruePositive(Base):
 
 
 class FalsePositive(Base):
-    """Known false positive (issue that looks like a problem but isn't).
-
-    Composite primary key: (snapshot_slug, fp_id).
-    Each FP has one or more occurrences with relevant_files semantics.
-    Occurrences are stored in the separate false_positive_occurrences table.
-    """
+    """Known non-issue; occurrences carry relevant-file semantics."""
 
     __tablename__ = "false_positives"
     __table_args__ = (
@@ -329,7 +268,6 @@ class FalsePositive(Base):
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship(back_populates="false_positives")
     occurrences: Mapped[list[FalsePositiveOccurrenceORM]] = relationship(
         back_populates="false_positive", cascade="all, delete-orphan"
@@ -346,12 +284,7 @@ class FalsePositive(Base):
 
 
 class TruePositiveOccurrenceORM(Base):
-    """Occurrence within a true positive issue.
-
-    Each occurrence represents a specific location where the issue manifests.
-    critic_scopes_expected_to_recall is stored in the critic_scopes_expected_to_recall M:N table (linking to file_sets).
-    File ranges are stored in tp_occurrence_ranges table (normalized from JSONB).
-    """
+    """Expected occurrence with normalized ranges and alternative recall scopes."""
 
     __tablename__ = "true_positive_occurrences"
 
@@ -373,7 +306,6 @@ class TruePositiveOccurrenceORM(Base):
         ),
     )
 
-    # Relationships
     true_positive: Mapped[TruePositive] = relationship(back_populates="occurrences")
     critic_scopes_expected_to_recall: Mapped[list[CriticScopeExpectedToRecall]] = relationship(
         back_populates="occurrence",
@@ -393,7 +325,6 @@ class TruePositiveOccurrenceORM(Base):
 
     @property
     def critic_scopes_expected_to_recall_set(self) -> set[frozenset[Path]]:
-        """Derive set of file scopes from critic_scopes_expected_to_recall relationship."""
         result: set[frozenset[Path]] = set()
         for scope in self.critic_scopes_expected_to_recall:
             # Each scope links to a file_set via files_hash
@@ -405,12 +336,7 @@ class TruePositiveOccurrenceORM(Base):
 
 
 class FalsePositiveOccurrenceORM(Base):
-    """Occurrence within a false positive issue.
-
-    Each occurrence represents a specific location where the false positive manifests.
-    File ranges are stored in fp_occurrence_ranges table (normalized from JSONB).
-    Relevant files are stored in fp_occurrence_relevant_files table (normalized from JSONB).
-    """
+    """Known non-issue occurrence with normalized ranges and relevant files."""
 
     __tablename__ = "false_positive_occurrences"
 
@@ -432,7 +358,6 @@ class FalsePositiveOccurrenceORM(Base):
         ),
     )
 
-    # Relationships
     false_positive: Mapped[FalsePositive] = relationship(back_populates="occurrences")
     # overlaps: occurrence_ranges table has exclusive arc (tp_id XOR fp_id), so both
     # TruePositiveOccurrenceORM.ranges and FalsePositiveOccurrenceORM.ranges write to same columns
@@ -513,8 +438,6 @@ class OccurrenceRangeORM(Base):
 
 
 class FalsePositiveRelevantFileORM(Base):
-    """File that makes a false positive occurrence relevant."""
-
     __tablename__ = "fp_occurrence_relevant_files"
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
@@ -539,16 +462,11 @@ class FalsePositiveRelevantFileORM(Base):
         ),
     )
 
-    # Relationships
     occurrence: Mapped[FalsePositiveOccurrenceORM] = relationship(back_populates="relevant_file_orms")
 
 
 class SnapshotFile(Base):
-    """File in a snapshot with metadata.
-
-    Used for FK validation of file paths in occurrences and trigger sets.
-    Populated during sync from the snapshot's code tar.
-    """
+    """Populated from the snapshot code tar during sync; validates occurrence/scope paths via FKs."""
 
     __tablename__ = "snapshot_files"
 
@@ -560,16 +478,11 @@ class SnapshotFile(Base):
     )
     line_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship()
 
 
 class FileSet(Base):
-    """Content-addressable file set for training examples.
-
-    Primary key is (snapshot_slug, files_hash) where files_hash is MD5 of sorted file paths.
-    Deduplicated by PK constraint - same files always produce same hash.
-    """
+    """Content-addressed scope: files_hash is MD5 of sorted paths, deduplicated per snapshot."""
 
     __tablename__ = "file_sets"
 
@@ -579,24 +492,17 @@ class FileSet(Base):
     files_hash: Mapped[str] = mapped_column(String, primary_key=True, comment="MD5 of sorted file paths")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
-    # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship()
     members: Mapped[list[FileSetMember]] = relationship(back_populates="file_set", cascade="all")
 
 
 class FileSetMember(Base):
-    """File belonging to a file set.
-
-    FK to snapshot_files validates file paths exist in the snapshot.
-    """
-
     __tablename__ = "file_set_members"
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     files_hash: Mapped[str] = mapped_column(String, primary_key=True)
     file_path: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Composite FK to file_sets
     __table_args__ = (
         ForeignKeyConstraint(
             ["snapshot_slug", "files_hash"], ["file_sets.snapshot_slug", "file_sets.files_hash"], ondelete="CASCADE"
@@ -608,21 +514,14 @@ class FileSetMember(Base):
         ),
     )
 
-    # Relationships
     file_set: Mapped[FileSet] = relationship(back_populates="members")
 
 
 class CriticScopeExpectedToRecall(Base):
-    """M:N linking TP occurrences to file_sets defining EXPECTED recall scopes.
+    """Alternative expected scopes (OR) determine only the recall denominator.
 
-    DETERMINES: Recall DENOMINATOR only. "From which scopes do we expect critics to find this issue?"
-    Each occurrence may have multiple alternative scopes (OR logic: any one suffices).
-
-    DOES NOT CONSTRAIN: Critics CAN find issues outside expected scopes (recall >100% possible).
-    A diligent critic reviewing file.py might discover issues in bar.py it depends on.
-
-    DISTINCT FROM match_file_restriction: That field is a HARD constraint on where
-    graders can give credit. This field only affects metric denominators.
+    Critics can find issues outside these scopes (recall >100% is possible). Unlike
+    match_file_restriction, these scopes do not constrain where graders give credit.
     """
 
     __tablename__ = "critic_scopes_expected_to_recall"
@@ -633,7 +532,6 @@ class CriticScopeExpectedToRecall(Base):
     files_hash: Mapped[str] = mapped_column(String, primary_key=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
-    # Composite FKs
     __table_args__ = (
         ForeignKeyConstraint(
             ["snapshot_slug", "tp_id", "occurrence_id"],
@@ -649,7 +547,6 @@ class CriticScopeExpectedToRecall(Base):
         ),
     )
 
-    # Relationships
     # overlaps needed because snapshot_slug is in both FKs (to occurrence and file_set)
     file_set: Mapped[FileSet] = relationship(overlaps="critic_scopes_expected_to_recall,occurrence")
     occurrence: Mapped[TruePositiveOccurrenceORM] = relationship(
@@ -658,12 +555,7 @@ class CriticScopeExpectedToRecall(Base):
 
 
 class ReportedIssue(Base):
-    """Issue reported by an agent during code review.
-
-    Part of the critic workflow - agent creates issue headers and links occurrences.
-    Uses compound primary key (agent_run_id, issue_id) for scoped uniqueness.
-    Agent uses hard DELETE to remove incorrect issues.
-    """
+    """Agent-reported issue; agents hard-delete incorrect reports."""
 
     __tablename__ = "reported_issues"
     __table_args__ = (
@@ -683,7 +575,6 @@ class ReportedIssue(Base):
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
-    # Relationships
     agent_run: Mapped[AgentRun] = relationship(back_populates="reported_issues")
     occurrences: Mapped[list[ReportedIssueOccurrence]] = relationship(
         back_populates="reported_issue", cascade="all, delete-orphan"
@@ -691,19 +582,7 @@ class ReportedIssue(Base):
 
 
 class ReportedIssueOccurrence(Base):
-    """Specific location(s) for a reported issue.
-
-    Each occurrence has 1+ locations (JSONB array).
-    Each location: {file: str, start_line?: int, end_line?: int}
-
-    Example:
-    locations = [
-        {"file": "src/foo.py", "start_line": 10, "end_line": 20},
-        {"file": "src/bar.py", "start_line": 30, "end_line": 40}
-    ]
-
-    CHECK constraint ensures locations is non-empty array.
-    """
+    """One or more JSONB locations: {file: str, start_line?: int, end_line?: int}."""
 
     __tablename__ = "reported_issue_occurrences"
 
@@ -717,12 +596,10 @@ class ReportedIssueOccurrence(Base):
         comment="1+ location anchors: {file, start_line?, end_line?}",
     )
 
-    # Audit trail
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     cancelled_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Foreign key to composite primary key
     __table_args__ = (
         ForeignKeyConstraint(
             ["agent_run_id", "reported_issue_id"],
@@ -732,16 +609,11 @@ class ReportedIssueOccurrence(Base):
         CheckConstraint("jsonb_array_length(locations) > 0", name="locations_not_empty"),
     )
 
-    # Relationships
     reported_issue: Mapped[ReportedIssue] = relationship(back_populates="occurrences")
 
 
 class GradingPending(Base):
-    """View: missing grading edges (drift detection).
-
-    Each row represents a (critique_issue, gt_occurrence) pair that needs grading.
-    When this view returns no rows for a grader's scope, grading is complete.
-    """
+    """Missing (critique issue, GT occurrence) edges; empty within grader scope means complete."""
 
     __tablename__ = "grading_pending"
     __table_args__ = ({"info": {"is_view": True}},)
@@ -755,9 +627,6 @@ class GradingPending(Base):
     fp_occurrence_id: Mapped[str | None] = mapped_column(String, primary_key=True, nullable=True)
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn())
-
-
-# --- Grading Target Types (Discriminated Union) ---
 
 
 class TpTarget(BaseModel):
@@ -778,22 +647,10 @@ GradingTarget = Annotated[TpTarget | FpTarget, Field(discriminator="kind")]
 
 
 class GradingEdge(Base):
-    """Explicit bipartite graph edge from critique issue to GT occurrence.
+    """Complete bipartite critique-issue/GT-occurrence coverage; grading_pending finds missing edges.
 
-    Each edge represents a grader's judgment about whether a critique issue matches
-    a ground truth occurrence. Every (critique_issue, gt_occurrence) pair must have
-    an edge (complete bipartite coverage enforced by grading_pending view).
-
-    Exactly one of TP or FP target must be set (enforced by DB CHECK constraint):
-    - TP edge: tp_id + tp_occurrence_id NOT NULL, fp_id + fp_occurrence_id NULL
-    - FP edge: fp_id + fp_occurrence_id NOT NULL, tp_id + tp_occurrence_id NULL
-
-    Credit semantics:
-    - For TPs: 0.0-1.0 (how well critique matches; 0.0 = reviewed, no match)
-    - For FPs: 0.0 for non-match, >0 for penalty (incorrectly triggered FP)
-
-    Most edges have credit=0.0 (sparse matches). Query grading_pending view to see
-    missing edges that still need grading.
+    TP credit measures match quality (0 means reviewed/no match); positive FP credit
+    is a penalty. Exactly one target is allowed; most edges have zero credit.
     """
 
     __tablename__ = "grading_edges"
@@ -809,32 +666,25 @@ class GradingEdge(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # Critique reference
     critique_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     critique_issue_id: Mapped[str] = mapped_column(String, nullable=False)
 
-    # Snapshot (for FK validation)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
 
-    # TP target (nullable - exactly one of TP or FP)
     tp_id: Mapped[str | None] = mapped_column(String, nullable=True)
     tp_occurrence_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # FP target (nullable)
     fp_id: Mapped[str | None] = mapped_column(String, nullable=True)
     fp_occurrence_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # Grading metadata
     credit: Mapped[float] = mapped_column(nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     grader_run_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False
     )
 
-    # Audit trail
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
-    # Relationships
     grader_run: Mapped[AgentRun] = relationship(foreign_keys=[grader_run_id])
 
     def to_target(self) -> GradingTarget:
@@ -853,14 +703,7 @@ class GradingEdge(Base):
 
 
 class IssueCluster(Base):
-    """Cluster of unmatched critique issues that report the same underlying problem.
-
-    Groups issues from different critic runs that describe the same novel finding
-    (one not covered by ground truth TPs/FPs). Only issues with all grading edges
-    at credit=0 can be clustered.
-
-    Composite primary key: (snapshot_slug, cluster_id).
-    """
+    """Same novel finding across critic runs; only issues with all-zero grading edges qualify."""
 
     __tablename__ = "issue_clusters"
 
@@ -874,16 +717,11 @@ class IssueCluster(Base):
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
-    # Relationships
     members: Mapped[list[IssueClusterMember]] = relationship(back_populates="cluster", cascade="all, delete-orphan")
 
 
 class IssueClusterMember(Base):
-    """Membership of a critique issue in a cluster.
-
-    Each critique issue belongs to at most one cluster (UNIQUE constraint).
-    Only issues with no positive grading edges (credit > 0) can be members.
-    """
+    """An issue can belong to at most one cluster and must have no positive grading edges."""
 
     __tablename__ = "issue_cluster_members"
 
@@ -912,15 +750,11 @@ class IssueClusterMember(Base):
         UniqueConstraint("critique_run_id", "critique_issue_id", name="uq_issue_cluster_member_issue"),
     )
 
-    # Relationships
     cluster: Mapped[IssueCluster] = relationship(back_populates="members")
 
 
 class ClusteringPending(Base):
-    """View: critique issues that need clustering (fully graded, no positive match, not yet clustered).
-
-    When this view returns no rows for a snapshot, all unmatched issues are clustered.
-    """
+    """Fully graded, unmatched, unclustered issues; empty per snapshot means clustering is complete."""
 
     __tablename__ = "clustering_pending"
     __table_args__ = ({"info": {"is_view": True}},)
@@ -931,16 +765,9 @@ class ClusteringPending(Base):
 
 
 class ModelMetadata(Base):
-    """Model metadata: pricing, context limits, and upstream routing.
+    """Synced from PropsConfig.models, with explicit upstream configuration.
 
-    Synchronized from PropsConfig.models. Every served model declares its
-    upstream explicitly in that configuration.
-
-    Upstream routing:
-    - upstream_name: References [upstreams.*] in props config.
-    - upstream_model: Model name to send in API request. NULL = use model_id.
-
-    Enables post-hoc cost calculation, context validation, and multi-upstream routing.
+    upstream_name selects [upstreams.*]; null upstream_model sends model_id.
     """
 
     __tablename__ = "model_metadata"
@@ -964,11 +791,7 @@ class ModelMetadata(Base):
 
 
 class LLMRunCost(Base):
-    """Aggregated LLM costs per agent run from llm_run_costs database VIEW.
-
-    Aggregates token usage and costs per (agent_run_id, model) from llm_requests
-    logged by the proxy.
-    """
+    """Proxy-logged token usage and costs aggregated by (agent_run_id, model)."""
 
     __tablename__ = "llm_run_costs"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
@@ -986,11 +809,9 @@ class LLMRunCost(Base):
 
 
 class AgentRunBudgetStatus(Base):
-    """Per-agent-run budget status from agent_run_budget_status VIEW.
+    """own_spent_usd counts direct costs; tree_spent_usd includes all descendants.
 
-    own_spent_usd: direct LLM costs for this agent only.
-    tree_spent_usd: recursive subtree costs (this agent + all descendants).
-    remaining_usd: budget_usd - tree_spent_usd.
+    remaining_usd = budget_usd - tree_spent_usd.
     """
 
     __tablename__ = "agent_run_budget_status"
@@ -1005,29 +826,24 @@ class AgentRunBudgetStatus(Base):
 
 
 class TpOccurrenceCredit(Base):
-    """Per-(critique_run, tp, occurrence) credit from tp_occurrence_credits VIEW.
+    """SUM of edge credits per (critic_run, tp, occurrence), capped at 1 by a DB trigger.
 
-    One row per (critic_run, tp_id, occurrence_id). found_credit is the SUM of all
-    grading edge credits for that combination (≤ 1.0 enforced by DB trigger).
-    grader_run_id is not exposed — it is provenance, not an aggregation dimension.
+    grader_run_id is provenance, not an aggregation dimension.
     """
 
     __tablename__ = "tp_occurrence_credits"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key (critic_run_id, tp_id, occurrence_id)
     critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Snapshot/Example context
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
     split: Mapped[Split] = mapped_column(nullable=False)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, nullable=False)
     files_hash: Mapped[str | None] = mapped_column(String, nullable=True)  # NULL for whole_snapshot
 
-    # Critic provenance
     critic_image_digest: Mapped[str] = mapped_column(String, nullable=False)
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
 
@@ -1036,27 +852,20 @@ class TpOccurrenceCredit(Base):
 
 
 class RecallByRun(Base):
-    """Per-critic-run recall from recall_by_run database VIEW.
-
-    Includes all runs (in_progress, exited, timed_out). missing_grading_edges counts
-    how many grading_pending edges remain for this run (0 = grading complete).
-    """
+    """Includes in-progress and terminal runs; zero missing_grading_edges means grading is complete."""
 
     __tablename__ = "recall_by_run"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Primary key
     critic_run_id: Mapped[UUID] = mapped_column(primary_key=True)
 
-    # Example identification
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, nullable=False)
     files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     split: Mapped[Split] = mapped_column(nullable=False)
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Critic-specific columns
     critic_image_digest: Mapped[str] = mapped_column(String, nullable=False)
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
     critic_status: Mapped[AgentRunStatus] = mapped_column(nullable=False)
@@ -1072,21 +881,15 @@ class RecallByRun(Base):
 
 
 class RecallByDefinitionExample(Base):
-    """Per-(definition, model, example) recall statistics from recall_by_definition_example VIEW.
+    """Aggregate recall_by_run by (definition, model, example).
 
-    Intermediate view between recall_by_run and higher-level aggregations.
-    Groups recall_by_run by (definition, model, example) for optimization and dashboard reporting.
-
-    - recall_denominator: Ground truth count (denominator)
-    - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / recall_denominator
+    credit_stats summarizes raw credits; recall_stats divides by recall_denominator.
     """
 
     __tablename__ = "recall_by_definition_example"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key
     critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
@@ -1094,56 +897,44 @@ class RecallByDefinitionExample(Base):
     files_hash: Mapped[str | None] = mapped_column(String, primary_key=True)
     split: Mapped[Split] = mapped_column(nullable=False)
 
-    # Ground truth count (denominator)
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Number of critic runs for this (definition, model, example)
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Status breakdown (JSONB: {AgentRunStatus.EXITED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
 
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
 class RecallByDefinitionSplitKind(Base):
-    """Recall by (definition, model, split, example_kind) from recall_by_definition_split_kind VIEW.
+    """Aggregate examples within (definition, model, split, example_kind).
 
-    Aggregates recall_by_definition_example across examples within each (split, example_kind) group.
-
-    - recall_denominator: Sum across distinct examples (denominator)
-    - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / recall_denominator
+    recall_denominator sums distinct examples; recall_stats = credit_stats / denominator.
     """
 
     __tablename__ = "recall_by_definition_split_kind"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key (matches view GROUP BY)
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
     critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Example and run counts
     n_examples: Mapped[int] = mapped_column(Integer, nullable=False)
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Catchable occurrences (denominator - sum across distinct examples)
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Status breakdown (JSONB: {AgentRunStatus.EXITED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
 
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
     # Count of runs where caught credit was exactly 0 (complete failure to find anything)
@@ -1151,39 +942,30 @@ class RecallByDefinitionSplitKind(Base):
 
 
 class RecallByExample(Base):
-    """Per-example recall statistics from recall_by_example database VIEW.
+    """Aggregate definition/example statistics across definitions.
 
-    Aggregates recall_by_definition_example across definitions.
-
-    - recall_denominator: Ground truth count (denominator)
-    - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / recall_denominator
+    recall_denominator counts GT; recall_stats = credit_stats / recall_denominator.
     """
 
     __tablename__ = "recall_by_example"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
     files_hash: Mapped[str | None] = mapped_column(String, primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Catchable occurrences (denominator)
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Run count
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Status breakdown (JSONB: {AgentRunStatus.EXITED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
 
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -1197,41 +979,25 @@ _WinningDefinitionListAdapter: TypeAdapter[list[WinningDefinition]] = TypeAdapte
 
 
 class ParetoFrontierByExample(Base):
-    """Pareto frontier from pareto_frontier_by_example database VIEW (not a table).
+    """Definitions tied at best mean credit for each (snapshot, split, kind, files_hash, model).
 
-    For each example, shows definitions that achieved the best mean credit.
-
-    For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows:
-    - recall_denominator: ground truth count (denominator for recall)
-    - winning_definitions: list of {image_digest, credit_stats, n_runs} for all definitions at best score
-
-    All entries in winning_definitions have the same credit_stats.mean (the best score).
-    Consumer can compute recall as best_mean_credit / recall_denominator.
-
-    Useful for prompt optimization to identify:
-    - Which definitions excel on specific examples (definition specialization)
-    - Examples where no definition performs well (improvement opportunities)
-    - Generalist vs specialist definition patterns
-
-    Built on recall_by_definition_example, which aggregates over runs.
-    Failed critic runs (timed_out) count as 0.0 credit.
+    Built on recall_by_definition_example; failed/timed-out runs count as zero credit.
+    winning_definitions share the best credit_stats.mean; divide by recall_denominator
+    for recall. Each winner carries image_digest, credit_stats and n_runs.
     """
 
     __tablename__ = "pareto_frontier_by_example"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
     files_hash: Mapped[str | None] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Ground truth count for this example
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # JSONB array of {image_digest, credit_stats, n_runs} objects
     _winning_definitions_raw: Mapped[list[dict[str, Any]]] = mapped_column("winning_definitions", JSONB, nullable=False)
 
     @property
@@ -1244,32 +1010,20 @@ class ParetoFrontierByExample(Base):
 
 
 class OccurrenceStatistics(Base):
-    """Per-occurrence statistics across critic runs from occurrence_statistics VIEW.
-
-    Aggregated credit statistics per occurrence. credit_stats.n = number of critic runs,
-    credit_stats.mean = average credit across runs.
-
-    Use cases:
-    - Identify "hard" occurrences (low credit_stats.mean, high variance)
-    - Training diagnostics: "Which occurrences are never caught?"
-    - Prompt improver: "Focus on occurrences with low credit_stats.mean"
-    """
+    """Per-occurrence/run statistics: credit_stats.n is critic run count, .mean is average credit."""
 
     __tablename__ = "occurrence_statistics"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Example identification
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
     files_hash: Mapped[str | None] = mapped_column(String, primary_key=True)
 
-    # Ground truth identification
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Critic-specific
     critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
@@ -1316,11 +1070,7 @@ class ValidationRecallByDefinition(Base):
 
 
 class AgentDefinition(Base):
-    """Agent image definition stored as OCI digest.
-
-    The registry proxy writes rows to this table on manifest push.
-    Digest is the primary key (sha256:...).
-    """
+    """The registry proxy writes image definitions on manifest push."""
 
     __tablename__ = "agent_definitions"
     __table_args__ = (CheckConstraint("is_valid_digest(digest)", name="check_digest_format"),)
@@ -1341,19 +1091,13 @@ class AgentDefinition(Base):
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationships
     agent_runs: Mapped[list[AgentRun]] = relationship(
         back_populates="agent_definition", foreign_keys="AgentRun.image_digest"
     )
 
 
 class LLMRequest(Base):
-    """LLM API request logged by the proxy.
-
-    Records all requests made through the LLM proxy, including full request/response
-    payloads for debugging. Token counts are extracted from the response at log time
-    and used by the llm_request_costs view for cost calculation.
-    """
+    """Full request/response bodies from the proxy; response token counts feed llm_request_costs."""
 
     __tablename__ = "llm_requests"
 
@@ -1374,32 +1118,15 @@ class LLMRequest(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
-    # Relationships
     agent_run: Mapped[AgentRun] = relationship(back_populates="llm_requests")
 
     __table_args__ = (CheckConstraint(f"api_shape IN ({_LLM_API_SHAPES_SQL})", name="llm_requests_api_shape_check"),)
 
 
 class AgentRun(Base):
-    """Unified agent run record (replaces separate critic_runs, grader_runs, etc.).
+    """Type-configured run with parent/child spawning.
 
-    Each run references an agent definition and stores type-specific config as JSONB.
-    Parent-child relationships track sub-agent spawning.
-
-    Status tracking:
-    - status: Current run status (in_progress, completed, etc.)
-    - container_exit_code: Exit code from container (NULL if still running)
-
-    Resource limits (set at launch time):
-    - budget_usd: Max USD cost allowed (including child agents). Enforced by proxy.
-    - timeout_seconds: Max seconds before agent is killed. Enforced by agent_registry.
-
-    Container lifecycle timestamps:
-    - started_at: When container started executing
-    - ended_at: When container finished (success or failure)
-
-    Image reference:
-    - image_digest: OCI image digest (sha256:...), FK to agent_definitions.digest
+    The proxy enforces budget_usd across descendants; agent_registry enforces timeout_seconds.
     """
 
     __tablename__ = "agent_runs"
@@ -1420,7 +1147,6 @@ class AgentRun(Base):
         nullable=False, server_default="in_progress", comment="Terminal status of the agent run"
     )
 
-    # Resource limits (set at launch time)
     budget_usd: Mapped[float] = mapped_column(
         nullable=False, comment="Max USD cost allowed for this agent (including child agents). Enforced by proxy."
     )
@@ -1428,7 +1154,6 @@ class AgentRun(Base):
         nullable=True, comment="Max seconds before agent is killed. Enforced by agent_registry."
     )
 
-    # Container lifecycle timestamps
     # TODO: Populate started_at when container actually starts executing (currently not set).
     # Could compute deadline as started_at + timeout_seconds for display/monitoring.
     started_at: Mapped[datetime | None] = mapped_column(
@@ -1446,7 +1171,6 @@ class AgentRun(Base):
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationships
     agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs", foreign_keys=[image_digest])
     parent: Mapped[AgentRun | None] = relationship("AgentRun", remote_side=[agent_run_id], backref="children")
     reported_issues: Mapped[list[ReportedIssue]] = relationship(
@@ -1457,7 +1181,6 @@ class AgentRun(Base):
     )
     llm_requests: Mapped[list[LLMRequest]] = relationship(back_populates="agent_run", cascade="all, delete-orphan")
 
-    # Type-safe config accessors
     def critic_config(self) -> CriticTypeConfig:
         if isinstance(self.type_config, CriticTypeConfig):
             return self.type_config
