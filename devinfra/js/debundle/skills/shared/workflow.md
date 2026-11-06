@@ -223,6 +223,18 @@ Omitting an explicit catchall claim can recreate residual ownership without its
 authored renames. Repair invalid full-spec selectors or claims
 separately; ownership selection does not hide them.
 
+Before splitting a module into temporary YAML siblings to withhold a few
+members, try its optional `bindings` include list. Use authored readable
+member/export names from the native `bindings list` catalogue or the YAML
+claims, not minified `binding_names` or names adopted only by the emitted
+report. An omitted list keeps every claim; `"bindings": []` keeps anonymous
+statement claims, including the bindings those statements declare. Identify
+source units by `(chunk_id, unit:N)` when combining chunk reports. The
+[CLI contract](../../docs/cli.md#ownership-subsets-with-full-selector-context)
+and [spec contract](../../SPEC.md#ownership-subsets) describe the input and
+limits. Keep full selectors, assertions, anchors and matching analysis in
+place, and require the ordinary gate for each actual selected union.
+
 1. Reduce the rejecting spec by returning suspected groups of claims to
    residual until a useful subset passes. That candidate is a known passing
    lower bound. Alternatively start from an existing passing partial spec or
@@ -257,6 +269,10 @@ module-root prefixes in authored YAML are not necessarily those identities.
 Use the [diagnosed actual blockers](#diagnose-a-rejected-assignment) for the first
 coarse candidate, then bisect remaining failing additions. Removing the owner union
 of hypothetical collapsed-cycle reports can discard otherwise viable modules.
+For a large **actual** cyclic SCC, compare coarse omission of new SCC owner
+groups with pruning or bisection at the cut endpoints. If repeated frontier
+cuts recover little ownership, switch tactics. A hypothetical pass-one owner
+union is not an exclusion set; check each actual union with the normal gate.
 
 Removal can change module cycles and selector dependencies, so do not assume
 acceptance is monotone or prune untried subsets from one failing result. A
