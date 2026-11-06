@@ -217,6 +217,43 @@ def _container_state(value: object) -> dict[str, object]:
     }
 
 
+def _launcher_container(name: object) -> bool:
+    return isinstance(name, str) and (name == "compute" or name.startswith("virtiofs-"))
+
+
+def _container_specs(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    containers = []
+    for container in value:
+        if not isinstance(container, dict) or not _launcher_container(container.get("name")):
+            continue
+        resources = container.get("resources")
+        selected = _selected_fields(container, ("name", "image", "imagePullPolicy", "restartPolicy"))
+        if isinstance(resources, dict):
+            selected["resources"] = {
+                bound: _selected_fields(resources[bound], ("cpu", "memory", "ephemeral-storage"))
+                for bound in ("requests", "limits")
+                if bound in resources
+            }
+        containers.append(selected)
+    return containers
+
+
+def _container_statuses(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    statuses = []
+    for container in value:
+        if not isinstance(container, dict) or not _launcher_container(container.get("name")):
+            continue
+        selected = _selected_fields(container, ("name", "ready", "started", "restartCount"))
+        selected["state"] = _container_state(container.get("state"))
+        selected["lastState"] = _container_state(container.get("lastState"))
+        statuses.append(selected)
+    return statuses
+
+
 def _pod_status_snapshot(payload: object, pod: str, pod_uid: str) -> dict[str, object] | None:
     if not isinstance(payload, dict):
         return None
@@ -228,39 +265,20 @@ def _pod_status_snapshot(payload: object, pod: str, pod_uid: str) -> dict[str, o
     if not isinstance(spec, dict) or not isinstance(status, dict):
         return None
 
-    containers = []
-    for container in spec.get("containers", []):
-        if not isinstance(container, dict) or not isinstance(container.get("name"), str):
-            continue
-        if container["name"] != "compute" and not container["name"].startswith("virtiofs-"):
-            continue
-        resources = container.get("resources")
-        selected = _selected_fields(container, ("name", "image", "imagePullPolicy"))
-        if isinstance(resources, dict):
-            selected["resources"] = {
-                bound: _selected_fields(resources[bound], ("cpu", "memory", "ephemeral-storage"))
-                for bound in ("requests", "limits")
-                if bound in resources
-            }
-        containers.append(selected)
-
-    statuses = []
-    for container in status.get("containerStatuses", []):
-        if not isinstance(container, dict) or not isinstance(container.get("name"), str):
-            continue
-        if container["name"] != "compute" and not container["name"].startswith("virtiofs-"):
-            continue
-        selected = _selected_fields(container, ("name", "ready", "started", "restartCount"))
-        selected["state"] = _container_state(container.get("state"))
-        selected["lastState"] = _container_state(container.get("lastState"))
-        statuses.append(selected)
-
     selected_metadata = _selected_fields(metadata, ("name", "uid", "creationTimestamp"))
     selected_metadata["deletionTimestamp"] = metadata.get("deletionTimestamp")
     return {
         "metadata": selected_metadata,
-        "spec": {**_selected_fields(spec, ("nodeName", "terminationGracePeriodSeconds")), "containers": containers},
-        "status": {**_selected_fields(status, ("phase", "startTime")), "containerStatuses": statuses},
+        "spec": {
+            **_selected_fields(spec, ("nodeName", "terminationGracePeriodSeconds")),
+            "containers": _container_specs(spec.get("containers")),
+            "initContainers": _container_specs(spec.get("initContainers")),
+        },
+        "status": {
+            **_selected_fields(status, ("phase", "startTime")),
+            "containerStatuses": _container_statuses(status.get("containerStatuses")),
+            "initContainerStatuses": _container_statuses(status.get("initContainerStatuses")),
+        },
     }
 
 

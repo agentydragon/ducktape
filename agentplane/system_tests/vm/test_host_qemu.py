@@ -349,6 +349,98 @@ def test_pod_snapshot_retains_only_matching_compute_and_virtiofs_lifecycle() -> 
     )
 
 
+def test_pod_snapshot_retains_restartable_virtiofs_init_sidecar_lifecycle() -> None:
+    pod = "virt-launcher-vm-pod"
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    payload = {
+        "metadata": {"name": pod, "uid": uid, "deletionTimestamp": None},
+        "spec": {
+            "restartPolicy": "Never",
+            "containers": [{"name": "compute", "image": "quay.io/kubevirt/virt-launcher:v1.8.2"}],
+            "initContainers": [
+                {
+                    "name": "virtiofs-state",
+                    "image": "quay.io/kubevirt/virt-launcher:v1.8.2",
+                    "restartPolicy": "Always",
+                    "resources": {"requests": {"memory": "1M"}, "limits": {"memory": "80M"}},
+                    "env": [{"value": "PRIVATE_INIT_ENV"}],
+                    "args": ["PRIVATE_INIT_ARG"],
+                },
+                {"name": "unrelated-init", "image": "PRIVATE_INIT_IMAGE"},
+            ],
+        },
+        "status": {
+            "containerStatuses": [{"name": "compute", "ready": True, "state": {"running": {}}}],
+            "initContainerStatuses": [
+                {
+                    "name": "virtiofs-state",
+                    "ready": False,
+                    "started": True,
+                    "restartCount": 1,
+                    "state": {
+                        "terminated": {
+                            "exitCode": 137,
+                            "reason": "OOMKilled",
+                            "startedAt": "2026-11-06T10:00:11Z",
+                            "finishedAt": "2026-11-06T10:00:55Z",
+                            "message": "PRIVATE_INIT_MESSAGE",
+                        }
+                    },
+                    "lastState": {
+                        "terminated": {"exitCode": 1, "reason": "Error", "finishedAt": "2026-11-06T09:59:59Z"}
+                    },
+                },
+                {"name": "unrelated-init", "state": {"terminated": {"message": "PRIVATE_INIT_STATUS"}}},
+            ],
+        },
+    }
+
+    snapshot = host_qemu._pod_status_snapshot(payload, pod, uid)
+
+    assert snapshot is not None
+    spec = snapshot["spec"]
+    status = snapshot["status"]
+    assert isinstance(spec, dict)
+    assert isinstance(status, dict)
+    assert spec["containers"] == [{"name": "compute", "image": "quay.io/kubevirt/virt-launcher:v1.8.2"}]
+    assert spec["initContainers"] == [
+        {
+            "name": "virtiofs-state",
+            "image": "quay.io/kubevirt/virt-launcher:v1.8.2",
+            "restartPolicy": "Always",
+            "resources": {"requests": {"memory": "1M"}, "limits": {"memory": "80M"}},
+        }
+    ]
+    assert status["initContainerStatuses"] == [
+        {
+            "name": "virtiofs-state",
+            "ready": False,
+            "started": True,
+            "restartCount": 1,
+            "state": {
+                "terminated": {
+                    "exitCode": 137,
+                    "reason": "OOMKilled",
+                    "startedAt": "2026-11-06T10:00:11Z",
+                    "finishedAt": "2026-11-06T10:00:55Z",
+                }
+            },
+            "lastState": {"terminated": {"exitCode": 1, "reason": "Error", "finishedAt": "2026-11-06T09:59:59Z"}},
+        }
+    ]
+    retained = json.dumps(snapshot)
+    assert all(
+        private not in retained
+        for private in (
+            "PRIVATE_INIT_ENV",
+            "PRIVATE_INIT_ARG",
+            "PRIVATE_INIT_IMAGE",
+            "PRIVATE_INIT_MESSAGE",
+            "PRIVATE_INIT_STATUS",
+        )
+    )
+
+
 def test_pod_snapshot_rejects_replaced_launcher_uid_without_leaking_status() -> None:
     pod = "virt-launcher-vm-pod"
     payload = {

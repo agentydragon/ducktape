@@ -30,7 +30,8 @@ If a retained raw serial log records the exact guest shutdown request and no exa
 proof follows within five seconds, `vm-artifacts/host-qemu/` retains at most two timestamped host
 QEMU and read-only libvirt/QMP snapshots for that launcher. Each also retains the matching
 launcher's Pod UID, deletion timestamp, and allowlisted compute/virtiofs container spec and
-status, including running or terminated timestamps. Pod name and UID must match the serial
+status, including restartable virtiofs initContainers, their initContainerStatuses,
+restartPolicy, and running or terminated timestamps. Pod name and UID must match the serial
 artifact before container details are recorded; environment variables and other containers are
 omitted. Each sample has a ten-second budget;
 the second starts at least two seconds after the first completes. QMP queries can wake QEMU's main
