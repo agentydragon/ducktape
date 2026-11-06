@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -270,12 +271,7 @@ func grpcTLSDefaults(source *tls.Config) *tls.Config {
 }
 
 func slicesContains(values []string, value string) bool {
-	for _, existing := range values {
-		if existing == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, value)
 }
 
 func grpcForbiddenCipherSuite(id uint16) bool {
