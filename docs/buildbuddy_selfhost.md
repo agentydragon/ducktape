@@ -40,8 +40,7 @@ private registry access, Flux notification and deployment. That evidence does
 not establish current live health, Dockerfile builds or general compatibility
 with the repository's GitHub Actions workflows. Use the [spike configuration
 and acceptance procedure](../cluster/x/gitlab_spike/README.md) for exact setup
-and remaining replacement gates; do not copy a generic pipeline or Runner
-example from this page.
+and remaining replacement gates.
 
 ## Decision gates
 
@@ -61,8 +60,7 @@ Before expanding a self-hosted topology or cutting over CI:
    license entitlement and quote for the exact service/executor arrangement.
 2. Validate the selected executor mode on its target nodes, including KVM and
    required isolation, image, storage and resource behavior. Use the checked-in
-   executor configurations and their acceptance evidence; the old recipes and
-   sizing tables in this page were not validated deployment guidance.
+   executor configurations and their acceptance evidence.
 3. Run a representative Bazel workload through the candidate endpoint. Check
    remote execution and cache behavior, required Docker use, cancellation and
    cleanup, and the same assertions as the hosted path. The KVM guide links the
