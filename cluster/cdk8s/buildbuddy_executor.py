@@ -1,4 +1,4 @@
-"""Opt-in KVM execution on wyrm2, deployed by the official executor Helm chart."""
+"""Pod execution pools deployed by the official BuildBuddy executor Helm chart."""
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
@@ -30,6 +30,6 @@ def buildbuddy_executor(
                 namespace="buildbuddy-executor",
             )
         ],
-        # KubeVirt supplies the node's devices.kubevirt.io/kvm device allocation.
+        # KubeVirt supplies the suspended Firecracker driver's KVM device allocation.
         depends_on=flux_kustomization_depends_on_many(kubevirt, kyverno),
     )

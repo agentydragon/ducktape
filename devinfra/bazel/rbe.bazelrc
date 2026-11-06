@@ -2,6 +2,9 @@
 # BuildBuddy bazelrc contributes only the credential, scoped to this config.
 build --config=rbe
 
+# Route the opted-in unit-test target to the cluster; its build actions stay hosted.
+build:cluster-tests --//devinfra/buildbuddy:cluster_tests=true
+
 # Strict action env prevents NixOS store paths from leaking to RBE workers.
 build:rbe --incompatible_strict_action_env
 

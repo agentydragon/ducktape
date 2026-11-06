@@ -5,7 +5,6 @@ metadata:
   name: buildbuddy-executor
   labels:
     # The OCI executor needs privilege to create its isolated action containers.
-    # Actions receive /dev/kvm through executor.oci.devices, not privileged mode.
     pod-security.kubernetes.io/enforce: privileged
 
 ---
@@ -54,10 +53,8 @@ spec:
                 path: /spec/template/spec/automountServiceAccountToken
                 value: false
   values:
-    # Keep Helm reconciling: suspend leaves pods running. Quote zero because the
-    # chart's `default 1` replaces numeric zero with one replica.
-    replicas: "0"
-    poolName: wyrm2-kvm
+    replicas: 2
+    poolName: cluster-oci
     strategy:
       type: Recreate
     resources:
@@ -65,29 +62,39 @@ spec:
         cpu: 2
         memory: 4Gi
         ephemeral-storage: 10Gi
-        devices.kubevirt.io/kvm: "1"
       limits:
-        cpu: 4
-        memory: 8Gi
+        cpu: 2
+        memory: 4Gi
         ephemeral-storage: 30Gi
-        devices.kubevirt.io/kvm: "1"
     nodeSelector:
-      kubernetes.io/hostname: wyrm2
+      kubernetes.io/arch: amd64
+      kubernetes.io/os: linux
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: buildbuddy-executor
+                  app.kubernetes.io/name: buildbuddy-executor
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
     config:
       executor:
         app_target: "grpcs://remote.buildbuddy.io:443"
         enable_oci: true
+        enable_firecracker: false
+        enable_bare_runner: false
+        default_isolation_type: oci
         child_cgroups_enabled: true
         child_cgroups_move_tini: true
         local_cache_size_bytes: 8000000000
-        oci:
-          devices:
-            - path: /dev/kvm
-              type: c
-              major: 10
-              minor: 232
-              # os.FileMode is decimal; 438 = 0666.
-              filemode: 438
 
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
