@@ -39,9 +39,7 @@ _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
 # neither can name a file the other does not project. These tokens are destination scoped; the proxy
 # hop itself always uses the Runner SVID for Sandbox Pods.
-_SUBSTITUTABLE_AUDIENCE_FILES = {
-    egress.KUBERNETES_AUDIENCE: "kubernetes-token",
-}
+_SUBSTITUTABLE_AUDIENCE_FILES = {egress.KUBERNETES_AUDIENCE: "kubernetes-token"}
 SIDECAR_LISTEN_PORT = 3128
 # The sidecar's settings file: a ConfigMap per Pod template, mounted on the sidecar alone.
 SIDECAR_SETTINGS_VOLUME_NAME = "egress-sidecar-settings"

@@ -24,7 +24,7 @@ def sidecar_routes(namespace: str, *, rules_origin: ServiceRef | None = None) ->
     )
     dispatcher = WorkloadRoute(
         upstream=f"{dispatcher_destination.fqdn}:{dispatcher_destination.port.number}",
-        server_uri="spiffe://agentplane/session-dispatcher",
+        server_uri=runner_gateway.WORKLOAD_URI,
         tls=security,
     )
     return {
