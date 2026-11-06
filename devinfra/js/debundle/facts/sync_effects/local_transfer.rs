@@ -8,7 +8,7 @@ use super::array_transfer::ArrayPushSelection;
 use super::descriptor_transfer::NativeObjectPostcondition;
 use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
-    DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCallee,
+    DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCall, LocalCallee,
     LocalExpression, LocalOperation,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
@@ -710,21 +710,7 @@ fn expression(
         LocalExpression::UpdateBinding { binding, span } => {
             update_binding_expression(context, binding, span, body, frame, judgment)
         }
-        LocalExpression::Call {
-            invocation,
-            callee,
-            arguments,
-            span,
-        } => call_expression(
-            context,
-            *invocation,
-            callee,
-            arguments,
-            span,
-            body,
-            frame,
-            judgment,
-        ),
+        LocalExpression::Call(call) => call_expression(context, call, body, frame, judgment),
         LocalExpression::ReadField {
             receiver,
             property,
@@ -1073,14 +1059,18 @@ fn update_binding_expression(
 
 fn call_expression(
     context: &mut impl LocalContext,
-    invocation: ForeignInvocation,
-    callee: &LocalCallee,
-    arguments: &[LocalExpression],
-    span: &Span,
+    call: &LocalCall,
     body: &LocalBody,
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
+    let LocalCall {
+        invocation,
+        callee,
+        arguments,
+        span,
+    } = call;
+    let invocation = *invocation;
     // GetValue(callee) precedes every argument. In particular, an
     // argument assignment must not replace this captured callee.
     let callee = if let Some((selection, effects)) =

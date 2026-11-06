@@ -69,6 +69,14 @@ impl LocalCallee {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct LocalCall {
+    pub(super) invocation: ForeignInvocation,
+    pub(super) callee: LocalCallee,
+    pub(super) arguments: Arc<[LocalExpression]>,
+    pub(super) span: Span,
+}
+
 /// Home-object sites express source containment, never receiver ownership.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DeferredCallableCreation {
@@ -159,12 +167,7 @@ pub(super) enum LocalExpression {
         span: Span,
     },
     Closure(DeferredCallableCreation),
-    Call {
-        invocation: ForeignInvocation,
-        callee: LocalCallee,
-        arguments: Arc<[Self]>,
-        span: Span,
-    },
+    Call(LocalCall),
     ReadField {
         receiver: Id,
         property: String,
@@ -524,9 +527,9 @@ impl LocalExpression {
                         .iter()
                         .any(|argument| argument.spread.is_some()) =>
             {
-                Some(Self::Call {
+                Some(Self::Call(LocalCall {
                     invocation: ForeignInvocation::Construct,
-                    callee: LocalCallee::lower(&construction.callee)?,
+                    callee: LocalCallee::lower(&construction.callee, class_template)?,
                     arguments: construction
                         .args
                         .as_deref()
@@ -535,7 +538,7 @@ impl LocalExpression {
                         .map(|argument| Self::lower(&argument.expr, class_template))
                         .collect::<Option<Arc<[_]>>>()?,
                     span: construction.span,
-                })
+                }))
             }
             Expr::Tpl(template) if template.exprs.is_empty() => Some(Self::Value(
                 ValueExpr::NonCallable(analysis_model::PrimKinds::STRING),
@@ -576,7 +579,7 @@ impl LocalExpression {
                     return None;
                 };
                 let callee = LocalCallee::lower(callee, class_template)?;
-                Some(Self::Call {
+                Some(Self::Call(LocalCall {
                     invocation: ForeignInvocation::Call,
                     callee,
                     arguments: call
@@ -585,7 +588,7 @@ impl LocalExpression {
                         .map(|argument| Self::lower(&argument.expr, class_template))
                         .collect::<Option<Arc<[_]>>>()?,
                     span: call.span,
-                })
+                }))
             }
             Expr::Member(member) => {
                 let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
@@ -704,9 +707,9 @@ impl LocalExpression {
                 reads.insert(binding.clone());
             }
             Self::Closure(_) | Self::This => {}
-            Self::Call {
+            Self::Call(LocalCall {
                 callee, arguments, ..
-            } => {
+            }) => {
                 match callee {
                     LocalCallee::Binding(binding)
                     | LocalCallee::Member {
@@ -752,7 +755,7 @@ impl LocalExpression {
                 )
             }
 
-            Self::Call { arguments, .. } => {
+            Self::Call(LocalCall { arguments, .. }) => {
                 // Grammar admission is only a candidate. Each consumer must
                 // select the actual callee and transfer its invocation.
                 let (mut allocation, mut closure) = (true, true);
@@ -857,7 +860,7 @@ impl LocalExpression {
             Self::Assign { value, .. }
             | Self::AssignField { value, .. }
             | Self::DefineThisField { value, .. } => value.requires_keyed_collection_new(),
-            Self::Call { arguments, .. } => {
+            Self::Call(LocalCall { arguments, .. }) => {
                 arguments.iter().any(Self::requires_keyed_collection_new)
             }
             Self::PrimitiveLiteral(_)
@@ -907,7 +910,7 @@ impl LocalExpression {
                     expression.writes(writes);
                 }
             }
-            Self::Call { arguments, .. } => {
+            Self::Call(LocalCall { arguments, .. }) => {
                 for argument in arguments.iter() {
                     argument.writes(writes);
                 }
@@ -949,7 +952,7 @@ impl LocalBody {
             _ => return None,
         };
         match value {
-            LocalExpression::Call { span, .. } => Some(*span),
+            LocalExpression::Call(LocalCall { span, .. }) => Some(*span),
             _ => None,
         }
     }
