@@ -388,9 +388,13 @@ fn omitting_an_explicit_catchall_claim_recreates_only_residual_ownership() {
 #[test]
 fn subset_retains_full_context_cross_claim_anchors_imports_and_anonymous_claims() {
     for mode in subset_modes() {
-        let subset =
-            write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/run"}]}"#);
-        let fixture = run_fixture_without_graphs_with_args(
+        for retain_import in [false, true] {
+            let subset = write_subset(if retain_import {
+                r#"{"modules":[{"chunk":"static/app","module":"features/run"},{"chunk":"static/app","module":"features/provider"}]}"#
+            } else {
+                r#"{"modules":[{"chunk":"static/app","module":"features/run"}]}"#
+            });
+            let fixture = run_fixture_without_graphs_with_args(
             FixtureOpts::new(
                 "import { seed } from './peer.js';\nfunction base(value) { return value + seed; }\nfunction wrapper(value) { return base(value); }\nconsole.log(wrapper(1));\nexport { wrapper };\n",
                 vec![
@@ -398,29 +402,37 @@ fn subset_retains_full_context_cross_claim_anchors_imports_and_anonymous_claims(
                     logical_module("features/provider", &[Member::renamed_with_kind("providerSeed", "seed", Some("import_specifier"))]),
                     logical_module_with_anon("features/run", &[Member::cross_ref_references("run", "anchor", Some("function_declaration"))], &["console.log(wrapper(1));"]),
                 ],
-            ).with_extra_chunks(&[("static/peer", "export const seed = 41;\n")]).with_unassigned_mode(mode),
+            ).with_extra_chunks(&[("static/peer", "export const seed = 41;\n")]).with_unassigned_mode(mode.clone()),
             &["--ownership-subset", subset.path().to_str().unwrap()],
         );
-        assert_preserved_entry_output(&fixture, "42\n");
-        assert_module_source(
-            &fixture.out_root,
-            "static/app/modules/features/run.js",
-            &["function run"],
-            &["function wrapper"],
-        );
-        assert_module_source(
-            &fixture.out_root,
-            "static/app/modules/features/run.js",
-            &["console.log"],
-            &[],
-        );
-        for omitted in ["anchor", "provider"] {
+            assert_preserved_entry_output(&fixture, "42\n");
+            assert_module_source(
+                &fixture.out_root,
+                "static/app/modules/features/run.js",
+                &["function run", "console.log"],
+                &["function wrapper"],
+            );
             assert!(
                 !fixture
                     .out_root
-                    .join(format!("static/app/modules/features/{omitted}.js"))
+                    .join("static/app/modules/features/anchor.js")
                     .exists()
             );
+            if retain_import {
+                assert_module_exports(
+                    &fixture.out_root,
+                    "static/app/modules/features/provider.js",
+                    &["providerSeed"],
+                    &["seed"],
+                );
+            } else {
+                assert!(
+                    !fixture
+                        .out_root
+                        .join("static/app/modules/features/provider.js")
+                        .exists()
+                );
+            }
         }
     }
 }
