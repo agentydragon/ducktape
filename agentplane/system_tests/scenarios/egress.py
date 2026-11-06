@@ -126,7 +126,7 @@ async def _create_kubernetes_probe(
 
     name = f"{view.target.name}-kubernetes-probe"
     value = secrets.token_urlsafe(32)
-    metadata = {
+    metadata: dict[str, object] = {
         "namespace": account.namespace,
         "ownerReferences": [
             {
@@ -137,16 +137,13 @@ async def _create_kubernetes_probe(
             }
         ],
     }
+    named_metadata = metadata.copy()
+    named_metadata["name"] = name
     await cluster.kubectl(
         "create",
         "-f",
         "-",
-        body={
-            "apiVersion": "v1",
-            "kind": "ConfigMap",
-            "metadata": {**metadata, "name": name},
-            "data": {"value": value},
-        },
+        body={"apiVersion": "v1", "kind": "ConfigMap", "metadata": named_metadata, "data": {"value": value}},
     )
     await cluster.kubectl(
         "create",
@@ -155,7 +152,7 @@ async def _create_kubernetes_probe(
         body={
             "apiVersion": "rbac.authorization.k8s.io/v1",
             "kind": "Role",
-            "metadata": {**metadata, "name": name},
+            "metadata": named_metadata,
             "rules": [{"apiGroups": [""], "resources": ["configmaps"], "resourceNames": [name], "verbs": ["get"]}],
         },
     )
@@ -166,7 +163,7 @@ async def _create_kubernetes_probe(
         body={
             "apiVersion": "rbac.authorization.k8s.io/v1",
             "kind": "RoleBinding",
-            "metadata": {**metadata, "name": name},
+            "metadata": named_metadata,
             "subjects": [{"kind": "ServiceAccount", "name": account.name, "namespace": account.namespace}],
             "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": name},
         },
