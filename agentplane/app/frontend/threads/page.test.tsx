@@ -1773,21 +1773,12 @@ it("moves a local control into chronological history once projected and retains 
 });
 
 it("shows a server-only pending command as saved, not as a local delivery", async () => {
-  const [section] = await renderHistory(
-    [
-      entity({
-        case: "command",
-        value: {
-          operation: "change_model",
-          outcome: ThreadCommandOutcome.PENDING,
-          outcomeCursor: undefined,
-          outcomeReason: undefined,
-          requestedValue: "next-model",
-        },
-      }),
-    ],
-    false
-  );
+  const section = await renderServerOnlyChangeModelSection({
+    outcome: ThreadCommandOutcome.PENDING,
+    outcomeCursor: undefined,
+    outcomeReason: undefined,
+    requestedValue: "next-model",
+  });
   const pending = pendingRow(section, "test-entity");
   expect(pending.textContent).toContain("Change model to next-model");
   expect(pending.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
@@ -1799,21 +1790,12 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
 });
 
 it("shows the failure and reason for a server-only command", async () => {
-  const [section] = await renderHistory(
-    [
-      entity({
-        case: "command",
-        value: {
-          operation: "change_model",
-          outcome: ThreadCommandOutcome.FAILED,
-          outcomeCursor: 1n,
-          outcomeReason: "model unavailable",
-          requestedValue: undefined,
-        },
-      }),
-    ],
-    false
-  );
+  const section = await renderServerOnlyChangeModelSection({
+    outcome: ThreadCommandOutcome.FAILED,
+    outcomeCursor: 1n,
+    outcomeReason: "model unavailable",
+    requestedValue: undefined,
+  });
   const pending = pendingRow(section, "test-entity");
   expect(pending.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     "Failed: model unavailable"
@@ -1822,21 +1804,12 @@ it("shows the failure and reason for a server-only command", async () => {
 });
 
 it("renders a server-only no-op control as a settled label, not a progress light", async () => {
-  const [section] = await renderHistory(
-    [
-      entity({
-        case: "command",
-        value: {
-          operation: "change_model",
-          outcome: ThreadCommandOutcome.NOOP,
-          outcomeCursor: 1n,
-          outcomeReason: "model already selected",
-          requestedValue: "current-model",
-        },
-      }),
-    ],
-    false
-  );
+  const section = await renderServerOnlyChangeModelSection({
+    outcome: ThreadCommandOutcome.NOOP,
+    outcomeCursor: 1n,
+    outcomeReason: "model already selected",
+    requestedValue: "current-model",
+  });
   const row = pendingRow(section, "test-entity");
   expect(row.textContent).toContain("Change model to current-model");
   expect(row.querySelector(".agentplane-command-progress")).toBeNull();
@@ -1947,6 +1920,24 @@ async function renderHistory(
     )
   );
   return [...container.querySelectorAll("section")];
+}
+
+async function renderServerOnlyChangeModelSection(value: {
+  outcome: ThreadCommandOutcome;
+  outcomeCursor: bigint | undefined;
+  outcomeReason: string | undefined;
+  requestedValue: string | undefined;
+}): Promise<HTMLElement> {
+  const [section] = await renderHistory(
+    [
+      entity({
+        case: "command",
+        value: { operation: "change_model", ...value },
+      }),
+    ],
+    false
+  );
+  return section;
 }
 
 function pendingInput(id: string, cursor: string): ThreadEntity {
