@@ -80,6 +80,7 @@ class Run:
     path: str
     status: str
     pull: Association | None
+    pull_count: int
 
     @classmethod
     def parse(cls, data: dict[str, Any]) -> Run:
@@ -107,9 +108,10 @@ class Run:
             path=data["path"],
             status=data["status"],
             pull=pull,
+            pull_count=len(pulls),
         )
 
-    def same_repository_pr_validation(
+    def same_repository_pr_source(
         self, *, repository_id: int, repository: str, workflow_id: int, workflow_paths: tuple[str, ...]
     ) -> bool:
         return (
@@ -120,23 +122,34 @@ class Run:
             and self.path in workflow_paths
             and self.event == "pull_request"
             and self.attempt == 1
-            and self.pull is not None
-            and self.pull.base_repository_id == repository_id
-            and self.pull.head_repository_id == repository_id
+            and self.pull_count <= 1
+            and ((self.pull_count == 0 and self.pull is None) or (self.pull_count == 1 and self.pull is not None))
+            and (self.pull is None or self.pull.base_repository_id == repository_id)
+            and (self.pull is None or self.pull.head_repository_id == repository_id)
             and bool(self.head_branch)
         )
+
+    def same_repository_pr_validation(
+        self, *, repository_id: int, repository: str, workflow_id: int, workflow_paths: tuple[str, ...]
+    ) -> bool:
+        return (
+            self.same_repository_pr_source(
+                repository_id=repository_id,
+                repository=repository,
+                workflow_id=workflow_id,
+                workflow_paths=workflow_paths,
+            )
+            and self.pull_count == 1
+            and self.pull is not None
+        )
+
+    def same_run_identity_except_pull(self, other: Run) -> bool:
+        """Compare immutable run provenance while allowing GitHub to clear pull_requests."""
+        return replace(self, status=other.status, pull=None, pull_count=0) == replace(other, pull=None, pull_count=0)
 
     def ordinary_pr(self, *, repository_id: int, repository: str, workflow_id: int) -> bool:
         return self.same_repository_pr_validation(
             repository_id=repository_id, repository=repository, workflow_id=workflow_id, workflow_paths=(WORKFLOW_PATH,)
-        )
-
-    def closed_pr_validation(self, *, repository_id: int, repository: str, workflow_id: int) -> bool:
-        return self.same_repository_pr_validation(
-            repository_id=repository_id,
-            repository=repository,
-            workflow_id=workflow_id,
-            workflow_paths=CLOSED_PR_WORKFLOW_PATHS,
         )
 
 
@@ -199,6 +212,54 @@ def relevant_closed_pull(api: CancellationApi, number: int, expected: ClosedPull
     return pull["state"] == "closed" and ClosedPull.parse(pull) == expected
 
 
+def unique_closed_pull_for_branch(
+    api: CancellationApi, repository_id: int, repository: str, head_branch: str
+) -> ClosedPull | None:
+    """Resolve a branch only when its all-state PR query yields one closed same-repository match."""
+    owner = repository.split("/", maxsplit=1)[0]
+    page = 1
+    matches: list[dict[str, Any]] = []
+    while True:
+        query = urlencode({"state": "all", "head": f"{owner}:{head_branch}", "per_page": 100, "page": page})
+        result = api.get(f"pulls?{query}")
+        if not isinstance(result, list):
+            raise ValueError("Expected GitHub pull request list for branch resolution")
+        matches.extend(result)
+        if len(matches) > 1:
+            return None
+        if len(result) < 100:
+            break
+        page += 1
+
+    if len(matches) != 1 or matches[0]["state"] != "closed":
+        return None
+    candidate = ClosedPull.parse(matches[0])
+    if (
+        candidate.head_branch != head_branch
+        or candidate.association.base_repository_id != repository_id
+        or candidate.association.head_repository_id != repository_id
+    ):
+        return None
+    return candidate
+
+
+def relevant_closed_branch(api: CancellationApi, repository_id: int, repository: str, expected: ClosedPull) -> bool:
+    candidate = unique_closed_pull_for_branch(api, repository_id, repository, expected.head_branch)
+    return candidate == expected and relevant_closed_pull(api, expected.association.number, expected)
+
+
+def run_matches_closed_pull(run: Run, closed: ClosedPull) -> bool:
+    return run.pull_count <= 1 and (run.pull is None or run.pull == closed.association)
+
+
+def same_closed_run_identity(before: Run, after: Run, closed: ClosedPull) -> bool:
+    return (
+        before.same_run_identity_except_pull(after)
+        and run_matches_closed_pull(before, closed)
+        and run_matches_closed_pull(after, closed)
+    )
+
+
 def cancel_obsolete(api: CancellationApi, event: dict[str, Any]) -> None:
     if event["action"] != "requested":
         return
@@ -206,24 +267,38 @@ def cancel_obsolete(api: CancellationApi, event: dict[str, Any]) -> None:
     if event["repository"]["full_name"] != api.repository:
         return
     observed = Run.parse(event["workflow_run"])
-    if not observed.closed_pr_validation(
-        repository_id=repository_id, repository=api.repository, workflow_id=observed.workflow_id
+    if not observed.same_repository_pr_source(
+        repository_id=repository_id,
+        repository=api.repository,
+        workflow_id=observed.workflow_id,
+        workflow_paths=CLOSED_PR_WORKFLOW_PATHS,
     ):
         return
     trigger = Run.parse(api.get(f"actions/runs/{observed.id}"))
     # Event identity is the immutable cutoff. A modified API identity is not a
     # replacement cutoff, including an observed manual rerun of the trigger.
     # Status may advance between event delivery and GET; other fields may not.
-    if trigger != replace(observed, status=trigger.status):
+    if not observed.same_run_identity_except_pull(trigger) or not run_matches_association_set(observed, trigger):
         return
     workflow = api.get(f"actions/workflows/{trigger.workflow_id}")
     if positive(workflow["id"]) != trigger.workflow_id or workflow["path"] != trigger.path:
         return
-    assert trigger.pull is not None
+    if trigger.pull is None:
+        closed = unique_closed_pull_for_branch(api, repository_id, api.repository, trigger.head_branch)
+        if (
+            closed is None
+            or not run_matches_closed_pull(observed, closed)
+            or not run_matches_closed_pull(trigger, closed)
+        ):
+            return
+        _cancel_closed_pr_runs(api, repository_id, api.repository, closed, workflow_paths=(trigger.path,))
+        return
     pull = api.get(f"pulls/{trigger.pull.number}")
     if pull["state"] == "closed":
         closed = ClosedPull.parse(pull)
         if closed.association != trigger.pull or closed.head_branch != trigger.head_branch:
+            return
+        if not run_matches_closed_pull(observed, closed) or not run_matches_closed_pull(trigger, closed):
             return
         # A requested run can arrive after the close-event sweep. Its own
         # trusted workflow_run event repeats the closed-PR cleanup so queued
@@ -233,7 +308,9 @@ def cancel_obsolete(api: CancellationApi, event: dict[str, Any]) -> None:
     # Keep the open-PR admission optimization scoped to ordinary Bazel CI.
     # The Nix wheel check has its own concurrency group and is only included
     # here as a late-run signal for a PR that has already closed.
-    if not trigger.ordinary_pr(repository_id=repository_id, repository=api.repository, workflow_id=trigger.workflow_id):
+    if trigger != replace(observed, status=trigger.status) or not trigger.ordinary_pr(
+        repository_id=repository_id, repository=api.repository, workflow_id=trigger.workflow_id
+    ):
         return
     if not relevant_open_head(pull, trigger):
         return
@@ -288,7 +365,7 @@ def _cancel_closed_pr_runs(
     workflow_paths: tuple[str, ...] = CLOSED_PR_WORKFLOW_PATHS,
 ) -> None:
     number = closed.association.number
-    if not relevant_closed_pull(api, number, closed):
+    if not relevant_closed_branch(api, repository_id, repository, closed):
         return
 
     for workflow_path in workflow_paths:
@@ -311,13 +388,13 @@ def _cancel_closed_pr_runs(
                 if not _closed_pr_candidate(candidate, closed, repository_id, repository, workflow_id, workflow_path):
                     continue
                 fresh = Run.parse(api.get(f"actions/runs/{candidate.id}"))
-                if fresh != replace(candidate, status=fresh.status):
+                if not same_closed_run_identity(candidate, fresh, closed):
                     continue
                 if not _closed_pr_candidate(fresh, closed, repository_id, repository, workflow_id, workflow_path):
                     continue
                 # A PR may be reopened or its head changed while this controller is
                 # paging. Recheck the closure identity immediately before each write.
-                if not relevant_closed_pull(api, number, closed):
+                if not relevant_closed_branch(api, repository_id, repository, closed):
                     return
                 print(f"Requesting cancellation of active validation run {fresh.id} for closed PR #{number}")
                 api.cancel(fresh.id)
@@ -331,10 +408,21 @@ def _closed_pr_candidate(
 ) -> bool:
     return (
         run.path == workflow_path
-        and run.closed_pr_validation(repository_id=repository_id, repository=repository, workflow_id=workflow_id)
-        and run.pull == closed.association
+        and run.same_repository_pr_source(
+            repository_id=repository_id, repository=repository, workflow_id=workflow_id, workflow_paths=(workflow_path,)
+        )
+        and run_matches_closed_pull(run, closed)
         and run.head_branch == closed.head_branch
         and run.status in ACTIVE_STATUSES
+    )
+
+
+def run_matches_association_set(first: Run, second: Run) -> bool:
+    """Association metadata can disappear at close, but cannot conflict or multiply."""
+    return (
+        first.pull_count <= 1
+        and second.pull_count <= 1
+        and (first.pull is None or second.pull is None or first.pull == second.pull)
     )
 
 

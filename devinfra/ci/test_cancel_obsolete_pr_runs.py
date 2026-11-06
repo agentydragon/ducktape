@@ -3,6 +3,7 @@ from __future__ import annotations
 from email.message import Message
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs
 
 import pytest
 import pytest_bazel
@@ -67,6 +68,8 @@ class FakeApi(CancellationApi):
         self.pages = [candidates if candidates is not None else [run(10, number=10, head=OLD_HEAD)]]
         self.fresh: dict[int, dict[str, Any]] = {}
         self.pulls = [pull()]
+        self.pull_responses: dict[int, list[dict[str, Any]]] = {}
+        self.branch_pull_pages: list[Any] = [[pull(state="closed")]]
         self.requests: list[str] = []
         self.canceled: list[int] = []
         self.cancel_error: Exception | None = None
@@ -79,12 +82,19 @@ class FakeApi(CancellationApi):
             return self.nix_workflow
         if path in {"actions/workflows/7", "actions/workflows/8"}:
             return self.workflow if path.endswith("/7") else self.nix_workflow
-        if path == "pulls/42":
-            result = self.pulls[0]
-            if len(self.pulls) > 1:
-                self.pulls.pop(0)
+        if path.startswith("pulls?"):
+            page = int(parse_qs(path.partition("?")[2])["page"][0])
+            return self.branch_pull_pages[page - 1]
+        if path.startswith("pulls/"):
+            number = int(path.rsplit("/", 1)[1])
+            responses = self.pull_responses.get(number, self.pulls if number == 42 else [])
+            if not responses:
+                raise AssertionError(f"No fake pull response for PR #{number}")
+            result = responses[0]
+            if len(responses) > 1:
+                responses.pop(0)
             return result
-        if path.startswith(("actions/workflows/7/runs?", "actions/workflows/8/runs?")):
+        if path.startswith("actions/workflows/") and "/runs?" in path:
             page = int(path.rsplit("=", 1)[1])
             return {"workflow_runs": self.pages[page - 1]}
         if path == f"actions/runs/{self.trigger['id']}":
@@ -117,6 +127,74 @@ class FakeApi(CancellationApi):
                 "head": {"repo": {"id": 1}, "ref": "feature", "sha": NEW_HEAD},
             },
         }
+
+
+def actual_cancelled_run(*, nix: bool) -> dict[str, Any]:
+    """Current GitHub run metadata for the manually cancelled CI/Nix runs, active at cancellation time."""
+    if nix:
+        return {
+            "id": 42157484248,
+            "run_number": 37109,
+            "run_attempt": 1,
+            "workflow_id": 305072831,
+            "repository": {"id": 986172774, "full_name": "agentydragon/ducktape"},
+            "head_repository": {"id": 986172774, "full_name": "agentydragon/ducktape"},
+            "head_sha": "e205692c8ee1cedab27f0b348fcf5df85b9d8e0c",
+            "head_branch": "codex/svid-action",
+            "event": "pull_request",
+            "path": NIX_WHEEL_CHECK_WORKFLOW_PATH,
+            # The live record is completed after manual cancellation; model its status immediately before that write.
+            "status": "in_progress",
+            "pull_requests": [],
+        }
+    return {
+        "id": 42157485295,
+        "run_number": 52406,
+        "run_attempt": 1,
+        "workflow_id": 207172864,
+        "repository": {"id": 986172774, "full_name": "agentydragon/ducktape"},
+        "head_repository": {"id": 986172774, "full_name": "agentydragon/ducktape"},
+        "head_sha": "0a3811dc99c03ffa51608867f83cdc0da7fbed1e",
+        "head_branch": "codex/svid-history",
+        "event": "pull_request",
+        "path": WORKFLOW_PATH,
+        "status": "in_progress",
+        "pull_requests": [],
+    }
+
+
+def actual_closed_pull(*, nix: bool) -> dict[str, Any]:
+    if nix:
+        return {
+            "id": 5182034914,
+            "number": 14528,
+            "state": "closed",
+            "base": {"repo": {"id": 986172774}, "ref": "codex/svid-dispatcher"},
+            "head": {
+                "repo": {"id": 986172774},
+                "ref": "codex/svid-action",
+                "sha": "09111dd22313d7dea17a958f88bc80c4aa5cfc02",
+            },
+        }
+    return {
+        "id": 5181863774,
+        "number": 14523,
+        "state": "closed",
+        "base": {"repo": {"id": 986172774}, "ref": "codex/svid-egress-flip"},
+        "head": {
+            "repo": {"id": 986172774},
+            "ref": "codex/svid-history",
+            "sha": "65ccd736f4014e3a38dea5c3779196d20de31514",
+        },
+    }
+
+
+def event_for_pull(pr: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action": "closed",
+        "repository": {"id": 986172774, "full_name": "agentydragon/ducktape"},
+        "pull_request": pr,
+    }
 
 
 def test_cancel_old_run_without_waiting_for_terminal() -> None:
@@ -213,7 +291,25 @@ def test_closed_pr_cancels_active_ci_run_from_an_older_head() -> None:
     cancel_closed_pr_runs(api, api.closed_event())
     assert api.canceled == [10]
     assert api.requests.count("actions/runs/10") == 1
-    assert api.requests[api.requests.index("actions/runs/10") + 1] == "pulls/42"
+    assert api.requests[api.requests.index("actions/runs/10") + 1].startswith("pulls?")
+
+
+@pytest.mark.parametrize("nix", [False, True], ids=["ci", "nix-wheel-check"])
+def test_actual_closed_run_metadata_without_pull_associations_is_resolved_safely(nix: bool) -> None:
+    candidate = actual_cancelled_run(nix=nix)
+    pr = actual_closed_pull(nix=nix)
+    workflow = {"id": candidate["workflow_id"], "path": NIX_WHEEL_CHECK_WORKFLOW_PATH if nix else WORKFLOW_PATH}
+    api = FakeApi(candidates=[candidate], workflow=workflow)
+    api.repository = "agentydragon/ducktape"
+    if nix:
+        api.nix_workflow = workflow
+    api.branch_pull_pages = [[pr]]
+    api.pull_responses[pr["number"]] = [pr]
+
+    cancel_closed_pr_runs(api, event_for_pull(pr))
+
+    assert api.canceled == [candidate["id"]]
+    assert any("pulls?" in request and "state=all" in request for request in api.requests)
 
 
 def test_closed_pr_cancels_nix_wheel_check_validation_run() -> None:
@@ -259,6 +355,24 @@ def test_late_nix_wheel_check_request_after_close_is_cancelled() -> None:
     api.pulls = [pull(state="closed")]
     cancel_obsolete(api, api.event(nix_run))
     assert api.canceled == [20]
+
+
+@pytest.mark.parametrize(
+    ("workflow_id", "workflow_path"),
+    [(7, WORKFLOW_PATH), (8, NIX_WHEEL_CHECK_WORKFLOW_PATH)],
+    ids=["ci", "nix-wheel-check"],
+)
+def test_late_unassociated_run_after_close_is_cancelled_by_unique_branch_history(
+    workflow_id: int, workflow_path: str
+) -> None:
+    late_run = run(workflow_id=workflow_id, path=workflow_path, pull_requests=[])
+    api = FakeApi(trigger=late_run, candidates=[late_run])
+    api.pulls = [pull(state="closed")]
+
+    cancel_obsolete(api, api.event(late_run))
+
+    assert api.canceled == [20]
+    assert sum("pulls?" in request and "state=all" in request for request in api.requests) >= 2
 
 
 def test_nix_wheel_check_request_does_not_change_open_ci_supersession() -> None:
@@ -310,6 +424,88 @@ def test_closed_pr_stops_if_reopened_before_cancellation() -> None:
     api = FakeApi()
     api.pulls = [pull(state="closed"), pull(state="open")]
     cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+
+@pytest.mark.parametrize(
+    "history",
+    [[pull(state="closed"), pull(id=100, number=43)], [pull(state="closed"), pull(id=100, number=43, state="closed")]],
+)
+def test_closed_pr_refuses_reused_or_ambiguous_branch_history(history: list[dict[str, Any]]) -> None:
+    api = FakeApi()
+    api.branch_pull_pages = [history]
+    api.pulls = [pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+    assert not any(path.startswith("actions/workflows/ci.yml") for path in api.requests)
+
+
+def test_closed_pr_refuses_open_branch_history_even_if_expected_pr_is_closed() -> None:
+    api = FakeApi()
+    api.branch_pull_pages = [[pull(state="open")]]
+    api.pulls = [pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+
+def test_closed_pr_refuses_api_branch_filter_returning_a_different_head_branch() -> None:
+    api = FakeApi()
+    api.branch_pull_pages = [[pull(state="closed", head={"repo": {"id": 1}, "sha": NEW_HEAD, "ref": "other"})]]
+    api.pulls = [pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+
+def test_closed_pr_branch_resolution_rejects_malformed_api_response() -> None:
+    api = FakeApi()
+    api.branch_pull_pages = [{"state": "closed"}]
+    with pytest.raises(ValueError, match="Expected GitHub pull request list"):
+        cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+
+@pytest.mark.parametrize("fresh_pull_requests", [[], [run()["pull_requests"][0]]], ids=["dropped", "retained"])
+def test_closed_run_accepts_only_expected_association_disappearing_at_fresh_read(
+    fresh_pull_requests: list[dict[str, Any]],
+) -> None:
+    candidate = run(10, number=10, head=OLD_HEAD)
+    api = FakeApi(candidates=[candidate])
+    api.fresh[10] = run(10, number=10, head=OLD_HEAD, pull_requests=fresh_pull_requests)
+    api.pulls = [pull(state="closed"), pull(state="closed")]
+
+    cancel_closed_pr_runs(api, api.closed_event())
+
+    assert api.canceled == [10]
+
+
+def test_closed_run_rejects_multiple_explicit_associations() -> None:
+    candidate = run(10, number=10, head=OLD_HEAD)
+    candidate["pull_requests"] *= 2
+    api = FakeApi(candidates=[candidate])
+    api.pulls = [pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+
+def test_late_run_allows_association_to_disappear_between_event_and_fresh_get() -> None:
+    observed = run(pull_requests=run()["pull_requests"])
+    current = run(pull_requests=[])
+    api = FakeApi(trigger=current, candidates=[current])
+    api.pulls = [pull(state="closed"), pull(state="closed"), pull(state="closed")]
+
+    cancel_obsolete(api, api.event(observed))
+
+    assert api.canceled == [20]
+
+
+def test_late_run_rejects_conflicting_associations_across_fresh_get() -> None:
+    observed = run()
+    current = run(pull_requests=[{"number": 43, "id": 100, "base": {"repo": {"id": 1}}, "head": {"repo": {"id": 1}}}])
+    api = FakeApi(trigger=current, candidates=[current])
+    api.pulls = [pull(state="closed")]
+
+    cancel_obsolete(api, api.event(observed))
+
     assert not api.canceled
 
 
