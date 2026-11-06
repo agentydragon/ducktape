@@ -124,12 +124,11 @@ flowchart LR
     relay -->|OTLP/gRPC| alloy
     gw -->|mTLS Runner and Executor gRPC| runtime
     gw -->|mTLS Runner and Executor gRPC| vmruntime
-    runner -.->|History mTLS through CONNECT| sidecar
-    sidecar -.->|opaque History TLS| egress
-    egress -.->|opaque SessionJournalIngress.Push TLS| hs
+    runner -.->|dials SessionJournalIngress.Push| sidecar
+    sidecar -.->|outbound ingress route| hs
     agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| sidecar
-    guest -.->|History mTLS through CONNECT| relay
-    relay -.->|opaque History TLS| egress
+    guest -.->|dials SessionJournalIngress.Push| relay
+    relay -.->|outbound ingress route| hs
     guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
 
@@ -177,8 +176,7 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
 - **Runner control uses native gRPC.** The Gateway dials each runner's private server using mTLS.
   It validates the certificate against the active Sandbox/workload and retains `<sandbox>-control`
   routing and `<sandbox>-runner` observation Leases. History push and ordinary Sandbox egress retain
-  their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself
-  ([runner control](runner_control.md)).
+  their sidecar or VM relay paths ([runner control](runner_control.md)).
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
   Browser spans post to the same-origin App relay, which forwards OTLP/HTTP to Alloy. Runner spans use
   the sidecar's local telemetry route; VM guest spans use the launcher relay's guest gateway route.
@@ -549,7 +547,7 @@ flowchart LR
     runner --> sidecar -->|TLS SVID on proxy-mtls:8889 when enabled| egress
     guest --> relay -->|TLS SVID on proxy-mtls:8889 when enabled| egress
     app -->|egress admin API| egress
-    egress -->|policy and credential watches| k8s
+    egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|workload Actions gRPC and MCP| actions
     egress -->|policy-approved requests| other
     egress -->|model requests| llm
@@ -558,11 +556,14 @@ flowchart LR
     actions -->|REST + web push| github
 ```
 
+The optional runner mTLS hop authenticates the Runtime SVID, then resolves its Sandbox UID and
+accepted credential ID through the live API before using that Sandbox's own ServiceAccount as the
+policy subject. Caller headers do not select identity; the HTTP token listener remains available.
 The egress proxy substitutes a configured credential only for the destination covered by its
 policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
 The Sandbox sidecar and KubeVirt launcher relay select their hop mode explicitly. Pod and
 Firecracker system-test fixtures exercise the TLS listener; staging remains in token mode until the
-dependent service migration is ready. Plain Action boxes and external workloads still use token
+explicit flip. Plain Action boxes and external workloads still use token
 mode because they have no Sandbox Controller-issued SVID.
 The app has independent `action_federation.service_url` and `connection_service_url` settings.
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).

@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 )
@@ -256,10 +257,10 @@ func (s *sidecar) dialProxy() (net.Conn, error) {
 		_ = connection.Close()
 		return nil, fmt.Errorf("unsupported central proxy mode: %q", s.config.ProxyMode)
 	}
-	tlsConnection := tls.Client(connection, s.proxyTLS.Clone())
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := tlsConnection.HandshakeContext(ctx); err != nil {
+	tlsConnection, err := environment_runtime_transport.ClientTLSConnection(ctx, connection, s.proxyTLS)
+	if err != nil {
 		_ = connection.Close()
 		return nil, fmt.Errorf("central proxy mTLS handshake: %w", err)
 	}

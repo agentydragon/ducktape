@@ -152,13 +152,10 @@ Session behind one flow-control window, so a catch-up would delay every live Ses
 runner would have to schedule fairly itself; and its writer binding and acknowledgement would be
 per frame instead of per call.
 
-**Writer binding.** History's workload listener verifies the Runtime's SVID with the shared
-transport and resolves the live Sandbox and accepted credential generation through
-`workload_auth/auth.SVIDResolver`. Its subject is the Sandbox's own controller-owned ServiceAccount,
-including the account's current UID. Deleted or replaced Sandboxes, stale credentials and incomplete
-Pod bindings fail before the ingress handler. The central sampler keeps its separate token and
-delegation path ([workload authentication](workload_authentication.md)). The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
-and the canonical account UID, in the transaction that records the Session, so of two concurrent
+**Writer binding.** The ingress authenticates every call's bearer for its own audience with a
+TokenReview through `workload_auth/auth.Resolver`
+([workload authentication](workload_authentication.md)), and resolves no Sandbox. The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
+and the UID TokenReview returns, in the transaction that records the Session, so of two concurrent
 first writers one is refused. A call for the Session from any other ServiceAccount fails with
 `PERMISSION_DENIED`. Every Sandbox runs as a ServiceAccount named for it, so this ties the Session to its
 Sandbox, and the History Service reads the Sandbox off the writer's namespace and name without
@@ -181,13 +178,11 @@ since only an operator resolves them; a refused Session holds up no other. Unack
 bounded only by the state volume, and a Sandbox cannot finish teardown while any is left.
 
 **Endpoint and authentication.** The SandboxTemplate sets the runner's ingress endpoint and private
-control listener: one ingress for every Sandbox. A create request cannot choose either. History's
-endpoint uses `svid.server_uri = spiffe://agentplane/history-ingress` and a local sidecar or guest
-relay `proxy_address`. Runtime opens HTTP CONNECT through that local relay and then mTLS directly
-to History. The central proxy carries opaque TLS to an exact deployment-configured authority;
-History verifies the leaf and chooses the caller itself. No History audience token is projected
-into Sandboxes. Historyless deployments may still configure an explicit bearer endpoint; an SVID
-endpoint cannot also specify a bearer or run without Runtime's mTLS credentials.
+control listener: one ingress for every Sandbox (the History Service, or a historyless deployment's own sink). A create request cannot choose either; an ingress per Sandbox is not built. The runner reaches the ingress over its
+egress sidecar's platform route: the sidecar
+attaches the Pod's projected token for that ingress's own audience, `agentplane-runner-ingress` for
+the History Service, and an audience of its own for a historyless client. No other recipient
+can replay a token the ingress saw, and an ingress token opens no control connection.
 
 **Sealing.** `Quiesce` closes admission and starts draining and sealing every journal, returning the
 current quiesce stage. The runner publishes subsequent stages through
@@ -369,9 +364,11 @@ Kyverno checks the live Sandbox status binding against the VM annotation, curren
 credential label before injection. The sidecar verifies the proxy's fixed SPIFFE identity; the proxy
 checks the Runner client identity against current Sandbox/incarnation state.
 
-The sidecar's `proxy_mode` selects either the token or mTLS listener; an mTLS error never falls back
-to token authentication. Routes using opaque CONNECT passthrough retain end-to-end service TLS and
-the destination verifies the Runner SVID itself. Other routes that need credential substitution use
-the projected proxy-audience bearer, which the proxy binds to the authenticated Runner identity.
-Command Action Pods and external OpenClaw workloads remain token-mode clients because they do not
-have Sandbox-issued Runner certificates.
+The sidecar's `proxy_mode` is required and selects either the legacy token listener or mTLS listener.
+An mTLS error never falls back to token authentication. During PR2, the projected proxy-audience
+bearer remains available beside mTLS so the current proxy can preserve downstream
+`authenticatedWorkloadToken` behavior; the proxy binds it to the SVID caller. PR3 removes that
+compatibility bearer after dependent service authentication migrates. Staging remains on token mode
+until that cutover. Command Action Pods and external OpenClaw workloads also remain token-mode
+clients because they do not have Sandbox-issued Runner certificates; their credential model must be
+decided before retiring the token listener.

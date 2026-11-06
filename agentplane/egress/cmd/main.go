@@ -26,15 +26,20 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"k8s.io/apimachinery/pkg/runtime"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -175,6 +180,21 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer proxyListener.Close()
+	var svidListener net.Listener
+	if c.SVIDListenAddress != "" {
+		listener, err := openListener("proxy SVID", c.SVIDListenAddress)
+		if err != nil {
+			return err
+		}
+		defer listener.Close()
+		tlsConfig, err := (environment_runtime_transport.Config{
+			CertFile: c.SVIDCertFile, KeyFile: c.SVIDKeyFile, CAFile: c.SVIDCAFile,
+		}).WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+		if err != nil {
+			return fmt.Errorf("proxy SVID TLS configuration: %w", err)
+		}
+		svidListener = tls.NewListener(listener, tlsConfig)
+	}
 	agentAPIListener, err := openListener("agent API", c.AgentAPIListenAddress)
 	if err != nil {
 		return err
@@ -185,10 +205,10 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer adminListener.Close()
-	return serve(ctx, c, proxyListener, agentAPIListener, adminListener)
+	return serve(ctx, c, proxyListener, svidListener, agentAPIListener, adminListener)
 }
 
-func serve(ctx context.Context, c config, proxyListener, agentAPIListener, adminListener net.Listener) error {
+func serve(ctx context.Context, c config, proxyListener, svidListener, agentAPIListener, adminListener net.Listener) error {
 	base, err := kubernetesConfig(c.Kubeconfig)
 	if err != nil {
 		return err
@@ -200,6 +220,24 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	verifier, err := workloadIdentity(reviews.TokenReviews(), c)
 	if err != nil {
 		return err
+	}
+	sandboxReaders := map[string]*sandboxreader.Reader{}
+	if svidListener != nil {
+		scheme := runtime.NewScheme()
+		if err := sandboxapi.AddToScheme(scheme); err != nil {
+			return fmt.Errorf("register Sandbox API: %w", err)
+		}
+		objects, err := client.New(base, client.Options{Scheme: scheme})
+		if err != nil {
+			return fmt.Errorf("create live Sandbox reader: %w", err)
+		}
+		for _, namespace := range c.AllowedServiceAccountNamespaces {
+			reader, err := sandboxreader.New(namespace, objects)
+			if err != nil {
+				return fmt.Errorf("configure Sandbox reader for %q: %w", namespace, err)
+			}
+			sandboxReaders[namespace] = reader
+		}
 	}
 	ca, err := tls.LoadX509KeyPair(c.CACert, c.CAKey)
 	if err != nil {
@@ -240,8 +278,8 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	}
 
 	egress, err := proxy.New(proxy.Options{
-		CA: ca, UpstreamRoots: roots, Identity: verifier, Policy: index, TLSPassthroughTargets: c.TLSPassthroughTargets,
-		Upstream: upstream.NewResolver(c.ExemptNetworks), Record: decisions.Record,
+		CA: ca, UpstreamRoots: roots, Identity: verifier, Policy: index,
+		Upstream: upstream.NewResolver(c.ExemptNetworks), Record: decisions.Record, SandboxReaders: sandboxReaders,
 	})
 	if err != nil {
 		return err
@@ -268,6 +306,9 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { watcher.Run(ctx); return nil })
 	group.Go(func() error { return serving("proxy", egress.Serve(proxyListener)) })
+	if svidListener != nil {
+		group.Go(func() error { return serving("proxy SVID", egress.Serve(svidListener)) })
+	}
 	group.Go(func() error { return agentAPIServer.Serve(agentAPIListener) })
 	// The admin listener is the readiness probe and readiness gates every Service this Pod backs, so
 	// it starts accepting last: the readiness check answering means the listeners above are serving.

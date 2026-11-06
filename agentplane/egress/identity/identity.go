@@ -124,3 +124,32 @@ func (v *Verifier) VerifyProjected(ctx context.Context, presented map[string]str
 	}
 	return verified
 }
+
+// VerifyProjectedForSandbox keeps only audience-scoped tokens whose TokenReview
+// names the ServiceAccount and Pod incarnation bound to a live Sandbox. Unlike
+// the legacy token hop, the SVID caller does not carry a ServiceAccount UID, so
+// the comparison is deliberately limited to the account and Pod UID that the
+// proxy resolved from Sandbox status.
+func (v *Verifier) VerifyProjectedForSandbox(
+	ctx context.Context, presented map[string]string, account auth.Account, podUID string,
+) map[string]string {
+	verified := map[string]string{}
+	for audience, token := range presented {
+		resolver, configured := v.projected[audience]
+		if !configured {
+			slog.Warn("no resolver configured for projected token audience", "audience", audience)
+			continue
+		}
+		reviewed, err := resolver.ResolveToken(ctx, token)
+		if err != nil {
+			slog.Warn("projected token rejected", "audience", audience, "error", err)
+			continue
+		}
+		if reviewed.Account != account || reviewed.PodUID != podUID {
+			slog.Warn("projected token is not bound to the SVID Sandbox account and Pod", "audience", audience)
+			continue
+		}
+		verified[audience] = token
+	}
+	return verified
+}

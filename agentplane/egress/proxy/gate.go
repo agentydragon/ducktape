@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"log/slog"
 	"maps"
@@ -14,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
@@ -131,6 +133,9 @@ func (p *Proxy) decide(
 func (p *Proxy) authenticate(
 	ctx context.Context, client *connection, hop []string, supplied bool, presented map[string]string,
 ) (*authenticated, error) {
+	if client.peerState != nil {
+		return p.authenticateSVID(ctx, client, hop, supplied, presented)
+	}
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	var previous *authenticated
@@ -158,6 +163,81 @@ func (p *Proxy) authenticate(
 	var projected map[string]string
 	if presented != nil {
 		projected = p.options.Identity.VerifyProjected(ctx, presented, principal)
+	} else if previous != nil {
+		projected = maps.Clone(previous.projected)
+	}
+	client.auth = &authenticated{bearer: token, principal: principal, projected: projected}
+	return client.auth, nil
+}
+
+// authenticateSVID maps the verified transport identity to the Sandbox that
+// currently accepts its credential on every request. The URI never supplies a
+// policy subject directly: the live Sandbox provides its owned ServiceAccount
+// name and current runner Pod binding.
+func (p *Proxy) authenticateSVID(
+	ctx context.Context, client *connection, hop []string, supplied bool, presented map[string]string,
+) (*authenticated, error) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.peerState == nil {
+		return nil, &identity.Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}
+	}
+	peerURI, err := environment_runtime_transport.PeerIdentityFromTLSState(*client.peerState, x509.ExtKeyUsageClientAuth)
+	if err != nil {
+		return nil, &identity.Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}
+	}
+	namespace, sandboxUID, credentialID, err := environment_runtime_transport.ParseEnvironmentRuntimeURI(peerURI)
+	if err != nil {
+		return nil, &identity.Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID identity URI"}
+	}
+	reader := p.options.SandboxReaders[namespace]
+	if reader == nil {
+		return nil, &identity.Rejection{Reason: decision.Unavailable, Detail: "SVID authentication is not configured"}
+	}
+	view, found, err := reader.FindRunnerCredential(ctx, sandboxUID, credentialID)
+	if err != nil {
+		return nil, &identity.Rejection{Reason: decision.Unavailable, Detail: "live Sandbox lookup failed"}
+	}
+	if !found || view.Identity == nil || view.Resource == nil {
+		return nil, &identity.Rejection{Reason: decision.TokenRejected, Detail: "SVID does not name a current Sandbox credential"}
+	}
+	podName, podUID, bound := view.RunnerPod()
+	if !bound || view.Identity.Namespace != namespace || view.Identity.Name != view.Resource.Name || view.Resource.Name == "" {
+		return nil, &identity.Rejection{Reason: decision.TokenRejected, Detail: "Sandbox has no current runner binding"}
+	}
+	principal := auth.Principal{
+		Account: auth.Account{Namespace: view.Identity.Namespace, Name: view.Identity.Name},
+		PodName: podName, PodUID: podUID,
+	}
+	previous := client.auth
+	if previous != nil && (previous.principal.Account != principal.Account || previous.principal.PodUID != principal.PodUID) {
+		client.auth = nil
+		return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "SVID Sandbox binding changed on this connection"}
+	}
+	token := ""
+	if supplied {
+		client.auth = nil
+		var ok bool
+		if token, ok = identity.BearerToken(hop); !ok {
+			return nil, &identity.Rejection{Reason: decision.TokenMissing, Detail: "invalid optional Proxy-Authorization"}
+		}
+	} else if previous != nil {
+		token = previous.bearer
+	}
+	if token != "" {
+		tokenPrincipal, err := p.options.Identity.Identify(ctx, token)
+		if err != nil {
+			client.auth = nil
+			return nil, err
+		}
+		if tokenPrincipal.Account != principal.Account || tokenPrincipal.PodUID != principal.PodUID {
+			client.auth = nil
+			return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "hop bearer does not match the SVID Sandbox"}
+		}
+	}
+	var projected map[string]string
+	if presented != nil {
+		projected = p.options.Identity.VerifyProjectedForSandbox(ctx, presented, principal.Account, principal.PodUID)
 	} else if previous != nil {
 		projected = maps.Clone(previous.projected)
 	}

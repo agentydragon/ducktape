@@ -141,7 +141,7 @@ func (c Config) ClientCredentials(expectedPeerURI string) (credentials.Transport
 	if err != nil {
 		return nil, err
 	}
-	return credentials.NewTLS(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
 }
 
 // ServerCredentials creates mTLS server credentials pinned to the expected client URI.
@@ -157,12 +157,23 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	if err != nil {
 		return nil, err
 	}
-	return credentials.NewTLS(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
 }
 
-// ClientTLSConfig creates client credentials pinned to a first-party service's
-// fixed SPIFFE identity. The file source reloads projected certificate, key,
-// and CA bundle replacements while keeping the client identity pinned.
+// WorkloadServerCredentials creates mTLS server credentials for the fixed
+// egress identity and a live EnvironmentRuntime peer. Established connections
+// close when either selected leaf certificate expires.
+func (c Config) WorkloadServerCredentials(localURI string) (credentials.TransportCredentials, error) {
+	config, err := c.WorkloadServerTLSConfig(localURI)
+	if err != nil {
+		return nil, err
+	}
+	return newExpiringCredentials(config), nil
+}
+
+// ClientTLSConfig creates HTTPS credentials pinned to a first-party service's
+// SPIFFE identity. The file source reloads projected certificate, key, and CA
+// bundle replacements while keeping the client identity pinned.
 func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 	if expectedPeerURI != EgressProxyURI && expectedPeerURI != HistoryIngressURI {
 		return nil, errors.New("expected peer URI must name a supported first-party service")
@@ -184,9 +195,9 @@ func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 	return tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth)), nil
 }
 
-// WorkloadServerTLSConfig creates mTLS credentials for a first-party workload
-// listener. It accepts only a current EnvironmentRuntime identity with an
-// explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
+// WorkloadServerTLSConfig creates mTLS server credentials for a first-party
+// workload listener. It accepts only a current EnvironmentRuntime identity with
+// an explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
 func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
 	if localURI != EgressProxyURI && localURI != HistoryIngressURI {
 		return nil, errors.New("local URI must name a supported first-party service")
