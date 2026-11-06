@@ -26,10 +26,7 @@ fn dataflow_cycle_fixture() -> FixtureOpts<'static> {
     FixtureOpts::new(
         r#"const alpha = (globalThis.tag = "first", "a");
 const beta = (globalThis.tag = "second", "b");
-const captured = [];
-const composed = [];
-function touch() { composed.push("local"); }
-const probe = probeHost(alpha, () => captured.push("escaped"), touch());
+const probe = probeHost(alpha);
 const gamma = (globalThis.tag = "third", "g");
 console.log(alpha, beta, probe, gamma, globalThis.tag);
 export { alpha, beta, probe, gamma };
@@ -37,8 +34,27 @@ export { alpha, beta, probe, gamma };
         vec![
             logical_module("mod_a", &[Member::new("alpha"), Member::new("gamma")]),
             logical_module("mod_b", &[Member::new("beta")]),
+            logical_module("mod_c", &[Member::new("probe")]),
+        ],
+    )
+    .with_dataflow_aware_s_chain()
+}
+
+fn heap_frontier_cycle_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        r#"const first = beforeHost();
+const captured = [0];
+const composed = [0];
+function touch() { composed[0] = 1; }
+const probe = probeHost(() => captured[0] = 1, touch());
+const last = afterHost();
+console.log(first, probe, last);
+export { first, probe, last };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("first"), Member::new("last")]),
             logical_module(
-                "mod_c",
+                "mod_b",
                 &[
                     Member::new("captured"),
                     Member::new("composed"),
@@ -56,10 +72,8 @@ fn pure_wrapper_heap_frontier_fixture() -> FixtureOpts<'static> {
         r#"import { observe } from './peer.js';
 const alpha = (globalThis.tag = "first", "a");
 const beta = (globalThis.tag = "second", "b");
-const captured = [];
-const composed = [];
-function touch() { composed.push("local"); }
-const observed = observe(() => captured.push("escaped"), touch());
+const captured = [0];
+const observed = observe(() => captured[0] = 1);
 const gamma = (globalThis.tag = "third", "g");
 console.log(alpha, beta, observed, gamma, globalThis.tag);
 export { alpha, beta, observed, gamma };
@@ -71,8 +85,6 @@ export { alpha, beta, observed, gamma };
                 "mod_c",
                 &[
                     Member::new("captured"),
-                    Member::new("composed"),
-                    Member::new("touch"),
                     Member::new("observe").with_purity(MemberPurity::Pure),
                     Member::new("observed"),
                 ],
@@ -81,7 +93,7 @@ export { alpha, beta, observed, gamma };
     )
     .with_extra_chunks(&[(
         "static/peer",
-        "export function observe(callback, value) { return value; }\n",
+        "export function observe(callback) { return foreignObserver(callback); }\n",
     )])
     .with_dataflow_aware_s_chain()
 }
@@ -179,7 +191,18 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     assert_eq!(reason["rule"], "unknown_call", "{edge}");
     assert_eq!(reason["detail"], "probeHost", "{edge}");
 
-    let heap = &barrier_cause["heap_frontier"];
+    // Keep the original cut fixture stable: adding captured arrays changes
+    // its binding timelines and therefore which edges the feedback cut picks.
+    let heap_rejected = run_rejection_fixture(heap_frontier_cycle_fixture());
+    let heap_graph = heap_rejected.dependency_graph();
+    let probe_node = heap_graph
+        .nodes
+        .iter()
+        .find(|node| node.declared_bindings.iter().any(|b| b.binding == "probe"))
+        .expect("probe source unit");
+    let execution = serde_json::to_value(&probe_node.synchronous_execution)
+        .expect("synchronous execution serializes");
+    let heap = &execution["heap_frontier"];
     let own = &heap["own_at_init"];
     assert_eq!(own["opaque"], true, "{edge}");
     assert_eq!(own["writes"]["count"], 1, "{edge}");
@@ -225,7 +248,7 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
         );
     }
 
-    let graph_path = rejected
+    let graph_path = heap_rejected
         .report_root
         .join("static/app/dependency_graph.json.gz");
     let described = run_debundle(&[
@@ -255,28 +278,26 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
         pure_cycles[0]["rejection"], "mutual_constraining_cycle",
         "adding heap endpoint context must not change the gate verdict: {pure_cycles:#?}"
     );
-    let pure_endpoint = cut_edges(&pure_cycles)
-        .into_iter()
-        .filter(|edge| edge["kind"] == "sequenced")
-        .find_map(|edge| {
-            [
-                &edge["sequenced_source_unit"],
-                &edge["explanation"]["target_source_unit"],
-            ]
-            .into_iter()
-            .find(|endpoint| endpoint["binding_names"] == json!(["observed"]))
+    let pure_graph = pure_rejected.dependency_graph();
+    let pure_node = pure_graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|b| b.binding == "observed")
         })
-        .unwrap_or_else(|| {
-            panic!("pure heap-frontier endpoint missing from cycles.json: {pure_cycles:#?}")
-        });
+        .expect("declared-pure wrapper source unit");
+    let pure_endpoint = serde_json::to_value(pure_node).expect("source unit serializes");
     assert_eq!(pure_endpoint["purity"]["kind"], "pure", "{pure_endpoint}");
     assert_eq!(
-        pure_endpoint["heap_frontier"]["own_at_init"]["opaque"], true,
+        pure_endpoint["synchronous_execution"]["heap_frontier"]["own_at_init"]["opaque"], true,
         "{pure_endpoint}"
     );
-    let captured_writes = pure_endpoint["heap_frontier"]["own_at_init"]["writes"]["sample"]
-        .as_array()
-        .expect("captured array writes");
+    let captured_writes =
+        pure_endpoint["synchronous_execution"]["heap_frontier"]["own_at_init"]["writes"]["sample"]
+            .as_array()
+            .expect("captured array writes");
     assert!(
         captured_writes
             .iter()
