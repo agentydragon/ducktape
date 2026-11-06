@@ -3,7 +3,7 @@ name: Cancel obsolete PR CI
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, Nix wheel check]
     types: [requested]
 
 permissions: {}

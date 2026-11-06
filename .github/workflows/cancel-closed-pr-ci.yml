@@ -1,10 +1,9 @@
-# Cancel only active ordinary CI validation runs after a same-repository PR closes.
+# Cancel only active CI and Nix PR validation runs after a same-repository PR closes.
 # Shipping push runs and independent image builds remain under their own workflows.
 name: Cancel CI for closed PR
 
 on:
   pull_request_target:
-    branches: [devel]
     types: [closed]
 
 permissions: {}
@@ -23,7 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # pull_request_target supplies trusted base-branch workflow code, never PR code.
+          # pull_request_target loads this workflow from the base repository's default branch.
+          # Pin checkout to that trusted workflow revision, never the PR head or base branch.
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
       - name: Cancel active CI validation runs for the closed PR

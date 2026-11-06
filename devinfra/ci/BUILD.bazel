@@ -366,9 +366,15 @@ py_library(
 py_test(
     name = "test_cancel_obsolete_pr_runs",
     srcs = ["test_cancel_obsolete_pr_runs.py"],
+    data = [
+        "//:.github/workflows/cancel-closed-pr-ci.yml",
+        "//:.github/workflows/cancel-obsolete-pr-ci.yml",
+    ],
     deps = [
         ":cancel_obsolete_pr_runs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

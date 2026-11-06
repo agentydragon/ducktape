@@ -6,8 +6,18 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 import pytest_bazel
+import yaml
+from python.runfiles import Runfiles
 
-from devinfra.ci.cancel_obsolete_pr_runs import CancellationApi, cancel_closed_pr_runs, cancel_obsolete
+from devinfra.ci.cancel_obsolete_pr_runs import (
+    CLOSED_PR_WORKFLOW_PATHS,
+    NIX_WHEEL_CHECK_WORKFLOW_PATH,
+    WORKFLOW_PATH,
+    CancellationApi,
+    cancel_closed_pr_runs,
+    cancel_obsolete,
+    main,
+)
 
 REPOSITORY = "owner/repo"
 NEW_HEAD = "a" * 40
@@ -53,6 +63,7 @@ class FakeApi(CancellationApi):
         super().__init__(repository=REPOSITORY, token="unused")
         self.trigger = trigger or run()
         self.workflow = workflow or {"id": 7, "path": ".github/workflows/ci.yml"}
+        self.nix_workflow = {"id": 8, "path": ".github/workflows/nix-wheel-check.yml"}
         self.pages = [candidates if candidates is not None else [run(10, number=10, head=OLD_HEAD)]]
         self.fresh: dict[int, dict[str, Any]] = {}
         self.pulls = [pull()]
@@ -62,16 +73,18 @@ class FakeApi(CancellationApi):
 
     def get(self, path: str) -> Any:
         self.requests.append(path)
-        if path == "actions/workflows/7":
-            return {"id": 7, "path": ".github/workflows/ci.yml"}
         if path == "actions/workflows/ci.yml":
             return self.workflow
+        if path == "actions/workflows/nix-wheel-check.yml":
+            return self.nix_workflow
+        if path in {"actions/workflows/7", "actions/workflows/8"}:
+            return self.workflow if path.endswith("/7") else self.nix_workflow
         if path == "pulls/42":
             result = self.pulls[0]
             if len(self.pulls) > 1:
                 self.pulls.pop(0)
             return result
-        if path.startswith("actions/workflows/7/runs?"):
+        if path.startswith(("actions/workflows/7/runs?", "actions/workflows/8/runs?")):
             page = int(path.rsplit("=", 1)[1])
             return {"workflow_runs": self.pages[page - 1]}
         if path == f"actions/runs/{self.trigger['id']}":
@@ -86,8 +99,12 @@ class FakeApi(CancellationApi):
         if self.cancel_error is not None:
             raise self.cancel_error
 
-    def event(self) -> dict[str, Any]:
-        return {"action": "requested", "repository": {"id": 1, "full_name": REPOSITORY}, "workflow_run": run()}
+    def event(self, workflow_run: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "action": "requested",
+            "repository": {"id": 1, "full_name": REPOSITORY},
+            "workflow_run": workflow_run or run(),
+        }
 
     def closed_event(self) -> dict[str, Any]:
         return {
@@ -196,7 +213,32 @@ def test_closed_pr_cancels_active_ci_run_from_an_older_head() -> None:
     cancel_closed_pr_runs(api, api.closed_event())
     assert api.canceled == [10]
     assert api.requests.count("actions/runs/10") == 1
-    assert api.requests[-1] == "pulls/42"
+    assert api.requests[api.requests.index("actions/runs/10") + 1] == "pulls/42"
+
+
+def test_closed_pr_cancels_nix_wheel_check_validation_run() -> None:
+    nix_run = run(11, number=11, head=OLD_HEAD, workflow_id=8, path=NIX_WHEEL_CHECK_WORKFLOW_PATH)
+    api = FakeApi(candidates=[nix_run])
+    api.pulls = [pull(state="closed"), pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert api.canceled == [11]
+    assert any(path.startswith("actions/workflows/8/runs?") for path in api.requests)
+
+
+def test_closed_pr_workflow_covers_non_default_base_branches() -> None:
+    root = Runfiles.CreateOrRaise().root()
+    close_workflow = yaml.load(
+        (root / "ducktape/.github/workflows/cancel-closed-pr-ci.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    trigger = close_workflow["on"]["pull_request_target"]
+    assert trigger["types"] == ["closed"]
+    assert "branches" not in trigger
+
+    listener = yaml.load(
+        (root / "ducktape/.github/workflows/cancel-obsolete-pr-ci.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    assert listener["on"]["workflow_run"]["workflows"] == ["CI", "Nix wheel check"]
+    assert set(CLOSED_PR_WORKFLOW_PATHS) == {WORKFLOW_PATH, ".github/workflows/nix-wheel-check.yml"}
 
 
 def test_run_requested_after_close_catches_a_run_created_after_the_close_sweep() -> None:
@@ -211,11 +253,28 @@ def test_run_requested_after_close_catches_a_run_created_after_the_close_sweep()
     assert api.canceled == [20]
 
 
+def test_late_nix_wheel_check_request_after_close_is_cancelled() -> None:
+    nix_run = run(workflow_id=8, path=NIX_WHEEL_CHECK_WORKFLOW_PATH)
+    api = FakeApi(trigger=nix_run, candidates=[nix_run])
+    api.pulls = [pull(state="closed")]
+    cancel_obsolete(api, api.event(nix_run))
+    assert api.canceled == [20]
+
+
+def test_nix_wheel_check_request_does_not_change_open_ci_supersession() -> None:
+    nix_run = run(workflow_id=8, path=NIX_WHEEL_CHECK_WORKFLOW_PATH)
+    api = FakeApi(trigger=nix_run, candidates=[run(10, number=10, head=OLD_HEAD)])
+    cancel_obsolete(api, api.event(nix_run))
+    assert not api.canceled
+    assert not any("runs?" in path for path in api.requests)
+
+
 @pytest.mark.parametrize(
     "changes",
     [
         {"status": "completed"},
         {"event": "push"},
+        {"event": "push", "workflow_id": 8, "path": NIX_WHEEL_CHECK_WORKFLOW_PATH},
         {"path": ".github/workflows/container-images.yml"},
         {"workflow_id": 8},
         {"run_attempt": 2},
@@ -284,6 +343,12 @@ def test_bad_event_repository_fails_closed() -> None:
     with pytest.raises(ValueError, match="positive integer"):
         cancel_obsolete(api, event)
     assert not api.canceled
+
+
+def test_main_rejects_unsupported_event_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    with pytest.raises(ValueError, match="Unsupported GITHUB_EVENT_NAME: push"):
+        main()
 
 
 @pytest.mark.parametrize("code", [409, 403])
