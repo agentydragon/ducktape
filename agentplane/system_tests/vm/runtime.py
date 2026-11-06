@@ -58,6 +58,9 @@ class VmRuntime:
 
     def configure(self, objects: list[dict[str, Any]]) -> None:
         vm_sandboxes.select_boot_evidence(objects, enabled=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1")
+        vm_sandboxes.select_libvirt_monitor_debug(
+            objects, enabled=os.environ.get("AGENTPLANE_VM_LIBVIRT_MONITOR_DEBUG") == "1"
+        )
         vm_sandboxes.select_native_profile(
             objects,
             enabled=os.environ.get("AGENTPLANE_VM_NATIVE_PROFILE") == "1",
