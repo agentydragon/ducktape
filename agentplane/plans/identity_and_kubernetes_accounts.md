@@ -177,11 +177,13 @@ the shared transport's verified trust-manager roots and rotation behavior.
 
 The proxy's optional TLS hop initially coexists with the token hop. Per-audience tokens remain for
 unmigrated platform routes; their Pod UID must match the bound Pod UID in Sandbox status. Services
-migrate separately in this order: History runner ingress, Notification, Dispatcher, Action and LLM.
+migrate in this order: History runner ingress, Notification, Dispatcher, Action and LLM; their
+service boundaries are combined in one PR.
 Each terminates the opaque TLS passthrough and resolves the SVID itself. The central sampler keeps
 its existing delegated path. Removing the HTTP token hop is a separate draft cutover, blocked on a
-non-Sandbox authentication design for command boxes, Haku UI and external OpenClaw callers. Those callers have
-no Sandbox-issued SVID, so a sidecar image update alone cannot restore their egress. The operator
+non-Sandbox authentication design for active command boxes and Haku UI. Those callers have no
+Sandbox-issued SVID, so a sidecar image update alone cannot restore their egress. OpenClaw is
+stopped and its future authentication does not block this slice. The operator
 accepted temporary loss of unmigrated platform routes at that cutover; this does not authorize
 permanently stranding non-SVID callers.
 
