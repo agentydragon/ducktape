@@ -149,8 +149,8 @@ def _loki_values() -> dict[str, object]:
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
-            # Upstream issues grafana/loki#23514 and #19586 remain open: Loki does not
-            # derive `GOMEMLIMIT` from its cgroup limit, so set it to ~80% of the hard
+            # See upstream issues grafana/loki#23514 and #19586: Loki does not derive
+            # `GOMEMLIMIT` from its cgroup limit, so set it to ~80% of the hard
             # cap. `read` combines query-frontend and querier; broad queries can decompress
             # matching chunks before filtering, so memory tracks data scanned (#4763; the
             # query cause in that incident was unconfirmed).

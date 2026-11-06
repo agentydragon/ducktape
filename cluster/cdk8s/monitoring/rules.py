@@ -128,9 +128,9 @@ _EXTERNAL_SECRETS = [
 ]
 
 _FLUX = [
-    # Suspended Flux Kustomizations retain Ready=False; before this exclusion, 13/18
-    # firing `FluxKustomizationNotReady` alerts were suspended services and exhausted
-    # ntfy's quota in the 2026-08-05 outage.
+    # Suspension leaves an existing `Ready=False` condition in place. Before this
+    # exclusion, 13/18 firing `FluxKustomizationNotReady` alerts came from suspended
+    # services, exhausting ntfy's quota in the 2026-08-05 outage.
     # `unless` matches label sets, not values: require `== 1`. Unset suspend has no
     # series; explicit `suspend: false` yields 0 and must not suppress a broken service.
     Rule.alert(

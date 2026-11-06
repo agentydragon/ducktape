@@ -154,8 +154,8 @@ def _alertmanager_config() -> dict[str, object]:
                     ],
                 },
                 # Delivery-failure alerts cannot report a broken delivery path and add
-                # quota pressure during that outage; use the external Watchdog dead-man
-                # switch instead (`cluster/docs/plan.md`). AlertmanagerClusterDown,
+                # quota pressure during that outage; the planned external Watchdog
+                # dead-man switch is needed (`cluster/docs/plan.md`). AlertmanagerClusterDown,
                 # ClusterCrashlooping, ConfigInconsistent, FailedReload and
                 # MembersInconsistent still page because Alertmanager can still send.
                 {
