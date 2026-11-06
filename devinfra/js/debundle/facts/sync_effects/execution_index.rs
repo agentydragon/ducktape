@@ -5,7 +5,9 @@ mod prototype_properties;
 
 use super::callable_body_facts::CallableBodyFacts;
 use super::effect_coverage::{RootEffectIdentity, RootEffectSource};
-use super::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody, OrderedRoot};
+use super::local_operations::{
+    DeferredCallableCreation, LocalBinding, LocalBody, LocalCall, OrderedRoot,
+};
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::value_model::{
@@ -13970,10 +13972,9 @@ impl Visit for ExecutionIndex {
         chain.visit_children_with(self);
         self.past_await = before;
         if let OptChainBase::Call(call) = chain.base.as_ref() {
-            // Optional invocation can still execute arbitrary callee/receiver
-            // protocols and invoke its arguments. Keep that conservative call
-            // even though value/short-circuit inference stays opaque. Do not
-            // admit the assertions indexed only for ordinary CallExpr syntax.
+            // Preserve the conservative call even when the ordered kernel
+            // cannot prove the selected callee non-nullish. Do not admit the
+            // assertions indexed only for ordinary CallExpr syntax.
             self.record_call(Call {
                 callee: ValueExpr::from_expr(&call.callee),
                 args: call
@@ -14006,7 +14007,13 @@ impl Visit for ExecutionIndex {
                 );
             }
         }
-        self.mark_opaque();
+        // Direct optional calls have a source-covered operation plan. Its
+        // execution still needs an actual non-nullish source callable; other
+        // targets truncate before arguments. Child operations retain their
+        // own opaque flags, and unsupported optional syntax stays opaque.
+        if LocalCall::optional_callee(chain).is_none() {
+            self.mark_opaque();
+        }
     }
 
     fn visit_new_expr(&mut self, new_expr: &NewExpr) {

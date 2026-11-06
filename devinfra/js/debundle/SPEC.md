@@ -3611,10 +3611,16 @@ before the arguments. Local method results also require the existing
 unused-receiver check, including nested callable implicit captures; source
 methods requiring `this` stay conservative. Invocation and fallback use the
 captured receiver even if an argument rebinds its source cell. Computed or
-dynamic receivers, optional calls, spread arguments and direct eval remain
-outside this ordered grammar.
+dynamic receivers, optional receiver/member chains, spread arguments and direct
+eval remain outside this ordered grammar. A direct optional call selects its
+callee before arguments through the same binding read and call transfer as an
+ordinary call. Only an actual singleton source callable proves that this
+invocation cannot short-circuit. Nullish, mixed and unknown targets truncate
+before arguments and retain conservative fallback; they acquire no invocation
+receipt. This does not supply skipped-call coverage or extend assertions scoped
+to ordinary call syntax.
 
-Eager binary expressions in these ordered callable bodies evaluate their left
+Eager binary expressions in ordered bodies evaluate their left
 and right operands once, in source order. When both results are known
 primitives, the shared primitive transfer supplies the result kind and records
 a no-effect operation fragment only when the operation cannot throw for those
@@ -3622,9 +3628,8 @@ kinds. A possible Symbol or BigInt throw leaves effect and completion coverage
 unknown. If either operand is an object or unknown value, the existing
 coercion fallback receives both already evaluated operands, so user coercion
 runs after the right operand and is not replayed. Short-circuit operators,
-`in`, `instanceof`, and strict equality remain outside this transfer. This
-does not admit a binary root initializer or a provider summary containing
-calls.
+`in`, `instanceof`, and strict equality remain outside this transfer. Coverage
+of the operand operations remains a separate requirement.
 
 Guarded dense-array `push` consumes that captured receiver and evaluated
 primitive arguments. An uninterrupted first dense literal allocation without

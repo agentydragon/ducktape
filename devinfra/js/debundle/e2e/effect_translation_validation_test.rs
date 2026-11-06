@@ -11,6 +11,107 @@ const REEXPORT_PEER_SOURCE: &str =
     "console.log('peer'); globalThis.marker = 1; export const shared = 1;\n";
 
 #[test]
+fn known_optional_callee_composes_arguments_and_relocates() {
+    let source = "let argumentCalls = 0; function argument() { argumentCalls++; return 20; } function calculate(value) { return value + 22; } const readLater = () => later; const result = calculate?.(argument()); const later = 1; console.log(result, argumentCalls, readLater());\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "work",
+                    &[
+                        Member::new("argumentCalls"),
+                        Member::new("argument"),
+                        Member::new("calculate"),
+                        Member::new("readLater"),
+                        Member::new("result"),
+                    ],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        "known-optional-call",
+    );
+    assert_preserved_entry_output(&fixture, "42 1 1\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_operation_receipt(&fixture, "result", 2);
+}
+
+#[test]
+fn optional_callee_is_selected_before_argument_replacement() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "let calls = 0; let selected = value => value + 22; function replacement() { return 99; } function argument() { calls++; selected = replacement; return 20; } const result = selected?.(argument()); console.log(result, calls, selected());\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "42 1 99\n");
+    assert_operation_receipt(&fixture, "result", 2);
+}
+
+#[test]
+fn nullable_optional_callee_keeps_short_circuit_and_no_invocation_receipt() {
+    for input in ["null", ""] {
+        let source = format!(
+            "let calls = 0; function argument() {{ calls++; throw 'argument'; }} function run(target) {{ return target?.(argument()); }} const result = run({input}); console.log(result, calls);\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, "undefined 0\n");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "an unproved short-circuit frontier cannot fabricate a call: {execution}"
+        );
+    }
+    let non_callable = run_fixture(
+        FixtureOpts::new(
+            "function run(target) { return target?.(); } const result = run(42); console.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_error(&non_callable, "TypeError");
+    let execution = binding_execution_report(&non_callable, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution}"
+    );
+}
+
+#[test]
+fn optional_call_retains_the_actual_captured_read_conflict() {
+    let source = "let state = 0; function read() { return state; } const result = read?.(); state = 42; console.log(result, state);\n";
+    let baseline = run_fixture(
+        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "0 42\n");
+    assert_operation_receipt(&baseline, "result", 1);
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "state",
+                    &[Member::new("state"), Member::new("read")],
+                    &["state = 42;"],
+                ),
+                logical_module("observer", &[Member::new("result")]),
+            ],
+        ),
+        &["--emit-on-rejection"],
+        3,
+    );
+    let report = rejected.candidate_relocation_assessment();
+    assert_eq!(report["decision"]["status"], "conflict", "{report}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_node_output(&rejected.entry_path(), "42 42\n", "");
+}
+
+#[test]
 fn immediate_source_callables_compose_creation_arguments_and_body() {
     for (case, callee) in [
         ("arrow", "(value => value + 22)"),

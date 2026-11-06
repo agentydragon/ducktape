@@ -70,11 +70,45 @@ impl LocalCallee {
 }
 
 #[derive(Debug, Clone)]
+pub(super) enum LocalInvocation {
+    Call,
+    OptionalCall,
+    Construct,
+}
+
+impl LocalInvocation {
+    pub(super) fn foreign_invocation(&self) -> ForeignInvocation {
+        match self {
+            Self::Call | Self::OptionalCall => ForeignInvocation::Call,
+            Self::Construct => ForeignInvocation::Construct,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(super) struct LocalCall {
-    pub(super) invocation: ForeignInvocation,
+    pub(super) invocation: LocalInvocation,
     pub(super) callee: LocalCallee,
     pub(super) arguments: Arc<[LocalExpression]>,
     pub(super) span: Span,
+}
+
+impl LocalCall {
+    /// Only optional invocation of a direct reference is represented here.
+    /// Optional receiver lookup and continuing chains have another evaluation
+    /// frontier and retain their conservative source protocol.
+    pub(super) fn optional_callee(chain: &OptChainExpr) -> Option<LocalCallee> {
+        let OptChainBase::Call(call) = chain.base.as_ref() else {
+            return None;
+        };
+        if !chain.optional || call.args.iter().any(|argument| argument.spread.is_some()) {
+            return None;
+        }
+        let Expr::Ident(binding) = call.callee.unwrap_parens() else {
+            return None;
+        };
+        (binding.sym != "eval").then(|| LocalCallee::Binding(binding.to_id()))
+    }
 }
 
 /// Home-object sites express source containment, never receiver ownership.
@@ -550,7 +584,7 @@ impl LocalExpression {
                         .any(|argument| argument.spread.is_some()) =>
             {
                 Some(Self::Call(LocalCall {
-                    invocation: ForeignInvocation::Construct,
+                    invocation: LocalInvocation::Construct,
                     callee: LocalCallee::lower(&construction.callee, class_template)?,
                     arguments: construction
                         .args
@@ -602,7 +636,23 @@ impl LocalExpression {
                 };
                 let callee = LocalCallee::lower(callee, class_template)?;
                 Some(Self::Call(LocalCall {
-                    invocation: ForeignInvocation::Call,
+                    invocation: LocalInvocation::Call,
+                    callee,
+                    arguments: call
+                        .args
+                        .iter()
+                        .map(|argument| Self::lower(&argument.expr, class_template))
+                        .collect::<Option<Arc<[_]>>>()?,
+                    span: call.span,
+                }))
+            }
+            Expr::OptChain(chain) => {
+                let callee = LocalCall::optional_callee(chain)?;
+                let OptChainBase::Call(call) = chain.base.as_ref() else {
+                    unreachable!("optional callee admission requires an invocation")
+                };
+                Some(Self::Call(LocalCall {
+                    invocation: LocalInvocation::OptionalCall,
                     callee,
                     arguments: call
                         .args
