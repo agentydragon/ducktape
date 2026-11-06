@@ -103,6 +103,71 @@ func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 	}
 }
 
+func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherRuntimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "rotated-credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	client := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	proxyTLS, err := proxy.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := client.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, beforeServerState, err := tlsHandshake(t, clientTLS, proxyTLS)
+	if err != nil {
+		t.Fatalf("initial handshake: %v", err)
+	}
+	if len(beforeServerState.PeerCertificates) == 0 {
+		t.Fatal("initial handshake returned no client certificate to the proxy")
+	}
+	before := beforeServerState.PeerCertificates[0]
+	if got, err := environment_runtime_transport.PeerIdentityFromTLSState(beforeServerState, x509.ExtKeyUsageClientAuth); err != nil || got != runtimeURI {
+		t.Fatalf("initial client identity = %q, error %v", got, err)
+	}
+
+	rotatedClient := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	copyFile(t, rotatedClient.CertFile, client.CertFile)
+	copyFile(t, rotatedClient.KeyFile, client.KeyFile)
+	afterClientState, afterServerState, err := tlsHandshake(t, clientTLS, proxyTLS)
+	if err != nil {
+		t.Fatalf("same-identity rotated handshake: %v", err)
+	}
+	if len(afterClientState.PeerCertificates) == 0 {
+		t.Fatal("rotated handshake returned no proxy identity")
+	}
+	if got, err := environment_runtime_transport.PeerIdentityFromTLSState(afterClientState, x509.ExtKeyUsageServerAuth); err != nil || got != environment_runtime_transport.EgressProxyURI {
+		t.Fatalf("rotated proxy identity = %q, error %v", got, err)
+	}
+	if len(afterServerState.PeerCertificates) == 0 {
+		t.Fatal("rotated handshake returned no client certificate to the proxy")
+	}
+	after := afterServerState.PeerCertificates[0]
+	if string(before.Raw) == string(after.Raw) {
+		t.Fatal("rotated handshake reused the old client certificate")
+	}
+	if got, err := environment_runtime_transport.PeerIdentityFromTLSState(afterServerState, x509.ExtKeyUsageClientAuth); err != nil || got != runtimeURI {
+		t.Fatalf("rotated client identity = %q, error %v", got, err)
+	}
+
+	changedIdentity := ca.IssueWithUsage(t, otherRuntimeURI, x509.ExtKeyUsageClientAuth)
+	copyFile(t, changedIdentity.CertFile, client.CertFile)
+	copyFile(t, changedIdentity.KeyFile, client.KeyFile)
+	if _, _, err := tlsHandshake(t, clientTLS, proxyTLS); err == nil {
+		t.Fatal("rotated handshake accepted a changed local SPIFFE identity")
+	}
+}
+
 func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.ConnectionState, tls.ConnectionState, error) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

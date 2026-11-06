@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,10 +17,18 @@ type platformRouteConfig struct {
 	TokenFile     string `yaml:"token_file,omitempty"`
 }
 
+type proxyTLSConfig struct {
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+	CAFile   string `yaml:"ca_file"`
+}
+
 type config struct {
 	ProxyHost              string                         `yaml:"proxy_host"`
 	ProxyPort              int                            `yaml:"proxy_port"`
-	TokenFile              string                         `yaml:"token_file"`
+	ProxyMode              string                         `yaml:"proxy_mode"`
+	TokenFile              string                         `yaml:"token_file,omitempty"`
+	ProxyTLS               *proxyTLSConfig                `yaml:"proxy_tls,omitempty"`
 	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
 	PlatformRoutes         map[string]platformRouteConfig `yaml:"platform_routes"`
 	ListenAddress          string                         `yaml:"listen_address"`
@@ -56,8 +65,25 @@ func loadConfig(getenv func(string) string) (config, error) {
 }
 
 func (c config) validate() error {
-	if c.ProxyHost == "" || c.TokenFile == "" {
-		return errors.New("proxy_host and token_file are required")
+	if c.ProxyHost == "" {
+		return errors.New("proxy_host is required")
+	}
+	switch c.ProxyMode {
+	case "token":
+		if c.TokenFile == "" || c.ProxyTLS != nil {
+			return errors.New("token mode requires token_file and forbids proxy_tls")
+		}
+	case "mtls":
+		if c.ProxyTLS == nil {
+			return errors.New("mtls mode requires proxy_tls")
+		}
+		for _, file := range []string{c.ProxyTLS.CertFile, c.ProxyTLS.KeyFile, c.ProxyTLS.CAFile} {
+			if file == "" || !filepath.IsAbs(file) {
+				return errors.New("mtls mode requires absolute cert_file, key_file and ca_file paths")
+			}
+		}
+	default:
+		return fmt.Errorf("proxy_mode must be token or mtls: %q", c.ProxyMode)
 	}
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
 		return fmt.Errorf("proxy_port must be in 1..65535: %d", c.ProxyPort)

@@ -330,6 +330,45 @@ command admission or native execution. Losing it does not establish that admitte
 
 ## Path through the egress proxy
 
-History ingress and other platform routes retain their bearer-substituting egress paths. Runner
-control uses the Gateway's direct mTLS connection and never sends its private key or control
-credentials through an HTTP interception proxy.
+```mermaid
+flowchart LR
+    SECRET[(runner credential Secret)]
+    subgraph POD[Sandbox Pod or Firecracker host]
+        RUNTIME[Environment Runtime]
+        SIDECAR[egress-sidecar]
+        WORKLOAD[workload and executor<br/>no Secret mount]
+    end
+    PROXY[egress proxy mTLS listener :8889]
+    DEST[policy-approved destination]
+    SECRET -->|same projected files| RUNTIME
+    SECRET -->|same projected files| SIDECAR
+    SIDECAR -->|mTLS ClientAuth SVID<br/>temporary optional destination bearer| PROXY
+    PROXY -->|policy and substitution| DEST
+```
+
+Runner control stays on the Gateway's direct mTLS connection; its private key and control calls do
+not pass through HTTP interception. Separately, the egress sidecar relays runner HTTP(S) traffic to
+the central proxy. Runner Pod and Firecracker templates select the proxy's dedicated mTLS port and
+present the same per-incarnation Runner certificate under `spiffe://agentplane/environment-runtime/...`.
+The Certificate carries server auth for the Runtime's control listener and client auth for this hop.
+
+For the standard runner Pod, the controller mounts one projected Secret and the cluster trust bundle
+into the Environment Runtime and egress sidecar; workload and executor containers do not mount it.
+Custom runtime-only templates remain supported and receive the projection only in Runtime. The
+Firecracker host launcher and relay sidecar read the projected files directly; the sidecar does not
+request its certificate through the guest Workload API. The existing host-to-guest Workload API
+continues to deliver the Runtime's control identity. For KubeVirt, the guest Runtime reads the same
+Secret from its existing root-only virtiofs mount, while the launcher relay gets a projection of that
+Secret into its own sidecar mount.
+Kyverno checks the live Sandbox status binding against the VM annotation, current VMI UID and
+credential label before injection. The sidecar verifies the proxy's fixed SPIFFE identity; the proxy
+checks the Runner client identity against current Sandbox/incarnation state.
+
+The sidecar's `proxy_mode` is required and selects either the legacy token listener or mTLS listener.
+An mTLS error never falls back to token authentication. During PR2, the projected proxy-audience
+bearer remains available beside mTLS so the current proxy can preserve downstream
+`authenticatedWorkloadToken` behavior; the proxy binds it to the SVID caller. PR3 removes that
+compatibility bearer after dependent service authentication migrates. Staging remains on token mode
+until that cutover. Command Action Pods and external OpenClaw workloads also remain token-mode
+clients because they do not have Sandbox-issued Runner certificates; their credential model must be
+decided before retiring the token listener.

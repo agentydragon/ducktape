@@ -357,6 +357,7 @@ py_library(
         ":telemetry",
         "//agentplane/egress:platform_routes",
         "//agentplane/egress:resources",
+        "//agentplane/egress:settings",
         "//agentplane/egress:sidecar_config",
         "//agentplane/env:config",
         "//agentplane/history_service:settings",

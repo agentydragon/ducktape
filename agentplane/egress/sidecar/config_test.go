@@ -28,6 +28,7 @@ func TestLoadConfigReadsTheSettingsFile(t *testing.T) {
 	path := writeSettingsFile(t, `
 proxy_host: egress.example
 proxy_port: 9001
+proxy_mode: token
 token_file: /var/run/egress/token
 audience_token_files:
   https://kubernetes.test/Audience: /var/run/api/upper-token
@@ -62,8 +63,51 @@ listen_address: 127.0.0.1:0
 	}
 }
 
+func TestLoadConfigSelectsMTLSAndAllowsOptionalCompatibilityBearer(t *testing.T) {
+	path := writeSettingsFile(t, `
+proxy_host: egress.example
+proxy_mode: mtls
+proxy_port: 8889
+token_file: /var/run/agentplane-egress/token
+proxy_tls:
+  cert_file: /run/runner/tls.crt
+  key_file: /run/runner/tls.key
+  ca_file: /run/runner/ca.crt
+audience_token_files:
+  https://kubernetes.test: /var/run/egress/kubernetes-token
+platform_routes: {}
+`)
+	config, err := loadConfig(settingsFileEnv(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ProxyMode != "mtls" || config.ProxyPort != 8889 || config.TokenFile != "/var/run/agentplane-egress/token" {
+		t.Fatalf("unexpected mTLS hop settings: %+v", config)
+	}
+	if config.ProxyTLS == nil || config.ProxyTLS.CertFile != "/run/runner/tls.crt" || config.ProxyTLS.KeyFile != "/run/runner/tls.key" || config.ProxyTLS.CAFile != "/run/runner/ca.crt" {
+		t.Fatalf("unexpected mTLS files: %+v", config.ProxyTLS)
+	}
+}
+
+func TestLoadConfigSelectsMTLSWithoutCompatibilityBearer(t *testing.T) {
+	path := writeSettingsFile(t, `
+proxy_host: egress.example
+proxy_mode: mtls
+proxy_port: 8889
+proxy_tls: {cert_file: /run/runner/tls.crt, key_file: /run/runner/tls.key, ca_file: /run/runner/ca.crt}
+platform_routes: {}
+`)
+	config, err := loadConfig(settingsFileEnv(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ProxyMode != "mtls" || config.TokenFile != "" {
+		t.Fatalf("unexpected mTLS hop settings without compatibility bearer: %+v", config)
+	}
+}
+
 func TestLoadConfigRefusesWhatTheSettingsFileGetsWrong(t *testing.T) {
-	const required = "proxy_host: p.example\ntoken_file: /token\n"
+	const required = "proxy_host: p.example\nproxy_mode: token\ntoken_file: /token\n"
 	for name, content := range map[string]string{
 		"unknown key":           required + "proxy_hots: typo\n",
 		"route unknown key":     required + "platform_routes: {control: {listen_address: 127.0.0.1:3130, upstream: u, token_file: /t, extra: true}}\n",
@@ -77,6 +121,12 @@ func TestLoadConfigRefusesWhatTheSettingsFileGetsWrong(t *testing.T) {
 		"audience value object": required + "audience_token_files: {a: {nested: 1}}\n",
 		"proxy host missing":    "token_file: /token\n",
 		"token file missing":    "proxy_host: p.example\n",
+		"unknown proxy mode":    required + "proxy_mode: insecure\n",
+		"missing proxy mode":    "proxy_host: p.example\ntoken_file: /token\n",
+		"token plus TLS":        required + "proxy_tls: {cert_file: /c, key_file: /k, ca_file: /ca}\n",
+		"mTLS missing TLS":      "proxy_host: p.example\nproxy_mode: mtls\n",
+		"mTLS missing CA":       "proxy_host: p.example\nproxy_mode: mtls\nproxy_tls: {cert_file: /c, key_file: /k}\n",
+		"mTLS relative path":    "proxy_host: p.example\nproxy_mode: mtls\nproxy_tls: {cert_file: c, key_file: /k, ca_file: /ca}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadConfig(settingsFileEnv(writeSettingsFile(t, content))); err == nil {

@@ -78,7 +78,7 @@ class CommandSandbox(Construct):
         self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
-            self, env, name=f"{NAME}-egress-sidecar", platform_routes={}
+            self, env, name=f"{NAME}-egress-sidecar", platform_routes={}, proxy_mode="token"
         )
         _pod_template(
             self,
