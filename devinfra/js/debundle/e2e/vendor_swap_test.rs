@@ -3,8 +3,8 @@
 //! asserts the generated wrapper.
 
 use debundle_e2e_support::{
-    CommandResult, assert_module_source, assert_node_output, read_json, run_debundler,
-    write_text_file, write_yaml_file,
+    CommandResult, assert_module_source, assert_node_output, assert_source_file, read_json,
+    run_debundler, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
 use spec::{
@@ -53,18 +53,10 @@ const lib = { ping() { return "pong"; } };
 fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
     assert_success(&fixture.result);
 
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    assert!(
-        wrapper_source.contains("ping"),
-        "wrapper should retain the upstream local that becomes `default`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export default"),
-        "wrapper should expose a `export default ...`:\n{wrapper_source}",
-    );
-    assert!(
-        !wrapper_source.contains("as default"),
-        "wrapper should not re-emit the original upstream `export {{ ... as default }}` once the wrapper has its own default export:\n{wrapper_source}",
+    assert_source_file(
+        &fixture.wrapper_path,
+        &["ping", "export default"],
+        &["as default"],
     );
 
     // Cross-check the resolution manifest: `generated_wrapper_path` is recorded
@@ -435,26 +427,15 @@ fn partial_swap_basic_rewrites_to_namespace_member() {
 
     assert_success(&fixture.result);
 
-    let caller_emitted = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller_emitted.contains("import * as z from \"zod\""),
-        "caller should namespace-import the package:\n{caller_emitted}",
-    );
-    assert!(
-        caller_emitted.contains("z.boolean()"),
-        "caller should call z.boolean() instead of zodBoolean():\n{caller_emitted}",
-    );
-    assert!(
-        !caller_emitted.contains("zodBoolean"),
-        "caller should not retain the original local-alias identifier:\n{caller_emitted}",
-    );
-    assert!(
-        caller_emitted.contains("keepMe as kept"),
-        "caller should retain non-swapped imports unchanged:\n{caller_emitted}",
-    );
-    assert!(
-        caller_emitted.contains("kept()"),
-        "caller should still reference the kept import by its local name:\n{caller_emitted}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import * as z from \"zod\"",
+            "z.boolean()",
+            "keepMe as kept",
+            "kept()",
+        ],
+        &["zodBoolean"],
     );
 }
 
@@ -480,14 +461,10 @@ fn partial_swap_strips_swapped_names_from_export_block() {
     });
 
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        !emitted.contains("e6Impl as e6"),
-        "stripped name `e6` should be gone from the export block:\n{emitted}",
-    );
-    assert!(
-        emitted.contains("keepMeImpl as keepMe"),
-        "non-swapped name `keepMe` should still be exported:\n{emitted}",
+    assert_source_file(
+        &fixture.megachunk_emitted_path,
+        &["keepMeImpl as keepMe"],
+        &["e6Impl as e6"],
     );
 }
 
@@ -505,15 +482,7 @@ fn partial_swap_strips_implementation_when_unreferenced() {
     });
 
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        !emitted.contains(" e6 "),
-        "swapped binding `e6` should be DCE'd:\n{emitted}",
-    );
-    assert!(
-        emitted.contains("keepMe"),
-        "non-swapped binding `keepMe` should remain:\n{emitted}",
-    );
+    assert_source_file(&fixture.megachunk_emitted_path, &["keepMe"], &[" e6 "]);
 }
 
 #[test]
@@ -738,15 +707,7 @@ fn partial_swap_keeps_side_effect_init() {
     });
 
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        emitted.contains("console.log"),
-        "side-effect statement should be retained:\n{emitted}",
-    );
-    assert!(
-        !emitted.contains(" e6 "),
-        "swapped `e6` definition should still be DCE'd:\n{emitted}",
-    );
+    assert_source_file(&fixture.megachunk_emitted_path, &["console.log"], &[" e6 "]);
 }
 
 #[test]
@@ -838,11 +799,7 @@ fn partial_swap_drops_island_registration_of_an_array_born_in_the_island() {
     let fixture =
         run_island_registration_fixture(&island_registration("[\"mouseout\", \"mouseover\"]", "7"));
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        !emitted.contains("register("),
-        "island registration should be removed with the island:\n{emitted}",
-    );
+    assert_source_file(&fixture.megachunk_emitted_path, &[], &["register("]);
     let app_root = emitted_app_root(&fixture);
     install_node_module(
         &app_root,
@@ -1050,14 +1007,10 @@ fn partial_swap_drops_original_package_island_with_local_mutations() {
     });
 
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        !emitted.contains("ZodBoolean"),
-        "old package class should be removed from the residual chunk:\n{emitted}",
-    );
-    assert!(
-        !emitted.contains("displayName"),
-        "local metadata write should be removed with the old package class:\n{emitted}",
+    assert_source_file(
+        &fixture.megachunk_emitted_path,
+        &[],
+        &["ZodBoolean", "displayName"],
     );
 }
 
@@ -1248,14 +1201,10 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
     assert_success(&result);
 
     let entry_path = ws.out_root.join("app/static/app/entry.js");
-    let entry = fs::read_to_string(&entry_path).expect("app entry emitted");
-    assert!(
-        entry.contains("pkg/util.js"),
-        "entry must keep importing its own materialized module:\n{entry}",
-    );
-    assert!(
-        !entry.contains(&format!("from \"{PACKAGE_NAME}\"")),
-        "entry's materialized-module import must not be misrouted to the vendor package:\n{entry}",
+    assert_source_file(
+        &entry_path,
+        &["pkg/util.js"],
+        &[&format!("from \"{PACKAGE_NAME}\"")],
     );
 
     let probe_path = ws.out_root.join("__run_materialized_collision.mjs");
@@ -1350,24 +1299,20 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     assert_success(&result);
 
     let module_path = ws.out_root.join("app/static/app/modules/flags.js");
-    let module = fs::read_to_string(&module_path).expect("materialized module emitted");
-    assert!(
-        module.contains("import * as z from \"zod\"") && module.contains("z.boolean()"),
-        "materialized module should consume the package, not the chunk:\n{module}",
-    );
-    assert!(
-        !module.contains("zodBoolean"),
-        "materialized module should not retain the swapped import alias:\n{module}",
-    );
-    assert!(
-        module.contains("keepMe as kept"),
-        "materialized module keeps the non-swapped chunk re-import:\n{module}",
+    assert_source_file(
+        &module_path,
+        &[
+            "import * as z from \"zod\"",
+            "z.boolean()",
+            "keepMe as kept",
+        ],
+        &["zodBoolean"],
     );
     let entry_path = ws.out_root.join("app/static/app/entry.js");
-    let entry = fs::read_to_string(&entry_path).expect("app entry emitted");
-    assert!(
-        entry.contains("import * as z from \"zod\"") && entry.contains("z.boolean()"),
-        "pass-through entry should consume the package, not the chunk:\n{entry}",
+    assert_source_file(
+        &entry_path,
+        &["import * as z from \"zod\"", "z.boolean()"],
+        &[],
     );
 
     let manifest: Value =
@@ -1421,18 +1366,14 @@ fn partial_swap_namespace_kind_replaces_whole_import() {
     });
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("import * as React from \"react\""),
-        "caller should emit a namespace import for the package:\n{caller}",
-    );
-    assert!(
-        caller.contains("React.useState()"),
-        "caller's member-access references must stay intact:\n{caller}",
-    );
-    assert!(
-        caller.contains("keepMe as kept"),
-        "non-swapped specifiers stay in the residual import:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import * as React from \"react\"",
+            "React.useState()",
+            "keepMe as kept",
+        ],
+        &[],
     );
 }
 
@@ -1456,18 +1397,14 @@ fn partial_swap_default_kind_replaces_whole_import() {
     });
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("import z from \"clsx\""),
-        "caller should emit a default import for the package:\n{caller}",
-    );
-    assert!(
-        caller.contains("z(\"a\", \"b\")"),
-        "caller's call-site references must stay intact:\n{caller}",
-    );
-    assert!(
-        caller.contains("keepMe as kept"),
-        "non-swapped specifiers stay in the residual import:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import z from \"clsx\"",
+            "z(\"a\", \"b\")",
+            "keepMe as kept",
+        ],
+        &[],
     );
 }
 
@@ -1493,22 +1430,14 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
     });
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("import { observer } from \"mobx-react-lite\""),
-        "caller should emit a bare named import using the upstream export:\n{caller}",
-    );
-    assert!(
-        caller.contains("observer(\"X\")"),
-        "caller's call-site references should be renamed to the upstream export:\n{caller}",
-    );
-    assert!(
-        !caller.contains("mobxObserver"),
-        "caller should not retain the original local alias:\n{caller}",
-    );
-    assert!(
-        caller.contains("keepMe as kept"),
-        "non-swapped specifiers stay in the residual import:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import { observer } from \"mobx-react-lite\"",
+            "observer(\"X\")",
+            "keepMe as kept",
+        ],
+        &["mobxObserver"],
     );
 }
 
@@ -1530,14 +1459,13 @@ fn partial_swap_named_kind_no_rewrite_when_local_already_matches() {
     });
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("import { observer } from \"mobx-react-lite\""),
-        "no `as` alias when local matches upstream export:\n{caller}",
-    );
-    assert!(
-        caller.contains("observer(\"X\")"),
-        "call sites unchanged:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import { observer } from \"mobx-react-lite\"",
+            "observer(\"X\")",
+        ],
+        &[],
     );
 }
 
@@ -1613,15 +1541,13 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     assert_success(&result);
 
     let caller_path = ws.out_root.join("app/static/app").join("entry.js");
-    let caller = fs::read_to_string(&caller_path).expect("caller emitted");
-    assert!(
-        !caller.contains("from \"react\"") && !caller.contains("from \"react/jsx-runtime\""),
-        "bundled partial swap must not leave browser-facing raw CJS package imports:\n{caller}",
-    );
-    assert!(
-        caller.contains("vendors/generated/static/megachunk/react.js")
-            && caller.contains("vendors/generated/static/megachunk/react_jsx-runtime.js"),
-        "caller should import generated ESM facades:\n{caller}",
+    assert_source_file(
+        &caller_path,
+        &[
+            "vendors/generated/static/megachunk/react.js",
+            "vendors/generated/static/megachunk/react_jsx-runtime.js",
+        ],
+        &["from \"react\"", "from \"react/jsx-runtime\""],
     );
 
     let probe_path = ws.out_root.join("__run_entry.mjs");
@@ -1805,14 +1731,10 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     let materialized_path = ws
         .out_root
         .join("app/static/app/modules/helpers/observer.js");
-    let materialized = fs::read_to_string(&materialized_path).expect("materialized module emitted");
-    assert!(
-        !materialized.contains("vendor/entry.js"),
-        "materialized module must not keep importing the residual vendor chunk:\n{materialized}",
-    );
-    assert!(
-        materialized.contains("vendors/generated/static/vendor/observer-kit_observer.js"),
-        "materialized module should import the generated bundled facade:\n{materialized}",
+    assert_source_file(
+        &materialized_path,
+        &["vendors/generated/static/vendor/observer-kit_observer.js"],
+        &["vendor/entry.js"],
     );
 
     let probe_path = ws.out_root.join("__run_materialized.mjs");
@@ -1914,22 +1836,15 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
     let materialized_path = ws
         .out_root
         .join("app/static/app/modules/helpers/toolkit.js");
-    let materialized = fs::read_to_string(&materialized_path).expect("materialized module emitted");
-    assert!(
-        materialized.contains("vendors/generated/static/vendor/toolkit-core.js"),
-        "materialized module should import the generated bundled facade:\n{materialized}",
-    );
-    assert!(
-        materialized.contains("Toolkit.map(") && materialized.contains("Toolkit.make("),
-        "materialized module should rewrite imported aliases to package-facade members:\n{materialized}",
-    );
-    assert!(
-        !materialized.contains("toolkitMap(\"top\")") && !materialized.contains("toolkitMake"),
-        "materialized module should not retain top-level generated import aliases:\n{materialized}",
-    );
-    assert!(
-        materialized.contains("toolkitMap(\"shadow\")"),
-        "shadowed local parameter should not be rewritten by the package-facade alias pass:\n{materialized}",
+    assert_source_file(
+        &materialized_path,
+        &[
+            "vendors/generated/static/vendor/toolkit-core.js",
+            "Toolkit.map(",
+            "Toolkit.make(",
+            "toolkitMap(\"shadow\")",
+        ],
+        &["toolkitMap(\"top\")", "toolkitMake"],
     );
 
     let probe_path = ws.out_root.join("__run_materialized_named.mjs");
@@ -1991,15 +1906,10 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
-    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
-        .expect("vendor chunk emitted");
-    assert!(
-        !vendor.contains("function nY"),
-        "original local helper should be removed from residual vendor chunk:\n{vendor}",
-    );
-    assert!(
-        vendor.contains(".instanceof(URL)"),
-        "residual schema should call the bundled facade:\n{vendor}",
+    assert_source_file(
+        &ws.out_root.join("app/static/vendor/entry.js"),
+        &[".instanceof(URL)"],
+        &["function nY"],
     );
 
     let probe_path = ws.out_root.join("__run_local_helper.mjs");
@@ -2035,17 +1945,13 @@ fn partial_swap_does_not_rewrite_shadowing_inner_binding() {
 
     assert_success(&fixture.result);
 
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     // The top-level import-local use is rewritten to the facade member.
-    assert!(
-        caller.contains("z.boolean()"),
-        "top-level import-local use should be rewritten to the facade member:\n{caller}",
-    );
     // The shadowing parameter and its read must survive verbatim — the
     // inner `zodFlag()` is a call on the parameter, not the import local.
-    assert!(
-        caller.contains("function pick(zodFlag)") && caller.contains("return zodFlag()"),
-        "shadowing parameter binding must not be rewritten to the facade member:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &["z.boolean()", "function pick(zodFlag)", "return zodFlag()"],
+        &[],
     );
 
     // Runtime proof: `fromParam` must reflect the argument passed to
@@ -2300,18 +2206,14 @@ fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("export { boolean as zodBoolean } from \"zod\""),
-        "re-export of swapped name should target the upstream package:\n{caller}",
-    );
-    assert!(
-        caller.contains("keepMe") && caller.contains("../megachunk/entry.js"),
-        "non-swapped re-export stays on the residual chunk:\n{caller}",
-    );
-    assert!(
-        !caller.contains("e6"),
-        "no re-export of the stripped chunk name may survive:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "export { boolean as zodBoolean } from \"zod\"",
+            "keepMe",
+            "../megachunk/entry.js",
+        ],
+        &["e6"],
     );
 
     let app_root = emitted_app_root(&fixture);
@@ -2352,10 +2254,10 @@ fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("clsx", &package_root)]);
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("export { default as z } from \"clsx\""),
-        "re-export of a kind=default symbol should forward the package default:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &["export { default as z } from \"clsx\""],
+        &[],
     );
 
     let app_root = emitted_app_root(&fixture);
@@ -2396,10 +2298,10 @@ fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("react", &package_root)]);
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("export * as React from \"react\""),
-        "re-export of a kind=namespace symbol should forward the package namespace:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &["export * as React from \"react\""],
+        &[],
     );
 
     let app_root = emitted_app_root(&fixture);
@@ -2499,11 +2401,10 @@ fn boundary_rename_rewrites_caller_imports_end_to_end() {
     let result = run_debundler(&spec_path, &[]);
     assert_success(&result);
 
-    let caller =
-        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
-    assert!(
-        caller.contains("import { alpha as a }"),
-        "caller import should be rewritten to the vendor's public export name:\n{caller}",
+    assert_source_file(
+        &ws.out_root.join("app/static/app/entry.js"),
+        &["import { alpha as a }"],
+        &[],
     );
     let probe_path = ws.out_root.join("__run_boundary_rename.mjs");
     write_text_file(
@@ -2638,17 +2539,15 @@ fn suppress_vendor_chunk_passes_through_unchanged() {
     let result = run_debundler(&spec_path, &[]);
     assert_success(&result);
 
-    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
-        .expect("vendor chunk emitted");
-    assert!(
-        vendor.contains("export { a as alpha }"),
-        "suppressed vendor chunk's export surface must be unchanged:\n{vendor}",
+    assert_source_file(
+        &ws.out_root.join("app/static/vendor/entry.js"),
+        &["export { a as alpha }"],
+        &[],
     );
-    let caller =
-        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
-    assert!(
-        caller.contains("import { alpha } from \"../vendor/entry.js\""),
-        "caller import of a suppressed chunk must be unchanged:\n{caller}",
+    assert_source_file(
+        &ws.out_root.join("app/static/app/entry.js"),
+        &["import { alpha } from \"../vendor/entry.js\""],
+        &[],
     );
     let probe_path = ws.out_root.join("__run_suppress.mjs");
     write_text_file(
@@ -2689,15 +2588,10 @@ fn suppress_vendor_chunk_skips_specifier_canonicalization() {
     let result = run_debundler(&spec_path, &[]);
     assert_success(&result);
 
-    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
-        .expect("vendor chunk emitted");
-    assert!(
-        vendor.contains("\"./helper-X.js\""),
-        "suppress chunk directives must keep their original spelling:\n{vendor}",
-    );
-    assert!(
-        !vendor.contains("../helper-X/entry.js"),
-        "suppress chunk directives must not be canonicalized:\n{vendor}",
+    assert_source_file(
+        &ws.out_root.join("app/static/vendor/entry.js"),
+        &["\"./helper-X.js\""],
+        &["../helper-X/entry.js"],
     );
 }
 
@@ -2744,12 +2638,11 @@ fn full_swap_with_caller_preserves_import_for_removed_chunk() {
         !ws.out_root.join("app/static/lib-X").exists(),
         "fully-swapped chunk must be removed from the emitted tree",
     );
-    let caller =
-        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
-    assert!(
-        caller.contains("../lib-X/entry.js"),
-        "caller's import of the removed chunk is intentionally left dangling \
-         (resolved by the host import map):\n{caller}",
+    // The caller import is intentionally dangling and resolved by the host import map.
+    assert_source_file(
+        &ws.out_root.join("app/static/app/entry.js"),
+        &["../lib-X/entry.js"],
+        &[],
     );
 }
 
