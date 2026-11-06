@@ -17,8 +17,9 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecHealthCheckExprs,
 )
 
-from cluster.cdk8s import cnpg, cnpg_backup, namespaces
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.cdviz import config, timescale
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
@@ -48,14 +49,14 @@ def chart(app: App) -> Chart:
                 name=role, login=True, password_secret=ClusterSpecManagedRolesPasswordSecret(name=secret.name)
             )
         )
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "cluster",
         ref=config.DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="10Gi",
         image_name=timescale.POSTGRES_IMAGE,
-        initdb=cnpg.same_owner_initdb(config.DATABASE_NAME),
+        initdb=cluster.same_owner_initdb(config.DATABASE_NAME),
         postgresql=timescale.postgresql(),
         managed=ClusterSpecManaged(roles=roles),
         wal_archive=True,
@@ -70,7 +71,7 @@ def chart(app: App) -> Chart:
         database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
         extensions=[DatabaseSpecExtensions(name="timescaledb", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
     )
-    cnpg_backup.CnpgBackup(chart, "backup", ref=config.DATABASE, retention="30d", adopt_existing=False)
+    backup.CnpgBackup(chart, "backup", ref=config.DATABASE, retention="30d", adopt_existing=False)
     return chart
 
 

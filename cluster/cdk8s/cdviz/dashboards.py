@@ -15,13 +15,13 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 from cluster.cdk8s.cdviz import config
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.grafana_dashboards import DashboardFile
+from cluster.cdk8s.monitoring import grafana_instance
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
-_NAMESPACE = "monitoring"
+_NAMESPACE = grafana_instance.SERVICE.pods.namespace
 _PASSWORD = "cdviz-database"
-_INSTANCE = {"dashboards": "grafana"}
 DASHBOARDS = [
     DashboardFile(source=f"cluster/cdk8s/cdviz/{name}.json", config_map=f"cdviz-{name}", namespace=_NAMESPACE)
     for name in ("pipelines", "tasks")
@@ -54,7 +54,7 @@ def chart(app: App) -> Chart:
         chart,
         "datasource",
         metadata=ApiObjectMetadata(name="cdviz", namespace=_NAMESPACE),
-        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE),
+        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
         datasource=GrafanaDatasourceSpecDatasource(
             name="CI Analytics",
             uid="cdviz",
@@ -86,7 +86,7 @@ def chart(app: App) -> Chart:
             chart,
             dashboard.config_map,
             metadata=ApiObjectMetadata(name=dashboard.config_map, namespace=_NAMESPACE),
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE),
+            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
             folder="CI",
             config_map_ref=dashboard.config_map_ref(),
         )
