@@ -56,27 +56,17 @@ async def test_registered_exec_tool_applies_exposed_env_and_user(docker_exec_ser
         properties = exec_tool.input_schema["properties"]
         assert {"env", "user"} <= properties.keys()
 
-        env_result = await session.call_tool(
-            ContainerExecServer.EXEC_TOOL_NAME,
-            {
-                "cmd": ["sh", "-c", "printf '%s' \"$EXEC_REAL_INPUT_TEST\""],
-                "timeout_ms": 10000,
-                "env": ["EXEC_REAL_INPUT_TEST=visible"],
-                "user": None,
-                "cwd": None,
-            },
-        )
-        assert not env_result.is_error
-        env_execution = BaseExecResult.model_validate(env_result.structured_content)
-        assert env_execution.stdout == "visible"
-
-        user_result = await session.call_tool(
-            ContainerExecServer.EXEC_TOOL_NAME,
-            {"cmd": ["id", "-u"], "timeout_ms": 10000, "env": None, "user": "65534", "cwd": None},
-        )
-        assert not user_result.is_error
-        user_execution = BaseExecResult.model_validate(user_result.structured_content)
-        assert user_execution.stdout == "65534\n"
+        for cmd, env, user, expected_stdout in (
+            (["sh", "-c", "printf '%s' \"$EXEC_REAL_INPUT_TEST\""], ["EXEC_REAL_INPUT_TEST=visible"], None, "visible"),
+            (["id", "-u"], None, "65534", "65534\n"),
+        ):
+            result = await session.call_tool(
+                ContainerExecServer.EXEC_TOOL_NAME,
+                {"cmd": cmd, "timeout_ms": 10000, "env": env, "user": user, "cwd": None},
+            )
+            assert not result.is_error
+            execution = BaseExecResult.model_validate(result.structured_content)
+            assert execution.stdout == expected_stdout
 
 
 async def test_registered_exec_tool_hides_unconfigured_fields_and_uses_fixed_cwd(
