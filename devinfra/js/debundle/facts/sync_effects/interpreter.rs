@@ -3198,6 +3198,18 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             span,
         );
     }
+    fn unproved_optional_call(&mut self, frame: &LocalFrame, callee: &Values, span: Span) {
+        self.fallback(
+            frame,
+            callee.clone(),
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::OpaqueExecution,
+                ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
+            },
+            span,
+        );
+    }
     fn publish_throw(&mut self, values: &Values) {
         self.executor.publish_values(
             values,

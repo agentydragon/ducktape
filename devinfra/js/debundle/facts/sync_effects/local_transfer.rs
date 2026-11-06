@@ -9,7 +9,7 @@ use super::descriptor_transfer::NativeObjectPostcondition;
 use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
     ClassConstructorBody, ClassFieldKey, DeferredCallableCreation, LocalArrayElement, LocalBinding,
-    LocalBody, LocalCall, LocalCallee, LocalExpression, LocalOperation,
+    LocalBody, LocalCall, LocalCallee, LocalExpression, LocalInvocation, LocalOperation,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::property_inference::DescriptorAttributes;
@@ -347,6 +347,10 @@ pub(super) trait LocalContext: OwnDataContext {
     /// Operands have already executed. Summarize possible coercion code from
     /// these retained values without evaluating either operand again.
     fn unproved_operator(&mut self, _frame: &mut LocalFrame, _operands: &Values, _span: Span) {}
+    /// An optional callee was selected, but its non-nullish source identity
+    /// was not proved. Arguments have not run. Application execution must
+    /// summarize the remainder without treating the call as unconditional.
+    fn unproved_optional_call(&mut self, _frame: &LocalFrame, _callee: &Values, _span: Span) {}
     fn publish_throw(&mut self, values: &Values);
     fn keyed_collection_new(
         &mut self,
@@ -1113,7 +1117,8 @@ fn call_expression(
         arguments,
         span,
     } = call;
-    let invocation = *invocation;
+    let optional = matches!(invocation, LocalInvocation::OptionalCall);
+    let invocation = invocation.foreign_invocation();
     // GetValue(callee) precedes every argument. In particular, an
     // argument assignment must not replace this captured callee.
     let callee = if let Some((selection, effects)) =
@@ -1198,6 +1203,20 @@ fn call_expression(
         return Some(SelectedValue::raw(Values::new()));
     }
     frame.inputs.extend(callee.targets().iter().cloned());
+    if optional
+        && !matches!(&callee,
+            EvaluatedCallee::Direct(selected)
+                if selected.values.len() == 1
+                    && matches!(selected.values.first(),
+                        Some(AbstractValue::Closure(..)
+                            | AbstractValue::Value(Value::Alloc(Kind::Function, _)))))
+    {
+        // This bounded lane proves that no short-circuit branch exists.
+        // Nullish, mixed and unknown targets need skipped-call coverage;
+        // they must not execute arguments or acquire an invocation receipt.
+        context.unproved_optional_call(frame, callee.targets(), *span);
+        return None;
+    }
     let mut inputs = Vec::with_capacity(arguments.len());
     for argument in arguments.iter() {
         let selected = expression(context, argument, body, frame, judgment)?;
