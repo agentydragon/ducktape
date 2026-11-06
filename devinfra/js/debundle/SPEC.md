@@ -450,6 +450,12 @@ legacy gate and edge-TV oracle unchanged. Unknown global/property/host
 coverage remains conservative Havoc independently of purity or synchronous
 completeness. Counts include every conflicting swapped pair and existing
 pair-premise disposition; observed contradictions are diagnostics only.
+Local export lists (`export { value }`, including aliases) link live bindings
+without evaluating their values or initializing a binding. Their initialization
+effect footprint is empty. Dependency-bearing re-exports (`export ... from`)
+retain conservative dependency-evaluation coverage; default export expressions
+and declarations retain their normal evaluation effects. Structural facts,
+heap and synchronous analyses, and saved analysis share this classification.
 Twenty deterministic examples bound default output: rows with modeled cells
 are preferred, then the earliest Havoc-only rows fill unused slots; selected
 rows retain sweep order. Truncation and coverage limitations remain explicit.

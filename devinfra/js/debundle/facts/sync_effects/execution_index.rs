@@ -5881,7 +5881,6 @@ struct ExecutionIndex {
     exported_names: BTreeMap<String, Id>,
     /// Source units holding `export default`.
     default_export_owners: BTreeSet<SourceUnitOrdinal>,
-    linkage_owners: BTreeSet<SourceUnitOrdinal>,
     dynamic_scope_owners: BTreeSet<SourceUnitOrdinal>,
     opaque_top: BTreeSet<SourceUnitOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
@@ -6067,7 +6066,6 @@ impl Default for ExecutionIndex {
             exported_bindings: BTreeSet::new(),
             exported_names: BTreeMap::new(),
             default_export_owners: BTreeSet::new(),
-            linkage_owners: BTreeSet::new(),
             dynamic_scope_owners: BTreeSet::new(),
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
@@ -10457,7 +10455,6 @@ impl ExecutionIndex {
                 self.top_exported_values[self.owner.0].push(ValueExpr::from_expr(&export.expr));
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => {
-                self.linkage_owners.insert(self.owner);
                 if export.src.is_none() {
                     for specifier in &export.specifiers {
                         if let ExportSpecifier::Named(named) = specifier
@@ -10472,9 +10469,6 @@ impl ExecutionIndex {
                         }
                     }
                 }
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => {
-                self.linkage_owners.insert(self.owner);
             }
             _ => {}
         }

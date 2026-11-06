@@ -5109,7 +5109,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         // Export lists link bindings; evaluating one does not expose a value
         // whose declaration has not run yet.
-        if self.inputs.index.linkage_owners.contains(&fact.ordinal) {
+        if fact.export_linkage.is_some() {
             return roots;
         }
         if let Some(proof) = closed_callback_factory_result {

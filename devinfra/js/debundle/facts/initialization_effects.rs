@@ -11,7 +11,7 @@ use source_identity::SourceUnitOrdinal;
 
 use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
 use super::sync_effects::noninvoking_initialization::CompletedInitialization;
-use super::{DataflowOpacityCause, EffectCell, StatementFacts, StatementKind};
+use super::{DataflowOpacityCause, EffectCell, ExportLinkage, StatementFacts, StatementKind};
 use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss, SourceLocation};
 
@@ -165,6 +165,7 @@ impl StatementFacts {
     pub(crate) fn initializes_bindings_at_evaluation(&self) -> bool {
         !matches!(self.kind, StatementKind::Import | StatementKind::FnDecl)
             && !(self.kind == StatementKind::Export && self.declares_direct_function)
+            && self.export_linkage != Some(ExportLinkage::Local)
     }
 
     pub fn initialization_effects(&self) -> InitializationEffects<'_> {

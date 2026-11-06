@@ -291,6 +291,8 @@ impl<'a> SavedChunkFactAnalysis<'a> {
 #[derive(Serialize, Deserialize)]
 struct SavedStatementFacts<'a> {
     ordinal: SourceUnitOrdinal,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    export_linkage: Option<ExportLinkage>,
     stable_iterable_producers: Cow<'a, BTreeSet<SourceUnitOrdinal>>,
     source_location: Cow<'a, Option<SourceLocation>>,
     callback_factory_barriers: Cow<'a, [CallbackFactoryBarrierFact]>,
@@ -329,6 +331,7 @@ impl<'a> SavedStatementFacts<'a> {
     ) -> Result<Self> {
         Ok(Self {
             ordinal: fact.ordinal,
+            export_linkage: fact.export_linkage,
             stable_iterable_producers: Cow::Borrowed(&fact.stable_iterable_producers),
             source_location: Cow::Borrowed(&fact.source_location),
             callback_factory_barriers: Cow::Borrowed(&fact.callback_factory_barriers),
@@ -389,6 +392,7 @@ impl<'a> SavedStatementFacts<'a> {
     ) -> Result<StatementFacts> {
         Ok(StatementFacts {
             ordinal: self.ordinal,
+            export_linkage: self.export_linkage,
             stable_iterable_producers: self.stable_iterable_producers.into_owned(),
             source_location: self.source_location.into_owned(),
             callback_factory_barriers: self.callback_factory_barriers.into_owned(),
