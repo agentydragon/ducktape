@@ -21,6 +21,7 @@ use crate::analysis_inputs::{
     ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
 };
+use crate::execution_evidence::SourceLocation;
 use crate::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
@@ -56,7 +57,6 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
-    SourceLocation,
 };
 use analysis_model::PrimKinds;
 use source_identity::SourceUnitOrdinal;
