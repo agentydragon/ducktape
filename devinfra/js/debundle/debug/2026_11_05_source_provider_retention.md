@@ -12,6 +12,17 @@ canonical source-site provider provenance keys, so an imported provider outside
 Frontend resolution requires that AST and has no fallback parse. Static-import
 census supplies no analysis-provider retention request.
 
+Analysis-only retention uses `JsFileBody::SourceWithAst`: it borrows the original
+`SourceFile` without copying its bytes. Read-only source queries and emission
+preserve the previous source representation, including minified spacing,
+comments, and header behavior. Mutable AST access promotes the body to ordinary
+`Ast` before exposing it; consuming AST parts likewise drops the source snapshot.
+Source-marker labels therefore keep their existing source/staged-body contract.
+Cloning retains the same original source while allowing independent mutation.
+Both `EmissionFiles` constructors release analysis-only syntax back to source
+storage before eager emission mutation passes. This preserves which pass-through
+files participate in rewrites and their exact source bytes; indexes are reused.
+
 The source entry/path/selection helpers and source-marker policy-label resolver
 now belong to `artifact`; frontend has no dependency on the staged analysis
 execution target. Source-marker resolution only maps configured labels to loaded
@@ -34,5 +45,11 @@ unifying all source facts/selector indexes is a separate architecture slice.
 The preparation storage-invariant control loads real provider and neighbor files,
 then checks that only the separately requested provider keeps its AST without
 materialization. Real CLI controls cover an unmaterialized captured-value
-provider, outside-closure refusal, source-match/member site parity, stale source
+provider, source-marker/minified/comment pass-through parity, outside-closure refusal, source-match/member site parity, stale source
 provenance, and direct versus staged saved-analysis parity.
+
+The neutral marker/minified/comment CLI control fails on the initial retention
+head `1f43a3954d` (with the test-only patch) in BuildBuddy invocation
+`76c505b1-4fd9-4270-9d0c-5cbacd43cb09`: adding a source-only premise changes
+source-marker matching from one provider to zero. The repaired representation
+must preserve both provider selection and actual written provider bytes.

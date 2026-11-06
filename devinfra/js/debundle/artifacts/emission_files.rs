@@ -15,13 +15,13 @@ pub struct EmissionFiles {
 impl EmissionFiles {
     pub fn new(files: ChunkBundle) -> Result<Self> {
         Ok(Self {
-            indexed: IndexedFiles::new(files)?,
+            indexed: IndexedFiles::new(files)?.release_analysis_asts(),
         })
     }
 
     pub fn from_prepared(program: SourceProgram) -> Self {
         Self {
-            indexed: program.indexed,
+            indexed: program.indexed.release_analysis_asts(),
         }
     }
 

@@ -2775,7 +2775,11 @@ The pipeline has three stages with different inputs and responsibilities:
   has no dependency on analysis execution or lowering. Source preparation keeps
   original ASTs for configured source-premise providers under an analysis
   retention reason independent of materialization. Frontend premise resolution
-  requires those retained ASTs and never reparses provider source. Source entry,
+  requires those retained ASTs and never reparses provider source. Read-only
+  analysis retention preserves the original source representation for source
+  labels and emission; mutable AST access discards that representation before
+  exposing the staged body. The emission boundary releases analysis-only ASTs
+  back to source storage before emission rewrites. Source entry,
   chunk selection and source-marker label resolution belong to `artifact`.
   Projection generation returns directly from
   this service; materialization consumes its same resolution and claims before

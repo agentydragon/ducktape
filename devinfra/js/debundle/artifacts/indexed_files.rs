@@ -93,6 +93,17 @@ impl IndexedFiles {
         self.artifact
     }
 
+    /// Drop syntax retained only for source analysis at the emission boundary.
+    /// This changes storage representation only; indexed paths stay identical.
+    pub(super) fn release_analysis_asts(mut self) -> Self {
+        for chunk in &mut self.artifact.chunks {
+            for file in &mut chunk.js.files {
+                file.release_analysis_ast();
+            }
+        }
+        self
+    }
+
     /// Mutate AST bodies without changing the indexed file layout. The
     /// source/output path index remains valid; reject any accidental change
     /// to the file set, entry paths, or source paths before returning it.

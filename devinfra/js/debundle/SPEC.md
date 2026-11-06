@@ -2125,7 +2125,10 @@ chunk_export_purity:
 
 Matching uses the loaded provider entry's current analysis source before
 logical-module lowering: exact input text for pass-through source entries,
-or the current staged AST's rendering for retained AST entries. It does not
+including entries retaining an AST solely for read-only premise analysis,
+or the current staged AST's rendering for other AST entries. Mutable access to
+a read-only retained AST discards its original-source representation before
+exposing the staged body. Matching does not
 read filenames or original text from an earlier parser snapshot. Every marker
 must be nonempty, and the conjunction must identify exactly one loaded
 provider, including providers outside the selected chunks' import closure.
