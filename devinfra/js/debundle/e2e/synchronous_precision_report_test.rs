@@ -538,6 +538,33 @@ fn single_call_root_depth_limit_does_not_invent_a_caller_remainder() {
 }
 
 #[test]
+fn retained_depth_suffix_composes_primitive_operators_and_sequences() {
+    let mut source = String::from("const seed = 7;\n");
+    for index in 0..66 {
+        source.push_str(&format!(
+            "function step{index}() {{ return (step{}(), seed + 1); }}\n",
+            index + 1
+        ));
+    }
+    source.push_str(
+        "function step66() { return seed + 1; }\nconst marker = 1;\nconst result = step0();\nconsole.log(result, marker);\n",
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+
+    assert_preserved_entry_output(&fixture, "8 1\n");
+    let result = execution(&fixture, "result");
+    let loss = assert_reason(
+        &result,
+        serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
+    );
+    assert_eq!(
+        loss["reach"],
+        serde_json::json!({"kind": "bounded"}),
+        "{result:#}"
+    );
+}
+
+#[test]
 fn compound_call_root_keeps_its_unexecuted_remainder_fallback() {
     let mut source = String::from("const seed = 7;\n");
     for index in 0..66 {

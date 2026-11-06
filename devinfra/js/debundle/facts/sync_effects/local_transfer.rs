@@ -8,7 +8,7 @@ use super::local_operations::{
     DeferredCallableCreation, LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
-use super::value_model::{AbstractValue, CallSite, Context, ValueExpr, Values};
+use super::value_model::{AbstractValue, CallSite, Context, PropertyDefinition, ValueExpr, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -433,16 +433,7 @@ fn expression(
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
     match node {
-        LocalExpression::Value(node) => {
-            let selected = if let ValueExpr::Binding(binding) = node {
-                read_binding_selected(context, binding, frame, judgment)?
-            } else {
-                let result = value(context, node, frame)?;
-                judgment.compose(&result.judgment);
-                SelectedValue::raw(result.values)
-            };
-            Some(completing_selected(selected, frame))
-        }
+        LocalExpression::Value(node) => value_expression(context, node, frame, judgment),
         LocalExpression::PrimitiveLiteral(kind) => {
             // The canonical source literal cannot invoke code, access exterior
             // state or throw. Its value abstraction is independent evidence.
@@ -463,340 +454,451 @@ fn expression(
         LocalExpression::Record {
             allocation,
             properties,
-        } => {
-            frame
-                .effect_coverage
-                .compose(&EffectCoverageFragment::default());
-            if !matches!(context.literal_layout(*allocation), LiteralLayout::Record) {
-                return None;
-            }
-            let mut new_record = !context.heap().properties.contains_key(allocation);
-            let result = allocation_transfer::record(
-                &mut LocalValueContext { context, frame },
-                *allocation,
-                properties
-                    .iter()
-                    .map(|property| property.map(|value| value)),
-                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
-                |context, node| {
-                    let mut judgment =
-                        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
-                    let selected =
-                        expression(context.context, node, body, context.frame, &mut judgment)?;
-                    // A later child can truncate the unfinished literal.
-                    context.frame.inputs.extend(selected.values.iter().cloned());
-                    // A child can reenter this allocation site. Its resulting
-                    // heap entry then also represents an older record.
-                    new_record &= !context.context.heap().properties.contains_key(allocation);
-                    Some(AllocationValue {
-                        values: selected.values,
-                        judgment,
-                    })
-                },
-            )?;
-            judgment.compose(&result.judgment);
-            mark_fresh_record(context, frame, *allocation, new_record, &result.values);
-            Some(completing_selected(
-                SelectedValue::raw(result.values),
-                frame,
-            ))
-        }
+        } => record_expression(context, allocation, properties, body, frame, judgment),
         LocalExpression::Array {
             allocation,
             elements,
-        } => {
-            let result = allocation_transfer::array(
-                &mut LocalValueContext { context, frame },
-                *allocation,
-                elements.iter().map(Option::as_ref),
-                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
-                |context, node| {
-                    let mut judgment =
-                        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
-                    let selected =
-                        expression(context.context, node, body, context.frame, &mut judgment)?;
-                    context.frame.inputs.extend(selected.values.iter().cloned());
-                    Some(AllocationValue {
-                        values: selected.values,
-                        judgment,
-                    })
-                },
-            )?;
-            judgment.compose(&result.judgment);
-            Some(completing_selected(
-                SelectedValue::raw(result.values),
-                frame,
-            ))
-        }
+        } => array_expression(context, allocation, elements, body, frame, judgment),
         LocalExpression::Sequence(expressions) => {
-            let mut selection = None;
-            let result = allocation_transfer::sequence(
-                &mut LocalValueContext { context, frame },
-                expressions.iter(),
-                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
-                |context, node| {
-                    let mut judgment =
-                        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
-                    let selected =
-                        expression(context.context, node, body, context.frame, &mut judgment)?;
-                    selection = selected.selection;
-                    Some(AllocationValue {
-                        values: selected.values,
-                        judgment,
-                    })
-                },
-            )?;
-            judgment.compose(&result.judgment);
-            Some(completing_selected(
-                SelectedValue {
-                    values: result.values,
-                    selection,
-                },
-                frame,
-            ))
+            sequence_expression(context, expressions, body, frame, judgment)
         }
         LocalExpression::Closure(callable) => {
-            let result = context.closure(frame, *callable)?;
-            frame.effect_coverage.compose(&result.effects);
-            judgment.compose(&result.allocation.judgment);
-            Some(completing_selected(
-                SelectedValue {
-                    values: result.allocation.values,
-                    selection: result.selection,
-                },
-                frame,
-            ))
+            closure_expression(context, callable, frame, judgment)
         }
         LocalExpression::Assign {
             binding,
             value: node,
             span,
-        } => {
-            frame
-                .effect_coverage
-                .compose(&EffectCoverageFragment::default());
-            let selected = expression(context, node, body, frame, judgment)?;
-            let values = selected.values;
-            if values.is_empty() {
-                return Some(SelectedValue::raw(values));
-            }
-            let Some(kind) = body.bindings.get(binding) else {
-                frame.binding_selections.remove(binding);
-                let result = context.assign_capture(frame, binding, &values, *span)?;
-                judgment.compose(&result.judgment);
-                return Some(completing_selected(
-                    SelectedValue::raw(result.values),
-                    frame,
-                ));
-            };
-            if matches!(kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
-                || (*kind == LocalBinding::Parameter
-                    && frame.parameter_inputs.is_some()
-                    && !frame.initialized_bindings.contains(binding))
-                || (*kind == LocalBinding::Let
-                    && frame
-                        .environment
-                        .get(binding)
-                        .expect("instantiated local binding")
-                        .contains(&AbstractValue::Value(Value::Unavailable)))
-            {
-                frame
-                    .returns
-                    .insert(AbstractValue::Value(Value::Unavailable));
-                return Some(SelectedValue::raw(Values::new()));
-            }
-            frame.environment.insert(binding.clone(), values.clone());
-            if let Some(selection) = selected
-                .selection
-                .filter(|selection| selection.matches(&values))
-            {
-                frame.binding_selections.insert(binding.clone(), selection);
-            } else {
-                frame.binding_selections.remove(binding);
-            }
-            context.local_binding_stored(binding, frame);
-            Some(SelectedValue {
-                values,
-                selection: frame.binding_selections.get(binding).cloned(),
-            })
-        }
+        } => assign_expression(context, binding, node, span, body, frame, judgment),
         LocalExpression::Call {
             callee,
             arguments,
             span,
-        } => {
-            // GetValue(callee) precedes every argument. In particular, an
-            // argument assignment must not replace this captured callee.
-            let callee = match callee {
-                LocalCallee::Binding(binding) => EvaluatedCallee::Direct(read_binding_selected(
-                    context, binding, frame, judgment,
-                )?),
-                LocalCallee::Member {
-                    receiver,
-                    property,
-                    span,
-                } => {
-                    let result = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
-                    judgment.compose(&result.judgment);
-                    let receivers = completing(result.values, frame);
-                    if receivers.is_empty() {
-                        return Some(SelectedValue::raw(Values::new()));
-                    }
-                    frame.inputs.extend(receivers.iter().cloned());
-                    let module_prefix = context.module_prefix_receiver(receiver, &receivers);
-                    let result = read_field(context, frame, receiver, &receivers, property, *span)?;
-                    let selection_dependencies = module_prefix
-                        .then(|| result.effects.lexical_selection_dependencies())
-                        .flatten();
-                    // Selection/GetValue is an executed lexical operation and
-                    // is composed now, before any argument can throw or mutate
-                    // the selected property.
-                    frame.effect_coverage.compose(&result.effects);
-                    judgment.compose(&result.allocation.judgment);
-                    EvaluatedCallee::Member {
-                        receiver: receivers,
-                        targets: completing(result.allocation.values, frame),
-                        selection_dependencies,
-                    }
-                }
-            };
-            if callee.targets().is_empty() {
-                return Some(SelectedValue::raw(Values::new()));
-            }
-            frame.inputs.extend(callee.targets().iter().cloned());
-            let mut inputs = Vec::with_capacity(arguments.len());
-            for argument in arguments.iter() {
-                let selected = expression(context, argument, body, frame, judgment)?;
-                if selected.values.is_empty() {
-                    return Some(SelectedValue::raw(Values::new()));
-                }
-                frame.inputs.extend(selected.values.iter().cloned());
-                inputs.push(selected);
-            }
-            let result = context.call(frame, &callee, &inputs, *span)?;
-            frame.effect_coverage.compose(&result.effects);
-            judgment.compose(&result.allocation.judgment);
-            Some(completing_selected(
-                SelectedValue {
-                    values: result.allocation.values,
-                    selection: result.selection,
-                },
-                frame,
-            ))
-        }
+        } => call_expression(context, callee, arguments, span, body, frame, judgment),
         LocalExpression::ReadField {
             receiver,
             property,
             span,
-        } => {
-            let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
-            judgment.compose(&receivers.judgment);
-            let receivers = completing(receivers.values, frame);
-            if receivers.is_empty() {
-                return Some(SelectedValue::raw(Values::new()));
-            }
-            let result = read_field(context, frame, receiver, &receivers, property, *span)?;
-            frame.effect_coverage.compose(&result.effects);
-            judgment.compose(&result.allocation.judgment);
-            Some(completing_selected(
-                SelectedValue {
-                    values: result.allocation.values,
-                    selection: result.selection,
-                },
-                frame,
-            ))
-        }
+        } => read_field_expression(context, receiver, property, span, frame, judgment),
         LocalExpression::AssignField {
             receiver,
             property,
             value: node,
             span,
-        } => {
-            // Capture the LHS reference before the RHS can replace its binding.
-            let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
-            judgment.compose(&receivers.judgment);
-            let receivers = completing(receivers.values, frame);
-            if receivers.is_empty() {
-                return Some(SelectedValue::raw(Values::new()));
-            }
-            // Capture the applicable module-prefix lane alongside the LHS
-            // reference. The RHS may rebind the source cell, but JavaScript
-            // has already evaluated the original receiver value.
-            let module_prefix = context.module_prefix_receiver(receiver, &receivers);
-            let selected = expression(context, node, body, frame, judgment)?;
-            if selected.values.is_empty() {
-                return Some(selected);
-            }
-            let slot = if module_prefix {
-                own_data_transfer::resolve_writable_slot(context, &receivers, property)
-            } else {
-                own_data_field(context, &receivers, property, frame).ok()
-            };
-            let Some(slot) = slot else {
-                context.unproved_field_write(frame, &receivers, &selected.values, *span);
-                return None;
-            };
-            let writable = context.property_is_writable(slot.object, property);
-            let write_dependencies = writable.then(|| context.selection_prerequisites());
-            context.record_property_write(slot.cell());
-            context
-                .heap()
-                .write_property(slot.object, Some(property.clone()), &selected.values);
-            if writable {
-                let mut effects = EffectCoverageFragment::lexical_operation();
-                effects.depend_on(
-                    write_dependencies
-                        .as_ref()
-                        .expect("writable proof captures its prefix dependencies")
-                        .as_ref(),
-                );
-                frame.effect_coverage.compose(&effects);
-            } else {
-                frame
-                    .effect_coverage
-                    .compose(&EffectCoverageFragment::default());
-            }
-            Some(selected)
-        }
+        } => assign_field_expression(
+            &mut LocalValueContext { context, frame },
+            receiver,
+            property,
+            node,
+            span,
+            body,
+            judgment,
+        ),
         LocalExpression::DefineThisField {
             property,
             value: node,
             ..
-        } => {
-            frame
-                .effect_coverage
-                .compose(&EffectCoverageFragment::default());
-            let selected = expression(context, node, body, frame, judgment)?;
-            if selected.values.is_empty() {
-                return Some(selected);
-            }
-            if selected
-                .values
-                .contains(&AbstractValue::Value(Value::Unavailable))
-            {
-                return None;
-            }
-            let this_values = frame.this_values.as_ref()?;
-            let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) =
-                this_values.first()
-            else {
-                return None;
-            };
-            if this_values.len() != 1 {
-                return None;
-            }
-            // Constructor summaries use this heap entry only to walk values
-            // retained by the fresh instance. `ordinary_record_shape` remains
-            // the prerequisite for reads, so class slots never become
-            // ordinary data fields by being recorded here.
-            context
-                .heap()
-                .write_property(*object, Some(property.clone()), &selected.values);
-            Some(selected)
-        }
+        } => define_this_field_expression(context, property, node, body, frame, judgment),
     }
 }
 
+fn value_expression(
+    context: &mut impl LocalContext,
+    node: &ValueExpr,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let selected = if let ValueExpr::Binding(binding) = node {
+        read_binding_selected(context, binding, frame, judgment)?
+    } else {
+        let result = value(context, node, frame)?;
+        judgment.compose(&result.judgment);
+        SelectedValue::raw(result.values)
+    };
+    Some(completing_selected(selected, frame))
+}
+
+fn record_expression(
+    context: &mut impl LocalContext,
+    allocation: &u32,
+    properties: &[PropertyDefinition<LocalExpression>],
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    frame
+        .effect_coverage
+        .compose(&EffectCoverageFragment::default());
+    if !matches!(context.literal_layout(*allocation), LiteralLayout::Record) {
+        return None;
+    }
+    let mut new_record = !context.heap().properties.contains_key(allocation);
+    let result = allocation_transfer::record(
+        &mut LocalValueContext { context, frame },
+        *allocation,
+        properties
+            .iter()
+            .map(|property| property.map(|value| value)),
+        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        |context, node| {
+            let mut judgment =
+                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+            let selected = expression(context.context, node, body, context.frame, &mut judgment)?;
+            // A later child can truncate the unfinished literal.
+            context.frame.inputs.extend(selected.values.iter().cloned());
+            // A child can reenter this allocation site. Its resulting
+            // heap entry then also represents an older record.
+            new_record &= !context.context.heap().properties.contains_key(allocation);
+            Some(AllocationValue {
+                values: selected.values,
+                judgment,
+            })
+        },
+    )?;
+    judgment.compose(&result.judgment);
+    mark_fresh_record(context, frame, *allocation, new_record, &result.values);
+    Some(completing_selected(
+        SelectedValue::raw(result.values),
+        frame,
+    ))
+}
+
+fn array_expression(
+    context: &mut impl LocalContext,
+    allocation: &u32,
+    elements: &[Option<LocalExpression>],
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let result = allocation_transfer::array(
+        &mut LocalValueContext { context, frame },
+        *allocation,
+        elements.iter().map(Option::as_ref),
+        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        |context, node| {
+            let mut judgment =
+                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+            let selected = expression(context.context, node, body, context.frame, &mut judgment)?;
+            context.frame.inputs.extend(selected.values.iter().cloned());
+            Some(AllocationValue {
+                values: selected.values,
+                judgment,
+            })
+        },
+    )?;
+    judgment.compose(&result.judgment);
+    Some(completing_selected(
+        SelectedValue::raw(result.values),
+        frame,
+    ))
+}
+
+fn sequence_expression(
+    context: &mut impl LocalContext,
+    expressions: &[LocalExpression],
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let mut selection = None;
+    let result = allocation_transfer::sequence(
+        &mut LocalValueContext { context, frame },
+        expressions.iter(),
+        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        |context, node| {
+            let mut judgment =
+                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+            let selected = expression(context.context, node, body, context.frame, &mut judgment)?;
+            selection = selected.selection;
+            Some(AllocationValue {
+                values: selected.values,
+                judgment,
+            })
+        },
+    )?;
+    judgment.compose(&result.judgment);
+    Some(completing_selected(
+        SelectedValue {
+            values: result.values,
+            selection,
+        },
+        frame,
+    ))
+}
+
+fn closure_expression(
+    context: &mut impl LocalContext,
+    callable: &DeferredCallableCreation,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let result = context.closure(frame, *callable)?;
+    frame.effect_coverage.compose(&result.effects);
+    judgment.compose(&result.allocation.judgment);
+    Some(completing_selected(
+        SelectedValue {
+            values: result.allocation.values,
+            selection: result.selection,
+        },
+        frame,
+    ))
+}
+
+fn assign_expression(
+    context: &mut impl LocalContext,
+    binding: &Id,
+    node: &LocalExpression,
+    span: &Span,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    frame
+        .effect_coverage
+        .compose(&EffectCoverageFragment::default());
+    let selected = expression(context, node, body, frame, judgment)?;
+    let values = selected.values;
+    if values.is_empty() {
+        return Some(SelectedValue::raw(values));
+    }
+    let Some(kind) = body.bindings.get(binding) else {
+        frame.binding_selections.remove(binding);
+        let result = context.assign_capture(frame, binding, &values, *span)?;
+        judgment.compose(&result.judgment);
+        return Some(completing_selected(
+            SelectedValue::raw(result.values),
+            frame,
+        ));
+    };
+    if matches!(kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
+        || (*kind == LocalBinding::Parameter
+            && frame.parameter_inputs.is_some()
+            && !frame.initialized_bindings.contains(binding))
+        || (*kind == LocalBinding::Let
+            && frame
+                .environment
+                .get(binding)
+                .expect("instantiated local binding")
+                .contains(&AbstractValue::Value(Value::Unavailable)))
+    {
+        frame
+            .returns
+            .insert(AbstractValue::Value(Value::Unavailable));
+        return Some(SelectedValue::raw(Values::new()));
+    }
+    frame.environment.insert(binding.clone(), values.clone());
+    if let Some(selection) = selected
+        .selection
+        .filter(|selection| selection.matches(&values))
+    {
+        frame.binding_selections.insert(binding.clone(), selection);
+    } else {
+        frame.binding_selections.remove(binding);
+    }
+    context.local_binding_stored(binding, frame);
+    Some(SelectedValue {
+        values,
+        selection: frame.binding_selections.get(binding).cloned(),
+    })
+}
+
+fn call_expression(
+    context: &mut impl LocalContext,
+    callee: &LocalCallee,
+    arguments: &[LocalExpression],
+    span: &Span,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    // GetValue(callee) precedes every argument. In particular, an
+    // argument assignment must not replace this captured callee.
+    let callee = match callee {
+        LocalCallee::Binding(binding) => {
+            EvaluatedCallee::Direct(read_binding_selected(context, binding, frame, judgment)?)
+        }
+        LocalCallee::Member {
+            receiver,
+            property,
+            span,
+        } => {
+            let result = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
+            judgment.compose(&result.judgment);
+            let receivers = completing(result.values, frame);
+            if receivers.is_empty() {
+                return Some(SelectedValue::raw(Values::new()));
+            }
+            frame.inputs.extend(receivers.iter().cloned());
+            let module_prefix = context.module_prefix_receiver(receiver, &receivers);
+            let result = read_field(context, frame, receiver, &receivers, property, *span)?;
+            let selection_dependencies = module_prefix
+                .then(|| result.effects.lexical_selection_dependencies())
+                .flatten();
+            // Selection/GetValue is an executed lexical operation and
+            // is composed now, before any argument can throw or mutate
+            // the selected property.
+            frame.effect_coverage.compose(&result.effects);
+            judgment.compose(&result.allocation.judgment);
+            EvaluatedCallee::Member {
+                receiver: receivers,
+                targets: completing(result.allocation.values, frame),
+                selection_dependencies,
+            }
+        }
+    };
+    if callee.targets().is_empty() {
+        return Some(SelectedValue::raw(Values::new()));
+    }
+    frame.inputs.extend(callee.targets().iter().cloned());
+    let mut inputs = Vec::with_capacity(arguments.len());
+    for argument in arguments.iter() {
+        let selected = expression(context, argument, body, frame, judgment)?;
+        if selected.values.is_empty() {
+            return Some(SelectedValue::raw(Values::new()));
+        }
+        frame.inputs.extend(selected.values.iter().cloned());
+        inputs.push(selected);
+    }
+    let result = context.call(frame, &callee, &inputs, *span)?;
+    frame.effect_coverage.compose(&result.effects);
+    judgment.compose(&result.allocation.judgment);
+    Some(completing_selected(
+        SelectedValue {
+            values: result.allocation.values,
+            selection: result.selection,
+        },
+        frame,
+    ))
+}
+
+fn read_field_expression(
+    context: &mut impl LocalContext,
+    receiver: &Id,
+    property: &str,
+    span: &Span,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
+    judgment.compose(&receivers.judgment);
+    let receivers = completing(receivers.values, frame);
+    if receivers.is_empty() {
+        return Some(SelectedValue::raw(Values::new()));
+    }
+    let result = read_field(context, frame, receiver, &receivers, property, *span)?;
+    frame.effect_coverage.compose(&result.effects);
+    judgment.compose(&result.allocation.judgment);
+    Some(completing_selected(
+        SelectedValue {
+            values: result.allocation.values,
+            selection: result.selection,
+        },
+        frame,
+    ))
+}
+
+fn assign_field_expression(
+    local: &mut LocalValueContext<'_, impl LocalContext>,
+    receiver: &Id,
+    property: &str,
+    node: &LocalExpression,
+    span: &Span,
+    body: &LocalBody,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    // Capture the LHS reference before the RHS can replace its binding.
+    let receivers = value(
+        local.context,
+        &ValueExpr::Binding(receiver.clone()),
+        local.frame,
+    )?;
+    judgment.compose(&receivers.judgment);
+    let receivers = completing(receivers.values, local.frame);
+    if receivers.is_empty() {
+        return Some(SelectedValue::raw(Values::new()));
+    }
+    // Capture the applicable module-prefix lane alongside the LHS
+    // reference. The RHS may rebind the source cell, but JavaScript
+    // has already evaluated the original receiver value.
+    let module_prefix = local.context.module_prefix_receiver(receiver, &receivers);
+    let selected = expression(local.context, node, body, local.frame, judgment)?;
+    if selected.values.is_empty() {
+        return Some(selected);
+    }
+    let slot = if module_prefix {
+        own_data_transfer::resolve_writable_slot(local.context, &receivers, property)
+    } else {
+        own_data_field(local.context, &receivers, property, local.frame).ok()
+    };
+    let Some(slot) = slot else {
+        local
+            .context
+            .unproved_field_write(local.frame, &receivers, &selected.values, *span);
+        return None;
+    };
+    let writable = local.context.property_is_writable(slot.object, property);
+    let write_dependencies = writable.then(|| local.context.selection_prerequisites());
+    local.context.record_property_write(slot.cell());
+    local
+        .context
+        .heap()
+        .write_property(slot.object, Some(property.to_owned()), &selected.values);
+    if writable {
+        let mut effects = EffectCoverageFragment::lexical_operation();
+        effects.depend_on(
+            write_dependencies
+                .as_ref()
+                .expect("writable proof captures its prefix dependencies")
+                .as_ref(),
+        );
+        local.frame.effect_coverage.compose(&effects);
+    } else {
+        local
+            .frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
+    }
+    Some(selected)
+}
+
+fn define_this_field_expression(
+    context: &mut impl LocalContext,
+    property: &str,
+    node: &LocalExpression,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    frame
+        .effect_coverage
+        .compose(&EffectCoverageFragment::default());
+    let selected = expression(context, node, body, frame, judgment)?;
+    if selected.values.is_empty() {
+        return Some(selected);
+    }
+    if selected
+        .values
+        .contains(&AbstractValue::Value(Value::Unavailable))
+    {
+        return None;
+    }
+    let this_values = frame.this_values.as_ref()?;
+    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) = this_values.first() else {
+        return None;
+    };
+    if this_values.len() != 1 {
+        return None;
+    }
+    // Constructor summaries use this heap entry only to walk values
+    // retained by the fresh instance. `ordinary_record_shape` remains
+    // the prerequisite for reads, so class slots never become
+    // ordinary data fields by being recorded here.
+    context
+        .heap()
+        .write_property(*object, Some(property.to_owned()), &selected.values);
+    Some(selected)
+}
 /// Syntax coverage comes from LocalBody's canonical lowering. The judgment
 /// composes every reached operation, including values discarded by a sequence.
 pub(super) fn execute(
