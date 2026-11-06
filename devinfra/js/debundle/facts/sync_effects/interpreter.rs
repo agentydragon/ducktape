@@ -148,7 +148,7 @@ pub(super) struct Outcome {
     /// never carry a root identity and cannot seal their parent's effects.
     root_effect_identity: Option<RootEffectIdentity>,
     returns: Values,
-    thrown: Option<KnownThrow>,
+    thrown: Option<Box<KnownThrow>>,
     return_selection: Option<CallableSelection>,
     return_postcondition: Option<Box<NativeObjectPostcondition>>,
     complete: bool,

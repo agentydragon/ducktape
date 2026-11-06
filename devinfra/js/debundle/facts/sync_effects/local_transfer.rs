@@ -10,6 +10,7 @@ use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
     ClassConstructorBody, ClassFieldKey, DeferredCallableCreation, LocalArrayElement, LocalBinding,
     LocalBody, LocalCall, LocalCallee, LocalExpression, LocalInvocation, LocalOperation,
+    LocalRegion,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::property_inference::DescriptorAttributes;
@@ -43,7 +44,7 @@ pub(super) struct LocalFrame {
     pub(super) fresh_records: BTreeSet<u32>,
     pub(super) returns: Values,
     /// An actual source throw, separate from unknown abrupt/TDZ alternatives.
-    pub(super) thrown: Option<KnownThrow>,
+    pub(super) thrown: Option<Box<KnownThrow>>,
     /// Set only by a checked constructor provider query. Other local calls do
     /// not acquire a receiver just because their syntax mentions `this`.
     pub(super) this_values: Option<Values>,
@@ -137,8 +138,8 @@ pub(super) struct KnownThrow {
 }
 
 enum RegionExit {
-    Return(SelectedValue, Span),
-    Throw(KnownThrow),
+    Return(Box<SelectedValue>, Span),
+    Throw(Box<KnownThrow>),
     Unknown,
 }
 
@@ -1875,7 +1876,7 @@ fn execute_operations(
                 if selected.values.is_empty() {
                     return Some(abrupt_exit(frame));
                 }
-                return Some(Break(RegionExit::Return(selected, *span)));
+                return Some(Break(RegionExit::Return(Box::new(selected), *span)));
             }
             LocalOperation::Throw(node, span) => {
                 let selected = expression(context, node, body, frame, judgment)?;
@@ -1886,10 +1887,10 @@ fn execute_operations(
                 // Preserve the conservative escape policy until throw-value
                 // reach is also represented at every nonlocal invocation boundary.
                 context.publish_throw(&selected.values);
-                return Some(Break(RegionExit::Throw(KnownThrow {
+                return Some(Break(RegionExit::Throw(Box::new(KnownThrow {
                     value: selected,
                     frontier: *span,
-                })));
+                }))));
             }
             LocalOperation::TryCatch {
                 body: region,
@@ -1897,118 +1898,135 @@ fn execute_operations(
                 handler,
             } => {
                 let completion =
-                    execute_operations(context, body, &region.operations, frame, judgment)?;
-                match completion {
-                    Continue(()) | Break(RegionExit::Return(..)) => {
-                        let frontier = match &completion {
-                            Break(RegionExit::Return(_, frontier)) => *frontier,
-                            _ => region.span,
-                        };
-                        if !context.skipped_region(
-                            frame,
-                            handler.span,
-                            frontier,
-                            SkippedCallReason::HandlerNotEntered,
-                        ) {
-                            context.unproved_control_flow(frame, region.span);
-                            return None;
-                        }
-                        if let Break(RegionExit::Return(_, frontier)) = &completion
-                            && !context.skipped_region(
-                                frame,
-                                region.span,
-                                *frontier,
-                                SkippedCallReason::KnownReturn,
-                            )
-                        {
-                            context.unproved_control_flow(frame, region.span);
-                            return None;
-                        }
-                        if completion.is_break() {
-                            return Some(completion);
-                        }
-                    }
-                    Break(RegionExit::Throw(thrown)) if frame.returns.is_empty() => {
-                        if !context.skipped_region(
-                            frame,
-                            region.span,
-                            thrown.frontier,
-                            SkippedCallReason::KnownThrow,
-                        ) || !frame.effect_coverage.handle_known_throw()
-                        {
-                            context.publish_throw(&thrown.value.values);
-                            context.unproved_control_flow(frame, region.span);
-                            return None;
-                        }
-                        if let Some(binding) = binding {
-                            frame.environment.insert(
-                                binding.clone(),
-                                Values::from([AbstractValue::Value(Value::Unavailable)]),
-                            );
-                            context.instantiate_catch_binding(binding, frame);
-                            frame
-                                .effect_coverage
-                                .compose(&context.declarative_binding_operation(
-                                    binding,
-                                    frame,
-                                    BindingOperation::Create,
-                                ));
-                            frame.inputs.extend(thrown.value.values.iter().cloned());
-                            frame
-                                .environment
-                                .insert(binding.clone(), thrown.value.values.clone());
-                            if let Some(selection) = thrown
-                                .value
-                                .selection
-                                .filter(|selection| selection.matches(&thrown.value.values))
-                            {
-                                frame.binding_selections.insert(binding.clone(), selection);
-                            }
-                            context.local_binding_stored(binding, frame);
-                            frame.initialized_bindings.insert(binding.clone());
-                            frame
-                                .effect_coverage
-                                .compose(&context.declarative_binding_operation(
-                                    binding,
-                                    frame,
-                                    BindingOperation::Initialize,
-                                ));
-                        }
-                        let result =
-                            execute_operations(context, body, &handler.operations, frame, judgment);
-                        if let Some(binding) = binding {
-                            context.leave_catch_binding(binding);
-                            frame.environment.remove(binding);
-                            frame.binding_selections.remove(binding);
-                            frame.binding_postconditions.remove(binding);
-                            frame.initialized_bindings.remove(binding);
-                        }
-                        let result = result?;
-                        let frontier = match &result {
-                            Break(RegionExit::Return(_, span)) => {
-                                Some((*span, SkippedCallReason::KnownReturn))
-                            }
-                            Break(RegionExit::Throw(thrown)) => {
-                                Some((thrown.frontier, SkippedCallReason::KnownThrow))
-                            }
-                            _ => None,
-                        };
-                        if let Some((frontier, reason)) = frontier
-                            && !context.skipped_region(frame, handler.span, frontier, reason)
-                        {
-                            context.unproved_control_flow(frame, handler.span);
-                            return None;
-                        }
-                        if result.is_break() {
-                            return Some(result);
-                        }
-                    }
-                    _ => {
-                        context.unproved_control_flow(frame, region.span);
-                        return None;
-                    }
+                    execute_try_catch(context, body, region, binding, handler, frame, judgment)?;
+                if completion.is_break() {
+                    return Some(completion);
                 }
             }
+        }
+    }
+    Some(Continue(()))
+}
+
+// Keep handler environments and completion routing out of ordinary deep
+// invocation frames; their payloads are carried by boxed completion values.
+#[inline(never)]
+fn execute_try_catch(
+    context: &mut impl LocalContext,
+    body: &LocalBody,
+    region: &LocalRegion,
+    binding: &Option<Id>,
+    handler: &LocalRegion,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<std::ops::ControlFlow<RegionExit>> {
+    use std::ops::ControlFlow::{Break, Continue};
+    let completion = execute_operations(context, body, &region.operations, frame, judgment)?;
+    match completion {
+        Continue(()) | Break(RegionExit::Return(..)) => {
+            let frontier = match &completion {
+                Break(RegionExit::Return(_, frontier)) => *frontier,
+                _ => region.span,
+            };
+            if !context.skipped_region(
+                frame,
+                handler.span,
+                frontier,
+                SkippedCallReason::HandlerNotEntered,
+            ) {
+                context.unproved_control_flow(frame, region.span);
+                return None;
+            }
+            if let Break(RegionExit::Return(_, frontier)) = &completion
+                && !context.skipped_region(
+                    frame,
+                    region.span,
+                    *frontier,
+                    SkippedCallReason::KnownReturn,
+                )
+            {
+                context.unproved_control_flow(frame, region.span);
+                return None;
+            }
+            if completion.is_break() {
+                return Some(completion);
+            }
+        }
+        Break(RegionExit::Throw(thrown)) if frame.returns.is_empty() => {
+            if !context.skipped_region(
+                frame,
+                region.span,
+                thrown.frontier,
+                SkippedCallReason::KnownThrow,
+            ) || !frame.effect_coverage.handle_known_throw()
+            {
+                context.publish_throw(&thrown.value.values);
+                context.unproved_control_flow(frame, region.span);
+                return None;
+            }
+            if let Some(binding) = binding {
+                frame.environment.insert(
+                    binding.clone(),
+                    Values::from([AbstractValue::Value(Value::Unavailable)]),
+                );
+                context.instantiate_catch_binding(binding, frame);
+                frame
+                    .effect_coverage
+                    .compose(&context.declarative_binding_operation(
+                        binding,
+                        frame,
+                        BindingOperation::Create,
+                    ));
+                frame.inputs.extend(thrown.value.values.iter().cloned());
+                frame
+                    .environment
+                    .insert(binding.clone(), thrown.value.values.clone());
+                if let Some(selection) = thrown
+                    .value
+                    .selection
+                    .filter(|selection| selection.matches(&thrown.value.values))
+                {
+                    frame.binding_selections.insert(binding.clone(), selection);
+                }
+                context.local_binding_stored(binding, frame);
+                frame.initialized_bindings.insert(binding.clone());
+                frame
+                    .effect_coverage
+                    .compose(&context.declarative_binding_operation(
+                        binding,
+                        frame,
+                        BindingOperation::Initialize,
+                    ));
+            }
+            let result = execute_operations(context, body, &handler.operations, frame, judgment);
+            if let Some(binding) = binding {
+                context.leave_catch_binding(binding);
+                frame.environment.remove(binding);
+                frame.binding_selections.remove(binding);
+                frame.binding_postconditions.remove(binding);
+                frame.initialized_bindings.remove(binding);
+            }
+            let result = result?;
+            let frontier = match &result {
+                Break(RegionExit::Return(_, span)) => Some((*span, SkippedCallReason::KnownReturn)),
+                Break(RegionExit::Throw(thrown)) => {
+                    Some((thrown.frontier, SkippedCallReason::KnownThrow))
+                }
+                _ => None,
+            };
+            if let Some((frontier, reason)) = frontier
+                && !context.skipped_region(frame, handler.span, frontier, reason)
+            {
+                context.unproved_control_flow(frame, handler.span);
+                return None;
+            }
+            if result.is_break() {
+                return Some(result);
+            }
+        }
+        _ => {
+            context.unproved_control_flow(frame, region.span);
+            return None;
         }
     }
     Some(Continue(()))
