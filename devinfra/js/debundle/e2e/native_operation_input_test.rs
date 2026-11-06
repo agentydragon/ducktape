@@ -1261,6 +1261,13 @@ fn selected_literal_symbol_for_breaks_order_cycle_with_live_array_contents() {
         0
     );
     assert_eq!(native_input_uses(&graph).len(), 1);
+    let execution = &marker["synchronous_execution"];
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{authority:#}");
+    assert_eq!(authority["receipt"]["calls"].as_array().unwrap().len(), 1, "{authority:#}");
+    let assessment = fixture.candidate_relocation_assessment();
+    assert!(assessment["swapped_pairs"].as_u64().unwrap() > 0, "the selected native call must actually cross a source unit: {assessment:#}");
 
     for (call, description) in [
         ("Symbol()", "undefined"),
