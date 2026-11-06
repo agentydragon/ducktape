@@ -1,21 +1,4 @@
-"""Containerized Claude interface providing ClaudeSDKClient compatibility.
-
-# DEBUGGING REFERENCE
-
-For comprehensive debugging information about containerized Claude execution,
-including critical issues and solutions, see:
-
-    DEBUGGING.md
-
-This file contains detailed documentation about:
-- Docker buildx context isolation issues
-- Container user permission problems
-- User-specified global pre-task setup
-- File exclusion for grader
-- Debugging commands and common failure modes
-
-Preserve DEBUGGING.md - it will save hours when things break.
-"""
+"""Containerized Claude interface providing `ClaudeSDKClient` compatibility."""
 
 from __future__ import annotations
 
@@ -71,7 +54,6 @@ def _monkey_patch_claude_sdk_for_containerization():
     """Monkeypatch Claude SDK to use our containerized wrapper instead of PATH lookup.
 
     Injects claude_binary option to override hardcoded PATH lookup.
-    See DEBUGGING.md for implementation details and failure modes.
     """
     # Override _find_cli to use claude_binary from options
     # Replace the options class so we can pass claude_binary
@@ -319,7 +301,6 @@ class TaskClaude:
         """Start Docker container for the task.
 
         Multi-stage startup: initial container -> setup scripts -> remount -> wrapper.
-        See DEBUGGING.md for detailed process and failure modes.
         """
         try:
             # Setup docker image from task configuration
@@ -387,7 +368,7 @@ class TaskClaude:
                     error=str(e),
                     debug_hint=f"Run: docker logs {self._container.id}",
                 )
-                # Don't cleanup container on error - leave running for debugging (see DEBUGGING.md)
+                # Leave the container running for debugging if setup fails.
                 self._container = None  # Prevent cleanup in __aexit__
             raise
 
@@ -512,7 +493,6 @@ class TaskClaude:
         """Remount git volume as read-only for security.
 
         Restarts container with RO git mount. Wrapper script recreated with new container ID.
-        See DEBUGGING.md for security rationale and troubleshooting.
 
         NOTE: This is only needed when git volume is enabled. Currently skipped in production.
         """
