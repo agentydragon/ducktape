@@ -40,6 +40,11 @@ use super::{
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::analysis_provenance::InferenceRule;
+use crate::execution_evidence::{
+    AssumedEffectReason, ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
+    ExecutionPrecisionLossReason, GlobalReachCause, HavocReach, OrderedCallAdmissionRefusal,
+    OrderedFieldReadRefusal, PossibleGetterLookupSite, PossibleGetterPromotion,
+};
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
 use crate::facts::abstract_domain::builtins::{
@@ -76,15 +81,12 @@ use crate::facts::{
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Effects};
 use crate::reports::schema::{
-    AssumedEffectReason, BoundedInvocationFallbackCallSite, BoundedInvocationFallbackInputPath,
+    BoundedInvocationFallbackCallSite, BoundedInvocationFallbackInputPath,
     BoundedInvocationFallbackPathEdge, BoundedInvocationFallbackSeed,
     BoundedInvocationFallbackUnknownPathReason, CallbackFactoryUseKind,
-    ClassMembersPublicationWriter, ConstructionRejection, ExecutionOperation,
-    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, FirstClassMembersPublication,
-    GlobalReachCause, HavocReach, LocalRecordFactoryRejection, NativeIntegrityCheck,
-    NativeIntegrityGuard, NativePrefixObservation, NativePrototypePropertyCheck,
-    OrderedCallAdmissionRefusal, OrderedFieldReadRefusal, PossibleGetterLookupSite,
-    PossibleGetterPromotion, RecordFactoryRejectionReason,
+    ClassMembersPublicationWriter, FirstClassMembersPublication, LocalRecordFactoryRejection,
+    NativeIntegrityCheck, NativeIntegrityGuard, NativePrefixObservation,
+    NativePrototypePropertyCheck, RecordFactoryRejectionReason,
 };
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
@@ -12439,7 +12441,7 @@ impl PreparedSynchronousCallIndex {
 
     pub(crate) fn locate_native_integrity_witnesses(
         &mut self,
-        locate: impl FnMut(Span) -> Option<crate::reports::schema::SourceLocation>,
+        locate: impl FnMut(Span) -> Option<crate::execution_evidence::SourceLocation>,
     ) {
         self.index.locate_native_integrity_witnesses(locate);
     }

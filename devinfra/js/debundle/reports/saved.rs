@@ -5,10 +5,12 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use swc_common::Span;
 
+use crate::execution_evidence::ExecutionPrecisionLoss;
+
 use super::schema::{
-    ExecutionPrecisionLoss, LocalRecordFactoryRejection, LocalRecordFactoryUse,
-    NativeMutationWitness, NativeOperationInputUse, NativePrototypeMutation,
-    NativeUnreachableBranch, ReentryFreeOperationUse,
+    LocalRecordFactoryRejection, LocalRecordFactoryUse, NativeMutationWitness,
+    NativeOperationInputUse, NativePrototypeMutation, NativeUnreachableBranch,
+    ReentryFreeOperationUse,
 };
 
 #[derive(Serialize, Deserialize)]

@@ -21,6 +21,7 @@ pub mod analysis_provenance;
 pub mod assignment_assembly;
 pub mod atomic_groups;
 pub mod cross_module_purity;
+pub mod execution_evidence;
 pub mod facts;
 pub mod graph;
 pub mod ids;
@@ -44,6 +45,7 @@ pub use atomic_groups::{
     DependencyGraphAndAtomicGroups, compute_atomic_groups,
     compute_dependency_graph_and_atomic_groups_with,
 };
+pub use execution_evidence::SourceLocation;
 pub use facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
     ChunkFactAnalysis, DataflowOpacityCause, EffectCell, PositionBucketed, StatementEffectSummary,
@@ -86,6 +88,5 @@ pub use reports::schema::{
     CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, ConflictingClaimReport,
     DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
     ModuleEntry, ModuleKey, ModuleQuotientReport, ProgramGraphReport, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause, SourceLocation,
-    SourceUnitReport,
+    QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause, SourceUnitReport,
 };

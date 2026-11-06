@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
+use crate::execution_evidence::SourceLocation;
 use crate::facts::{EffectCell, SourceUnitReadClosure};
-use crate::{SourceLocation, StatementEffectSummary, StatementFacts, StatementKind};
+use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
 /// The per-chunk options dependency-graph construction reads.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -24,8 +25,8 @@ use super::edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, DependencyEdge, DependencyEdgeId,
     EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause, SequencedCause,
 };
+use crate::execution_evidence::AssumedEffectReason;
 use crate::facts::DataflowOpacityCause;
-use crate::reports::schema::AssumedEffectReason;
 
 /// Multiple declarations of one binding are supported only when every site
 /// declares `var`. Other duplicate declaration shapes remain rejected.

@@ -34,7 +34,6 @@ use js_ast::SourceLineIndex;
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::ModuleItem;
 
-use crate::SourceLocation;
 use crate::analysis_inputs::{
     BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
     DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
@@ -42,6 +41,7 @@ use crate::analysis_inputs::{
     ResolvedBindingValueInput, ResolvedNativeOperationInput, ReturnedRecordSummary,
     SelectedBindingValueInput, SelectedNativeOperationInput,
 };
+use crate::execution_evidence::SourceLocation;
 
 use crate::facts::abstract_domain::value::Value;
 use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};

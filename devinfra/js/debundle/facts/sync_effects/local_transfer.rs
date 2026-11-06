@@ -10,8 +10,8 @@ use super::local_operations::{
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::value_model::{AbstractValue, CallSite, Context, ValueExpr, Values};
 use crate::analysis_inputs::ProofDependencies;
+use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::reports::schema::OrderedFieldReadRefusal;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::Id;

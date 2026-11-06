@@ -10,7 +10,7 @@ use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
 
 use crate::analysis_inputs::ProofDependencies;
-use crate::reports::schema::AssumedEffectReason;
+use crate::execution_evidence::AssumedEffectReason;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

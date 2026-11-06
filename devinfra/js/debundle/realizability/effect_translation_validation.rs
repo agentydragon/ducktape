@@ -288,7 +288,7 @@ pub struct EffectOpacity<'a> {
     pub unknown_coverage: &'a BTreeSet<UnknownEffectCoverage>,
     pub dataflow_opacity: &'a BTreeSet<analysis::DataflowOpacityCause>,
     pub incomplete_execution: bool,
-    pub execution_losses: &'a [analysis::reports::schema::ExecutionPrecisionLoss],
+    pub execution_losses: &'a [analysis::execution_evidence::ExecutionPrecisionLoss],
     pub opaque_heap: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_coverage_refusal: Option<&'a OwnerInitializationCoverageRefusal>,

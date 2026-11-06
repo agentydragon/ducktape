@@ -1,6 +1,6 @@
 use super::super::value_model::{Context, Values};
 use super::interpreter::{Executor, Outcome};
-use crate::reports::schema::{ExecutionPrecisionLossReason, HavocReach};
+use crate::execution_evidence::{ExecutionPrecisionLossReason, HavocReach};
 use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
 

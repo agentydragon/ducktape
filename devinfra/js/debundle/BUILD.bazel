@@ -593,6 +593,7 @@ rust_library(
         "assignment_assembly.rs",
         "atomic_groups.rs",
         "cross_module_purity.rs",
+        "execution_evidence.rs",
         "facts/abstract_domain.rs",
         "facts/abstract_domain/builtins.rs",
         "facts/abstract_domain/effect.rs",

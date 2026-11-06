@@ -4,12 +4,14 @@
 use crate::emit_report;
 use analysis::ProgramGraphReport;
 use analysis::analysis_inputs::NativeIntrinsic;
+use analysis::execution_evidence::{
+    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, SourceLocation,
+};
 use analysis::facts::abstract_domain::integrity::{CensusExplanation, SlotName, SlotReach};
 use analysis::facts::standard_globals::is_standard_global;
 use analysis::reports::schema::{
-    BindingReport, ExecutionPrecisionLoss, ExecutionPrecisionLossReason, NativeIntegrityCheck,
-    NativeIntegrityGuard, NativeMutationOperation, NativeMutationWitness,
-    NativePrototypeMutationKind, NativeWriteSlot, SourceLocation,
+    BindingReport, NativeIntegrityCheck, NativeIntegrityGuard, NativeMutationOperation,
+    NativeMutationWitness, NativePrototypeMutationKind, NativeWriteSlot,
 };
 use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Args as ClapArgs};

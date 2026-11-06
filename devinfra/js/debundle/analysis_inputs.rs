@@ -11,8 +11,8 @@ use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
 use swc_ecma_ast::{CallExpr, Expr, Id, Lit};
 
+use crate::execution_evidence::SourceLocation;
 use crate::purity::Purity;
-use crate::reports::schema::SourceLocation;
 use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
 pub mod saved;

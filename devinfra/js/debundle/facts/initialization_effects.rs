@@ -13,8 +13,7 @@ use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
 use super::sync_effects::noninvoking_initialization::CompletedInitialization;
 use super::{DataflowOpacityCause, EffectCell, StatementFacts, StatementKind};
 use crate::analysis_inputs::ProofDependencies;
-use crate::reports::schema::SourceLocation;
-use crate::reports::schema::{AssumedEffectReason, ExecutionPrecisionLoss};
+use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss, SourceLocation};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InitializationEffectEvidence {
