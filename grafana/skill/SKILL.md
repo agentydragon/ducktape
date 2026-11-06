@@ -20,7 +20,7 @@ datasource inputs to a datasource name. `bb run //cluster/cdk8s:generate_manifes
 writes its `GrafanaDashboard` and `configMapGenerator` entry. A component's own dashboard
 sits beside the generator module that deploys it, declared as that module's `DASHBOARD`
 (for example, `cluster/cdk8s/github_exporter/dashboard.json`). AIQuota history is
-under `monitoring/dashboards/` but remains deployed by `grafana/app.py` alongside its
+under `monitoring/dashboards/` but remains deployed by `monitoring/aiquota_analytics.py` alongside its
 ClickHouse datasource.
 
 ## Credential consent

@@ -132,7 +132,6 @@ from cluster.cdk8s.external_secrets import (
 )
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import SecretGeneratorArgs
-from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.forgejo import (
     app as forgejo_app,
     budget_namespace as forgejo_budget_namespace,
@@ -171,7 +170,6 @@ from cluster.cdk8s.gitlab_spike import (
     flux as gitlab_spike_flux,
     runner as gitlab_spike_runner,
 )
-from cluster.cdk8s.grafana import app as grafana_app
 from cluster.cdk8s.grocy import (
     app as grocy_app,
     flux_kustomizations as grocy_flux_kustomizations,
@@ -212,9 +210,11 @@ from cluster.cdk8s.litellm import (
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.matrix import matrix, user_provisioner as matrix_user_provisioner
 from cluster.cdk8s.monitoring import (
+    aiquota_analytics,
     alloy,
     alloy_otlp_bearer_token,
     cilium_monitoring,
+    flux_annotations,
     flux_kustomizations as monitoring_flux_kustomizations,
     gateway_probe,
     grafana_helmrepository,
@@ -1375,23 +1375,23 @@ def generate_manifests(root: Path) -> None:
         keda_kustomization,
         external_secrets_operator_kustomization,
     )
-    flux_grafana_secrets_artifact = artifact("flux-grafana-secrets", flux_grafana_secrets.OUTPUT_DIR)
-    flux_grafana_secrets.flux_grafana_secrets(
+    flux_annotations_artifact = artifact("flux-grafana-secrets", flux_annotations.OUTPUT_DIR)
+    flux_annotations.flux_annotations(
         flux_chart,
-        write_directory(root, flux_grafana_secrets_artifact, flux_grafana_secrets.chart),
+        write_directory(root, flux_annotations_artifact, flux_annotations.chart),
         grafana_operator_kustomization,
     )
-    clickhouse_grafana_artifact = artifact("clickhouse-grafana", grafana_app.OUTPUT_DIR)
-    grafana_app.clickhouse_grafana(
+    clickhouse_grafana_artifact = artifact("clickhouse-grafana", aiquota_analytics.OUTPUT_DIR)
+    aiquota_analytics.clickhouse_grafana(
         flux_chart,
         write_directory(
             root,
             clickhouse_grafana_artifact,
-            grafana_app.chart,
+            aiquota_analytics.chart,
             config_map_generator=grafana_dashboards.config_map_generator(
-                root, grafana_app.OUTPUT_DIR, [grafana_app.DASHBOARD]
+                root, aiquota_analytics.OUTPUT_DIR, [aiquota_analytics.DASHBOARD]
             ),
-            configurations=[grafana_dashboards.write_kustomize_config(root, grafana_app.OUTPUT_DIR)],
+            configurations=[grafana_dashboards.write_kustomize_config(root, aiquota_analytics.OUTPUT_DIR)],
         ),
         grafana_operator_kustomization,
     )
@@ -2076,7 +2076,7 @@ def generate_manifests(root: Path) -> None:
             dns_automation_artifact,
             external_dns_artifact,
             external_dns_records_artifact,
-            flux_grafana_secrets_artifact,
+            flux_annotations_artifact,
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,
             forgejo_gitops_artifact,
