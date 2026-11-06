@@ -75,6 +75,14 @@ def _put_manifest(base_url: str, tag: str, manifest: bytes) -> httpx.Response:
     )
 
 
+def _head_manifest(base_url: str, reference: str) -> httpx.Response:
+    return httpx.head(
+        f"{base_url}/v2/critic/manifests/{reference}",
+        headers={"Accept": "application/vnd.oci.image.manifest.v1+json"},
+        timeout=10.0,
+    )
+
+
 def test_registry_keeps_only_blobs_and_layer_links_across_container_removal() -> None:
     namespace = f"test-{uuid4().hex}"
     image_ref = load_oci_image(registry_3.LAYOUT_RLOCATION)
@@ -110,10 +118,12 @@ def test_registry_keeps_only_blobs_and_layer_links_across_container_removal() ->
             base_url = f"http://localhost:{first.get_exposed_port(5000)}"
             _push_config(base_url, config, blob_digest)
             assert _put_manifest(base_url, "first-tag", manifest).status_code == 201
+            assert _head_manifest(base_url, "first-tag").status_code == 200
             # Digest-only manifests are invisible to tags/list cleanup.
             untagged_manifest = json.dumps({**json.loads(manifest), "annotations": {"test": "untagged"}}).encode()
             untagged_digest = "sha256:" + hashlib.sha256(untagged_manifest).hexdigest()
             assert _put_manifest(base_url, untagged_digest, untagged_manifest).status_code == 201
+            assert _head_manifest(base_url, untagged_digest).status_code == 200
             unfinished_upload = _start_upload(base_url).copy_add_param("digest", blob_digest)
 
         for name in first_receipt.volume_names:
@@ -128,9 +138,9 @@ def test_registry_keeps_only_blobs_and_layer_links_across_container_removal() ->
             assert len(second_receipt.volume_names) == 1
             base_url = f"http://localhost:{second.get_exposed_port(5000)}"
             assert httpx.head(f"{base_url}/v2/critic/blobs/{blob_digest}", timeout=10.0).status_code == 200
-            assert httpx.head(f"{base_url}/v2/critic/manifests/first-tag", timeout=10.0).status_code == 404
-            assert httpx.head(f"{base_url}/v2/critic/manifests/{manifest_digest}", timeout=10.0).status_code == 404
-            assert httpx.head(f"{base_url}/v2/critic/manifests/{untagged_digest}", timeout=10.0).status_code == 404
+            assert _head_manifest(base_url, "first-tag").status_code == 404
+            assert _head_manifest(base_url, manifest_digest).status_code == 404
+            assert _head_manifest(base_url, untagged_digest).status_code == 404
             stale_upload = httpx.put(
                 unfinished_upload.copy_with(host="localhost", port=int(second.get_exposed_port(5000))),
                 headers={"Content-Type": "application/octet-stream"},
@@ -260,7 +270,7 @@ def test_failed_registry_stop_preserves_attached_storage(monkeypatch: pytest.Mon
                 lifetime.close()
 
         assert httpx.head(f"{base_url}/v2/critic/blobs/{blob_digest}", timeout=10.0).status_code == 200
-        assert httpx.head(f"{base_url}/v2/critic/manifests/preserve-me", timeout=10.0).status_code == 200
+        assert _head_manifest(base_url, "preserve-me").status_code == 200
 
 
 def test_registry_cache_lease_fails_without_waiting_for_another_owner() -> None:
