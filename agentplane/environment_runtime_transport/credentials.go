@@ -147,7 +147,7 @@ func (c Config) ClientCredentials(expectedPeerURI string) (credentials.Transport
 	if err != nil {
 		return nil, err
 	}
-	return credentials.NewTLS(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
 }
 
 // ServerCredentials creates mTLS server credentials pinned to the expected client URI.
@@ -163,7 +163,18 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	if err != nil {
 		return nil, err
 	}
-	return credentials.NewTLS(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
+}
+
+// WorkloadServerCredentials creates mTLS server credentials for the fixed
+// egress identity and a live EnvironmentRuntime peer. Established connections
+// close when either selected leaf certificate expires.
+func (c Config) WorkloadServerCredentials(localURI string) (credentials.TransportCredentials, error) {
+	config, err := c.WorkloadServerTLSConfig(localURI)
+	if err != nil {
+		return nil, err
+	}
+	return newExpiringCredentials(config), nil
 }
 
 // ClientTLSConfig creates client credentials pinned to a first-party service's

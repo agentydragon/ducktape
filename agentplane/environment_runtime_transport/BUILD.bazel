@@ -7,8 +7,10 @@ go_library(
     name = "environment_runtime_transport",
     srcs = [
         "credentials.go",
+        "expiry_credentials.go",
         "open.go",
         "security.go",
+        "workload_source.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport",
     deps = [
@@ -27,6 +29,7 @@ go_test(
     name = "environment_runtime_transport_test",
     srcs = [
         "credentials_test.go",
+        "expiry_credentials_test.go",
         "security_test.go",
         "workload_test.go",
     ],
@@ -38,6 +41,8 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
         "@org_golang_google_grpc//status",

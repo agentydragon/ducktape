@@ -12,7 +12,6 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
-	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -141,7 +140,7 @@ func (s *OpenedSecurity) ClientCredentials(expectedPeerURI string) (credentials.
 	if err != nil {
 		return nil, err
 	}
-	return credentials.NewTLS(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
 }
 
 // ServerCredentials creates server credentials backed by the shared source.
@@ -160,7 +159,7 @@ func (s *OpenedSecurity) ServerCredentials(expectedPeerURI string) (credentials.
 	if err != nil {
 		return nil, err
 	}
-	return credentials.NewTLS(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
 }
 
 // AuthorizePeer checks the authenticated peer against the exact configured
@@ -229,16 +228,3 @@ func validateLocalSVID(source credentialSource, identity spiffeid.ID, usage x509
 	}
 	return svid, nil
 }
-
-func newWorkloadAPISource(ctx context.Context, socket string) (credentialSource, func() error, error) {
-	startupCtx, cancel := context.WithTimeout(ctx, workloadAPISourceStartupTimeout)
-	defer cancel()
-	address, _ := parseWorkloadAPISocket(socket)
-	source, err := workloadapi.NewX509Source(startupCtx, workloadapi.WithClientOptions(workloadapi.WithAddr(address)))
-	if err != nil {
-		return nil, nil, fmt.Errorf("open Workload API source: %w", err)
-	}
-	return source, source.Close, nil
-}
-
-var _ credentialSource = (*workloadapi.X509Source)(nil)
