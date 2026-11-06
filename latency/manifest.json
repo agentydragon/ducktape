@@ -1,26 +1,22 @@
 {
-  "source_devel_commit": "7fe51fd3cc159b7cecf1995eee15d5c0b4aa9a73",
+  "source_devel_commit": "7fc04701455bc2c47fd6961b0140dce82a94d609",
   "window_start_utc": "2026-11-01T00:00:00Z",
-  "window_end_utc": "2026-11-05T08:00:38.025331Z",
-  "published_at_utc": "2026-11-05T08:53:40.552341+00:00",
+  "window_end_utc": "2026-11-06T01:12:39Z",
+  "published_at_utc": "2026-11-06T01:28:50.999183+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "552b8b2af66bc6cd94c30777f4594988a92bc5ca",
-  "report_html_sha256": "ad7967a35c86d0311ccbb45db4cf96503761e845c1cd19c8b599825cff709a42",
-  "evidence_sha256": "cfb65ed7c771cf0c5af3947b56e27820baee37e7488a126725235f05718e2b44",
-  "analysis_scope": "Bounded Nov5 follow-up from existing performance evidence: controlled Rust source-delta comparison, one later CI queue observation, fresh read-only org-admin access and Nov1-4 complete-day hosted usage. Historical Nov3-4 feedback cohort unchanged; no new fleet percentiles or performance experiments. Broader goal stays paused.",
-  "window_semantics": "Envelope across retained historical evidence and the bounded follow-up, not a new cohort collection window. Component clocks and source identities are retained separately.",
-  "retained_feedback_window_utc": [
-    "2026-11-03T12:45:00Z",
-    "2026-11-04T12:44:59Z"
-  ],
+  "previous_report_commit": "1ead186a30",
+  "analysis_scope": "Focused service-reuse audit plus one same-input three-case Props local snapshot pair. Previous Rust/capacity findings, historical feedback cohorts and all prior-work dispositions retained with their original windows.",
+  "window_semantics": "Envelope across retained historical evidence, a mainline execution sample updated Nov4-6 and the Props pair; not a new PR-feedback census. Component clocks remain separate.",
+  "report_html_sha256": "35c94ab73c15ef321d9c5bc34ca07888353603debf5dea17d4bba5044a980184",
+  "evidence_sha256": "9595741eff10d530bd7d55eecfaa57de29763a787dfefd757f6ea9877f264efa",
   "visual_validation": {
-    "target": "//x/ci_report_preview:visual_test",
+    "target": "//x/ci_service_reuse_preview:visual_test",
     "result": "PASSED",
-    "source_commit": "b7a95b671fa176760f79943237ec1357275124a5",
-    "source_branch": "codex/ci-latency-rust-capacity-preview-20261105",
-    "bazel_invocation_id": "7eb94cf0-bf39-4c2d-bd8c-c4507c33f438",
-    "invocation_url": "https://app.buildbuddy.io/invocation/7eb94cf0-bf39-4c2d-bd8c-c4507c33f438",
-    "reviewed_html_sha256": "ad7967a35c86d0311ccbb45db4cf96503761e845c1cd19c8b599825cff709a42",
+    "bazel_invocation_id": "b0839c89-6d96-49e0-99c2-f256bc926e57",
+    "invocation_url": "https://app.buildbuddy.io/invocation/b0839c89-6d96-49e0-99c2-f256bc926e57",
+    "source_base_commit": "cd8e32fde0355ff4ddd44c1c551eb01cab4f5d50",
+    "harness_template_commit": "b7a95b671fa176760f79943237ec1357275124a5",
+    "reviewed_html_sha256": "35c94ab73c15ef321d9c5bc34ca07888353603debf5dea17d4bba5044a980184",
     "viewports": [
       {
         "name": "desktop",
@@ -33,8 +29,9 @@
         "height": 844
       }
     ],
-    "details_expanded": 8,
+    "details_expanded": 9,
     "controls_exercised": [
+      "select:Service reuse design",
       "select:Bazel finish advance"
     ],
     "horizontal_overflow": false,
@@ -50,39 +47,51 @@
         "body_width": 390
       }
     ],
-    "wide_table_scroll_regions_checked": 10,
-    "keyboard_scroll_test": "All named focusable wide-table regions scroll with ArrowRight at390px; condition waits check observed movement. Document remains within viewport.",
-    "link_count": 65,
-    "link_audit_scope": "All internal anchor targets verified; external URLs not visited by the render test.",
-    "capture_hashes_verified": 18,
-    "manual_review": {
-      "result": "Reviewed desktop/mobile first screens, full Rust followup and hosted-capacity sections. Mobile table captures reflect exercised horizontal scroll state; each table is keyboard scrollable. Other sections checked automatically; no claim that every historical line was visually re-reviewed.",
-      "captures": [
-        {
-          "name": "a123fea680c199dd17658d553cf0262407f9caeed68577bca485a8b7161f9100.png",
-          "sha256": "9919cc04d5dcbe4a2985ce346d030e36f836b1afc263b72cc8afb40f2ff0db98"
-        },
-        {
-          "name": "ee8195a8c32e9fd47f17e1e1f813789f2bf18d787137474dfc03840219624497.png",
-          "sha256": "f63528f675314abca50369983196b5fd61987b8156534c6fed8f5d20d9c8a025"
-        },
-        {
-          "name": "103f524b18b1ddf1afd32400595b49f86915f06739d40d84a61a43cd44c9977b.png",
-          "sha256": "ee916af49528169aa96433635c3dbab1ade6585b7956fdcd2a7fe8a24604b412"
-        },
-        {
-          "name": "e69ca402b7766c6d8547d92613525b7dd2763f7d626d44b659f60304dd28963e.png",
-          "sha256": "3c43ad194a89e645718ec503f97793dc562c6382dca6dac3f914010faee8999b"
-        },
-        {
-          "name": "e7381e5c58375b5c083570a1cd454c27bc2283fa7582dad8a6dbc5f5ee2e4a09.png",
-          "sha256": "0c23cbf62d06906d339d042a5aaad8cc60b4465b07ead76f17223c815a2ae612"
-        },
-        {
-          "name": "32a0356db02593b26967aeb334dbf0980fa8b230edac31c6fa35ae1bd7096ae6.png",
-          "sha256": "87cf17869af4e12509ee5fc68258880bbb95c2aa0dfccd46ed3829355e91b071"
-        }
-      ]
-    }
+    "wide_table_scroll_regions_checked": 12,
+    "keyboard_scroll_test": "All named focusable table regions exercised with ArrowRight at 390px; condition waits observed scroll movement; document remained within viewport.",
+    "capture_hashes_verified": 8,
+    "manual_review": "Desktop/mobile first screens and all three new service-reuse sections inspected. Mobile table captures show the exercised horizontal-scroll state; keyboard scrolling and document bounds passed. Historical sections retained and checked by the harness, without claiming every historical pixel was re-reviewed.",
+    "captures": [
+      {
+        "viewport": "desktop",
+        "name": "baa4b6a09d588a87bf23e181d5820742f9b55deb72ef1cd2bf11963476ffafdf.png",
+        "sha256": "aef65a22f7e22fdbba1bd7be9c1704e72d5d3a17dd32d2139354a299f52e6305"
+      },
+      {
+        "viewport": "desktop",
+        "name": "50029223c453fcc38dc8b936f4da97e8fea54290b052c20b4d80eba2403cbdf0.png",
+        "sha256": "720433c26a8ebce47af9272b044691247e80e58971fc82efb328c3b236ff41df"
+      },
+      {
+        "viewport": "desktop",
+        "name": "15a532a54512b969f1c5f136a2a997caf9255434c3b4de866bbeb86cee112c15.png",
+        "sha256": "37a6ec6a7dc49e2007bc1d87c8478bc74c7ff9c6a5e6b4baac88ca3e1b242b04"
+      },
+      {
+        "viewport": "desktop",
+        "name": "74a83c1e10803029c63e6d5f3857bab7aeef29d0ae8afcd3081b4ca9aee24a0e.png",
+        "sha256": "b04197291b1cd5ceaaef5c96c3848e7c1605898168e7bf40dc409ed2f459b7b6"
+      },
+      {
+        "viewport": "mobile",
+        "name": "a8e8e3662356a94336a213bde8f185fabf389fe6802e12e306f420a3d2b3c0dc.png",
+        "sha256": "06ac65ad20204dec2a6a9b97f05b3141998efa54ed833a4b97840e481fadb163"
+      },
+      {
+        "viewport": "mobile",
+        "name": "0b83e27db2baad2059da3c67762779ed36cedd6444a047dede9812e8fff711cb.png",
+        "sha256": "b6af1339e28b596f7a5f1ab286e549ce1025531d80eff0e8b95693bca89fbfba"
+      },
+      {
+        "viewport": "mobile",
+        "name": "0865efc1c9f5ed3d6689def937f436c894d99115b830b576aefa1d042dccb7cc.png",
+        "sha256": "490646191a531e58bf2107fc0197443265dfa3428d6492113f9a122636334514"
+      },
+      {
+        "viewport": "mobile",
+        "name": "8b75d2b38a51e0d35f0efa69cc2fc3c292ba8eed0121c6cf4c816a41c1fe3161.png",
+        "sha256": "ca1a8303f34aabeb2d9ec267d613adf1965d34aa60fcc5c3f5106b8813e38232"
+      }
+    ]
   }
 }

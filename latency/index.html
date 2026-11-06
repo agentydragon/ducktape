@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CI latency — Rust results and hosted capacity visibility</title>
+    <title>CI latency — service reuse and snapshot lifecycle</title>
     <style>
       :root {
         color-scheme: light;
@@ -278,26 +278,272 @@
   <body>
     <main>
       <header>
-        <div class="eyebrow">Ducktape · CI latency · 5 November 2026 follow-up</div>
-        <h1>Rust builds do less work; the timing win is unproven</h1>
+        <div class="eyebrow">Ducktape · CI latency · 5 November 2026 service-reuse audit</div>
+        <h1>Reuse useful service state with bounded snapshot writes</h1>
         <p>
-          Both dependency changes are merged. Seven controlled E2E runs show fewer compiler actions, but no reliable
-          elapsed improvement. One later CI run has a confirmed 35.6s worker wait on its critical path. The org admin
-          key opens account usage visibility; our hosted capacity ceiling remains unknown.
+          Props has a demonstrated image-cache opportunity. Browser and K3s image reuse already exist; retaining
+          additional live daemons needs a stricter ownership and reset contract. Keep the provider's default save policy
+          and version compatible service recipes.
         </p>
         <p class="muted">
-          This is a bounded follow-up, not a new PR-feedback census. The retained mean 6m22s / p90 11m18s describe 247
-          green heads from 3–4 November, before these Rust changes. They have not been remeasured. Follow-up source:
-          <code>7fe51fd3cc159b7cecf1995eee15d5c0b4aa9a73</code>. No new performance experiments or infrastructure
-          changes.
+          Focused source/execution audit and one three-case Props pair, not a new PR-feedback census. Inspected source:
+          <code>7fc04701455bc2c47fd6961b0140dce82a94d609</code>. Historical cohorts and unresolved work are retained
+          below.
         </p>
         <nav aria-label="Report sections">
-          <a href="#followup">Latest findings</a><a href="#capacity">Hosted capacity</a
-          ><a href="#current-feedback">Historical PR feedback</a><a href="#bottlenecks">Measured bottlenecks</a
-          ><a href="#selection">Test selection</a><a href="#interventions">Remaining candidates</a
-          ><a href="#continuity">Prior work</a><a href="#method">Evidence &amp; method</a>
+          <a href="#service-reuse">Fresh service evidence</a><a href="#reuse-model">Reuse model</a>
+          <a href="#service-rollout">Preparation and upgrades</a><a href="#followup">Earlier Rust findings</a>
+          <a href="#capacity">Historical capacity evidence</a><a href="#current-feedback">Historical PR feedback</a>
+          <a href="#continuity">Prior work</a><a href="#method">Earlier method</a>
         </nav>
       </header>
+      <section id="service-reuse">
+        <h2>Use useful image families before retaining more live services</h2>
+        <p>
+          Recycling is already enabled. The missing boundary is often the environment being recycled: Props resumed a
+          generic snapshot prepared by an unrelated Python wheel action and then loaded its database images again. A
+          dedicated image family proved reuse without changing its fixtures or opting into remote snapshot publication.
+        </p>
+        <div class="cards">
+          <div class="card">
+            <span class="metric">2,261</span><strong>NEW test actions inspected</strong>
+            <p>377 labels in 27 selected mainline sweeps; 21 had execution records. Slow runs are oversampled.</p>
+          </div>
+          <div class="card">
+            <span class="metric">3 → 0</span><strong>Props Docker imports</strong>
+            <p>Both runs passed the same three cases with identical Action inputs. The second restored the first.</p>
+          </div>
+          <div class="card">
+            <span class="metric">86.1 → 78.0s</span><strong>One action pair</strong>
+            <p>CPU: 164.4 → 84.1 seconds. Local reuse on one executor; no fleet or PR-feedback claim.</p>
+          </div>
+        </div>
+        <p>
+          <a href="https://app.buildbuddy.io/invocation/f7236ffa-da1e-4936-bbfc-eb31eee763d1">Cold seed</a> ·
+          <a href="https://app.buildbuddy.io/invocation/346ef4fc-a92c-4bba-815b-6df9958db156">Warm reuse</a> ·
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/cd8e32fde0355ff4ddd44c1c551eb01cab4f5d50/devinfra/buildbuddy/debug/2026_11_05_service_reuse_audit.md"
+            >Source audit and method</a
+          >
+          ·
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/cd8e32fde0355ff4ddd44c1c551eb01cab4f5d50/devinfra/buildbuddy/docs/service_reuse.md"
+            >Service lifecycle and upgrade workflow</a
+          >
+        </p>
+        <p class="callout">
+          Keep <code>remote-snapshot-save-policy</code> unset. The experiment used an isolated local-only family and
+          retained fresh PostgreSQL. A VM snapshot, cached images, a healthy live daemon and fresh test data are four
+          separate observations.
+        </p>
+        <h3>Recent execution cost, in its own units</h3>
+        <div class="table-scroll" role="region" aria-label="Sampled slow test actions" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Test</th>
+                <th>NEW actions</th>
+                <th>Median process</th>
+                <th>Maximum</th>
+                <th>Process sum</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>App thread browser</td>
+                <td>96 shards</td>
+                <td>87.8s</td>
+                <td>283.3s</td>
+                <td>9,661.2s</td>
+              </tr>
+              <tr>
+                <td>App bridge</td>
+                <td>24 shards</td>
+                <td>112.4s</td>
+                <td>211.7s</td>
+                <td>2,843.6s</td>
+              </tr>
+              <tr>
+                <td>System VM</td>
+                <td>8</td>
+                <td>324.5s</td>
+                <td>383.8s</td>
+                <td>2,631.6s</td>
+              </tr>
+              <tr>
+                <td>System Pod</td>
+                <td>8</td>
+                <td>297.3s</td>
+                <td>416.7s</td>
+                <td>2,314.5s</td>
+              </tr>
+              <tr>
+                <td>Props optimize E2E</td>
+                <td>1</td>
+                <td>190.9s</td>
+                <td>190.9s</td>
+                <td>190.9s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">
+          Enumerated CI-role test invocations updated 4 November 00:55–6 November 00:55:29 UTC. Selected the latest
+          completed mainline sweep in each occupied two-hour creation-time stratum, plus the eight longest sweeps.
+          Ignored 109 non-NEW links. These are overlapping action-seconds; Props has only one originating execution per
+          target in this sample. Cached summaries are excluded.
+        </p>
+        <h3>What the fixtures actually repeat</h3>
+        <ul>
+          <li>
+            <strong>Props:</strong> sampled PostgreSQL image loads took 9.4–36.5s, startup 3.4–4.4s, schema setup
+            0.28–0.48s, and registry startup 1.38–1.72s. Optimize also spent 23.9s pushing three images and a 61.8s
+            envelope pulling them concurrently. Fix image reuse before treating the whole stack as a persistent daemon.
+          </li>
+          <li>
+            <strong>Browser:</strong> the shipped image family was effective on 13/16 sampled placements; three cold
+            placements still loaded images. Sixteen fresh generic PostgreSQL startups summed to 54.3 action-seconds. A
+            distinct logical-WAL database and per-test Electric remain fresh. That sum is not 54 seconds of end-to-end
+            savings.
+          </li>
+          <li>
+            <strong>K3s:</strong> selected Pod and MCP-service receipts were warm and clean with fresh workload
+            identities. Setup remained 99.4/82.7s; PostgreSQL readiness was only 4.25/4.11s. Preserve existing retained
+            infrastructure and investigate remaining image work.
+          </li>
+          <li>
+            <strong>Other PostgreSQL fixtures:</strong> Python and Go helpers already clone migrated templates but stop
+            their servers at action exit. A static BUILD screen finds broad declared reach, while fresh Go observations
+            are sparse. The two complete-graph queries failed on Debian download 504s; no exact runtime-startup census
+            is claimed.
+          </li>
+        </ul>
+      </section>
+      <section id="reuse-model">
+        <h2>The reuse model: stable services, fresh workloads, verified release</h2>
+        <p>
+          Use a versioned infrastructure recipe for compatible services and pinned images. Check actual identity,
+          configuration, health and cleanliness at attach. Build current application inputs and fresh
+          databases/certificates/mock state. Release a clean environment only after all owned mutable resources are
+          gone; rebuild owned dirty or incompatible state cold.
+        </p>
+        <ol>
+          <li>
+            <strong>Family:</strong> recipe version + infrastructure pins/configuration; avoid a new family for every
+            application edit. Effective platform/resource/VM settings still affect matching.
+          </li>
+          <li>
+            <strong>Attach:</strong> prove ownership and health; mark leased/dirty before handing it out. A restored
+            process may be dead or have stale connections.
+          </li>
+          <li>
+            <strong>Test:</strong> current code and isolated state. Migration-from-empty, restart, supervision and
+            recovery scenarios retain their fresh-start coverage.
+          </li>
+          <li>
+            <strong>Release:</strong> stop clients, remove owned databases/roles/slots/credentials, then atomically mark
+            clean. Failed cleanup prevents reuse.
+          </li>
+        </ol>
+        <div class="filter">
+          <label for="reuse-choice"><strong>Compare an execution design</strong></label>
+          <select id="reuse-choice" aria-label="Service reuse design">
+            <option value="images">Local image family — measured</option>
+            <option value="daemon">Retained daemon lease — proposed</option>
+            <option value="remote">Remote snapshot family — conditional</option>
+          </select>
+        </div>
+        <p id="reuse-choice-detail" aria-live="polite"></p>
+        <p class="muted">This selector explains designs; it does not change repository or executor settings.</p>
+        <p>
+          Local fixtures should call the same setup/reset/cleanup code with retention off by default and fixture-owned
+          temporary state. BuildBuddy permission and invalidation belong in an adapter. Current Docker/browser tests
+          still run on RBE; local-host validation and any policy change are separate. Self-hosted OCI/Docker can retain
+          a paused container on one executor; Firecracker snapshotting needs additional host capabilities and executor
+          configuration.
+        </p>
+      </section>
+      <section id="service-rollout">
+        <h2>Prepare lazily; version layout changes; add a warmer only for a measured need</h2>
+        <p>
+          A normal cold test can prepare a family. Test setup boots or attaches, test teardown proves cleanliness, and
+          BuildBuddy decides whether to save afterward. A service-layout or lifecycle change gets a new compatibility
+          recipe version and all consumers change together. Validate cold, warm and another compatible consumer; an
+          action-cache pass cannot prove warming.
+        </p>
+        <div class="table-scroll" role="region" aria-label="Service reuse recommendations" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Concrete next step</th>
+                <th>Proof / limit</th>
+                <th>Keep</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1 · Props images</td>
+                <td>Derive container E2E families from PostgreSQL/registry/Ryuk pins.</td>
+                <td>Three-case local reuse pair passed; broader enrollment untested.</td>
+                <td>Current application digests and real proxy/push/auth coverage.</td>
+              </tr>
+              <tr>
+                <td>2 · PostgreSQL image profiles</td>
+                <td>Profile actual Python/Go consumers; separate pgvector and logical-WAL configurations.</td>
+                <td>Image loads dominate sampled daemon startup; no broad savings estimate.</td>
+                <td>Migrated templates, fresh clones and cold-start tests.</td>
+              </tr>
+              <tr>
+                <td>3 · One retained daemon</td>
+                <td>Implement owned leases/reset/health for one justified workload.</td>
+                <td>Measure reset cost and idle memory before expanding.</td>
+                <td>Role/slot cleanup, reaper ownership, crash/cancellation recovery.</td>
+              </tr>
+              <tr>
+                <td>4 · Deliberate warming</td>
+                <td>Only if cold bursts or availability justify a serialized preparation target.</td>
+                <td>Same effective family as consumers; one seed does not cover every VM configuration.</td>
+                <td>Default save policy and bounded publication cost.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Upstream <code>d436b0d87bd124235481a3eda45470d94f6cf7f6</code> retains the inspected default: likely-default
+          families refresh by age (one-hour upstream default), non-default runs save if no usable snapshot exists.
+          Branchless test families take the likely-default path. Concurrent cold/stale actions can all write, so this is
+          not an atomic global cap. The hosted revision and provider overrides remain unknown.
+        </p>
+        <p class="callout">
+          Do not set <code>always</code> on a warmer while consumers leave it unset: that can select a different family.
+          The inspected per-action API has no supported read-only-consumer contract. Executor-wide read-only
+          configuration is a different control. Completed publication/transfer counters are still needed to judge
+          snapshot-spam mitigation.
+        </p>
+        <details>
+          <summary>Prior negative results and unchanged work</summary>
+          <p>
+            The K3s PostgreSQL-retention experiment passed but showed no timing win: warm pair 243.2/230.1s versus
+            234.0/220.5s for K3s/PKI-only retention. Reset cost and other readiness work dominated its expected gain. It
+            does not measure standalone fixtures. The paused Pod default-policy experiment and broader latency goal
+            remain separate; this audit did not run them.
+          </p>
+          <p>
+            All prior report sections and the 31-item disposition ledger are retained below with their original dates
+            and evidence. Rust/YAML work, historical feedback distributions, capacity unknowns, failure tails and
+            already-landed image/fixture changes are not recast as new daemon optimizations. No deployment, service
+            lifetime, production family or CI warmup was changed.
+          </p>
+        </details>
+      </section>
+
+      <p class="callout">
+        <strong>Historical findings retained below.</strong> The following sections describe the earlier 5 November
+        follow-up and its original measurement windows. Their statements about experiments and cutoff scope refer to
+        that work. The new service-reuse evidence and two Props runs are above; historical feedback percentiles have not
+        been remeasured.
+      </p>
       <section id="followup">
         <h2>What the Rust experiments established</h2>
         <p>
@@ -1557,6 +1803,25 @@
         document.getElementById("model-p90").textContent = clock(row.p90_seconds);
         document.getElementById("model-under").textContent = `${row.green_under_300_count}/247`;
       });
+    </script>
+    <script>
+      (() => {
+        const descriptions = {
+          images:
+            "Measured: retain digest-checked images in a dedicated local family. PostgreSQL, registry fixtures and test data still start fresh. No remote-snapshot opt-in was added in the Props pair.",
+          daemon:
+            "Proposed: retain an owned healthy daemon behind an exclusive lease, with fresh databases and complete role/slot cleanup. Requires dirty-state, cancellation, restart and cold-fallback tests; no daemon-retention speedup is established here.",
+          remote:
+            "Conditional: a compatible remote snapshot can seed another host, but eligibility, executor flags and VM configuration must match. Publication costs and concurrent cold writers require a provider-supported budget and measurements.",
+        };
+        const choice = document.getElementById("reuse-choice");
+        const detail = document.getElementById("reuse-choice-detail");
+        const render = () => {
+          detail.textContent = descriptions[choice.value];
+        };
+        choice.addEventListener("change", render);
+        render();
+      })();
     </script>
   </body>
 </html>
