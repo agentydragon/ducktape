@@ -2990,13 +2990,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 // would additionally expose its merely selected callee.
                 // Stop the kernel, retaining uncertainty and every child loss;
                 // neither a partial value nor a terminal position is coverage.
+                let no_normal_return = self.executor.callable_has_no_normal_return(key);
                 self.outcome.complete = false;
                 self.outcome.effect_coverage = EffectCoverageFragment::default();
                 frame.returns.extend(values);
                 frame
                     .returns
                     .insert(AbstractValue::Value(Value::Unavailable));
-                if !self.executor.callable_has_no_normal_return(key) {
+                if !no_normal_return {
                     frame.returns.insert(AbstractValue::Value(Value::Top));
                 }
                 return None;
@@ -12178,6 +12179,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         *outcome
     }
 
+    fn callable_has_no_normal_return(&self, key: u32) -> bool {
+        self.inputs
+            .index
+            .callables
+            .get(&key)
+            .is_some_and(|callable| {
+                !callable.generator
+                    && !self.inputs.index.async_callables.contains(&key)
+                    && !callable.may_fall_through
+                    && callable.body_facts.value_flow().returns().is_empty()
+            })
+    }
+
     pub(super) fn invoke_transfer(
         &mut self,
         key: u32,
@@ -12226,19 +12240,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         self.state.active_cells = outer_cells;
         outcome
-    }
-
-    fn callable_has_no_normal_return(&self, key: u32) -> bool {
-        self.inputs
-            .index
-            .callables
-            .get(&key)
-            .is_some_and(|callable| {
-                !callable.generator
-                    && !self.inputs.index.async_callables.contains(&key)
-                    && !callable.may_fall_through
-                    && callable.body_facts.value_flow().returns().is_empty()
-            })
     }
 
     fn invoke_with_cells(

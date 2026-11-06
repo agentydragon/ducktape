@@ -2169,15 +2169,16 @@ ordered execution and conservatively summarizes the remaining body, retaining
 input, local and newly allocated capabilities and possible setter effects.
 Its precision loss identifies the assignment's source span.
 An incomplete, already-executed local call in an exact terminal `return call(...)`
-of a callable stops ordered execution without publishing the caller's entire
-frame: there is no remaining caller operation to summarize. This sufficient
+of a callable, or an entire initializer or expression statement, stops ordered
+execution without publishing the caller's entire frame: there is no remaining
+caller operation to summarize. This sufficient
 condition requires a directly selected, singleton ordinary source function,
 excluding opaque, async and generator bodies, and a child value transfer. Child
 effects, escapes, precision losses and incomplete execution remain; partial
 returns are widened to include unknown normal and abrupt completion, and no
 effect coverage is issued. A selected callee with neither a source return nor
-a fall-through path retains only its abrupt result; this terminal fallback
-cannot reintroduce a normal value that the invocation boundary excluded.
+a fall-through path retains only its abrupt result; this fallback cannot
+reintroduce a normal value excluded by the invocation boundary.
 Nonterminal calls, operand failures, unknown targets and missing-result
 transfers retain ordinary fallback.
 Calls, member reads, computed writes, branches, unknown free bindings, dynamic
