@@ -383,11 +383,9 @@ def objects(
     synthesized = list(Testing.synth(fixture.chart))
     if vm_sandboxes:
         _boot_test_guest(synthesized)
-    if firecracker_sandboxes:
-        # Bare k3s does not install Cilium. Keep the production construct and its SandboxTemplate,
-        # but omit its CiliumNetworkPolicy because this fixture cannot enforce that policy.
-        synthesized = [doc for doc in synthesized if doc["kind"] != "CiliumNetworkPolicy"]
-    return synthesized
+    # Service-owned workload listeners render Cilium admission in production. Bare k3s has no
+    # Cilium CRD or dataplane; network-policy validation remains a rendering/staging boundary.
+    return [doc for doc in synthesized if doc["kind"] != "CiliumNetworkPolicy"]
 
 
 def build_chart(

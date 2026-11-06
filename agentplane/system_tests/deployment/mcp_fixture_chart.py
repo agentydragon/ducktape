@@ -105,7 +105,7 @@ def objects(
         system_roots=system_roots,
         dex_clients=[fixture.app, fixture.actions, fixture.mcp_edge],
     )
-    return list(Testing.synth(fixture.chart))
+    return [doc for doc in Testing.synth(fixture.chart) if doc["kind"] != "CiliumNetworkPolicy"]
 
 
 def _add_mcp_fixtures(

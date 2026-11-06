@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -48,8 +49,7 @@ func TestPassthroughPreservesDestinationTLSWithoutPolicyOrCallerHeaders(t *testi
 		t.Fatal(err)
 	}
 	authority := fixtureHost + ":" + port
-	lab.options.TLSPassthroughTargets = []string{authority}
-	lab.start(t)
+	lab.proxy.options.TLSPassthroughTargets = []string{authority}
 	raw, response := lab.connect(t, authority, validBearer+"X-Agentplane-Subject: test/attacker\r\n")
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("CONNECT: %s", response.Status)
@@ -93,8 +93,20 @@ func TestPassthroughPreservesDestinationTLSWithoutPolicyOrCallerHeaders(t *testi
 	if refused.StatusCode == http.StatusOK {
 		t.Fatal("unconfigured passthrough target admitted")
 	}
-	_, refused = lab.connect(t, authority, "")
-	if refused.StatusCode == http.StatusOK {
-		t.Fatal("unauthenticated passthrough admitted")
+	withoutSVID := lab.proxyClientTLS.Clone()
+	withoutSVID.GetClientCertificate = nil
+	withoutSVID.Certificates = nil
+	noIdentity, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", lab.address, withoutSVID)
+	if err == nil {
+		defer noIdentity.Close()
+		if err := noIdentity.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fmt.Fprintf(noIdentity, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", authority, authority); err == nil {
+			answer, err := http.ReadResponse(bufio.NewReader(noIdentity), &http.Request{Method: http.MethodConnect})
+			if err == nil && answer.StatusCode == http.StatusOK {
+				t.Fatal("unauthenticated passthrough admitted")
+			}
+		}
 	}
 }
