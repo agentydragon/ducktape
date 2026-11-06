@@ -13324,7 +13324,8 @@ pub(crate) struct InferredForeignCall {
 /// Availability is independent of the callable body's invocation/return proof.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CallableAvailability {
-    Instantiation,
+    /// Existing declaration eligibility, kept separate from the new initializer proof.
+    Declaration,
     /// The provider has one const callable declaration and only local exports.
     /// Every emitted destination reaching it therefore depends on a leaf: no
     /// assignment can introduce a return import from that initializer.
@@ -13897,7 +13898,7 @@ fn infer_foreign_calls<'f>(
             // An initializer's binding holds `undefined` (or is in its TDZ)
             // until its statement runs; afterwards it must hold only that
             // function.
-            if call.availability == CallableAvailability::Instantiation {
+            if call.availability == CallableAvailability::Declaration {
                 values.iter().count() == 1
             } else {
                 values
@@ -13937,7 +13938,7 @@ fn foreign_call(
     InferredForeignCall {
         declaration_start,
         availability: if hoisted {
-            CallableAvailability::Instantiation
+            CallableAvailability::Declaration
         } else if isolated_initializer && derived.retained_provider_captures.is_empty() {
             CallableAvailability::IsolatedInitializer
         } else {
