@@ -2793,15 +2793,16 @@ The pipeline has three stages with different inputs and responsibilities:
   chunk analysis, assignment assembly, the gate, and lowering.
 
 The materializer composes these stages. Analysis (the cross-module
-pass and each chunk's facts) reads the spec only through
-`staged_analysis::analysis_projection::AnalysisProjection`, built after the selector
-solve, so it can also run in another process:
+pass and each chunk's facts) reads the spec only through the contract model
+`analysis_projection::AnalysisProjection`, built after frontend selector
+resolution, so it can also run in another process:
 
 - `debundle spec project-analysis` writes the projection as canonical bytes
   (`AnalysisSpec`): source-analysis inputs only, with notes and graph inputs
   kept in their owning contexts, source paths relative to the source root, and
-  premises resolved to bindings. It rejects selector errors before writing the
-  projection, without constructing `ChunkPlanBuilder` or entering lowering.
+  exact premise statements resolved across the selected static-import provider
+  closure. It rejects selector errors before writing the projection, without
+  constructing `ChunkPlanBuilder` or entering lowering.
 - `debundle analyze --projection` computes the analysis from the projection
   and the sources alone and writes an analysis artifact
   (`staged_analysis::analysis_artifact`): a header naming the engine, the projection

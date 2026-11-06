@@ -1023,6 +1023,23 @@ rust_test(
 )
 
 rust_library(
+    name = "analysis_projection",
+    srcs = ["analysis_projection.rs"],
+    crate_root = "analysis_projection.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":artifact",
+        ":source_identity",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:rmp-serde",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_library(
     name = "staged_analysis",
     srcs = glob(["staged_analysis/*.rs"]),
     crate_root = "staged_analysis/mod.rs",
@@ -1031,18 +1048,15 @@ rust_library(
         ":analysis",
         ":analysis_codec",
         ":analysis_model",
+        ":analysis_projection",
         ":artifact",
         ":chunk_analysis",
         ":graph_provenance",
         ":js_ast",
         ":prepare_chunks",
         ":program_analysis",
-        ":selector_outcome",
-        ":selector_resolve",
         ":source_identity",
-        ":source_match",
         ":spec",
-        ":spec_resolution",
         ":vendor",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -1067,12 +1081,15 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_projection",
         ":artifact",
         ":binding_targets",
+        ":graph_provenance",
         ":js_ast",
         ":selector_outcome",
         ":selector_resolve",
         ":source_identity",
+        ":source_match",
         ":spec",
         ":spec_resolution",
         ":staged_analysis",
@@ -1131,6 +1148,7 @@ rust_library(
     deps = [
         ":analysis",
         ":analysis_model",
+        ":analysis_projection",
         ":artifact",
         ":binding_targets",
         ":chunk_analysis",
@@ -1286,6 +1304,7 @@ rust_library(
     crate_root = "pipeline.rs",
     edition = "2024",
     deps = [
+        ":analysis_projection",
         ":artifact",
         ":emit_harness",
         ":frontend_elaboration",

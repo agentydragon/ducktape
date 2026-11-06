@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 
+use analysis_projection::AnalysisSpec;
 use artifact::EmissionFiles;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use emit_harness::emit_browser_harness;
@@ -29,7 +30,6 @@ use reconstruction::{
 use spec::{ChunkExportPurity, LogicalModule, TransformSpec};
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, graph_module_roots};
-use staged_analysis::AnalysisSpec;
 use vendor::{
     VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, apply_emission_rewrites_in_place,
     build_partial_swap_resolutions, build_vendor_resolution_plan,
@@ -317,7 +317,8 @@ pub fn project_analysis(cli: &TransformRequest, out: &Path) -> Result<()> {
     let (spec, prepared) = prepare_transform(cli, &options, None, None)?;
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
     let artifact = prepared.source.program.into_artifact();
-    let projection = frontend_elaboration::project_analysis(artifact, &spec, &base)?;
+    let projection =
+        frontend_elaboration::project_analysis(artifact, &spec, &base, Some(&prepared.provenance))?;
     fs::write(out, projection.encode()?)
         .with_context(|| format!("write analysis projection {}", out.display()))
 }

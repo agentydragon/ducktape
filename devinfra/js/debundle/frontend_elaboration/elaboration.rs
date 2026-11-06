@@ -7,25 +7,29 @@
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast, binding_declaration};
 use crate::source_ast::RuntimeImportKind;
 use analysis::AnalysisAssumptions;
-use analysis::analysis_inputs::SourceDeclaration;
+use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
 use analysis::facts::StructuralChunkSourceFacts;
+use analysis_projection::{
+    self, AnalysisNativeOperationInput, AnalysisProjection, AnalysisSourceSites, AnalysisSpec,
+    ChunkGraphInputs, ProjectedChunkOptions,
+};
 use anyhow::{Context, Result, bail, ensure};
-use artifact::ChunkBundle;
+use artifact::{ArtifactIndexes, ChunkBundle};
+use graph_provenance::GraphProvenance;
 use rayon::prelude::*;
 use selector_outcome::{Entity, EntityRef, Outcome, SelectorOutcome, Severity};
-use selector_resolve::MemberSelector;
+use selector_resolve::{Chunk as SelectorChunk, EntityIndex, MemberSelector};
 use source_identity::ChunkId;
 use source_identity::StatementId;
+use source_match::source_match_claim_member_selectors;
 use spec::{
     ChunkExportPurity, ChunkRenames, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,
-    LogicalModule, UnassignedMode,
+    LogicalModule, SourceMatchClaim, SourceUnitSelector, UnassignedMode,
 };
 use spec_resolution::{
     LogicalRequest, ProjectedChunk, ResolvedChunk, logical_requests_for_chunk, project_chunk,
 };
-use staged_analysis::analysis_projection::{self, AnalysisProjection, ChunkGraphInputs};
 use staged_analysis::chunk_facts::chunk_runtime_entry;
-use staged_analysis::{AnalysisSpec, ResolvedMemberSite};
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::GLOBALS;
 use swc_ecma_ast::{Module, ModuleItem};
@@ -52,6 +56,14 @@ pub struct FrontendChunk<'a> {
     pub member_claims: MemberClaimProjection,
     pub declared_assumptions: AnalysisAssumptions,
     pub source_only_initializer_bindings: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedMemberSite {
+    pub provider_chunk: String,
+    pub module: String,
+    pub name: String,
+    pub declaration: Option<SourceDeclaration>,
 }
 
 /// Canonical binding ownership after the joint selector solve. Lowering applies
@@ -112,6 +124,7 @@ pub struct FrontendSpecInputs<'a> {
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
     pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
+    pub graph_provenance: Option<&'a GraphProvenance>,
     pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
     pub host_behavior: &'a HostBehavior,
     pub intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
@@ -126,6 +139,7 @@ pub fn project_analysis(
     mut artifact: ChunkBundle,
     spec: &spec::TransformSpec,
     base: &AnalysisSpec,
+    graph_provenance: Option<&GraphProvenance>,
 ) -> Result<AnalysisSpec> {
     if !spec.materialize_logical_modules.target_dir.is_empty() {
         artifact::paths::normalize_module_path(&spec.materialize_logical_modules.target_dir)?;
@@ -167,6 +181,7 @@ pub fn project_analysis(
             chunk_renames: &spec.chunk_renames,
             unassigned_mode: &spec.unassigned_mode,
             chunk_analysis_options: &spec.chunk_analysis_options,
+            graph_provenance,
             chunk_export_purity: chunk_export_purity.as_ref(),
             host_behavior: &spec.host_behavior,
             intrinsics_never_written: spec.program_premises.intrinsics_never_written.as_ref(),
@@ -181,6 +196,20 @@ pub fn elaborate<'a>(
     inputs: Vec<FrontendChunkInput<'a>>,
     spec: FrontendSpecInputs<'a>,
 ) -> Result<FrontendElaboration<'a>> {
+    let prepared_artifact = inputs
+        .first()
+        .map(|input| input.artifact)
+        .context("frontend elaboration requires at least one chunk")?;
+    ensure!(
+        inputs
+            .iter()
+            .all(|input| std::ptr::eq(input.artifact, prepared_artifact)),
+        "frontend elaboration inputs must share one prepared artifact"
+    );
+    let selected_chunk_ids = inputs
+        .iter()
+        .map(|input| input.chunk_id.to_string())
+        .collect::<Vec<_>>();
     let mut prepared = GLOBALS
         .with(|globals| {
             inputs
@@ -233,19 +262,388 @@ pub fn elaborate<'a>(
         .iter()
         .map(|(chunk, options)| (chunk.clone(), options.graph.clone()))
         .collect();
+    let (source_sites, native_operation_inputs) = resolve_analysis_source_sites(
+        prepared_artifact,
+        &selected_chunk_ids,
+        &projected_options,
+        &resolved_member_sites,
+        spec.graph_provenance,
+    )?;
     let projection = AnalysisProjection::new(
         &projected_options,
         spec.chunk_export_purity,
         spec.host_behavior,
         spec.intrinsics_never_written,
         declared_assumptions,
-        &resolved_member_sites,
+        source_sites,
+        native_operation_inputs,
     )?;
     Ok(FrontendElaboration {
         chunks,
         projection,
         graph_inputs,
         resolved_member_sites,
+    })
+}
+
+fn resolve_analysis_source_sites(
+    artifact: &ChunkBundle,
+    selected_chunk_ids: &[String],
+    projected_options: &BTreeMap<String, ProjectedChunkOptions>,
+    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    graph_provenance: Option<&GraphProvenance>,
+) -> Result<(
+    AnalysisSourceSites,
+    BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
+)> {
+    let indexes = ArtifactIndexes::build(artifact)?;
+    let provider_closure = analysis_projection::selected_static_import_closure(
+        artifact,
+        &indexes,
+        selected_chunk_ids,
+    )?;
+    let mut source_sites = AnalysisSourceSites::default();
+    let mut native_operation_inputs = BTreeMap::new();
+
+    for (chunk_name, options) in projected_options {
+        let has_source_premises = !options.native_operation_inputs.is_empty()
+            || !options.analysis.value_inputs.is_empty()
+            || !options.analysis.native_call_identity_inputs.is_empty()
+            || !options.analysis.argument_inputs.is_empty()
+            || !options.analysis.no_accessor_install_callables.is_empty();
+        if !has_source_premises {
+            continue;
+        }
+
+        let prefix = format!("chunk_analysis_options.{chunk_name}");
+        let chunk = artifact
+            .chunks
+            .iter()
+            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
+        if !provider_closure.contains(&chunk.chunk_id) {
+            if !options.analysis.value_inputs.is_empty() {
+                bail!(
+                    "chunk_analysis_options.{chunk_name}.value_inputs provider is outside the existing analyzed import closure"
+                );
+            }
+            if !options.native_operation_inputs.is_empty()
+                || !options.analysis.native_call_identity_inputs.is_empty()
+            {
+                bail!(
+                    "chunk_analysis_options.{chunk_name}.native_operation_inputs provider is outside the existing analyzed import closure"
+                );
+            }
+            if !options.analysis.argument_inputs.is_empty() {
+                bail!(
+                    "chunk_analysis_options.{chunk_name}.argument_inputs cannot target an outside-closure provider"
+                );
+            }
+            bail!(
+                "chunk_analysis_options.{chunk_name}.no_accessor_install_callables cannot target an outside-closure provider"
+            );
+        }
+        let source = graph_provenance
+            .context("source premise sites require parser-input provenance")?
+            .chunk_sources
+            .iter()
+            .find(|source| source.chunk_id == *chunk_name)
+            .with_context(|| format!("{prefix} provider has no parser-input provenance"))?;
+        source_sites
+            .source_sha256
+            .insert(chunk_name.clone(), source.sha256.clone());
+        let entry_file = chunk
+            .js
+            .get_file(&chunk.analysis.entry_file)
+            .with_context(|| {
+                format!("{prefix} provider entry is unavailable to whole-program analysis")
+            })?;
+
+        let resolved = if let Some(parsed) = entry_file.ast() {
+            resolve_provider_source_sites(
+                chunk_name,
+                &parsed.module,
+                options,
+                resolved_member_sites,
+            )?
+        } else {
+            let source = entry_file
+                .source()
+                .with_context(|| format!("{prefix} provider entry has no retained source text"))?;
+            let parsed = js_ast::parse_js_module(chunk_name, source)?;
+            resolve_provider_source_sites(
+                chunk_name,
+                &parsed.module,
+                options,
+                resolved_member_sites,
+            )?
+        };
+        let ProviderSourceSites {
+            value_inputs,
+            native_call_identity_inputs,
+            argument_inputs,
+            no_accessor_install_callables,
+            native_operation_inputs: operations,
+        } = resolved;
+        if !value_inputs.is_empty() {
+            source_sites
+                .value_inputs
+                .insert(chunk_name.clone(), value_inputs);
+        }
+        if !native_call_identity_inputs.is_empty() {
+            source_sites
+                .native_call_identity_inputs
+                .insert(chunk_name.clone(), native_call_identity_inputs);
+        }
+        if !argument_inputs.is_empty() {
+            source_sites
+                .argument_inputs
+                .insert(chunk_name.clone(), argument_inputs);
+        }
+        if !no_accessor_install_callables.is_empty() {
+            source_sites
+                .no_accessor_install_callables
+                .insert(chunk_name.clone(), no_accessor_install_callables);
+        }
+        if !operations.is_empty() {
+            native_operation_inputs.insert(chunk_name.clone(), operations);
+        }
+    }
+
+    Ok((source_sites, native_operation_inputs))
+}
+
+struct ProviderSourceSites {
+    value_inputs: Vec<SourceDeclaration>,
+    native_call_identity_inputs: Vec<SourceDeclaration>,
+    argument_inputs: Vec<SourceDeclaration>,
+    no_accessor_install_callables: Vec<SourceDeclaration>,
+    native_operation_inputs: Vec<AnalysisNativeOperationInput>,
+}
+
+fn resolve_provider_source_sites(
+    chunk_name: &str,
+    module: &Module,
+    options: &ProjectedChunkOptions,
+    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+) -> Result<ProviderSourceSites> {
+    let structural = analysis::facts::collect_chunk_source_facts(module, None, |_| None);
+    let selector_chunk = SelectorChunk::new(chunk_name, module, structural);
+    let mut resolved = ProviderSourceSites {
+        value_inputs: Vec::with_capacity(options.analysis.value_inputs.len()),
+        native_call_identity_inputs: Vec::with_capacity(
+            options.analysis.native_call_identity_inputs.len(),
+        ),
+        argument_inputs: Vec::with_capacity(options.analysis.argument_inputs.len()),
+        no_accessor_install_callables: Vec::with_capacity(
+            options.analysis.no_accessor_install_callables.len(),
+        ),
+        native_operation_inputs: Vec::with_capacity(options.native_operation_inputs.len()),
+    };
+
+    for (index, contract) in options.analysis.value_inputs.iter().enumerate() {
+        let request_id = format!("chunk_analysis_options.{chunk_name}.value_inputs[{index}]");
+        resolved.value_inputs.push(select_one_source_declaration(
+            &selector_chunk,
+            &request_id,
+            &contract.source_match,
+        )?);
+    }
+    for (index, contract) in options
+        .analysis
+        .native_call_identity_inputs
+        .iter()
+        .enumerate()
+    {
+        let request_id =
+            format!("chunk_analysis_options.{chunk_name}.native_call_identity_inputs[{index}]");
+        resolved
+            .native_call_identity_inputs
+            .push(select_one_source_declaration(
+                &selector_chunk,
+                &request_id,
+                &contract.source_match,
+            )?);
+    }
+    for (index, contract) in options.analysis.argument_inputs.iter().enumerate() {
+        let request_id = format!("chunk_analysis_options.{chunk_name}.argument_inputs[{index}]");
+        resolved.argument_inputs.push(select_one_source_declaration(
+            &selector_chunk,
+            &request_id,
+            &contract.source_match,
+        )?);
+    }
+    for (index, contract) in options
+        .analysis
+        .no_accessor_install_callables
+        .iter()
+        .enumerate()
+    {
+        let request_id =
+            format!("chunk_analysis_options.{chunk_name}.no_accessor_install_callables[{index}]");
+        resolved
+            .no_accessor_install_callables
+            .push(select_one_source_declaration(
+                &selector_chunk,
+                &request_id,
+                &contract.source_match,
+            )?);
+    }
+    for (index, contract) in options.native_operation_inputs.iter().enumerate() {
+        let request_id =
+            format!("chunk_analysis_options.{chunk_name}.native_operation_inputs[{index}]");
+        let (declaration, selector) = match &contract.selector {
+            SourceUnitSelector::SourceMatch(source_match) => {
+                let declaration =
+                    select_one_source_declaration(&selector_chunk, &request_id, source_match)?;
+                (
+                    declaration,
+                    NativeOperationSelectorProvenance::SourceMatch(source_match.clone()),
+                )
+            }
+            SourceUnitSelector::ResolvedMember(member) => {
+                let site = resolve_premise_member_site(
+                    resolved_member_sites,
+                    &request_id,
+                    chunk_name,
+                    &member.module,
+                    &member.name,
+                )?;
+                let declaration = site.declaration.clone().with_context(|| {
+                    format!("{request_id}.resolved_member has no unique original local declaration")
+                })?;
+                (
+                    declaration.clone(),
+                    NativeOperationSelectorProvenance::Declaration(declaration),
+                )
+            }
+        };
+        resolved
+            .native_operation_inputs
+            .push(AnalysisNativeOperationInput {
+                declaration,
+                selector,
+                operation: contract.operation,
+                audited_source_sha256: contract.audited_source_sha256.clone(),
+            });
+    }
+
+    Ok(resolved)
+}
+
+fn resolve_premise_member_site<'a>(
+    resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    request_id: &str,
+    chunk_name: &str,
+    module: &str,
+    name: &str,
+) -> Result<&'a ResolvedMemberSite> {
+    let key = (module.to_owned(), name.to_owned());
+    let sites = resolved_member_sites.get(&key).with_context(|| {
+        format!(
+            "{request_id}.resolved_member names no logical module member for requested provider chunk {chunk_name} (module {module}, member {name}); module names are chunk-relative, so declare the module under logical_modules[{chunk_name}]"
+        )
+    })?;
+    let mut provider_sites = sites
+        .iter()
+        .filter(|site| site.provider_chunk == chunk_name);
+    let site = provider_sites.next().with_context(|| {
+        let providers: BTreeSet<_> = sites
+            .iter()
+            .map(|site| site.provider_chunk.as_str())
+            .collect();
+        format!(
+            "{request_id}.resolved_member belongs to another provider chunk(s) {providers:?}, not requested provider chunk {chunk_name} (module {module}, member {name}); module names are chunk-relative, so use a module declared under logical_modules[{chunk_name}]"
+        )
+    })?;
+    ensure!(
+        provider_sites.next().is_none(),
+        "{request_id}.resolved_member is ambiguous in provider {chunk_name} (module {module}, member {name}); module names are chunk-relative to each provider chunk"
+    );
+    Ok(site)
+}
+
+pub fn select_one_declared_binding(
+    selector_chunk: &SelectorChunk<'_>,
+    request_id: &str,
+    claim: &SourceMatchClaim,
+) -> Result<(usize, String)> {
+    ensure!(
+        claim.bindings.len() == 1,
+        "{request_id}.source_match must select exactly one declared binding"
+    );
+    let spec::SourceMatchBinding::Local(local) = &claim.bindings[0] else {
+        bail!("{request_id}.source_match does not accept detailed name/rename payloads");
+    };
+    let mut selectors = source_match_claim_member_selectors(request_id, claim)?;
+    ensure!(
+        selectors.len() == 1,
+        "{request_id}.source_match must produce one selector"
+    );
+    let selector = selectors.pop().expect("one selector was checked");
+    ensure!(
+        selector
+            .parsed_selector
+            .declared_binding_names()
+            .iter()
+            .any(|name| name == local),
+        "{request_id}.source_match binding `{local}` must be declared by its pattern"
+    );
+    let parsed_selector = selector.parsed_selector.clone();
+    let selector_module = spec_resolution::spec_module(
+        request_id.to_owned(),
+        vec![spec_resolution::member_from_source_match(
+            selector.export_name,
+            selector.parsed_selector,
+        )],
+        Vec::new(),
+    );
+    let resolution = selector_chunk.resolve(&[selector_module])?;
+    let outcome = resolution
+        .outcome(0, EntityIndex::Member(0))
+        .with_context(|| format!("{request_id}.source_match produced no selector outcome"))?;
+    let (representative, binding) = match &outcome.outcome {
+        Outcome::Resolved {
+            body_index,
+            binding: Some(binding),
+            ..
+        } => (*body_index, binding.clone()),
+        other => bail!(
+            "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
+        ),
+    };
+    let mut sites = selector_chunk
+        .matcher()
+        .member_candidates(request_id, &parsed_selector)?
+        .into_iter()
+        .filter(|matched| matched.binding.binding_name == binding)
+        .map(|matched| matched.body_idx)
+        .collect::<BTreeSet<_>>();
+    match sites.len() {
+        1 => Ok((sites.pop_first().expect("one site"), binding)),
+        0 => bail!(
+            "{request_id}.source_match resolved `{binding}` to statement #{representative} but its template matches none of the binding's declaration sites"
+        ),
+        _ => bail!(
+            "{request_id}.source_match matches `{binding}` at several declaration sites (statements {}); a source-unit endpoint must pin one",
+            sites
+                .iter()
+                .map(|site| format!("#{site}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn select_one_source_declaration(
+    selector_chunk: &SelectorChunk<'_>,
+    request_id: &str,
+    claim: &SourceMatchClaim,
+) -> Result<SourceDeclaration> {
+    let (body_index, binding) = select_one_declared_binding(selector_chunk, request_id, claim)?;
+    Ok(SourceDeclaration {
+        binding,
+        body_index,
     })
 }
 
@@ -991,6 +1389,7 @@ pub fn complete_analysis_spec(
 ) -> Result<AnalysisSpec> {
     base.clone().with_premises(
         projection.declared_assumptions.clone(),
+        projection.source_sites.clone().into_owned(),
         projection.native_operation_inputs.clone(),
     )
 }

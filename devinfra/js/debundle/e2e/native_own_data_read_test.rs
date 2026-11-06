@@ -188,6 +188,64 @@ fn resolved_member_certifies_only_the_selected_relational_alias() {
 }
 
 #[test]
+fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
+    const SOURCE: &str =
+        "var alias = Object.defineProperty;\nconst value = alias;\nexport { alias, value };\n";
+    let modules = vec![logical_module(
+        "alias_module",
+        &[Member::new("alias"), Member::new("value")],
+    )];
+    let source_match = run_fixture(
+        FixtureOpts::new(SOURCE, modules.clone()).with_native_operation_inputs(
+            "static/app",
+            vec![input(SOURCE, "var alias = Object.defineProperty;")],
+        ),
+    );
+    let resolved_member = run_fixture(
+        FixtureOpts::new(SOURCE, modules).with_native_operation_inputs(
+            "static/app",
+            vec![relational_input(SOURCE, "alias_module", "alias")],
+        ),
+    );
+
+    let source_graph = serde_json::to_value(source_match.dependency_graph()).unwrap();
+    let member_graph = serde_json::to_value(resolved_member.dependency_graph()).unwrap();
+    let source_alias = node(&source_graph, "alias");
+    let member_alias = node(&member_graph, "alias");
+    let source_use = &source_alias["synchronous_execution"]["native_operation_input_uses"][0];
+    let member_use = &member_alias["synchronous_execution"]["native_operation_input_uses"][0];
+    for field in ["reference", "audited_source_sha256"] {
+        assert_eq!(
+            source_use["evidence"][field], member_use["evidence"][field],
+            "selector form changed the selected site in {field}"
+        );
+    }
+    let spec_claim_location = |use_site: &Value| -> String {
+        use_site["evidence"]["spec_location"]
+            .as_str()
+            .unwrap()
+            .split_once(":chunk_analysis_options.")
+            .unwrap()
+            .1
+            .to_owned()
+    };
+    assert_eq!(
+        spec_claim_location(source_use),
+        spec_claim_location(member_use),
+        "selector form changed the authored claim location"
+    );
+    assert_eq!(
+        source_use["evidence"]["operation"],
+        member_use["evidence"]["operation"]
+    );
+    assert_eq!(
+        source_alias["inference_uses"],
+        member_alias["inference_uses"]
+    );
+    assert_eq!(source_graph["edges"], member_graph["edges"]);
+}
+
+#[test]
 fn project_analysis_rejects_missing_and_foreign_resolved_members() {
     let source = format!(
         "{}{}",

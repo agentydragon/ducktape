@@ -9,5 +9,6 @@ pub mod source_ast;
 
 pub use elaboration::{
     FrontendChunk, FrontendChunkInput, FrontendElaboration, FrontendSpecInputs,
-    MemberClaimProjection, complete_analysis_spec, elaborate, project_analysis,
+    MemberClaimProjection, ResolvedMemberSite, complete_analysis_spec, elaborate, project_analysis,
+    select_one_declared_binding,
 };

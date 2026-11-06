@@ -1,9 +1,9 @@
 //! Shared fact computation and loaded-fact validation, independent of lowering.
-use super::analysis_projection::AnalysisProjection;
 use super::progress::emit_debundle_progress;
 use analysis::AnalysisInputs;
 use analysis::analysis_inputs::CallableSummary;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
+use analysis_projection::AnalysisProjection;
 use anyhow::{Context, Result};
 use artifact::paths::normalize_module_path;
 use artifact::{ArtifactIndexes, ChunkBundle, JsFile, get_chunk_entry_path};
