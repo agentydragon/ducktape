@@ -180,9 +180,10 @@ Rules then key on the identity. Everything the egress SPEC says about a subject 
 "ServiceAccount" read as "Identity": a subject no binding names reaches no rule, and the connection
 address is not identity evidence.
 
-Workloads without an SVID, such as the public coder's OpenClaw fronted by the proxy, keep presenting
-a projected SA token; `status.workloadCredentials` maps that account to its identity. The MCP edge
-binds a Connection to an `Identity` instead of a ServiceAccount.
+Active callers without a Sandbox-issued SVID need a separate authentication design before the
+TLS-only proxy flip. OpenClaw is stopped; its authentication is deferred until a concrete caller
+needs it, without a projected-token compatibility surface. The MCP edge binds a Connection to an
+`Identity` instead of a ServiceAccount at the later identity cutover.
 
 ## Changing an environment's identity
 

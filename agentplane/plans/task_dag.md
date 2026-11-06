@@ -1554,8 +1554,8 @@ runner ingress) need a replacement the destination verifies itself, never a prox
 design that before removing the projected tokens. Consequence for `AGENT_PRINCIPAL_MODEL_DESIGN`:
 the Pod's ServiceAccount stops being what authenticates an agent, and no agent is provisioned one by
 default. Costs that stand: a second authentication scheme in each agent-facing service during the
-migration, and the projected-token path kept for non-SVID workloads the proxy fronts (the public
-coder's OpenClaw). **Exit:** `SVID_PLATFORM_ROUTES` in
+migration. Active non-Sandbox callers need the separate authentication design below; stopped
+OpenClaw instances require no compatibility surface. **Exit:** `SVID_PLATFORM_ROUTES` in
 [section 14](#14-identity-and-kubernetes-accounts-cutover); the Gateway path is already covered.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
@@ -2989,13 +2989,14 @@ tests of untouched kinds still pass.
 
 ### `NON_SANDBOX_PROXY_AUTH` — separate caller authentication before merging the flip
 
-**Operator decision; 2026-11-05.** Keep the TLS-only hop flip draft and blocked while defining
-how Action command boxes, Haku UI and external OpenClaw instances authenticate without a
-Sandbox-issued SVID. An OpenClaw instance may have its own SVID; issuance, attestation and policy
-subject resolution need an explicit design. Preserve the first-slice Sandbox ServiceAccount
-subject and do not introduce the Identity/account cutover here. **Exit:** the chosen non-Sandbox
-contract is implemented and exercised before the staging flip merges. This is an operational hold,
-not a prerequisite for drafting the five service-owned SVID boundaries.
+**Operator decision; 2026-11-05, narrowed 2026-11-06.** Keep the TLS-only hop flip draft and
+blocked while defining how the active Action command boxes and Haku UI authenticate without a
+Sandbox-issued SVID. Preserve the first-slice Sandbox ServiceAccount subject and do not introduce
+the Identity/account cutover here. OpenClaw is stopped; the operator deferred its authentication
+until there is a concrete caller, so it requires no compatibility surface and does not block this
+flip. **Exit:** the active non-Sandbox callers' contract is implemented and exercised before the
+staging flip merges. This is an operational hold, not a prerequisite for drafting the five
+service-owned SVID boundaries.
 
 ### `SVID_PLATFORM_ROUTES` — first-party services verify SVIDs themselves
 
