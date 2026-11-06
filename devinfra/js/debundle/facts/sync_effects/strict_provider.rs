@@ -17,8 +17,8 @@ use super::super::property_inference::{
     OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
 };
 use super::super::value_model::{
-    AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
-    SymbolicInputId, ValueExpr, Values,
+    AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, PrivateFieldId, ProviderInput,
+    ProviderScopeId, SymbolicInputId, ValueExpr, Values,
 };
 use super::{Call, CallKind, ExecutionIndex, native_call_identity_key};
 use crate::analysis_inputs::{
@@ -57,6 +57,7 @@ struct ProviderContext<'a> {
     native_operations: BTreeSet<ForeignNativeOperation>,
     native_derivation_rules: BTreeSet<InferenceRule>,
     properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    private_properties: OrdMap<u32, BTreeMap<PrivateFieldId, Values>>,
     arrays: OrdMap<u32, DenseArray>,
     writable_prefix: OrdMap<u32, WritablePrefixState>,
     descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
@@ -128,6 +129,7 @@ impl AllocationContext for ProviderContext<'_> {
     fn heap(&mut self) -> LiteralHeap<'_> {
         LiteralHeap {
             properties: &mut self.properties,
+            private_properties: Some(&mut self.private_properties),
             arrays: &mut self.arrays,
             revision: &mut self.revision,
             writable_prefix: self.body_effect_mode.then_some(&mut self.writable_prefix),
@@ -1015,6 +1017,7 @@ fn execute_provider_body<'a>(
         native_operations: BTreeSet::new(),
         native_derivation_rules: BTreeSet::new(),
         properties: OrdMap::new(),
+        private_properties: OrdMap::new(),
         arrays: OrdMap::new(),
         writable_prefix: OrdMap::new(),
         descriptor_maps: OrdMap::new(),
@@ -1237,32 +1240,39 @@ pub(super) fn derive_class(
     class: u32,
     shadowed: &BTreeSet<&'static str>,
 ) -> Option<DerivedForeignCall> {
-    let (body, parameters) = index.class_provider_bodies.get(&class)?;
-    let local_bindings: BTreeSet<_> = body.bindings.keys().cloned().collect();
-    if body.free_reads().iter().any(|binding| {
-        !matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
-            || shadowed.contains(binding.0.as_ref())
-            || local_bindings.iter().any(|local| local.0 == binding.0)
-    }) || !body.captured_writes().is_empty()
+    let body = index.class_provider_bodies.get(&class)?;
+    let local_bindings: BTreeSet<_> = body.constructor.bindings.keys().cloned().collect();
+    if body
+        .initializers
+        .free_reads()
+        .iter()
+        .chain(body.constructor.free_reads())
+        .any(|binding| {
+            !matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
+                || shadowed.contains(binding.0.as_ref())
+                || local_bindings.iter().any(|local| local.0 == binding.0)
+        })
+        || !body.initializers.captured_writes().is_empty()
+        || !body.constructor.captured_writes().is_empty()
     {
         return None;
     }
     let scope = ProviderScopeId::fresh()?;
-    let mut bindings = Context::new();
+    let mut parameter_inputs = Vec::new();
     let mut argument_values = Values::new();
-    for (parameter, binding) in parameters.iter().enumerate() {
+    for (parameter, _) in body.constructor.parameters.iter().enumerate() {
         let value = AbstractValue::SymbolicInput(SymbolicInputId {
             scope,
             input: ProviderInput::Argument(parameter),
         });
-        bindings.insert(binding.clone(), Values::from([value.clone()]));
+        parameter_inputs.push(SelectedValue::raw(Values::from([value.clone()])));
         argument_values.insert(value);
     }
     let mut context = ProviderContext {
         index,
         calls: &[],
         scope,
-        bindings,
+        bindings: Context::new(),
         argument_values,
         closure_captures: BTreeMap::new(),
         closure_local_reads: BTreeMap::new(),
@@ -1270,11 +1280,12 @@ pub(super) fn derive_class(
         unsupported_closures: BTreeSet::new(),
         final_environment: None,
         class_mode: true,
-        local_bindings: body.bindings.keys().cloned().collect(),
+        local_bindings,
         shadowed: shadowed.clone(),
         native_operations: BTreeSet::new(),
         native_derivation_rules: BTreeSet::new(),
         properties: OrdMap::new(),
+        private_properties: OrdMap::new(),
         arrays: OrdMap::new(),
         writable_prefix: OrdMap::new(),
         descriptor_maps: OrdMap::new(),
@@ -1282,15 +1293,23 @@ pub(super) fn derive_class(
         revision: 0,
         input_shape: None,
         parameter_reads: BTreeSet::new(),
-        body_effect_mode: false,
-        body_effect_bindings: BTreeSet::new(),
+        body_effect_mode: true,
+        body_effect_bindings: body
+            .constructor
+            .bindings
+            .iter()
+            .filter_map(|(binding, kind)| {
+                matches!(
+                    kind,
+                    LocalBinding::Parameter | LocalBinding::Let | LocalBinding::Const
+                )
+                .then_some(binding.clone())
+            })
+            .collect(),
     };
-    let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
-    frame.this_values = Some(Values::from([AbstractValue::Value(Value::Alloc(
-        Kind::Object,
-        class,
-    ))]));
-    let transfer = local_transfer::execute(&mut context, body, &mut frame)?;
+    let mut frame = LocalFrame::constructor(body);
+    let transfer =
+        local_transfer::execute_constructor(&mut context, body, parameter_inputs, &mut frame)?;
     if !frame
         .returns
         .iter()
@@ -1321,6 +1340,9 @@ pub(super) fn derive_class(
                     continue;
                 }
                 if let Some(properties) = context.properties.get(&allocation) {
+                    pending_values.extend(properties.values().flatten().cloned());
+                }
+                if let Some(properties) = context.private_properties.get(&allocation) {
                     pending_values.extend(properties.values().flatten().cloned());
                 }
             }
@@ -1424,7 +1446,7 @@ mod tests {
             _ => panic!("provider fixture"),
         };
         let views = top_level_item_views(&module.body);
-        let prepared = super::super::prepare_callable_capabilities(
+        let mut prepared = super::super::prepare_callable_capabilities(
             &views,
             StableArraySpreadShapes::default(),
             BTreeSet::from(["make".into()]),
@@ -1433,6 +1455,8 @@ mod tests {
             Default::default(),
             Default::default(),
         );
+        let integrity = super::super::resolve_native_integrity([prepared.native_writes()]);
+        prepared.index.apply_native_integrity(&integrity);
         if matches!(
             &module.body[0],
             ModuleItem::Stmt(Stmt::Decl(Decl::Class(_)))
@@ -1471,7 +1495,7 @@ mod tests {
     }
 
     #[test]
-    fn constructor_retention_does_not_cover_missing_operation_effects() {
+    fn constructor_field_and_parameter_operations_close_with_retention() {
         js_ast::with_swc_globals(|| {
             for (source, retained) in [
                 ("class make { field = 1; }", BTreeSet::new()),
@@ -1487,13 +1511,31 @@ mod tests {
                     "class make { constructor() { const value = 1; return value; } }",
                     BTreeSet::new(),
                 ),
+                (
+                    "class make { #callback; #cache = new WeakMap(); constructor(callback, label) { this.#callback = callback; } invoke() { return this.#callback(); } }",
+                    BTreeSet::from([0]),
+                ),
+                (
+                    "class make { field; #field; constructor(callback) { this.#field = callback; } }",
+                    BTreeSet::from([0]),
+                ),
+                (
+                    "class make { #field; constructor(callback) { this.#field = callback; this.#field = 1; } }",
+                    BTreeSet::from([0]),
+                ),
+                ("class make { __proto__ = 1; }", BTreeSet::new()),
+                ("class make { field = 1; field = 2; }", BTreeSet::new()),
+                (
+                    "class make { #first; #later = (this.#first = 1); }",
+                    BTreeSet::new(),
+                ),
             ] {
                 let summary = derive_source(source).unwrap_or_else(|| panic!("{source}"));
                 let effects = summary
                     .body_effects
                     .as_ref()
                     .expect("executed body fragment");
-                assert!(!effects.has_closed_effects(), "{source}: {effects:#?}");
+                assert!(effects.has_closed_effects(), "{source}: {effects:#?}");
                 assert_eq!(summary.retained_arguments, retained, "{source}");
                 assert_eq!(
                     summary.returns,
@@ -1517,8 +1559,35 @@ mod tests {
                 "class make { constructor() { return this; } }",
                 "class make { #method() { return captured; } }",
                 "class make { get #field() { return captured; } }",
+                "class make { #first = (this.#later = 1); #later; }",
+                "class make { #field = (this.#field = 1); }",
+                "class make { field; #field = (this.#field = 1); }",
+                "class make { field = callback; constructor(callback) {} }",
+                "class make { field = value; constructor() { const value = 1; } }",
+                "class make { field = unknown(); }",
+                "class make { #field; constructor(value) { this.#field = value.field; } }",
             ] {
                 assert!(derive_source(source).is_none(), "{source}");
+            }
+        });
+    }
+
+    #[test]
+    fn constructor_missing_child_operation_effects_stay_uncovered() {
+        js_ast::with_swc_globals(|| {
+            for source in [
+                "class make { constructor() { var value = 1; return value; } }",
+                "class make { field = this; }",
+            ] {
+                let summary =
+                    derive_source(source).expect("allocation projection remains separate");
+                assert!(
+                    summary
+                        .body_effects
+                        .as_ref()
+                        .is_some_and(|effects| !effects.has_closed_effects()),
+                    "{source}"
+                );
             }
         });
     }
@@ -1714,7 +1783,8 @@ mod tests {
     fn unsupported_native_unknown_and_free_read_paths_never_close_body_effects() {
         js_ast::with_swc_globals(|| {
             for source in [
-                "function make() { return new Map(); }",
+                "function make() { return new Map(); } Map = () => {};",
+                "function make(value) { return new Map(value); }",
                 "function make() { return host(); }",
                 "function make() { missing; return {}; }",
             ] {

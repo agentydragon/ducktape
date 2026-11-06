@@ -4920,6 +4920,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let state = &mut *self.state;
         super::super::allocation_transfer::LiteralHeap {
             properties: &mut state.prefix_object_properties,
+            private_properties: None,
             arrays: &mut state.dense_arrays,
             revision: &mut state.prefix_revision,
             writable_prefix: Some(&mut state.writable_prefix),

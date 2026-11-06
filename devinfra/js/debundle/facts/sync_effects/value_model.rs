@@ -30,6 +30,12 @@ pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct PrivateFieldId {
+    pub(super) class: u32,
+    pub(super) name: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Values(OrdSet<AbstractValue>);
 
