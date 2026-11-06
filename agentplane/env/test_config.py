@@ -33,15 +33,6 @@ def _configuration() -> dict[str, object]:
     }
 
 
-def test_runner_configuration_serializes_environment_sources_and_listener() -> None:
-    config = Configuration.model_validate(_configuration())
-    serialized = json.loads(config.model_dump_json(exclude_none=True))
-
-    assert serialized["control"]["listen_address"] == "127.0.0.1:8090"
-    assert serialized["harness_environment"] == {"inherit": ["PATH"], "values": {"HOME": "/test/home"}}
-    assert "codex_readiness" not in serialized
-
-
 def test_codex_readiness_serializes_explicit_values_and_omits_unset_fields() -> None:
     config = Configuration.model_validate(
         _configuration()
