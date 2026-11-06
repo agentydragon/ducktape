@@ -51,6 +51,11 @@ impl Add for MultiplyDecimal {
     }
 }
 
+/// From petgraph, modified to use multiplication instead of addition.
+/// https://docs.rs/petgraph/0.4.0/src/petgraph/.cargo/registry/src/github.com-1ecc6299db9ec823/petgraph-0.4.0/src/algo.rs.html#550-592,
+///
+/// TODO(agentydragon): send PR to upstream petgraph for custom binary function
+/// Deviation: negative cycles are logged and the computed distances are returned.
 pub fn bellman_ford<G>(g: G, source: G::NodeId) -> Vec<G::EdgeWeight>
 where
     G: NodeCount + IntoNodeIdentifiers + IntoEdges + NodeIndexable,
@@ -95,57 +100,6 @@ where
     distance
 }
 
-/// From petgraph, modified to use multiplication instead of addition.
-/// https://docs.rs/petgraph/0.4.0/src/petgraph/.cargo/registry/src/github.com-1ecc6299db9ec823/petgraph-0.4.0/src/algo.rs.html#550-592,
-///
-/// TODO(agentydragon): send PR to upstream petgraph for custom binary function
-//pub fn bellman_ford<G>(
-//    g: G,
-//    source: G::NodeId,
-//) -> Result<(Vec<f64>, Vec<Option<G::NodeId>>), petgraph::algo::NegativeCycle>
-//where
-//    G: NodeCount + IntoNodeIdentifiers + IntoEdges + NodeIndexable,
-//    G::EdgeWeight: f64,
-//{
-//    let mut predecessor = vec![None; g.node_bound()];
-//    let mut distance = vec![<_>::infinite(); g.node_bound()];
-//
-//    let ix = |i| g.to_index(i);
-//
-//    distance[ix(source)] = /* zero */;
-//    // scan up to |V| - 1 times.
-//    for _ in 1..g.node_count() {
-//        let mut did_update = false;
-//        for edge in g.edge_references() {
-//            let i = edge.source();
-//            let j = edge.target();
-//            let w = *edge.weight();
-//            if distance[ix(i)] + w < distance[ix(j)] {
-//                distance[ix(j)] = distance[ix(i)] + w;
-//                predecessor[ix(j)] = Some(i);
-//                did_update = true;
-//            }
-//        }
-//        if !did_update {
-//            break;
-//        }
-//    }
-//
-//    // check for negative weight cycle
-//    for i in g.node_identifiers() {
-//        for edge in g.edges(i) {
-//            let j = edge.target();
-//            let w = *edge.weight();
-//            if distance[ix(i)] * w < distance[ix(j)] {
-//                //println!("neg cycle, detected from {} to {}, weight={}", i, j, w);
-//                return Err(NegativeCycle(()));
-//            }
-//        }
-//    }
-//
-//    Ok((distance, predecessor))
-//}
-//
 pub fn in_common_currency(
     all_conversions: &[ExchangeRate],
     base: &Denomination,
