@@ -1149,19 +1149,20 @@ def test_portfolio_policy_rejects_overlapping_account_and_security_selectors() -
 
 
 @pytest.mark.parametrize(
-    "multiplier", [Decimal(0), Decimal(-1), Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")]
+    "multiplier",
+    [
+        pytest.param(Decimal(0), id="decimal-zero"),
+        pytest.param(Decimal(-1), id="decimal-negative"),
+        pytest.param(Decimal("NaN"), id="decimal-nan"),
+        pytest.param(Decimal("Infinity"), id="decimal-positive-infinity"),
+        pytest.param(Decimal("-Infinity"), id="decimal-negative-infinity"),
+        pytest.param(2, id="integer"),
+        pytest.param(True, id="boolean"),
+        pytest.param(0.5, id="float"),
+        pytest.param("2", id="string"),
+    ],
 )
-def test_holding_value_correction_multiplier_must_be_positive_and_finite(multiplier: Decimal) -> None:
-    with pytest.raises(ValidationError):
-        _policy(
-            corrections=[
-                {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": multiplier}
-            ]
-        )
-
-
-@pytest.mark.parametrize("multiplier", [2, True, 0.5, "2"])
-def test_holding_value_correction_rejects_non_decimal_multiplier(multiplier: object) -> None:
+def test_holding_value_correction_rejects_invalid_multiplier(multiplier: object) -> None:
     with pytest.raises(ValidationError):
         _policy(
             corrections=[
