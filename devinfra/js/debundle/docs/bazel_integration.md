@@ -79,9 +79,53 @@ The analysis header uses `analysis_engine_sha256`; earlier artifacts with
 `engine_sha256` must be regenerated. Source digests and canonical projection
 checks remain mandatory.
 
+## Share analysis between spec variants
+
+Pass `analysis` to reuse an existing target's saved analysis. Bazel obtains that
+artifact through the producing action's ordinary cache or executes that action
+when needed. The consuming target registers no projection or Analyze action;
+assignment, gates, translation validation and emission still run against its
+current spec. The CLI rejects incompatible engine, source or analysis-projection
+identities. Module assignments and renames may differ when the projection permits
+it; changing an analysis-relevant author contract requires fresh analysis.
+
+```python
+filegroup(
+    name = "shared_analysis",
+    srcs = [":debundle"],
+    output_group = "analysis",
+)
+
+debundle_pipeline(
+    name = "debundle_variant",
+    analysis = ":shared_analysis",
+    input_data = ["//path/to:bundle_inputs"],
+    spec_tree_inputs = [":variant_spec_data"],
+    tree_config = ":generated_variant_config",
+    tree_modules = "spec/modules",
+    tree_source_root = "//path/to:bundle_inputs",
+    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
+)
+```
+
+`analysis` accepts a single `.analysis` file or a filegroup containing exactly one
+such file. The consuming target forwards those files in its own `analysis`
+output group. Selecting the producer's `analysis` group does not select its
+emission or graph-export actions. `analysis_threads` must remain zero on a
+consumer; set the worker limit on the producer instead.
+
+`tree_config` and `tree_vendor_marks` are file labels and accept generated files.
+`tree_modules` remains a package-relative directory, with its complete YAML inputs
+declared through `spec_tree_inputs`. Every variant must declare its complete
+source, spec and package inputs even when it shares analysis. Optional graph
+exports consume that same analysis through the existing separate action.
+
+## Output groups and gate rejection
+
 A reading-only target sets `emit_on_rejection = True`: it passes
 `--emit-on-rejection`, and the action succeeds on exit status 3 — the gate's
-rejection is the only failure — as well as 0. Every other failure still fails
+rejection is the only failure — with a `GATE_REJECTED` marker, as well as 0.
+Every other failure still fails
 the build. A gate-rejected output is marked by `GATE_REJECTED` at its
 `write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
 output on gate rejection), so name the target for it, e.g. `debundle_readable`.

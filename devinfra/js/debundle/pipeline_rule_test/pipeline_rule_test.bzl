@@ -63,7 +63,9 @@ def _pipeline_report_flags_test_impl(ctx):
     asserts.false(env, "spec project-analysis" in project_command)
     asserts.false(env, "--effect-conflicts" in baseline["DebundlePipeline"].argv[-1])
     asserts.false(env, "--full-report" in baseline["DebundlePipeline"].argv[-1])
-    asserts.equals(env, ctx.attr.readable, '[ "$status" -eq 3 ] || exit "$status"' in command)
+    asserts.equals(env, ctx.attr.readable, '[ "$status" -eq 3 ] && [ -f ' in command)
+    if ctx.attr.readable:
+        asserts.true(env, target.label.name + ".out/GATE_REJECTED" in command)
 
     asserts.false(env, "--graphs" in command)
     asserts.equals(env, [target.label.name + ".out"], [file.basename for file in actions["DebundlePipeline"].outputs.to_list()])
