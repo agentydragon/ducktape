@@ -741,9 +741,10 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
         "edit gate: {stderr}"
     );
     let report = parse_stdout_json(&unassign);
-    assert_eq!(report["needs_full_assessment"], false, "{report}");
+    assert_eq!(report.get("needs_full_assessment"), None, "{report}");
+    assert_eq!(report["gate"], "passed", "{report}");
     assert_eq!(
-        report["effect_relocation_assessment"]["status"], "accepted",
+        report["effect_relocation_assessment"]["status"], "accepted_within_checked_scope",
         "{report}"
     );
     tree.assert_runs("shared other ok\n");
@@ -850,9 +851,10 @@ fn relational_claims_eliminate_in_graph_backed_commands() {
         "edit gate: {stderr}"
     );
     let report = parse_stdout_json(&unassign);
-    assert_eq!(report["needs_full_assessment"], false, "{report}");
+    assert_eq!(report.get("needs_full_assessment"), None, "{report}");
+    assert_eq!(report["gate"], "passed", "{report}");
     assert_eq!(
-        report["effect_relocation_assessment"]["status"], "accepted",
+        report["effect_relocation_assessment"]["status"], "accepted_within_checked_scope",
         "{report}"
     );
     tree.assert_runs("shared o\n");
