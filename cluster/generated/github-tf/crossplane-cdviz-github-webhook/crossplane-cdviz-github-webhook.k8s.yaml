@@ -124,7 +124,7 @@ apiVersion: opentofu.upbound.io/v1beta1
 kind: Workspace
 metadata:
   annotations:
-    crossplane.io/external-name: default
+    crossplane.io/external-name: cdviz-github-webhook
   name: cdviz-github-webhook
 spec:
   deletionPolicy: Orphan
