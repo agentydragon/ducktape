@@ -210,12 +210,21 @@ package, spec and ownership-subset inputs for native replay. Requesting it alone
 selects their producers. The `analysis` and `debundler` groups supply the
 matching analysis artifacts and executable.
 
+The public `debundle_pipeline` rule accepts an explicit `analysis` file or
+filegroup containing exactly one `.analysis` artifact. That target registers
+only emission and optional graph-export actions and forwards the supplied
+`analysis` output group. Saved-analysis engine, source and projection checks,
+assignment gates and translation validation remain mandatory. Each consumer
+declares its complete current inputs. Tree config and vendor marks accept source
+or generated file labels; module YAML inputs remain declared in `spec_tree_inputs`.
+
 The public `debundle_pipeline` rule's `analysis_threads` attr defaults to zero,
 omitting the override so `DebundleAnalyze` uses inherited `RAYON_NUM_THREADS`
 when set, or Rayon's default otherwise. A positive value sets the tracked
 `RAYON_NUM_THREADS` action environment for `DebundleAnalyze` only; projection,
 Pipeline and graph export keep their existing environments. Negative values fail
-during rule analysis.
+during rule analysis. A nonzero value also fails when `analysis` is supplied;
+configure Analyze threads on the producing target instead.
 
 Staged `.analysis` headers carry `analysis_engine_sha256`, the generated
 configured compiled `staged_analysis` closure identity shared by the writer and

@@ -5,12 +5,15 @@ outputs (manifests, analysis, emitted JS) land under the rule's declared
 output directory in `bazel-bin/`. Each corpus may layer a `write_source_files`
 regen target on top to commit a subset of outputs into the source tree.
 
-Three actions: `DebundleProjectAnalysis` writes what analysis reads from the
+By default, three actions: `DebundleProjectAnalysis` writes what analysis reads from the
 spec, `DebundleAnalyze` computes the analysis from that projection and the
 sources alone, and `DebundlePipeline` runs against the stored analysis. The
 `analysis` output group holds the projection and the analysis artifact. The
 `native_inputs` output group exposes the spec, source and package inputs without
 selecting analysis or pipeline actions.
+An explicit `analysis` input reuses another target's projection and analysis
+instead of registering those two actions. The CLI checks compatibility before
+using saved facts; assignment, gates and translation validation still run.
 When split_dependency_graphs is enabled, a separate DebundleExportGraphs action
 loads that exact artifact on demand; default outputs never serialize full graphs.
 """
@@ -24,10 +27,56 @@ _GATE_REJECTED_EXIT_CODE = 3
 def _debundle_pipeline_impl(ctx):
     if ctx.attr.analysis_threads < 0:
         fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
+    if ctx.attr.analysis and ctx.attr.analysis_threads:
+        fail("analysis_threads cannot be set when reusing an analysis input")
     if ctx.file.ownership_subset and ctx.attr.split_dependency_graphs:
         fail("ownership_subset does not support split_dependency_graphs")
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
     plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
+
+    analysis_files = _pipeline_analysis(ctx, plan)
+    analysis = [file for file in analysis_files.to_list() if file.extension == "analysis"]
+    if len(analysis) != 1:
+        fail("analysis must expose exactly one .analysis artifact, got {}".format(len(analysis)))
+    analysis = analysis[0]
+
+    output_groups = {
+        "analysis": analysis_files,
+        "debundler": depset([ctx.executable.debundler]),
+        "projector": depset([ctx.executable.projector]),
+        "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
+    }
+    _run_debundler(
+        ctx,
+        inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [plan.inputs]),
+        outputs = [out_dir],
+        command = _pipeline_command(ctx, plan, analysis, []),
+        mnemonic = "DebundlePipeline",
+        progress = "Running debundle pipeline for %{label}",
+    )
+    if ctx.attr.split_dependency_graphs:
+        # Register an independent, on-demand export. DefaultInfo never reaches
+        # this action; it consumes the exact SAME Analyze artifact as Pipeline.
+        graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
+        graph_plan = _debundle_pipeline_plan(ctx, graphs_dir.short_path, include_full_streams = False)
+        _run_debundler(
+            ctx,
+            inputs = depset([analysis], transitive = [graph_plan.inputs]),
+            outputs = [graphs_dir],
+            command = _pipeline_command(ctx, graph_plan, analysis, [
+                "--graphs",
+                "--reports-only",
+                shell.quote(graphs_dir.short_path),
+            ], allow_gate_rejection = True),
+            mnemonic = "DebundleExportGraphs",
+            progress = "Exporting full debundle graphs for %{label}",
+        )
+        output_groups["dependency_graphs"] = depset([graphs_dir])
+    return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
+
+def _pipeline_analysis(ctx, plan):
+    if ctx.attr.analysis:
+        return ctx.attr.analysis[DefaultInfo].files
 
     # Analysis is computed by its own action, keyed only by what it reads:
     # the projection, the sources and the package roots. An edit the
@@ -67,39 +116,7 @@ def _debundle_pipeline_impl(ctx):
         analysis_threads = ctx.attr.analysis_threads,
     )
 
-    output_groups = {
-        "analysis": depset([projection, analysis]),
-        "debundler": depset([ctx.executable.debundler]),
-        "projector": depset([ctx.executable.projector]),
-        "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
-    }
-    _run_debundler(
-        ctx,
-        inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [plan.inputs]),
-        outputs = [out_dir],
-        command = _pipeline_command(ctx, plan, analysis, []),
-        mnemonic = "DebundlePipeline",
-        progress = "Running debundle pipeline for %{label}",
-    )
-    if ctx.attr.split_dependency_graphs:
-        # Register an independent, on-demand export. DefaultInfo never reaches
-        # this action; it consumes the exact SAME Analyze artifact as Pipeline.
-        graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
-        graph_plan = _debundle_pipeline_plan(ctx, graphs_dir.short_path, include_full_streams = False)
-        _run_debundler(
-            ctx,
-            inputs = depset([analysis], transitive = [graph_plan.inputs]),
-            outputs = [graphs_dir],
-            command = _pipeline_command(ctx, graph_plan, analysis, [
-                "--graphs",
-                "--reports-only",
-                shell.quote(graphs_dir.short_path),
-            ], allow_gate_rejection = True),
-            mnemonic = "DebundleExportGraphs",
-            progress = "Exporting full debundle graphs for %{label}",
-        )
-        output_groups["dependency_graphs"] = depset([graphs_dir])
-    return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
+    return depset([projection, analysis])
 
 def _pipeline_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = False):
     run_flags = plan.run_flags
@@ -112,10 +129,11 @@ def _pipeline_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = F
         ["--analysis", shell.quote(analysis.short_path)] + extra_flags,
     )
     if ctx.attr.emit_on_rejection or allow_gate_rejection:
-        # Only the typed gate-only rejection passes; other errors fail.
-        return "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] || exit \"$status\"; }}".format(
+        # Reading output must have both the typed status and its marker.
+        return "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] && [ -f {marker} ] || exit \"$status\"; }}".format(
             command = command,
             gate = _GATE_REJECTED_EXIT_CODE,
+            marker = shell.quote(paths.join(plan.out_root, "GATE_REJECTED")),
         )
     return command
 
@@ -184,11 +202,11 @@ def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
         source_root = _tree_source_root_arg(ctx)
         spec_args = [
             "--tree-config",
-            _shell_source_path(paths.join(pkg, ctx.attr.tree_config)),
+            _shell_source_path(ctx.file.tree_config.path),
             "--tree-modules",
             _shell_source_path(paths.join(pkg, ctx.attr.tree_modules)),
             "--tree-vendor-marks",
-            _shell_source_path(paths.join(pkg, ctx.attr.tree_vendor_marks)),
+            _shell_source_path(ctx.file.tree_vendor_marks.path),
             # Source-relative paths embedded in the tree config YAML
             # (e.g. `inputs.js_list_path`) resolve against this root.
             "--tree-source-root",
@@ -219,7 +237,7 @@ def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
                      [ctx.attr.tree_source_root[DefaultInfo].files],
     )
     inputs = depset(
-        direct = [ctx.file.spec] if ctx.file.spec else [],
+        direct = [ctx.file.spec] if ctx.file.spec else [ctx.file.tree_config, ctx.file.tree_vendor_marks],
         transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
                      [source_inputs],
     )
@@ -232,6 +250,7 @@ def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
         source_root = source_root,
         source_inputs = source_inputs,
         inputs = inputs,
+        out_root = out_root,
     )
 
 def _tree_source_root_arg(ctx):
@@ -281,6 +300,10 @@ def _shell_execroot_path(execroot_relative):
     return "\"${{OLDPWD}}/{}\"".format(execroot_relative)
 
 _DEBUNDLE_PIPELINE_ATTRS = {
+    "analysis": attr.label(
+        allow_files = [".analysis"],
+        doc = "Optional saved analysis file or filegroup selecting another pipeline's analysis output group. The CLI checks engine, source and projection compatibility. Only assignment, validation and emission actions are registered for this target.",
+    ),
     "analysis_threads": attr.int(
         default = 0,
         doc = "Rayon worker limit for DebundleAnalyze; 0 omits the override, using inherited RAYON_NUM_THREADS or Rayon's default, and positive values set RAYON_NUM_THREADS for that action only.",
@@ -293,14 +316,16 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         allow_single_file = True,
         doc = "Optional flat transform spec YAML. Mutually exclusive with the tree_* attrs.",
     ),
-    "tree_config": attr.string(
-        doc = "Package-relative path to the tree-shaped authoring config YAML.",
+    "tree_config": attr.label(
+        allow_single_file = True,
+        doc = "Source or generated tree-shaped authoring config YAML.",
     ),
     "tree_modules": attr.string(
         doc = "Package-relative path to the directory containing per-module YAML files.",
     ),
-    "tree_vendor_marks": attr.string(
-        doc = "Package-relative path to the tree-shaped vendor marks YAML.",
+    "tree_vendor_marks": attr.label(
+        allow_single_file = True,
+        doc = "Source or generated tree-shaped vendor marks YAML.",
     ),
     "spec_tree_inputs": attr.label_list(
         allow_files = True,
