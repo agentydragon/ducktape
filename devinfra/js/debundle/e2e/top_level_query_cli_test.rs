@@ -582,14 +582,27 @@ const QUERY_SOURCE: &str = "const primary = class Primary {};\nconst firstAlias 
 
 /// `primary` is read at init by both aliases; `middle` is claimed by a module.
 /// The residual owners are `primary`, `firstAlias`, and `secondAlias`.
+/// This split lacks effect coverage for moving `middle` before the class
+/// expression. Read-only queries must remain useful on its rejected graph.
 fn module_home_fixture() -> GraphFixture {
-    GraphFixture::new(
+    let fixture = GraphFixture::rejected(
         QUERY_SOURCE,
         &[(
             "home/middle.yaml",
             "members: [{name: Middle, selector: {binding: {name: middle}}}]\n",
         )],
+    );
+    let assessment: Value = serde_json::from_slice(
+        &fs::read(
+            fixture
+                .graph
+                .with_file_name("candidate_relocation_assessment.json"),
+        )
+        .unwrap(),
     )
+    .unwrap();
+    assert_eq!(assessment["status"], "incomplete", "{assessment}");
+    fixture
 }
 
 /// The string at `field` of every element of `report[key]`.
@@ -996,6 +1009,8 @@ fn modules_propose_limit_keeps_a_prefix_and_reports_the_total() {
     limited_args.extend(["--limit", "1"]);
     let limited = fixture.json(&limited_args);
     assert_eq!(limited["proposals"], json!([all["proposals"][0].clone()]));
+    // This proposal field reports graph readiness; a write still needs the
+    // complete post-edit assessment, independent of these read-only queries.
     assert_eq!(limited["proposals"][0]["landable_today"], true);
     assert_eq!(limited["limits"]["limit"], 1);
     assert_eq!(
