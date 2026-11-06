@@ -128,6 +128,7 @@ def shared_py_image_layers(name, binary, owner = "1000", group = "1000"):
     _runtime_alias(
         name = alias_name + "_symlink",
         binary = binary,
+        visibility = ["//visibility:private"],
     )
     pkg_tar(
         name = alias_name,
