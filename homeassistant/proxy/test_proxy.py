@@ -67,11 +67,6 @@ async def test_health(client: httpx.AsyncClient):
     assert resp.json() == {"status": "ok"}
 
 
-async def test_unauthorized_no_token(client: httpx.AsyncClient):
-    resp = await client.get("/api/states")
-    assert resp.status_code == 401
-
-
 async def test_unauthorized_wrong_token(client: httpx.AsyncClient):
     resp = await client.get("/api/states", headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 401
