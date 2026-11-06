@@ -42,9 +42,11 @@ const HistoryIngressURI = "spiffe://agentplane/history-ingress"
 const NotificationsURI = "spiffe://agentplane/notifications"
 
 // SessionDispatcherURI is the Runner Gateway's Sandbox workload listener.
-const SessionDispatcherURI = "spiffe://agentplane/session-dispatcher"
-// ActionsURI is the Action Service workload listener.
-const ActionsURI = "spiffe://agentplane/actions"
+const (
+	SessionDispatcherURI = "spiffe://agentplane/session-dispatcher"
+	// ActionsURI is the Action Service workload listener.
+	ActionsURI = "spiffe://agentplane/actions"
+)
 
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 

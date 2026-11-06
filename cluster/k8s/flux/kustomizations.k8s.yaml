@@ -4577,6 +4577,10 @@ spec:
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
+      name: actions-workload
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
       name: notifications-workload
       namespace: agentplane-staging
     - apiVersion: trust.cert-manager.io/v1alpha1
