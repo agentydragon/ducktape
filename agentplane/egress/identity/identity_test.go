@@ -49,7 +49,12 @@ func pod(t *testing.T, account auth.Account) *corev1.Pod {
 
 func token(t *testing.T, pod *corev1.Pod) string {
 	t.Helper()
-	token, err := api.PodToken(t.Context(), pod, projectedAudience)
+	return tokenForAudience(t, pod, projectedAudience)
+}
+
+func tokenForAudience(t *testing.T, pod *corev1.Pod, audience string) string {
+	t.Helper()
+	token, err := api.PodToken(t.Context(), pod, audience)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,13 +95,14 @@ func TestVerifyProjectedForSandboxRequiresMatchingAccountAndPodUID(t *testing.T)
 	otherAccount := auth.Account{Namespace: testNamespace, Name: "another-runner"}
 	c := pod(t, otherAccount)
 	v := verifier(t, api.TokenReviews())
+	differentAudience := tokenForAudience(t, a, "https://other.test.invalid")
 	for name, c := range map[string]struct {
 		token  string
 		podUID string
 	}{
 		"same account but different Pod": {token(t, b), string(a.UID)},
 		"different account":              {token(t, c), string(a.UID)},
-		"different audience":             {token(t, a), string(a.UID)},
+		"different audience":             {differentAudience, string(a.UID)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := v.VerifyProjectedForSandbox(t.Context(), map[string]string{projectedAudience: c.token}, runner, c.podUID)

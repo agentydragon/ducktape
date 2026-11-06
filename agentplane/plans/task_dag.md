@@ -2951,11 +2951,11 @@ old paths.
 
 The implementation of [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md)
 under the 2026-11-05 decisions. The SVID authentication slice preserves Sandbox ServiceAccount
-subjects and has its own draft flip/operational hold. The later Identity/account changes stay off
-in staging and are exercised in k3s; `IDENTITY_CUTOVER` is the one change
-with downtime, per [`AGENTS.md`](../AGENTS.md) § Changes that can break staging. Stage edges are
-technical prerequisites; the fan-in to the system tests is a sequencing hold, not a permission to
-start them early.
+subjects and has its own rollout hold: existing Sandbox Pods must be recreated to load the mTLS
+sidecar configuration, and non-Sandbox proxy callers need a separate authentication design before
+the SVID-only proxy is enabled in staging. The later Identity/account changes remain separately
+gated and are exercised in k3s. Stage edges are technical prerequisites; the fan-in to the system
+tests is a sequencing hold, not a permission to start them early.
 
 ```mermaid
 flowchart LR
