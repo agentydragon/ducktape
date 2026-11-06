@@ -43,6 +43,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -117,11 +118,7 @@ type running struct {
 
 func testDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	return db
 }
 

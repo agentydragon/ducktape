@@ -20,7 +20,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -135,11 +134,7 @@ type served struct {
 func serve(t *testing.T) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, dsn)
 	// The LISTEN connection is named so a test can drop it.
 	listening, err := url.Parse(dsn)
 	if err != nil {

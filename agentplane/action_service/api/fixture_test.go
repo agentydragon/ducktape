@@ -28,6 +28,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -301,11 +302,7 @@ func serveWithPolicy(
 ) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, dsn)
 	// The LISTEN connection is named so a test can drop it.
 	listening, err := url.Parse(dsn)
 	if err != nil {

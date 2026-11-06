@@ -1,10 +1,10 @@
 package probes
 
 import (
-	"database/sql"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -15,11 +15,7 @@ func TestReadinessNeedsTheWakeupsTheDatabaseAndAServiceThatIsNotDraining(t *test
 		"no database": func(p *Probes) { p.db.Close() },
 	} {
 		t.Run(name, func(t *testing.T) {
-			db, err := sql.Open("postgres", integrationDatabase.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { db.Close() })
+			db := postgres.Open(t, integrationDatabase.URL)
 			hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, "test_probes")
 			if err != nil {
 				t.Fatal(err)

@@ -23,7 +23,6 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	_ "github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
@@ -352,11 +351,7 @@ func start(t *testing.T, configure ...func(*Config)) *harness {
 
 func startWithResource(t *testing.T, resource func(*Server) http.Handler, configure ...func(*Config)) *harness {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.Clone(t))
 	h := &harness{
 		db: db, callers: &testCallers{accounts: []workloadauth.Account{callerAccount, otherAccount}},
 		upstream: newFakeUpstream(t), documents: newDocumentServer(t),

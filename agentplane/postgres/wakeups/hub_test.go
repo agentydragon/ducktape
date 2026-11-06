@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/lib/pq"
 )
 
@@ -15,11 +16,7 @@ const awaitBound = 30 * time.Second
 
 func openDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	return db
 }
 

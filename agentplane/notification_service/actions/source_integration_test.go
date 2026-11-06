@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -148,11 +149,7 @@ type fixture struct {
 // newFixture starts from a database without the other tests' inboxes: Claim takes whichever inbox is due.
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	db, err := sql.Open("postgres", database.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, database.URL)
 	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
 		t.Fatal(err)
 	}

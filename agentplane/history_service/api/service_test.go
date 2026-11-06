@@ -25,6 +25,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -105,11 +106,7 @@ func newServerWithDelegation(
 	uidReader auth.ServiceAccountUIDReader,
 ) testServer {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, storage.ChannelHistory, projection.ChannelSummaries, storage.ChannelSessions)
 	if err != nil {
 		t.Fatal(err)

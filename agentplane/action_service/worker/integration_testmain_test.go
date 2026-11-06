@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
@@ -60,11 +59,7 @@ func newFixture(t *testing.T) fixture {
 
 func open(t *testing.T, url string) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, url)
 	return db
 }
 

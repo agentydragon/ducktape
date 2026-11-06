@@ -25,6 +25,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -252,11 +253,7 @@ func newIsolatedHarness(t *testing.T, settings Settings) *harness {
 
 func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settings) *harness {
 	t.Helper()
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, databaseURL)
 	h := &harness{
 		db: db, settings: settings, sandboxes: &fakeSandboxes{view: matchingSandbox()},
 		history: &fakeHistory{}, dispatcher: &fakeDispatcher{accountUID: "test-account-uid"}, actions: newFakeProvider(),
