@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/forgejo-token-rotation
-    newTag: devel-20261106052114-1b91b70 # {"$imagepolicy": "flux-system:forgejo-token-rotation:tag"}
+    newTag: devel-20261106185816-7b55922 # {"$imagepolicy": "flux-system:forgejo-token-rotation:tag"}
