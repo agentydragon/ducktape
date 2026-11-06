@@ -168,7 +168,7 @@ The environment-runner is an Anthropic-built Go binary that orchestrates Claude 
 output and examples for `release-ba76006550-ext`. The
 [setup flag inventory](../re/SETUP_FLAGS_INVENTORY.md) and
 [environment-manager RE guide](../re/environment_manager/README.md) describe earlier
-builds; use this capture for the current command surface.
+builds; use this capture for that version's command surface.
 
 `setup` preinstalls Claude Code and Sandbox Runtime but neither starts a session nor
 disables per-session auto-updates.
@@ -176,8 +176,9 @@ disables per-session auto-updates.
 execute hook (session JSON on stdin) or `task-run --input-format=v1`; the default
 backend is `sandbox-runtime`. `poll` makes one non-blocking request, and `task-run`
 accepts v0/v1 JSON on stdin.
-Self-hosted polling requires `ENVIRONMENT_SERVICE_KEY`; explicit environment and
-organization IDs are checked against `whoami`.
+Self-hosted polling requires a service key from `ENVIRONMENT_SERVICE_KEY` or
+`--service-key-file`; explicit environment and organization IDs are checked against
+`whoami`.
 
 ### Preloaded Claude Process
 
@@ -609,8 +610,9 @@ Stop hook and allows the `Skill` permission.
 
 The image's [stop-hook script](../rootfs/home/claude/.claude/stop-hook-git-check.sh)
 prevents exit when the repo has staged or unstaged changes, non-ignored untracked files,
-or commits not pushed to its tracking remote (falling back to `origin/HEAD` for a new
-branch). It returns successfully for recursive hook calls and outside Git repositories.
+or commits ahead of `origin/<branch>` (falling back to `origin/HEAD` only if that branch
+ref is absent). It returns successfully for recursive hook calls and outside Git
+repositories.
 
 ### Session Start Hook Skill
 
