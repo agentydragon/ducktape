@@ -21,6 +21,7 @@ from fastmcp.client.transports import FastMCPTransport
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.testing.helpers import unwrap_result
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 BASE_URL = "https://grocy.example.com/api"
@@ -69,9 +70,7 @@ async def test_add_stock_post_not_retried_when_get_fails(mcp_client: tuple[Clien
     result = await client.call_tool(
         "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
     )
-    sc = result.structured_content
-    assert sc is not None
-    op = sc["result"][0]
+    op = unwrap_result(result)[0]
     assert op["kind"] == "ok", f"expected ok, got: {op}"
     assert op["new_amount"] is None  # GET failed
     assert op["qu_name"] == "pieces"
@@ -94,9 +93,7 @@ async def test_add_stock_post_not_retried_on_server_error(mcp_client: tuple[Clie
     result = await client.call_tool(
         "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
     )
-    sc = result.structured_content
-    assert sc is not None
-    op = sc["result"][0]
+    op = unwrap_result(result)[0]
     assert op["kind"] == "error", f"expected error, got: {op}"
     assert post_route.calls.call_count == 1, "mutating POST must not be resent after an HTTP 500"
     assert "may or may not have been applied" in op["error"]
@@ -114,9 +111,7 @@ async def test_mutating_post_not_retried_on_timeout(mcp_client: tuple[Client, re
     result = await client.call_tool(
         "stock_consume", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
     )
-    sc = result.structured_content
-    assert sc is not None
-    op = sc["result"][0]
+    op = unwrap_result(result)[0]
     assert op["kind"] == "error", f"expected error, got: {op}"
     assert post_route.calls.call_count == 1, "mutating POST must be sent exactly once on timeout"
     error = op["error"]
@@ -134,9 +129,7 @@ async def test_read_get_still_retried_on_timeout(mcp_client: tuple[Client, respx
     )
 
     result = await client.call_tool("stock_get", {"products": [], "locations": []})
-    sc = result.structured_content
-    assert sc is not None
-    assert sc["result"] == []
+    assert unwrap_result(result) == []
     assert stock_route.calls.call_count == 2, "read GET should retry after a timeout"
 
 
@@ -147,9 +140,7 @@ async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.
     result = await client.call_tool(
         "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "grams", "location": "TestLoc"}]}
     )
-    sc = result.structured_content
-    assert sc is not None
-    op = sc["result"][0]
+    op = unwrap_result(result)[0]
     assert op["kind"] == "error", f"expected error for wrong QU, got: {op}"
     assert "pieces" in op["error"], "error should mention the expected stock QU"
 
@@ -170,9 +161,7 @@ async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_clien
     result = await client.call_tool(
         "stock_consume", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
     )
-    sc = result.structured_content
-    assert sc is not None
-    op = sc["result"][0]
+    op = unwrap_result(result)[0]
     assert op["kind"] == "error", f"expected error, got: {op}"
     expected_body = httpx2.Response(status_code=400, json=error_payload).text
     assert op["error"] == (

@@ -233,6 +233,7 @@ py_test(
         ":conftest",
         ":mcp_types",
         "//:conftest",
+        "//grocy_mcp/testing:helpers",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
