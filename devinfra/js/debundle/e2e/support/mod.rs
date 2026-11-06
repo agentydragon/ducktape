@@ -52,6 +52,7 @@ const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static FAILED_FIXTURE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Fixture {
     pub chunk_id: String,
@@ -195,6 +196,9 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     }
     args.extend_from_slice(extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
+    if !result.status.success() {
+        preserve_failed_fixture_reports(&setup, opts.chunk_id);
+    }
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -224,6 +228,39 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
         harness_root: setup.browser_harness.map(|harness| harness.out_dir),
         source_path: setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
         _root: setup.root,
+    }
+}
+
+/// Preserve assessment evidence before an unexpected exit drops its tempdir.
+/// Earlier pipeline failures can legitimately precede individual reports.
+fn preserve_failed_fixture_reports(setup: &PreparedFixture, chunk_id: &str) {
+    let output = PathBuf::from(
+        std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
+            .expect("Bazel undeclared outputs directory is set"),
+    )
+    .join("failed-fixtures")
+    .join(format!(
+        "{}{}",
+        current_test_prefix(),
+        FAILED_FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed),
+    ));
+    fs::create_dir_all(&output).expect("create failed fixture report directory");
+    fs::copy(&setup.spec_path, output.join("transform_spec.yaml"))
+        .expect("preserve failed fixture spec");
+    for name in [
+        "candidate_relocation_assessment.json",
+        "effect_translation_validation.json",
+        "dependency_graph.json.gz",
+    ] {
+        let source = setup.report_root.join(chunk_id).join(name);
+        if source.exists() {
+            fs::copy(&source, output.join(name)).unwrap_or_else(|error| {
+                panic!(
+                    "preserve failed fixture report {}: {error}",
+                    source.display()
+                )
+            });
+        }
     }
 }
 
@@ -451,6 +488,9 @@ fn run_rejection_fixture_with_options(
     }
     args.extend_from_slice(extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
+    if result.status.code() != Some(exit_code) {
+        preserve_failed_fixture_reports(&setup, opts.chunk_id);
+    }
     assert_eq!(
         result.status.code(),
         Some(exit_code),
