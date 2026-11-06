@@ -91,7 +91,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway_workload,
     staging,
 )
-from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
+from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import (
     artifact,
     artifact_generators as artifact_generators_factory,
@@ -239,12 +239,7 @@ from cluster.cdk8s.parked import (
     flux_kustomizations as parked_flux_kustomizations,
     haku_openclaw_spike_backup,
 )
-from cluster.cdk8s.plaid_mcp import (
-    app as plaid_mcp_app,
-    db as plaid_mcp_db,
-    pgweb as plaid_mcp_pgweb,
-    spend as plaid_mcp_spend,
-)
+from cluster.cdk8s.plaid_mcp import component as plaid_mcp_component
 from cluster.cdk8s.platform_sessions import app as platform_sessions_app
 from cluster.cdk8s.public_coder import app as public_coder_app, backup as public_coder_backup
 from cluster.cdk8s.seaweedfs import (
@@ -288,7 +283,6 @@ def generate_manifests(root: Path) -> None:
     litellm_proxy.write_manifests(root, mesh)
     litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
-    agents_namespaces.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
     tofu_state_db.write_manifests(root)
     mcp_oauth_state.write_manifests(root)
@@ -309,10 +303,6 @@ def generate_manifests(root: Path) -> None:
         grocy_app.write_manifests(root, household, mcp_dir=grocy_mcp.output_dir(household))
     grocy_user_perms.write_manifests(root)
     oci_cache_zot.write_manifests(root)
-    plaid_mcp_app.write_manifests(root)
-    plaid_mcp_db.write_manifests(root)
-    plaid_mcp_pgweb.write_manifests(root)
-    plaid_mcp_spend.write_manifests(root)
     tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
@@ -1460,10 +1450,11 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     agents_flux_kustomizations.plaid_spend_policy(flux_chart)
-    plaid_mcp_artifact = artifact("plaid-mcp", f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp")
-    plaid_mcp_kustomization = agents_flux_kustomizations.plaid_mcp(
+    plaid_mcp_artifact = artifact("plaid-mcp", plaid_mcp_component.OUTPUT_DIR)
+    plaid_mcp_directory = plaid_mcp_component.write_directory(root, plaid_mcp_artifact)
+    plaid_mcp_kustomization = plaid_mcp_component.plaid_mcp(
         flux_chart,
-        plaid_mcp_artifact,
+        plaid_mcp_directory,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         authentik_kustomization,

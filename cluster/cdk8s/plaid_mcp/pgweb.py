@@ -11,23 +11,18 @@ for a sandbox that sends a placeholder; the network policy admits nothing but th
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp import db
-from cluster.cdk8s.plaid_mcp.app import NAMESPACE
+from cluster.cdk8s.plaid_mcp.db import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 _NAME = "plaid-pgweb"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 # Clients use the default HTTP port; pgweb's unprivileged container still listens on 8081.
@@ -172,7 +167,3 @@ def chart(app: App) -> Chart:
         egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": _DB_CLUSTER}, 5432)],
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart, manifest_name="pgweb.k8s.yaml")
