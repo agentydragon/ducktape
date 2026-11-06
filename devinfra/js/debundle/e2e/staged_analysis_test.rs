@@ -3902,6 +3902,7 @@ fn initializer_source_only_reuses_raw_analysis_and_changes_materialized_effects(
         source: &'static str,
         binding: &'static str,
         members: &'static [&'static str],
+        anonymous_statements: &'static [&'static str],
         static_footprint: &'static [(&'static str, &'static str)],
         output: &'static str,
         expects_rebind: bool,
@@ -3916,6 +3917,7 @@ var later = 0;\n\
 console.log(result, later);\n",
             binding: "result",
             members: &["seed", "factory", "result", "later"],
+            anonymous_statements: &[],
             static_footprint: &[("seed", "eager_use"), ("factory", "hoisted_use")],
             output: "41 0\n",
             expects_rebind: true,
@@ -3934,6 +3936,10 @@ console.log(table[0], later, globalThis.saved === readLater);\n\
 export { table, readLater };\n",
             binding: "table",
             members: &["readLater", "table", "later"],
+            anonymous_statements: &[
+                "globalThis.saved = readLater;",
+                "console.log(table[0], later, globalThis.saved === readLater);",
+            ],
             static_footprint: &[],
             output: "0 ready true\n",
             expects_rebind: false,
@@ -3947,7 +3953,14 @@ export { table, readLater };\n",
                 .iter()
                 .map(|name| Member::new(*name))
                 .collect::<Vec<_>>();
-            let mut opts = FixtureOpts::new(case.source, vec![logical_module("all", &members)]);
+            let mut opts = FixtureOpts::new(
+                case.source,
+                vec![logical_module_with_anon(
+                    "all",
+                    &members,
+                    case.anonymous_statements,
+                )],
+            );
             if case.array_integrity_premise {
                 opts = opts.with_program_premises(ProgramPremises {
                     intrinsics_never_written: Some(IntrinsicsNeverWritten {

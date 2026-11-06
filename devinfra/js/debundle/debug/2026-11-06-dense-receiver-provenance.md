@@ -72,6 +72,13 @@ Constructing typed `ProgramPremises` and `IntrinsicFamily::Array` removes that
 serialization round trip. The initial negative-read fixture passed; the
 corrected positive fixture remains subject to automatic PR CI.
 
+The next CI run exposed a separate fixture ownership error: selecting all
+bindings left its anonymous callback publication and console observer in the
+residual module, creating a genuine side-effect/reader cycle before the
+provenance assertion was checked. The fixture now explicitly co-locates those
+statements using the existing anonymous-statement helper. Binding selection
+alone is not complete source-unit ownership, even in a tiny reproduction.
+
 ## Diagnostic lesson
 
 An effect labeled observed means the abstraction recorded a non-fallback
