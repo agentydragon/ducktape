@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net"
 	"os"
 	"strings"
 	"testing"
@@ -15,7 +14,6 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	targetpb "github.com/buildbuddy-io/buildbuddy/proto/target"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -61,20 +59,6 @@ func (s *targetTestServer) GetTargetFlakeSamples(_ context.Context, req *targetp
 		return nil, grpcstatus.Error(codes.InvalidArgument, "unexpected page token")
 	}
 	return page, nil
-}
-
-func startTargetTestServer(t *testing.T, service *targetTestServer) {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen for gRPC test server: %v", err)
-	}
-	server := grpc.NewServer()
-	bbspb.RegisterBuildBuddyServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	t.Setenv("BUILDBUDDY_API_KEY", "test-key")
-	t.Setenv("BUILDBUDDY_URL", "http://"+listener.Addr().String())
 }
 
 func decodeTargetHistoryPage(t *testing.T, data []byte) *targetpb.GetTargetHistoryResponse {
@@ -186,7 +170,7 @@ func TestTargetHistoryPaginatesMergesAndFiltersBothOutputModes(t *testing.T) {
 					"page-3": decodeTargetHistoryPage(t, thirdPage),
 				},
 			}
-			startTargetTestServer(t, service)
+			startBuildBuddyTestServer(t, service)
 
 			previousJSONOutput := jsonOutput
 			jsonOutput = tc.jsonOutput
@@ -278,7 +262,7 @@ func TestTargetStatsPassesFiltersAndPreservesDefaultWindow(t *testing.T) {
 					Invocation: []*invocationpb.Invocation{{Acl: &aclpb.ACL{GroupId: "test-group"}}},
 				},
 			}
-			startTargetTestServer(t, service)
+			startBuildBuddyTestServer(t, service)
 
 			previousJSONOutput := jsonOutput
 			jsonOutput = true
@@ -343,7 +327,7 @@ func TestTargetFlakesPaginatesAndReturnsCombinedJSON(t *testing.T) {
 			"page-2": decodeTargetFlakePage(t, []byte(`{"samples":[{"invocationId":"sample-3"}]}`)),
 		},
 	}
-	startTargetTestServer(t, service)
+	startBuildBuddyTestServer(t, service)
 
 	previousJSONOutput := jsonOutput
 	jsonOutput = true
@@ -420,7 +404,7 @@ func TestTargetFlakesRejectsRepeatedPageTokenBeforeOutput(t *testing.T) {
 			"page-2": decodeTargetFlakePage(t, []byte(`{"samples":[{"invocationId":"sample-2"}],"nextPageToken":"page-2"}`)),
 		},
 	}
-	startTargetTestServer(t, service)
+	startBuildBuddyTestServer(t, service)
 
 	previousJSONOutput := jsonOutput
 	jsonOutput = true

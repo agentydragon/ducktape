@@ -70,67 +70,10 @@ whether an in-bounds range cites the right lines.
 
 ### 3. Issue File Templates
 
-**True Positive (issue that should be caught):**
-
-```yaml
-rationale: |
-  Dead code should be removed. Lines 145-167 define a function
-  that is never called anywhere in the codebase.
-should_flag: true
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      src/cli.py:
-        - [145, 167]
-    # critic_scopes_expected_to_recall auto-inferred for single-file issues
-```
-
-**Multi-file issue (requires explicit critic_scopes_expected_to_recall):**
-
-```yaml
-rationale: |
-  Duplicated enum definitions. Both files define the same Status enum,
-  creating a maintenance burden and potential for drift.
-should_flag: true
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      src/types.py:
-        - [6, 10]
-      src/persist.py:
-        - [54, 58]
-    critic_scopes_expected_to_recall:
-      - [src/types.py] # Catch from either file
-      - [src/persist.py]
-```
-
-**Note on `critic_scopes_expected_to_recall`:** This field specifies which minimal file sets are needed to detect the issue. It's used to generate focused training examples per-file rather than only full-snapshot reviews. See [Training Strategy](../../docs/training_strategy.md) for details on how this enables the per-file examples approach and tighter optimization feedback loops.
-
-**Multiple occurrences (with notes):**
-
-```yaml
-rationale: |
-  Imperative list building should use comprehensions. Replace
-  `result = []; for x in items: result.append(f(x))` with
-  `[f(x) for x in items]` for cleaner, more Pythonic code.
-should_flag: true
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      src/agents.py:
-        - [50, 59]
-    note: "In _convert_pending_approvals()"
-    critic_scopes_expected_to_recall:
-      - [src/agents.py]
-
-  - occurrence_id: occ-1
-    files:
-      src/bridge.py:
-        - [64, 108]
-    note: "In list_approvals()"
-    critic_scopes_expected_to_recall:
-      - [src/bridge.py]
-```
+Use the [format specification](format_spec.md#issue-file-format-yaml) for canonical TP/FP
+templates, occurrence fields, line-range syntax, inference rules, and Pydantic models.
+`critic_scopes_expected_to_recall` drives the focused examples described in the
+[Training Strategy](../../docs/training_strategy.md).
 
 **Rationale vs Occurrence Notes:**
 
@@ -138,56 +81,6 @@ Rationale can be specific—include file names, line numbers, concrete details. 
 
 - **Single occurrence:** Rationale contains all details. No note needed.
 - **Multiple occurrences:** Rationale describes the shared pattern. Notes identify each instance.
-
-**Single occurrence (specific rationale):**
-
-```yaml
-rationale: |
-  `_build_host_config` (lines 122-130) silently ignores `opts.volumes` when it's
-  a list[str], despite the type allowing it (line 54). Handle both cases or
-  remove list[str] from the type.
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      container_session.py:
-        - [54, 54]
-        - [122, 130]
-```
-
-**Multiple occurrences (notes distinguish instances):**
-
-```yaml
-rationale: |
-  Multiple fields use str instead of AgentID newtype. Use proper type.
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      container.py: [[45, 45]]
-    note: "agent_id field in AgentContainer"
-  - occurrence_id: occ-1
-    files:
-      registry.py: [[89, 89]]
-    note: "id parameter in get_agent()"
-```
-
-**False Positive:**
-
-```yaml
-rationale: |
-  Critics might flag this duplication as problematic because the button styles
-  are repeated across components. However, our ground truth is that this is
-  intentional for visual consistency - we want all interactive elements to
-  have identical hover/active states for UX coherence.
-should_flag: false
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      src/Button.svelte:
-        - [45, 60]
-      src/Link.svelte:
-        - [32, 47]
-    # relevant_files auto-inferred from files keys
-```
 
 **False Positive Rationale Format:**
 
@@ -209,22 +102,7 @@ The exact phrasing can vary - the key is to acknowledge what looks problematic w
 
 ### 4. Detection Standard for `critic_scopes_expected_to_recall`
 
-See format_spec.md for line range formats and auto-inference rules.
-
-**The key question:** "If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"
-
-**What "reviewing a file" includes:**
-
-- Reading the file thoroughly line by line
-- Following imports and calls to check APIs
-- Searching the codebase for existing helpers/patterns
-- Looking for duplication or similar patterns
-- All normal thorough code review activities
-
-**What it does NOT mean:**
-
-- "Can you detect this reading ONLY these files in complete isolation?"
-- "Without following any imports or doing any searches?"
+The canonical standard and file-set semantics are in the [format specification](format_spec.md#detection-standard-critic_scopes_expected_to_recall). These examples focus on choosing the files needed to recognize an issue.
 
 **Examples:**
 
@@ -298,86 +176,19 @@ When the plausible fix is "wire it up," note this in the occurrence's `note` fie
 
 ### 5. Setting `match_file_restriction` (Optional)
 
-**Purpose:** This field is a grading optimization. When set, critiques that report issues only in files OUTSIDE this set are skipped during matching (assumed non-match without semantic comparison).
-
-**Relationship to `critic_scopes_expected_to_recall`:**
-
-- `critic_scopes_expected_to_recall` = where the issue can be DETECTED from (training signal)
-- `match_file_restriction` = where the issue can be validly REPORTED (grading optimization)
-
-These are independent. An issue detectable from file A might be validly reported in files A, B, or C.
-
-**When to set it:**
-
-- Single-file issues where the problem is fully contained → set to that file
-- Issues that can only be described from specific files → set to those files
-
-**When to leave it NULL (omit):**
-
-- Cross-cutting issues that could be reported from many files
-- When unsure about the complete set of valid reporting locations
-- Issues with dual framing (e.g., "X calls missing method" vs "Y is missing method callers expect")
+See the [format specification](format_spec.md#match-file-restriction-match_file_restriction) for field semantics and examples.
 
 **Validation test:** Can you produce a valid critique phrasing that accurately describes this issue but tags a file outside the set?
 
 - **If yes** → the set is too narrow, expand it or use NULL
 - **If no** → the set is safe to use
 
-**Example - safe to set:**
-
-```yaml
-# Issue: Useless docstring that restates the function signature
-# Can only be reported from the file containing the docstring
-match_file_restriction:
-  - src/persist.py
-```
-
-**Example - must include multiple files or use NULL:**
-
-```yaml
-# Issue: agents.py calls agent.abort() which doesn't exist
-# Valid framings:
-#   - "agents.py calls nonexistent method" (tag agents.py)
-#   - "agent.py missing abort() that callers expect" (tag agent.py)
-match_file_restriction:
-  - src/agents.py
-  - src/agent.py
-```
-
 **Antipattern - splitting producer/consumer issues:**
 
-Don't split a single logical issue into separate occurrences by file with narrow `match_file_restriction`. Example of what NOT to do:
-
-```yaml
-# WRONG: Split into two occurrences with narrow sets
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      runtime.py:
-        - [249, 253] # passes hardcoded False
-    match_file_restriction: [runtime.py] # TOO NARROW
-  - occurrence_id: occ-1
-    files:
-      status_shared.py:
-        - [42, 56] # has unreachable code
-    match_file_restriction: [status_shared.py] # TOO NARROW
-```
-
-This fails because a critique like "status_shared.py has dead code because runtime.py passes False" could validly tag either file. Instead, merge into one occurrence:
-
-```yaml
-# CORRECT: Single occurrence with both files
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      runtime.py:
-        - [249, 253]
-      status_shared.py:
-        - [42, 56]
-    match_file_restriction:
-      - runtime.py
-      - status_shared.py
-```
+Don't split one producer/consumer issue into separate occurrences with narrow restrictions.
+Put both files in one occurrence and allow both valid reporting locations; for example, include
+both `runtime.py` and `status_shared.py` when a hardcoded value in the former makes code in
+the latter unreachable.
 
 See @only_matchable_labels.md for more labeled examples.
 

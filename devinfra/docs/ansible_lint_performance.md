@@ -1,119 +1,48 @@
-# Ansible-Lint Performance
+# Ansible-Lint Performance (Historical)
 
-## Setup
+## Current checks and setup
 
-Two-tier: pre-commit runs `ansible-playbook --syntax-check` per playbook
-(~1–3s, via `ansible/scripts/run-syntax-check.sh`) — catches YAML/template
-syntax errors, undefined variables, invalid module names. CI runs full
-`ansible-lint` on all playbooks when `ansible/` changes (~42s, via
-`.github/scripts/run-ansible-lint.sh`) — adds style, best-practice,
-deprecation, and security rules. Full lint locally when needed:
+Pre-commit's root-level playbook filter is in
+[`.pre-commit-config.yaml`](../../.pre-commit-config.yaml); it runs
+`ansible-playbook --syntax-check` through
+[`run-syntax-check.sh`](../../ansible/scripts/run-syntax-check.sh). CI runs full
+`ansible-lint` (style, best-practice, deprecation and security rules) when `ansible/`
+changes; the
+[`ansible-lint` workflow](../../.github/workflows/ansible-lint.yml) installs Python,
+Ansible and `ansible-lint`, then the project's Galaxy roles and collections, before
+calling [`run-ansible-lint.sh`](../../.github/scripts/run-ansible-lint.sh). The
+[linting guide](linting.md#ci-boundaries) describes this split and its owners.
+
+For a focused local run, use `cd ansible` followed by:
 
 ```bash
-cd ansible
-ansible-lint --config-file ../.ansible-lint.yaml [wyrm.yaml]
+ansible-lint --project-dir . --config-file ../.ansible-lint.yaml [playbook.yaml]
 ```
 
-## Why CI takes 42s (expected)
+## Earlier profiling and unsubmitted proposals
 
-`ansible-playbook --syntax-check` spawns a fresh Ansible per playbook
-(0.6–2s each; no multi-playbook invocation exists) — upstream limitation
-confirmed in [ansible-lint discussion #1256](https://github.com/ansible/ansible-lint/discussions/1256);
-no fix available. Our 191 files at 0.22s/file is better than typical
-(zuul-roles: 330+ files, 80s). If `python3 -c "import yaml; print(yaml.__with_libyaml__)"`
-prints `False`, reinstalling pyyaml with libyaml shaves a few seconds.
+The figures below come from earlier notes, not current CI timings. The
+optimization proposals were recorded as unsubmitted. Source locations are those
+recorded by the profile.
 
-## Potential Upstream Optimizations (Not Yet Submitted)
+| Area and profile evidence                                                                                                                                                                 | Proposed optimization                                                                                       | Estimated saving | Recorded complexity / risk |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------- | -------------------------- |
+| `get_deps_versions()` at `src/ansiblelint/config.py:282`: 3,652 calls per run.                                                                                                            | Add `@functools.cache`.                                                                                     | 5–6s             | Trivial / none             |
+| `kind_from_path()` at `src/ansiblelint/file_utils.py:139`: 39,334 `posix.stat()` calls, up to 7 per file.                                                                                 | Cache file-type detection with `@functools.lru_cache(maxsize=1024)`.                                        | 2–3s             | Trivial / low              |
+| `_sanitize_task()` at `src/ansiblelint/utils.py:712`: 1.3 million `copy.deepcopy()` calls.                                                                                                | Copy the task's top level, then copy only mutable nested values that need it.                               | 1.5–2s           | Medium / medium            |
+| Subprocess work: `ansible-config dump`, `ansible --version`, and `ansible-galaxy` collection install/list calls took about 0.75s each; syntax checks were measured at 1.15s per playbook. | Cache collection metadata, skip version checks in offline mode, and cache `ansible-doc` module information. | 2–4s             | Medium / low               |
 
-From profiling this repo's runs; could be PRs to ansible/ansible-lint:
+The profile summary estimated 11–15s total savings, moving a roughly 42s run to
+27–31s; it said about 20s of per-playbook subprocess overhead would remain. Earlier
+notes recorded syntax checks at 1–3s per playbook, and the profile measured them at
+0.6–2s (using 1.15s in its subprocess estimate). The same note recorded 191 files at
+0.22s per file and compared that run with zuul-roles (330+ files in 80s). These are
+historical estimates and comparisons, not current benchmarks or upstream guarantees.
 
-### Issue #1: Cache Package Version Lookups (5-6s savings)
+The earlier notes attributed repeated startup to the per-playbook syntax check
+([upstream discussion](https://github.com/ansible/ansible-lint/discussions/1256));
+recheck upstream before treating that batching limitation as current.
 
-**Location**: `src/ansiblelint/config.py:282` in `get_deps_versions()`
-
-**Problem**: Function called **3,652 times** per run, queries package metadata each time.
-
-**Fix**: Add `@functools.cache` decorator
-
-```python
-from functools import cache
-
-@cache
-def get_deps_versions() -> dict[str, Version | None]:
-    """Return versions of most important dependencies."""
-    # ... existing code ...
-```
-
-**Impact**: 5-6 seconds, trivial complexity, zero risk
-
-### Issue #2: Cache File Type Detection (2-3s savings)
-
-**Location**: `src/ansiblelint/file_utils.py:139` in `kind_from_path()`
-
-**Problem**: **39,334 calls** to `posix.stat()`, up to 7 stat operations per file.
-
-**Fix**: Add `@functools.lru_cache` decorator
-
-```python
-from functools import lru_cache
-
-@lru_cache(maxsize=1024)
-def kind_from_path(path: Path, *, base: bool = False) -> FileType:
-    """Determine the file kind based on its name."""
-    # ... existing code ...
-```
-
-**Impact**: 2-3 seconds, trivial complexity, low risk
-
-### Issue #3: Optimize Deep Copying (1.5-2s savings)
-
-**Location**: `src/ansiblelint/utils.py:712` in `_sanitize_task()`
-
-**Problem**: **1.3 million calls** to `copy.deepcopy()`, full recursive copy of task structures.
-
-**Fix**: Use selective copying instead of full deep copy
-
-```python
-def _sanitize_task(task: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
-    """Return a stripped-off task structure compatible with new Ansible."""
-    # Shallow copy the top level
-    result = dict(task)
-
-    # Remove forbidden keys
-    for key in [SKIPPED_RULES_KEY, FILENAME_KEY, LINE_NUMBER_KEY]:
-        result.pop(key, None)
-
-    # Selectively deep copy only mutable nested values
-    for key, value in result.items():
-        if isinstance(value, MutableMapping):
-            result[key] = _sanitize_dict(value)
-        elif isinstance(value, list):
-            result[key] = copy.deepcopy(value)
-
-    return result
-```
-
-**Impact**: 1.5-2 seconds, medium complexity, medium risk
-
-### Issue #4: Reduce Subprocess Overhead (2-4s savings)
-
-**Problem**: Multiple ansible subprocess calls per run: `ansible-config dump`,
-`ansible --version`, `ansible-galaxy collection install/list` (~0.75s each),
-plus the per-playbook syntax check (1.15s each).
-
-**Optimizations**: cache collection metadata, skip version checks in offline
-mode, cache ansible-doc module info.
-
-**Impact**: 2-4 seconds, medium complexity, low risk
-
-### Summary
-
-| Issue                   | Fix            | Complexity | Savings | Risk   |
-| ----------------------- | -------------- | ---------- | ------- | ------ |
-| #1: Package versions    | `@cache`       | Trivial    | 5-6s    | None   |
-| #2: File stats          | `@lru_cache`   | Trivial    | 2-3s    | Low    |
-| #3: Deep copying        | Selective copy | Medium     | 1.5-2s  | Medium |
-| #4: Subprocess overhead | Multiple fixes | Medium     | 2-4s    | Low    |
-
-Total potential: 11-15s (42s → 27-31s); the ~20s of per-playbook subprocess
-overhead remains unavoidable regardless.
+One environment caveat from that profile: when
+`python3 -c "import yaml; print(yaml.__with_libyaml__)"` returned `False`, using a
+PyYAML build with libyaml was reported to save a few seconds.

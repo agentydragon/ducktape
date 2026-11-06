@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -11,7 +10,6 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	invocationstatuspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -30,20 +28,6 @@ func (s *invocationListTestServer) SearchInvocation(_ context.Context, req *invo
 	return proto.Clone(s.pages[req.GetPageToken()]).(*invocationpb.SearchInvocationResponse), nil
 }
 
-func startInvocationListTestServer(t *testing.T, service *invocationListTestServer) {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen for gRPC test server: %v", err)
-	}
-	server := grpc.NewServer()
-	bbspb.RegisterBuildBuddyServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	t.Setenv("BUILDBUDDY_API_KEY", "test-key")
-	t.Setenv("BUILDBUDDY_URL", "http://"+listener.Addr().String())
-}
-
 func (s *invocationListTestServer) capturedRequests() []*invocationpb.SearchInvocationRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -60,7 +44,7 @@ func TestInvocationListFiltersAndPaginatesAllPages(t *testing.T) {
 			Invocation: []*invocationpb.Invocation{{InvocationId: "invocation-2"}},
 		},
 	}}
-	startInvocationListTestServer(t, service)
+	startBuildBuddyTestServer(t, service)
 
 	previousJSONOutput := jsonOutput
 	jsonOutput = true
@@ -145,7 +129,7 @@ func TestInvocationListKeepsDefaultRepoQueryAndSinglePage(t *testing.T) {
 			NextPageToken: "page-2",
 		},
 	}}
-	startInvocationListTestServer(t, service)
+	startBuildBuddyTestServer(t, service)
 	previousJSONOutput := jsonOutput
 	jsonOutput = true
 	t.Cleanup(func() { jsonOutput = previousJSONOutput })
@@ -187,7 +171,7 @@ func TestInvocationListGroupWithoutRepoDoesNotAutodetectRepository(t *testing.T)
 	service := &invocationListTestServer{pages: map[string]*invocationpb.SearchInvocationResponse{
 		"": {Invocation: []*invocationpb.Invocation{{InvocationId: "group-invocation"}}},
 	}}
-	startInvocationListTestServer(t, service)
+	startBuildBuddyTestServer(t, service)
 	previousJSONOutput := jsonOutput
 	jsonOutput = false
 	t.Cleanup(func() { jsonOutput = previousJSONOutput })
@@ -223,7 +207,7 @@ func TestInvocationListAllRejectsRepeatedPageToken(t *testing.T) {
 		"":       {NextPageToken: "repeat"},
 		"repeat": {NextPageToken: "repeat"},
 	}}
-	startInvocationListTestServer(t, service)
+	startBuildBuddyTestServer(t, service)
 	cmd := invocationListCmd()
 	if err := cmd.Flags().Set("group", "test-group"); err != nil {
 		t.Fatal(err)

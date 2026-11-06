@@ -69,17 +69,7 @@ def _snapshot() -> QuotaSnapshot:
 
 async def test_clickhouse_sink_batches_raw_and_typed_rows() -> None:
     requests: list[httpx.Request] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(200, request=request)
-
-    sink = ClickHouseSnapshotSink(
-        url="http://clickhouse:8123",
-        username="aiquota_ingest",
-        password="secret",
-        transport=httpx.MockTransport(handler),
-    )
+    sink = _mock_sink(requests)
 
     assert await sink.write(_snapshot()) == 2
     assert len(requests) == 1
@@ -180,10 +170,12 @@ def _history_snapshot() -> HistorySnapshot:
     )
 
 
-def _mock_sink(requests: list[httpx.Request]) -> ClickHouseSnapshotSink:
+def _mock_sink(
+    requests: list[httpx.Request], *, status_code: int = 200, text: str | None = None
+) -> ClickHouseSnapshotSink:
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, request=request)
+        return httpx.Response(status_code, text=text, request=request)
 
     return ClickHouseSnapshotSink(
         url="http://clickhouse:8123",
@@ -267,17 +259,7 @@ async def test_apply_schema_posts_each_idempotent_statement_alone() -> None:
 async def test_apply_schema_failure_carries_the_explanation_clickhouse_gives() -> None:
     explanation = "Code: 497. DB::Exception: aiquota_ingest: Not enough privileges."
     requests: list[httpx.Request] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(403, text=explanation, request=request)
-
-    sink = ClickHouseSnapshotSink(
-        url="http://clickhouse:8123",
-        username="aiquota_ingest",
-        password="secret",
-        transport=httpx.MockTransport(handler),
-    )
+    sink = _mock_sink(requests, status_code=403, text=explanation)
 
     with pytest.raises(httpx.HTTPStatusError) as raised:
         await sink.apply_schema()

@@ -1,12 +1,29 @@
 package main
 
 import (
+	"net"
 	"testing"
 	"time"
 
 	bbapipb "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi/proto"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	"google.golang.org/grpc"
 )
+
+func startBuildBuddyTestServer(t *testing.T, service bbspb.BuildBuddyServiceServer) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for gRPC test server: %v", err)
+	}
+	server := grpc.NewServer()
+	bbspb.RegisterBuildBuddyServiceServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	t.Setenv("BUILDBUDDY_API_KEY", "test-key")
+	t.Setenv("BUILDBUDDY_URL", "http://"+listener.Addr().String())
+}
 
 func TestMatchGlob(t *testing.T) {
 	tests := []struct {
