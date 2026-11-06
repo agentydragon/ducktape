@@ -29,9 +29,9 @@ from cluster.rotators.attic_jwt_rotation.rotate import (
     ensure_cache,
     mint_admin_jwt,
     mint_attic_token,
-    remaining_hours,
     rotate_one,
 )
+from cluster.rotators.sops_stamps import remaining_hours
 
 
 def _make_jwt(claims: dict) -> str:

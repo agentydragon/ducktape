@@ -20,6 +20,7 @@ py_library(
     srcs = ["rotate.py"],
     deps = [
         ":config",
+        "//cluster/rotators:sops_stamps",
         "//devinfra:prettier_cli",
         "@pypi//httpx",
         "@pypi//pyyaml",

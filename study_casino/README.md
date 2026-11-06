@@ -32,8 +32,8 @@ OIDC Authorization Code (confidential client) in `auth.py`: `/auth/login` → Au
 partial configuration fails settings validation before the app serves requests. With all four
 unset, the app accepts requests as user `default` for local development and tests. Authentik
 resources: `tf/gitops/sso-providers/provider_study_casino.tf`. Users in
-`STUDY_CASINO_ADMIN_USERS` (comma-separated) manage everyone's prize catalogs via `/admin/*`;
-non-admins cannot create or delete prizes, even their own, but redeem against their own tokens.
+`STUDY_CASINO_ADMIN_USERS` (comma-separated) manage everyone's prize catalogs; `/admin/*` is
+read-only. Non-admins may redeem prizes but cannot create, update, or delete them, even their own.
 
 ## State
 
@@ -59,8 +59,8 @@ of the user's tabs). Mutations are `POST /actions/*` (sessions, convert, prizes,
 import/reset) and `POST /casino/{slots,roulette,blackjack}/*`; reads include `/casino/stats`,
 `/admin/casino/stats?user=`, `/game-events`, `/ledger-events`, `/me`, `/healthz`.
 
-- The study timer lives in client `localStorage`; the server sees a session only at
-  `/actions/session/complete`.
+- Active timers live in client `localStorage`; completion and backfill actions create session rows,
+  and `/actions/import` can also restore them.
 - Every action carries a `client_action_id`; a retry returns the original `ledger_events` row
   without replaying the mutation.
 - Historical rows keep their literals: `game_events` before 2026-05-07 have

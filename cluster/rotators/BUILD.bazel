@@ -1,0 +1,8 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "sops_stamps",
+    srcs = ["sops_stamps.py"],
+    visibility = ["//cluster/rotators:__subpackages__"],
+    deps = ["@pypi//pyyaml"],
+)

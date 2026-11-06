@@ -1,7 +1,7 @@
 // Single React hook exposing reactive state + every mutation. The data
 // model is server-authoritative Postgres — no CRDT — and the active
-// study-session timer lives in localStorage on the client (only
-// `/actions/session/complete` ever turns it into a server-side row).
+// study-session timer lives in localStorage on the client. Completion/backfill
+// actions and `/actions/import` can also write session rows.
 //
 //     const casino = useCasino();
 //     casino.credits / casino.tokens / casino.sessions / ...

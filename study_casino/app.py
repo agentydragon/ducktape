@@ -1,44 +1,7 @@
-"""Study Casino backend — REST + thin WebSocket state-changed pings.
+"""Study Casino backend: REST + thin WebSocket state-changed pings.
 
-Wire surface:
-
-  GET  /state                           — full canonical state JSON (per user)
-  POST /actions/session/complete        — commit an active session (timing supplied by client)
-  POST /actions/session/add-past        — backfill a past session
-  POST /actions/session/edit            — rename / re-time a completed session
-  POST /actions/session/delete          — drop a completed session
-  POST /actions/convert                 — credits → tokens
-  POST /actions/prize/create            — add to user prize catalog (admin-only)
-  POST /actions/prize/delete            — remove from user prize catalog (admin-only)
-  POST /actions/prize/update            — rename or reprice a catalog entry (admin-only)
-  POST /actions/prize/redeem            — spend tokens to redeem a prize (caller redeems own)
-  POST /actions/changelog/ack           — advance the caller's changelog read cursor
-  POST /actions/import / reset          — bulk replace / wipe state (snapshot saved)
-  POST /casino/slots/spin               — server-resolved slots
-  POST /casino/roulette/spin            — server-resolved roulette
-  POST /casino/blackjack/{deal,hit,stand,double} — server-resolved blackjack
-  GET  /admin/users                     — admin-only: list known usernames
-  GET  /admin/state                     — admin-only: state_dump for `?user=<u>`
-  GET  /casino/stats                    — aggregated wager/payout stats (caller)
-  GET  /admin/casino/stats              — admin-only: same, for `?user=<u>`
-  GET  /game-events / /ledger-events    — read-only audit listings
-  GET  /deployment                      — runtime image tag / source commit
-  GET  /me / /healthz                   — auth introspection / liveness
-  WS   /ws                              — broadcasts {"type":"state_changed"}
-                                          to every tab of the same user
-                                          after a successful action; clients
-                                          refetch `/state` on receipt.
-
-Active study-session timer state lives in the browser's localStorage —
-the server never sees an in-progress session. Only `/actions/session/complete`
-(or `/actions/session/add-past`) ever inserts a row into the `sessions`
-table.
-
-Multi-user: every authenticated user's state is scoped by `user_id` in
-the shared store. When OIDC is not configured the app falls back to a
-single "default" user, keeping existing tests working. Usernames listed
-in `Settings.admin_users` are admins; they manage other users' prize
-catalogs and have read-only access to other users' states.
+`/deployment` reports the running image tag and source commit. `/admin/state?user=<u>` is
+read-only and lets admins inspect another user's state.
 """
 
 import asyncio
