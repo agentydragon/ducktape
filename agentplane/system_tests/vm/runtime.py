@@ -95,6 +95,7 @@ class VmRuntime:
             yield
 
     def report(self, k3s: K3s, namespace: str) -> str:
+        host_qemu.snapshot_pending(k3s.kubectl, namespace, undeclared_outputs_dir() / "vm-artifacts")
         return vm_sandboxes.report(k3s.kubectl, namespace)
 
     def clean(self, k3s: K3s) -> None:

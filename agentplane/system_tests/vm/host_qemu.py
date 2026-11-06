@@ -238,26 +238,50 @@ def _record_collector_error(root: Path, error: Exception) -> None:
 
 
 def _take_sample(
-    kubectl: Kubectl, namespace: str, launcher: Path, artifact_root: Path, sample: int, stop: threading.Event
+    kubectl: Kubectl,
+    namespace: str,
+    launcher: Path,
+    artifact_root: Path,
+    sample: int,
+    stop: threading.Event,
+    *,
+    phase: str = "shutdown",
 ) -> None:
     pod_uid = _launcher_pod_uid(launcher, namespace)
     pod = launcher.name.removeprefix(f"{namespace}_").rsplit("_", 1)[0]
     directory = artifact_root / "host-qemu" / launcher.name
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"shutdown-{sample}-{time.time_ns()}.txt"
+    path = directory / f"{phase}-{sample}-{time.time_ns()}.txt"
     with path.open("w") as output:
         output.write(
-            f"HOST_QEMU_SNAPSHOT phase=shutdown timestamp={datetime.now(UTC).isoformat(timespec='milliseconds')}\n"
+            f"HOST_QEMU_SNAPSHOT phase={phase} timestamp={datetime.now(UTC).isoformat(timespec='milliseconds')}\n"
             f"launcher={launcher.name} pod={pod} pod_uid={pod_uid}\n"
-            f"request={SHUTDOWN_REQUESTED.decode()} proof_absent_after={REQUEST_GRACE_SECONDS:.1f}s\n"
             "QMP is read-only but may wake QEMU's main loop or vCPUs.\n"
         )
+        if phase == "shutdown":
+            output.write(f"request={SHUTDOWN_REQUESTED.decode()} proof_absent_after={REQUEST_GRACE_SECONDS:.1f}s\n")
         output.flush()
         try:
             _snapshot_qemu(kubectl, namespace, pod, pod_uid, output, stop)
         except Exception as error:
             output.write(f"SNAPSHOT_ERROR {error!r}\n")
             output.flush()
+
+
+def snapshot_pending(kubectl: Kubectl, namespace: str, artifact_root: Path) -> None:
+    """Retain end-of-case evidence when teardown is blocked before ACPI can be sent."""
+    stop = threading.Event()
+    try:
+        launchers = _namespace_launchers(artifact_root / "serial", namespace)
+    except OSError as error:
+        _record_collector_error(artifact_root / "host-qemu", error)
+        return
+    for launcher in launchers:
+        try:
+            if not _launcher_markers(launcher)[1]:
+                _take_sample(kubectl, namespace, launcher, artifact_root, 0, stop, phase="report")
+        except Exception as error:
+            _record_collector_error(artifact_root / "host-qemu" / launcher.name, error)
 
 
 def _observe(kubectl: Kubectl, namespace: str, artifact_root: Path, stop: threading.Event) -> None:

@@ -204,5 +204,38 @@ def test_one_launcher_read_failure_does_not_stop_other_launcher_capture(
     assert "one retained serial file is unreadable" in errors
 
 
+@pytest.mark.parametrize("fail_list", [False, True])
+def test_report_captures_unrequested_guest_without_touching_completed_or_foreign_guests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_list: bool
+) -> None:
+    monkeypatch.setattr(host_qemu, "_snapshot_host_qemu", lambda *args, **kwargs: None)
+    pending = tmp_path / "serial" / "systest_virt-launcher-pending_uid-pending"
+    complete = tmp_path / "serial" / "systest_virt-launcher-complete_uid-complete"
+    foreign = tmp_path / "serial" / "other_virt-launcher-pending_uid-foreign"
+    for launcher, contents in (
+        (pending, b"runtime started\n"),
+        (complete, host_qemu.SHUTDOWN_COMPLETE + b"\n"),
+        (foreign, b"runtime started\n"),
+    ):
+        serial = launcher / "vmi" / "serial.log"
+        serial.parent.mkdir(parents=True)
+        serial.write_bytes(contents)
+    k3s = _FakeK3s(fail_list=fail_list)
+    k3s.release.set()
+
+    host_qemu.snapshot_pending(k3s.kubectl, "systest", tmp_path)
+
+    files = list((tmp_path / "host-qemu").glob("*/*.txt"))
+    assert len(files) == 1
+    assert files[0].parent.name == pending.name
+    evidence = files[0].read_text()
+    assert "phase=report" in evidence
+    assert host_qemu.SHUTDOWN_REQUESTED.decode() not in evidence
+    assert k3s.calls
+    assert all(args[3] == "virt-launcher-pending" for args, _ in k3s.calls)
+    if fail_list:
+        assert "libvirt socket disappeared" in evidence
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

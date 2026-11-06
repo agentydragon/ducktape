@@ -136,6 +136,16 @@ The source checks used systemd `v257.9`, matching the guest's `257.9-1~deb13u1`:
    these five executions completed shutdown, and no QMP query ran. This failure is before
    guest shutdown, not a reproduction of the original post-ACPI quiet interval.
 
+   VM 1 had passed supervision and become ready by 20:43:58 UTC, then completed both
+   session setups by 20:44:20. Its command was admitted at 20:44:20.677; the last native
+   session event was harness initialization at 20:44:23.443. Runtime's connected condition
+   became false at 20:45:14, and Gateway logs retained repeated TLS handshake timeouts.
+   Suspend and deletion were accepted at 20:46:10–11, but six runner-quiescence RPCs through
+   20:51:11 returned `Unavailable`. The controller therefore retained the unquiesced VMI.
+   The guest journal ends at 20:44:38 and serial at 20:44:56; neither identifies why control
+   traffic stopped responding. The final VM report now also captures host/QEMU state for
+   launchers without proof, so this earlier gate does not have to reach ACPI for collection.
+
 The journal/serial diagnostics merged in [PR #14629](https://github.com/agentydragon/ducktape/pull/14629).
 The FIFO observer merged in [PR #14633](https://github.com/agentydragon/ducktape/pull/14633)
 at head `78775a077cd7c6fd93f13373b6e43cd47407b0db`. Its CI synthetic merge commit

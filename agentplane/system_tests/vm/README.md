@@ -32,3 +32,6 @@ QEMU and read-only libvirt/QMP snapshots for that launcher. Each sample has a te
 the second starts at least two seconds after the first completes. QMP queries can wake QEMU's main
 loop or vCPUs and may change what a later sample observes. The monitor stops with the VM artifact
 capture.
+
+The end-of-case VM report also samples launchers without proof, including cleanup blocked
+at runner quiescence before ACPI. A `report` sample does not imply a shutdown request occurred.
