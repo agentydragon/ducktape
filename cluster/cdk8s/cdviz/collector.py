@@ -13,7 +13,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
-OUTPUT_DIR = f"{config.OUTPUT_DIR}/collector"
+OUTPUT_DIR = f"{config.OUTPUT_DIR}/app"
 IMAGE = (
     "ghcr.io/cdviz-dev/cdviz-collector:0.53.1@sha256:7d69848b44d608e56db67b8af6b28885071ae593bcda35bf23cdb220ae45dab8"
 )
@@ -248,17 +248,18 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def cdviz_collector(
+def cdviz_app(
     chart: Chart,
     directory: RenderedDirectory,
     database: Kustomization,
     webhook: Kustomization,
     monitoring: Kustomization,
+    grafana_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
-        "cdviz-collector",
+        "cdviz",
         directory,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(database, webhook, monitoring),
+        depends_on=flux_kustomization_depends_on_many(database, webhook, monitoring, grafana_operator),
     )

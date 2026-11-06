@@ -1697,7 +1697,6 @@ py_library(
         "//cluster/cdk8s/cdviz:dashboards",
         "//cluster/cdk8s/cdviz:database",
         "//cluster/cdk8s/cdviz:github_webhook",
-        "//cluster/cdk8s/cdviz:namespace",
         "//cluster/cdk8s/cert_manager:app",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/cert_manager:config",

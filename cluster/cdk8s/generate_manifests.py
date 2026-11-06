@@ -115,7 +115,6 @@ from cluster.cdk8s.cdviz import (
     dashboards as cdviz_dashboards,
     database as cdviz_database,
     github_webhook as cdviz_github_webhook,
-    namespace as cdviz_namespace,
 )
 from cluster.cdk8s.cert_manager import (
     app as cert_manager_app,
@@ -1366,15 +1365,10 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
         flux_webhook_token_kustomization,
     )
-    cdviz_namespace_artifact = artifact("cdviz-namespace", cdviz_namespace.OUTPUT_DIR)
-    cdviz_namespace_kustomization = cdviz_namespace.cdviz_namespace(
-        flux_chart, write_directory(root, cdviz_namespace_artifact, cdviz_namespace.chart)
-    )
     cdviz_database_artifact = artifact("cdviz-database", cdviz_database.OUTPUT_DIR)
     cdviz_database_kustomization = cdviz_database.cdviz_database(
         flux_chart,
         write_directory(root, cdviz_database_artifact, cdviz_database.chart),
-        cdviz_namespace_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
@@ -1389,32 +1383,28 @@ def generate_manifests(root: Path) -> None:
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
             github_secrets_sync_secrets_kustomization,
-            cdviz_namespace_kustomization,
+            cdviz_database_kustomization,
         ],
     )
-    cdviz_collector_artifact = artifact("cdviz-collector", cdviz_collector.OUTPUT_DIR)
-    cdviz_collector_kustomization = cdviz_collector.cdviz_collector(
-        flux_chart,
-        write_directory(root, cdviz_collector_artifact, cdviz_collector.chart),
-        cdviz_database_kustomization,
-        cdviz_webhook_kustomization,
-        monitoring_crds_kustomization,
-    )
-    cdviz_dashboards_artifact = artifact("cdviz-dashboards", cdviz_dashboards.OUTPUT_DIR)
-    cdviz_dashboards.cdviz_dashboards(
+    cdviz_app_artifact = artifact("cdviz", cdviz_collector.OUTPUT_DIR)
+    cdviz_collector.cdviz_app(
         flux_chart,
         write_directory(
             root,
-            cdviz_dashboards_artifact,
+            cdviz_app_artifact,
+            cdviz_collector.chart,
             cdviz_dashboards.chart,
             config_map_generator=grafana_dashboards.config_map_generator(
-                root, cdviz_dashboards.OUTPUT_DIR, cdviz_dashboards.DASHBOARDS
+                root, cdviz_collector.OUTPUT_DIR, cdviz_dashboards.DASHBOARDS
             ),
-            configurations=[grafana_dashboards.write_kustomize_config(root, cdviz_dashboards.OUTPUT_DIR)],
+            configurations=[grafana_dashboards.write_kustomize_config(root, cdviz_collector.OUTPUT_DIR)],
         ),
-        cdviz_collector_kustomization,
+        cdviz_database_kustomization,
+        cdviz_webhook_kustomization,
+        monitoring_crds_kustomization,
         grafana_operator_kustomization,
     )
+    copy_source_file(root, cdviz_collector.OUTPUT_DIR, "cluster/cdk8s/cdviz/LICENSE")
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_kustomization = haku_ci_runner.haku_ci(
         flux_chart,
@@ -2127,11 +2117,8 @@ def generate_manifests(root: Path) -> None:
             flux_annotations_artifact,
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,
-            cdviz_namespace_artifact,
             cdviz_database_artifact,
-            cdviz_webhook_artifact,
-            cdviz_collector_artifact,
-            cdviz_dashboards_artifact,
+            cdviz_app_artifact,
             forgejo_gitops_artifact,
             budget_namespace_artifact,
             gaffer_private_source_artifact,

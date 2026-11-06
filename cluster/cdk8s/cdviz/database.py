@@ -17,11 +17,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecHealthCheckExprs,
 )
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces
 from cluster.cdk8s.cdviz import config, timescale
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cnpg.database import Database
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/database"
@@ -29,6 +30,7 @@ OUTPUT_DIR = f"{config.OUTPUT_DIR}/database"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "cdviz-database", disable_resource_name_hashes=True)
+    namespaces.namespace(chart, "namespace", name=config.NAMESPACE, vpa=Vpa.RECOMMEND)
     roles = []
     for role, secret in [("cdviz_collector", config.COLLECTOR_PASSWORD), ("cdviz_reader", config.GRAFANA_PASSWORD)]:
         mint_db_role_secret(
@@ -75,7 +77,6 @@ def chart(app: App) -> Chart:
 def cdviz_database(
     chart: Chart,
     directory: RenderedDirectory,
-    namespace: Kustomization,
     cnpg: Kustomization,
     external_secrets: Kustomization,
     seaweedfs: Kustomization,
@@ -95,5 +96,5 @@ def cdviz_database(
                 ),
             )
         ],
-        depends_on=flux_kustomization_depends_on_many(namespace, cnpg, external_secrets, seaweedfs),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets, seaweedfs),
     )

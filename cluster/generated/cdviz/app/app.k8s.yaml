@@ -1042,3 +1042,138 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: cdviz-retention
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cdviz-database-reader
+  namespace: monitoring
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cdviz-database-reader
+  namespace: cdviz
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - grafana-db
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cdviz-database-reader
+  namespace: cdviz
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cdviz-database-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: cdviz-database-reader
+    namespace: monitoring
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-cdviz-database-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - monitoring
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: cdviz-database-reader
+      remoteNamespace: cdviz
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cdviz-database
+  namespace: monitoring
+spec:
+  dataFrom:
+    - extract:
+        key: grafana-db
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cdviz-database-secret-store
+  target:
+    creationPolicy: Owner
+    name: cdviz-database
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: cdviz
+  namespace: monitoring
+spec:
+  datasource:
+    access: proxy
+    editable: false
+    isDefault: false
+    jsonData:
+      database: cdviz
+      postgresVersion: 1800
+      sslmode: require
+      timescaledb: true
+    name: CI Analytics
+    secureJsonData:
+      password: ${password}
+    type: grafana-postgresql-datasource
+    uid: cdviz
+    url: db-rw.cdviz.svc:5432
+    user: cdviz_reader
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  valuesFrom:
+    - targetPath: secureJsonData.password
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: cdviz-database
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cdviz-pipelines
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: pipelines.json
+    name: cdviz-pipelines
+  folder: CI
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cdviz-tasks
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: tasks.json
+    name: cdviz-tasks
+  folder: CI
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana

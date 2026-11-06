@@ -1,0 +1,326 @@
+--- a/cdviz-grafana/dashboards/taskrun_executions.json
++++ b/cdviz-grafana/dashboards/taskrun_executions.json
+@@ -6,20 +6,6 @@
+   "schemaVersion": 42,
+   "templating": {
+     "list": [
+-      {
+-        "type": "datasource",
+-        "name": "datasource",
+-        "skipUrlSync": false,
+-        "multi": false,
+-        "allowCustomValue": true,
+-        "includeAll": false,
+-        "auto": false,
+-        "auto_min": "10s",
+-        "auto_count": 30,
+-        "query": "postgres",
+-        "regex": "cdviz.*",
+-        "hide": 3
+-      },
+       {
+         "type": "query",
+         "name": "selected_value",
+@@ -32,8 +18,8 @@
+         "auto_count": 30,
+         "label": "Task",
+         "datasource": {
+-          "type": "postgres",
+-          "uid": "${datasource}"
++          "type": "grafana-postgresql-datasource",
++          "uid": "cdviz"
+         },
+         "query": "SELECT DISTINCT COALESCE(NULLIF(payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') AS __value\nFROM cdviz.cdevents_lake\nWHERE $__timeFilter(timestamp)\nAND subject = 'taskrun'\nORDER BY __value",
+         "sort": 5,
+@@ -61,9 +47,7 @@
+   "annotations": {},
+   "title": "Task: Executions",
+   "uid": "taskrun_executions",
+-  "tags": [
+-    "taskrun"
+-  ],
++  "tags": ["taskrun"],
+   "time": {
+     "from": "now-31d",
+     "to": "now"
+@@ -72,7 +56,7 @@
+     {
+       "type": "row",
+       "collapsed": false,
+-      "id": 0,
++      "id": 1,
+       "panels": [],
+       "title": "Task: Overview",
+       "gridPos": {
+@@ -88,16 +72,16 @@
+       "repeatDirection": "h",
+       "title": "Total Duration",
+       "datasource": {
+-        "type": "postgres",
+-        "uid": "${datasource}"
++        "type": "grafana-postgresql-datasource",
++        "uid": "cdviz"
+       },
+       "targets": [
+         {
+           "format": "table",
+           "rawSql": "SELECT\n  COALESCE(SUM(extract('epoch' from (finished_at - started_at))), 0) AS total_duration\nFROM cdviz.taskrun\nWHERE\n  $__timeFilter(finished_at)\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\n  AND finished_at IS NOT NULL",
+           "datasource": {
+-            "type": "postgres",
+-            "uid": "${datasource}"
++            "type": "grafana-postgresql-datasource",
++            "uid": "cdviz"
+           },
+           "editorMode": "code",
+           "rawQuery": true
+@@ -123,7 +107,8 @@
+           }
+         },
+         "overrides": []
+-      }
++      },
++      "id": 2
+     },
+     {
+       "type": "stat",
+@@ -131,16 +116,16 @@
+       "repeatDirection": "h",
+       "title": "Avg Runtime",
+       "datasource": {
+-        "type": "postgres",
+-        "uid": "${datasource}"
++        "type": "grafana-postgresql-datasource",
++        "uid": "cdviz"
+       },
+       "targets": [
+         {
+           "format": "table",
+           "rawSql": "SELECT\n  COALESCE(AVG(extract('epoch' from (finished_at - started_at))), 0) AS avg_runtime\nFROM cdviz.taskrun\nWHERE\n  $__timeFilter(finished_at)\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\n  AND finished_at IS NOT NULL",
+           "datasource": {
+-            "type": "postgres",
+-            "uid": "${datasource}"
++            "type": "grafana-postgresql-datasource",
++            "uid": "cdviz"
+           },
+           "editorMode": "code",
+           "rawQuery": true
+@@ -166,7 +151,8 @@
+           }
+         },
+         "overrides": []
+-      }
++      },
++      "id": 3
+     },
+     {
+       "type": "stat",
+@@ -174,16 +160,16 @@
+       "repeatDirection": "h",
+       "title": "Failure Rate",
+       "datasource": {
+-        "type": "postgres",
+-        "uid": "${datasource}"
++        "type": "grafana-postgresql-datasource",
++        "uid": "cdviz"
+       },
+       "targets": [
+         {
+           "format": "table",
+           "rawSql": "SELECT\n  COALESCE(\n    100.0 * COUNT(*) FILTER (WHERE outcome IN ('fail', 'failure', 'error')) / NULLIF(COUNT(*), 0),\n    0\n  ) AS failure_rate\nFROM cdviz.taskrun\nWHERE\n  $__timeFilter(finished_at)\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\n  AND finished_at IS NOT NULL",
+           "datasource": {
+-            "type": "postgres",
+-            "uid": "${datasource}"
++            "type": "grafana-postgresql-datasource",
++            "uid": "cdviz"
+           },
+           "editorMode": "code",
+           "rawQuery": true
+@@ -217,7 +203,8 @@
+           }
+         },
+         "overrides": []
+-      }
++      },
++      "id": 4
+     },
+     {
+       "type": "timeseries",
+@@ -225,16 +212,16 @@
+       "repeatDirection": "h",
+       "title": "Task Total Duration per Day",
+       "datasource": {
+-        "type": "postgres",
+-        "uid": "${datasource}"
++        "type": "grafana-postgresql-datasource",
++        "uid": "cdviz"
+       },
+       "targets": [
+         {
+           "format": "time_series",
+           "rawSql": "SELECT\n  time_bucket('1 day', finished_at) AS time,\n  SUM(extract('epoch' from (finished_at - started_at))) AS total_duration\nFROM cdviz.taskrun\nWHERE\n  $__timeFilter(finished_at)\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\n  AND finished_at IS NOT NULL\nGROUP BY time\nORDER BY time",
+           "datasource": {
+-            "type": "postgres",
+-            "uid": "${datasource}"
++            "type": "grafana-postgresql-datasource",
++            "uid": "cdviz"
+           },
+           "editorMode": "code",
+           "rawQuery": true
+@@ -305,13 +292,11 @@
+           "displayMode": "table",
+           "placement": "right",
+           "showLegend": true,
+-          "calcs": [
+-            "sum",
+-            "max"
+-          ],
++          "calcs": ["sum", "max"],
+           "width": 300
+         }
+-      }
++      },
++      "id": 5
+     },
+     {
+       "type": "timeseries",
+@@ -319,16 +304,16 @@
+       "repeatDirection": "h",
+       "title": "Task Total Number of Run per Day",
+       "datasource": {
+-        "type": "postgres",
+-        "uid": "${datasource}"
++        "type": "grafana-postgresql-datasource",
++        "uid": "cdviz"
+       },
+       "targets": [
+         {
+           "format": "time_series",
+-          "rawSql": "SELECT\n  time_bucket('1 day', COALESCE(finished_at, started_at)) AS time,\n  CASE\n    WHEN finished_at IS NULL THEN 'cancelled'\n    WHEN outcome = 'success' THEN 'success'\n    WHEN outcome = 'pass' THEN 'pass'\n    WHEN outcome = 'fail' THEN 'fail'\n    WHEN outcome = 'failure' THEN 'fail'\n    WHEN outcome = 'error' THEN 'error'\n    WHEN outcome = 'skip' THEN 'skip'\n    WHEN outcome = 'skipped' THEN 'skip'\n    ELSE COALESCE(outcome, 'unknown')\n  END AS status,\n  COUNT(*) AS count\nFROM cdviz.taskrun\nWHERE\n  $__timeFilter(finished_at)\n  AND (finished_at IS NOT NULL OR started_at IS NOT NULL)\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\nGROUP BY time, status\nORDER BY time, status",
++          "rawSql": "SELECT\n  time_bucket('1 day', COALESCE(finished_at, started_at)) AS time,\n  CASE\n    WHEN outcome IN ('cancel', 'cancelled', 'canceled') THEN 'cancelled'\n    WHEN finished_at IS NULL AND started_at IS NOT NULL THEN 'running'\n    WHEN finished_at IS NULL THEN 'queued'\n    WHEN outcome = 'success' THEN 'success'\n    WHEN outcome = 'pass' THEN 'pass'\n    WHEN outcome = 'fail' THEN 'fail'\n    WHEN outcome = 'failure' THEN 'fail'\n    WHEN outcome = 'error' THEN 'error'\n    WHEN outcome = 'skip' THEN 'skip'\n    WHEN outcome = 'skipped' THEN 'skip'\n    ELSE COALESCE(outcome, 'unknown')\n  END AS status,\n  COUNT(*) AS count\nFROM cdviz.taskrun\nWHERE\n  $__timeFilter(finished_at)\n  AND (finished_at IS NOT NULL OR started_at IS NOT NULL)\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\nGROUP BY time, status\nORDER BY time, status",
+           "datasource": {
+-            "type": "postgres",
+-            "uid": "${datasource}"
++            "type": "grafana-postgresql-datasource",
++            "uid": "cdviz"
+           },
+           "editorMode": "code",
+           "rawQuery": true
+@@ -505,35 +490,31 @@
+           "displayMode": "table",
+           "placement": "right",
+           "showLegend": true,
+-          "calcs": [
+-            "sum",
+-            "max"
+-          ],
++          "calcs": ["sum", "max"],
+           "width": 300
+         }
+-      }
++      },
++      "id": 6
+     },
+     {
+       "type": "row",
+       "collapsed": true,
+-      "id": 0,
++      "id": 7,
+       "panels": [
+         {
+-          "type": "cdviz-executiontable-panel",
+-          "transparent": false,
+-          "repeatDirection": "h",
++          "type": "table",
+           "title": "$selected_value - Summary",
+           "datasource": {
+-            "type": "postgres",
+-            "uid": "${datasource}"
++            "type": "grafana-postgresql-datasource",
++            "uid": "cdviz"
+           },
+           "targets": [
+             {
+               "format": "table",
+-              "rawSql": "WITH\n  -- Get last N executions per name with all details\n  execution_history AS (\n    SELECT\n      COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') AS name,\n      subject_id,\n      outcome,\n      extract('epoch' from (finished_at - started_at)) AS run_duration,\n      \n      COALESCE(last_payload -> 'subject' -> 'content' ->> 'uri', last_payload -> 'subject' -> 'content' ->> 'url') AS url,\n      started_at,\n      finished_at,\n      \n      row_number() OVER (PARTITION BY COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') ORDER BY finished_at DESC) AS rn\n    FROM cdviz.taskrun\n    WHERE\n      $__timeFilter(finished_at)\n      AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\n      AND finished_at IS NOT NULL\n  ),\n\n  -- Aggregate statistics per name\n  aggregated_stats AS (\n    SELECT\n      name,\n      COALESCE(PERCENTILE_CONT(0.80) WITHIN GROUP (ORDER BY run_duration), 0) AS p80_duration,\n      COUNT(*) AS total_runs\n    FROM execution_history\n    GROUP BY name\n  ),\n\n  -- Create arrays of historical data for visualization\n  history_arrays AS (\n    SELECT\n      name,\n      COALESCE(array_agg(run_duration ORDER BY finished_at ASC) FILTER (WHERE rn <= 20), ARRAY[]::numeric[]) AS run_duration_history,\n      \n      COALESCE(array_agg(outcome ORDER BY finished_at ASC) FILTER (WHERE rn <= 20), ARRAY[]::text[]) AS outcome_history,\n      COALESCE(array_agg(subject_id ORDER BY finished_at ASC) FILTER (WHERE rn <= 20), ARRAY[]::text[]) AS subject_id_history,\n      COALESCE(array_agg(url ORDER BY finished_at ASC) FILTER (WHERE rn <= 20), ARRAY[]::text[]) AS url_history,\n      COALESCE(array_agg(started_at ORDER BY finished_at ASC) FILTER (WHERE rn <= 20), ARRAY[]::timestamptz[]) AS started_times,\n      COALESCE(array_agg(finished_at ORDER BY finished_at ASC) FILTER (WHERE rn <= 20), ARRAY[]::timestamptz[]) AS completion_times\n      \n    FROM execution_history\n    WHERE rn <= 20\n    GROUP BY name\n  ),\n\n  -- Aggregate outcome counts across all runs per name\n  outcome_summary AS (\n    SELECT\n      name,\n      COUNT(*) FILTER (WHERE outcome IN ('pass', 'success')) AS passed,\n      COUNT(*) FILTER (WHERE outcome IN ('fail', 'failure', 'error')) AS failed,\n      COUNT(*) FILTER (WHERE outcome IN ('skip', 'skipped')) AS skipped\n    FROM execution_history\n    GROUP BY name\n  )\n\n-- Main query: 1 row per name\nSELECT\n  s.name AS \"Name\",\n  h.run_duration_history AS \"Run History (s)\",\n  h.outcome_history AS \"Outcome History\",\n  h.subject_id_history AS \"Run IDs\",\n  h.url_history AS \"URLs\",\n  h.started_times AS \"Started Times\",\n  h.completion_times AS \"Completion Times\",\n  \n  s.p80_duration AS \"P80 Duration (s)\",\n  s.total_runs AS \"Total Runs\",\n  COALESCE(o.passed, 0) AS \"Passed\",\n  COALESCE(o.failed, 0) AS \"Failed\",\n  COALESCE(o.skipped, 0) AS \"Skipped\"\nFROM aggregated_stats s\nLEFT JOIN history_arrays h ON s.name = h.name\nLEFT JOIN outcome_summary o ON s.name = o.name\nORDER BY s.name",
++              "rawSql": "SELECT\n  regexp_replace(COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown'), '^agentydragon/ducktape/', '') AS \"Task\",\n  outcome AS \"Outcome\",\n  started_at AS \"Started\",\n  finished_at AS \"Finished\",\n  ROUND(EXTRACT(EPOCH FROM (finished_at - started_at))::numeric, 1) AS \"Runtime (s)\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_job' ->> 'head_branch' AS \"Branch\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_job' ->> 'head_sha' AS \"Head SHA\",\n  last_payload -> 'subject' -> 'content' -> 'pipelineRun' ->> 'id' AS \"Pipeline Run\",\n  COALESCE(last_payload -> 'subject' -> 'content' ->> 'uri', last_payload -> 'subject' -> 'content' ->> 'url') AS \"URL\"\nFROM cdviz.taskrun\nWHERE $__timeFilter(COALESCE(finished_at, started_at))\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\nORDER BY COALESCE(finished_at, started_at) DESC NULLS LAST\nLIMIT ${limit}",
+               "datasource": {
+-                "type": "postgres",
+-                "uid": "${datasource}"
++                "type": "grafana-postgresql-datasource",
++                "uid": "cdviz"
+               },
+               "editorMode": "code",
+               "rawQuery": true
+@@ -546,21 +527,50 @@
+             "y": 12
+           },
+           "fieldConfig": {
+-            "defaults": {},
+-            "overrides": []
++            "defaults": {
++              "custom": {
++                "align": "auto",
++                "cellOptions": {
++                  "type": "auto"
++                },
++                "inspect": false
++              }
++            },
++            "overrides": [
++              {
++                "matcher": {
++                  "id": "byName",
++                  "options": "Task"
++                },
++                "properties": [
++                  {
++                    "id": "custom.width",
++                    "value": 300
++                  },
++                  {
++                    "id": "links",
++                    "value": [
++                      {
++                        "title": "Open in GitHub",
++                        "url": "${__data.fields[\"URL\"]}",
++                        "targetBlank": true
++                      }
++                    ]
++                  }
++                ]
++              }
++            ]
+           },
+           "options": {
+-            "maxHistoryItems": 20,
+-            "showQueueHistory": false,
+-            "barHeight": 20,
+-            "barGap": 2,
+-            "sortBy": [
+-              {
+-                "displayName": "Run History (s)",
+-                "desc": true
+-              }
+-            ]
+-          }
++            "showHeader": true,
++            "cellHeight": "sm",
++            "footer": {
++              "show": false,
++              "reducer": ["sum"],
++              "countRows": false
++            }
++          },
++          "id": 8
+         }
+       ],
+       "title": "Task: Latest $limit Executions",
+@@ -572,5 +582,7 @@
+       }
+     }
+   ],
+-  "version": 2026060914
++  "version": 2026060914,
++  "description": "Modified from CDviz task-run dashboard at commit 44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f: uses this repository's CI Analytics datasource and replaces the unsigned execution-table panel with Grafana's built-in table.",
++  "refresh": "1m"
+ }

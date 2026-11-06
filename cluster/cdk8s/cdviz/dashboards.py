@@ -14,13 +14,11 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 
 from cluster.cdk8s.cdviz import config
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
-OUTPUT_DIR = f"{config.OUTPUT_DIR}/dashboards"
 _NAMESPACE = "monitoring"
 _PASSWORD = "cdviz-database"
 _INSTANCE = {"dashboards": "grafana"}
@@ -93,11 +91,3 @@ def chart(app: App) -> Chart:
             config_map_ref=dashboard.config_map_ref(),
         )
     return chart
-
-
-def cdviz_dashboards(
-    chart: Chart, directory: RenderedDirectory, collector: Kustomization, grafana_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart, "cdviz-dashboards", directory, depends_on=flux_kustomization_depends_on_many(collector, grafana_operator)
-    )
