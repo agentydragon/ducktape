@@ -118,13 +118,23 @@ The source checks used systemd `v257.9`, matching the guest's `257.9-1~deb13u1`:
    A halted vCPU alone therefore does not identify a wedge. One execution failed its first
    supervision fixture attempt, passed after guest service restart, then surfaced a
    provisioner API timeout at teardown; all three guests still emitted proof and powerdown.
-   Infrastructure retries also encountered the execution-VM failures recorded below.
+   Nine executions passed and this one failed; all 30 guests emitted proof and powerdown.
+   Three infrastructure attempts failed separately and were retried, encountering the
+   execution-VM failures recorded below.
 8. [Delayed QMP control](https://app.buildbuddy.io/invocation/8f11029e-2525-49a6-b764-902cdad946dd):
    five requested executions using `a332a112481b226b0951a9fbc63ecabba864177a`. Remove all
    boot monitor queries and collect passive host thread state at five seconds after ACPI,
    then at four-second intervals. Delay QMP until at least 15 seconds without proof. This
    separates passive observations from monitor queries that may wake QEMU/vCPUs. Completed
    healthy shutdown samples reached proof without issuing any monitor query.
+
+   Four executions passed. Run 5 hit the existing 600-second pytest limit, then timed out
+   waiting for Sandbox cleanup. Its last live snapshot remained `Quiescing`, waiting to
+   retry runner quiescence. VM 1 never recorded an ACPI request, proof or powerdown; its
+   Sandbox and loop device remained, so the fixture correctly refused recycling. The
+   other two guests emitted proof and powerdown. All 14 guests that received ACPI across
+   these five executions completed shutdown, and no QMP query ran. This failure is before
+   guest shutdown, not a reproduction of the original post-ACPI quiet interval.
 
 The journal/serial diagnostics merged in [PR #14629](https://github.com/agentydragon/ducktape/pull/14629).
 The FIFO observer merged in [PR #14633](https://github.com/agentydragon/ducktape/pull/14633)
