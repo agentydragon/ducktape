@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import cast
 from unittest.mock import AsyncMock, call, create_autospec
 from uuid import uuid4
@@ -55,6 +55,18 @@ def _create_targets(client: Client, names: tuple[str, ...]) -> dict[str, identit
     created = {name: _target(name, str(uuid4())) for name in names}
     cast(AsyncMock, client.create_sandbox).side_effect = list(created.values())
     return created
+
+
+def _ready_for_targets(
+    views: dict[str, identity_pb2.EnvironmentTarget],
+) -> Callable[[Client, identity_pb2.EnvironmentTarget], Awaitable[environment_service_pb2.EnvironmentDescriptor]]:
+    async def ready(
+        _client: Client, target: identity_pb2.EnvironmentTarget
+    ) -> environment_service_pb2.EnvironmentDescriptor:
+        assert target == views[target.name]
+        return _environment(target.name, target.uid, ready=True)
+
+    return ready
 
 
 @pytest.fixture
@@ -285,13 +297,7 @@ async def test_scope_releases_owned_sandboxes_concurrently(cluster: Cluster, mon
     client = create_autospec(Client, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == views[target.name]
-        return _environment(target.name, target.uid, ready=True)
-
-    monkeypatch.setattr(sandbox, "wait_until_running", ready)
+    monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
     started: set[str] = set()
     all_started = asyncio.Event()
     release = asyncio.Event()
@@ -330,13 +336,7 @@ async def test_scope_drains_other_owners_when_one_cleanup_fails(
     client = create_autospec(Client, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == views[target.name]
-        return _environment(target.name, target.uid, ready=True)
-
-    monkeypatch.setattr(sandbox, "wait_until_running", ready)
+    monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
     started: set[str] = set()
     peer_started = asyncio.Event()
     release_peer = asyncio.Event()
@@ -379,13 +379,7 @@ async def test_scope_preserves_multiple_cleanup_failures(cluster: Cluster, monke
     client = create_autospec(Client, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == views[target.name]
-        return _environment(target.name, target.uid, ready=True)
-
-    monkeypatch.setattr(sandbox, "wait_until_running", ready)
+    monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
     started: set[str] = set()
     all_started = asyncio.Event()
     release = asyncio.Event()
@@ -460,13 +454,7 @@ async def test_scope_body_cancellation_waits_for_cleanup_and_keeps_failures(
     client = create_autospec(Client, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == views[target.name]
-        return _environment(target.name, target.uid, ready=True)
-
-    monkeypatch.setattr(sandbox, "wait_until_running", ready)
+    monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
     body_started = asyncio.Event()
     cleanup_started = asyncio.Event()
     release = asyncio.Event()
@@ -522,13 +510,7 @@ async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
     client = create_autospec(Client, instance=True)
     views = _create_targets(client, ("owned-0", "owned-1"))
 
-    async def ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == views[target.name]
-        return _environment(target.name, target.uid, ready=True)
-
-    monkeypatch.setattr(sandbox, "wait_until_running", ready)
+    monkeypatch.setattr(sandbox, "wait_until_running", _ready_for_targets(views))
     cleanup_started = asyncio.Event()
     release = asyncio.Event()
     started: set[str] = set()

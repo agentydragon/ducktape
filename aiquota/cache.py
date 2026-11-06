@@ -40,7 +40,7 @@ class QuotaCache:
         except OSError, ValueError:
             return None
 
-    def write(self, quotas: AllQuotas) -> None:
+    def write(self, quotas: AllQuotas | AllQuotasView) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(quotas.model_dump_json())
@@ -75,11 +75,7 @@ class QuotaCache:
             if cached is None:
                 raise
             return refresh_view(cached, connection_error=str(exc))
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(fresh.model_dump_json())
-        except OSError:
-            pass
+        self.write(fresh)
         return refresh_view(fresh)
 
 

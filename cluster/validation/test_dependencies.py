@@ -97,28 +97,22 @@ class TestSourceReferences:
         assert "sourceRef" in errors[0]
         assert "flux-system" in errors[0]
 
-    def test_source_ref_same_namespace_bare_passes(self) -> None:
-        """Bare sourceRef within the source's own namespace resolves there."""
+    @pytest.mark.parametrize(
+        ("namespace", "ref_kind", "ref_name", "source_kind", "source_name", "source_namespace"),
+        [
+            # Bare refs resolve within the consumer's namespace.
+            ("flux-system", "GitRepository", "flux-system", "GitRepository", "flux-system", "flux-system"),
+            # Same names in another source kind do not collide with GitRepository lookup.
+            ("ducktape-flux", "GitRepository", "kyverno", "HelmRepository", "kyverno", "kyverno"),
+        ],
+        ids=("same-namespace-bare-ref", "same-name-different-kind"),
+    )
+    def test_source_ref_positive_cases(
+        self, namespace: str, ref_kind: str, ref_name: str, source_kind: str, source_name: str, source_namespace: str
+    ) -> None:
         cluster = _cluster(
-            {
-                "app": FluxKustomizationSpec(
-                    namespace="flux-system", source_ref=SourceRef(kind="GitRepository", name="flux-system")
-                )
-            },
-            flux_sources={("GitRepository", "flux-system", "flux-system")},
-        )
-        assert check_source_references(cluster) == []
-
-    def test_source_ref_name_shared_by_another_kind_is_not_a_collision(self) -> None:
-        """A GitRepository ref is judged against GitRepositories only; a HelmRepository elsewhere
-        that happens to share the name is not the source it fails to find."""
-        cluster = _cluster(
-            {
-                "app": FluxKustomizationSpec(
-                    namespace="ducktape-flux", source_ref=SourceRef(kind="GitRepository", name="kyverno")
-                )
-            },
-            flux_sources={("HelmRepository", "kyverno", "kyverno")},
+            {"app": FluxKustomizationSpec(namespace=namespace, source_ref=SourceRef(kind=ref_kind, name=ref_name))},
+            flux_sources={(source_kind, source_name, source_namespace)},
         )
         assert check_source_references(cluster) == []
 
