@@ -1301,13 +1301,6 @@ fn compute_realizability_cut(
     let (anchor_from, anchor_to) =
         assignment_endpoints(anchor_edge, assignment, EndpointView::Gate)
             .expect("cut edge is cross-module in the gate view");
-    let mut successors: BTreeMap<ModuleId, Vec<(ModuleId, DependencyEdgeId)>> = BTreeMap::new();
-    for (&(from, to), ids) in &by_pair {
-        successors
-            .entry(from)
-            .or_default()
-            .push((to, *ids.iter().min().expect("a pair has an edge")));
-    }
     let mut queue = VecDeque::from([anchor_to]);
     let mut seen = BTreeSet::from([anchor_to]);
     let mut predecessor: BTreeMap<ModuleId, (ModuleId, DependencyEdgeId)> = BTreeMap::new();
@@ -1315,8 +1308,13 @@ fn compute_realizability_cut(
         if from == anchor_from {
             break;
         }
-        for &(to, edge_id) in successors.get(&from).into_iter().flatten() {
+        // Reuse the pair graph rather than retaining another adjacency map.
+        // Its edges were inserted in BTreeMap order, so traversal is repeatable.
+        for pair_edge in pair_graph.edges(idx_of[&from]) {
+            let pair = pair_edge.weight();
+            let to = pair.1;
             if seen.insert(to) {
+                let edge_id = *by_pair[pair].iter().min().expect("a pair has an edge");
                 predecessor.insert(to, (from, edge_id));
                 queue.push_back(to);
             }
