@@ -1379,7 +1379,7 @@ fn emit_reports_and_resolve_gate<'a>(
     } else if !assignment_report.cycles.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             // Trim the wire shape before writing: keep `id` (array
-            // index), `modules`, `cut`. Per-edge evidence is
+            // index), `modules`, `cut`, and the bounded Pass-1 walk. Other per-edge evidence is
             // recomputable from `dependency_graph.json.gz` + this entry's
             // `modules` set via `debundle gate describe <id>`. See
             // `validation.rs` `BlockingSccEntry` for the schema and

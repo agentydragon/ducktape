@@ -608,7 +608,7 @@ a `ModuleRef { chunk_id, path }` object.
 
 | File                          | Module-identity fields                                                                   |
 | ----------------------------- | ---------------------------------------------------------------------------------------- |
-| `cycles.json` (per chunk)     | `modules[]`, `cut[].from`, `cut[].to` — `ModulePath`                                     |
+| `cycles.json` (per chunk)     | `modules[]`, `cut[].from`, `cut[].to`, `pass_one_witness.steps[].from/to` — `ModulePath` |
 | `atomic_group_conflicts.json` | `claims[].module` — `ModulePath` (source-unit IDs are `"unit:N"` strings)                |
 | `modules.json` (per chunk)    | `final_module_contents[].path`, `requested_logical_modules[].target_path` — `ModulePath` |
 | tree `index.json` (per dir)   | `modules[]` — `ModuleRef`; per-file rows carry `module: ModuleRef`                       |
@@ -632,7 +632,7 @@ declarations. A binding with no declaring source unit has an empty list. The
 existing module-level `source_unit_ids` remains the aggregate of the named
 bindings' declaration IDs and does not pair IDs with individual names.
 
-`CycleEdge` rows in `cycles.json` (`cut[]`, `lazy_closure[]`, and
+`CycleEdge` rows in `cycles.json` (`cut[]`, `pass_one_witness.steps[]`, `lazy_closure[]`, and
 `inert_commuting_edges[]`) carry `from_source_unit_id` and
 `to_source_unit_id` as the actual dependency-edge endpoints, using the same
 `unit:N` identities as `dependency_graph.json.gz`'s `nodes[].id`,

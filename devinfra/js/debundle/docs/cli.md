@@ -1577,6 +1577,14 @@ the current gate report set is complete; rejection writers emit `cycles.json`
 whenever the current assignment has blocking SCCs, including beside an atomic
 conflict report.
 
+For an actual Pass-1 mutual constraining SCC, each `cycles.json` entry carries
+`pass_one_witness`: one complete ordered module closed walk anchored at a cut
+edge. Each step uses the same source-unit IDs, binding labels and edge causes
+as the cut; the JSON includes every step while the stderr preview gives its
+omission count. The field is `null` for actual Pass-2 ESM TDZ and conditional
+after-collapse diagnoses. A Pass-1 witness does not describe those paths.
+Ownership-subset runs can use the stored witness without full graph export.
+
 For a sequencing edge, `gate describe` retains the impure initializer source
 unit and its purity reasons, and every cut and evidence edge carries the same
 `explanation` the stored cut has (the evidence rebuilds it from

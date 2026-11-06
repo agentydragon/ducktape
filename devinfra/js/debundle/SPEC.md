@@ -126,6 +126,12 @@ annotations are checked before ownership is reduced. The selection does not
 change the analysis projection or source graph. Retained bindings, imported
 re-exports, destructuring companions and anonymous statements use the same
 normal assignment assembly, gate, translation validation and emission.
+For an actual Pass-1 constraining SCC, `cycles.json` includes a complete
+`pass_one_witness` closed walk of ordered, typed edge causes. Its text summary
+previews a bounded number of steps and states how many were omitted from the
+preview. Actual Pass-2 TDZ and conditional after-collapse diagnoses have
+`pass_one_witness: null`; their cuts remain available, but this witness does
+not claim to explain their reciprocal import path.
 Omitted claims follow the selected residual policy: they return to entry under
 `inline_in_entry`, move into the configured catchall under `catchall_file`, or
 move into generated atomic-group modules under
