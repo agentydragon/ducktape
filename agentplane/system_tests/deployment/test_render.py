@@ -310,6 +310,24 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     sidecar_env = {entry["name"]: entry.get("value") for entry in runner_sidecar[0]["env"]}
     assert "OTEL_SDK_DISABLED" not in sidecar_env
     assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://alloy.monitoring.svc.cluster.local:4317"
+    runner_pod_spec = template["spec"]["pod"]["spec"]
+    runner_egress_volume = next(v for v in runner_pod_spec["volumes"] if v["name"] == "egress-token")
+    runner_token_sources = runner_egress_volume["projected"]["sources"]
+    assert any(
+        source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress"
+        and source["serviceAccountToken"]["path"] == "token"
+        for source in runner_token_sources
+    )
+    runner_sidecar_config = _resource(docs, "ConfigMap", "environment-tools-egress-sidecar")["data"]
+    runner_settings = yaml.safe_load(next(iter(runner_sidecar_config.values())))
+    assert runner_settings["proxy_mode"] == "mtls"
+    assert runner_settings["proxy_port"] == 8889
+    assert runner_settings["token_file"] == "/var/run/agentplane-egress/token"
+    assert runner_settings["proxy_tls"] == {
+        "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
+        "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
+        "ca_file": "/run/agentplane/environment-runtime-tls/ca.crt",
+    }
     assert "OTEL_SDK_DISABLED" not in {entry["name"] for entry in pod_containers["codex-executor"].get("env", [])}
     executor = pod_containers["codex-executor"]
     assert executor["livenessProbe"]["initialDelaySeconds"] == 5

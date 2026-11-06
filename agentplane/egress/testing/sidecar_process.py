@@ -59,6 +59,7 @@ class SidecarProcess:
             settings = Settings(
                 proxy_host=self._proxy_host,
                 proxy_port=self._proxy_port,
+                proxy_mode="token",
                 token_file=self._token_file,
                 audience_token_files=dict(self._audience_token_files),
                 platform_routes=routes,

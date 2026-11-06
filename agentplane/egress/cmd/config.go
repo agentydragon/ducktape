@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
@@ -26,6 +27,10 @@ type config struct {
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
 	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
 	ListenAddress                   string            `mapstructure:"listen_address"`
+	SVIDListenAddress               string            `mapstructure:"svid_listen_address"`
+	SVIDCertFile                    string            `mapstructure:"svid_cert_file"`
+	SVIDKeyFile                     string            `mapstructure:"svid_key_file"`
+	SVIDCAFile                      string            `mapstructure:"svid_ca_file"`
 	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
 	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
 	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
@@ -62,6 +67,10 @@ func loadConfig() (config, error) {
 		"rules_namespace",
 		"credentials_namespace",
 		"listen_address",
+		"svid_listen_address",
+		"svid_cert_file",
+		"svid_key_file",
+		"svid_ca_file",
 		"admin_listen_address",
 		"admin_grpc_audience",
 		"agent_api_listen_address",
@@ -118,6 +127,28 @@ func (c *config) validate() error {
 	}
 	if slices.Contains(c.ProjectedTokenAudiences, "") {
 		return errors.New("projected_token_audiences must not contain an empty audience")
+	}
+	svidSettings := []struct{ name, value string }{
+		{"svid_listen_address", c.SVIDListenAddress},
+		{"svid_cert_file", c.SVIDCertFile},
+		{"svid_key_file", c.SVIDKeyFile},
+		{"svid_ca_file", c.SVIDCAFile},
+	}
+	configuredSVIDSettings := 0
+	for _, setting := range svidSettings {
+		if setting.value != "" {
+			configuredSVIDSettings++
+		}
+	}
+	if configuredSVIDSettings != 0 && configuredSVIDSettings != len(svidSettings) {
+		return errors.New("svid_listen_address, svid_cert_file, svid_key_file and svid_ca_file must be configured together")
+	}
+	if configuredSVIDSettings == len(svidSettings) {
+		for _, setting := range svidSettings[1:] {
+			if !filepath.IsAbs(setting.value) {
+				return fmt.Errorf("%s must be an absolute path", setting.name)
+			}
+		}
 	}
 	for _, limit := range []bounded{
 		{"decision_history_size", c.DecisionHistorySize, 1, history.MaxCapacity},

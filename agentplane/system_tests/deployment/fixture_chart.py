@@ -301,6 +301,10 @@ def environment(
             hostname=None,
         ),
         vm_sandboxes=vm_sandboxes,
+        # Exercise the new sidecar hop in the ordinary Pod and Firecracker fixtures. KubeVirt's
+        # launcher relay remains token-mode in this suite until its workload flow is explicitly
+        # selected for mTLS.
+        runner_egress_mtls=not vm_sandboxes,
         firecracker_sandboxes=firecracker_sandboxes,
         vm_resources=vm_configuration.RESOURCES if vm_sandboxes or firecracker_sandboxes else None,
         vm_console_autologin=True,

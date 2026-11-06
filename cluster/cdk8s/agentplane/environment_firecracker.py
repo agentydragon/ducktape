@@ -71,6 +71,7 @@ class EnvironmentFirecrackerTemplate(Construct):
             name=f"{NAME}-relay",
             listen_address=f"[::]:{sandbox_pod.SIDECAR_LISTEN_PORT}",
             platform_routes=platform_routes.sidecar_routes(namespace, listen_host="0.0.0.0"),
+            proxy_mode="mtls" if env.runner_egress_mtls else "token",
         )
         launcher_settings = SettingsFile(
             self,
@@ -129,7 +130,9 @@ class EnvironmentFirecrackerTemplate(Construct):
             image_pull_secret_name=image_pull_secret_name,
             keep_sidecar_until_workload_exit=True,
             restart_policy="Never",
-            security_context=k8s.PodSecurityContext(run_as_user=0, run_as_group=0),
+            # The controller projects the runner Secret as 0440 root:fsGroup. Keep it readable
+            # by the nonroot relay sidecar; the launcher itself remains root for KVM.
+            security_context=k8s.PodSecurityContext(run_as_user=0, run_as_group=0, fs_group=1000),
             workload_volumes=[
                 wiring.volume,
                 k8s.Volume(name="guest-config", config_map=k8s.ConfigMapVolumeSource(name=self.configuration.name)),
