@@ -1,0 +1,86 @@
+--- a/tcg/guest.sh
++++ b/tcg/guest.sh
+@@ -34,9 +34,15 @@
+   --sandbox=none \
+   --cache=auto >/scratch/virtiofsd.log 2>&1 &
+ VIRTIOFSD_PID=$!
++mkdir -p /scratch/tls /scratch/trust
++rm -f /tmp/virtiofs-tls.sock /tmp/virtiofs-trust.sock
++"$VIRTIOFSD" --socket-path=/tmp/virtiofs-tls.sock --shared-dir=/scratch/tls --sandbox=none --cache=auto >/scratch/virtiofsd-tls.log 2>&1 &
++TLS_PID=$!
++"$VIRTIOFSD" --socket-path=/tmp/virtiofs-trust.sock --shared-dir=/scratch/trust --sandbox=none --cache=auto >/scratch/virtiofsd-trust.log 2>&1 &
++TRUST_PID=$!
+ cleanup_virtiofsd() {
+-  kill "$VIRTIOFSD_PID" 2>/dev/null || true
+-  wait "$VIRTIOFSD_PID" 2>/dev/null || true
++  kill "$VIRTIOFSD_PID" "$TLS_PID" "$TRUST_PID" 2>/dev/null || true
++  wait "$VIRTIOFSD_PID" "$TLS_PID" "$TRUST_PID" 2>/dev/null || true
+ }
+ trap cleanup_virtiofsd EXIT HUP INT TERM
+ count=0
+@@ -52,6 +58,15 @@
+   cat /scratch/virtiofsd.log
+   exit 13
+ }
++for sock in /tmp/virtiofs-tls.sock /tmp/virtiofs-trust.sock; do
++  count=0
++  while [ ! -S "$sock" ] && [ "$count" -lt 40 ]; do
++    kill -0 "$TLS_PID" "$TRUST_PID" 2>/dev/null || { cat /scratch/virtiofsd-tls.log /scratch/virtiofsd-trust.log; exit 14; }
++    sleep 0.25
++    count=$((count + 1))
++  done
++  [ -S "$sock" ] || { cat /scratch/virtiofsd-tls.log /scratch/virtiofsd-trust.log; exit 15; }
++done
+ echo "VIRTIOFSD_SOCKET=ready"
+ grep -E '^(Uid|Gid|CapEff):' "/proc/$VIRTIOFSD_PID/status"
+ # The guest consumes the exact CI vmlinuz, initramfs, root erofs and runner erofs.
+@@ -59,8 +74,14 @@
+ # This only probes TCG guest boot/ACPI plumbing, not reproduction of the shutdown stall.
+ (
+   sleep 60
+-  printf 'info status\ninfo kvm\ninfo cpus\nsystem_powerdown\n'
+-  sleep 30
++  printf 'info status\ninfo kvm\ninfo cpus\n'
++  for attempt in 1 2 3 4; do
++    printf 'system_powerdown\n'
++    sleep 0.05
++  done
++  sleep 5
++  printf 'system_powerdown\n'
++  sleep 25
+   printf 'info status\nquit\n'
+ ) | "$QEMU" \
+   -name agentplane-vm-tcg-smoke \
+@@ -94,6 +115,10 @@
+   -device virtio-net-pci,netdev=guestnet,romfile= \
+   -chardev socket,id=char-state,path=/tmp/virtiofs-state.sock \
+   -device vhost-user-fs-pci,chardev=char-state,tag=state \
++  -chardev socket,id=char-tls,path=/tmp/virtiofs-tls.sock \
++  -device vhost-user-fs-pci,chardev=char-tls,tag=agentplane-environment-runtime-tls \
++  -chardev socket,id=char-trust,path=/tmp/virtiofs-trust.sock \
++  -device vhost-user-fs-pci,chardev=char-trust,tag=agentplane-environment-runtime-trust \
+   -monitor stdio \
+   -serial file:/scratch/guest-serial.log \
+   >/scratch/qemu-monitor.log 2>&1
+--- a/tcg/pod.yaml
++++ b/tcg/pod.yaml
+@@ -17,6 +17,8 @@
+     agentplane-test: vm-shutdown-tcg-smoke
+ spec:
+   activeDeadlineSeconds: 1600
++  nodeSelector:
++    kubernetes.io/hostname: wyrm2
+   automountServiceAccountToken: false
+   restartPolicy: Never
+   securityContext:
+--- a/tcg/run.sh
++++ b/tcg/run.sh
+@@ -93,7 +93,7 @@
+   '
+   result=0
+   timeout 180s kubectl -n "$namespace" exec qemu-smoke -- /bin/sh /scratch/guest.sh >"$run_dir/guest-exec.log" 2>&1 || result=$?
+-  for log in guest-serial qemu-monitor virtiofsd; do
++  for log in guest-serial qemu-monitor virtiofsd virtiofsd-tls virtiofsd-trust; do
+     timeout 30s kubectl -n "$namespace" exec qemu-smoke -- cat "/scratch/$log.log" >"$run_dir/$log.log" || true
+   done
+   if [[ "$result" != 0 ]] \
