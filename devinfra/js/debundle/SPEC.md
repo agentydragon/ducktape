@@ -3513,8 +3513,10 @@ without granting own-field, prototype or later-method effects.
 
 A class constructor's closed body does not establish its binding's GetValue.
 An independent source proof covers that read only when the provider consists
-of that one stable class declaration and local named exports: every emitted
-consumer then depends on a leaf. Other class providers keep possible TDZ
+of that one stable class declaration and local named exports, and the canonical
+class definition has no static field/block, computed method key or other
+unproved eager operation. Every emitted consumer then depends on a
+non-reentrant leaf. Other class providers keep possible TDZ
 completion, including cycles. A replaced provider's initialization proof
 retains its vendor-swap equivalence condition. Saved summaries preserve this
 initialization proof separately from the actual body fragment and its dependencies.

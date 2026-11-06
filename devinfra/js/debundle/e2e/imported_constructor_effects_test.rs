@@ -69,6 +69,9 @@ fn unsupported_constructor_operations_keep_conservative_effects() {
         "export class Box { #method() {} }",
         "export class Box { get #value() { return 1; } }",
         "export class Box { constructor() { var value = 1; return value; } }",
+        "export class Box { static { globalThis.fixtureConstructorMarker = 1; } }",
+        "export class Box { static value = 1; }",
+        "export class Box { ['method']() {} }",
     ] {
         let colocated = run_fixture(
             FixtureOpts::new(SOURCE, vec![]).with_extra_chunks(&[("static/peer", provider)]),

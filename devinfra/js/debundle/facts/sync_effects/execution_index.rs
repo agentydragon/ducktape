@@ -14983,8 +14983,12 @@ fn foreign_call(
     InferredForeignCall {
         declaration_start,
         initialized_class: (isolated_initializer
-            && derived.invocation == crate::analysis_inputs::ForeignInvocation::Construct)
-            .then(|| dependencies.clone()),
+            && derived.invocation == crate::analysis_inputs::ForeignInvocation::Construct
+            && index
+                .class_provider_bodies
+                .get(&declaration_start)
+                .is_some_and(|body| body.noninvoking_definition))
+        .then(|| dependencies.clone()),
         availability: if hoisted {
             CallableAvailability::Declaration
         } else if isolated_initializer && derived.retained_provider_captures.is_empty() {
