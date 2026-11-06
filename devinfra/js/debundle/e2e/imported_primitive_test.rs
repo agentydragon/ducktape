@@ -71,16 +71,6 @@ fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) 
 }
 
 fn assert_imported_read_receipt(fixture: &Fixture, binding: &str) {
-    let assessment = fixture.candidate_relocation_assessment();
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "the primitive read must participate in an actual inversion: {assessment:#}"
-    );
-
     let graph = fixture.dependency_graph();
     let node = graph
         .nodes
@@ -97,14 +87,9 @@ fn assert_imported_read_receipt(fixture: &Fixture, binding: &str) {
     else {
         panic!("imported primitive read lacks an operation receipt: {execution:#?}");
     };
-    assert!(
-        matches!(
-            &receipt.root,
-            analysis::reports::schema::LexicalEffectRoot::BindingInitializer {
-                binding: receipt_binding,
-                ..
-            } if receipt_binding == binding
-        ),
+    assert_eq!(
+        receipt.binding.as_str(),
+        binding,
         "receipt must identify the exact imported-value initializer: {receipt:#?}"
     );
 }
@@ -123,6 +108,15 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
         .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 264\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the primitive read must participate in an actual inversion: {assessment:#}"
+    );
     assert_imported_read_receipt(&fixture, "computed");
 }
 
