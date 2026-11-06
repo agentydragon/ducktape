@@ -230,7 +230,7 @@ func workloadCentral(t *testing.T, ca *environmentruntimetransporttesting.CA, cl
 }
 
 func workloadSidecar(t *testing.T, central *httptest.Server, proxyCredential environment_runtime_transport.Config, route workloadRouteConfig) string {
-    return workloadSidecarFor(t, central, proxyCredential, "rules.test.invalid:80", route)
+	return workloadSidecarFor(t, central, proxyCredential, "rules.test.invalid:80", route)
 }
 
 func workloadSidecarFor(t *testing.T, central *httptest.Server, proxyCredential environment_runtime_transport.Config, authority string, route workloadRouteConfig) string {
