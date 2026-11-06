@@ -227,33 +227,20 @@ def test_bar_proportionality():
 def test_percentage_calculation():
     """Test that percentage column shows correct ratio of file changes to total changes."""
     changes = [
-        FileChange(path="file1.py", additions=100, deletions=50),  # 150 total
-        FileChange(path="file2.py", additions=30, deletions=20),  # 50 total
-        FileChange(path="file3.py", additions=200, deletions=0),  # 200 total
+        FileChange(path="file1.py", additions=100, deletions=50),
+        FileChange(path="file2.py", additions=30, deletions=20),
+        FileChange(path="file3.py", additions=200, deletions=0),
     ]
-
-    # Total changes across all files: 150 + 50 + 200 = 400
-    # file1: 150/400 = 37.5%
-    # file2: 50/400 = 12.5%
-    # file3: 200/400 = 50.0%
 
     config = RenderConfig(columns=[Column.TREE, Column.PERCENTAGES])
     diff_tree = make_diff_tree(changes, config=config)
     result = render_to_string(diff_tree, width=120, force_terminal=False)
 
     lines = result.split("\n")
-
-    # Find lines containing each file
-    file1_line = _find_line_with(lines, "file1.py")
-    file2_line = _find_line_with(lines, "file2.py")
-    file3_line = _find_line_with(lines, "file3.py")
-
-    # Extract percentage values
-    # Percentage should be at the end of each line
-    # Format is like " 37.5%" or "12.5%"
-    assert "37.5%" in file1_line, f"file1.py should show 37.5%, got: {file1_line}"
-    assert "12.5%" in file2_line, f"file2.py should show 12.5%, got: {file2_line}"
-    assert "50.0%" in file3_line, f"file3.py should show 50.0%, got: {file3_line}"
+    expected_percentages = {"file1.py": "37.5%", "file2.py": "12.5%", "file3.py": "50.0%"}
+    for file_path, expected in expected_percentages.items():
+        line = _find_line_with(lines, file_path)
+        assert expected in line, f"{file_path} should show {expected}, got: {line}"
 
 
 def test_deletion_bar_alignment():
