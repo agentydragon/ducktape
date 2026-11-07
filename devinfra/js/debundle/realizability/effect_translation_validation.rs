@@ -158,6 +158,12 @@ pub struct EffectConflictCell<Evidence = InitializationEffectEvidence> {
     pub later_write: Option<Evidence>,
     pub allocation_involved: bool,
     pub observed_conflict: bool,
+    /// Typed reason a mutable ObjectShape read supports a selected own-data
+    /// operation. This is report evidence only; it does not discharge havoc.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub first_operation_support_reads: Vec<analysis::facts::OperationSupportReceipt>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub later_operation_support_reads: Vec<analysis::facts::OperationSupportReceipt>,
 }
 
 impl<Evidence> EffectConflictCell<Evidence> {
@@ -173,6 +179,8 @@ impl<Evidence> EffectConflictCell<Evidence> {
             later_write: self.later_write.map(&mut project),
             allocation_involved: self.allocation_involved,
             observed_conflict: self.observed_conflict,
+            first_operation_support_reads: self.first_operation_support_reads,
+            later_operation_support_reads: self.later_operation_support_reads,
         }
     }
 }
@@ -328,6 +336,14 @@ impl EffectConflictCells<'_> {
                 allocation_involved: self.first.allocates.contains(cell)
                     || self.later.allocates.contains(cell),
                 observed_conflict: *observed,
+                first_operation_support_reads: self
+                    .first
+                    .operation_support_reads_for(cell)
+                    .to_vec(),
+                later_operation_support_reads: self
+                    .later
+                    .operation_support_reads_for(cell)
+                    .to_vec(),
             })
     }
 }

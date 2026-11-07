@@ -6,7 +6,10 @@ use super::allocation_transfer::{
 };
 use super::array_transfer::ArrayMethodSelection;
 use super::descriptor_transfer::NativeObjectPostcondition;
-use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
+use super::effect_coverage::{
+    EffectCoverageFragment, NativeCalleeSelection, OperationSupportOperation,
+    OperationSupportReceipt,
+};
 use super::local_operations::{
     ClassConstructorBody, ClassDefinition, ClassFieldKey, ConstructorPhase,
     DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCall, LocalCallee,
@@ -347,6 +350,16 @@ pub(super) trait LocalContext: OwnDataContext {
     fn heap(&mut self) -> LiteralHeap<'_>;
     fn record_property_read(&mut self, cell: crate::facts::EffectCell);
     fn record_property_write(&mut self, cell: crate::facts::EffectCell);
+    /// Only application contexts project pooled source regions into their
+    /// relocation footprint. Isolated providers override this so their local
+    /// allocation ordinals cannot escape into importer analysis.
+    fn operation_support_receipt(
+        &self,
+        _operation: OperationSupportOperation,
+        origin: u32,
+        dependencies: &ProofDependencies,
+    ) -> Option<OperationSupportReceipt>;
+    fn record_operation_support(&mut self, _receipt: OperationSupportReceipt) {}
     /// An exact native binding and own-data slot proof can cover this whole
     /// lookup, including its global receiver. Other contexts evaluate the
     /// receiver and retain the ordinary own-data or accessor path.
@@ -654,9 +667,25 @@ fn read_field(
             let read = slot.read(context);
             let selection =
                 CallableSelection::observed(&read.values, selection_dependencies.clone());
-            context.record_property_read(read.cell);
-            let mut effects = EffectCoverageFragment::modeled_own_data_access();
-            effects.depend_on(selection_dependencies.as_ref());
+            let effects = if let Some(origin) = slot_origin_from_cell(&read.cell)
+                && let Some(receipt) = context.operation_support_receipt(
+                    OperationSupportOperation::OwnDataRead,
+                    origin,
+                    &selection_dependencies,
+                ) {
+                context.record_property_read(read.cell.clone());
+                context.record_property_read(crate::facts::EffectCell::ObjectShape(origin));
+                let mut effects = EffectCoverageFragment::modeled_own_data_access();
+                effects.depend_on(selection_dependencies.as_ref());
+                effects.operation_support(receipt.clone());
+                context.record_operation_support(receipt);
+                effects
+            } else {
+                // The own-property operation was selected, but its mutable
+                // descriptor support has no transportable address.
+                context.record_property_read(read.cell.clone());
+                EffectCoverageFragment::default()
+            };
             Some(LocalValueResult {
                 allocation: AllocationValue {
                     values: read.values,
@@ -679,6 +708,13 @@ fn read_field(
                         postcondition: None,
                     })
             }),
+    }
+}
+
+fn slot_origin_from_cell(cell: &crate::facts::EffectCell) -> Option<u32> {
+    match cell {
+        crate::facts::EffectCell::OwnProperty { origin, .. } => Some(*origin),
+        _ => None,
     }
 }
 
@@ -1413,12 +1449,21 @@ fn assign_field_expression(
     };
     let writable = local.context.property_is_writable(slot.object, property);
     let write_dependencies = writable.then(|| local.context.selection_prerequisites());
+    let support_receipt = writable.then(|| {
+        local.context.operation_support_receipt(
+            OperationSupportOperation::WritableOwnDataStore,
+            slot.object,
+            write_dependencies
+                .as_ref()
+                .expect("writable proof captures its prefix dependencies"),
+        )
+    });
     local.context.record_property_write(slot.cell());
     local
         .context
         .heap()
         .write_property(slot.object, Some(property.to_owned()), &selected.values);
-    if writable {
+    if let (true, Some(Some(receipt))) = (writable, support_receipt) {
         let mut effects = EffectCoverageFragment::modeled_own_data_access();
         effects.depend_on(
             write_dependencies
@@ -1426,6 +1471,11 @@ fn assign_field_expression(
                 .expect("writable proof captures its prefix dependencies")
                 .as_ref(),
         );
+        local
+            .context
+            .record_property_read(crate::facts::EffectCell::ObjectShape(slot.object));
+        effects.operation_support(receipt.clone());
+        local.context.record_operation_support(receipt);
         local.frame.effect_coverage.compose(&effects);
     } else {
         local

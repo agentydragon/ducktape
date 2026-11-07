@@ -819,6 +819,14 @@ The receipt retains current-prefix proof dependencies, while receiver, callee,
 argument and RHS evaluation compose their own effects. Accessors, missing or
 inherited slots, unsettled receivers and unproved writable descriptors do not
 receive this coverage.
+Each admitted own-data read or writable-own-data store also reads the target's
+`object_shape` region in the same relocation footprint as its `own_property`
+cell. The origin denotes every runtime generation of that source allocation,
+not one birth or singleton. Unmapped or unresolved support retains conservative
+effects; opaque descriptor/prototype mutations remain overlapping unknown
+invalidators. Support receipts are evidence and read footprints only: they do
+not close coverage or extend reasoning to absent/inherited slots or
+extensibility.
 A canonical in-range array-index read uses the same own-data transfer when the
 current prefix retains a settled, first-generation dense array-literal witness
 and the actual stored element value. Source operands are not reevaluated to

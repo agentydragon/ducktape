@@ -112,6 +112,10 @@ pub struct InitializationEffects<'a> {
     pub ordinal: SourceUnitOrdinal,
     pub reads: BTreeMap<EffectCell, InitializationEffectEvidence>,
     pub writes: BTreeMap<EffectCell, InitializationEffectEvidence>,
+    /// Receipts that explain when a projected ObjectShape read supports an
+    /// admitted own-data operation. These receipts never affect coverage.
+    operation_support_reads:
+        BTreeMap<EffectCell, Vec<super::sync_effects::OperationSupportReceipt>>,
     pub allocates: BTreeSet<EffectCell>,
     /// Conditions of the exact owner's whole-evaluation coverage proof. An
     /// import or direct function declaration executes no body and needs none.
@@ -133,6 +137,19 @@ pub struct InitializationEffects<'a> {
     pub execution_losses: &'a [ExecutionPrecisionLoss],
     pub opaque_heap: bool,
     pub owner_coverage_refusal: Option<OwnerInitializationCoverageRefusal>,
+}
+
+impl InitializationEffects<'_> {
+    /// Typed reasons that an operation's mutable descriptor/shape state was
+    /// projected into this statement's read footprint.
+    pub fn operation_support_reads_for(
+        &self,
+        cell: &EffectCell,
+    ) -> &[super::sync_effects::OperationSupportReceipt] {
+        self.operation_support_reads
+            .get(cell)
+            .map_or(&[], Vec::as_slice)
+    }
 }
 
 impl<'a> InitializationEffects<'a> {
@@ -195,6 +212,7 @@ impl StatementFacts {
             ordinal: self.ordinal,
             reads: BTreeMap::new(),
             writes: BTreeMap::new(),
+            operation_support_reads: BTreeMap::new(),
             allocates: self.heap_contents.allocations.clone(),
             coverage_dependencies: None,
             control_dependencies: None,
@@ -297,6 +315,15 @@ impl StatementFacts {
             record(&mut effects.writes, cell.clone(), None);
         }
         if let Some(calls) = &self.synchronous_calls {
+            for receipt in calls.operation_support_receipts() {
+                if let Some(cell) = receipt.projected_cell() {
+                    effects
+                        .operation_support_reads
+                        .entry(cell)
+                        .or_default()
+                        .push(receipt.clone());
+                }
+            }
             for (site, evidence) in &calls.evaluation_effects.global_accesses {
                 let target = match site.access {
                     GlobalAccessKind::Read => &mut effects.reads,

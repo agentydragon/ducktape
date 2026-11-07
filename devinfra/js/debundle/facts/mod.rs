@@ -108,6 +108,7 @@ pub(crate) use statement_facts::{
     ConstructorFacts, ExportLinkage, HeapContentCells, LocalRecordFactoryPurityCertificate,
     SettledElements,
 };
+pub use sync_effects::OperationSupportReceipt;
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
