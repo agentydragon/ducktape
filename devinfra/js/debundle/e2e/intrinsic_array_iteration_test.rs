@@ -1,12 +1,16 @@
 //! Builtin iteration preserves real callback effects and retained array values.
+use analysis::DependencyGraphReport;
 use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
-fn assert_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &str) {
+fn assert_selected_iteration_receipt_in_graph(
+    graph: &DependencyGraphReport,
+    binding: &str,
+    method: &str,
+) {
     let expected = format!("prototype.{method}");
-    let graph = fixture.dependency_graph();
-    let owner = source_unit_for_binding(&graph, binding);
+    let owner = source_unit_for_binding(graph, binding);
     let execution = graph
         .nodes
         .iter()
@@ -29,10 +33,17 @@ fn assert_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &
     );
 }
 
-fn assert_no_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &str) {
+fn assert_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &str) {
+    assert_selected_iteration_receipt_in_graph(&fixture.dependency_graph(), binding, method);
+}
+
+fn assert_no_selected_iteration_receipt_in_graph(
+    graph: &DependencyGraphReport,
+    binding: &str,
+    method: &str,
+) {
     let expected = format!("prototype.{method}");
-    let graph = fixture.dependency_graph();
-    let owner = source_unit_for_binding(&graph, binding);
+    let owner = source_unit_for_binding(graph, binding);
     let execution = graph
         .nodes
         .iter()
@@ -52,6 +63,10 @@ fn assert_no_selected_iteration_receipt(fixture: &Fixture, binding: &str, method
         _ => false,
     };
     assert!(!has_receipt, "{execution:#?}");
+}
+
+fn assert_no_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &str) {
+    assert_no_selected_iteration_receipt_in_graph(&fixture.dependency_graph(), binding, method);
 }
 
 #[test]
@@ -352,6 +367,97 @@ fn argument_time_prototype_restore_does_not_replace_the_captured_custom_method()
     // GetValue captured the custom method before the argument restored the
     // array's prototype. The built-in iteration row must not claim this call.
     assert_no_selected_iteration_receipt(&fixture, "result", "forEach");
+}
+
+#[test]
+fn some_stops_before_a_later_throwing_callback_value() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [() => ({ id: 'first' }), () => { throw 'later'; }];\nlet calls = 0;\nfunction invoke(value) { calls++; return value(); }\nconst result = entries.some(invoke);\nconsole.log(result, calls);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "true 1\n");
+    assert_selected_iteration_receipt(&fixture, "result", "some");
+}
+
+#[test]
+fn reached_some_callback_throw_is_an_abrupt_completion() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [() => { throw 'reached'; }, () => ({ id: 'later' })];\nlet calls = 0;\nfunction invoke(value) { calls++; return value(); }\nfunction run() { try { return entries.some(invoke); } catch (error) { return error; } }\nconst result = run();\nconsole.log(result, calls);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "reached 1\n");
+    assert_selected_iteration_receipt(&fixture, "result", "some");
+}
+
+#[test]
+fn unknown_some_predicate_refuses_without_executing_the_suffix() {
+    let source = "const entries = [undefined, { rank: 1 }];\nconst before = 0;\nlet calls = 0;\nconst result = entries.some((value, index) => { calls++; return index > 0; });\nconst observed = calls;\nconst after = 1;\nconsole.log(result, observed);\n";
+    let modules = vec![
+        logical_module("array", &[Member::new("entries")]),
+        logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+        logical_module(
+            "query",
+            &[
+                Member::new("calls"),
+                Member::new("result"),
+                Member::new("observed"),
+            ],
+        ),
+    ];
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(source, modules));
+    save_relocation_reports(
+        &rejected.report_root,
+        &rejected.chunk_id,
+        "array-some-unknown-predicate-prefix",
+    );
+    assert_node_output(&rejected.source_root.join("static/app.js"), "true 2\n", "");
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_ne!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    let graph = rejected.dependency_graph();
+    assert_no_selected_iteration_receipt_in_graph(&graph, "result", "some");
+    let owner = source_unit_for_binding(&graph, "result");
+    let execution = &graph
+        .nodes
+        .iter()
+        .find(|node| node.id == owner)
+        .unwrap()
+        .synchronous_execution;
+    assert!(!execution.as_ref().unwrap().complete, "{execution:#?}");
+}
+
+#[test]
+fn some_after_receiver_length_mutation_keeps_the_original_method_selection_conservative() {
+    let source = "const entries = [1];\nconst before = 0;\nconst result = entries.some((entries.length = 0, () => true));\nconst after = 1;\nconsole.log(result, entries.length);\n";
+    let modules = vec![
+        logical_module("array", &[Member::new("entries")]),
+        logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+        logical_module("query", &[Member::new("result")]),
+    ];
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(source, modules));
+    save_relocation_reports(
+        &rejected.report_root,
+        &rejected.chunk_id,
+        "array-some-argument-time-receiver-mutation",
+    );
+    assert_node_output(&rejected.source_root.join("static/app.js"), "false 0\n", "");
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_ne!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    let graph = rejected.dependency_graph();
+    assert_no_selected_iteration_receipt_in_graph(&graph, "result", "some");
 }
 
 fn assert_early_iteration_rejected(

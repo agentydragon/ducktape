@@ -1029,9 +1029,8 @@ pub enum IterationResult {
     /// A fresh array of the callback results, an array result spread one
     /// level through `IsArray`, `length` and index reads.
     FlatMapped,
-    /// A Boolean. This and the next two may stop at any element; the
-    /// interpreter still invokes the callback for every element, since
-    /// effects join and the extra invocations only add possible effects.
+    /// A Boolean. `some` and `every` may stop once callback truthiness proves
+    /// their result; `find` and `findIndex` retain their conservative paths.
     Boolean,
     /// An element, or `undefined`.
     Element,

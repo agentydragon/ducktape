@@ -3820,12 +3820,12 @@ before arguments and retain conservative fallback; they acquire no invocation
 receipt. This does not supply skipped-call coverage or extend assertions scoped
 to ordinary call syntax.
 
-Guarded dense-array `forEach`, `map` and `filter` capture the native method
-before arguments execute only when the checked array receiver still has its
-original `%Array.prototype%` lookup and no own method override. Receiver
-descriptors and, for result arrays, constructor/species premises are checked
-after the operands. The shared invocation kernel runs each reached callback
-with the element, numeric index and captured receiver.
+Guarded dense-array `forEach`, `map`, `filter`, `some` and `every` capture the
+native method before arguments execute only when the checked array receiver
+still has its original `%Array.prototype%` lookup and no own method override.
+Receiver descriptors and, for result arrays, constructor/species premises are
+checked after the operands. The shared invocation kernel runs each reached
+callback with the element, numeric index and captured receiver.
 Callback effects, dependencies, normal returns and possible throws compose
 independently; complete timing alone supplies no effect coverage. A known
 callback throw stops later indices. `forEach` returns `undefined` and ignores
@@ -4984,9 +4984,11 @@ once per element, in index order, with the retained element, a primitive index
 and the source array (`reduce` passes the accumulator first). Its reads,
 writes, coercions and publication are observed effects of the statement.
 
-- **Early exit.** `some`, `every`, `find` and `findIndex` can stop at any
-  element. The analysis still runs the callback for every element: effects
-  only join, so the extra invocations add possible effects and remove none.
+- **Early exit.** `some` and `every` use shared abstract truthiness to continue
+  only through a definitely non-stopping prefix, and stop at a definitely
+  stopping callback. An undecidable predicate leaves the Boolean result and
+  suffix effects incomplete; later callbacks are not executed without branch
+  state. `find` and `findIndex` keep their conservative callback path.
 - **Results.** `forEach` returns `undefined` and ignores callback returns.
   `map`, `filter` and `flatMap` return fresh arrays: `map` retains callback
   results, `filter` retains the original elements whose predicate is truthy,
@@ -4994,9 +4996,10 @@ writes, coercions and publication are observed effects of the statement.
   abstract truthiness keeps possible elements as unknown contents, not exact
   dense slots. A `flatMap` result whose positions are unknown likewise keeps
   its values as contents and is not iterated precisely later. `find` returns
-  an element or `undefined`; `reduce` returns the last accumulator, and on an
-  empty array without an initial value it throws. Iteration and spread of a
-  result do not invoke stored functions.
+  an element or `undefined`; `some` and `every` return Booleans without a
+  result-array allocation or species read. `reduce` returns the last
+  accumulator, and on an empty array without an initial value it throws.
+  Iteration and spread of a result do not invoke stored functions.
 - **Constructed class inputs.** A dense input slot may carry a checked local
   base-class construction while its class, receiver and array protocol remain
   untainted and unpublished. This proves the receiver's class kind, not a

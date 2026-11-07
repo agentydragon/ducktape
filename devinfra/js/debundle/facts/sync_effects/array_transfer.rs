@@ -100,8 +100,12 @@ pub(super) fn select_iteration(
     };
     if !matches!(
         row.result,
-        IterationResult::Undefined | IterationResult::Mapped | IterationResult::Filtered
+        IterationResult::Undefined
+            | IterationResult::Mapped
+            | IterationResult::Filtered
+            | IterationResult::Boolean
     ) || !matches!(row.invokes, ArgSel::Arg(0))
+        || (row.result == IterationResult::Boolean && !matches!(row.member, "some" | "every"))
         || !row.arity.contains(&1)
     {
         return None;
@@ -126,7 +130,7 @@ pub(super) fn select_iteration(
     }
     let result = match row.result {
         IterationResult::Mapped | IterationResult::Filtered => Some(result?),
-        IterationResult::Undefined => None,
+        IterationResult::Undefined | IterationResult::Boolean => None,
         _ => return None,
     };
     let dependencies = context.array_dependencies();

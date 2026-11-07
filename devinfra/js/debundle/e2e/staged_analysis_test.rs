@@ -1504,6 +1504,96 @@ fn filtered_array_iteration_receipt_survives_saved_analysis() {
     }
 }
 
+#[test]
+fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering() {
+    let source = "let executorCalls = 0;\nconst entries = [undefined, { id: 'record', executor: () => { executorCalls++; return 'deferred'; } }];\nconst before = 0;\nlet someCalls = 0;\nlet someTrace = 0;\nconst someResult = entries.some((value, index) => { someCalls++; someTrace = someTrace * 100 + index + 1; return value; });\nlet everyCalls = 0;\nlet everyTrace = 0;\nconst everyResult = entries.every((value, index) => { everyCalls++; everyTrace = everyTrace * 100 + index + 1; return value; });\nconst deferred = entries[1].executor();\nconst after = 1;\nconsole.log(someResult, everyResult, someCalls, everyCalls, someTrace, everyTrace, deferred, executorCalls);\n";
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "array",
+                &[Member::new("executorCalls"), Member::new("entries")],
+            ),
+            logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+            logical_module(
+                "booleans",
+                &[
+                    Member::new("someCalls"),
+                    Member::new("someTrace"),
+                    Member::new("someResult"),
+                    Member::new("everyCalls"),
+                    Member::new("everyTrace"),
+                    Member::new("everyResult"),
+                    Member::new("deferred"),
+                ],
+            ),
+        ],
+    ));
+    let expected = "true false 2 1 102 1 deferred 1\n";
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+
+    let direct = staged.run(&[]);
+    save_relocation_reports(
+        &direct.output_root().join("reports/tree"),
+        "static/app",
+        "array-boolean-rows-direct",
+    );
+    assert_ok(&direct.result, "direct Boolean array iteration run");
+    let direct_validation: Value = read_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/effect_translation_validation.json"),
+    );
+    assert_eq!(
+        direct_validation["decision"]["status"], "accepted",
+        "{direct_validation:#}"
+    );
+    assert!(
+        direct_validation["swapped_pairs"].as_u64().unwrap() > 0,
+        "{direct_validation:#}"
+    );
+
+    let artifact = path(&staged.artifact).to_owned();
+    let saved = staged.run(&["--analysis", artifact.as_str()]);
+    save_relocation_reports(
+        &saved.output_root().join("reports/tree"),
+        "static/app",
+        "array-boolean-rows-saved",
+    );
+    assert_ok(&saved.result, "saved-analysis Boolean array iteration run");
+    assert_same_invocation_trees(&direct, &saved);
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            expected,
+            "",
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        for (binding, method) in [("someResult", "some"), ("everyResult", "every")] {
+            let execution = &graph_node_for_binding(&graph, binding)["synchronous_execution"];
+            assert_eq!(execution["complete"], true, "{binding}: {execution:#}");
+            assert_eq!(
+                execution["binding_effect_authority"]["authority"], "operation_receipt",
+                "{binding}: {execution:#}"
+            );
+            let calls = execution["binding_effect_authority"]["receipt"]["calls"]
+                .as_array()
+                .unwrap();
+            assert!(
+                calls.iter().any(|call| {
+                    call["target"]["kind"] == "native"
+                        && call["target"]["property"] == format!("prototype.{method}")
+                }),
+                "{binding}: {execution:#}"
+            );
+        }
+    }
+}
+
 fn assert_distinct_root_call_receipts(execution: &Value, expected_calls: usize) {
     let calls = execution["binding_effect_authority"]["receipt"]["calls"]
         .as_array()

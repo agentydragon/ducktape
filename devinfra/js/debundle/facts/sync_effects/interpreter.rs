@@ -5766,6 +5766,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     )> {
         let proof = self.inputs.index.array_iterations.get(&span)?.clone();
         proof.result?;
+        // `some` and `every` need the selected-method receipt and the shared
+        // transfer's prefix truthiness decisions. This legacy plan has no
+        // captured pre-argument method identity or branch-state carrier.
+        if proof.row.result == IterationResult::Boolean {
+            return None;
+        }
         let values = self.evaluate(&proof.source, env, captures);
         let DenseArrayIterationTransfer::Yielded { source, slots } = self
             .dense_array_iteration_transfer(&values, || {
@@ -5851,6 +5857,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ]))
     }
 
+    /// A Boolean iteration with an unknown predicate prefix cannot execute
+    /// the suffix without branch state. Keep its normal and abrupt outcomes,
+    /// and make the unexecuted suffix's effects conservative at the caller.
+    fn incomplete_array_boolean_result(
+        &mut self,
+        call: &Call,
+        outcome: &mut Outcome,
+    ) -> CallTransfer {
+        outcome.unsupported(ExecutionOperation::ArrayIteration, call.owner, call.span);
+        outcome
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
+        CallTransfer::Values(Values::from([
+            AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN)),
+            AbstractValue::Value(Value::Unavailable),
+        ]))
+    }
+
     fn execute_selected_array_iteration(
         &mut self,
         call: &Call,
@@ -5864,12 +5888,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if call.kind != CallKind::Call || selection.site != call.span.into() {
             return refused;
         }
-        if !matches!(
-            selection.row.result,
-            IterationResult::Undefined | IterationResult::Mapped | IterationResult::Filtered
-        ) || (selection.row.result == IterationResult::Undefined && selection.result.is_some())
-            || (selection.row.result != IterationResult::Undefined && selection.result.is_none())
-        {
+        let result_shape_valid = match selection.row.result {
+            IterationResult::Mapped | IterationResult::Filtered => selection.result.is_some(),
+            IterationResult::Undefined | IterationResult::Boolean => selection.result.is_none(),
+            _ => false,
+        };
+        if !result_shape_valid {
             return refused;
         }
         let [callback] = arguments else {
@@ -5974,6 +5998,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 false,
             );
             let complete = nested.body_invoked && nested.complete && !nested.unknown_call;
+            let had_prior_possible_throw = may_throw;
             let known_throw = complete
                 && nested.thrown.is_some()
                 && nested.returns == Values::from([AbstractValue::Value(Value::Unavailable)])
@@ -5997,6 +6022,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             may_throw |= returned.remove(&AbstractValue::Value(Value::Unavailable));
             self.merge_array_effects(outcome, nested);
             if known_throw {
+                if selection.row.result == IterationResult::Boolean && had_prior_possible_throw {
+                    return self.incomplete_array_boolean_result(call, outcome);
+                }
                 outcome.thrown = thrown;
                 return CallTransfer::Values(Values::new());
             }
@@ -6007,12 +6035,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.literal_heap().write_property(result, None, &returned);
             }
             if !complete {
+                if selection.row.result == IterationResult::Boolean {
+                    return self.incomplete_array_boolean_result(call, outcome);
+                }
                 return self.incomplete_array_iteration_result(call, selection, &source, outcome);
             }
             if returned.is_empty() {
+                if selection.row.result == IterationResult::Boolean {
+                    return self.incomplete_array_boolean_result(call, outcome);
+                }
                 return CallTransfer::Values(Values::from([AbstractValue::Value(
                     Value::Unavailable,
                 )]));
+            }
+            if selection.row.result == IterationResult::Boolean {
+                let Some(truthiness) = allocation_transfer::truthiness(&returned) else {
+                    return self.incomplete_array_boolean_result(call, outcome);
+                };
+                let stop = match (selection.row.member, truthiness) {
+                    ("some", allocation_transfer::Truthiness::AlwaysTruthy)
+                    | ("every", allocation_transfer::Truthiness::AlwaysFalsy) => true,
+                    ("some", allocation_transfer::Truthiness::AlwaysFalsy)
+                    | ("every", allocation_transfer::Truthiness::AlwaysTruthy) => false,
+                    (_, allocation_transfer::Truthiness::Maybe) => {
+                        return self.incomplete_array_boolean_result(call, outcome);
+                    }
+                    _ => return refused,
+                };
+                if stop {
+                    let mut values =
+                        Values::from([AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN))]);
+                    if may_throw {
+                        values.insert(AbstractValue::Value(Value::Unavailable));
+                    }
+                    return CallTransfer::Values(values);
+                }
             }
             if self.settled_dense_array_slots(selection.object).as_ref() != Some(&dense)
                 || !self.array_iteration_values_are_settled(&dense)
@@ -6044,12 +6101,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                     }
                 }
-                IterationResult::Undefined => {}
+                IterationResult::Undefined | IterationResult::Boolean => {}
                 _ => return refused,
             }
         }
         let mut values = match selection.row.result {
             IterationResult::Undefined => Values::from([AbstractValue::UNDEFINED]),
+            IterationResult::Boolean => {
+                Values::from([AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN))])
+            }
             IterationResult::Mapped | IterationResult::Filtered => {
                 let result = selection.result.expect("array row has an array result");
                 if selection.row.result == IterationResult::Filtered && filter_truthiness_unknown {
