@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -22,7 +23,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.k3s import baseline
-from agentplane.system_tests.vm import guest_logs, host_qemu, infrastructure, shutdown_diagnostic
+from agentplane.system_tests.vm import boot_rcu, guest_logs, host_qemu, infrastructure, shutdown_diagnostic
 from cluster.cdk8s.agentplane import launcher_relay
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -40,6 +41,7 @@ _SKIP_VIRTIOFS_POLICY_ENV = "AGENTPLANE_TCG_VMI_SKIP_VIRTIOFS_POLICY"
 _CYCLES_ENV = "AGENTPLANE_TCG_VMI_CYCLES"
 _DEBUG_KERNEL_ARGS_ENV = "AGENTPLANE_TCG_VMI_DEBUG_KERNEL_ARGS"
 _DEBUG_KERNEL_ARGS = "systemd.log_level=debug systemd.log_target=console loglevel=8"
+_BOOT_RCU_ENV = "AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER"
 
 
 def _cycle_count() -> int:
@@ -61,6 +63,16 @@ def _debug_kernel_args() -> bool:
             return True
         case value:
             raise ValueError(f"{_DEBUG_KERNEL_ARGS_ENV} must be '0' or '1', got {value!r}")
+
+
+def _boot_rcu_observer() -> bool:
+    match os.environ.get(_BOOT_RCU_ENV, "0"):
+        case "0":
+            return False
+        case "1":
+            return True
+        case value:
+            raise ValueError(f"{_BOOT_RCU_ENV} must be '0' or '1', got {value!r}")
 
 
 def _skip_virtiofs_shutdown_policy() -> bool:
@@ -197,7 +209,9 @@ def _disk(name: str, serial: str) -> dict[str, Any]:
     return {"name": name, "serial": serial, "disk": {"bus": "virtio"}}
 
 
-def _vmi(namespace: str, images: dict[str, str], *, debug_kernel_args: bool = False) -> dict[str, Any]:
+def _vmi(
+    namespace: str, images: dict[str, str], *, debug_kernel_args: bool = False, boot_rcu_observe: bool = False
+) -> dict[str, Any]:
     boot_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-boot:unset"))
     root_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-root:unset"))
     runner_image = next(reference for reference in images if reference.endswith("agentplane-runner-disk:unset"))
@@ -220,6 +234,7 @@ def _vmi(namespace: str, images: dict[str, str], *, debug_kernel_args: bool = Fa
                             "console=ttyS0 net.ifnames=0 agentplane.boot-evidence=1 "
                             "systemd.mask=agentplane-environment-runtime.service"
                             + (f" {_DEBUG_KERNEL_ARGS}" if debug_kernel_args else "")
+                            + (" agentplane.boot-rcu-observe=1" if boot_rcu_observe else "")
                         ),
                         "container": {
                             "image": boot_image,
@@ -866,6 +881,29 @@ def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None
     assert debug == plain
 
 
+def test_boot_rcu_observer_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_BOOT_RCU_ENV, raising=False)
+    assert _boot_rcu_observer() is False
+    monkeypatch.setenv(_BOOT_RCU_ENV, "1")
+    assert _boot_rcu_observer() is True
+    monkeypatch.setenv(_BOOT_RCU_ENV, "true")
+    with pytest.raises(ValueError, match="must be '0' or '1'"):
+        _boot_rcu_observer()
+
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
+    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, boot_rcu_observe=True)
+    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert observed_args == f"{plain_args} agentplane.boot-rcu-observe=1"
+    observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
+    assert observed == plain
+
+
 def test_shutdown_policy_lifecycle_sample_distinguishes_absent_from_api_error_and_replaced_pod() -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
 
@@ -923,6 +961,7 @@ def _run_cycle(
     *,
     skip_virtiofs_policy: bool,
     debug_kernel_args: bool,
+    boot_rcu_observe: bool,
 ) -> None:
     """Run one isolated VMI lifecycle and keep its evidence before cleanup."""
     output.mkdir(parents=True, exist_ok=True)
@@ -963,7 +1002,9 @@ def _run_cycle(
             _create_namespaced(k3s, namespace_name, namespace_uid, _placeholder_config_map(namespace_name, name))
         pvc = _create_namespaced(k3s, namespace_name, namespace_uid, _state_claim(namespace_name))
         pvc_uid = pvc["metadata"]["uid"]
-        vmi = _vmi(namespace_name, guest_image_manifest, debug_kernel_args=debug_kernel_args)
+        vmi = _vmi(
+            namespace_name, guest_image_manifest, debug_kernel_args=debug_kernel_args, boot_rcu_observe=boot_rcu_observe
+        )
         (output / "vmi.json").write_text(json.dumps(vmi, indent=2, sort_keys=True))
 
         vmi_was_created = False
@@ -980,10 +1021,15 @@ def _run_cycle(
                 record_shutdown_diagnostic=True,
             ),
             host_qemu.capture(k3s.kubectl, namespace_name, output / "vm-artifacts"),
+            ExitStack() as boot_observer,
         ):
             created_vmi = _create_namespaced(k3s, namespace_name, namespace_uid, vmi)
             vmi_was_created = True
             vmi_uid = created_vmi["metadata"]["uid"]
+            if boot_rcu_observe:
+                boot_observer.enter_context(
+                    boot_rcu.capture(k3s.kubectl, namespace_name, vmi_uid, output / "boot-rcu-host.jsonl")
+                )
             shutdown_diagnostic.write_progress(output, "started", sandbox_uid=vmi_uid)
             pvc = _wait_for_pvc(k3s, namespace_name)
             k3s.kubectl(
@@ -1008,6 +1054,7 @@ def _run_cycle(
                         "policy_uid": policy_uid,
                         "policy_enabled": not skip_virtiofs_policy,
                         "debug_kernel_args": debug_kernel_args,
+                        "boot_rcu_observer": boot_rcu_observe,
                     },
                     indent=2,
                     sort_keys=True,
@@ -1149,12 +1196,14 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     cycle_count = _cycle_count()
     skip_virtiofs_policy = _skip_virtiofs_shutdown_policy()
     debug_kernel_args = _debug_kernel_args()
+    boot_rcu_observe = _boot_rcu_observer()
     (output / "run-config.json").write_text(
         json.dumps(
             {
                 "requested_cycles": cycle_count,
                 "policy_enabled": not skip_virtiofs_policy,
                 "debug_kernel_args": debug_kernel_args,
+                "boot_rcu_observer": boot_rcu_observe,
                 "debug_kernel_args_value": _DEBUG_KERNEL_ARGS if debug_kernel_args else "",
             },
             indent=2,
@@ -1181,6 +1230,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 output / "cycles" / f"{cycle:03d}",
                 skip_virtiofs_policy=skip_virtiofs_policy,
                 debug_kernel_args=debug_kernel_args,
+                boot_rcu_observe=boot_rcu_observe,
             )
     except BaseException as error:
         primary_error = error

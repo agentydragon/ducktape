@@ -1,0 +1,24 @@
+#!/usr/bin/busybox sh
+# Opt-in, read-only boot samples. Each field is capped before writing to serial.
+set -u
+export PATH=/usr/bin:/usr/sbin
+sample=0
+while [ "$sample" -lt 120 ]; do
+	printf 'AGENTPLANE_BOOT_RCU_SAMPLE_BEGIN seq=%s\n' "$sample"
+	printf 'UPTIME '
+	busybox head -c 64 /proc/uptime 2>/dev/null || printf 'unavailable\n'
+	printf '\nINTERRUPTS\n'
+	busybox awk 'NR == 1 || $1 ~ /^(LOC:|RES:|CAL:|0:|9:)$/' /proc/interrupts 2>/dev/null | busybox head -c 1024
+	printf '\nSOFTIRQS\n'
+	busybox awk 'NR == 1 || $1 ~ /^(TIMER:|RCU:|SCHED:)$/' /proc/softirqs 2>/dev/null | busybox head -c 512
+	printf '\nPID1_WCHAN '
+	busybox head -c 128 /proc/1/wchan 2>/dev/null || printf 'unavailable'
+	printf '\nPID1_STACK\n'
+	busybox head -c 2048 /proc/1/stack 2>/dev/null || printf 'unavailable\n'
+	printf '\nPID1_SYSCALL '
+	busybox head -c 128 /proc/1/syscall 2>/dev/null || printf 'unavailable'
+	printf '\nAGENTPLANE_BOOT_RCU_SAMPLE_END seq=%s\n' "$sample"
+	sample=$((sample + 1))
+	busybox sleep 1
+done
+printf 'AGENTPLANE_BOOT_RCU_OBSERVER_COMPLETE samples=%s\n' "$sample"

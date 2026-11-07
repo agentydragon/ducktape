@@ -282,6 +282,23 @@ k3s_tcg_vm_image_manifest(
     name = "test_tcg_vmi_shutdown_image_manifest",
 )
 
+py_library(
+    name = "boot_rcu",
+    srcs = ["boot_rcu.py"],
+    deps = [":host_qemu"],
+)
+
+py_test(
+    name = "test_boot_rcu",
+    srcs = ["test_boot_rcu.py"],
+    deps = [
+        ":boot_rcu",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_tcg_vmi_shutdown",
     size = "enormous",
@@ -305,6 +322,7 @@ py_test(
     main = "test_tcg_vmi_shutdown.py",
     tags = K3S_TAGS + ["manual"],
     deps = [
+        ":boot_rcu",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -333,6 +351,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
+        ":boot_rcu",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -358,6 +377,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
+        ":boot_rcu",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",

@@ -137,6 +137,7 @@ pkg_files(
     srcs = [
         "agentplane-boot-evidence",
         "agentplane-boot-evidence-monitor",
+        "boot_rcu_observer",
         "cgroup_observer",
         "environment_runtime_start",
         "guest_prepare",
@@ -152,6 +153,7 @@ pkg_files(
     renames = {
         "//agentplane/env/images:home_prepare": "agentplane-home-prepare",
         "cgroup_observer": "agentplane-cgroup-observer",
+        "boot_rcu_observer": "agentplane-boot-rcu-observer",
         "guest_prepare": "agentplane-guest-prepare",
         "environment_runtime_start": "agentplane-environment-runtime-start",
         "startup_profile": "agentplane-startup-profile",
@@ -175,6 +177,7 @@ pkg_files(
         "agentplane-acpi.service",
         "agentplane-boot-device-monitor.service",
         "agentplane-boot-evidence.service",
+        "agentplane-boot-rcu-observer.service",
         "agentplane-cgroup-observer.service",
         "agentplane-guest-prepare.service",
         "agentplane-home-prepare.service",
@@ -201,6 +204,7 @@ pkg_tar(
         "default.target": "/usr/lib/systemd/system/multi-user.target",
         "getty.target": "/dev/null",
         "sysinit.target.wants/agentplane-boot-device-monitor.service": "../agentplane-boot-device-monitor.service",
+        "sysinit.target.wants/agentplane-boot-rcu-observer.service": "../agentplane-boot-rcu-observer.service",
         "sysinit.target.wants/agentplane-journal-console.service": "../agentplane-journal-console.service",
         "sysinit.target.wants/agentplane-shutdown-watchdog.service": "../agentplane-shutdown-watchdog.service",
         "multi-user.target.wants/agentplane-acpi.service": "../agentplane-acpi.service",

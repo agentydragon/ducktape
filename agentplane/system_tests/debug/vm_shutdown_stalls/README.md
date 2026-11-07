@@ -26,6 +26,58 @@ are in the guest's memory and disappear when the VM is deleted.
 The exact pending shutdown job is still unknown as of the experiments below. A missing proof receipt does not by itself
 identify the proof unit as the blocker.
 
+## Separate boot RCU wedge: opt-in observation
+
+The full VM suite also has a distinct **pre-Ready** failure. In [invocation
+`c4d8ad7d-afbd-4d14-8a93-f54b968fce8f`](https://app.buildbuddy.io/invocation/c4d8ad7d-afbd-4d14-8a93-f54b968fce8f),
+run 1 VM 2 did not become Ready. Cleanup sent ACPI, but PID 1 remained in
+`cgroup_subtree_control_write` → `synchronize_rcu_normal` → `__wait_rcu_gp` and
+the domain was destroyed at the grace limit. The earlier [boot RCU stall in
+`3d2f8852`](https://app.buildbuddy.io/invocation/3d2f8852-9353-456e-9959-418555c97da4)
+had a halted CPU 1 and no timer progress on that CPU. Neither is evidence of
+the late post-ACPI shutdown stall's cause.
+
+The manual direct-VMI test now accepts `AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER=1`.
+Only that opt-in appends `agentplane.boot-rcu-observe=1` to its two-vCPU guest
+kernel arguments. A conditioned early systemd service writes up to 120 samples
+to the serial console, about once per second, capped per field and by a
+150-second unit runtime. Each sample reads guest uptime, both CPUs' interrupt
+and TIMER/RCU softirq counters, and PID 1's wait channel, stack and syscall.
+The host samples QEMU process and up to 16 thread states from `/proc` only,
+matched by the launcher's exact Pod UID cgroup. It caps collection at 120
+samples, 150 seconds and 256 KiB, with an explicit incomplete-scan result for
+permission errors or process-scan truncation. The new host observer issues no
+QMP command; the existing harness checks `query-kvm` only after the VMI becomes
+Ready. The guest's 1 Hz console writer is itself a perturbation.
+An independently bounded summary records the host sampler's stop reason,
+written sample count, capture-error count and clean-exit status; a crash leaves
+an explicit `not_finished` summary.
+
+One uncached policy-on smoke used source base `5a0996f9c2bcd437fb2af9aadc590e5c46f05509`
+plus working-tree patch SHA-256
+`ebe919032e94919cf969e7a6449c2fb95ade0c5af6f100f1babe80a08d821d14`.
+The [observer-on action](https://app.buildbuddy.io/invocation/97e4d6e1-6d91-46ae-b800-93e5a8e6d207)
+passed: 66 host samples from 04:33:46.758–04:34:51.547 UTC on November 7,
+2026 included 44 exact-Pod-cgroup QEMU matches, both `CPU 0/TCG` and
+`CPU 1/TCG`, and zero capture/incomplete-scan errors. The CRI-timestamped
+serial first sampled at 04:34:21.071 UTC (guest uptime 13.29 seconds), completed
+21 samples, and began another before normal powerdown. Both CPUs' TIMER
+softirqs rose from 411/624 to 2250/2578; RCU softirqs rose from 2136/1886
+to 8439/8644. No sampled PID 1 wait showed the earlier cgroup/RCU path.
+The guest received ACPI, emitted ordered shutdown proof, and its namespace
+cleanup reached `sandbox_deleted`.
+
+The separate [observer-off control](https://app.buildbuddy.io/invocation/14e5811a-02fa-4b52-9d2e-3224a7801b58)
+also passed. Its actual kernel command line omitted the opt-in argument; the
+service was skipped, both retained console copies had zero sample markers,
+and no host boot-sampler artifact was produced. It likewise emitted ordered
+proof and reached `sandbox_deleted`. These two actions overlapped; each had an
+independent disposable cluster. The direct VMI masks
+`agentplane-environment-runtime.service`, so a clean result cannot exclude
+the full guest's Runtime startup path or establish why either boot wedge
+occurred. Raw smoke artifacts and checksums remain in the task scratch area;
+the linked BuildBuddy artifacts are the durable evidence.
+
 ## Historical target boundary
 
 The earliest verified **post-ACPI, missing-proof, forced-kill** case in the indexed VM

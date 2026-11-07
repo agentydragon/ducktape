@@ -1,0 +1,16 @@
+[Unit]
+Description=Bounded read-only boot RCU evidence for manual VM diagnostics
+ConditionKernelCommandLine=agentplane.boot-rcu-observe=1
+DefaultDependencies=no
+Before=sysinit.target
+
+[Service]
+Type=exec
+ExecStart=/usr/sbin/agentplane-boot-rcu-observer
+RuntimeMaxSec=150s
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0
+
+[Install]
+WantedBy=sysinit.target
