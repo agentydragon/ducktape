@@ -478,7 +478,6 @@ class EnvironmentSandboxTemplate(Construct):
 
     def _add_sidecar_settings(self, *, name: str, listen_host: str | None = None) -> SettingsFile:
         bind_host = listen_host or "127.0.0.1"
-        api = self.egress_api_service or egress.agent_api(self.env.namespace)
         if self.env.runner_egress_mtls:
             tls_path = Path(sidecar_config.RUNNER_TLS_MOUNT_PATH)
             proxy_transport: sidecar_config.ProxyTransport = sidecar_config.TLSProxyTransport(
@@ -493,8 +492,9 @@ class EnvironmentSandboxTemplate(Construct):
             self,
             self.env,
             name=name,
-            platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
-            rules_api=(f"{api.fqdn}:{api.port.number}" if self.env.runner_egress_mtls else None),
+            platform_routes=platform_routes.sidecar_routes(
+                self.env.namespace, listen_host=bind_host, runner_egress_mtls=self.env.runner_egress_mtls
+            ),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
             proxy_transport=proxy_transport,
         )

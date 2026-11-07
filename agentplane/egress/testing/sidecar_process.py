@@ -26,12 +26,10 @@ class SidecarProcess:
         *,
         proxy: Proxy,
         audience_token_files: Mapping[str, Path] = MappingProxyType({}),
-        rules_api: str | None = None,
         platform_routes: Mapping[str, PlatformRoute] = MappingProxyType({}),
     ) -> None:
         self._proxy = proxy
         self._audience_token_files = audience_token_files
-        self._rules_api = rules_api
         self._platform_routes = platform_routes
         self._listener_stack = ExitStack()
         self._proxy_listener: Listener | None = None
@@ -51,13 +49,12 @@ class SidecarProcess:
                 listener = self._listener_stack.enter_context(listen_tcp())
                 self._route_listeners[name] = listener
                 routes[name] = PlatformRoute(
-                    listen_address=self._fd_address(listener), upstream=config.upstream, token_file=config.token_file
+                    listen_address=self._fd_address(listener), upstream=config.upstream, transport=config.transport
                 )
 
             settings = Settings(
                 proxy=self._proxy,
                 audience_token_files=dict(self._audience_token_files),
-                rules_api=self._rules_api,
                 platform_routes=routes,
                 listen_address=self._fd_address(self.proxy_listener),
                 readiness_listen_address=self._fd_address(self.readiness_listener),

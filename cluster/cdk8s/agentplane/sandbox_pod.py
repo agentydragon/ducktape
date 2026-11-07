@@ -187,7 +187,6 @@ def add_sidecar_settings(
     name: str,
     platform_routes: Mapping[str, PlatformRoute],
     proxy_transport: sidecar_config.ProxyTransport,
-    rules_api: str | None = None,
     listen_address: str | None = None,
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
@@ -200,7 +199,6 @@ def add_sidecar_settings(
         audience_token_files={
             audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
         },
-        rules_api=rules_api,
         platform_routes=dict(platform_routes),
     )
     if listen_address is not None:

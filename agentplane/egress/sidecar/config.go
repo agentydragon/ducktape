@@ -16,10 +16,79 @@ import (
 
 const configFileEnv = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
+type platformRouteMode string
+
+const (
+	platformRoutePlaintext  platformRouteMode = "plaintext"
+	platformRouteTLSConnect platformRouteMode = "tls_connect"
+)
+
+type platformRouteTransportConfig interface {
+	mode() platformRouteMode
+}
+
+type plaintextRouteTransportConfig struct{ TokenFile string }
+
+func (plaintextRouteTransportConfig) mode() platformRouteMode { return platformRoutePlaintext }
+
+type tlsConnectRouteTransportConfig struct{}
+
+func (tlsConnectRouteTransportConfig) mode() platformRouteMode { return platformRouteTLSConnect }
+
 type platformRouteConfig struct {
-	ListenAddress string `yaml:"listen_address"`
-	Upstream      string `yaml:"upstream"`
-	TokenFile     string `yaml:"token_file,omitempty"`
+	ListenAddress string                       `yaml:"listen_address"`
+	Upstream      string                       `yaml:"upstream"`
+	Transport     platformRouteTransportConfig `yaml:"transport"`
+}
+
+// UnmarshalYAML keeps route transport and its permitted fields as a sealed variant.
+func (c *platformRouteConfig) UnmarshalYAML(node *yaml.Node) error {
+	var raw struct {
+		ListenAddress string    `yaml:"listen_address"`
+		Upstream      string    `yaml:"upstream"`
+		Transport     yaml.Node `yaml:"transport"`
+	}
+	if err := decodeKnownFields(node, &raw); err != nil {
+		return err
+	}
+	if raw.Transport.Kind == 0 {
+		return errors.New("transport is required")
+	}
+	transport, err := decodePlatformRouteTransport(&raw.Transport)
+	if err != nil {
+		return fmt.Errorf("transport: %w", err)
+	}
+	*c = platformRouteConfig{ListenAddress: raw.ListenAddress, Upstream: raw.Upstream, Transport: transport}
+	return nil
+}
+
+func decodePlatformRouteTransport(node *yaml.Node) (platformRouteTransportConfig, error) {
+	var transport struct {
+		Mode      platformRouteMode `yaml:"mode"`
+		TokenFile yaml.Node         `yaml:"token_file"`
+	}
+	if err := decodeKnownFields(node, &transport); err != nil {
+		return nil, err
+	}
+	switch transport.Mode {
+	case platformRoutePlaintext:
+		var tokenFile string
+		if transport.TokenFile.Kind != 0 {
+			var err error
+			tokenFile, err = requiredYAMLString(&transport.TokenFile, "token_file")
+			if err != nil || !filepath.IsAbs(tokenFile) {
+				return nil, errors.New("plaintext route token_file must be an absolute path")
+			}
+		}
+		return plaintextRouteTransportConfig{TokenFile: tokenFile}, nil
+	case platformRouteTLSConnect:
+		if transport.TokenFile.Kind != 0 {
+			return nil, errors.New("TLS CONNECT route cannot set token_file")
+		}
+		return tlsConnectRouteTransportConfig{}, nil
+	default:
+		return nil, fmt.Errorf("mode must be %q or %q: %q", platformRoutePlaintext, platformRouteTLSConnect, transport.Mode)
+	}
 }
 
 type proxyAuth interface {
@@ -209,7 +278,6 @@ func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
 type config struct {
 	Proxy                  proxyConfig                    `yaml:"proxy"`
 	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
-	RulesAPI               string                         `yaml:"rules_api,omitempty"`
 	PlatformRoutes         map[string]platformRouteConfig `yaml:"platform_routes"`
 	ListenAddress          string                         `yaml:"listen_address"`
 	ReadinessListenAddress string                         `yaml:"readiness_listen_address"`
@@ -254,16 +322,20 @@ func (c config) validate() error {
 		return errors.New("platform_routes must be an object")
 	}
 	for name, route := range c.PlatformRoutes {
-		if route.ListenAddress == "" || route.Upstream == "" {
+		if route.ListenAddress == "" || route.Upstream == "" || route.Transport == nil {
 			return fmt.Errorf("platform route %q requires listen_address and upstream", name)
 		}
-	}
-	if c.RulesAPI != "" {
-		if _, ok := c.Proxy.Transport.(tlsProxyTransportConfig); !ok {
-			return errors.New("rules_api requires TLS proxy transport")
+		if err := validateAuthority(route.Upstream); err != nil {
+			return fmt.Errorf("platform route %q upstream: %w", name, err)
 		}
-		if err := validateAuthority(c.RulesAPI); err != nil {
-			return fmt.Errorf("rules_api: %w", err)
+		if route.Transport.mode() == platformRouteTLSConnect {
+			transport, ok := c.Proxy.Transport.(tlsProxyTransportConfig)
+			if !ok {
+				return fmt.Errorf("platform route %q TLS CONNECT requires TLS proxy transport", name)
+			}
+			if _, ok := transport.Auth.(spiffeProxyAuth); !ok {
+				return fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE proxy authentication", name)
+			}
 		}
 	}
 	return nil

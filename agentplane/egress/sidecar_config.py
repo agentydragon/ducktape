@@ -4,7 +4,7 @@ import ipaddress
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from agentplane.egress.platform_routes import PlatformRoute
 
@@ -123,15 +123,22 @@ class Settings(BaseModel):
         "central proxy to substitute where a rule names that audience. Destination tokens are independent "
         "of the proxy hop authentication.",
     )
-    rules_api: str | None = Field(
-        default=None, description="Exact Rules API host:port; it uses the proxy hop's TLS credentials and trust."
-    )
     platform_routes: dict[str, PlatformRoute] = Field(
         default_factory=dict,
-        description="Agentplane services this Pod calls directly, by name: each gets a loopback gRPC "
-        "listener that forwards with the service's token, bypassing the central proxy.",
+        description="Agentplane services this Pod calls by name. Each gets a local gRPC listener; "
+        "the route transport chooses a direct bearer hop or SVID-authenticated TLS through the central proxy.",
     )
     listen_address: str = Field(
         default="127.0.0.1:3128", description="Address the runner container's HTTP(S)_PROXY names."
     )
     readiness_listen_address: str = Field(default=READINESS_LISTEN_ADDRESS, description="HTTP address serving /readyz.")
+
+    @model_validator(mode="after")
+    def tls_routes_require_spiffe_proxy_auth(self) -> Settings:
+        has_tls_route = any(route.transport.mode == "tls_connect" for route in self.platform_routes.values())
+        if has_tls_route and not (
+            isinstance(self.proxy.transport, TLSProxyTransport)
+            and isinstance(self.proxy.transport.auth, SpiffeProxyAuth)
+        ):
+            raise ValueError("TLS CONNECT platform routes require TLS proxy transport with SPIFFE authentication")
+        return self

@@ -29,11 +29,9 @@ const (
 )
 
 type sidecar struct {
-	rulesHandler   *httputil.ReverseProxy
-	rulesTransport *http.Transport
-	config         config
-	proxyHop       *proxyHop
-	ready          atomic.Bool
+	config   config
+	proxyHop *proxyHop
+	ready    atomic.Bool
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
@@ -47,17 +45,11 @@ type sidecar struct {
 }
 
 func (s *sidecar) run(ctx context.Context) error {
-	if err := s.prepareRulesAPI(); err != nil {
-		return err
-	}
-	if s.rulesTransport != nil {
-		defer s.rulesTransport.CloseIdleConnections()
-	}
 	readinessListener, err := netlistener.Open(s.config.ReadinessListenAddress)
 	if err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
 	}
-	routes, err := bindPlatformRoutes(s.config.PlatformRoutes)
+	routes, err := s.bindPlatformRoutes(s.config.PlatformRoutes)
 	if err != nil {
 		_ = readinessListener.Close()
 		return err
@@ -244,20 +236,14 @@ func (s *sidecar) proxyHandler() http.Handler {
 			s.handleConnect(w, r)
 			return
 		}
-		absolute := r.URL.Scheme == "http" && r.URL.Host != ""
 		if r.URL.Scheme == "" && r.URL.Host == "" && r.Host != "" {
 			// Local clients may send origin-form requests to the proxy listener.
-			// Only absolute-form requests select the Rules API TLS route.
 			r = r.Clone(r.Context())
 			r.URL.Scheme = "http"
 			r.URL.Host = r.Host
 		} else if r.URL.Scheme != "http" || r.URL.Host == "" {
 			refuse(w, http.StatusBadRequest, "bad-request")
 			return
-		}
-		authority := r.URL.Host
-		if r.URL.Port() == "" {
-			authority = net.JoinHostPort(r.URL.Hostname(), "80")
 		}
 		token, err := s.proxyHop.auth.requestToken()
 		if err != nil {
@@ -266,10 +252,6 @@ func (s *sidecar) proxyHandler() http.Handler {
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), proxyTokenKey{}, token))
-		if absolute && s.rulesHandler != nil && authority == s.config.RulesAPI {
-			s.rulesHandler.ServeHTTP(w, r)
-			return
-		}
 		proxy.ServeHTTP(w, r)
 	})
 }

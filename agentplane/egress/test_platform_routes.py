@@ -11,7 +11,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.egress.platform_routes import PlaintextRouteTransport, PlatformRoute
 from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 
@@ -92,7 +92,11 @@ def token_file(tmp_path: Path) -> Path:
 async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> AsyncIterator[RouteUnderTest]:
     handler, port = upstream
     route_config = {
-        "control": PlatformRoute(listen_address="127.0.0.1:0", upstream=f"127.0.0.1:{port}", token_file=token_file)
+        "control": PlatformRoute(
+            listen_address="127.0.0.1:0",
+            upstream=f"127.0.0.1:{port}",
+            transport=PlaintextRouteTransport(token_file=token_file),
+        )
     }
     async with (
         SidecarProcess(

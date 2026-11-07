@@ -8,7 +8,7 @@ go_library(
         "main.go",
         "platform_routes.go",
         "relay.go",
-        "rules_api.go",
+        "tls_route.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/sidecar",
     visibility = ["//agentplane/egress:__pkg__"],

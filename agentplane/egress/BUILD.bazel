@@ -124,6 +124,7 @@ py_test(
     srcs = ["test_sidecar_config.py"],
     deps = [
         ":conftest",
+        ":platform_routes",
         ":sidecar_config",
         "//:conftest",
         "@pypi//pydantic",

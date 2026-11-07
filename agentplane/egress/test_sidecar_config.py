@@ -1,12 +1,21 @@
 """The sidecar authoring union keeps invalid hop combinations out of rendered settings."""
 
 import json
+from pathlib import Path
 
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.egress.sidecar_config import Proxy
+from agentplane.egress.platform_routes import PlatformRoute, TLSConnectRouteTransport
+from agentplane.egress.sidecar_config import (
+    KubernetesBearerProxyAuth,
+    PlaintextProxyTransport,
+    Proxy,
+    Settings,
+    SpiffeProxyAuth,
+    TLSProxyTransport,
+)
 
 
 @pytest.mark.parametrize(
@@ -57,6 +66,38 @@ def test_proxy_address_requires_exact_host_port(address: str) -> None:
                 }
             )
         )
+
+
+def test_tls_connect_route_requires_svid_proxy_hop() -> None:
+    route = PlatformRoute(listen_address="127.0.0.1:3133", upstream="rules:8081", transport=TLSConnectRouteTransport())
+    with pytest.raises(ValidationError, match="TLS CONNECT platform routes require"):
+        Settings(
+            proxy=Proxy(
+                address="egress.example:8888",
+                transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=Path("/token"))),
+            ),
+            platform_routes={"egress-rules": route},
+        )
+    with pytest.raises(ValidationError, match="TLS CONNECT platform routes require"):
+        Settings(
+            proxy=Proxy(
+                address="egress.example:8888",
+                transport=TLSProxyTransport(
+                    ca_file=Path("/ca"), auth=KubernetesBearerProxyAuth(token_file=Path("/token"))
+                ),
+            ),
+            platform_routes={"egress-rules": route},
+        )
+    Settings(
+        proxy=Proxy(
+            address="egress.example:8888",
+            transport=TLSProxyTransport(
+                ca_file=Path("/ca"),
+                auth=SpiffeProxyAuth(cert_file=Path("/svid/tls.crt"), key_file=Path("/svid/tls.key")),
+            ),
+        ),
+        platform_routes={"egress-rules": route},
+    )
 
 
 if __name__ == "__main__":

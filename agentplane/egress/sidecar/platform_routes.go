@@ -33,15 +33,15 @@ type routeForwarder struct {
 	tokenFile string
 }
 
-func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute, error) {
-	return bindPlatformRoutesWithKeepalive(routes, keepalive.ClientParameters{
+func (s *sidecar) bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute, error) {
+	return s.bindPlatformRoutesWithKeepalive(routes, keepalive.ClientParameters{
 		Time:                time.Minute,
 		Timeout:             10 * time.Second,
 		PermitWithoutStream: false,
 	})
 }
 
-func bindPlatformRoutesWithKeepalive(
+func (s *sidecar) bindPlatformRoutesWithKeepalive(
 	routes map[string]platformRouteConfig,
 	keepaliveParameters keepalive.ClientParameters,
 ) ([]*platformRoute, error) {
@@ -53,23 +53,60 @@ func bindPlatformRoutesWithKeepalive(
 	started := make([]*platformRoute, 0, len(names))
 	for _, name := range names {
 		config := routes[name]
+		clientTarget := config.Upstream
+		var tokenFile string
+		var dialOptions []grpc.DialOption
+		switch transport := config.Transport.(type) {
+		case plaintextRouteTransportConfig:
+			tokenFile = transport.TokenFile
+		case tlsConnectRouteTransportConfig:
+			if s.proxyHop == nil {
+				stopPlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q TLS CONNECT requires a proxy hop", name)
+			}
+			proxyTransport, okay := s.proxyHop.transport.(tlsProxyTransport)
+			if !okay {
+				stopPlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q TLS CONNECT requires TLS proxy transport", name)
+			}
+			if _, okay := s.proxyHop.auth.(spiffeProxyAuth); !okay {
+				stopPlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE proxy authentication", name)
+			}
+			// Keep the configured authority intact: the central proxy resolves it
+			// after applying its hostname policy and destination TLS identity.
+			clientTarget = "passthrough:///" + config.Upstream
+			dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
+				if address != config.Upstream {
+					return nil, fmt.Errorf("unexpected platform route destination %q", address)
+				}
+				return s.dialTLSRoute(ctx, address, proxyTransport.security)
+			}))
+		default:
+			stopPlatformRoutes(started)
+			return nil, fmt.Errorf("platform route %q has unsupported transport %T", name, config.Transport)
+		}
 		listener, err := netlistener.Open(config.ListenAddress)
 		if err != nil {
 			stopPlatformRoutes(started)
 			return nil, fmt.Errorf("listen for platform route %q: %w", name, err)
 		}
-		conn, err := grpc.NewClient(
-			config.Upstream,
+		clientOptions := []grpc.DialOption{
 			observability.GRPCClientOption(),
+			// The TLS CONNECT dialer completes and verifies destination TLS before
+			// returning this connection. Insecure gRPC credentials only wrap that
+			// already-encrypted connection; there is no plaintext fallback.
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithKeepaliveParams(keepaliveParameters),
-		)
+		}
+		clientOptions = append(clientOptions, dialOptions...)
+		conn, err := grpc.NewClient(clientTarget, clientOptions...)
 		if err != nil {
 			_ = listener.Close()
 			stopPlatformRoutes(started)
 			return nil, fmt.Errorf("create upstream for platform route %q: %w", name, err)
 		}
-		forwarder := &routeForwarder{conn: conn, tokenFile: config.TokenFile}
+		forwarder := &routeForwarder{conn: conn, tokenFile: tokenFile}
 		server := grpc.NewServer(
 			observability.GRPCServerOption(),
 			grpc.UnknownServiceHandler(forwarder.forward),
@@ -105,7 +142,8 @@ func (f *routeForwarder) forward(_ any, workload grpc.ServerStream) error {
 	incoming, _ := metadata.FromIncomingContext(workload.Context())
 	outgoing := metadata.MD{}
 	for key, values := range incoming {
-		if key == "authorization" || strings.HasPrefix(key, ":") || strings.HasPrefix(key, "grpc-") {
+		if key == "authorization" || key == "proxy-authorization" || key == "x-agentplane-workload-token" ||
+			strings.HasPrefix(key, ":") || strings.HasPrefix(key, "grpc-") {
 			continue
 		}
 		outgoing[key] = append([]string(nil), values...)
