@@ -1,13 +1,15 @@
 # Opt-in shutdown SysRq capture
 
 On 2026-11-07 we tested a one-shot guest SysRq `w` request during direct VMI
-shutdown. `AGENTPLANE_TCG_VMI_SHUTDOWN_SYSRQ=1` adds
+shutdown. The experiment below used a 12-second delay; the later
+[CI-default experiment](sysrq_default_ci.md) changes that delay and full-suite
+configuration. `AGENTPLANE_TCG_VMI_SHUTDOWN_SYSRQ=1` adds
 `agentplane.shutdown-sysrq=1` to that guest's kernel arguments. After the
 watchdog receives ACPI notification, a separate worker waits 12 guest seconds.
 If the shutdown proof's mount checks have already completed, it skips the dump;
 otherwise it writes `w` to `/proc/sysrq-trigger` and reports its attempt and
-return status on the serial console. This opt-in does not enable the diagnostic
-for ordinary CI guests. The proof check and request are not atomic; a proof
+return status on the serial console. At the time of this experiment, the
+direct-VMI opt-in did not enable the diagnostic for ordinary CI guests. The proof check and request are not atomic; a proof
 can race with a dump already beginning.
 
 We used two concurrent uncached actions with one attempt, both based on
