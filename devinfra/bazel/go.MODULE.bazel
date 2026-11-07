@@ -478,7 +478,6 @@ use_repo(
     "com_github_cheynewallace_tabby",
     "com_github_coder_websocket",
     "com_github_containerd_cgroups_v3",
-    "com_github_coreos_go_oidc_v3",
     "com_github_coreos_go_systemd_v22",
     "com_github_cosi_project_runtime",
     "com_github_danielgtaylor_huma_v2",
@@ -490,7 +489,6 @@ use_repo(
     "com_github_fsouza_go_dockerclient",
     "com_github_gertd_go_pluralize",
     "com_github_go_git_go_git_v5",
-    "com_github_go_jose_go_jose_v4",
     "com_github_go_json_experiment_json",
     "com_github_go_kit_log",
     "com_github_go_logfmt_logfmt",
@@ -502,7 +500,6 @@ use_repo(
     "com_github_google_uuid",
     "com_github_goretk_gore",
     "com_github_goretk_redress",
-    "com_github_gorilla_securecookie",
     "com_github_hashicorp_golang_lru_v2",
     "com_github_invopop_jsonschema",
     "com_github_josharian_intern",
@@ -544,7 +541,6 @@ use_repo(
     "com_github_yosida95_uritemplate_v3",
     "com_github_zitadel_oidc_v3",
     "dev_dny_code_ssrf",
-    "in_gopkg_yaml_v3",
     "in_yaml_go_yaml_v4",
     "io_etcd_go_bbolt",
     "io_k8s_api",
@@ -573,10 +569,8 @@ use_repo(
     "io_opentelemetry_go_otel_trace",
     "io_opentelemetry_go_proto_otlp",
     "org_golang_x_arch",
-    "org_golang_x_crypto",
     "org_golang_x_exp_typeparams",
     "org_golang_x_image",
-    "org_golang_x_oauth2",
     "org_golang_x_time",
     "org_golang_x_tools",
     "org_modernc_sqlite",
@@ -584,7 +578,7 @@ use_repo(
     "org_uber_go_zap",
 )
 
-# Export only the Go repositories needed by the generated session management facade.
+# Export Go repositories needed by the session gateway to downstream modules.
 # The remaining first-party Go dependencies stay root-only for RE-only consumers.
 session_go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 session_go_deps.module(
@@ -637,8 +631,44 @@ session_go_deps.module(
     sum = "h1:29LZPNIJg+GEmJwZXruJJRwqy/wnWAYZXDtROToV/aQ=",
     version = "v0.0.0-20260911204522-f61a6ca850bd",
 )
+session_go_deps.module(
+    path = "github.com/coreos/go-oidc/v3",
+    sum = "h1:wZo4Q9Pum8dYEj0eMUPrqR+kvuGkeUplbLpNCkBqoWM=",
+    version = "v3.21.0",
+)
+session_go_deps.module(
+    path = "github.com/go-jose/go-jose/v4",
+    sum = "h1:moDMcTHmvE6Groj34emNPLs/qtYXRVcd6S7NHbHz3kA=",
+    version = "v4.1.4",
+)
+session_go_deps.module(
+    path = "github.com/gorilla/securecookie",
+    sum = "h1:YCIWL56dvtr73r6715mJs5ZvhtnY73hBvEF8kXD8ePA=",
+    version = "v1.1.2",
+)
+session_go_deps.module(
+    path = "gopkg.in/yaml.v3",
+    sum = "h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
+    version = "v3.0.1",
+)
+session_go_deps.module(
+    path = "golang.org/x/crypto",
+    sum = "h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=",
+    version = "v0.57.0",
+)
+session_go_deps.module(
+    path = "golang.org/x/oauth2",
+    sum = "h1:JUlcxA8oAtauLfiH8FX2/FkAWHAdi0QtGCGc+hofE98=",
+    version = "v0.37.0",
+)
 use_repo(
     session_go_deps,
+    "com_github_coreos_go_oidc_v3",
+    "com_github_go_jose_go_jose_v4",
+    "com_github_gorilla_securecookie",
+    "in_gopkg_yaml_v3",
+    "org_golang_x_crypto",
+    "org_golang_x_oauth2",
     "com_github_grpc_ecosystem_grpc_gateway_v2",
     "in_yaml_go_yaml_v3",
     "org_golang_google_genproto_googleapis_api",
