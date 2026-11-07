@@ -287,10 +287,6 @@ impl<'a> ModulePurityFacts<'a> {
         )
     }
 
-    /// The imported-binding purities for this module under the current
-    /// program-wide export verdicts: each local import bound to a *function*
-    /// export of an analyzed module gets that export's verdict; anything
-    /// unresolved is omitted (stays `unknown_call`).
     /// Raw value projection of each local import under the program-wide
     /// export facts. This does not prove the consumer's normal imported
     /// `GetValue`; candidate execution must join it with a read capability.

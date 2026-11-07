@@ -573,7 +573,7 @@ pub fn collect_program_summary(
         &static_requests,
         &modules.keys().cloned().collect(),
     );
-    let primitive_reads = modules
+    let primitive_reads: BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>> = modules
         .iter()
         .map(|(importer, module)| {
             let reads = module
