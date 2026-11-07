@@ -1,7 +1,6 @@
 """Validation of provider control messages at both ends of the RPC boundary."""
 
 import re
-from collections.abc import Callable
 
 from google.protobuf.timestamp_pb2 import Timestamp
 
@@ -15,15 +14,6 @@ class ProviderProtocolError(ValueError):
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 PROBE_SOURCES = {pb.PROBE_SOURCE_SCHEDULED, pb.PROBE_SOURCE_MANUAL}
-
-
-def _enum(value: int, name: Callable[[int], str], *, allow_unspecified: bool = False) -> None:
-    try:
-        if value == 0 and not allow_unspecified:
-            raise ValueError("unspecified")
-        name(value)
-    except ValueError as exc:
-        raise ProviderProtocolError("Provider returned an invalid enum value") from exc
 
 
 def _timestamp(value: Timestamp) -> None:
@@ -60,36 +50,24 @@ def provider_info(provider: pb.ProviderInfo) -> None:
             raise ProviderProtocolError("Provider info declares candidate verification without an import format")
 
 
-def _unknown(value: pb.OperationOutcomeUnknown) -> None:
-    _enum(value.reason, pb.UnknownOutcomeReason.Name, allow_unspecified=True)
-    if value.HasField("upstream_http_status") and (
-        value.reason != pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR or not 100 <= value.upstream_http_status <= 599
-    ):
-        raise ProviderProtocolError("Provider returned invalid unknown-outcome diagnostics")
-
-
 def probe_result(result: pb.ProbeResult, *, require_metadata: bool = True) -> None:
     if require_metadata:
         if not result.HasField("completed_at") or result.source not in PROBE_SOURCES:
             raise ProviderProtocolError("Provider returned an incomplete probe result")
         _timestamp(result.completed_at)
-    kind = result.WhichOneof("result")
-    if kind is None:
-        raise ProviderProtocolError("Provider returned a probe without a typed result")
-    if kind == "failure":
-        try:
-            _enum(result.failure.reason, pb.ProbeFailureReason.Name)
-        except ProviderProtocolError as exc:
-            raise ProviderProtocolError("Provider returned a probe without a valid typed result") from exc
-    elif kind == "outcome_unknown":
-        _unknown(result.outcome_unknown)
+    if result.outcome == pb.PROBE_OUTCOME_UNSPECIFIED:
+        raise ProviderProtocolError("Provider returned a probe without an outcome")
+    if result.outcome == pb.PROBE_OUTCOME_UNKNOWN and not result.HasField("outcome_unknown"):
+        raise ProviderProtocolError("Unknown probe outcome lacks rotation details")
+    if result.outcome == pb.PROBE_OUTCOME_FAILURE and (
+        not result.HasField("failure") or result.failure.reason == pb.PROBE_FAILURE_REASON_UNSPECIFIED
+    ):
+        raise ProviderProtocolError("Probe failure lacks a reason")
 
 
 def snapshot(value: pb.SessionSnapshot) -> None:
-    try:
-        _enum(value.state, pb.SessionState.Name)
-    except ProviderProtocolError as exc:
-        raise ProviderProtocolError("Provider returned an invalid session snapshot") from exc
+    if value.state == pb.SESSION_STATE_UNSPECIFIED:
+        raise ProviderProtocolError("Provider returned an invalid session snapshot")
     if value.state != pb.SESSION_STATE_STORAGE_ERROR and not value.HasField("state_changed_at"):
         raise ProviderProtocolError("Provider returned an incomplete session snapshot")
     for field in ("state_changed_at", "last_verified_at", "imported_at"):
@@ -100,21 +78,40 @@ def snapshot(value: pb.SessionSnapshot) -> None:
 
 
 def candidate_result(result: pb.ImportSessionResponse | pb.VerifyCandidateResponse) -> None:
-    kind = result.WhichOneof("result")
-    if kind is None:
-        raise ProviderProtocolError("Provider returned a candidate operation without a valid typed result")
-    if kind == "rejected":
-        try:
-            _enum(result.rejected.reason, pb.CandidateRejectionReason.Name)
-        except ProviderProtocolError as exc:
-            raise ProviderProtocolError("Provider returned a candidate operation without a valid typed result") from exc
-    elif kind == "outcome_unknown":
-        _unknown(result.outcome_unknown)
-    elif kind == "failure" and isinstance(result, pb.ImportSessionResponse):
-        failure = result.failure
-        _enum(failure.reason, pb.ImportFailureReason.Name)
-        if failure.HasField("upstream_http_status") and (
-            failure.reason != pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR
-            or not 100 <= failure.upstream_http_status <= 599
-        ):
-            raise ProviderProtocolError("Provider returned an invalid import failure")
+    if isinstance(result, pb.ImportSessionResponse):
+        unspecified = result.outcome == pb.IMPORT_OUTCOME_UNSPECIFIED
+        rejected = result.outcome == pb.IMPORT_OUTCOME_REJECTED
+        unknown = result.outcome == pb.IMPORT_OUTCOME_UNKNOWN
+        if result.outcome == pb.IMPORT_OUTCOME_FAILURE:
+            if not result.HasField("failure") or result.failure.reason == pb.IMPORT_FAILURE_REASON_UNSPECIFIED:
+                raise ProviderProtocolError("Import failure lacks a reason")
+            failure = result.failure
+            _check_status(
+                failure.reason,
+                failure.upstream_http_status if failure.HasField("upstream_http_status") else None,
+                pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
+            )
+    else:
+        unspecified = result.outcome == pb.VERIFY_OUTCOME_UNSPECIFIED
+        rejected = result.outcome == pb.VERIFY_OUTCOME_REJECTED
+        unknown = result.outcome == pb.VERIFY_OUTCOME_UNKNOWN
+    if unspecified:
+        raise ProviderProtocolError("Candidate operation has no outcome")
+    if rejected and (
+        not result.HasField("rejected") or result.rejected.reason == pb.CANDIDATE_REJECTION_REASON_UNSPECIFIED
+    ):
+        raise ProviderProtocolError("Candidate rejection lacks a reason")
+    if unknown:
+        if not result.HasField("outcome_unknown"):
+            raise ProviderProtocolError("Unknown outcome lacks rotation details")
+        detail = result.outcome_unknown
+        _check_status(
+            detail.reason,
+            detail.upstream_http_status if detail.HasField("upstream_http_status") else None,
+            pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
+        )
+
+
+def _check_status(reason: int, status: int | None, upstream_reason: int) -> None:
+    if status is not None and (reason != upstream_reason or not 100 <= status <= 599):
+        raise ProviderProtocolError("Invalid upstream status")

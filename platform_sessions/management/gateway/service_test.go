@@ -38,7 +38,7 @@ func (f *fakeProvider) ImportSession(_ context.Context, req *providerpb.ImportSe
 	if f.wrongRef {
 		ref = &providerpb.InstanceRef{ProviderId: "chatgpt", InstanceId: "wrong"}
 	}
-	return &providerpb.ImportSessionResponse{Instance: ref, Result: &providerpb.ImportSessionResponse_Installed{Installed: &providerpb.SessionInstalled{}}}, nil
+	return &providerpb.ImportSessionResponse{Instance: ref, Outcome: providerpb.ImportOutcome_IMPORT_OUTCOME_INSTALLED}, nil
 }
 
 func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
@@ -54,7 +54,7 @@ func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
 	}
 	req := &managementpb.CandidateRequest{InstanceId: "personal", MediaType: "application/json", FormatVersion: "1", Candidate: []byte("test")}
 	result, err := service.ImportSession(ctx, req)
-	if err != nil || result.GetInstalled() == nil || fake.calls != 1 {
+	if err != nil || result.GetOutcome() != providerpb.ImportOutcome_IMPORT_OUTCOME_INSTALLED || fake.calls != 1 {
 		t.Fatalf("import: %v, %v, calls=%d", result, err, fake.calls)
 	}
 	fake.importErr = errors.New("contains secret, do not expose")
@@ -75,19 +75,17 @@ func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
 	}
 }
 
-func TestUnknownOutcomeDiagnosticsAreBounded(t *testing.T) {
-	statusCode := uint32(503)
-	value := &providerpb.OperationOutcomeUnknown{Reason: providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR, UpstreamHttpStatus: &statusCode}
-	if !unknownValid(value) {
-		t.Fatal("valid upstream status rejected")
+func TestUnknownOutcomeRequiresRotationDetails(t *testing.T) {
+	value := &providerpb.ImportSessionResponse{Outcome: providerpb.ImportOutcome_IMPORT_OUTCOME_UNKNOWN}
+	if importValid(value) {
+		t.Fatal("unknown outcome accepted without details")
 	}
-	value.Reason = providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_TIMEOUT
-	if unknownValid(value) {
-		t.Fatal("status accepted for timeout")
+	value.OutcomeUnknown = &providerpb.OperationOutcomeUnknown{CredentialRotationMayHaveOccurred: true}
+	if !importValid(value) {
+		t.Fatal("unknown outcome with rotation details rejected")
 	}
-	value.Reason = providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR
-	statusCode = 99
-	if unknownValid(value) {
-		t.Fatal("invalid status accepted")
+	value.Outcome = providerpb.ImportOutcome(999)
+	if !importValid(value) {
+		t.Fatal("future outcome rejected")
 	}
 }

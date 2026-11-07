@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from enum import Enum
 from typing import NoReturn, TypeVar, override
 
 import grpc
@@ -18,18 +17,11 @@ logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
 
-class ProbeSource(Enum):
-    """Explicit source of a provider probe request."""
-
-    SCHEDULED = pb.PROBE_SOURCE_SCHEDULED
-    MANUAL = pb.PROBE_SOURCE_MANUAL
-
-
 class ProviderBackend(ABC):
     """Local provider operations used by the control-plane adapter.
 
     The backend owns provider-specific persistence, upstream calls, and any cookie or token
-    rotation. It returns a protobuf result with its outcome oneof set. The service supplies the
+    rotation. It returns a protobuf result with its outcome enum set. The service supplies the
     response instance and probe source and completion time. If an upstream call may have
     rotated credentials but its result is ambiguous, return OperationOutcomeUnknown and persist
     that uncertainty in the local session snapshot. Do not raise an exception for that known case.
@@ -54,7 +46,7 @@ class ProviderBackend(ABC):
         """Install and durably persist a candidate; never log or return candidate bytes."""
 
     @abstractmethod
-    async def probe(self, instance_id: str, *, source: ProbeSource) -> pb.ProbeResult:
+    async def probe(self, instance_id: str, *, source: pb.ProbeSource) -> pb.ProbeResult:
         """Verify one session and persist any credential rotation before returning."""
 
     async def verify_candidate(
@@ -127,6 +119,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             response = pb.ImportSessionResponse(
                 instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id)
             )
+            response.outcome = pb.IMPORT_OUTCOME_REJECTED
             response.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
             return response
 
@@ -158,12 +151,11 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         if request.source not in (pb.PROBE_SOURCE_SCHEDULED, pb.PROBE_SOURCE_MANUAL):
             await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "probe source is required")
 
-        source = ProbeSource(request.source)
         outcome = await self._call_provider(
             context,
             operation="probe",
             instance_id=instance_id,
-            action=lambda: self._provider.probe(instance_id, source=source),
+            action=lambda: self._provider.probe(instance_id, source=request.source),
         )
         try:
             if not isinstance(outcome, pb.ProbeResult):
@@ -196,6 +188,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         if not self._supports_candidate_verification[instance_id]:
             await self._abort(context, grpc.StatusCode.UNIMPLEMENTED, "Candidate verification is not supported")
         if (request.media_type, request.format_version) not in self._accepted_formats[instance_id]:
+            response.outcome = pb.VERIFY_OUTCOME_REJECTED
             response.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
             return response
 

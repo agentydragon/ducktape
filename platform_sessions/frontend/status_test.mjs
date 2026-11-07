@@ -237,8 +237,29 @@ const grpcUi = page([entry("account", "alpha")], true);
 await settle();
 await settle();
 assert.equal(grpcUi.nodes.integrations.children[0].children[1].textContent, "Connected");
+grpcUi.replies.set(
+  "/api/v1/instances/account/session",
+  response({
+    snapshot: {
+      state: "SESSION_STATE_UNVERIFIED",
+      lastProbe: { outcome: "PROBE_OUTCOME_FAILURE", failure: { reason: "PROBE_FAILURE_REASON_STORAGE_ERROR" } },
+    },
+  })
+);
+grpcUi.timers[0]();
+await settle();
+await settle();
+assert.equal(grpcUi.nodes.integrations.children[0].children[3].children[7].textContent, "storage error");
+grpcUi.replies.set(
+  "/api/v1/instances/account/session",
+  response({ snapshot: { state: "SESSION_STATE_UNVERIFIED", lastProbe: { outcome: 999 } } })
+);
+grpcUi.timers[0]();
+await settle();
+await settle();
+assert.equal(grpcUi.nodes.integrations.children[0].children[3].children[7].textContent, "Check outcome unknown");
 grpcUi.nodes.session.value = exportedSession("alpha", { cookie: "synthetic" });
-grpcUi.replies.set("/api/v1/instances/account:importSession", response({ installed: {} }));
+grpcUi.replies.set("/api/v1/instances/account:importSession", response({ outcome: "IMPORT_OUTCOME_INSTALLED" }));
 await grpcUi.nodes["session-form"].listeners.submit(event);
 const grpcRequest = grpcUi.calls.findLast(({ url }) => url.endsWith(":importSession"));
 const grpcBody = JSON.parse(grpcRequest.options.body);
@@ -251,7 +272,7 @@ assert.match(grpcUi.nodes.result.textContent, /session imported/);
 grpcUi.nodes.session.value = exportedSession("alpha", { cookie: "synthetic" });
 grpcUi.replies.set(
   "/api/v1/instances/account:importSession",
-  response({ outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_TIMEOUT" } })
+  response({ outcome: "IMPORT_OUTCOME_UNKNOWN", outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_TIMEOUT" } })
 );
 await grpcUi.nodes["session-form"].listeners.submit(event);
 assert.match(grpcUi.nodes.result.textContent, /may have completed/);
