@@ -9,8 +9,8 @@ Keep the Action's actual request ID and original submission idempotency key. If 
 uncertain, recover through the Actions API first; do not invent a request ID or submit another
 Action. For an already-finished Action, read its result directly.
 
-The command does not create Action subscriptions yet: create one with `POST /v1/subscriptions` and an
-`actions` source ([request schema](/openapi.json)):
+Create an Action subscription with `agentplane notifications subscribe create --request-file FILE`.
+The file contains a protobuf JSON `CreateSubscriptionRequest` with an `actions` source:
 
 ```json
 {
@@ -19,6 +19,9 @@ The command does not create Action subscriptions yet: create one with `POST /v1/
   "source": { "actions": { "requestId": "YOUR_ACTION_REQUEST_ID", "afterSequence": 0 } }
 }
 ```
+
+On an older image without `subscribe create`, send the same JSON body with `POST /v1/subscriptions`
+through the Notifications HTTP service and its workload Bearer placeholder.
 
 Use the supplied Session ID (`AGENTPLANE_SESSION_ID`) and the real returned Action ID. Start
 `afterSequence` at zero or the last Action event sequence you actually recorded; it is not an inbox
