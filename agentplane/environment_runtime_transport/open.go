@@ -140,7 +140,7 @@ func (s *OpenedSecurity) ClientCredentials(expectedPeerURI string) (credentials.
 	if err != nil {
 		return nil, err
 	}
-	return newExpiringCredentials(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth)), false), nil
 }
 
 // ServerCredentials creates server credentials backed by the shared source.
@@ -159,7 +159,7 @@ func (s *OpenedSecurity) ServerCredentials(expectedPeerURI string) (credentials.
 	if err != nil {
 		return nil, err
 	}
-	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
 }
 
 // AuthorizePeer checks the authenticated peer against the exact configured
