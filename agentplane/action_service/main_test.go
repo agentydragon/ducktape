@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -32,6 +33,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -77,6 +79,7 @@ type running struct {
 	health    healthpb.HealthClient
 	actions   action_servicepb.ActionServiceClient
 	operators operator_action_servicepb.OperatorActionServiceClient
+	linkages  linkage_servicepb.LinkageServiceClient
 	// url is the base URL of the service's HTTP routes.
 	url string
 	// store is the service's database, and updates is signalled on every Event committed to it.
@@ -145,6 +148,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	return running{
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
 		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
+		linkages:  linkage_servicepb.NewLinkageServiceClient(connection),
 		url:       "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
@@ -438,12 +442,50 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 	}
 	awaitMCPHealth(t, groups, "test-linked", unlinked)
 
+	// A public gRPC callback preserves the same single-use state when the HTTP boundary moves elsewhere.
+	started, err = replica.Start(t.Context(), "test-linked", nil, testOperator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &linkage_servicepb.CompleteCallbackRequest{
+		State: oauthprovider.State(t, started.GetAuthorizationUrl()), Code: "test-code",
+	}
+	result, err := service.linkages.CompleteCallback(t.Context(), request)
+	if err != nil || result.GetLinkage().GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED {
+		t.Fatalf("the gRPC callback answered %v, %v", result, err)
+	}
+	if _, err := service.linkages.CompleteCallback(t.Context(), request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("replaying the callback returned %v", err)
+	}
+	if _, err := service.linkages.CompleteCallback(t.Context(), &linkage_servicepb.CompleteCallbackRequest{}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("an incomplete callback returned %v", err)
+	}
+	started, err = replica.Start(t.Context(), "test-linked", nil, testOperator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.linkages.CompleteCallback(t.Context(), &linkage_servicepb.CompleteCallbackRequest{
+		State: oauthprovider.State(t, started.GetAuthorizationUrl()), Code: oauthprovider.RefusedCode,
+	})
+	details := status.Convert(err).Details()
+	if status.Code(err) != codes.Unavailable || len(details) != 1 {
+		t.Fatalf("a refused exchange returned %v", err)
+	}
+	info, ok := details[0].(*errdetails.ErrorInfo)
+	if !ok || info.GetReason() != "MCP_TOKEN_EXCHANGE_FAILED" || info.GetDomain() != "agentplane.actions" {
+		t.Fatalf("a refused exchange returned details %v", details)
+	}
+
 	code, body = fetch(t, service.url+linkage.ClientMetadataPath)
 	var document struct {
 		ClientID string `json:"client_id"`
 	}
 	if code != http.StatusOK || json.Unmarshal(body, &document) != nil || document.ClientID != metadata.URL {
 		t.Errorf("the Client ID Metadata Document answered %d %s", code, body)
+	}
+	metadataResponse, err := service.linkages.GetClientMetadata(t.Context(), &linkage_servicepb.GetClientMetadataRequest{})
+	if err != nil || string(metadataResponse.GetJsonDocument()) != string(body) {
+		t.Fatalf("the gRPC metadata document answered %q, %v; HTTP answered %q", metadataResponse.GetJsonDocument(), err, body)
 	}
 }
 
