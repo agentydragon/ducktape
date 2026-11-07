@@ -104,12 +104,12 @@ func providerInfoValid(p *providerpb.ProviderInfo) bool {
 }
 
 func validateHTTPConfig(service *Service, config HTTPConfig) error {
-	if len(config.Providers) != len(service.providers) || len(config.ProviderTypes) != len(service.providers) {
+	if len(config.Providers) != len(service.providers) {
 		return errors.New("HTTP providers must match control providers")
 	}
 	for id, provider := range config.Providers {
-		control, ok := service.providers[id]
-		if !ok || provider.ID != id || config.ProviderTypes[id] != control.Ref.ProviderId {
+		_, ok := service.providers[id]
+		if !ok || provider.ID != id {
 			return errors.New("HTTP provider identity mismatch")
 		}
 		origin, err := url.Parse(provider.Origin)

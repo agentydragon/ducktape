@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -22,7 +21,6 @@ import (
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"gopkg.in/yaml.v3"
 )
 
 type instance struct {
@@ -73,35 +71,6 @@ func secretFile(path string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func documents(dir string, types map[string]string) (map[string]json.RawMessage, error) {
-	docs := map[string]json.RawMessage{}
-	for _, provider := range types {
-		if _, ok := docs[provider]; ok {
-			continue
-		}
-		if strings.ContainsAny(provider, "/\\.") {
-			return nil, errors.New("invalid provider type")
-		}
-		data, err := os.ReadFile(filepath.Join(dir, provider, "openapi.yaml"))
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, errors.New("provider document unavailable")
-		}
-		var value any
-		if yaml.Unmarshal(data, &value) != nil {
-			return nil, errors.New("invalid provider document")
-		}
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return nil, errors.New("invalid provider document")
-		}
-		docs[provider] = encoded
-	}
-	return docs, nil
-}
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "platform sessions gateway:", err)
@@ -114,17 +83,8 @@ func run() error {
 	var connections map[string]connection
 	var bearerSettings map[string]bearerConfig
 	var headers map[string]headerConfig
-	var headerDefaults map[string]headerConfig
 	if decodeEnv("PLATFORM_SESSIONS_INTEGRATION_CONFIG", &cfg) != nil || decodeEnv("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", &connections) != nil || decodeEnv("PLATFORM_SESSIONS_BEARERS", &bearerSettings) != nil || decodeEnv("PLATFORM_SESSIONS_PROXY_HEADERS", &headers) != nil {
 		return errors.New("invalid gateway configuration")
-	}
-	defaultsFile := os.Getenv("PLATFORM_SESSIONS_PROVIDER_HEADER_DEFAULTS")
-	if defaultsFile == "" {
-		defaultsFile = "/usr/local/share/platform-sessions/provider_headers.json"
-	}
-	defaultsData, err := os.ReadFile(defaultsFile)
-	if err != nil || json.Unmarshal(defaultsData, &headerDefaults) != nil {
-		return errors.New("provider header defaults unavailable")
 	}
 	var controls []gateway.Provider
 	var channels []*gateway.ProviderConnection
@@ -134,7 +94,6 @@ func run() error {
 		}
 	}()
 	providers := map[string]gateway.ProviderHTTPConfig{}
-	types := map[string]string{}
 	for _, item := range cfg.Integrations {
 		if item.Enabled != nil && !*item.Enabled {
 			continue
@@ -162,11 +121,7 @@ func run() error {
 			return err
 		}
 		h := headers[item.ID]
-		defaults := headerDefaults[item.Type]
-		h.Request = append(defaults.Request, h.Request...)
-		h.Response = append(defaults.Response, h.Response...)
 		providers[item.ID] = gateway.ProviderHTTPConfig{ID: item.ID, Origin: c.Origin, Upstream: item.Upstream, OwnerToken: owner, RouteToken: route, CAFile: c.HTTPCAFile, RequestHeaders: h.Request, ResponseHeaders: h.Response}
-		types[item.ID] = item.Type
 	}
 	if len(connections) != len(providers) {
 		return errors.New("provider connections must match enabled instances")
@@ -195,14 +150,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	docsDir := os.Getenv("PLATFORM_SESSIONS_OPENAPI_DOCUMENTS_DIR")
-	if docsDir == "" {
-		docsDir = "/usr/local/share/platform-sessions/providers"
-	}
-	docs, err := documents(docsDir, types)
-	if err != nil {
-		return err
-	}
 	managementPath := os.Getenv("PLATFORM_SESSIONS_MANAGEMENT_OPENAPI")
 	if managementPath == "" {
 		managementPath = "/usr/local/share/platform-sessions/management.swagger.json"
@@ -213,7 +160,7 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	handler, err := gateway.HTTPServer(ctx, service, gateway.HTTPConfig{Owner: gateway.OwnerConfig{Issuer: os.Getenv("PLATFORM_SESSIONS_ISSUER"), ClientID: os.Getenv("PLATFORM_SESSIONS_CLIENT_ID"), ClientSecret: os.Getenv("PLATFORM_SESSIONS_CLIENT_SECRET"), SessionSecret: os.Getenv("PLATFORM_SESSIONS_SESSION_SECRET"), PublicBaseURL: os.Getenv("PLATFORM_SESSIONS_PUBLIC_BASE_URL"), AllowedSubject: os.Getenv("PLATFORM_SESSIONS_ALLOWED_SUBJECT")}, Providers: providers, ProviderTypes: types, Bearers: bearers, Assets: map[string][]byte{"status.html": frontend.HTML, "status.css": frontend.CSS, "status.js": frontend.JavaScript}, Documents: docs, ManagementDocument: managementDoc})
+	handler, err := gateway.HTTPServer(ctx, service, gateway.HTTPConfig{Owner: gateway.OwnerConfig{Issuer: os.Getenv("PLATFORM_SESSIONS_ISSUER"), ClientID: os.Getenv("PLATFORM_SESSIONS_CLIENT_ID"), ClientSecret: os.Getenv("PLATFORM_SESSIONS_CLIENT_SECRET"), SessionSecret: os.Getenv("PLATFORM_SESSIONS_SESSION_SECRET"), PublicBaseURL: os.Getenv("PLATFORM_SESSIONS_PUBLIC_BASE_URL"), AllowedSubject: os.Getenv("PLATFORM_SESSIONS_ALLOWED_SUBJECT")}, Providers: providers, Bearers: bearers, Assets: map[string][]byte{"status.html": frontend.HTML, "status.css": frontend.CSS, "status.js": frontend.JavaScript}, ManagementDocument: managementDoc})
 	if err != nil {
 		return err
 	}

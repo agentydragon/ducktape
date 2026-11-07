@@ -16,7 +16,7 @@ def _proto_openapi_impl(ctx):
     # The plugin names a merged document `<merge_file_name>.swagger.json` under the output root, so the
     # merge name is this rule's own path and the declared output is where the plugin writes it.
     document = ctx.actions.declare_file(ctx.label.name + ".swagger.json")
-    merge_file_name = document.path.removeprefix(ctx.bin_dir.path + "/").removesuffix(".swagger.json")
+    merge_file_name = "{}/{}".format(ctx.label.package, ctx.label.name)
 
     # External imports (googleapis' `google/api/annotations.proto`) resolve under their own source root.
     import_roots = ["-I" + root for root in proto_info.transitive_proto_path.to_list() if root != "."]
@@ -24,21 +24,11 @@ def _proto_openapi_impl(ctx):
     # The plugin insists on a Go import path for every file it reads, though none reaches the document;
     # `go_proto_library` supplies the real one to the Go compilers, so a proto here carries no `go_package`.
     # External protos (googleapis) declare their own `go_package`.
-    # In downstream workspaces this module's sources are under external/<repo>/,
-    # while protoc imports them by their paths within that repository.
-    repo_prefix = "external/{}/".format(ctx.label.workspace_name) if ctx.label.workspace_name else ""
-    go_import_paths = []
-    for source in proto_info.transitive_sources.to_list():
-        if source.owner.workspace_name != ctx.label.workspace_name:
-            continue
-        import_path = source.dirname.removeprefix(repo_prefix)
-
-        # The direct input uses its exec-root path; imports inside that input use
-        # paths relative to the owning repository. Map both spellings.
-        go_import_paths.append("M{}={}".format(source.path, import_path))
-        if repo_prefix:
-            go_import_paths.append("M{}={}".format(source.path.removeprefix(repo_prefix), import_path))
-    go_import_path = ",".join(go_import_paths)
+    go_import_path = ",".join([
+        "M{}={}".format(source.path, source.dirname)
+        for source in proto_info.transitive_sources.to_list()
+        if not source.path.startswith("external/")
+    ])
     ctx.actions.run(
         executable = ctx.executable._protoc,
         arguments = [

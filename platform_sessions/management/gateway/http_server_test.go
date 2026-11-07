@@ -79,8 +79,7 @@ func TestHTTPImportReachesProviderOnce(t *testing.T) {
 	ownerToken := strings.Repeat("o", 40)
 	handler, err := HTTPServer(context.Background(), service, HTTPConfig{
 		Owner: testOwnerConfig(), Bearers: []Bearer{{Token: ownerToken, Owner: true}},
-		Providers:     map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: "https://provider.invalid", Upstream: "https://chatgpt.com", OwnerToken: strings.Repeat("i", 40), RouteToken: strings.Repeat("r", 40)}},
-		ProviderTypes: map[string]string{"personal": "chatgpt"},
+		Providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: "https://provider.invalid", Upstream: "https://chatgpt.com", OwnerToken: strings.Repeat("i", 40), RouteToken: strings.Repeat("r", 40)}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -15,13 +15,18 @@ import (
 
 type fakeProvider struct {
 	providerpb.SessionProviderControlClient
-	calls     int
-	importErr error
-	wrongRef  bool
+	calls        int
+	importErr    error
+	wrongRef     bool
+	documentPath string
 }
 
 func (f *fakeProvider) GetInfo(_ context.Context, _ *providerpb.GetInfoRequest, _ ...grpc.CallOption) (*providerpb.GetInfoResponse, error) {
-	return &providerpb.GetInfoResponse{Provider: &providerpb.ProviderInfo{ProviderId: "chatgpt", DisplayName: "ChatGPT", Version: "1", Instances: []*providerpb.ProviderInstanceInfo{{InstanceId: "personal"}}}}, nil
+	instance := &providerpb.ProviderInstanceInfo{InstanceId: "personal"}
+	if f.documentPath != "" {
+		instance.OpenapiDocumentPath = &f.documentPath
+	}
+	return &providerpb.GetInfoResponse{Provider: &providerpb.ProviderInfo{ProviderId: "chatgpt", DisplayName: "ChatGPT", Version: "1", Instances: []*providerpb.ProviderInstanceInfo{instance}}}, nil
 }
 
 func (f *fakeProvider) ImportSession(_ context.Context, req *providerpb.ImportSessionRequest, _ ...grpc.CallOption) (*providerpb.ImportSessionResponse, error) {

@@ -7,16 +7,13 @@ import (
 	"strings"
 )
 
-// HTTPConfig supplies the existing UI and provider-owned documents. Documents
-// are keyed by provider type; routes never serve arbitrary filesystem paths.
+// HTTPConfig supplies gateway configuration and the generated owner UI.
 type HTTPConfig struct {
 	Owner              OwnerConfig
 	Providers          map[string]ProviderHTTPConfig
 	Bearers            []Bearer
 	Assets             map[string][]byte
-	Documents          map[string]json.RawMessage
 	ManagementDocument json.RawMessage
-	ProviderTypes      map[string]string
 }
 
 // HTTPServer implements browser login, owner management and the data plane on
@@ -98,7 +95,7 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 	})
 	mux.HandleFunc("GET /api/integrations/{instance}/openapi.json", func(w http.ResponseWriter, r *http.Request) {
 		instance := r.PathValue("instance")
-		providerType, ok := config.ProviderTypes[instance]
+		_, ok := service.providers[instance]
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -121,17 +118,11 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 			http.Error(w, "not authenticated", http.StatusUnauthorized)
 			return
 		}
-		raw, ok := config.Documents[providerType]
-		if !ok {
-			http.NotFound(w, r)
+		document, err := providerDocument(r.Context(), service.providers[instance], config.Providers[instance])
+		if err != nil {
+			http.Error(w, "provider document unavailable", http.StatusBadGateway)
 			return
 		}
-		var document map[string]any
-		if json.Unmarshal(raw, &document) != nil {
-			http.Error(w, "invalid document", http.StatusInternalServerError)
-			return
-		}
-		document["servers"] = []map[string]string{{"url": "/proxy/" + instance}}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(document)
 	})

@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "gateway",
     srcs = [
+        "documents.go",
         "grpc.go",
         "http.go",
         "http_server.go",
@@ -36,6 +37,7 @@ go_library(
 go_test(
     name = "gateway_test",
     srcs = [
+        "documents_test.go",
         "grpc_test.go",
         "http_server_test.go",
         "owner_test.go",
