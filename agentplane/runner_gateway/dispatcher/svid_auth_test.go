@@ -29,13 +29,6 @@ import (
 
 const workloadTestNamespace = "workload-test"
 
-type rejectedTokenReviews struct{ t *testing.T }
-
-func (r rejectedTokenReviews) Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	r.t.Error("SVID caller reached TokenReview")
-	return &authenticationv1.TokenReview{}, nil
-}
-
 type svidAdmissionProbe struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	t         *testing.T
@@ -45,13 +38,11 @@ type svidAdmissionProbe struct {
 
 func (p *svidAdmissionProbe) check(ctx context.Context) error {
 	p.t.Helper()
-	caller, err := auth.AdmittedReviewedCaller(ctx)
+	caller, err := auth.Caller(ctx)
 	if err != nil {
 		return err
 	}
-	if caller.ServiceAccount.GetAccount().GetNamespace() != p.principal.Account.Namespace ||
-		caller.ServiceAccount.GetAccount().GetName() != p.principal.Account.Name ||
-		caller.ServiceAccount.GetUid() != p.principal.ServiceAccountUID || caller.Pod == nil || *caller.Pod != p.principal {
+	if caller != p.principal {
 		p.t.Errorf("admitted caller = %+v, want Sandbox principal %+v", caller, p.principal)
 	}
 	p.calls++
@@ -80,7 +71,7 @@ func (p *svidAdmissionProbe) WatchDispatches(
 	})
 }
 
-func TestMethodsResolveSandboxSVIDBeforeNativeBearerAndAcrossWatch(t *testing.T) {
+func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	api, err := kubeapiserver.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -95,11 +86,7 @@ func TestMethodsResolveSandboxSVIDBeforeNativeBearerAndAcrossWatch(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokens, err := auth.NewResolver(rejectedTokenReviews{t: t}, "backend-only", []string{workloadTestNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods := Methods(tokens.WithSVID(svids))
+	methods := Methods(svids)
 
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.IssueWithUsage(t, environment_runtime_transport.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)

@@ -273,18 +273,10 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 	owner := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
 	foreign := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-foreign-caller")
 	ownerAccount := owner.Principal.Account
-	foreignAccount := foreign.Principal.Account
 	ownerIdentity := serviceAccountIdentityFor(ownerAccount, owner.Principal.ServiceAccountUID)
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, account: ownerIdentity, accountFound: true}
 	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tokens, err := auth.NewResolver(tokenReviewStub{
-		"owner-bearer":   {account: ownerAccount, uid: owner.Principal.ServiceAccountUID},
-		"foreign-bearer": {account: foreignAccount, uid: foreign.Principal.ServiceAccountUID},
-	}, authorityTestAudience, []string{caller.Namespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +287,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
-	methods := Methods(tokens.WithSVID(svids))
+	methods := Methods(svids)
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.Issue(t, environment_runtime_transport.SessionDispatcherURI)
 	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)

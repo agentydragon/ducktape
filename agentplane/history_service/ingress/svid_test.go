@@ -27,7 +27,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	service, _ := newService(t, testTiming)
-	service.Principals = service.Principals.WithSVID(resolver)
+	service.Principals = resolver
 	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
 	serverTLS, err := serverCredentials.WorkloadServerCredentials(transport.HistoryIngressURI)
 	if err != nil {
@@ -37,7 +37,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(service.Principals)}
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(resolver)}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverTLS))...)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(listener) }()

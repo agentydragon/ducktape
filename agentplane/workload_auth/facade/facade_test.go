@@ -159,13 +159,9 @@ func newHandler(t *testing.T, workload workloadauthtesting.Workload, ca *environ
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokens, err := auth.NewResolver(api.TokenReviews(), "backend-only", []string{workload.Sandbox.Namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
 	methods := auth.Methods{
-		notificationspb.Notifications_ListSubscriptions_FullMethodName: auth.AnyAccount(tokens.WithSVID(svid)),
-		notificationspb.Notifications_WatchInbox_FullMethodName:        auth.AnyAccount(tokens.WithSVID(svid)),
+		notificationspb.Notifications_ListSubscriptions_FullMethodName: auth.AnyAccount(svid),
+		notificationspb.Notifications_WatchInbox_FullMethodName:        auth.AnyAccount(svid),
 	}
 	handler, err := workloadfacade.NewHandler(t.Context(), workloadfacade.Interceptors{Unary: methods.UnaryInterceptor(time.Second), Stream: methods.StreamInterceptor(time.Second)}, facade.HandlerOptions{RejectUnknownJSONFields: true}, workloadfacade.Registration{
 		Server: func(registrar grpc.ServiceRegistrar) { notificationspb.RegisterNotificationsServer(registrar, service) },

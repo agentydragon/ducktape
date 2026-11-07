@@ -23,7 +23,6 @@ const (
 	ruleAnyAccount
 	ruleAccounts
 	ruleReviewedServiceAccount
-	ruleSVIDAccount
 )
 
 // Rule is who may call one gRPC method.
@@ -33,7 +32,6 @@ type Rule struct {
 	principalResolver PrincipalResolver
 	accounts          map[Account]struct{}
 	delegation        *delegationPolicy
-	svid *SVIDResolver
 }
 
 // Public admits a call without reading its bearer. Only the standard health service is public: Kubernetes
@@ -64,12 +62,6 @@ func Accounts(resolver *Resolver, accounts []Account) Rule {
 // existing Principal callers continue to require Pod-bound TokenReview claims.
 func ReviewedServiceAccount(resolver *Resolver) Rule {
 	return Rule{kind: ruleReviewedServiceAccount, resolver: resolver}
-}
-
-// SVIDAccount admits only a verified workload TLS peer resolved through the live Sandbox binding.
-// It has no token resolver, so bearer metadata can never provide a fallback identity.
-func SVIDAccount(resolver *SVIDResolver) Rule {
-	return Rule{kind: ruleSVIDAccount, svid: resolver}
 }
 
 // Methods maps the full name (`/package.Service/Method`) of each method a gRPC server serves to the Rule
@@ -238,7 +230,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return ctx, nil
-	case ruleAnyAccount, ruleAccounts, ruleReviewedServiceAccount, ruleSVIDAccount:
+	case ruleAnyAccount, ruleAccounts, ruleReviewedServiceAccount:
 	default:
 		return nil, errMethodNotAllowed
 	}
@@ -254,25 +246,11 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	md, _ := metadata.FromIncomingContext(ctx)
 	authorization := md.Get("authorization")
 	delegations := md.Get(DelegationMetadataKey)
-	if rule.kind == ruleSVIDAccount {
-		if len(delegations) > 0 || delegatedAttempt(authorization) {
-			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-		}
-		if rule.svid == nil {
-			return nil, errMethodNotAllowed
-		}
-		principal, err := rule.svid.Resolve(reviewContext)
-		if err != nil {
-			return nil, err
-		}
-		caller := serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)
-		return WithCaller(withAdmission(ctx, DirectAdmission{Caller: caller, Pod: &principal}), principal), nil
-	}
 	if len(delegations) > 0 || delegatedAttempt(authorization) {
-		if rule.resolver.usesSVID(reviewContext) {
+		if rule.delegation == nil {
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
-		if rule.delegation == nil {
+		if rule.resolver.usesSVID(resolveContext) {
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return rule.delegation.admit(ctx, resolveContext, authorization, delegations)

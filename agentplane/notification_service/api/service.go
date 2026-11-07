@@ -55,8 +55,6 @@ type Options struct {
 	Store *store.Store
 	// Wakeups must listen to store.InboxChannel, which the Session watches follow.
 	Wakeups *wakeups.Hub
-	// Resolver reviews a caller's bearer for Methods; it admits only the namespaces the Sandboxes run in.
-	Resolver *auth.Resolver
 	// Namespace is the one namespace whose Sandboxes destinations may name, and the one the operator reads.
 	Namespace string
 	Sandboxes worker.Sandboxes
@@ -79,9 +77,11 @@ type Options struct {
 	RequestTimeout time.Duration
 }
 
-// Methods admits authenticated workloads; individual RPCs enforce resource ownership.
-func Methods(options Options) auth.Methods {
-	workloads := auth.AnyAccount(options.Resolver)
+// Methods admits authenticated workloads using the source configured on this listener; individual RPCs
+// enforce resource ownership. Passing the listener's source keeps TLS SVID and TokenReview methods on the same
+// method policy without coupling either resolver to the servicers' options.
+func Methods(options Options, principalResolver auth.PrincipalResolver) auth.Methods {
+	workloads := auth.AnyAccount(principalResolver)
 	return auth.Methods{
 		notificationspb.Notifications_CreateSubscription_FullMethodName: workloads,
 		notificationspb.Notifications_ListSubscriptions_FullMethodName:  workloads,

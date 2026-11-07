@@ -18,8 +18,6 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
@@ -27,10 +25,6 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			objects, sandbox, leaf := svidFixture(t)
 			svids, err := auth.NewSVIDResolver(objects, []string{sandbox.Namespace})
-			if err != nil {
-				t.Fatal(err)
-			}
-			tokens, err := auth.NewResolver(unusedSVIDReviews{t}, "backend-only", []string{sandbox.Namespace})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -44,7 +38,7 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			methods := auth.Methods{healthpb.Health_Check_FullMethodName: auth.AnyAccount(tokens.WithSVID(svids))}
+			methods := auth.Methods{healthpb.Health_Check_FullMethodName: auth.AnyAccount(svids)}
 			server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 			handler := &svidHealth{expected: auth.Principal{Account: auth.Account{Namespace: sandbox.Namespace, Name: sandbox.Name}, ServiceAccountUID: accountUID(t, objects, sandbox), PodName: sandbox.Status.Incarnation.Name, PodUID: sandbox.Status.Incarnation.UID}}
 			healthpb.RegisterHealthServer(server, handler)
@@ -90,13 +84,6 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			}
 		})
 	}
-}
-
-type unusedSVIDReviews struct{ t *testing.T }
-
-func (r unusedSVIDReviews) Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	r.t.Error("SVID authentication reached TokenReview")
-	return &authenticationv1.TokenReview{}, nil
 }
 
 type svidHealth struct {

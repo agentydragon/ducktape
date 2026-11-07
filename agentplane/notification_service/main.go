@@ -166,12 +166,13 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	if err != nil {
 		return err
 	}
+	var workloadSVIDs *auth.SVIDResolver
 	if c.WorkloadTLS != nil {
 		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace})
 		if err != nil {
 			return err
 		}
-		resolver = resolver.WithSVID(svid)
+		workloadSVIDs = svid
 	}
 	sandboxes, err := sandboxreader.New(c.Namespace, deps.Sandboxes)
 	if err != nil {
@@ -248,7 +249,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 
 	options := api.Options{
-		Store: inboxes, Wakeups: hub, Resolver: resolver, Namespace: c.Namespace, Sandboxes: sandboxes,
+		Store: inboxes, Wakeups: hub, Namespace: c.Namespace, Sandboxes: sandboxes,
 		Runner: &api.ProxyRunner{
 			TokenFile: c.RunnerGateway.TokenFile, Timeout: seconds(c.RunnerGateway.RequestTimeoutSeconds),
 			TargetTemplate: c.RunnerGateway.ControlTarget,
@@ -264,7 +265,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	health := probes.New(db, hub)
 	methods := auth.HealthMethods()
 	// A watch carries no deadline of its own, so the request timeout bounds its admission.
-	maps.Copy(methods, api.Methods(options))
+	maps.Copy(methods, api.Methods(options, resolver))
 	grpcServer := grpc.NewServer(append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())...)
 	notifications := api.NewNotifications(options)
 	notificationspb.RegisterNotificationsServer(grpcServer, notifications)
@@ -293,7 +294,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		if err != nil {
 			return err
 		}
-		workloadMethods := api.Methods(options)
+		workloadMethods := api.Methods(options, workloadSVIDs)
 		workloadGRPC = grpc.NewServer(append(workloadMethods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())...)
 		notificationspb.RegisterNotificationsServer(workloadGRPC, notifications)
 		workloadHTTP, err := workloadfacade.NewHandler(facadeContext, workloadfacade.Interceptors{Unary: workloadMethods.UnaryInterceptor(options.RequestTimeout), Stream: workloadMethods.StreamInterceptor(options.RequestTimeout)},

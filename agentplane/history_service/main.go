@@ -263,12 +263,11 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 			return err
 		}
 		defer workloadListener.Close()
-		securedWriter := writerAuth.WithSVID(svids)
-		methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(securedWriter)}
+		methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(svids)}
 		options := methods.ServerOptions(seconds(c.RequestTimeoutSeconds))
 		workloadServer = grpc.NewServer(append(options, grpc.Creds(security), observability.GRPCServerOption())...)
 		session_ingresspb.RegisterSessionJournalIngressServer(workloadServer, &ingress.Service{
-			Principals: securedWriter, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
+			Principals: svids, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
 			History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
 			Timing:  ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
 		})
