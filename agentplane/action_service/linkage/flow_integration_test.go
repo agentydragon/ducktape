@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -159,8 +160,15 @@ func TestARefusedCodeIsReportedAndLeavesTheServerUnlinked(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = callback(t, linkage.NewService(authority), oauthprovider.State(t, started.GetAuthorizationUrl()), oauthprovider.RefusedCode)
-	if status.Code(err) != codes.Unavailable || !strings.Contains(err.Error(), oauthprovider.RefusedError) {
-		t.Errorf("the callback answered %v", err)
+	if status.Code(err) != codes.Unavailable || strings.Contains(err.Error(), oauthprovider.RefusedError) {
+		t.Fatalf("the callback answered %v", err)
+	}
+	details := status.Convert(err).Details()
+	if len(details) != 1 {
+		t.Fatalf("the callback error details are %v", details)
+	}
+	if info, ok := details[0].(*errdetails.ErrorInfo); !ok || info.GetReason() != "MCP_TOKEN_EXCHANGE_FAILED" || info.GetDomain() != "agentplane.actions" {
+		t.Errorf("the callback error details are %v", details)
 	}
 	if linked := linkageOf(t, authority, testServer); linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED {
 		t.Errorf("the linkage is %v", linked)
