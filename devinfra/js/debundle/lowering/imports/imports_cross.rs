@@ -88,8 +88,8 @@ pub(crate) fn cross_module_imports_for_plan(
                         disambiguate_import_locals(&import_names, sink.ledger, scope, &mut minted);
                     sink.submit(minted, CROSS_MODULE_IMPORT_CONTRIBUTOR);
                     let prepared_bindings: Vec<PreparedImportBinding> = bindings
-                        .into_iter()
-                        .map(|(_local, binding)| PreparedImportBinding {
+                        .into_values()
+                        .map(|binding| PreparedImportBinding {
                             source_binding: binding.source_binding,
                             imported_name: binding.imported_name,
                             target: PreparedImportTarget::CandidateOutput {
