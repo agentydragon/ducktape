@@ -1199,12 +1199,20 @@ fn own_data_read_support_conflicts_with_replaced_descriptor() {
         receipt["support"]["origin"], cell["cell"]["origin"],
         "the report must bind the read receipt to the projected shape cell: {cell:#}"
     );
-    assert_eq!(cell["observed_conflict"], true, "{cell:#}");
+    assert_eq!(
+        cell["first_write"]["kind"], "unclassified_callee_heap",
+        "the pooled shape origin is conservative may-effect evidence: {cell:#}"
+    );
+    assert_eq!(
+        cell["later_read"]["kind"], "unclassified_callee_heap",
+        "the pooled shape origin is conservative may-effect evidence: {cell:#}"
+    );
+    assert_eq!(cell["observed_conflict"], false, "{cell:#}");
 }
 
 #[test]
-fn writable_own_data_store_support_conflicts_with_readonly_descriptor_relocation() {
-    let source = "const target = { value: 0 };\nconst stored = (target.value = 7);\nconst frozen_source = Object.freeze({ value: 7 });\nconst descriptors = Object.getOwnPropertyDescriptors(frozen_source);\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(stored, target.value);\n";
+fn writable_own_data_store_support_conflicts_with_getter_only_descriptor_relocation() {
+    let source = "const target = { value: 0 };\nfunction store() { return (target.value = 7); }\nconst stored = store();\nconst descriptor_source = { get value() { return 7; } };\nconst descriptors = Object.getOwnPropertyDescriptors(descriptor_source);\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(stored, target.value);\n";
     let fixture = run_rejection_fixture_with_args(
         FixtureOpts::new(
             source,
@@ -1212,7 +1220,7 @@ fn writable_own_data_store_support_conflicts_with_readonly_descriptor_relocation
                 "a_readonly",
                 &[
                     Member::new("target"),
-                    Member::new("frozen_source"),
+                    Member::new("descriptor_source"),
                     Member::new("descriptors"),
                     Member::new("applied"),
                 ],
@@ -1233,12 +1241,35 @@ fn writable_own_data_store_support_conflicts_with_readonly_descriptor_relocation
     assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
 
     let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
-    let cell = rows
+    let pair = rows
         .iter()
-        .flat_map(|pair| pair["cells"].as_array().into_iter().flatten())
+        .find(|pair| {
+            pair["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| {
+                    cell["cell"]["kind"] == "object_shape"
+                        && cell["later_operation_support_reads"]
+                            .as_array()
+                            .is_some_and(|receipts| {
+                                receipts.iter().any(|receipt| {
+                                    receipt["operation"] == "writable_own_data_store"
+                                })
+                            })
+                })
+            })
+        })
+        .unwrap_or_else(|| {
+            panic!("the getter-only descriptor must conflict with store support: {rows:#?}")
+        });
+    assert_eq!(
+        pair["havoc"], false,
+        "the control needs modeled evidence: {pair:#}"
+    );
+    let cell = pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
         .find(|cell| {
             cell["cell"]["kind"] == "object_shape"
-                && cell["observed_conflict"] == true
                 && cell["later_operation_support_reads"]
                     .as_array()
                     .is_some_and(|receipts| {
@@ -1247,17 +1278,22 @@ fn writable_own_data_store_support_conflicts_with_readonly_descriptor_relocation
                             .any(|receipt| receipt["operation"] == "writable_own_data_store")
                     })
         })
-        .unwrap_or_else(|| {
-            panic!("the readonly descriptor must conflict with the store support read: {rows:#?}")
-        });
+        .unwrap();
     let receipt = cell["later_operation_support_reads"]
         .as_array()
         .unwrap()
         .iter()
         .find(|receipt| receipt["operation"] == "writable_own_data_store")
         .unwrap();
-    assert!(!cell["first_write"].is_null(), "{cell:#}");
-    assert!(!cell["later_read"].is_null(), "{cell:#}");
+    assert_eq!(
+        cell["first_write"]["kind"], "unclassified_callee_heap",
+        "the pooled shape origin is conservative may-effect evidence: {cell:#}"
+    );
+    assert_eq!(
+        cell["later_read"]["kind"], "unclassified_callee_heap",
+        "the pooled shape origin is conservative may-effect evidence: {cell:#}"
+    );
+    assert_eq!(cell["observed_conflict"], false, "{cell:#}");
     assert_eq!(
         receipt["support"]["kind"], "pooled_object_shape",
         "{cell:#}"
