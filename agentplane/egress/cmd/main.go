@@ -48,8 +48,7 @@ const (
 	// decisionFlushTimeout bounds how long shutdown waits for queued decisions to be written.
 	decisionFlushTimeout = 5 * time.Second
 	// changesHeartbeat is how often an idle decision change stream proves it is alive.
-	changesHeartbeat  = 15 * time.Second
-	readHeaderTimeout = 30 * time.Second
+	changesHeartbeat = 15 * time.Second
 )
 
 func main() {
@@ -123,22 +122,22 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 // workloadIdentity reviews an enabled bearer hop and each projected token for its audience,
 // accepting only ServiceAccounts of the allowed namespaces. SPIFFE-only listeners have no hop
 // bearer resolver.
-func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, *auth.Resolver, error) {
+func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
 	var hop *auth.Resolver
 	var err error
 	if c.Forward.Has(listener.KubernetesBearer) {
 		hop, err = auth.NewResolver(reviews, c.Forward.BearerAudience(), c.AllowedServiceAccountNamespaces)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
 	for _, audience := range c.ProjectedTokenAudiences {
 		if projected[audience], err = auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
-	return identity.NewVerifier(hop, projected), hop, nil
+	return identity.NewVerifier(hop, projected), nil
 }
 
 // upstreamRoots is the bundle destinations are verified against: the file when given, else the
@@ -196,10 +195,10 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer adminListener.Close()
-	return serve(ctx, c, proxyListener, adminListener)
+	return serve(ctx, c, proxyListener, adminListener, proxyTLS)
 }
 
-func serve(ctx context.Context, c config, proxyListener, adminListener net.Listener) error {
+func serve(ctx context.Context, c config, proxyListener, adminListener net.Listener, proxyTLS *tls.Config) error {
 	base, err := kubernetesConfig(c.Kubeconfig)
 	if err != nil {
 		return err
@@ -208,7 +207,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	if err != nil {
 		return err
 	}
-	verifier, rulesResolver, err := workloadIdentity(reviews.TokenReviews(), c)
+	verifier, err := workloadIdentity(reviews.TokenReviews(), c)
 	if err != nil {
 		return err
 	}
@@ -282,7 +281,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	}
 	adminServer, err := newAdminServer(c, reviews.TokenReviews(), admin.ServiceOptions{
 		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health, Credentials: index,
-	}, rulesResolver, index)
+	}, authentication, index, proxyTLS)
 	if err != nil {
 		return err
 	}
@@ -300,14 +299,9 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	return group.Wait()
 }
 
-// shutdowner is a server that stops accepting and lets admitted requests finish until ctx ends.
-type shutdowner interface {
-	Shutdown(ctx context.Context) error
-}
-
 // drain marks the proxy unready, lets admitted requests finish, then stops the other listeners. The
 // admin listener outlives the proxy's drain so the kubelet can see the Pod go unready.
-func drain(egress *proxy.Proxy, index *policy.Index, adminServer shutdowner) error {
+func drain(egress *proxy.Proxy, index *policy.Index, adminServer *adminServer) error {
 	slog.Info("draining")
 	index.Health.MarkDraining()
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)

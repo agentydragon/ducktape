@@ -9,6 +9,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 type Authenticated struct {
@@ -71,6 +76,40 @@ func (a *Authenticator) Authenticate(ctx context.Context, state *tls.ConnectionS
 	}
 	principal, err := a.tokens.Identify(ctx, token)
 	return Authenticated{Principal: principal, Mode: mode, Bearer: token}, err
+}
+
+// Resolve adapts a native gRPC call to the same authentication policy used by
+// the forward listener. TLS identity comes only from gRPC's authenticated peer
+// credentials; callers cannot supply an identity header.
+func (a *Authenticator) Resolve(ctx context.Context) (auth.Principal, error) {
+	var state *tls.ConnectionState
+	if remote, ok := peer.FromContext(ctx); ok {
+		switch info := remote.AuthInfo.(type) {
+		case credentials.TLSInfo:
+			state = &info.State
+		case *credentials.TLSInfo:
+			if info != nil {
+				state = &info.State
+			}
+		}
+	}
+	md, _ := metadata.FromIncomingContext(ctx)
+	bearer := md.Get("authorization")
+	caller, err := a.Authenticate(ctx, state, bearer, len(bearer) > 0)
+	if err == nil {
+		return caller.Principal, nil
+	}
+	if ctx.Err() != nil {
+		return auth.Principal{}, status.FromContextError(ctx.Err()).Err()
+	}
+	var rejection *Rejection
+	if !errors.As(err, &rejection) {
+		return auth.Principal{}, status.Error(codes.Internal, "workload authentication failed")
+	}
+	if rejection.Reason == decision.Unavailable {
+		return auth.Principal{}, status.Error(codes.Unavailable, "workload authentication unavailable")
+	}
+	return auth.Principal{}, status.Error(codes.Unauthenticated, "workload authentication refused")
 }
 
 func (a *Authenticator) VerifyProjected(ctx context.Context, caller Authenticated, presented map[string]string) map[string]string {
