@@ -39,11 +39,14 @@ func (s *Service) CompleteCallback(ctx context.Context, request *linkage_service
 	case errors.Is(err, ErrUnknownServer):
 		return nil, status.Error(codes.NotFound, ErrUnknownServer.Error())
 	case errors.As(err, &refused):
-		failure, detailErr := status.New(codes.Unavailable, refused.message).WithDetails(&errdetails.ErrorInfo{
+		// Provider error descriptions can contain attacker-controlled text. Keep the gRPC status safe;
+		// callers identify the token-exchange case through the typed ErrorInfo detail.
+		const safeMessage = "MCP authorization code exchange failed"
+		failure, detailErr := status.New(codes.Unavailable, safeMessage).WithDetails(&errdetails.ErrorInfo{
 			Reason: "MCP_TOKEN_EXCHANGE_FAILED", Domain: "agentplane.actions",
 		})
 		if detailErr != nil {
-			return nil, status.Error(codes.Unavailable, refused.message)
+			return nil, status.Error(codes.Unavailable, safeMessage)
 		}
 		return nil, failure.Err()
 	case err != nil:

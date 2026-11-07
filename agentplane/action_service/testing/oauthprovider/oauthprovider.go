@@ -23,6 +23,8 @@ const (
 	RefusedCode = "test-refused-code"
 	// RefusedError is the OAuth error RefusedCode gets.
 	RefusedError = "bad_verification_code"
+	// RefusedErrorDescription is the provider-reflected error description RefusedCode gets.
+	RefusedErrorDescription = "provider-reflected-sensitive-detail"
 )
 
 // Options are what a Provider publishes and grants.
@@ -145,7 +147,7 @@ func (p *Provider) serveToken(w http.ResponseWriter, r *http.Request) {
 	switch r.PostForm.Get("grant_type") {
 	case "authorization_code":
 		if r.PostForm.Get("code") == RefusedCode {
-			writeJSON(w, http.StatusOK, map[string]string{"error": RefusedError})
+			writeJSON(w, http.StatusOK, map[string]string{"error": RefusedError, "error_description": RefusedErrorDescription})
 			return
 		}
 		writeJSON(w, http.StatusOK, p.grant("test-access-token"))

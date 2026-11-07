@@ -550,7 +550,7 @@ surface.
 
 The app connects to the Connection Service through the separately configured `connection_service_url`
 and to the Action Service gRPC APIs through `action_federation.service_url`. The public MCP-linkage
-OAuth callback remains a narrow HTTP call to the Action Service. Staging points
+OAuth callback terminates at the app and calls `LinkageService.CompleteCallback` over gRPC. Staging points
 `connection_service_url` at the MCP edge and `action_federation.service_url` at the Action Service.
 Each service has its own gRPC health probe.
 
@@ -562,9 +562,9 @@ joins their latest states by group key/server ID without coupling their change r
 disconnect use the app's `POST /upstream/actions/v1/operator/mcp-servers/{id}/linkage/start` and
 `.../linkage/disconnect` routes, which call the Operator Action Service with the request-bound
 operator bearer. The provider's
-registered redirect remains the public `GET /mcp-linkage/callback`; the app forwards its state and
-code to the Action Service's public callback and returns the browser to `/#/mcp-servers`. The Go callback's
-ProtoJSON response is not part of the browser contract. What a link authorizes and when a linked
+registered redirect remains the app's public `GET /mcp-linkage/callback`; the app forwards the
+one-shot state capability and authorization code to Action Service and returns the browser to
+`/#/mcp-servers`. No operator bearer is sent with this callback. What a link authorizes and when a linked
 group becomes available is the Action Service's contract
 ([its README](../action_service/README.md#action-catalog)).
 
