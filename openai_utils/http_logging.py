@@ -37,31 +37,30 @@ async def _log_write(path: Path, record: dict[str, Any]) -> None:
         logger.debug("failed to write HTTP log: %s", e)
 
 
-async def _on_request(req: httpx.Request, *, path: Path) -> None:  # pragma: no cover - HTTP hook
+def _request_content(req: httpx.Request) -> tuple[dict[str, str], str]:
     headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
-    body = req.content or b""
+    return headers, (req.content or b"").decode("utf-8", errors="ignore")
+
+
+async def _response_content(resp: httpx.Response, target_logger: logging.Logger) -> str:
+    try:
+        return (await resp.aread()).decode("utf-8", errors="ignore")
+    except (httpx.StreamConsumed, httpx.StreamClosed, httpx.ReadError) as e:
+        target_logger.debug("failed to read response body: %s", e)
+        return ""
+
+
+async def _on_request(req: httpx.Request, *, path: Path) -> None:  # pragma: no cover - HTTP hook
+    headers, body = _request_content(req)
     await _log_write(
-        path,
-        {
-            "kind": "request",
-            "method": req.method,
-            "url": str(req.url),
-            "headers": headers,
-            "body": body.decode("utf-8", errors="ignore"),
-        },
+        path, {"kind": "request", "method": req.method, "url": str(req.url), "headers": headers, "body": body}
     )
 
 
 async def _on_response(resp: httpx.Response, *, path: Path) -> None:  # pragma: no cover - HTTP hook
     req = resp.request
-    headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
-    req_body = req.content or b""
-    # Read response body; may fail if stream already consumed
-    try:
-        resp_body_bytes = await resp.aread()
-    except (httpx.StreamConsumed, httpx.StreamClosed, httpx.ReadError) as e:
-        logger.debug("failed to read response body: %s", e)
-        resp_body_bytes = b""
+    headers, req_body = _request_content(req)
+    resp_body = await _response_content(resp, logger)
     await _log_write(
         path,
         {
@@ -69,22 +68,21 @@ async def _on_response(resp: httpx.Response, *, path: Path) -> None:  # pragma: 
             "status": resp.status_code,
             "req_url": str(req.url),
             "req_headers": headers,
-            "req_body": req_body.decode("utf-8", errors="ignore"),
+            "req_body": req_body,
             "resp_headers": dict(resp.headers),
-            "resp_body": resp_body_bytes.decode("utf-8", errors="ignore"),
+            "resp_body": resp_body,
         },
     )
 
 
 async def _log_request_to_logger(req: httpx.Request, *, logger: logging.Logger) -> None:  # pragma: no cover - HTTP hook
-    headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
-    body = req.content or b""
+    headers, body = _request_content(req)
     logger.debug(
         "OpenAI Request: %s %s\nHeaders: %s\nBody: %s",
         req.method,
         str(req.url),
         json.dumps(headers, ensure_ascii=False),
-        body.decode("utf-8", errors="ignore"),
+        body,
     )
 
 
@@ -92,22 +90,16 @@ async def _log_response_to_logger(
     resp: httpx.Response, *, logger: logging.Logger
 ) -> None:  # pragma: no cover - HTTP hook
     req = resp.request
-    headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
-    req_body = req.content or b""
-    # Read response body; may fail if stream already consumed
-    try:
-        resp_body_bytes = await resp.aread()
-    except (httpx.StreamConsumed, httpx.StreamClosed, httpx.ReadError) as e:
-        logger.debug("failed to read response body: %s", e)
-        resp_body_bytes = b""
+    headers, req_body = _request_content(req)
+    resp_body = await _response_content(resp, logger)
     logger.debug(
         "OpenAI Response: %d %s\nRequest Headers: %s\nRequest Body: %s\nResponse Headers: %s\nResponse Body: %s",
         resp.status_code,
         str(req.url),
         json.dumps(headers, ensure_ascii=False),
-        req_body.decode("utf-8", errors="ignore"),
+        req_body,
         json.dumps(dict(resp.headers), ensure_ascii=False),
-        resp_body_bytes.decode("utf-8", errors="ignore"),
+        resp_body,
     )
 
 
