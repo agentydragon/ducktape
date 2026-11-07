@@ -127,6 +127,22 @@ fn preserve_initialization(
             &context.artifact.chunk_table,
         )
         .map_err(|_| UnsupportedCandidateGraph)?;
+    // A new output can shadow a source-path fallback without changing provider
+    // completion. Retained imports must still select the defining source module
+    // whose body receipt the analysis used.
+    let consumer = context
+        .artifact
+        .find_chunk(context.consumer)
+        .ok_or(UnsupportedCandidateGraph)?;
+    let retained_targets = resolve_requests(
+        &consumer.analysis.runtime_facts.static_requests,
+        |specifier| {
+            resolver.resolve_runtime_import_reference(specifier, context.consumer, entry_file)
+        },
+    )?;
+    if source.get(&original_entry) != Some(&retained_targets) {
+        return Err(ProviderClosureChanged);
+    }
     let mut candidate = ModuleGraph::new();
     for chunk in &context.artifact.chunks {
         if chunk.chunk_id == context.consumer {
@@ -145,6 +161,9 @@ fn preserve_initialization(
                         canonicalized || target.kind == ImportReferenceKind::ArtifactPath
                     })
             })?;
+        if source.get(&(chunk.chunk_id, file.clone())) != Some(&targets) {
+            return Err(ForeignInitializationChanged);
+        }
         candidate.insert((chunk.chunk_id, file.clone()), targets);
     }
     for (index, (file, requests)) in inventories.iter().enumerate() {

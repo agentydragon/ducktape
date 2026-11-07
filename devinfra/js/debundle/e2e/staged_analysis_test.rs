@@ -1228,6 +1228,59 @@ fn assert_module_cell_address(address: &Value) {
     assert!(!address["declaration_origin"].is_null(), "{address:#}");
 }
 
+fn run_direct_and_saved_with_rejection(staged: &Staged) -> (StagedInvocation, StagedInvocation) {
+    let direct = staged.run(&["--emit-on-rejection"]);
+    let artifact = path(&staged.artifact).to_owned();
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", artifact.as_str()]);
+    assert_eq!(
+        direct.result.status.code(),
+        saved.result.status.code(),
+        "direct and saved-analysis CLI verdicts differ: direct={} saved={}",
+        direct.result.stderr,
+        saved.result.stderr
+    );
+    assert_same_invocation_trees(&direct, &saved);
+    (direct, saved)
+}
+
+fn conditional_foreign_body_used(graph: &Value, binding: &str) -> bool {
+    graph_node_for_binding(graph, binding)["synchronous_execution"]["inference_uses"]
+        .as_array()
+        .is_some_and(|uses| {
+            uses.iter()
+                .any(|usage| usage["conclusion"] == "conditional_foreign_body")
+        })
+}
+
+fn composed_module_cell_for_binding(graph: &Value, binding: &str, access: &str) -> Value {
+    let cells = module_cell_samples(
+        graph_node_for_binding(graph, binding),
+        "composed_synchronous_calls",
+        access,
+    );
+    assert_eq!(
+        cells.len(),
+        1,
+        "expected one composed module-cell {access} for {binding}: {graph:#}"
+    );
+    cells[0].clone()
+}
+
+fn module_initialization_cells<'a>(report: &'a Value, field: &str) -> &'a [Value] {
+    report["module_initialization"][field]
+        .as_array()
+        .unwrap_or_else(|| panic!("module initialization {field} is not an array: {report:#}"))
+}
+
+fn assert_same_module_cell_address(report_address: &Value, graph_address: &Value) {
+    assert_module_cell_address(graph_address);
+    assert_eq!(report_address["chunk"], graph_address["chunk"]);
+    assert_eq!(
+        report_address["declaration_origin"],
+        graph_address["declaration_origin"]
+    );
+}
+
 #[test]
 fn imported_impure_call_causes_survive_staged_analysis_as_shared_refs() {
     let provider = "let calls = 0;\n\
@@ -1535,6 +1588,277 @@ fn conditional_descriptor_body_effects_survive_saved_analysis() {
             &run.output_root().join("app/static/app/entry.js"),
             "42 42\n",
             "",
+        );
+    }
+}
+
+#[test]
+fn mutable_provider_cell_effects_survive_direct_saved_and_candidate_analysis() {
+    const PROVIDER: &str = "export let count = 0;\nexport function wrap(record) { count++; return {}; }\nexport function value(record) { return count; }\n";
+    const APP: &str = "import { count, wrap, value } from './peer.js';\nconst wrapped = wrap({});\nconst observed = value({});\nconst sourceCount = count;\nconsole.log(observed, typeof wrapped);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(APP, vec![logical_module("work", &[Member::new("wrapped")])])
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "1 object\n",
+            "",
+        );
+        let output = invocation.output_root().join("reports/tree");
+        let app_graph: Value = read_gzip_json(&output.join("static/app/dependency_graph.json.gz"));
+        let provider_cell = module_cell_for_binding(&app_graph, "sourceCount", "reads");
+        let wrapped_write = composed_module_cell_for_binding(&app_graph, "wrapped", "writes");
+        let observed_read = composed_module_cell_for_binding(&app_graph, "observed", "reads");
+        assert_eq!(wrapped_write, provider_cell, "{app_graph:#}");
+        assert_eq!(observed_read, provider_cell, "{app_graph:#}");
+        assert!(
+            conditional_foreign_body_used(&app_graph, "wrapped"),
+            "{app_graph:#}"
+        );
+        assert!(
+            conditional_foreign_body_used(&app_graph, "observed"),
+            "{app_graph:#}"
+        );
+
+        let report = candidate_relocation_report(invocation, "static/app");
+        assert_eq!(
+            report["status"], "accepted_within_checked_scope",
+            "{report:#}"
+        );
+        let required = module_initialization_cells(&report, "required_cells");
+        let preserved = module_initialization_cells(&report, "preserved_cells");
+        let unproved = module_initialization_cells(&report, "unproved_cells");
+        assert_eq!(required.len(), 1, "{report:#}");
+        assert_eq!(preserved.len(), 1, "{report:#}");
+        assert!(unproved.is_empty(), "{report:#}");
+        assert_same_module_cell_address(&required[0], &provider_cell);
+        assert_same_module_cell_address(&preserved[0], &provider_cell);
+        assert!(
+            report["module_initialization"]["refusal"].is_null(),
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn complete_module_cell_writer_census_withholds_conditional_provider_bodies() {
+    const APP: &str = "import { wrap, value } from './peer.js';\nconst wrapped = wrap({});\nconst observed = value({});\nconsole.log(observed, typeof wrapped);\n";
+    for (label, extra_writer) in [
+        (
+            "nested_post_await",
+            "function unused() { return async function poison() { await 0; count = {}; }; }\n",
+        ),
+        (
+            "unsupported_compound_store",
+            "function poison() { count += 1; }\n",
+        ),
+        (
+            "unsupported_loop_store",
+            "function poison() { for (count of []) {} }\n",
+        ),
+    ] {
+        let provider = format!(
+            "export let count = 0;\nexport function wrap(record) {{ count++; return {{}}; }}\nexport function value(record) {{ return count; }}\n{extra_writer}"
+        );
+        let (staged, _fixture) = staged(
+            FixtureOpts::new(APP, vec![logical_module("work", &[Member::new("wrapped")])])
+                .with_extra_chunks(&[("static/peer", &provider)])
+                .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+        for invocation in [&direct, &saved] {
+            assert_node_output(
+                &invocation.output_root().join("app/static/app/entry.js"),
+                "1 object\n",
+                "",
+            );
+            let graph: Value = read_gzip_json(
+                &invocation
+                    .output_root()
+                    .join("reports/tree/static/app/dependency_graph.json.gz"),
+            );
+            assert!(
+                !conditional_foreign_body_used(&graph, "wrapped"),
+                "{label}: {graph:#}"
+            );
+            assert!(
+                !conditional_foreign_body_used(&graph, "observed"),
+                "{label}: {graph:#}"
+            );
+            let report = candidate_relocation_report(invocation, "static/app");
+            assert!(
+                module_initialization_cells(&report, "required_cells").is_empty(),
+                "{label}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn cyclic_provider_cells_do_not_gain_source_initialization_authority() {
+    const PROVIDER: &str = "import { early } from './app.js';\nexport let count = 0;\nexport function wrap(record) { count++; return {}; }\nexport function value(record) { return count; }\n";
+    const APP: &str = "import { wrap, value } from './peer.js';\nexport function early() {}\nconst wrapped = wrap({});\nconst observed = value({});\nconsole.log(observed, typeof wrapped);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(APP, vec![logical_module("work", &[Member::new("wrapped")])])
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "1 object\n",
+            "",
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        assert!(
+            !conditional_foreign_body_used(&graph, "wrapped"),
+            "{graph:#}"
+        );
+        assert!(
+            !conditional_foreign_body_used(&graph, "observed"),
+            "{graph:#}"
+        );
+        let report = candidate_relocation_report(invocation, "static/app");
+        assert!(
+            module_initialization_cells(&report, "required_cells").is_empty(),
+            "{report:#}"
+        );
+    }
+}
+
+fn assert_module_initialization_refusal_fixture(
+    opts: FixtureOpts<'_>,
+    refusal: &str,
+    expected_output: &str,
+) {
+    let (staged, _fixture) = staged(opts);
+    let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            expected_output,
+            "",
+        );
+        let output = invocation.output_root().join("reports/tree");
+        let app_graph: Value = read_gzip_json(&output.join("static/app/dependency_graph.json.gz"));
+        let provider_cell = module_cell_for_binding(&app_graph, "sourceCount", "reads");
+        let body_write = composed_module_cell_for_binding(&app_graph, "wrapped", "writes");
+        assert_eq!(body_write, provider_cell, "{app_graph:#}");
+        assert!(
+            conditional_foreign_body_used(&app_graph, "wrapped"),
+            "{app_graph:#}"
+        );
+
+        let report = candidate_relocation_report(invocation, "static/app");
+        let required = module_initialization_cells(&report, "required_cells");
+        let preserved = module_initialization_cells(&report, "preserved_cells");
+        let unproved = module_initialization_cells(&report, "unproved_cells");
+        assert_eq!(required.len(), 1, "{report:#}");
+        assert!(preserved.is_empty(), "{report:#}");
+        assert_eq!(unproved.len(), 1, "{report:#}");
+        assert_same_module_cell_address(&required[0], &provider_cell);
+        assert_same_module_cell_address(&unproved[0], &provider_cell);
+        assert_eq!(
+            report["module_initialization"]["refusal"], refusal,
+            "{report:#}"
+        );
+        assert_ne!(
+            report["status"], "accepted_within_checked_scope",
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn candidate_module_initialization_checks_every_body_and_foreign_reentry() {
+    const PROVIDER: &str = "export let count = 0;\nexport function wrap(record) { count++; return {}; }\nexport function value(record) { return count; }\n";
+    assert_module_initialization_refusal_fixture(
+        FixtureOpts::new(
+            "const first = 0;\nimport { count, wrap, value } from './peer.js';\nconst sourceCount = count;\nconst before = 1;\nconst wrapped = wrap({});\nconst observed = value({});\nconsole.log(before, observed, typeof wrapped);\n",
+            vec![
+                logical_module("a_before", &[Member::new("before")]),
+                logical_module("b_work", &[Member::new("wrapped")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", PROVIDER)])
+        .with_unassigned_mode(unassigned_mode_inline()),
+        "provider_incomplete_at_consumer",
+        "1 1 object\n",
+    );
+
+    const SIBLING: &str =
+        "import { wrap } from './peer.js';\nwrap({});\nexport const siblingReady = true;\n";
+    assert_module_initialization_refusal_fixture(
+        FixtureOpts::new(
+            "import './sibling.js';\nimport { count, wrap, value } from './peer.js';\nconst sourceCount = count;\nconst wrapped = wrap({});\nconst observed = value({});\nconsole.log(observed, typeof wrapped);\n",
+            vec![logical_module("work", &[Member::new("wrapped")])],
+        )
+        .with_extra_chunks(&[("static/peer", PROVIDER), ("static/sibling", SIBLING)])
+        .with_unassigned_mode(unassigned_mode_inline()),
+        "foreign_initialization_changed",
+        "2 object\n",
+    );
+}
+
+#[test]
+fn candidate_module_initialization_rejects_output_path_shadowing() {
+    const PROVIDER: &str = "export let count = 0;\nexport function wrap(record) { count++; return {}; }\nexport function value(record) { return count; }\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            "import { wrap as foreignWrap, value as foreignValue } from './peer.js';\nfunction wrap(record) { return {}; }\nfunction value(record) { return 99; }\nconst peerMarker = foreignValue({});\nconst wrapped = foreignWrap({});\nconst observed = foreignValue({});\nconsole.log(observed, typeof wrapped);\n",
+            vec![
+                logical_module("peer", &[Member::new("wrap"), Member::new("value"), Member::new("peerMarker")]),
+                logical_module("work", &[Member::new("wrapped")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", PROVIDER)])
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(
+        &staged.root().join("snapshot/static/app.js"),
+        "1 object\n",
+        "",
+    );
+    let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "99 object\n",
+            "",
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        assert!(
+            conditional_foreign_body_used(&graph, "wrapped"),
+            "{graph:#}"
+        );
+        let report = candidate_relocation_report(invocation, "static/app");
+        let required = module_initialization_cells(&report, "required_cells");
+        let preserved = module_initialization_cells(&report, "preserved_cells");
+        let unproved = module_initialization_cells(&report, "unproved_cells");
+        assert_eq!(required.len(), 1, "{report:#}");
+        assert!(preserved.is_empty(), "{report:#}");
+        assert_eq!(unproved.len(), 1, "{report:#}");
+        assert_eq!(
+            report["module_initialization"]["refusal"], "provider_closure_changed",
+            "{report:#}"
+        );
+        assert_ne!(
+            report["status"], "accepted_within_checked_scope",
+            "{report:#}"
         );
     }
 }
