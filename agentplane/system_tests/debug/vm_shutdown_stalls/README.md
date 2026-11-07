@@ -308,3 +308,14 @@ opt-in passive virtiofsd timeline. All five guests completed the ordered unmount
 powered down without a forced domain destroy. Its byte-exact diagnostic subset and per-file
 checksums are retained alongside the run report. This healthy batch is not a reproduction
 or a causal explanation of the historical stall.
+
+## Five-run full-suite batch with a readiness-cleanup RCU wait
+
+The [five-run batch on source `9dc88d0432576155057d07530de01a34e397a504`](five_run_full_suite_rcu.md)
+passed four executions and failed one. In the failed execution, `vm-2` never reached
+Sandbox Ready; teardown then recorded guest PID 1 waiting in RCU/cgroup reconfiguration
+after ACPI and forcibly destroyed the QEMU domain. Its two host samples show QEMU running
+under TCG, but do not establish daemon request progress or identify a shutdown unit. The
+report retains the UID-correlated serial, console timestamps, host samples and lifecycle
+lines with checksums. This is distinct from the standalone policy-off FUSE failure; it does
+not establish a shared root cause.
