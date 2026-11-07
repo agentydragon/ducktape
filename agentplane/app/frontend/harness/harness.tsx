@@ -2692,11 +2692,18 @@ routes.push(
   ],
   [
     "GET",
-    /^\/system\/status$/,
-    () => [
-      { name: "Healthy component", state: "ok", detail: null, checked_at: ago(4000) },
-      { name: "Down component", state: "down", detail: "UNAVAILABLE: connection refused", checked_at: ago(4000) },
-    ],
+    /^\/upstream\/app\/v1\/system\/status$/,
+    () => ({
+      components: [
+        { name: "Healthy component", state: "SYSTEM_COMPONENT_STATE_OK", detail: null, checkedAt: ago(4000) },
+        {
+          name: "Down component",
+          state: "SYSTEM_COMPONENT_STATE_DOWN",
+          detail: "UNAVAILABLE: connection refused",
+          checkedAt: ago(4000),
+        },
+      ],
+    }),
   ],
   [
     "GET",
