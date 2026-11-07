@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import ssl
 from urllib.parse import urlsplit
 
 import httpx2
@@ -39,6 +40,7 @@ class RemoteSessionTransport:
         provider_base_url: str,
         owner_token: SecretStr,
         route_token: SecretStr,
+        tls_context: ssl.SSLContext | None = None,
         transport=None,
     ):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", instance_id):
@@ -59,6 +61,9 @@ class RemoteSessionTransport:
                 raise ValueError("Invalid internal credential")
         if owner_token.get_secret_value() == route_token.get_secret_value():
             raise ValueError("Internal credentials must be distinct")
+        if tls_context is not None and (tls_context.verify_mode != ssl.CERT_REQUIRED or not tls_context.check_hostname):
+            raise ValueError("Provider TLS must verify certificates and hostnames")
+        self.tls_context = tls_context
         self.transport = transport
 
     async def request(self, request: ProxyRequest) -> ProxyResponse:
@@ -85,7 +90,13 @@ class RemoteSessionTransport:
         token = self._owner_token if request.owner else self._route_token
         headers.append((b"authorization", b"Bearer " + token.get_secret_value().encode("ascii")))
         with (
-            httpx2.Client(transport=self.transport, trust_env=False, follow_redirects=False, timeout=20) as client,
+            httpx2.Client(
+                transport=self.transport,
+                verify=self.tls_context if self.tls_context is not None else True,
+                trust_env=False,
+                follow_redirects=False,
+                timeout=20,
+            ) as client,
             client.stream(request.method, target, headers=headers, content=request.body) as response,
         ):
             markers = response.headers.get_list(RESULT_HEADER.decode("ascii"))

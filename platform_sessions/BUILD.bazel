@@ -292,6 +292,7 @@ py_test(
         ":proxy",
         ":remote_transport",
         "//:conftest",
+        "@pypi//cryptography",
         "@pypi//httpx2",
         "@pypi//pydantic",
         "@pypi//pytest",
