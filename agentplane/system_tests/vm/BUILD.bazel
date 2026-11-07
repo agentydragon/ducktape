@@ -291,11 +291,20 @@ py_library(
 py_test(
     name = "test_boot_rcu",
     srcs = ["test_boot_rcu.py"],
+    data = [
+        "//agentplane/system_tests/vm/guest:boot_rcu_observer",
+        "@trixie_vm_guest//busybox-static:data",
+    ],
+    env = {
+        "BOOT_RCU_OBSERVER_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:boot_rcu_observer)",
+        "BOOT_RCU_BUSYBOX_RLOCATION": "$(rlocationpath @trixie_vm_guest//busybox-static:data)",
+    },
     deps = [
         ":boot_rcu",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

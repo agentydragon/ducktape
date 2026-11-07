@@ -78,6 +78,27 @@ the full guest's Runtime startup path or establish why either boot wedge
 occurred. Raw smoke artifacts and checksums remain in the task scratch area;
 the linked BuildBuddy artifacts are the durable evidence.
 
+A separate [five-action, three-cycle-per-action batch](https://app.buildbuddy.io/invocation/fcc2ad49-6bf9-45df-b118-6b95a8f97d94)
+ran on observer PR head `10681ce5666ebba85813f5b102ec7596f16cecbc` with policy on,
+the guest observer on and no debug kernel arguments. Four actions passed; the
+second failed its boot-evidence parser. All 15 VMI cycles nevertheless became
+Ready, received ACPI, emitted the shutdown-complete proof and `reboot: Power down`,
+and deleted their namespaces. No sampled PID 1 wait repeated the observed
+`cgroup_subtree_control_write`/RCU wedge. The failed cycle's raw CRI console
+at 04:51:06.534 UTC on November 7, 2026 contains
+`PID1_WCHAN do_epoll_waitAGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END`: the observer
+printed the field prefix and value in separate tty writes, and the reporter's
+exact receipt landed between them. This is an observer-caused evidence failure,
+not a pre-Ready wedge. The follow-up serial change assembles each capped sample
+in private guest scratch space and emits it as one newline-framed tty block;
+the original boot-evidence parser's exact marker matching stays unchanged.
+The exact guest BusyBox `dd` issued one write for 100-, 1000- and 2048-byte
+blocks on a Linux PTY, and the focused test preserved 3,000 concurrent exact
+reporter receipts. That bounds the reproduced userspace interleaving; it does
+not prove that an asynchronous kernel console producer cannot interrupt an
+actual UART transmission.
+The raw per-cycle artifacts remain in the linked invocation, not this repository.
+
 ## Historical target boundary
 
 The earliest verified **post-ACPI, missing-proof, forced-kill** case in the indexed VM
