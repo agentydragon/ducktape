@@ -247,11 +247,21 @@ ts_library(
 )
 
 ts_library(
+    name = "app_service_client",
+    srcs = ["app_service_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@bufbuild/protobuf",
+    ],
+)
+
+ts_library(
     name = "app_config_client",
     srcs = ["app_config_client.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":app_service_client",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:app_service_pb",
         "//agentplane/proto:session_pb",
@@ -699,7 +709,7 @@ ts_library(
     srcs = ["system_status_client.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        ":app_service_client",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:app_service_pb",
     ],

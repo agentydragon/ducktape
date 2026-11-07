@@ -1,6 +1,6 @@
-import { fromJson, type JsonValue as ProtoJsonValue } from "@bufbuild/protobuf";
+import { fromJson } from "@bufbuild/protobuf";
 
-import { fetchWithLogin, HttpError } from "./client";
+import { createAppServiceClient } from "./app_service_client";
 import {
   ListModelsResponseSchema,
   GetFrontendConfigResponseSchema,
@@ -63,28 +63,7 @@ export type SandboxPresetView = {
 };
 
 const APP_CONFIG_PATH = "/upstream/app-config/v1";
-
-function isJsonValue(value: unknown): value is ProtoJsonValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (typeof value !== "object") return false;
-  return Object.values(value).every(isJsonValue);
-}
-
-async function call(path: string): Promise<ProtoJsonValue> {
-  const response = await fetchWithLogin(`${APP_CONFIG_PATH}${path}`, { headers: { Accept: "application/json" } });
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = JSON.parse(text);
-  } catch {
-    payload = text;
-  }
-  if (!response.ok) throw new HttpError(response, payload);
-  if (!isJsonValue(payload)) throw new Error("Invalid app configuration response.");
-  return payload;
-}
+const appConfigClient = createAppServiceClient(APP_CONFIG_PATH, "Invalid app configuration response.");
 
 export function harnessName(harness: ProtoHarness): Harness {
   switch (harness) {
@@ -100,7 +79,7 @@ export function harnessName(harness: ProtoHarness): Harness {
 }
 
 export async function listModels(): Promise<ModelCatalog> {
-  const response: ListModelsResponse = fromJson(ListModelsResponseSchema, await call("/models"));
+  const response: ListModelsResponse = fromJson(ListModelsResponseSchema, await appConfigClient.get("/models"));
   const harnesses: Partial<Record<Harness, string[]>> = {};
   for (const offer of response.harnesses) harnesses[harnessName(offer.harness)] = offer.models;
   return {
@@ -114,7 +93,10 @@ export async function listModels(): Promise<ModelCatalog> {
 }
 
 export async function listSandboxPresets(): Promise<SandboxPresetView[]> {
-  const response: ListSandboxPresetsResponse = fromJson(ListSandboxPresetsResponseSchema, await call("/presets"));
+  const response: ListSandboxPresetsResponse = fromJson(
+    ListSandboxPresetsResponseSchema,
+    await appConfigClient.get("/presets")
+  );
   return response.presets.map((preset) => ({
     name: preset.name,
     title: preset.title,
@@ -136,7 +118,7 @@ export async function listSandboxPresets(): Promise<SandboxPresetView[]> {
 export async function getFrontendConfig(): Promise<FrontendConfig> {
   const response: ProtoGetFrontendConfigResponse = fromJson(
     GetFrontendConfigResponseSchema,
-    await call("/frontend-config")
+    await appConfigClient.get("/frontend-config")
   );
   const config = response.frontendConfig;
   return {
