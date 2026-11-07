@@ -1,4 +1,4 @@
-"""Manual one-guest KubeVirt/TCG shutdown diagnostic without the Agentplane service stack."""
+"""Manual KubeVirt/TCG shutdown diagnostic without the Agentplane service stack."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.k3s import baseline
-from agentplane.system_tests.vm import guest_logs, host_qemu, infrastructure
+from agentplane.system_tests.vm import guest_logs, host_qemu, infrastructure, shutdown_diagnostic
 from cluster.cdk8s.agentplane import launcher_relay
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -37,6 +37,30 @@ _VIRSH_URI = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
 _BOOT_WAIT_SECONDS = 240
 _SHUTDOWN_WAIT_SECONDS = 180
 _SKIP_VIRTIOFS_POLICY_ENV = "AGENTPLANE_TCG_VMI_SKIP_VIRTIOFS_POLICY"
+_CYCLES_ENV = "AGENTPLANE_TCG_VMI_CYCLES"
+_DEBUG_KERNEL_ARGS_ENV = "AGENTPLANE_TCG_VMI_DEBUG_KERNEL_ARGS"
+_DEBUG_KERNEL_ARGS = "systemd.log_level=debug systemd.log_target=console loglevel=8"
+
+
+def _cycle_count() -> int:
+    value = os.environ.get(_CYCLES_ENV, "1")
+    try:
+        count = int(value)
+    except ValueError as error:
+        raise ValueError(f"{_CYCLES_ENV} must be an integer from 1 to 3, got {value!r}") from error
+    if count not in range(1, 4):
+        raise ValueError(f"{_CYCLES_ENV} must be an integer from 1 to 3, got {value!r}")
+    return count
+
+
+def _debug_kernel_args() -> bool:
+    match os.environ.get(_DEBUG_KERNEL_ARGS_ENV, "0"):
+        case "0":
+            return False
+        case "1":
+            return True
+        case value:
+            raise ValueError(f"{_DEBUG_KERNEL_ARGS_ENV} must be '0' or '1', got {value!r}")
 
 
 def _skip_virtiofs_shutdown_policy() -> bool:
@@ -173,7 +197,7 @@ def _disk(name: str, serial: str) -> dict[str, Any]:
     return {"name": name, "serial": serial, "disk": {"bus": "virtio"}}
 
 
-def _vmi(namespace: str, images: dict[str, str]) -> dict[str, Any]:
+def _vmi(namespace: str, images: dict[str, str], *, debug_kernel_args: bool = False) -> dict[str, Any]:
     boot_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-boot:unset"))
     root_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-root:unset"))
     runner_image = next(reference for reference in images if reference.endswith("agentplane-runner-disk:unset"))
@@ -195,6 +219,7 @@ def _vmi(namespace: str, images: dict[str, str]) -> dict[str, Any]:
                         "kernelArgs": (
                             "console=ttyS0 net.ifnames=0 agentplane.boot-evidence=1 "
                             "systemd.mask=agentplane-environment-runtime.service"
+                            + (f" {_DEBUG_KERNEL_ARGS}" if debug_kernel_args else "")
                         ),
                         "container": {
                             "image": boot_image,
@@ -685,6 +710,42 @@ def test_virtiofs_policy_skip_is_opt_in_and_rejects_other_values(monkeypatch: py
         _skip_virtiofs_shutdown_policy()
 
 
+def test_shutdown_policy_cycle_count_and_debug_args_are_bounded_opt_ins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_CYCLES_ENV, raising=False)
+    monkeypatch.delenv(_DEBUG_KERNEL_ARGS_ENV, raising=False)
+    assert _cycle_count() == 1
+    assert _debug_kernel_args() is False
+
+    monkeypatch.setenv(_CYCLES_ENV, "3")
+    monkeypatch.setenv(_DEBUG_KERNEL_ARGS_ENV, "1")
+    assert _cycle_count() == 3
+    assert _debug_kernel_args() is True
+
+    for value in ("0", "4", "abc"):
+        monkeypatch.setenv(_CYCLES_ENV, value)
+        with pytest.raises(ValueError, match="integer from 1 to 3"):
+            _cycle_count()
+    monkeypatch.setenv(_DEBUG_KERNEL_ARGS_ENV, "true")
+    with pytest.raises(ValueError, match="must be '0' or '1'"):
+        _debug_kernel_args()
+
+
+def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None:
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    namespace = _NAMESPACE_PREFIX + "unit-test"
+    plain = _vmi(namespace, images)
+    debug = _vmi(namespace, images, debug_kernel_args=True)
+    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    debug_args = debug["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert debug_args == f"{plain_args} {_DEBUG_KERNEL_ARGS}"
+    debug["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
+    assert debug == plain
+
+
 def test_shutdown_policy_lifecycle_sample_distinguishes_absent_from_api_error_and_replaced_pod() -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
 
@@ -735,25 +796,17 @@ def test_shutdown_policy_lifecycle_sample_distinguishes_absent_from_api_error_an
     assert sample["initContainerStatuses"][0]["state"]["terminated"]["finishedAt"] == finished_at
 
 
-@pytest.mark.timeout(1200)
-def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
-    """Boot the CI guest under TCG and request shutdown through normal VMI deletion."""
-    output = undeclared_outputs_dir() / "standalone-vmi-tcg"
+def _run_cycle(
+    k3s: baseline.K3s,
+    guest_image_manifest: dict[str, str],
+    output: Path,
+    *,
+    skip_virtiofs_policy: bool,
+    debug_kernel_args: bool,
+) -> None:
+    """Run one isolated VMI lifecycle and keep its evidence before cleanup."""
     output.mkdir(parents=True, exist_ok=True)
-    runfiles = Runfiles.CreateOrRaise()
-    runfiles_root = runfiles.root()
-    binary = runfiles_root / os.environ["K3S_BINARY_RLOCATION"]
-    image_manifest = json.loads((runfiles_root / os.environ["K3S_IMAGE_MANIFEST_RLOCATION"]).read_text())
-    vm_images = _layout_paths(runfiles, image_manifest["vm"])
-    guest_images = _layout_paths(runfiles, image_manifest["guest"])
-    all_images = vm_images | guest_images
-    (output / "input-images.json").write_text(json.dumps(image_manifest, indent=2, sort_keys=True))
-
     namespace_name = _NAMESPACE_PREFIX + uuid.uuid4().hex[:10]
-    skip_virtiofs_policy = _skip_virtiofs_shutdown_policy()
-    work = Path(tempfile.mkdtemp(prefix="k3s-vmi-tcg-", dir=os.environ["TEST_TMPDIR"]))
-    k3s = baseline.K3s(work, binary)
-    process: subprocess.Popen[bytes] | None = None
     namespace_uid: str | None = None
     vmi_uid: str | None = None
     pvc_uid: str | None = None
@@ -761,16 +814,6 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     primary_error: BaseException | None = None
 
     try:
-        baseline.stop_previous()
-        process = k3s.start(layers_in_memory=False)
-        k3s.import_images(all_images)
-        releases = infrastructure.releases()
-        infrastructure.install(k3s.kubectl, releases)
-        infrastructure.wait_for_apis(k3s.kubectl)
-        # Install the namespace-scoped equivalent of the production virtiofs native-sidecar rule
-        # below, after creating its random namespace and before any VMI launcher admission.
-        infrastructure.wait_until_ready(k3s.kubectl, require_cluster_policies=False)
-
         namespace = _create_namespace(k3s, namespace_name)
         namespace_uid = namespace["metadata"]["uid"]
         policy: dict[str, Any] | None = None
@@ -800,7 +843,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
             _create_namespaced(k3s, namespace_name, namespace_uid, _placeholder_config_map(namespace_name, name))
         pvc = _create_namespaced(k3s, namespace_name, namespace_uid, _state_claim(namespace_name))
         pvc_uid = pvc["metadata"]["uid"]
-        vmi = _vmi(namespace_name, image_manifest["guest"])
+        vmi = _vmi(namespace_name, guest_image_manifest, debug_kernel_args=debug_kernel_args)
         (output / "vmi.json").write_text(json.dumps(vmi, indent=2, sort_keys=True))
 
         vmi_was_created = False
@@ -814,12 +857,14 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 destination=output / "vm-artifacts",
                 validate_shutdown=lambda: vmi_was_created,
                 require_boot_evidence=True,
+                record_shutdown_diagnostic=True,
             ),
             host_qemu.capture(k3s.kubectl, namespace_name, output / "vm-artifacts"),
         ):
             created_vmi = _create_namespaced(k3s, namespace_name, namespace_uid, vmi)
             vmi_was_created = True
             vmi_uid = created_vmi["metadata"]["uid"]
+            shutdown_diagnostic.write_progress(output, "started", sandbox_uid=vmi_uid)
             pvc = _wait_for_pvc(k3s, namespace_name)
             k3s.kubectl(
                 "wait",
@@ -832,6 +877,23 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
             pod = _launcher(k3s, namespace_name)
             pod_name = pod["metadata"]["name"]
             pod_uid = pod["metadata"]["uid"]
+            (output / "cycle-identity.json").write_text(
+                json.dumps(
+                    {
+                        "namespace": namespace_name,
+                        "namespace_uid": namespace_uid,
+                        "vmi_uid": vmi_uid,
+                        "launcher_pod_uid": pod_uid,
+                        "pvc_uid": pvc_uid,
+                        "policy_uid": policy_uid,
+                        "policy_enabled": not skip_virtiofs_policy,
+                        "debug_kernel_args": debug_kernel_args,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            )
             (output / "launcher-pod.json").write_text(json.dumps(pod, indent=2, sort_keys=True))
             init_containers = pod.get("spec", {}).get("initContainers", [])
             containers = pod.get("spec", {}).get("containers", [])
@@ -879,6 +941,8 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 f"libvirt_domain_type=qemu\n{qemu_cmdline}"
             )
 
+            shutdown_diagnostic.write_progress(output, "sandbox_ready", sandbox_uid=vmi_uid)
+
             # A normal VMI deletion asks KubeVirt to send the guest ACPI power button. No
             # QMP command or force-delete participates in the measured shutdown path. The
             # additional read-only observer samples only this Pod's status every 2 seconds.
@@ -910,6 +974,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                     )
                 if not _wait_for_delete(k3s, "vmi", _VMI_NAME, namespace_name, _SHUTDOWN_WAIT_SECONDS):
                     raise RuntimeError("KubeVirt did not remove the VMI after the bounded graceful deletion")
+                shutdown_diagnostic.write_progress(output, "sandbox_deleted", sandbox_uid=vmi_uid)
             finally:
                 _stop_launcher_lifecycle_capture(stop_lifecycle, lifecycle_thread)
 
@@ -920,12 +985,11 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     except BaseException as error:
         primary_error = error
         _write_shutdown_request_count(output)
-        if process is not None:
-            _write_failure_report(k3s, namespace_name, output)
+        _write_failure_report(k3s, namespace_name, output)
         raise
     finally:
         cleanup_errors: list[Exception] = []
-        if process is not None and process.poll() is None and namespace_uid is not None:
+        if namespace_uid is not None:
             try:
                 current_vmi = k3s.kubectl(
                     "get", "vmi", _VMI_NAME, "-n", namespace_name, "-o", "json", "--ignore-not-found=true", check=False
@@ -940,19 +1004,84 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
             except Exception as error:
                 cleanup_errors.append(error)
                 _write_failure_report(k3s, namespace_name, output)
-        if process is not None:
-            try:
-                k3s.stop(process)
-            except Exception as error:
-                cleanup_errors.append(error)
-                _write_failure_report(k3s, namespace_name, output)
-        shutil.rmtree(work, ignore_errors=True)
         if cleanup_errors:
-            message = "action-owned k3s cleanup failed: " + "; ".join(repr(error) for error in cleanup_errors)
+            message = "action-owned namespace cleanup failed: " + "; ".join(repr(error) for error in cleanup_errors)
             if primary_error is not None:
                 primary_error.add_note(message)
             else:
                 raise RuntimeError(message)
+
+
+@pytest.mark.timeout(1200)
+def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
+    """Run bounded, UID-isolated VMI shutdown cycles in one k3s installation."""
+    output = undeclared_outputs_dir() / "standalone-vmi-tcg"
+    output.mkdir(parents=True, exist_ok=True)
+    runfiles = Runfiles.CreateOrRaise()
+    runfiles_root = runfiles.root()
+    binary = runfiles_root / os.environ["K3S_BINARY_RLOCATION"]
+    image_manifest = json.loads((runfiles_root / os.environ["K3S_IMAGE_MANIFEST_RLOCATION"]).read_text())
+    vm_images = _layout_paths(runfiles, image_manifest["vm"])
+    guest_images = _layout_paths(runfiles, image_manifest["guest"])
+    all_images = vm_images | guest_images
+    (output / "input-images.json").write_text(json.dumps(image_manifest, indent=2, sort_keys=True))
+    cycle_count = _cycle_count()
+    skip_virtiofs_policy = _skip_virtiofs_shutdown_policy()
+    debug_kernel_args = _debug_kernel_args()
+    (output / "run-config.json").write_text(
+        json.dumps(
+            {
+                "requested_cycles": cycle_count,
+                "policy_enabled": not skip_virtiofs_policy,
+                "debug_kernel_args": debug_kernel_args,
+                "debug_kernel_args_value": _DEBUG_KERNEL_ARGS if debug_kernel_args else "",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    work = Path(tempfile.mkdtemp(prefix="k3s-vmi-tcg-", dir=os.environ["TEST_TMPDIR"]))
+    k3s = baseline.K3s(work, binary)
+    process: subprocess.Popen[bytes] | None = None
+    primary_error: BaseException | None = None
+    try:
+        baseline.stop_previous()
+        process = k3s.start(layers_in_memory=False)
+        k3s.import_images(all_images)
+        releases = infrastructure.releases()
+        infrastructure.install(k3s.kubectl, releases)
+        infrastructure.wait_for_apis(k3s.kubectl)
+        infrastructure.wait_until_ready(k3s.kubectl, require_cluster_policies=False)
+        for cycle in range(1, cycle_count + 1):
+            _run_cycle(
+                k3s,
+                image_manifest["guest"],
+                output / "cycles" / f"{cycle:03d}",
+                skip_virtiofs_policy=skip_virtiofs_policy,
+                debug_kernel_args=debug_kernel_args,
+            )
+    except BaseException as error:
+        primary_error = error
+        if process is not None:
+            try:
+                (output / "k3s-report.txt").write_text(k3s.report("default"))
+            except Exception as report_error:
+                error.add_note(f"k3s report capture failed: {report_error!r}")
+        raise
+    finally:
+        cleanup_error: Exception | None = None
+        if process is not None:
+            try:
+                k3s.stop(process)
+            except Exception as error:
+                cleanup_error = error
+        shutil.rmtree(work, ignore_errors=True)
+        if cleanup_error is not None:
+            if primary_error is not None:
+                primary_error.add_note(f"action-owned k3s cleanup failed: {cleanup_error!r}")
+            else:
+                raise RuntimeError(f"action-owned k3s cleanup failed: {cleanup_error!r}") from cleanup_error
 
 
 if __name__ == "__main__":
