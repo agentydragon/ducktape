@@ -69,7 +69,8 @@ class shape or heap-locality contract. See
 
 Use the separate `symbol_primitive_class_keys` input when those same exact
 reads yield primitive own-data values that may be filled Symbols. Audit the
-global data read and final own-data primitive result at every selected site in
+global data read, ordinary non-Proxy receiver, and final own-data primitive
+result at every selected site in
 every admitted schedule. Only exact top-level typeof-guarded matching
 `Symbol.for("Symbol.<name>")` fills with empty catch are eligible known writes;
 other known selected-slot writes or global Symbol replacement reject it.

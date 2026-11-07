@@ -1058,7 +1058,8 @@ effects. No class shape, whole-class purity or heap-locality premise is added.
 
 `symbol_primitive_class_keys` is a separate final-read premise for the same
 three names and direct class shape. It promises a data binding for the global
-Symbol read and a primitive-valued own data property at every selected site in
+Symbol read, an ordinary non-Proxy receiver, and a primitive-valued own data
+property at every selected site in
 every admitted schedule. It permits polyfilled Symbol values, and the abstract
 result is an unknown primitive rather than a known original Symbol value.
 The capability never enters native slot integrity or authorizes other reads

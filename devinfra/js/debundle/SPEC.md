@@ -2666,8 +2666,8 @@ future method behavior or integrity at another Symbol read.
 `symbol_primitive_class_keys` uses the same class shape and three supported
 property names, but asserts a different read contract: at every selected key
 read in every admitted initialization schedule, the unshadowed global `Symbol`
-read resolves through a data binding and the selected own data property yields
-a primitive. The primitive may vary with preceding writes. Native Symbols and
+read resolves through a data binding to an ordinary non-Proxy receiver and
+the selected own data property yields a primitive. The primitive may vary with preceding writes. Native Symbols and
 Symbol-valued polyfills qualify; no original well-known value or particular
 primitive type is certified. The parser-input digest remains required.
 
