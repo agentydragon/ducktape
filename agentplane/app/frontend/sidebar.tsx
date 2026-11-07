@@ -1,30 +1,15 @@
 /** The persistent left sidebar: the thread list, the Actions queue, and the footer's page links. */
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { IconBox, IconHeartbeat, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
-import { type JSX, useEffect, useState } from "react";
+import { IconBox, IconHeartbeat, IconLayoutDashboard, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
+import { type JSX, useEffect } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
 import { ActionsSidebarSection } from "./actions/sidebar";
+import { usePhoneWidth } from "./phone_width";
 import { ResizeHandle, usePaneSize } from "../../../util/frontend/resize_handle";
 import "./sidebar.css";
 import { ThreadList } from "./threads/thread_list";
 import { ThreadViewRecorderTools } from "./threads/thread_view_recorder_tools";
-
-// Matches sidebar.css's own phone breakpoint.
-const PHONE_QUERY = "(max-width: 560px)";
-
-/** Whether the sidebar is currently rendering as the phone-width full-screen overlay rather than a
- * docked desktop column -- the two need different close-on-navigate behavior below. */
-function usePhoneWidth(): boolean {
-  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
-  useEffect(() => {
-    const query = window.matchMedia(PHONE_QUERY);
-    const onChange = (event: MediaQueryListEvent): void => setPhone(event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return phone;
-}
 
 type SidebarProps = {
   settingsOpen: boolean;
@@ -116,6 +101,11 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
             onClick={() => goTo("/actions")}
           >
             <IconListCheck size={15} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Dockable workspace" withArrow>
+          <ActionIcon variant="subtle" aria-label="Dockable workspace" onClick={() => goTo("/dock")}>
+            <IconLayoutDashboard size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="System status" withArrow>

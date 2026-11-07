@@ -30,7 +30,14 @@ function inAppReturnTo(value: unknown): InAppReturnTo | null {
 }
 
 /** Full review page for one pending request or its durable terminal receipt. */
-export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.Element {
+export function ActionRequestDetail({
+  requestId,
+  onDone,
+}: {
+  requestId: string;
+  /** A docked pane closes itself, after Back and after a decision, instead of navigating the route. */
+  onDone?: () => void;
+}): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const actions = useContext(ActionRequestsContext);
@@ -68,7 +75,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   }, [knownRequests, loadDetail, liveRequest, requestId, staleRequestIds]);
 
   useEffect(() => {
-    if (returnAfterDecision === null || returnTo === null) return;
+    if (returnAfterDecision === null || (returnTo === null && onDone === undefined)) return;
     const decided = actions?.knownRequests.get(returnAfterDecision.requestId);
     if (
       decided === undefined ||
@@ -77,8 +84,9 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
     ) {
       return;
     }
-    void navigate(returnTo, { replace: true });
-  }, [actions?.knownRequests, navigate, returnAfterDecision, returnTo]);
+    if (onDone !== undefined) onDone();
+    else if (returnTo !== null) void navigate(returnTo, { replace: true });
+  }, [actions?.knownRequests, navigate, onDone, returnAfterDecision, returnTo]);
 
   useEffect(() => {
     if (detailRequestId === undefined || detailRequestState === "decision_pending") {
@@ -100,7 +108,9 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   }, [detailActionGroup, detailRequestId, detailRequestState]);
 
   function goBack(): void {
-    if (returnTo !== null) {
+    if (onDone !== undefined) {
+      onDone();
+    } else if (returnTo !== null) {
       void navigate(-1);
     } else {
       void navigate("/actions", { replace: true });
