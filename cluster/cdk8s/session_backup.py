@@ -128,9 +128,9 @@ def chart(app: App) -> Chart:
                     volumes=[
                         k8s.Volume(
                             name="source",
-                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
-                                claim_name=_DATA_CLAIM, read_only=True
-                            ),
+                            # Publish the CSI volume read-write like the serving
+                            # Pod; the container's volumeMount remains read-only.
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_DATA_CLAIM),
                         ),
                         k8s.Volume(
                             name="destination",

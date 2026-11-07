@@ -101,7 +101,6 @@ spec:
         - name: source
           persistentVolumeClaim:
             claimName: session-backup-data
-            readOnly: true
         - name: destination
           persistentVolumeClaim:
             claimName: session-backup-data-hdd
