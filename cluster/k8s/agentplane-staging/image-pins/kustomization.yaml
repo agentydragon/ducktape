@@ -7,7 +7,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261107094852-19673b4 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
-    newTag: devel-20261106013241-8fb66fe # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
+    newTag: devel-20261107095222-19673b4 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261107095050-19673b4 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
@@ -33,16 +33,16 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
     newTag: devel-20261107095051-19673b4 # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261107092904-51f3f2a # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261107095210-19673b4 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
     newTag: devel-20261107094852-19673b4 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261106051457-1b91b70 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261107095203-19673b4 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-vm
     newTag: devel-20261107094129-b4e7337 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261107092944-51f3f2a # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261107095233-19673b4 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
