@@ -34,6 +34,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import egress_rules_pb2, egress_rules_pb2_grpc
+from agentplane.egress.platform_routes import PlatformRoute, TLSConnectRouteTransport
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
@@ -496,6 +497,41 @@ async def test_rules_grpc_resolves_its_own_svid_and_returns_the_credential_descr
         with pytest.raises(grpc.aio.AioRpcError) as failure:
             await client.GetRules(request, timeout=5)
         assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
+    assert not egress.upstream.requests
+
+
+async def test_rules_grpc_sidecar_presents_its_svid_and_discards_caller_credentials(egress: Egress) -> None:
+    certificate, key = issue_runner_svid(egress, egress.tmp_path / "rules-sidecar-client")
+    root = write_ca(egress.runtime_ca, egress.tmp_path, "rules-sidecar-root")[0]
+    caller_token = await egress.api.workload_token(
+        ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B), ["ignored-caller-token"]
+    )
+    async with SidecarProcess(
+        proxy=Proxy(
+            address=f"{egress.proxy_listener.host}:{egress.proxy_listener.port}",
+            transport=TLSProxyTransport(ca_file=root, auth=SpiffeProxyAuth(cert_file=certificate, key_file=key)),
+        ),
+        platform_routes={
+            "rules": PlatformRoute(
+                listen_address="127.0.0.1:0",
+                upstream=f"localhost:{egress.replica.admin_listener.port}",
+                transport=TLSConnectRouteTransport(server_uri="spiffe://agentplane/egress-proxy"),
+            )
+        },
+    ) as sidecar:
+        listener = sidecar.platform_route_listeners["rules"]
+        async with grpc.aio.insecure_channel(f"{listener.host}:{listener.port}") as channel:
+            response = await egress_rules_pb2_grpc.EgressRulesStub(channel).GetRules(
+                egress_rules_pb2.GetRulesRequest(),
+                metadata=(
+                    ("authorization", f"Bearer {caller_token}"),
+                    ("proxy-authorization", f"Bearer {caller_token}"),
+                    ("x-agentplane-subject", f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"),
+                ),
+                timeout=5,
+            )
+            assert response.subject.namespace == SANDBOX_NAMESPACE
+            assert response.subject.name == SANDBOX_A
     assert not egress.upstream.requests
 
 

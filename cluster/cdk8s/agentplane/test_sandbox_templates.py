@@ -15,7 +15,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
-from cluster.cdk8s.agentplane import llm_ingress, sandbox_pod, staging
+from cluster.cdk8s.agentplane import llm_ingress, platform_routes, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
 
@@ -314,37 +314,20 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     launcher_settings = settings("launcher-relay-egress-sidecar")
     assert runner_settings["listen_address"] == "127.0.0.1:3128"
     assert launcher_settings["listen_address"] == "0.0.0.0:3128"
-    proxy = runner_settings["proxy"]
-    assert proxy["transport"]["mode"] == "plaintext"
-    auth = proxy["transport"]["auth"]
-    assert auth["mode"] == "kubernetes_bearer"
+    assert runner_settings["proxy"]["transport"]["mode"] == "tls"
+    assert runner_settings["proxy"]["transport"]["auth"]["mode"] == "spiffe"
+    for route in platform_routes.routes(staging.ENV.namespace):
+        rendered = runner_settings["platform_routes"][route.name]
+        assert rendered["upstream"] == f"{route.service.fqdn}:{route.service.pod_port}"
+        assert rendered["transport"] == route.transport.model_dump(mode="json", exclude_none=True)
     template = _by_name(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
     pod = template["spec"]["pod"]["spec"]
-    sidecar = one(container for container in pod["initContainers"] if container["name"] == "egress-sidecar")
-    token_mount = one(
-        mount for mount in sidecar["volumeMounts"] if mount["name"] == sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
-    )
-    token_volume = one(volume for volume in pod["volumes"] if volume["name"] == sandbox_pod.EGRESS_TOKEN_VOLUME_NAME)
-    hop_token = one(
-        source["serviceAccountToken"]
-        for source in token_volume["projected"]["sources"]
-        if source["serviceAccountToken"]["path"] == "token"
-    )
-    assert auth["token_file"] == f"{token_mount['mountPath']}/{hop_token['path']}"
-    rules_route = runner_settings["platform_routes"]["egress-rules"]
-    assert rules_route["transport"] == {"mode": "plaintext", "token_file": auth["token_file"]}
-    assert rules_route["listen_address"] == "127.0.0.1:3133"
-    assert rules_route["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     env = {entry["name"]: entry.get("value") for entry in runner["env"]}
     assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3133"
-    assert env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
-    notifications_route = runner_settings["platform_routes"]["notifications"]
-    assert notifications_route["listen_address"] == "127.0.0.1:3134"
-    assert notifications_route["upstream"] == "notifications.agentplane-staging.svc.cluster.local:8080"
-    assert notifications_route["transport"]["token_file"] == f"{token_mount['mountPath']}/notifications-token"
     assert env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"] == "http://127.0.0.1:3134"
-    assert env["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
+    assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in env
+    assert "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL" not in env
     for name, route in runner_settings["platform_routes"].items():
         _, port = route["listen_address"].rsplit(":", 1)
         assert route["listen_address"] == f"127.0.0.1:{port}"

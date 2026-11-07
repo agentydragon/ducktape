@@ -31,7 +31,7 @@ type plaintextRouteTransportConfig struct{ TokenFile string }
 
 func (plaintextRouteTransportConfig) mode() platformRouteMode { return platformRoutePlaintext }
 
-type tlsConnectRouteTransportConfig struct{}
+type tlsConnectRouteTransportConfig struct{ ServerURI string }
 
 func (tlsConnectRouteTransportConfig) mode() platformRouteMode { return platformRouteTLSConnect }
 
@@ -66,12 +66,16 @@ func decodePlatformRouteTransport(node *yaml.Node) (platformRouteTransportConfig
 	var transport struct {
 		Mode      platformRouteMode `yaml:"mode"`
 		TokenFile yaml.Node         `yaml:"token_file"`
+		ServerURI yaml.Node         `yaml:"server_uri"`
 	}
 	if err := decodeKnownFields(node, &transport); err != nil {
 		return nil, err
 	}
 	switch transport.Mode {
 	case platformRoutePlaintext:
+		if transport.ServerURI.Kind != 0 {
+			return nil, errors.New("plaintext route cannot set server_uri")
+		}
 		var tokenFile string
 		if transport.TokenFile.Kind != 0 {
 			var err error
@@ -85,7 +89,11 @@ func decodePlatformRouteTransport(node *yaml.Node) (platformRouteTransportConfig
 		if transport.TokenFile.Kind != 0 {
 			return nil, errors.New("TLS CONNECT route cannot set token_file")
 		}
-		return tlsConnectRouteTransportConfig{}, nil
+		serverURI, err := requiredYAMLString(&transport.ServerURI, "server_uri")
+		if err != nil {
+			return nil, err
+		}
+		return tlsConnectRouteTransportConfig{ServerURI: serverURI}, nil
 	default:
 		return nil, fmt.Errorf("mode must be %q or %q: %q", platformRoutePlaintext, platformRouteTLSConnect, transport.Mode)
 	}

@@ -50,6 +50,5 @@ def agent_cli_environment(urls: ServiceUrls) -> dict[str, str]:
         "AGENTPLANE_SESSIONS_URL": urls.sessions,
         "AGENTPLANE_NOTIFICATIONS_URL": urls.notifications,
         "AGENTPLANE_NOTIFICATIONS_GRPC_URL": urls.notifications_grpc,
-        "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL": platform_routes.ROUTE_BEARER,
         "AGENTPLANE_EGRESS_GRPC_URL": urls.egress_grpc,
     }

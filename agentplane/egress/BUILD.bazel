@@ -65,7 +65,6 @@ py_test(
         "//agentplane/egress:egress_rules_pb2_grpc",
         "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:sidecar_process",
-        "//agentplane/environment_runtime_transport:config",
         "//agentplane/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",

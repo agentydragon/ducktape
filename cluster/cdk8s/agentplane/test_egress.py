@@ -39,6 +39,7 @@ from cluster.cdk8s.agentplane.egress import (
     PROXY_PORT,
     PUBLIC_INTERNET_POLICY,
     Egress,
+    admin,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
@@ -105,11 +106,11 @@ def test_staging_requires_the_tls_hop_and_rules_boundary(staging_manifests: list
     )
     ports = {port["containerPort"] for port in proxy["ports"]}
     assert PROXY_PORT in ports
-    assert agent_api(staging.ENV.namespace).pod_port in ports
+    assert admin(staging.ENV.namespace).pod_port in ports
     settings = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
     assert [method["mode"] for method in settings["forward"]["auth"]] == ["spiffe"]
-    api = agent_api(staging.ENV.namespace)
+    api = admin(staging.ENV.namespace)
     assert f"{api.fqdn}:{api.port.number}" in settings["tls_passthrough_targets"]
 
 
@@ -296,7 +297,7 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(staging_manifests: l
 
 def test_llm_runner_traffic_uses_its_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
     llm_service = _by_name(staging_manifests, "Service", "llm-ingress")
-    assert {port["port"] for port in llm_service["spec"]["ports"]} == {8080, 8081}
+    assert {port["port"] for port in llm_service["spec"]["ports"]} == {8080, 8081, 8082}
 
     settings = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     workload = llm_ingress.workload_service(staging.ENV.namespace)
@@ -305,7 +306,7 @@ def test_llm_runner_traffic_uses_its_svid_listener(staging_manifests: list[dict[
     llm_settings = yaml.safe_load(
         _by_name(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"]
     )
-    assert llm_settings["workload_listen_address"] == "0.0.0.0:8081"
+    assert llm_settings["workload_listen_address"] == "0.0.0.0:8082"
     assert llm_settings["workload_tls"]["cert_file"].endswith("/tls.crt")
     assert llm_settings["workload_tls"]["key_file"].endswith("/tls.key")
     assert llm_settings["workload_tls"]["ca_file"].endswith("/ca-certificates.crt")

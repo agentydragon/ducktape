@@ -408,9 +408,7 @@ class EnvironmentSandboxTemplate(Construct):
                 target=platform_routes.model_config(self.env.namespace).local_target,
                 bearer=platform_routes.ROUTE_BEARER,
             ),
-            platform_instructions=platform_instructions(
-                self.env, session_runtime=SessionRuntime.NATIVE_HARNESS
-            ),
+            platform_instructions=platform_instructions(self.env, session_runtime=SessionRuntime.NATIVE_HARNESS),
             harness_environment=configuration.EnvironmentVariables(
                 inherit=tuple(dict.fromkeys((*self.env.harness_inherited_env, *harness_env))),
                 values={"HOME": _HOME_DIR},

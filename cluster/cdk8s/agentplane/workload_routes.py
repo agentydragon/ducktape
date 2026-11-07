@@ -11,7 +11,6 @@ def sidecar_routes(namespace: str) -> dict[str, WorkloadRoute]:
     notification_origin = notifications.http_service(namespace)
     notification_destination = notifications.workload_service(namespace)
     dispatcher_origin = session_dispatcher.service(namespace)
-    dispatcher_http_origin = session_dispatcher.http_service(namespace)
     dispatcher_destination = runner_gateway.workload_service(namespace)
     action_origin = actions.service(namespace)
     action_destination = actions.workload_service(namespace)
@@ -45,5 +44,4 @@ def sidecar_routes(namespace: str) -> dict[str, WorkloadRoute]:
             tls=security,
         ),
         f"{dispatcher_origin.fqdn}:{dispatcher_origin.port.number}": dispatcher,
-        f"{dispatcher_http_origin.fqdn}:{dispatcher_http_origin.port.number}": dispatcher,
     }

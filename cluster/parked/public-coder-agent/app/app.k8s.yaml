@@ -444,6 +444,7 @@ data:
           mode: kubernetes_bearer
           token_file: /var/run/agentplane-egress/token
     audience_token_files: {}
+    workload_routes: {}
     platform_routes:
       egress-rules:
         listen_address: 127.0.0.1:3133
