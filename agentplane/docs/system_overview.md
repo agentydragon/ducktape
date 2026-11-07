@@ -84,6 +84,7 @@ flowchart LR
     app -->|Action RPCs: gRPC; MCP OAuth callback: HTTP| actions
     app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|authenticated ActionService gRPC| actions
+    edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC| actions
     actions -->|Session commands: broker or delegated caller, gRPC| gw
     actions -->|caller-delegated EnvironmentService list/get: gRPC| gw
@@ -530,6 +531,7 @@ flowchart LR
     app -->|Action RPCs: gRPC; MCP OAuth callback: HTTP| actions
     app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|account scoped gRPC| actions
+    edge -->|public MCP client metadata: gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
     workload --> box_sidecar --> egress
