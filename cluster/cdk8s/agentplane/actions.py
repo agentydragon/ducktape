@@ -459,8 +459,7 @@ class Actions(Construct):
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()
         namespace = self.env.namespace
-        # Export metrics through the shared Alloy OTLP receiver while the existing
-        # ServiceMonitor remains available for deployed comparison.
+        # Export metrics through the shared Alloy OTLP receiver.
         env["OTEL_METRICS_EXPORTER"] = EnvValue.from_value("otlp")
         env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] = EnvValue.from_value("cumulative")
         env[env_name(Settings, "reader_accounts")] = EnvValue.from_value(

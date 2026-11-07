@@ -14,15 +14,13 @@ The public `LinkageService` gRPC API completes MCP OAuth callbacks and returns t
 Document. It requires no bearer: callback state is a single-use, expiring capability and the metadata is public.
 The app and MCP edge present these operations over HTTP at the public protocol boundary.
 
-## Metrics during the OTLP migration
+## Metrics
 
-The Action Service continues to expose Prometheus metrics at `/metrics` and the operator continues
-scraping that endpoint with its ServiceMonitor while OTLP metrics are compared in deployment. The
-OAuth token-request histogram is dual-exported with the same metric name, seconds unit, operation and
-outcome dimensions, and bucket boundaries. The OTLP stream also includes selected Go runtime values
+The Action Service exports an OAuth token-request histogram over OTLP with seconds, operation and
+outcome dimensions, and explicit bucket boundaries. The OTLP stream also includes selected Go runtime values
 (goroutines, heap allocation/in-use/reserved bytes, GC count and cumulative pause time) and Linux
 process values (CPU time, resident memory and open file descriptors). These OTLP metrics are not
-series-equivalent to the Prometheus Go and process collectors: in particular they do not preserve the
+series-equivalent to the former Prometheus Go and process collectors: in particular they do not preserve the
 complete `go_memstats_*` family or `go_gc_duration_seconds` histogram/quantiles. Cumulative temporality
 is required by the shared Alloy-to-Mimir conversion pipeline.
 

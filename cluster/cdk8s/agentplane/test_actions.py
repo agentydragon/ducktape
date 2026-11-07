@@ -121,7 +121,7 @@ def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[st
     assert server["startupProbe"]["grpc"] == {"port": server["readinessProbe"]["grpc"]["port"], "service": "livez"}
 
 
-def test_actions_push_otlp_metrics_while_prometheus_scrape_remains(staging_manifests: list[dict[str, Any]]) -> None:
+def test_actions_push_otlp_metrics(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
     )
@@ -130,11 +130,6 @@ def test_actions_push_otlp_metrics_while_prometheus_scrape_remains(staging_manif
     assert env["OTEL_METRICS_EXPORTER"] == "otlp"
     assert env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] == "cumulative"
     assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == telemetry.OTLP_GRPC_ENDPOINT
-
-    monitor = one(
-        doc for doc in staging_manifests if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "actions"
-    )
-    assert monitor["spec"]["endpoints"] == [{"path": "/metrics", "port": "http"}]
 
 
 def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -> None:

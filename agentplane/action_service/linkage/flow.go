@@ -22,8 +22,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -32,11 +30,6 @@ import (
 
 const tokenRequestDurationMetricName = "agentplane_mcp_oauth_token_request_duration_seconds"
 
-var tokenRequestPrometheusDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Name: "agentplane_mcp_oauth_token_request_duration_seconds",
-	Help: "MCP OAuth discovery and token endpoint request duration",
-}, []string{"operation", "outcome"})
-
 var (
 	tokenRequestOTelDurationOnce sync.Once
 	tokenRequestOTelDuration     metric.Float64Histogram
@@ -44,7 +37,6 @@ var (
 
 func observe(operation, outcome string, started time.Time) {
 	duration := time.Since(started).Seconds()
-	tokenRequestPrometheusDuration.WithLabelValues(operation, outcome).Observe(duration)
 	tokenRequestOTelDurationOnce.Do(func() {
 		instrument, err := otel.Meter("github.com/agentydragon/ducktape/agentplane/action_service/linkage").Float64Histogram(
 			tokenRequestDurationMetricName,
