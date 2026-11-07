@@ -154,7 +154,10 @@ export async function getFrontendConfig(): Promise<FrontendConfig> {
 }
 
 export async function getSandboxForm(): Promise<SandboxFormView> {
-  const response: GetSandboxFormResponse = fromJson(GetSandboxFormResponseSchema, await call("/sandbox-form"));
+  const response: GetSandboxFormResponse = fromJson(
+    GetSandboxFormResponseSchema,
+    await appConfigClient.get("/sandbox-form")
+  );
   const defaults = response.newSandboxDefaults;
   if (defaults === undefined) throw new Error("App configuration omitted Sandbox defaults.");
   return {
