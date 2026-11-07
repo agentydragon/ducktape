@@ -42,6 +42,9 @@ _CYCLES_ENV = "AGENTPLANE_TCG_VMI_CYCLES"
 _DEBUG_KERNEL_ARGS_ENV = "AGENTPLANE_TCG_VMI_DEBUG_KERNEL_ARGS"
 _DEBUG_KERNEL_ARGS = "systemd.log_level=debug systemd.log_target=console loglevel=8"
 _BOOT_RCU_ENV = "AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER"
+_SYNTHETIC_SLICE_ENV = "AGENTPLANE_TCG_VMI_SYNTHETIC_SLICE_PROBE"
+_SYNTHETIC_SLICE_SUCCESS = "AGENTPLANE_SYNTHETIC_SLICE_SUCCESS"
+_SYNTHETIC_SLICE_WAIT_SECONDS = 90
 
 
 def _cycle_count() -> int:
@@ -73,6 +76,16 @@ def _boot_rcu_observer() -> bool:
             return True
         case value:
             raise ValueError(f"{_BOOT_RCU_ENV} must be '0' or '1', got {value!r}")
+
+
+def _synthetic_slice_probe() -> bool:
+    match os.environ.get(_SYNTHETIC_SLICE_ENV, "0"):
+        case "0":
+            return False
+        case "1":
+            return True
+        case value:
+            raise ValueError(f"{_SYNTHETIC_SLICE_ENV} must be '0' or '1', got {value!r}")
 
 
 def _skip_virtiofs_shutdown_policy() -> bool:
@@ -210,7 +223,12 @@ def _disk(name: str, serial: str) -> dict[str, Any]:
 
 
 def _vmi(
-    namespace: str, images: dict[str, str], *, debug_kernel_args: bool = False, boot_rcu_observe: bool = False
+    namespace: str,
+    images: dict[str, str],
+    *,
+    debug_kernel_args: bool = False,
+    boot_rcu_observe: bool = False,
+    synthetic_slice_probe: bool = False,
 ) -> dict[str, Any]:
     boot_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-boot:unset"))
     root_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-root:unset"))
@@ -235,6 +253,7 @@ def _vmi(
                             "systemd.mask=agentplane-environment-runtime.service"
                             + (f" {_DEBUG_KERNEL_ARGS}" if debug_kernel_args else "")
                             + (" agentplane.boot-rcu-observe=1" if boot_rcu_observe else "")
+                            + (" agentplane.synthetic-slice-probe=1" if synthetic_slice_probe else "")
                         ),
                         "container": {
                             "image": boot_image,
@@ -526,6 +545,34 @@ def _wait_for_guest_boot(k3s: baseline.K3s, namespace: str, pod: str) -> str:
     raise TimeoutError(
         f"guest did not reach completed boot evidence within {_BOOT_WAIT_SECONDS}s; "
         f"last console output:\n{output[-8000:]}"
+    )
+
+
+def _synthetic_slice_complete(console: str) -> bool:
+    phases = ("baseline", "active", "after")
+    next_phase = 0
+    for line in console.splitlines():
+        record = line.rstrip("\r")
+        if next_phase < len(phases) and record.startswith(f"AGENTPLANE_SYNTHETIC_SLICE_PHASE={phases[next_phase]} "):
+            next_phase += 1
+        elif next_phase == len(phases) and record == _SYNTHETIC_SLICE_SUCCESS:
+            return True
+    return False
+
+
+def _wait_for_synthetic_slice(k3s: baseline.K3s, namespace: str, pod: str, output: Path) -> None:
+    deadline = time.monotonic() + _SYNTHETIC_SLICE_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        console = k3s.kubectl(
+            "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
+        )
+        output.write_text(console)
+        if _synthetic_slice_complete(console):
+            return
+        time.sleep(1)
+    raise TimeoutError(
+        f"synthetic slice did not complete baseline/active/after/success milestones "
+        f"within {_SYNTHETIC_SLICE_WAIT_SECONDS}s; see {output}"
     )
 
 
@@ -904,6 +951,59 @@ def test_boot_rcu_observer_is_opt_in_and_changes_only_guest_boot_args(monkeypatc
     assert observed == plain
 
 
+def test_synthetic_slice_probe_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_SYNTHETIC_SLICE_ENV, raising=False)
+    assert _synthetic_slice_probe() is False
+    monkeypatch.setenv(_SYNTHETIC_SLICE_ENV, "1")
+    assert _synthetic_slice_probe() is True
+    monkeypatch.setenv(_SYNTHETIC_SLICE_ENV, "true")
+    with pytest.raises(ValueError, match="must be '0' or '1'"):
+        _synthetic_slice_probe()
+
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
+    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, synthetic_slice_probe=True)
+    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert observed_args == f"{plain_args} agentplane.synthetic-slice-probe=1"
+    observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
+    assert observed == plain
+
+
+def test_synthetic_slice_success_requires_ordered_exact_guest_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline_line = "AGENTPLANE_SYNTHETIC_SLICE_PHASE=baseline uptime=30.0 root_controllers=cpu,memory root_subtree_control= slice_present=no unit_state=inactive"
+    active = "AGENTPLANE_SYNTHETIC_SLICE_PHASE=active uptime=31.0 root_controllers=cpu,memory root_subtree_control=cpu,memory slice_present=yes unit_state=active"
+    after = "AGENTPLANE_SYNTHETIC_SLICE_PHASE=after uptime=40.0 root_controllers=cpu,memory root_subtree_control=cpu,memory slice_present=no unit_state=inactive"
+    complete = "\n".join((baseline_line, active, after, _SYNTHETIC_SLICE_SUCCESS)) + "\n"
+    assert _synthetic_slice_complete(complete)
+    assert not _synthetic_slice_complete("\n".join((active, baseline_line, after, _SYNTHETIC_SLICE_SUCCESS)))
+    assert not _synthetic_slice_complete(
+        complete.replace(f"{_SYNTHETIC_SLICE_SUCCESS}\n", "noise" + _SYNTHETIC_SLICE_SUCCESS + "\n")
+    )
+    assert not _synthetic_slice_complete(complete.replace(f"{after}\n", ""))
+
+    class FakeK3s:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def kubectl(self, *_args: str, **_kwargs: Any) -> str:
+            self.calls += 1
+            return complete.replace(f"{_SYNTHETIC_SLICE_SUCCESS}\n", "") if self.calls == 1 else complete
+
+    fake = FakeK3s()
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    output = tmp_path / "probe-console.txt"
+    _wait_for_synthetic_slice(cast(baseline.K3s, fake), "scope", "launcher", output)
+    assert fake.calls == 2
+    assert output.read_text() == complete
+
+
 def test_shutdown_policy_lifecycle_sample_distinguishes_absent_from_api_error_and_replaced_pod() -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
 
@@ -962,6 +1062,7 @@ def _run_cycle(
     skip_virtiofs_policy: bool,
     debug_kernel_args: bool,
     boot_rcu_observe: bool,
+    synthetic_slice_probe: bool,
 ) -> None:
     """Run one isolated VMI lifecycle and keep its evidence before cleanup."""
     output.mkdir(parents=True, exist_ok=True)
@@ -1003,7 +1104,11 @@ def _run_cycle(
         pvc = _create_namespaced(k3s, namespace_name, namespace_uid, _state_claim(namespace_name))
         pvc_uid = pvc["metadata"]["uid"]
         vmi = _vmi(
-            namespace_name, guest_image_manifest, debug_kernel_args=debug_kernel_args, boot_rcu_observe=boot_rcu_observe
+            namespace_name,
+            guest_image_manifest,
+            debug_kernel_args=debug_kernel_args,
+            boot_rcu_observe=boot_rcu_observe,
+            synthetic_slice_probe=synthetic_slice_probe,
         )
         (output / "vmi.json").write_text(json.dumps(vmi, indent=2, sort_keys=True))
 
@@ -1055,6 +1160,7 @@ def _run_cycle(
                         "policy_enabled": not skip_virtiofs_policy,
                         "debug_kernel_args": debug_kernel_args,
                         "boot_rcu_observer": boot_rcu_observe,
+                        "synthetic_slice_probe": synthetic_slice_probe,
                     },
                     indent=2,
                     sort_keys=True,
@@ -1100,6 +1206,8 @@ def _run_cycle(
                 k3s.kubectl("get", "vmi", _VMI_NAME, "-n", namespace_name, "-o", "yaml")
             )
             (output / "guest-boot-console.txt").write_text(_wait_for_guest_boot(k3s, namespace_name, pod_name))
+            if synthetic_slice_probe:
+                _wait_for_synthetic_slice(k3s, namespace_name, pod_name, output / "synthetic-slice-console.txt")
             _, qemu_cmdline = _qemu_evidence(k3s, namespace_name, pod_name, output)
             (output / "qemu-pre-shutdown.txt").write_text(
                 f"namespace_uid={namespace_uid}\nvmi_uid={vmi_uid}\npvc_uid={pvc['metadata']['uid']}\n"
@@ -1197,6 +1305,9 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     skip_virtiofs_policy = _skip_virtiofs_shutdown_policy()
     debug_kernel_args = _debug_kernel_args()
     boot_rcu_observe = _boot_rcu_observer()
+    synthetic_slice_probe = _synthetic_slice_probe()
+    if synthetic_slice_probe and not boot_rcu_observe:
+        raise ValueError(f"{_SYNTHETIC_SLICE_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
     (output / "run-config.json").write_text(
         json.dumps(
             {
@@ -1204,6 +1315,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 "policy_enabled": not skip_virtiofs_policy,
                 "debug_kernel_args": debug_kernel_args,
                 "boot_rcu_observer": boot_rcu_observe,
+                "synthetic_slice_probe": synthetic_slice_probe,
                 "debug_kernel_args_value": _DEBUG_KERNEL_ARGS if debug_kernel_args else "",
             },
             indent=2,
@@ -1231,6 +1343,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 skip_virtiofs_policy=skip_virtiofs_policy,
                 debug_kernel_args=debug_kernel_args,
                 boot_rcu_observe=boot_rcu_observe,
+                synthetic_slice_probe=synthetic_slice_probe,
             )
     except BaseException as error:
         primary_error = error

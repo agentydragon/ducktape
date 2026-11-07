@@ -404,6 +404,32 @@ py_test(
 )
 
 py_test(
+    name = "test_tcg_vmi_shutdown_synthetic_slice",
+    size = "small",
+    srcs = ["test_tcg_vmi_shutdown.py"],
+    args = ["-k=synthetic_slice"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    main = "test_tcg_vmi_shutdown.py",
+    deps = [
+        ":boot_rcu",
+        ":guest_logs",
+        ":host_qemu",
+        ":infrastructure",
+        ":shutdown_diagnostic",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/k3s:baseline",
+        "//cluster/cdk8s/agentplane:launcher_relay",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
     name = "test_shutdown_watchdog_children",
     size = "small",
     srcs = ["test_shutdown_watchdog_children.py"],
