@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from platform_sessions.auth import BearerAuth
+from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.probe_types import ProbeSource
 from platform_sessions.registry import IntegrationInstance
 
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
     from platform_sessions.probe_types import ProbeReporter
 
 logger = logging.getLogger(__name__)
-MAX_SESSION_BYTES = 65536
 _FRONTEND = Path(__file__).parent / "frontend"
 _CSP = "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
