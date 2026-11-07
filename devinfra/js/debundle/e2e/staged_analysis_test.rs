@@ -1684,99 +1684,7 @@ fn conditional_descriptor_body_effects_survive_saved_analysis() {
 }
 
 #[test]
-fn conditional_borrowed_results_survive_direct_and_saved_analysis() {
-    const PROVIDER: &str = "export function echo(record) { record.value; return record; }\nexport function select(record) { return record.callback; }\nexport function read(record) { return record.value; }\nexport function primitiveAfterRead(record) { record.marker; return 7; }\n";
-    const APP: &str = "import { echo, select, read, primitiveAfterRead } from './peer.js';\nlet calls = 0;\nconst callback = () => { calls++; return 6; };\nconst nested = { value: 1 };\necho({ nested, value: 0 });\nconst input = { nested, value: 1 };\nconst same = echo(input);\nconst selected = select({ callback });\nconst observed = read({ value: 9 });\nconst primitive = primitiveAfterRead({ marker: true });\nconsole.log(same === input, same.nested === nested, selected === callback, calls, observed, primitive);\nselected();\nconsole.log(calls, nested.value);\n";
-    let (staged, _fixture) = staged(
-        FixtureOpts::new(
-            APP,
-            vec![logical_module(
-                "results",
-                &[
-                    Member::new("calls"),
-                    Member::new("callback"),
-                    Member::new("nested"),
-                    Member::new("input"),
-                    Member::new("same"),
-                    Member::new("selected"),
-                    Member::new("observed"),
-                    Member::new("primitive"),
-                ],
-            )],
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    let expected = "true true true 0 9 7\n1 1\n";
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
-    let (direct, saved) = run_conditional_result_direct_and_saved(&staged, "borrowed_results");
-
-    for invocation in [&direct, &saved] {
-        assert_ok(&invocation.result, "conditional borrowed-result CLI");
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            expected,
-            "",
-        );
-        assert!(
-            conditional_result_alternatives(invocation, "echo")
-                .iter()
-                .any(|alternative| alternative["kind"] == "argument" && alternative["index"] == 0),
-            "argument result must identify formal argument zero"
-        );
-        assert!(
-            conditional_result_alternatives(invocation, "select")
-                .iter()
-                .any(|alternative| alternative["kind"] == "property"
-                    && alternative["property"] == "callback"),
-            "property result must remain visible in the callable report"
-        );
-        assert!(
-            conditional_result_alternatives(invocation, "read")
-                .iter()
-                .any(|alternative| alternative["kind"] == "property"
-                    && alternative["property"] == "value"),
-            "record property result must remain visible in the callable report"
-        );
-        assert_conditional_result_kind(
-            invocation,
-            "primitiveAfterRead",
-            "primitive",
-            Some("kinds"),
-        );
-
-        let graph: Value = read_gzip_json(
-            &invocation
-                .output_root()
-                .join("reports/tree/static/app/dependency_graph.json.gz"),
-        );
-        for binding in ["same", "selected", "observed", "primitive"] {
-            assert!(
-                conditional_foreign_body_used(&graph, binding),
-                "result binding {binding} must have a guarded body receipt: {graph:#}"
-            );
-        }
-        let report = candidate_relocation_report(invocation, "static/app");
-        assert_eq!(
-            report["status"], "accepted_within_checked_scope",
-            "{report:#}"
-        );
-        let required = provider_targets(&report, "required_targets");
-        assert!(!required.is_empty(), "{report:#}");
-        assert_eq!(
-            provider_targets(&report, "preserved_targets"),
-            required,
-            "{report:#}"
-        );
-        assert!(
-            provider_targets(&report, "unproved_targets").is_empty(),
-            "{report:#}"
-        );
-    }
-}
-
-#[test]
-fn conditional_borrowed_results_keep_provider_target_shadowing_guarded() {
+fn conditional_borrowed_results_preserve_direct_saved_and_provider_target_guard() {
     const PROVIDER: &str = "export function echo(record) { record.value; return record; }\nexport function select(record) { return record.callback; }\nexport function read(record) { return record.value; }\nexport function primitiveAfterRead(record) { record.marker; return 7; }\n";
     const APP: &str = "import { echo, select, read, primitiveAfterRead } from './peer.js';\nlet calls = 0;\nconst callback = () => { calls++; return 6; };\nconst nested = { value: 1 };\necho({ nested, value: 0 });\nconst input = { nested, value: 1 };\nconst same = echo(input);\nconst selected = select({ callback });\nconst observed = read({ value: 9 });\nconst primitive = primitiveAfterRead({ marker: true });\nconsole.log(same === input, same.nested === nested, selected === callback, calls, observed, primitive);\nselected();\nconsole.log(calls, nested.value);\n";
     let expected = "true true true 0 9 7\n1 1\n";
@@ -1816,20 +1724,41 @@ fn conditional_borrowed_results_keep_provider_target_shadowing_guarded() {
                     expected,
                     "",
                 );
-            }
-            for (imported_local, kind) in [
-                ("echo", "argument"),
-                ("select", "property"),
-                ("read", "property"),
-                ("primitiveAfterRead", "primitive"),
-            ] {
-                assert!(
-                    conditional_result_alternatives(invocation, imported_local)
-                        .iter()
-                        .any(|alternative| alternative["kind"] == kind),
-                    "{layout}/{mode}: guarded {kind} result for {imported_local} must remain in the summary"
+            } else {
+                assert_eq!(
+                    invocation.result.status.code(),
+                    Some(3),
+                    "{layout}/{mode}: provider-target gate must refuse with its canonical exit code: {}",
+                    invocation.result.stderr
                 );
             }
+            assert!(
+                conditional_result_alternatives(invocation, "echo")
+                    .iter()
+                    .any(|alternative| alternative["kind"] == "argument"
+                        && alternative["index"] == 0),
+                "{layout}/{mode}: argument result must identify formal argument zero"
+            );
+            assert!(
+                conditional_result_alternatives(invocation, "select")
+                    .iter()
+                    .any(|alternative| alternative["kind"] == "property"
+                        && alternative["property"] == "callback"),
+                "{layout}/{mode}: callback result property must remain visible in the callable report"
+            );
+            assert!(
+                conditional_result_alternatives(invocation, "read")
+                    .iter()
+                    .any(|alternative| alternative["kind"] == "property"
+                        && alternative["property"] == "value"),
+                "{layout}/{mode}: record result property must remain visible in the callable report"
+            );
+            assert_conditional_result_kind(
+                invocation,
+                "primitiveAfterRead",
+                "primitive",
+                Some("kinds"),
+            );
 
             let graph: Value = read_gzip_json(
                 &invocation
@@ -1848,6 +1777,15 @@ fn conditional_borrowed_results_keep_provider_target_shadowing_guarded() {
             let preserved = provider_targets(&report, "preserved_targets");
             let unproved = provider_targets(&report, "unproved_targets");
             assert!(!required.is_empty(), "{layout}/{mode}: {report:#}");
+            assert!(
+                required
+                    .iter()
+                    .all(|target| target["source_binding"] == "echo"
+                        || target["source_binding"] == "select"
+                        || target["source_binding"] == "read"
+                        || target["source_binding"] == "primitiveAfterRead"),
+                "{layout}/{mode}: required targets must refer to the result-producing imports: {report:#}"
+            );
             if shadows_provider {
                 assert!(preserved.is_empty(), "{layout}/{mode}: {report:#}");
                 assert_eq!(unproved, required, "{layout}/{mode}: {report:#}");
