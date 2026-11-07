@@ -13,7 +13,7 @@ from pydantic import BaseModel, SecretStr
 
 from platform_sessions.auth import Bearer, BearerAuth, BearerConfig
 from platform_sessions.host import IntegrationError, create_app
-from platform_sessions.probe_types import ProbeReporter, ProbeSource
+from platform_sessions.probe_types import ProbeSource
 from platform_sessions.registry import IntegrationInstance
 
 
@@ -42,9 +42,6 @@ class FakeIntegration:
 
     async def status(self):
         return {"state": "ready" if self.session else "uninitialized"}
-
-    def bind_probe_reporter(self, reporter: ProbeReporter) -> None:
-        self.probe_reporter = reporter
 
     async def refresh(self, transport=None, *, source: ProbeSource = ProbeSource.VERIFY):
         self.checks += 1

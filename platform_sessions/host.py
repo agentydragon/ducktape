@@ -8,7 +8,7 @@ import inspect
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -17,9 +17,6 @@ from platform_sessions.auth import BearerAuth
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.probe_types import ProbeSource
 from platform_sessions.registry import IntegrationInstance
-
-if TYPE_CHECKING:
-    from platform_sessions.probe_types import ProbeReporter
 
 logger = logging.getLogger(__name__)
 _FRONTEND = Path(__file__).parent / "frontend"
@@ -47,7 +44,6 @@ class Integration(Protocol):
     async def status(self) -> dict[str, Any]: ...
     async def refresh(self, transport: Any = None, *, source: ProbeSource = ProbeSource.VERIFY) -> None: ...
     async def install(self, candidate: Any, transport: Any = None) -> dict[str, Any]: ...
-    def bind_probe_reporter(self, reporter: ProbeReporter) -> None: ...
 
 
 def _failure(
