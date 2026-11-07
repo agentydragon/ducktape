@@ -260,8 +260,16 @@ update, or private ownership. An `own_property` origin likewise includes all
 runtime generations of its source allocation and supplies no strong-update or
 privacy proof.
 For `lexical_cell`, `origin` is the canonical binding declaration offset and
-includes every activation of that binding; distinct declarations retain distinct
-origins across saved analysis.
+required `instance` is the actual nonreused declarative-cell arena ID in this
+analyzed chunk. Distinct activations of the same declaration have different
+instances; aliases of one captured cell retain both fields unchanged. Saved
+analysis preserves these identities without rebuilding the runtime arena.
+They are not process pointers or globally comparable cross-chunk IDs, and do
+not prove cell contents, initialization, private ownership or strong-update
+permission. There is no pooled lexical-cell address: an access without an
+active cell/source correspondence retains unknown heap coverage instead.
+Immutable function-name invocation views do not emit per-call lexical-cell
+births or writes; source-checked initialized name reads have no exterior effect.
 `coverage.covered_owner_dependencies` retains the typed conditions for
 all owner coverage certificates in the analyzed facts. `relocation_dependencies`
 retains the typed conditions for closed owners participating in candidate

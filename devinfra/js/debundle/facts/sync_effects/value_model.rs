@@ -1,6 +1,7 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
 use crate::analysis_inputs::ProofDependencies;
+use crate::facts::LexicalCellId;
 use crate::facts::abstract_domain::builtins::IterationRow;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::value_flow::static_prop as static_string_prop;
@@ -250,10 +251,6 @@ impl<T> Hash for Captured<T> {
         self.identity.hash(state);
     }
 }
-
-/// One instantiated lexical cell, not a source binding or structural cache key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct LexicalCellId(pub(super) usize);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct LexicalCaptures {

@@ -1119,7 +1119,7 @@ fn emit_heap_content_order(
                         cell,
                         EffectCell::OwnProperty { .. }
                             | EffectCell::PrivateSlot { .. }
-                            | EffectCell::LexicalCell(_)
+                            | EffectCell::LexicalCell { .. }
                             | EffectCell::ObjectShape(_)
                             | EffectCell::DescriptorMapContents(_)
                     )

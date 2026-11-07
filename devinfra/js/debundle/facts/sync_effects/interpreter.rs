@@ -28,8 +28,8 @@ use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, Ow
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
     DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, InstanceOrigin, LexicalCaptures,
-    LexicalCellId, MemberKey, OwnPropertyShape, PrivateFieldId, RetainedResultKind, ValueExpr,
-    Values, canonical_array_index,
+    MemberKey, OwnPropertyShape, PrivateFieldId, RetainedResultKind, ValueExpr, Values,
+    canonical_array_index,
 };
 use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
@@ -86,8 +86,8 @@ use crate::facts::sync_effects::property_inference::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
-    DataflowOpacityCause, EffectCell, LocalClassConstructionProof, LocalClassConstructionShapes,
-    NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic,
+    DataflowOpacityCause, EffectCell, LexicalCellId, LocalClassConstructionProof,
+    LocalClassConstructionShapes, NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StatementPurityContext,
     TopLevelNativeIterableOperandSite, set_iterables::SetIterableProof,
 };
@@ -1693,6 +1693,50 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         ) && !frame.environment.contains_key(binding)
     }
 
+    fn lexical_cell_effect(&mut self, binding: &Id) -> Option<EffectCell> {
+        if let (Some(instance), Some(origin)) = (
+            self.executor.state.active_cells.get(binding),
+            self.executor.inputs.index.lexical_cell_origins.get(binding),
+        ) && !matches!(
+            self.executor.state.lexical_cells[instance.0].kind,
+            LocalBinding::NamedSelf(_)
+        ) {
+            return Some(EffectCell::LexicalCell {
+                origin: *origin,
+                instance: *instance,
+            });
+        }
+        // A snapshot or missing source correspondence is not an address.
+        // Preserve normal values and capabilities, but no completion channel
+        // may certify the omitted possible cell access as an empty footprint.
+        self.outcome.effects.heap_contents.opaque = true;
+        self.outcome
+            .unsupported(ExecutionOperation::OpaqueExecution, self.owner, DUMMY_SP);
+        None
+    }
+
+    fn immutable_name_cell(&self, binding: &Id, id: LexicalCellId) -> bool {
+        let cell = &self.executor.state.lexical_cells[id.0];
+        let LocalBinding::NamedSelf(callable) = cell.kind else {
+            return false;
+        };
+        cell.initialization == CellInitialization::Initialized
+            && self
+                .executor
+                .inputs
+                .index
+                .callables
+                .get(&callable)
+                .is_some_and(|source| source.self_binding.as_ref() == Some(binding))
+            && cell.values.len() == 1
+            && matches!(cell.values.first(), Some(AbstractValue::Closure(key, _)
+                | AbstractValue::Value(Value::Alloc(Kind::Function, key))) if *key == callable)
+            && cell
+                .selection
+                .as_ref()
+                .is_some_and(|selection| selection.matches(&cell.values))
+    }
+
     fn binding_values<'a>(&'a self, binding: &Id, frame: &'a LocalFrame) -> Option<&'a Values> {
         if self.executor.inputs.top_bindings.contains(binding) {
             self.executor.state.prefix_values.get(binding)
@@ -2401,12 +2445,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             .captured_local_bindings
             .contains(binding)
         {
-            let origin = *self
-                .executor
-                .inputs
-                .index
-                .lexical_cell_origins
-                .get(binding)?;
             // An activation view of the immutable name cell contains the
             // original selected function, never a newly captured self cycle.
             let selection = CallableSelection::observed(
@@ -2425,15 +2463,9 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .insert(binding.clone(), cell);
             self.executor.state.prefix_revision =
                 self.executor.state.prefix_revision.wrapping_add(1);
-            let addressed = EffectCell::LexicalCell(origin);
-            self.outcome
-                .effects
-                .heap_contents
-                .allocations
-                .insert(addressed.clone());
-            self.outcome
-                .effects
-                .record_heap_write(addressed, self.executor.state.assumption.is_none());
+            // The immutable name environment was initialized when the function
+            // object was created. This invocation view preserves its selected
+            // value; it is not a new concrete cell allocation or write.
         }
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(&self.executor.settled_prefix_dependencies());
@@ -2454,26 +2486,26 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         else {
             return EffectCoverageFragment::default();
         };
-        let Some(id) = self.executor.state.active_cells.get(binding) else {
+        let Some(id) = self.executor.state.active_cells.get(binding).copied() else {
             return if self
                 .executor
                 .inputs
                 .captured_local_bindings
                 .contains(binding)
             {
+                let _ = self.lexical_cell_effect(binding);
                 EffectCoverageFragment::default()
             } else {
                 EffectCoverageFragment::no_effects()
             };
         };
-        let cell = &self.executor.state.lexical_cells[id.0];
-        let Some(origin) = self.executor.inputs.index.lexical_cell_origins.get(binding) else {
+        let Some(addressed) = self.lexical_cell_effect(binding) else {
             return EffectCoverageFragment::default();
         };
+        let cell = &self.executor.state.lexical_cells[id.0];
         if cell.kind != *kind {
             return EffectCoverageFragment::default();
         }
-        let addressed = EffectCell::LexicalCell(*origin);
         let non_assumed = self.executor.state.assumption.is_none();
         match operation {
             BindingOperation::Create
@@ -2892,13 +2924,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             });
         }
         if let Some(id) = self.executor.state.active_cells.get(binding).copied() {
-            let origin = self
-                .executor
-                .inputs
-                .index
-                .lexical_cell_origins
-                .get(binding)
-                .copied();
+            let addressed = if matches!(
+                self.executor.state.lexical_cells[id.0].kind,
+                LocalBinding::NamedSelf(_)
+            ) {
+                None
+            } else {
+                self.lexical_cell_effect(binding)
+            };
             let cell = &mut self.executor.state.lexical_cells[id.0];
             if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
                 || cell.initialization == CellInitialization::Uninitialized
@@ -2926,11 +2959,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     self.executor.state.prefix_revision.wrapping_add(1);
             }
             let mut effects = EffectCoverageFragment::default();
-            if let Some(origin) = origin {
-                self.outcome.effects.record_heap_write(
-                    EffectCell::LexicalCell(origin),
-                    self.executor.state.assumption.is_none(),
-                );
+            if let Some(addressed) = addressed {
+                self.outcome
+                    .effects
+                    .record_heap_write(addressed, self.executor.state.assumption.is_none());
                 if normal {
                     effects = EffectCoverageFragment::no_effects();
                     effects.depend_on(&self.executor.settled_prefix_dependencies());
@@ -2966,26 +2998,32 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         }
         let values = self.executor.evaluate_binding(binding, &frame.environment);
         let captured_cell = self.executor.state.active_cells.get(binding).copied();
-        let cell_origin = self
-            .executor
-            .inputs
-            .index
-            .lexical_cell_origins
-            .get(binding)
-            .copied();
-        if captured_cell.is_some()
-            && let Some(origin) = cell_origin
+        let immutable_name = captured_cell.is_some_and(|id| self.immutable_name_cell(binding, id));
+        let addressed = if immutable_name {
+            None
+        } else if captured_cell.is_some()
+            || self
+                .executor
+                .inputs
+                .captured_local_bindings
+                .contains(binding)
         {
-            self.outcome.effects.record_heap_read(
-                EffectCell::LexicalCell(origin),
-                self.executor.state.assumption.is_none(),
-            );
+            self.lexical_cell_effect(binding)
+        } else {
+            None
+        };
+        let addressed_cell = addressed.is_some();
+        if let Some(addressed) = addressed {
+            self.outcome
+                .effects
+                .record_heap_read(addressed, self.executor.state.assumption.is_none());
         }
-        let initialized_cell = cell_origin.is_some()
-            && captured_cell.is_some_and(|id| {
-                self.executor.state.lexical_cells[id.0].initialization
-                    == CellInitialization::Initialized
-            });
+        let initialized_cell = immutable_name
+            || (addressed_cell
+                && captured_cell.is_some_and(|id| {
+                    self.executor.state.lexical_cells[id.0].initialization
+                        == CellInitialization::Initialized
+                }));
         if self.executor.inputs.top_bindings.contains(binding)
             || (self.executor.state.active_cells.contains_key(binding)
                 && !self.body.bindings.contains_key(binding))
@@ -3032,6 +3070,16 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         } else if normal && initialized_cell {
             let mut effects = EffectCoverageFragment::no_effects();
             effects.depend_on(&self.executor.settled_prefix_dependencies());
+            if immutable_name {
+                effects.depend_on(
+                    &self.executor.state.lexical_cells
+                        [captured_cell.expect("checked immutable name").0]
+                        .selection
+                        .as_ref()
+                        .expect("immutable name proof retains the selected original value")
+                        .dependencies,
+                );
+            }
             effects
         } else if normal
             && frame.initialized_bindings.contains(binding)

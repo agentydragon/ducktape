@@ -950,9 +950,25 @@ later invocation must independently establish its operation effects.
 Capturing an available lexical cell does not read its value. The shared kernel
 records actual cell creation, initialization, initialized reads and mutable
 stores for simple captured parameters and local `let`/`const` bindings. Effects
-address `lexical_cell` by the canonical declaration offset, pooling all
-activations of that binding. This identity supplies no private-birth,
-strong-update or unique-activation proof. TDZ, possibly initialized cells and
+address `lexical_cell` by its canonical declaration offset and actual arena
+instance. Cell IDs are local to one analyzed chunk, never reused, and preserved
+through captured aliases, memoized effects and saved analysis. Different
+activations have different cells; reader/writer closures from the same
+activation retain the same cell, including through nested factories. These
+addresses prove neither private ownership nor contents or strong-update
+permission. A missing active cell or source correspondence preserves possible
+values and normal continuation while refusing heap-domain coverage; there is
+no origin-only summary address alongside the instance addresses. Opaque escape
+and recursive fallback retain their unknown heap effects. Object and Set heap
+allocation sites remain pooled independently of declarative-cell identity.
+Named function-expression environments are initialized at function-object
+creation, rather than on each call. Their immutable invocation views do not
+emit fresh-cell allocations or writes. A direct or descendant closure's name
+read requires the canonical self binding, initialized immutable view and the
+matching original selected function value with its dependencies; this proves
+the declarative read has no exterior effect. Missing correspondence remains
+uncovered and attempted name writes retain their abrupt result.
+TDZ, possibly initialized cells and
 immutable stores retain their abrupt or uncovered result. Callable selection
 travels only with its actual stored receipt; mutation or mutable-cell havoc
 discards it. A settled present own-data read does not

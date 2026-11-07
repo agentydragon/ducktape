@@ -98,7 +98,10 @@ impl SavedConstructorFacts {
 #[serde(rename_all = "snake_case")]
 enum SavedEffectCell {
     Binding(SavedBinding),
-    LexicalCell(u32),
+    LexicalCell {
+        origin: u32,
+        instance: LexicalCellId,
+    },
     GlobalProp(String),
     ArrayContents(u32),
     SetContents(u32),
@@ -120,7 +123,10 @@ impl SavedEffectCell {
     fn snapshot(cell: &EffectCell, ordinals: &ContextOrdinals) -> Result<Self> {
         Ok(match cell {
             EffectCell::Binding(binding) => Self::Binding(ordinals.snapshot_binding(binding)?),
-            EffectCell::LexicalCell(origin) => Self::LexicalCell(*origin),
+            EffectCell::LexicalCell { origin, instance } => Self::LexicalCell {
+                origin: *origin,
+                instance: *instance,
+            },
             EffectCell::GlobalProp(property) => Self::GlobalProp(property.clone()),
             EffectCell::ArrayContents(origin) => Self::ArrayContents(*origin),
             EffectCell::SetContents(origin) => Self::SetContents(*origin),
@@ -146,7 +152,7 @@ impl SavedEffectCell {
     fn restore(self, ordinals: &ContextOrdinals) -> Result<EffectCell> {
         Ok(match self {
             Self::Binding(binding) => EffectCell::Binding(ordinals.restore_binding(binding)?),
-            Self::LexicalCell(origin) => EffectCell::LexicalCell(origin),
+            Self::LexicalCell { origin, instance } => EffectCell::LexicalCell { origin, instance },
             Self::GlobalProp(property) => EffectCell::GlobalProp(property),
             Self::ArrayContents(origin) => EffectCell::ArrayContents(origin),
             Self::SetContents(origin) => EffectCell::SetContents(origin),
