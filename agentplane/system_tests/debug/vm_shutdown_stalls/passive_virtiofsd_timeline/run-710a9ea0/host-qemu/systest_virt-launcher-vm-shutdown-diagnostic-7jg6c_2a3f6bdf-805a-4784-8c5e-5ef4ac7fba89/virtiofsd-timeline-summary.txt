@@ -1,7 +1,0 @@
-launcher=systest_virt-launcher-vm-shutdown-diagnostic-7jg6c_2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89
-pod_uid=2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89
-post_acpi_samples=6
-stop_reason=proof-and-daemon-absent
-elapsed_seconds=10.008
-observer=local-proc-only qmp=disabled
-A matching process snapshot does not establish that virtiofsd was servicing guest requests.
