@@ -485,7 +485,7 @@ fn template_substitutions_compose_parameter_stores_in_source_order() {
     );
     assert_preserved_entry_output(&fixture, "0 1:2:2 1\n");
     assert_actual_imported_inversion(&fixture, "computed");
-    assert_imported_read_receipt(&fixture, "computed");
+    assert_root_read_receipt(&fixture, "computed");
 }
 
 #[test]

@@ -1863,7 +1863,7 @@ fn callback_timing_does_not_supply_missing_provider_body_effects() {
     let marks = [ChunkExportPurityBuilder::new("static/peer")
         .with_callback_factories(&["factory"])
         .build()];
-    let rejected = run_rejection_fixture(
+    let split = run_fixture(
         FixtureOpts::new(
             source,
             vec![
@@ -1874,9 +1874,19 @@ fn callback_timing_does_not_supply_missing_provider_body_effects() {
         .with_extra_chunks(&peers)
         .with_chunk_export_purity(&marks),
     );
+    assert_preserved_entry_output(&split, "factory\n42\n");
+    let report = split.effect_translation_validation();
     assert_eq!(
-        rejected.effect_translation_validation()["decision"]["status"],
-        "incomplete"
+        report["decision"],
+        serde_json::json!({"status": "accepted", "scope": "statement_order_commutation"}),
+        "{report:#}"
+    );
+    assert_eq!(report["swapped_pairs"], 2, "{report:#}");
+    let wrapped = binding_execution_report(&split, "wrapped");
+    assert_eq!(wrapped["complete"], false, "{wrapped:#}");
+    assert_eq!(
+        wrapped["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "timing alone supplies no provider body proof: {wrapped:#}"
     );
     let colocated = run_fixture(
         FixtureOpts::new(source, vec![])
@@ -5614,7 +5624,7 @@ fn text_encoder_initializer_requires_identity_zero_arguments_and_root_shape() {
         (
             "var encoder = new TextEncoder();\n\
              globalThis.TextEncoder = function replacement() {};\n",
-            "initializer_result_unproved",
+            "unknown_call",
             2,
         ),
         (

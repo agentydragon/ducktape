@@ -890,8 +890,10 @@ fn possible_object_prototype_field_reports_the_field() {
 
 #[test]
 fn unknown_property_source_reports_its_parameter() {
+    // The constructor owner must reach its source proof after the opaque
+    // producer, rather than stop while evaluating that producer as an operand.
     assert_construction_rejection(
-        "class Box { constructor(config) { this.value = config.value; } }\nconst result = new Box(JSON.parse('{\"value\": 3}'));\nconsole.log(result.value);",
+        "class Box { constructor(config) { this.value = config.value; } }\nconst config = JSON.parse('{\"value\": 3}');\nconst result = new Box(config);\nconsole.log(result.value);",
         "3\n",
         serde_json::json!({"check": "unchecked_property_source", "parameter": 0}),
     );

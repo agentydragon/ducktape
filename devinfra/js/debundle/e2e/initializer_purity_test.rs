@@ -86,12 +86,14 @@ fn initializer_override_keeps_callback_read_dependency() {
                 .as_ref()
                 .and_then(|execution| execution.binding_effect_authority.as_ref()),
             Some(
-                analysis::reports::schema::BindingEffectAuthorityReport::LegacyExecution {
-                    complete: false
-                }
-            )
+                analysis::reports::schema::BindingEffectAuthorityReport::OrderedRootInitializerUncovered { binding, .. }
+            ) if binding == "A"
         ),
         "the initializer assertion remains distinct from operation coverage: {caller:#?}"
+    );
+    assert!(
+        !caller.synchronous_execution.as_ref().unwrap().complete,
+        "the initializer assertion supplies no complete execution proof: {caller:#?}"
     );
     let promoted_seed_edges: Vec<_> = graph
         .edges
