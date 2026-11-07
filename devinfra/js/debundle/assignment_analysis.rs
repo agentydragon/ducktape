@@ -135,6 +135,12 @@ pub struct CandidatePreflight<'a> {
     placement: StructuralPlacementAssessment,
 }
 
+/// Prepared-output preservation proofs consumed together by final assessment.
+struct CandidatePreservationEvidence {
+    module_initialization: CandidateModuleInitializationEvidence,
+    provider_targets: CandidateProviderTargetEvidence,
+}
+
 impl<'a> CandidatePreflight<'a> {
     /// Prepare all assignment and structural facts before candidate effects are
     /// assessed. The projection must be for this immutable assignment.
@@ -188,8 +194,10 @@ impl<'a> CandidatePreflight<'a> {
             &translation_validation,
             &self.emitted_order,
             self.placement,
-            module_initialization_evidence,
-            provider_target_evidence,
+            CandidatePreservationEvidence {
+                module_initialization: module_initialization_evidence,
+                provider_targets: provider_target_evidence,
+            },
             effect_visitor,
         )?;
         Ok(CandidateEvaluation {
@@ -1040,8 +1048,7 @@ impl AssignmentAnalysis {
         legacy: &TranslationValidationResult,
         emitted_order: &CandidateEmittedOrder,
         placement: StructuralPlacementAssessment,
-        module_initialization_evidence: CandidateModuleInitializationEvidence,
-        provider_target_evidence: CandidateProviderTargetEvidence,
+        preservation: CandidatePreservationEvidence,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
         let required_module_cells = facts
@@ -1049,14 +1056,14 @@ impl AssignmentAnalysis {
             .flat_map(|fact| fact.required_initialized_module_cells())
             .collect();
         let module_initialization =
-            assess_module_initialization(required_module_cells, module_initialization_evidence);
+            assess_module_initialization(required_module_cells, preservation.module_initialization);
         let required_provider_targets = facts
             .iter()
             .flat_map(analysis::facts::StatementFacts::required_conditional_provider_targets)
             .map(provider_target_key)
             .collect();
         let provider_targets =
-            assess_provider_targets(required_provider_targets, provider_target_evidence);
+            assess_provider_targets(required_provider_targets, preservation.provider_targets);
         let effect = effect_translation_assess(
             EffectTranslationValidationInputs {
                 graph: self.inputs.dependency_graph(),

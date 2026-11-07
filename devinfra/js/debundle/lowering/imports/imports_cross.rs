@@ -10,7 +10,7 @@ use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };
 use super::imports_runtime::PreparedImportDecl;
-use super::plan_references::PlannedCrossModuleBinding;
+use super::plan_references::{PlannedCrossModuleBinding, PlannedResidualEntryBinding};
 use crate::body_facts::{PreparedImportBinding, PreparedImportTarget};
 use crate::imports::EntryExport;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
@@ -87,7 +87,7 @@ pub(crate) fn cross_module_imports_for_plan(
                     let resolved =
                         disambiguate_import_locals(&import_names, sink.ledger, scope, &mut minted);
                     sink.submit(minted, CROSS_MODULE_IMPORT_CONTRIBUTOR);
-                    let prepared_bindings = bindings
+                    let prepared_bindings: Vec<PreparedImportBinding> = bindings
                         .into_iter()
                         .map(|(_local, binding)| PreparedImportBinding {
                             source_binding: binding.source_binding,
@@ -166,7 +166,7 @@ pub(crate) fn residual_entry_imports_for_moved_body(
     entry_file: &str,
     from_file: &str,
     chunk: ChunkId,
-    imports: BTreeMap<String, EntryExport>,
+    imports: BTreeMap<String, PlannedResidualEntryBinding>,
     missing_exports: BTreeSet<String>,
     sink: &mut ImportLocalRenameSink<'_>,
 ) -> Result<Vec<PreparedImportDecl>> {
@@ -196,7 +196,7 @@ pub(crate) fn residual_entry_imports_for_moved_body(
     let resolved =
         disambiguate_residual_entry_import_locals(&import_names, sink.ledger, scope, &mut minted);
     sink.submit(minted, RESIDUAL_ENTRY_IMPORT_CONTRIBUTOR);
-    let bindings = imports
+    let bindings: Vec<PreparedImportBinding> = imports
         .into_values()
         .map(|binding| PreparedImportBinding {
             source_binding: binding.source_binding,

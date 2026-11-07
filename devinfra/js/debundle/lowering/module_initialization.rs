@@ -352,7 +352,7 @@ fn preserve_consumer_request_targets(
     entry_body: bool,
     provider_closure: &BTreeSet<ModuleFile>,
 ) -> Result<(), ProviderTargetRefusal> {
-    use ProviderTargetRefusal::{BindingRouteChanged, ProviderRouteChanged, UnsupportedRequest};
+    use ProviderTargetRefusal::{ProviderRouteChanged, UnsupportedRequest};
 
     let check = |request: &PreparedStaticRequest,
                  intended: Option<ModuleFile>,

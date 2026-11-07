@@ -93,6 +93,7 @@ pub(super) struct LoweredModuleOutput {
 /// without repeating reference or import planning.
 pub(super) struct PreparedModuleEmission<'a> {
     plan: &'a ModulePlan,
+    destination: ModuleId,
     body: Vec<ModuleItem>,
     static_requests: Vec<PreparedStaticRequest>,
     explicit_renames: BTreeMap<String, String>,
@@ -102,7 +103,7 @@ pub(super) struct PreparedModuleEmission<'a> {
 
 impl PreparedModuleEmission<'_> {
     pub(super) fn destination_id(&self) -> ModuleId {
-        self.plan.id
+        self.destination
     }
 
     pub(super) fn output_file_layout(&self) -> (&str, &str) {
@@ -260,13 +261,6 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         let mut renamer = IdentifierRenamer::new(&module_import_renames);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
-        }
-        for request in &mut static_requests {
-            for binding in &mut request.bindings {
-                if cross_module_chunk_renames.contains_key(binding.source_binding.0.as_ref()) {
-                    binding.target = PreparedImportTarget::Unsupported;
-                }
-            }
         }
         // Import-local renames are minted from the ledger's taken set,
         // which seal validated against every name bound anywhere in the
@@ -443,6 +437,16 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         let mut renamer = IdentifierRenamer::new(&cross_module_chunk_renames_by_id);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
+        }
+        // The inventory retains original source Ids. Source-level chunk
+        // renames are outside the current binding-route proof, unlike the
+        // import-local renames already carried by canonical planning.
+        for request in &mut static_requests {
+            for binding in &mut request.bindings {
+                if cross_module_chunk_renames.contains_key(binding.source_binding.0.as_ref()) {
+                    binding.target = PreparedImportTarget::Unsupported;
+                }
+            }
         }
         if !renamer.captured.is_empty() {
             // The entry-side chunk_renames validation only sees
@@ -629,6 +633,7 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
     };
     Ok(PreparedModuleEmission {
         plan,
+        destination: module,
         body,
         static_requests,
         explicit_renames,

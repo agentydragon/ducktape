@@ -116,7 +116,7 @@ impl PreparedCandidateEmissionPlan<'_> {
 
     /// The one prepared body that owns a source-unit destination. The entry
     /// inventory is addressed by the assignment's explicit entry destination;
-    /// logical bodies retain their canonical ModuleId from ModulePlan.
+    /// logical bodies retain their canonical ModuleId from preparation.
     pub(super) fn prepared_static_request_inventory_for_destination(
         &self,
         destination: ModuleId,

@@ -15,7 +15,7 @@ use artifact::paths::{
     join_module_path, module_path_dirname, normalize_relative_module_specifier,
     relative_module_path,
 };
-use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind};
+use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportKind};
 use js_ast::import_decl_module_item;
 use std::collections::BTreeMap;
 use swc_ecma_ast::*;
