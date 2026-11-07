@@ -5,6 +5,7 @@ go_library(
     name = "cli",
     srcs = [
         "actions.go",
+        "actions_guide.go",
         "app.go",
         "client.go",
         "egress.go",
@@ -23,6 +24,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/docs",
         "//agentplane/egress:egress_rules_go_proto",
         "//agentplane/egress/docs",
         "//agentplane/environments/v1:environment_service_go_proto",
@@ -68,6 +70,7 @@ go_test(
     name = "cli_test",
     size = "small",
     srcs = [
+        "actions_guide_test.go",
         "actions_test.go",
         "egress_test.go",
         "environments_test.go",

@@ -5,8 +5,9 @@ schema and `/v1/action-requests` lifecycle; the Agentplane integration app, Haku
 external harnesses remain clients rather than state owners.
 
 Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked lifecycle, recovery and
-Kubernetes/grant workflows. The generated HTTP/JSON API reference is `/openapi.json`; update the guides
-when those contracts change.
+Kubernetes/grant workflows. `agentplane actions guide [NAME]` reads the same bundled guides from newer
+CLI images; older images can fetch them from the existing HTTP paths. The generated HTTP/JSON API
+reference is `/openapi.json`; update the guides when those contracts change.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service

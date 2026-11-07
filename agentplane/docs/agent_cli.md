@@ -7,8 +7,9 @@ is the part `curl` leaves to every model turn: JSON quoting, the idempotency and
 waits, telling an egress refusal from a service refusal, and exit status. `agentplane --help` is what an
 agent reads first; each command's `--help` says what it wraps and the exit codes that matter.
 For the end-to-end child Session workflow, read the Actions
-[Session delegation guide](../action_service/docs/agents/session_delegation.md), also served from
-its `/llms.txt` index and through MCP `get_guide(name="session_delegation")`.
+[Session delegation guide](../action_service/docs/agents/session_delegation.md), bundled in newer CLI
+images as `agentplane actions guide session_delegation`, served from the existing `/llms.txt` index,
+and available through MCP `get_guide(name="session_delegation")`.
 
 The CLI overlaps `curl` and the Action Service's MCP tools on purpose. All three reach one backend
 authority (the Sandbox's ServiceAccount, through the proxy) and differ in what the caller has to write.
@@ -38,6 +39,7 @@ group, so another service joins as one more group under them.
 | `actions list [GROUP]`                                                                                                                               | the same, one Action per line                                           |
 | `actions show GROUP/ACTION`                                                                                                                          | `ActionService.GetAction`                                               |
 | `actions policy`                                                                                                                                     | `ActionService.GetActionPolicy`                                         |
+| `actions guide [NAME]`                                                                                                                               | bundled Action Service workflow guidance; no service call               |
 | `actions submit GROUP/ACTION --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--key KEY] [--wait [--until decision\|terminal]]`       | `SubmitActionRequest`, then optional watch                              |
 | `actions get {ID \| --key KEY}`                                                                                                                      | `GetActionRequest` or `ListActionRequests` by key                       |
 | `actions result {ID \| --key KEY}`                                                                                                                   | watch to terminal, then the stored result                               |

@@ -18,6 +18,9 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
     assert "http://test-actions.invalid" in guide
     assert "http://test-sessions.invalid" in guide
     assert "agentplane egress rules" in guide
+    assert "agentplane actions guide [NAME]" in guide
+    assert "On an older image without that subcommand" in guide
+    assert "`/docs/agents/` guide through the configured proxy" in guide
     assert "kubectl --server <host> --token <placeholder>" in guide
     match runtime:
         case SessionRuntime.NATIVE_HARNESS:

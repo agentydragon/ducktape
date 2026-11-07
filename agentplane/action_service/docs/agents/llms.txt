@@ -9,7 +9,9 @@ not select an owner or grant access. The operator routes are not a workload API.
 Find operations with `agentplane actions list` and fetch the chosen Action's argument schema with
 `agentplane actions show GROUP/ACTION`. Check `agentplane actions policy` for your current
 bindings, expiry, and exact argument constraints. A catalog entry alone grants nothing.
-`agentplane actions --help` lists every command.
+`agentplane actions --help` lists every command. Newer CLI images bundle this index and its guides:
+use `agentplane actions guide` for this index or `agentplane actions guide NAME` for one guide. If that
+subcommand is unavailable, fetch this index and its linked guides from the service HTTP paths below.
 MCP clients can read this index with `get_guide(name="index")` and a linked guide with
 `get_guide(name="session_delegation")`, for example. A guide name is its filename without `.md`.
 Read current Action descriptions and schemas with `get_action`; documentation is not a live catalogue.

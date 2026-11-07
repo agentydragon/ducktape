@@ -1,4 +1,4 @@
-// Package docs owns the agent guides served over HTTP and through the MCP edge.
+// Package docs owns the shared agent guides served over HTTP and bundled in the CLI and MCP edge.
 package docs
 
 import (
@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-// Agents holds the guides served at /llms.txt and /docs/agents/, under agents/.
+// Agents holds the guides served at /llms.txt and /docs/agents/, and bundled in agentplane actions guide.
 //
 //go:embed agents
 var Agents embed.FS

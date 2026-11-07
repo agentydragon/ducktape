@@ -127,7 +127,8 @@ func (s *seconds) Type() string { return "seconds" }
 const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions get, read-turns,
 and observe-input. The Notification Service uses HTTP through the egress proxy; egress rules use gRPC
 through a local sidecar route. The environments group reads the co-hosted Runner Gateway discovery
-API. It adds no authority and keeps no state. Each group reads its AGENTPLANE_*_URL and AGENTPLANE_*_CREDENTIAL pair
+API. It adds no authority and keeps no state. The 'agentplane actions guide' command prints Action workflow guides bundled in this image without a service call.
+Each live group reads its AGENTPLANE_*_URL and AGENTPLANE_*_CREDENTIAL pair
 (the placeholder bearer) and fails alone with exit 2 when they are missing; environments uses AGENTPLANE_SESSIONS_URL
 and AGENTPLANE_SESSIONS_CREDENTIAL.
 
