@@ -48,9 +48,9 @@ py_library(
     name = "materialize_searches",
     srcs = ["materialize_searches.py"],
     deps = [
-        "//tana:workspace",
         "//tana/domain:types",
         "//tana/graph",
+        "//tana/graph:loader",
         "//tana/query/search:materializer",
         "//tana/query/search:parser",
     ],
@@ -86,7 +86,7 @@ py_library(
     srcs = ["tana_issues_to_tanapaste.py"],
     deps = [
         ":convert",
-        "//tana:workspace",
+        "//tana/graph:loader",
         "//tana/query:filters",
     ],
 )

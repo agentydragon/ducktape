@@ -6,9 +6,9 @@ from pathlib import Path
 
 from tana.domain.types import NodeId
 from tana.graph.graph import TanaGraph
+from tana.graph.loader import load_workspace
 from tana.query.search.materializer import compare_search_results
 from tana.query.search.parser import parse_search_expression
-from tana.workspace import Workspace
 
 PRETTY_PRINT_LIMIT = 10
 
@@ -78,8 +78,7 @@ def main():
         print(f"Error: Input file '{input_path}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    workspace = Workspace.load(input_path)
-    store = workspace.graph
+    store = load_workspace(input_path)
 
     # Find all searches
     all_searches = find_all_searches(store)
