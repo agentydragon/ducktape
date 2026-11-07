@@ -127,6 +127,24 @@ py_library(
 )
 
 py_library(
+    name = "launcher_topology",
+    srcs = ["launcher_topology.py"],
+    deps = ["//devinfra/testing:undeclared_outputs"],
+)
+
+py_test(
+    name = "test_launcher_topology",
+    srcs = ["test_launcher_topology.py"],
+    deps = [
+        ":launcher_topology",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "host_qemu",
     srcs = ["host_qemu.py"],
     deps = [":guest_logs"],
