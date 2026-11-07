@@ -15,7 +15,8 @@ fn has_constraining_callback_edge(
     graph.edges.iter().any(|edge| {
         edge.source == caller
             && edge.target == target
-            && matches!(edge.edge_kind, DepKind::EagerUse | DepKind::Sequenced)
+            && edge.edge_kind == DepKind::EagerUse
+            && edge.binding.as_deref() == Some(target_binding)
             && edge.constrains_init_order
     })
 }
