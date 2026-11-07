@@ -23,16 +23,20 @@ fn descriptor_flags_receivers_and_deferred_counters_are_preserved() {
     let fixture = run_fixture(FixtureOpts::new(
         source,
         vec![
-            logical_module_with_anon(
+            logical_module(
                 "descriptors",
                 &[
                     Member::new("getterCalls"),
                     Member::new("methodCalls"),
                     Member::new("descriptors"),
                 ],
+            ),
+            // Keep the opaque observation before later's initialization.
+            logical_module_with_anon(
+                "later",
+                &[Member::new("later")],
                 &["console.log(getterCalls, methodCalls);"],
             ),
-            logical_module("later", &[Member::new("later")]),
         ],
     ));
     assert_preserved_entry_output(&fixture, "0 0\ngetter:42 method:42 1 1 true true true\n");
@@ -506,9 +510,33 @@ fn descriptor_map_mutation_invalidates_application_but_keeps_callbacks() {
 }
 
 #[test]
-fn descriptor_capture_accepts_an_assignment_of_a_fresh_ordinary_source() {
+fn descriptor_capture_keeps_the_assigned_source_in_its_destination() {
     let source = "let record;\nconst descriptors = Object.getOwnPropertyDescriptors(record = { get value() { return later; } });\nconst later = 42;\nconsole.log(descriptors.value.get());\n";
-    let fixture = run_fixture(FixtureOpts::new(source, descriptor_modules()));
+    let rejected = run_rejection_fixture(FixtureOpts::new(source, descriptor_modules()));
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(
+        assessment["status"], "blocked_by_placement",
+        "{assessment:#}"
+    );
+    assert!(
+        !assessment["placement"]["cross_destination_rebinds"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "assigning to an imported record binding is invalid: {assessment:#}"
+    );
+
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "descriptors",
+            &[
+                Member::new("record"),
+                Member::new("descriptors"),
+                Member::new("later"),
+            ],
+        )],
+    ));
     assert_preserved_entry_output(&fixture, "42\n");
 }
 
