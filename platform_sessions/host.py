@@ -42,7 +42,7 @@ class Integration(Protocol):
     periodic: bool
     candidate_verification: bool
 
-    def metadata(self) -> dict[str, Any]: ...
+    async def metadata(self) -> dict[str, Any]: ...
     def parse(self, body: bytes) -> Any: ...
     async def status(self) -> dict[str, Any]: ...
     async def refresh(self, transport: Any = None, *, source: ProbeSource = ProbeSource.VERIFY) -> None: ...
@@ -116,7 +116,7 @@ def create_management_router(
 
     @router.get("")
     async def list_integrations():
-        return [runtime.metadata() for runtime in integrations]
+        return await asyncio.gather(*(runtime.metadata() for runtime in integrations))
 
     @router.get("/{id}")
     async def get_integration(id: str):
