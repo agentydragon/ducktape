@@ -12,7 +12,6 @@ import grpc
 from pydantic import SecretStr
 
 from platform_sessions.provider.control_client import ProviderControlClient, dial_provider_control
-from platform_sessions.provider.management_adapter import RemoteIntegration
 from platform_sessions.proxy import HeaderPolicy, ProxyInstance
 from platform_sessions.registry import IntegrationInstance
 from platform_sessions.remote_transport import RemoteSessionTransport
@@ -37,7 +36,7 @@ class RemoteProviderSpec:
 class RemoteProviderBinding:
     """Objects to pass to create_app and install_proxy using the gateway's auth."""
 
-    integration: RemoteIntegration
+    control: ProviderControlClient
     proxy_instance: ProxyInstance
 
 
@@ -63,10 +62,7 @@ def bind_remote_provider(
         tls_context=spec.tls_context,
         transport=http_transport,
     )
-    return RemoteProviderBinding(
-        integration=RemoteIntegration(spec.config, control),
-        proxy_instance=ProxyInstance(spec.config, transport, spec.headers),
-    )
+    return RemoteProviderBinding(control=control, proxy_instance=ProxyInstance(spec.config, transport, spec.headers))
 
 
 @asynccontextmanager

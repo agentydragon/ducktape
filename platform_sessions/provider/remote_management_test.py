@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
-from pathlib import PurePosixPath
 from typing import override
 
 import grpc
@@ -13,27 +12,15 @@ import pytest
 import pytest_bazel
 from fastapi import HTTPException, Request
 from google.protobuf.timestamp_pb2 import Timestamp
-from pydantic import BaseModel
 
 from platform_sessions.auth import BearerAuth
-from platform_sessions.host import create_app
+from platform_sessions.host import create_shell
 from platform_sessions.provider.control_client import ProviderControlClient
-from platform_sessions.provider.management_adapter import RemoteIntegration
+from platform_sessions.provider.remote_management import create_remote_management_router
 from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as rpc
-from platform_sessions.registry import IntegrationInstance
 
 INSTANCE = pb.InstanceRef(provider_id="example", instance_id="account")
 SESSION = {"version": 1, "provider": "example", "session": {"token": "candidate-secret"}}
-
-
-class Settings(BaseModel):
-    pass
-
-
-def _config(instance_id: str) -> IntegrationInstance:
-    return IntegrationInstance(
-        instance_id, "example", True, "https://example.test", PurePosixPath(f"/data/{instance_id}"), 900, Settings()
-    )
 
 
 def _owner(request: Request) -> None:
@@ -137,15 +124,23 @@ async def served(tmp_path):
         await server.stop(grace=0)
 
 
-def _http_client(*integrations: RemoteIntegration) -> httpx.AsyncClient:
-    app = create_app(integrations, "https://service.test", require_owner=_owner, auth=BearerAuth([]))
+def _http_client(*clients: ProviderControlClient) -> httpx.AsyncClient:
+    app = create_shell()
+    app.include_router(
+        create_remote_management_router(
+            {client.instance.instance_id: client for client in clients},
+            "https://service.test",
+            require_owner=_owner,
+            auth=BearerAuth([]),
+        )
+    )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://service.test")
 
 
 @pytest.mark.asyncio
 async def test_owner_routes_preserve_metadata_status_and_typed_candidate_outcomes(tmp_path, caplog):
     async with served(tmp_path) as (provider, control, _, _):
-        integration = RemoteIntegration(_config("account"), control)
+        integration = control
         async with _http_client(integration) as client:
             headers = {"cookie": "owner=yes", "origin": "https://service.test"}
             assert (await client.get("/api/integrations")).status_code == 401
@@ -210,14 +205,11 @@ async def test_owner_routes_preserve_metadata_status_and_typed_candidate_outcome
 async def test_provider_outage_isolated_and_lost_import_is_not_retried(tmp_path, caplog):
     async with served(tmp_path) as (provider, control, token_file, _):
         bad_channel = grpc.aio.insecure_channel("127.0.0.1:1", options=(("grpc.enable_retries", 0),))
-        bad = RemoteIntegration(
-            _config("down"),
-            ProviderControlClient(
-                bad_channel, provider_id="example", instance_id="down", token_file=token_file, timeout_s=0.2
-            ),
+        bad = ProviderControlClient(
+            bad_channel, provider_id="example", instance_id="down", token_file=token_file, timeout_s=0.2
         )
         try:
-            async with _http_client(RemoteIntegration(_config("account"), control), bad) as client:
+            async with _http_client(control, bad) as client:
                 headers = {"cookie": "owner=yes", "origin": "https://service.test"}
                 listed = (await client.get("/api/integrations", headers=headers)).json()
                 assert [item["id"] for item in listed] == ["account", "down"]
@@ -241,10 +233,7 @@ async def test_provider_outage_isolated_and_lost_import_is_not_retried(tmp_path,
 
 @pytest.mark.asyncio
 async def test_import_diagnostics_preserve_specific_failures_and_unknown_outcomes(tmp_path):
-    async with (
-        served(tmp_path) as (provider, control, _, _),
-        _http_client(RemoteIntegration(_config("account"), control)) as client,
-    ):
+    async with served(tmp_path) as (provider, control, _, _), _http_client(control) as client:
         headers = {"cookie": "owner=yes", "origin": "https://service.test"}
         for result, expected in (
             (pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE), (502, "invalid_response")),
@@ -284,10 +273,7 @@ async def test_import_diagnostics_preserve_specific_failures_and_unknown_outcome
 
 @pytest.mark.asyncio
 async def test_invalid_envelope_never_reaches_provider(tmp_path):
-    async with (
-        served(tmp_path) as (provider, control, _, _),
-        _http_client(RemoteIntegration(_config("account"), control)) as client,
-    ):
+    async with served(tmp_path) as (provider, control, _, _), _http_client(control) as client:
         headers = {"cookie": "owner=yes", "origin": "https://service.test"}
         for candidate in (
             {"version": 1, "provider": "wrong", "session": {}},

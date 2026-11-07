@@ -20,15 +20,17 @@ py_library(
 )
 
 py_library(
-    name = "management_adapter",
-    srcs = ["management_adapter.py"],
+    name = "remote_management",
+    srcs = ["remote_management.py"],
     deps = [
         ":control_client",
+        "//platform_sessions:auth",
         "//platform_sessions:host",
-        "//platform_sessions:registry",
+        "//platform_sessions:limits",
         "//platform_sessions/provider/v1:session_provider_pb2",
+        "@pypi//fastapi",
         "@pypi//grpcio",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//protobuf",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
@@ -38,7 +40,6 @@ py_library(
     srcs = ["binding.py"],
     deps = [
         ":control_client",
-        ":management_adapter",
         "//platform_sessions:proxy",
         "//platform_sessions:registry",
         "//platform_sessions:remote_transport",
@@ -52,6 +53,7 @@ py_test(
     srcs = ["binding_test.py"],
     deps = [
         ":binding",
+        ":remote_management",
         "//:conftest",
         "//platform_sessions:auth",
         "//platform_sessions:host",
@@ -74,22 +76,20 @@ py_test(
 )
 
 py_test(
-    name = "management_adapter_test",
-    srcs = ["management_adapter_test.py"],
+    name = "remote_management_test",
+    srcs = ["remote_management_test.py"],
     deps = [
         ":control_client",
-        ":management_adapter",
+        ":remote_management",
         "//:conftest",
         "//platform_sessions:auth",
         "//platform_sessions:host",
-        "//platform_sessions:registry",
         "//platform_sessions/provider/v1:session_provider_pb2",
         "//platform_sessions/provider/v1:session_provider_pb2_grpc",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

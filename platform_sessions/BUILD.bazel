@@ -208,6 +208,8 @@ py_library(
         ":owner_web",
         ":proxy",
         ":proxy_support",
+        "//platform_sessions/provider:control_client",
+        "//platform_sessions/provider:remote_management",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",

@@ -19,8 +19,9 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from pydantic import BaseModel, SecretStr
 
 from platform_sessions.auth import Bearer, BearerAuth
-from platform_sessions.host import create_app
+from platform_sessions.host import create_shell
 from platform_sessions.provider.binding import RemoteProviderSpec, bind_remote_provider, open_remote_provider
+from platform_sessions.provider.remote_management import create_remote_management_router
 from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as rpc
 from platform_sessions.provider_proxy import ProviderProxy
 from platform_sessions.proxy import ProxyInstance, ProxyRequest, ProxyResponse, install_proxy
@@ -176,7 +177,12 @@ async def test_binding_preserves_gateway_auth_and_private_identity(tmp_path):
                 Bearer(SecretStr(PUBLIC_ROUTE), routes={"account": (Route("GET", "/orders/*"),)}),
             ]
         )
-        app = create_app([binding.integration], "https://gateway.test", require_owner=_owner, auth=public_auth)
+        app = create_shell()
+        app.include_router(
+            create_remote_management_router(
+                {"account": binding.control}, "https://gateway.test", require_owner=_owner, auth=public_auth
+            )
+        )
         install_proxy(app, {"account": binding.proxy_instance}, public_auth)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://gateway.test") as client:
             assert (await client.get("/api/integrations")).status_code == 401
@@ -233,9 +239,9 @@ async def test_binding_lifecycle_and_fail_closed_configuration(tmp_path, monkeyp
             )
 
         async with open_remote_provider(spec, control_channel=borrowed_channel) as binding:
-            assert (await binding.integration.metadata())["id"] == "account"
+            assert (await binding.control.get_info()).provider.instances[0].instance_id == "account"
         # Borrowing leaves the control channel usable for the caller.
-        assert (await binding.integration.metadata())["id"] == "account"
+        assert (await binding.control.get_info()).provider.instances[0].instance_id == "account"
 
         opened: list[grpc.aio.Channel] = []
 
@@ -248,9 +254,9 @@ async def test_binding_lifecycle_and_fail_closed_configuration(tmp_path, monkeyp
 
         monkeypatch.setattr("platform_sessions.provider.binding.dial_provider_control", dial)
         async with open_remote_provider(spec, control_options=(("grpc.keepalive_time_ms", 30_000),)) as owned:
-            assert (await owned.integration.metadata())["id"] == "account"
+            assert (await owned.control.get_info()).provider.instances[0].instance_id == "account"
         with pytest.raises(grpc.aio.UsageError, match="closed"):
-            await owned.integration.metadata()
+            await owned.control.get_info()
         assert len(opened) == 1
         assert control.get_info_calls == 3
 
