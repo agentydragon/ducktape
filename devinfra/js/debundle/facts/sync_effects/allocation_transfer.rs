@@ -95,14 +95,6 @@ pub(super) fn binary(
     right: &Values,
     mut judgment: AllocationJudgment,
 ) -> Option<AllocationValue> {
-    let primitive_kinds = |values: &Values| {
-        values.iter().try_fold(PrimKinds::NONE, |kinds, value| {
-            let AbstractValue::Value(Value::Prim(operand)) = value else {
-                return None;
-            };
-            Some(kinds.union(*operand))
-        })
-    };
     let left_kinds = primitive_kinds(left)?;
     let right_kinds = primitive_kinds(right)?;
     let result_kinds = primitive::binary_result(op, left_kinds, right_kinds)?;
@@ -116,6 +108,33 @@ pub(super) fn binary(
         judgment = AllocationJudgment::Opaque;
         values.insert(AbstractValue::Value(Value::Unavailable));
     }
+    Some(AllocationValue { values, judgment })
+}
+
+fn primitive_kinds(values: &Values) -> Option<PrimKinds> {
+    values.iter().try_fold(PrimKinds::NONE, |kinds, value| {
+        let AbstractValue::Value(Value::Prim(operand)) = value else {
+            return None;
+        };
+        Some(kinds.union(*operand))
+    })
+}
+
+/// Both postfix's old value and prefix's stored value have these numeric
+/// kinds. Exact numbers are outside this domain; object coercion declines.
+pub(super) fn update_result(operand: &Values) -> Option<AllocationValue> {
+    let kinds = primitive_kinds(operand)?;
+    let result = primitive::update(Some(kinds));
+    let mut values = Values::new();
+    if result != PrimKinds::NONE {
+        values.insert(AbstractValue::Value(Value::Prim(result)));
+    }
+    let judgment = if primitive::update_throws(kinds) || values.is_empty() {
+        values.insert(AbstractValue::Value(Value::Unavailable));
+        AllocationJudgment::Opaque
+    } else {
+        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default())
+    };
     Some(AllocationValue { values, judgment })
 }
 

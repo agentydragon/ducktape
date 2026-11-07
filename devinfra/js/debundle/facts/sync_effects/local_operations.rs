@@ -127,6 +127,12 @@ pub(super) enum LocalExpression {
         value: Arc<Self>,
         span: Span,
     },
+    /// Prefix and postfix have the same abstract numeric kind. The ordered
+    /// transfer keeps their read, conversion and store effects in source order.
+    UpdateBinding {
+        binding: Id,
+        span: Span,
+    },
     Closure(DeferredCallableCreation),
     Call {
         callee: LocalCallee,
@@ -546,6 +552,15 @@ impl LocalExpression {
                     _ => None,
                 }
             }
+            Expr::Update(update) if !class_template => {
+                let Expr::Ident(binding) = update.arg.unwrap_parens() else {
+                    return None;
+                };
+                Some(Self::UpdateBinding {
+                    binding: binding.to_id(),
+                    span: update.span,
+                })
+            }
             Expr::This(_) if class_template => Some(Self::This),
             _ => {
                 let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
@@ -588,6 +603,9 @@ impl LocalExpression {
             Self::Assign { binding, value, .. } => {
                 reads.insert(binding.clone());
                 value.reads(reads);
+            }
+            Self::UpdateBinding { binding, .. } => {
+                reads.insert(binding.clone());
             }
             Self::Closure(_) | Self::This => {}
             Self::Call {
@@ -681,6 +699,7 @@ impl LocalExpression {
                 let local = bindings.contains_key(binding);
                 (local && allocation_only, local && closure_allowed)
             }
+            Self::UpdateBinding { .. } => (false, false),
             Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
                 let (allocation_only, _) = value.allocation_syntax(bindings, closure_sites);
                 (allocation_only, false)
@@ -715,9 +734,11 @@ impl LocalExpression {
             Self::Call { arguments, .. } => {
                 arguments.iter().any(Self::requires_keyed_collection_new)
             }
-            Self::PrimitiveLiteral(_) | Self::This | Self::Closure(_) | Self::ReadField { .. } => {
-                false
-            }
+            Self::PrimitiveLiteral(_)
+            | Self::This
+            | Self::Closure(_)
+            | Self::ReadField { .. }
+            | Self::UpdateBinding { .. } => false,
         }
     }
 
@@ -732,6 +753,9 @@ impl LocalExpression {
             Self::Assign { binding, value, .. } => {
                 writes.insert(binding.clone());
                 value.writes(writes);
+            }
+            Self::UpdateBinding { binding, .. } => {
+                writes.insert(binding.clone());
             }
             Self::Array { elements, .. } => {
                 for element in elements.iter().flatten() {

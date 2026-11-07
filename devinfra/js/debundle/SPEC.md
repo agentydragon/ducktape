@@ -1884,6 +1884,15 @@ local writes in source order. Only completing paths reach the next operation;
 binding observations retain callback-path provenance through ordinary outcome
 composition and invocation memos. Thrown capabilities remain conservatively
 published. The value operations use the shared literal-allocation transfers.
+
+Identifier `++` and `--` in such a body read the binding, apply `ToNumeric`,
+and store through the same local or captured-cell path as assignment. Prefix
+and postfix results retain only possible Number or BigInt kinds; the analysis
+does not infer exact old or new values. A proved primitive Number conversion
+can carry a local binding-effect receipt when the target is an initialized,
+uncaptured mutable `let` or parameter. `var`, captured stores, const/TDZ errors,
+possible Symbol or BigInt throws, and object coercion remain uncovered or take
+the conservative fallback. Member updates are outside this ordered subset.
 Static field assignments through a local or parameter binding also execute in
 order when the receiver is one settled ordinary record allocated during this
 invocation and the field is an existing own data property. This permits local

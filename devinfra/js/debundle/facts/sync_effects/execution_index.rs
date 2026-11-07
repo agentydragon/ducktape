@@ -12720,12 +12720,21 @@ impl Visit for ExecutionIndex {
             ));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
+        // Keep the source protocol for conservative flat-summary fallback.
+        // A complete ordered body instead represents this binding read,
+        // ToNumeric and store at execution, where values decide coverage.
         self.record_source_protocol(
             CallKind::OpaqueExecution,
             ValueExpr::from_expr(&expression.arg),
             expression.span,
         );
-        self.mark_opaque();
+        let ordered_binding_update = matches!(expression.arg.unwrap_parens(), Expr::Ident(_))
+            && self
+                .current
+                .is_some_and(|key| self.callables[&key].body_facts.ordered_plan().is_some());
+        if !ordered_binding_update {
+            self.mark_opaque();
+        }
     }
 
     fn visit_unary_expr(&mut self, expression: &UnaryExpr) {

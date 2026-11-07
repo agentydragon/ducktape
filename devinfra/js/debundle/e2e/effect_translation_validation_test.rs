@@ -1553,7 +1553,7 @@ fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
 }
 
 #[test]
-fn local_declaration_operations_compose_lexical_receipts() {
+fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
     for body in [
         "const local = seed; return local;",
         "let local = seed; return local;",
@@ -1597,8 +1597,8 @@ fn local_declaration_operations_compose_lexical_receipts() {
         let report = fixture.effect_translation_validation();
         for domain in ["global_properties", "general_heap", "host_effects"] {
             assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], 2,
-                "lexical declarations cannot certify another effect domain: {body}: {report:#}"
+                report["coverage"]["unknown_coverage"][domain], 1,
+                "the private cell has no nonlexical effects; only output remains unknown: {body}: {report:#}"
             );
         }
     }
@@ -1819,6 +1819,128 @@ fn scalar_call_receipt_accepts_independent_statement_inversion() {
 }
 
 #[test]
+fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
+    for (body, expected) in [
+        ("let value = 1; return value++;", "7 1\n"),
+        ("let value = 1; return ++value;", "7 2\n"),
+        ("let value = 2; return value--;", "7 2\n"),
+        ("let value = 2; return --value;", "7 1\n"),
+        ("let value = '4'; return ++value;", "7 5\n"),
+        ("let value = 1; value++; return value;", "7 2\n"),
+    ] {
+        let source = format!(
+            "function bump() {{ {body} }}\nconst independent = 7;\nvar result = bump();\nconsole.log(independent, result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "update",
+                &[Member::new("bump"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_inline_operation_receipt(&fixture, "result", 1, body);
+        let report = fixture.effect_translation_validation();
+        assert_eq!(report["swapped_pairs"], 1, "{body}: {report:#}");
+        assert_eq!(
+            report["decision"]["status"], "accepted",
+            "{body}: {report:#}"
+        );
+        assert_eq!(
+            report["decision"]["scope"], "statement_order_commutation",
+            "{body}: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function bump(value) { value++; return value; }\nfunction invoke() { return bump(1); }\nconst independent = 7;\nvar result = invoke();\nconsole.log(independent, result);\n",
+        vec![logical_module(
+            "update",
+            &[
+                Member::new("bump"),
+                Member::new("invoke"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 2\n");
+    assert_inline_operation_receipt(&fixture, "result", 2, "parameter update");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 1, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["decision"]["scope"], "statement_order_commutation",
+        "{report:#}"
+    );
+}
+
+#[test]
+fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
+    for (body, error) in [
+        ("const value = 1; return value++;", "TypeError"),
+        ("return value++; let value = 1;", "ReferenceError"),
+        ("let value = Symbol(); return value++;", "TypeError"),
+    ] {
+        let source =
+            format!("function bump() {{ {body} }}\nvar result = bump();\nconsole.log(result);\n");
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[Member::new("bump"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_error(&fixture, error);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "{body}: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
+    for (body, expected) in [
+        ("let value = 1n; return value++;", "1n 0\n"),
+        (
+            "let value = { valueOf() { return ++calls; } }; return value++;",
+            "1 1\n",
+        ),
+        (
+            "let value = 1; const read = () => value; value++; return read();",
+            "2 0\n",
+        ),
+    ] {
+        let source = format!(
+            "let calls = 0;\nfunction bump() {{ {body} }}\nvar result = bump();\nconsole.log(result, calls);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("calls"),
+                    Member::new("bump"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "{body}: {execution:#}"
+        );
+    }
+}
+
+#[test]
 fn noncoercing_scalar_operators_do_not_cover_abrupt_children() {
     for expression in ["void later", "!later", "later === later"] {
         let source = format!(
@@ -1879,60 +2001,69 @@ fn noncoercing_scalar_operators_refuse_unproved_getters() {
 
 #[test]
 fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
-    for (seed, helper, invocation, lexical_authority) in [
+    for (seed, helper, invocation, lexical_authority, unknown) in [
         (
             "41",
             "function readSeed(unused) { return seed; }",
             "readSeed()",
             "operation_receipt",
+            1,
         ),
         (
             "41",
             "function readSeed(unused = seed) { return seed; }",
             "readSeed()",
             "operation_receipt",
+            1,
         ),
         (
             "41",
             "function readSeed(...unused) { return seed; }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "41",
             "function readSeed() { void arguments; return seed; }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "41",
             "function readSeed(unused) { return seed; }",
             "readSeed(seed)",
             "operation_receipt",
+            1,
         ),
         (
             "41",
             "function readSeed() { const local = seed; return local; }",
             "readSeed()",
             "operation_receipt",
+            1,
         ),
         (
             "({value: 41})",
             "function readSeed() { return seed.value.toString(); }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "41",
             "function readSeed() { return Math.abs(-41); }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "41",
             "function readSeed() { return globalThis.Number(41); }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
     ] {
         let source = format!(
@@ -1953,8 +2084,8 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
         let report = fixture.effect_translation_validation();
         for domain in ["global_properties", "general_heap", "host_effects"] {
             assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], 2,
-                "the initializer and output call must remain unknown for {helper} / {invocation}: {report:#}"
+                report["coverage"]["unknown_coverage"][domain], unknown,
+                "only proved private-cell operations can close the initializer; output remains unknown for {helper} / {invocation}: {report:#}"
             );
         }
         let graph = fixture.dependency_graph();
@@ -2029,7 +2160,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             "number",
             2,
         ),
-        ("function make() { return seed; let unused; }", "number", 2),
+        ("function make() { return seed; let unused; }", "number", 1),
         (
             "function make() { return seed; function unused() {} }",
             "number",
@@ -2038,7 +2169,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
         (
             "function make() { return seed; class Unused {} }",
             "number",
-            2,
+            1,
         ),
         ("function make() { return seed; }", "number", 1),
     ] {
@@ -2057,6 +2188,17 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             )],
         ));
         assert_preserved_entry_output(&fixture, &format!("{result_kind}\n"));
+        if matches!(
+            helper,
+            "function make() { return seed; let unused; }"
+                | "function make() { return seed; class Unused {} }"
+        ) {
+            let execution = binding_execution_report(&fixture, "result");
+            assert_eq!(
+                execution["binding_effect_authority"]["authority"], "operation_receipt",
+                "an unreached lexical declaration still creates a private cell without exterior effects: {execution:#}"
+            );
+        }
         let report = fixture.effect_translation_validation();
         for domain in ["global_properties", "general_heap", "host_effects"] {
             assert_eq!(
