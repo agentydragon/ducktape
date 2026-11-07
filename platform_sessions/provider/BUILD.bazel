@@ -40,12 +40,34 @@ py_library(
     deps = ["@pypi//grpcio"],
 )
 
+py_library(
+    name = "control_server",
+    srcs = ["control_server.py"],
+    deps = [
+        ":control_auth",
+        "@pypi//grpcio",
+    ],
+)
+
 py_test(
     name = "control_auth_test",
     srcs = ["control_auth_test.py"],
     deps = [
         ":control_auth",
         "//:conftest",
+        "@pypi//grpcio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "control_server_test",
+    srcs = ["control_server_test.py"],
+    deps = [
+        ":control_server",
+        "//:conftest",
+        "@pypi//cryptography",
         "@pypi//grpcio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
