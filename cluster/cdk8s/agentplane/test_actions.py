@@ -12,7 +12,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from cdk8s_plus_34 import EnvValue
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import actions, history_service, mcp_edge, session_dispatcher, staging
+from cluster.cdk8s.agentplane import actions, history_service, mcp_edge, session_dispatcher, staging, telemetry
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
@@ -109,6 +109,22 @@ def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[st
     assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
     assert not pod.get("initContainers")
     assert server["startupProbe"]["grpc"] == {"port": server["readinessProbe"]["grpc"]["port"], "service": "livez"}
+
+
+def test_actions_push_otlp_metrics_while_prometheus_scrape_remains(staging_manifests: list[dict[str, Any]]) -> None:
+    deployment = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
+    )
+    container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
+    env = {item["name"]: item.get("value") for item in container["env"]}
+    assert env["OTEL_METRICS_EXPORTER"] == "otlp"
+    assert env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] == "cumulative"
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == telemetry.OTLP_GRPC_ENDPOINT
+
+    monitor = one(
+        doc for doc in staging_manifests if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "actions"
+    )
+    assert monitor["spec"]["endpoints"] == [{"path": "/metrics", "port": "http"}]
 
 
 def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -> None:

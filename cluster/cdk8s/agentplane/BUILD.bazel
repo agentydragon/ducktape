@@ -868,6 +868,7 @@ py_test(
     deps = [
         ":conftest",
         ":mcp_edge",
+        ":telemetry",
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

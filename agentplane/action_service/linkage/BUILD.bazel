@@ -27,6 +27,9 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
         "@com_github_sethvargo_go_retry//:go-retry",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_metric//:metric",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
@@ -38,8 +41,17 @@ go_library(
 
 go_test(
     name = "unit_test",
-    srcs = ["settings_test.go"],
+    srcs = [
+        "metrics_test.go",
+        "settings_test.go",
+    ],
     embed = [":linkage"],
+    deps = [
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_sdk_metric//:metric",
+        "@io_opentelemetry_go_otel_sdk_metric//metricdata",
+    ],
 )
 
 go_test(

@@ -107,15 +107,32 @@ func Init(ctx context.Context, serviceName string, resourceAttributes ...attribu
 		providerOptions = append(providerOptions, sdktrace.WithBatcher(exporter))
 	}
 	provider := sdktrace.NewTracerProvider(providerOptions...)
+	metricProvider, err := newMeterProvider(ctx, res)
+	if err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		_ = provider.Shutdown(shutdownCtx)
+		return nil, err
+	}
 	otel.SetTracerProvider(provider)
+	if metricProvider != nil {
+		otel.SetMeterProvider(metricProvider)
+	}
 	otel.SetTextMapPropagator(traceContext)
 
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			if metricProvider != nil {
+				metricShutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+				if err := metricProvider.Shutdown(metricShutdownCtx); err != nil {
+					slog.Warn("OpenTelemetry metric shutdown failed", "error", err)
+				}
+				cancel()
+			}
+			traceShutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer cancel()
-			if err := provider.Shutdown(shutdownCtx); err != nil {
+			if err := provider.Shutdown(traceShutdownCtx); err != nil {
 				slog.Warn("OpenTelemetry trace shutdown failed", "error", err)
 			}
 		})
