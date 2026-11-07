@@ -190,8 +190,22 @@ class RemoteIntegration:
         except (grpc.aio.AioRpcError, OSError, ValueError) as exc:
             self._log_unavailable("ImportSession", exc)
             raise IntegrationError("outcome_unknown", 503) from None
-        if response.WhichOneof("result") != "installed":
-            raise _candidate_failure(response.WhichOneof("result"), response.rejected.reason)
+        result = response.WhichOneof("result")
+        if result == "failure":
+            if response.failure.reason == pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE:
+                raise IntegrationError("invalid_response", 502)
+            if response.failure.reason == pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR:
+                if response.failure.HasField("upstream_http_status"):
+                    raise IntegrationError(f"upstream_http_{response.failure.upstream_http_status}", 502)
+                raise IntegrationError("upstream_unavailable", 503)
+            raise IntegrationError("storage_error", 503)
+        if result == "outcome_unknown":
+            if response.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT:
+                raise IntegrationError("verification_timeout", 504)
+            if response.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE:
+                raise IntegrationError("upstream_unavailable", 503)
+        if result != "installed":
+            raise _candidate_failure(result, response.rejected.reason)
         return {"configured": True}
 
     def _log_unavailable(self, operation: str, exc: Exception) -> None:

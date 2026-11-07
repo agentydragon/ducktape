@@ -26,6 +26,7 @@ type ImportSessionOutcome = (
     | pb.ChallengeRequired
     | pb.UpstreamUnavailable
     | pb.OperationOutcomeUnknown
+    | pb.ImportFailure
 )
 type ProbeOutcome = (
     pb.ProbeVerified
@@ -374,7 +375,27 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         elif isinstance(outcome, pb.UpstreamUnavailable):
             response.upstream_unavailable.CopyFrom(outcome)
         elif isinstance(outcome, pb.OperationOutcomeUnknown):
+            if outcome.reason not in (
+                pb.UNKNOWN_OUTCOME_REASON_UNSPECIFIED,
+                pb.UNKNOWN_OUTCOME_REASON_TIMEOUT,
+                pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE,
+            ):
+                await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
             response.outcome_unknown.CopyFrom(outcome)
+        elif isinstance(outcome, pb.ImportFailure):
+            if outcome.reason not in (
+                pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE,
+                pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
+                pb.IMPORT_FAILURE_REASON_STORAGE_ERROR,
+            ) or (
+                outcome.HasField("upstream_http_status")
+                and (
+                    outcome.reason != pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR
+                    or not 100 <= outcome.upstream_http_status <= 599
+                )
+            ):
+                await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
+            response.failure.CopyFrom(outcome)
         else:
             logger.error("provider control operation returned an invalid result operation=import_session")
             await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")

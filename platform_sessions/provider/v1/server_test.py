@@ -11,6 +11,7 @@ from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc
 from platform_sessions.provider.v1.server import (
     CandidateVerificationOutcome,
+    ImportSessionOutcome,
     ProbeOutcome,
     ProbeSource,
     ProviderBackend,
@@ -77,7 +78,7 @@ class SyntheticProvider(ProviderBackend):
 
     async def import_session(
         self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-    ) -> pb.SessionInstalled:
+    ) -> ImportSessionOutcome:
         assert instance_id == "primary"
         assert (media_type, format_version) == (_CANDIDATE_MEDIA_TYPE, _CANDIDATE_VERSION)
         self.imported_candidates.append(candidate)
@@ -222,6 +223,40 @@ async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> N
         assert result.result.outcome_unknown.credential_rotation_may_have_occurred
         assert result.result.source == pb.PROBE_SOURCE_SCHEDULED
         assert len(provider.probes) == 1
+
+
+async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_status() -> None:
+    class Provider(SyntheticProvider):
+        outcome: ImportSessionOutcome = pb.ImportFailure(
+            reason=pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=429
+        )
+
+        async def import_session(
+            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+        ) -> ImportSessionOutcome:
+            return self.outcome
+
+    provider = Provider()
+    request = pb.ImportSessionRequest(
+        instance=instance_ref(),
+        media_type=_CANDIDATE_MEDIA_TYPE,
+        format_version=_CANDIDATE_VERSION,
+        candidate=_CANDIDATE,
+    )
+    async with served_provider(provider) as (client, _):
+        result = await client.ImportSession(request)
+        assert result.WhichOneof("result") == "failure"
+        assert result.failure.upstream_http_status == 429
+        provider.outcome = pb.OperationOutcomeUnknown(
+            credential_rotation_may_have_occurred=True, reason=pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+        )
+        result = await client.ImportSession(request)
+        assert result.WhichOneof("result") == "outcome_unknown"
+        assert result.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+        provider.outcome = pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429)
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.ImportSession(request)
+        assert error.value.code() == grpc.StatusCode.INTERNAL
 
 
 async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> None:
