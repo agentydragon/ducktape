@@ -48,6 +48,7 @@ def _post_json(origin: str, path: str, payload: dict[str, Any]) -> dict[str, Any
     with urllib.request.urlopen(request, timeout=240) as response:
         assert response.status == 200
         assert "application/json" in response.headers["content-type"]
+        assert response.headers["cache-control"] == "no-store"
         return cast(dict[str, Any], json.loads(response.read().decode()))
 
 
@@ -55,6 +56,7 @@ def _get_json(origin: str, path: str) -> dict[str, Any]:
     with urllib.request.urlopen(f"{origin}{path}", timeout=15) as response:
         assert response.status == 200
         assert "application/json" in response.headers["content-type"]
+        assert response.headers["cache-control"] == "no-store"
         return cast(dict[str, Any], json.loads(response.read().decode()))
 
 
