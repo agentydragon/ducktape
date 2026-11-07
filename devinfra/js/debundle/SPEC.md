@@ -3027,6 +3027,9 @@ or reused allocation sites, holes, unknown or multiple receivers, unsettled
 descriptors, and accessors remain conservative. This is a root-initializer
 read only: it does not admit numeric element reads, callable/provider/retained
 queries, or new array mutation behavior.
+The length cell shares a uniquely eager array's existing birth proof against
+older opaque heap operations. An intervening opaque operation or a repeated
+allocation site retains the conservative frontier.
 A provider query starts
 with scoped opaque parameters and an empty private heap. Parameters,
 instantiated locals and checked private `var` captures can supply binding
