@@ -143,7 +143,7 @@ func New(
 }
 
 // Methods admits callers of the Environment Runtime proxy and the typed execution API. Only the Sandbox
-// controller may quiesce the Environment Runtime; with no controller configured, nobody may.
+// controller may quiesce or change Firecracker suspension admission; with no controller configured, nobody may.
 func (g *Gateway) Methods() auth.Methods {
 	callers := auth.Accounts(g.callerAuth, g.config.CallerAccounts)
 	dispatcher := auth.Accounts(g.callerAuth, []auth.Account{g.config.DispatcherAccount})
@@ -161,6 +161,8 @@ func (g *Gateway) Methods() auth.Methods {
 		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName: dispatcher,
 		environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:         dispatcher,
 		environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:               auth.Accounts(g.callerAuth, controllers),
+		environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName:        auth.Accounts(g.callerAuth, controllers),
+		environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName:       auth.Accounts(g.callerAuth, controllers),
 		executorpb.Executor_OpenSession_FullMethodName:                               executors,
 		executorpb.Executor_StartProcess_FullMethodName:                              executors,
 		executorpb.Executor_ReadProcess_FullMethodName:                               executors,

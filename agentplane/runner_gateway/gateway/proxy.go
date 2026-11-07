@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 var identityMetadataKeys = []string{
@@ -99,6 +100,22 @@ func (p *environmentRuntimeProxy) Quiesce(ctx context.Context, request *sessionp
 		return nil, err
 	}
 	return connection.runner.Quiesce(ctx, request)
+}
+
+func (p *environmentRuntimeProxy) PrepareSuspend(ctx context.Context, request *environmentruntimepb.PrepareSuspendRequest) (*emptypb.Empty, error) {
+	connection, err := p.connection(ctx, false, true)
+	if err != nil {
+		return nil, err
+	}
+	return connection.runner.PrepareSuspend(ctx, request)
+}
+
+func (p *environmentRuntimeProxy) ResumeAdmission(ctx context.Context, request *environmentruntimepb.ResumeAdmissionRequest) (*emptypb.Empty, error) {
+	connection, err := p.connection(ctx, false, true)
+	if err != nil {
+		return nil, err
+	}
+	return connection.runner.ResumeAdmission(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {

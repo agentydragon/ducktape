@@ -157,6 +157,7 @@ class K3s:
         self.kubeconfig = work / "kubeconfig"
         self.data_dir = Path("/var/lib/k3s-env")
         self.node_ip = node_ip()
+        self._database_cleanup = contextlib.ExitStack()
         # CRI publishes an imported image's config-ID alias before its pinned tag.
         self._fixture_image_ids: set[str] = set()
 
@@ -198,20 +199,35 @@ class K3s:
         )
 
     @tracer.start_as_current_span("system_test.k3s.start")
-    def start(self, *, layers_in_memory: bool, detached: bool = False) -> subprocess.Popen[bytes]:
+    def start(
+        self,
+        *,
+        layers_in_memory: bool,
+        preserve_image_store: bool = True,
+        database_in_memory: bool = False,
+        detached: bool = False,
+    ) -> subprocess.Popen[bytes]:
         if os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") == "1":
             _prepare_docker_namespaces()
         _reset_previous_stack(self.data_dir)
         _shadow_kernel_sysctls()
+        if database_in_memory:
+            # Control-plane commits must not share the bulk guest-disk write queue.
+            database = self.data_dir / "server/db"
+            database.mkdir(parents=True)
+            run("mount", "-t", "tmpfs", "-o", "size=256m", "tmpfs", str(database))
+            self._database_cleanup.callback(run, "umount", str(database))
         # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half of
         # memory, makes a stack that outgrows it fail on a full filesystem rather than on the OOM killer.
         layers = self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"
-        if layers.is_mount() != layers_in_memory:
-            # A recycled runner's last stack kept its layers on the other medium, so containerd's metadata
-            # names snapshots this one would not see: start from an empty store.
+        if not preserve_image_store or layers.is_mount() != layers_in_memory:
+            # Discard metadata and layers together on a fresh start or a medium change;
+            # containerd metadata must never name snapshots this stack cannot see.
             if layers.is_mount():
                 run("umount", str(layers))
-            shutil.rmtree(self.data_dir / "agent/containerd", ignore_errors=True)
+            image_store = self.data_dir / "agent/containerd"
+            if image_store.exists():
+                shutil.rmtree(image_store)
             if layers_in_memory:
                 layers.mkdir(parents=True)
                 run("mount", "-t", "tmpfs", "tmpfs", str(layers))
@@ -281,6 +297,7 @@ class K3s:
                 process.kill()
                 process.wait()
             self._preserve_containerd_log()
+            self._database_cleanup.close()
             raise
         return process
 
@@ -400,6 +417,7 @@ class K3s:
         k3s instead would block containerd. Preserve its separate log before the cleanup process starts."""
         process.terminate()
         process.wait(timeout=STOP_TIMEOUT_SECONDS)
+        self._database_cleanup.close()
         self.cleanup_stopped()
 
     def cleanup_stopped(self) -> None:

@@ -5152,6 +5152,9 @@ spec:
             capabilities:
               drop:
                 - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
           volumeMounts:
             - mountPath: /var/run/agentplane-egress
               name: egress-token
@@ -6323,7 +6326,14 @@ rules:
       - list
       - watch
       - create
+      - update
       - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods/proxy
+    verbs:
+      - get
   - apiGroups:
       - cert-manager.io
     resources:

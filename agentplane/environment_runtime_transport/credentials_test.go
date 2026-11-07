@@ -475,6 +475,68 @@ func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
 	})
 }
 
+func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "workload-credential")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	short := ca.IssueWithValidity(t, runnerURI, now.Add(-time.Minute), now.Add(4*time.Second), x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth)
+	rotated := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth)
+	gateway := ca.IssueWithUsage(t, environment_runtime_transport.GatewayURI, x509.ExtKeyUsageServerAuth)
+	rootDER := readCertificateDER(t, ca.RootFile)
+	workloadServer := newWorkloadAPITestServer(t, workloadX509SVID(t, short, runnerURI, rootDER), rootDER)
+	opened, err := (environment_runtime_transport.Security{
+		Mode: environment_runtime_transport.MutualTLS,
+		TLS:  &environment_runtime_transport.Config{WorkloadAPISocket: workloadServer.endpoint},
+	}).Open(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	clientCredentials, err := opened.ClientCredentials(environment_runtime_transport.GatewayURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCredentials, err := gateway.ServerCredentials(runnerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortLeaf, err := x509.ParseCertificate(readCertificateDER(t, short.CertFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotatedDER := readCertificateDER(t, rotated.CertFile)
+	assertGRPCClientReconnectsAfterExpiry(t, clientCredentials, serverCredentials, shortLeaf.NotAfter, func() {
+		workloadServer.updates <- workloadX509SVID(t, rotated, runnerURI, rootDER)
+		time.Sleep(100 * time.Millisecond)
+		waitForWorkloadClientHandshake(t, clientCredentials, serverCredentials, rotatedDER)
+	})
+	if err := opened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	workloadServer.waitForStreamsToClose(t)
+}
+
+func waitForWorkloadClientHandshake(t *testing.T, client, server credentials.TransportCredentials, want []byte) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, serverInfo, err := handshake(t, client, server)
+		if err != nil {
+			t.Fatalf("handshake during Workload API rotation: %v", err)
+		}
+		if got := peerLeaf(t, serverInfo); bytes.Equal(got.Raw, want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Workload API source did not rotate the presented client certificate")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func assertGRPCClientReconnectsAfterExpiry(
 	t *testing.T,
 	clientCredentials, serverCredentials credentials.TransportCredentials,

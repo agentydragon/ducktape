@@ -9,6 +9,8 @@ import "agentplane/proto/event_log.proto";
 import "agentplane/proto/session.proto";
 import "agentplane/proto/environment_runtime_state.proto";
 import "agentplane/proto/identity.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
 
 // Served by Environment Runtime over its configured control transport. Sessions are durable;
 // process startup, native readiness and reconciliation are owned by the environment services.
@@ -29,6 +31,12 @@ service EnvironmentRuntime {
   // and seal every journal at its final cursor. Idempotent: a repeat returns the same cursors with
   // each Session's current `flushed`, so teardown repeats it until every Session is flushed.
   rpc Quiesce(agentplane.proto.QuiesceRequest) returns (agentplane.proto.QuiesceResponse);
+  // Atomically close admission only if the Runtime is still in the observed idle period.
+  // This preserves RAM and Sessions for a Firecracker checkpoint; it does not quiesce.
+  rpc PrepareSuspend(PrepareSuspendRequest) returns (google.protobuf.Empty);
+  // Release the admission gate after a completed checkpoint and actual guest resume, or
+  // invalidate an attempt rejected before checkpoint. A newer generation supersedes old RPCs.
+  rpc ResumeAdmission(ResumeAdmissionRequest) returns (google.protobuf.Empty);
   // One RPC per command: the same `command_id` with the same operation and payload returns the
   // existing admission, and under another operation or payload it fails with `ALREADY_EXISTS`.
   // A `command_id` is unique across these operations.
@@ -52,6 +60,15 @@ message WatchStateResponse {
   string environment_runtime_boot_id = 3;
   uint64 connection_epoch = 4;
   agentplane.proto.EnvironmentRuntimeFacts facts = 5;
+}
+
+message PrepareSuspendRequest {
+  int64 generation = 1;  // positive, monotonically increasing per Sandbox incarnation
+  google.protobuf.Timestamp if_idle_since = 2;
+}
+
+message ResumeAdmissionRequest {
+  int64 generation = 1;
 }
 
 message CreateSessionRequest {

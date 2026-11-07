@@ -1,0 +1,59 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "firecracker",
+    srcs = [
+        "thaw.go",
+        "vsock_linux.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/firecracker",
+    deps = [
+        ":management_go_proto",
+        "//agentplane/firecracker/vsock",
+        "//agentplane/firecracker/workloadidentity",
+        "@com_github_coreos_go_systemd_v22//daemon",
+        "@com_github_mdlayher_vsock//:vsock",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_x_sys//unix",
+    ],
+)
+
+go_test(
+    name = "firecracker_test",
+    srcs = ["thaw_test.go"],
+    embed = [":firecracker"],
+    deps = [
+        ":management_go_proto",
+        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/firecracker/workloadidentity",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+    ],
+)
+
+proto_library(
+    name = "management_proto",
+    srcs = ["management.proto"],
+)
+
+go_proto_library(
+    name = "management_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb",
+    proto = ":management_proto",
+)

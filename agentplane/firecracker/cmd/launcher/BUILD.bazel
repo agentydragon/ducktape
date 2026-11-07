@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "launcher",
+    srcs = ["main.go"],
+    pure = "on",
+    visibility = ["//agentplane/firecracker:__pkg__"],
+    deps = ["//agentplane/firecracker"],
+)

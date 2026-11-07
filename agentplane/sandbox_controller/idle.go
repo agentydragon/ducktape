@@ -2,6 +2,7 @@ package sandboxcontroller
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -74,11 +75,13 @@ type idleCheck struct {
 }
 
 // suspendIfIdle suspends a Sandbox that is to run once its runner has been idle for `spec.idleSuspendAfter`. It
-// asks the runner to quiesce only if it is still idle since the instant the timer ran on, so work that arrives
+// asks Pod and VM runners to quiesce only if still idle since the instant the timer ran on, so work that arrives
 // after the decision makes the runner refuse instead of draining a Sandbox with new work. Once the runner accepts,
 // the suspension is set on the in-memory status for the write that follows, at the wake generation read before the
 // call: a wake that lands meanwhile fails that write on the stale resource version, and the next reconcile finds
 // the runner in lameduck, which it replaces rather than leaving the wake unanswered.
+// Firecracker instead persists an attempt before convergence conditionally fences Runtime admission
+// and checkpoints RAM, preserving Sessions through the matching resume.
 func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (idleCheck, error) {
 	key := client.ObjectKeyFromObject(sandbox)
 	pod := w.incarnation()
@@ -89,6 +92,28 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
 		return idleCheck{}, err
+	}
+	if isFirecrackerPod(w.pod) {
+		if firecrackerSuspending(sandbox) {
+			return idleCheck{}, nil
+		}
+		// The restored guest can report running before the Gateway has reconnected. A Lease
+		// from before checkpoint must never trigger immediate re-suspension on stale idle facts.
+		before, err := strconv.ParseInt(w.pod.Annotations[FirecrackerSuspendEpochAnnotation], 10, 32)
+		if w.pod.Annotations[FirecrackerRunningAnnotation] != "true" ||
+			(w.pod.Annotations[FirecrackerSuspendEpochAnnotation] != "" && (err != nil || leaseTransitions(&lease) <= int32(before))) {
+			r.idle.forget(key)
+			return idleCheck{}, nil
+		}
+		if r.FirecrackerStatus == nil {
+			r.idle.forget(key)
+			return idleCheck{}, nil
+		}
+		state, err := r.FirecrackerStatus.Read(ctx, w.pod)
+		if err != nil || state.PodUID != string(w.pod.UID) || state.Phase != "running" {
+			r.idle.forget(key)
+			return idleCheck{}, nil
+		}
 	}
 	facts, err := sandboxlease.DecodeFacts(lease.Name, lease.Annotations, string(pod.UID))
 	if err != nil {
@@ -112,6 +137,9 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 	if remaining := due.Sub(now); remaining > 0 {
 		deadline := idleSuspendStatusTime(due)
 		return idleCheck{recheck: remaining, suspendAt: &deadline}, nil
+	}
+	if isFirecrackerPod(w.pod) {
+		return idleCheck{}, r.beginFirecrackerSuspend(ctx, sandbox, *facts.IdleSince)
 	}
 	logger := ctrl.LoggerFrom(ctx)
 	result, err := r.Quiescer.Quiesce(ctx, sandbox, facts.IdleSince)

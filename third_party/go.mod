@@ -114,6 +114,9 @@ require github.com/zitadel/oidc/v3 v3.51.16
 // Direct dependencies for agentplane/environment_runtime_transport (SPIFFE mTLS between Environment Runtime and Gateway)
 require github.com/spiffe/go-spiffe/v2 v2.7.0
 
+// Native AF_VSOCK listener used by the Firecracker guest management service.
+require github.com/mdlayher/vsock v1.3.0
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -276,6 +279,7 @@ require (
 	github.com/gobuffalo/flect v1.0.3 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
+	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/lib/pq v1.10.9
 	github.com/mailru/easyjson v0.9.0 // indirect

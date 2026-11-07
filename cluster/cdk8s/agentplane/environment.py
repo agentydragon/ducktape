@@ -219,6 +219,8 @@ class Environment:
     vm_storage_class: str | None = None
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
+    # Opt-in: trusted KVM launcher with same-Pod RAM checkpoints.
+    firecracker_sandboxes: bool = False
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
     isolated_codex_executor: bool = True
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
@@ -239,6 +241,8 @@ class Environment:
     harness_inherited_env: Sequence[str] = ("TZDIR",)
 
     def __post_init__(self) -> None:
+        if self.firecracker_sandboxes and self.vm_resources is None:
+            raise ValueError("firecracker_sandboxes requires vm_resources")
         if self.vm_storage_class is not None:
             if not self.vm_storage_class:
                 raise ValueError("vm_storage_class cannot be empty")

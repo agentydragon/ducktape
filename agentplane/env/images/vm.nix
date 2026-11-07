@@ -22,23 +22,54 @@
   pkgs,
   pkgsUnstable,
   preCommitPackages,
+  firecrackerGuest ? false,
   ...
 }:
 let
   guestContract = builtins.fromJSON (builtins.readFile ./vm_guest_contract.json);
-  stateDir = guestContract.state.mount;
-  workspaceDir = guestContract.disks.workspace.mount;
+  firecrackerContract = builtins.fromJSON (builtins.readFile ./firecracker_guest_contract.json);
+  stateDisk = if firecrackerGuest then firecrackerContract.disks.state else guestContract.state;
+  workspaceDisk =
+    if firecrackerGuest then firecrackerContract.disks.workspace else guestContract.disks.workspace;
+  runtimeDisk =
+    if firecrackerGuest then firecrackerContract.disks.runtime else guestContract.disks.runtime;
+  configDisk =
+    if firecrackerGuest then firecrackerContract.disks.config else guestContract.disks.config;
+  launchDisk =
+    if firecrackerGuest then firecrackerContract.disks.launch else guestContract.disks.launch;
+  trustDisk =
+    if firecrackerGuest then
+      firecrackerContract.disks.egress_trust
+    else
+      guestContract.disks.egress_trust;
+  stateDir = stateDisk.mount;
+  workspaceDir = workspaceDisk.mount;
   runtimeDir = "/run/agentplane";
-  environmentDir = guestContract.disks.runtime.mount;
-  configDir = guestContract.disks.config.mount;
+  environmentDir = runtimeDisk.mount;
+  configDir = configDisk.mount;
   runtimeConfigFile = "${configDir}/${guestContract.files.runtime_config}";
   runtimeTLS = guestContract.environment_runtime_tls;
   runtimeTrust = guestContract.environment_runtime_trust;
   # ConfigMap-backed disks carry immutable Runtime configuration, launch identity and egress trust.
-  seedDisks = {
+  kubeVirtSeedDisks = {
     config = guestContract.disks.config;
     launch = guestContract.disks.launch;
     trust = guestContract.disks.egress_trust;
+  };
+  diskDevice =
+    disk: if firecrackerGuest then disk.device else "/dev/disk/by-id/virtio-${disk.serial}";
+  stateDevice = if firecrackerGuest then stateDisk.device else stateDisk.volume_name;
+  workspaceDevice = workspaceDisk.device;
+  readOnlyFilesystem = disk: {
+    device = diskDevice disk;
+    fsType = disk.filesystem;
+    noCheck = true;
+    options = [
+      "ro"
+      "nosuid"
+      "nodev"
+      "noexec"
+    ];
   };
   fileSystemMatches =
     path: device: fsType:
@@ -46,19 +77,25 @@ let
     && config.fileSystems.${path}.device == device
     && config.fileSystems.${path}.fsType == fsType;
   guestMountsMatchContract =
-    fileSystemMatches stateDir guestContract.state.volume_name guestContract.state.filesystem
-    &&
-      fileSystemMatches workspaceDir guestContract.disks.workspace.device
-        guestContract.disks.workspace.filesystem
-    &&
-      fileSystemMatches environmentDir "/dev/disk/by-id/virtio-${guestContract.disks.runtime.serial}"
-        guestContract.disks.runtime.filesystem
+    fileSystemMatches stateDir stateDevice stateDisk.filesystem
+    && fileSystemMatches workspaceDir workspaceDevice workspaceDisk.filesystem
+    && fileSystemMatches environmentDir (diskDevice runtimeDisk) runtimeDisk.filesystem
     && fileSystemMatches runtimeTLS.private_mount runtimeTLS.volume_name runtimeTLS.filesystem
     && fileSystemMatches runtimeTrust.mount runtimeTrust.volume_name runtimeTrust.filesystem
-    && lib.all (
-      disk: fileSystemMatches disk.mount "/dev/disk/by-id/virtio-${disk.serial}" disk.filesystem
-    ) (builtins.attrValues seedDisks)
+    && lib.all (disk: fileSystemMatches disk.mount (diskDevice disk) disk.filesystem) (
+      builtins.attrValues kubeVirtSeedDisks
+    )
     && lib.elem "d ${builtins.dirOf runtimeTLS.private_mount} 0700 root root -" config.systemd.tmpfiles.rules
+    && lib.elem "L+ ${runtimeTLS.runtime_path} - - - - ${runtimeTLS.private_mount}" config.systemd.tmpfiles.rules;
+  firecrackerMountsMatchContract =
+    lib.all (disk: fileSystemMatches disk.mount disk.device disk.filesystem) (
+      builtins.attrValues firecrackerContract.disks
+    )
+    && !(builtins.hasAttr runtimeTLS.private_mount config.fileSystems)
+    && !(builtins.hasAttr runtimeTrust.mount config.fileSystems)
+    && lib.elem "d ${builtins.dirOf runtimeTLS.private_mount} 0700 root root -" config.systemd.tmpfiles.rules
+    && lib.elem "d ${runtimeTLS.private_mount} 0700 root root -" config.systemd.tmpfiles.rules
+    && lib.elem "d ${runtimeTrust.mount} 0755 root root -" config.systemd.tmpfiles.rules
     && lib.elem "L+ ${runtimeTLS.runtime_path} - - - - ${runtimeTLS.private_mount}" config.systemd.tmpfiles.rules;
   # virtiofsd's identity (above); the Go Runtime runs harnesses as this user.
   agentUser = "agent";
@@ -119,18 +156,18 @@ in
 {
   assertions = [
     {
-      assertion = guestMountsMatchContract;
+      assertion = if firecrackerGuest then firecrackerMountsMatchContract else guestMountsMatchContract;
       message = "Agentplane VM guest mounts and private TLS path must match vm_guest_contract.json";
     }
   ];
 
-  imports = [ ./../../../nix/nixos/modules/vm-hardware.nix ];
+  imports = lib.optionals (!firecrackerGuest) [ ./../../../nix/nixos/modules/vm-hardware.nix ];
 
-  networking.hostName = "agentplane-environment-vm";
+  networking.hostName = lib.mkIf (!firecrackerGuest) "agentplane-environment-vm";
   # The Runner Gateway initiates mTLS gRPC connections to the guest's runner listener.
   networking.firewall.allowedTCPPorts = [ 9090 ];
   services.openssh.enable = lib.mkForce false;
-  services.qemuGuest.enable = true;
+  services.qemuGuest.enable = lib.mkIf firecrackerGuest (lib.mkForce false);
   systemd.packages = [ supervisionUnits ];
   # Native services share exec-server sockets and temporary files with their harnesses.
   boot.tmp.useTmpfs = true;
@@ -152,7 +189,7 @@ in
   # disk-image.nix cannot pass copyChannel, whose default puts a second nixpkgs source in the image.
   image.modules.qemu-efi =
     { config, pkgs, ... }:
-    {
+    lib.mkIf (!firecrackerGuest) {
       system.build.image = lib.mkForce (
         import (pkgs.path + "/nixos/lib/make-disk-image.nix") {
           inherit lib config pkgs;
@@ -163,12 +200,18 @@ in
         }
       );
     };
-  boot.kernelModules = [ "virtiofs" ];
+  boot.kernelModules = lib.optionals (!firecrackerGuest) [ "virtiofs" ];
   boot.kernelParams = [
     "console=ttyS0,115200n8"
     # The root disk is discarded at every stop and the workspace is a journalled ext4, so a boot-time
     # check has nothing to repair; it costs seconds of seek-bound reads on a cold node.
     "fsck.mode=skip"
+  ]
+  ++ lib.optionals firecrackerGuest [
+    "root=${firecrackerContract.disks.root.device}"
+    "rootfstype=${firecrackerContract.disks.root.filesystem}"
+    "rootwait"
+    "rw"
   ];
   # Nobody is at the boot menu; its countdown is the first seconds of every start.
   boot.loader.timeout = 0;
@@ -232,98 +275,143 @@ in
   # an SSH key just to satisfy host defaults.
   users.allowNoPasswordLogin = true;
 
-  fileSystems = {
-    # The KubeVirt filesystem named `state` is the virtiofs tag.
-    ${stateDir} = {
-      device = guestContract.state.volume_name;
-      fsType = guestContract.state.filesystem;
-      noCheck = true;
-      options = [
-        "noatime"
-        "nodev"
-        "nosuid"
-      ];
-    };
-    ${workspaceDir} = {
-      device = guestContract.disks.workspace.device;
-      fsType = guestContract.disks.workspace.filesystem;
-      options = [
-        "noatime"
-        "nodev"
-        "nosuid"
-      ];
-      autoFormat = true;
-      autoResize = false;
-    };
-    # The Runtime disk is an erofs image on the containerDisk of serial `agentplane-runner`. Unlike
-    # the seed disks below it is executable. `nofail` leaves a missing disk to the runner, which
-    # requires its mount.
-    ${environmentDir} = {
-      device = "/dev/disk/by-id/virtio-${guestContract.disks.runtime.serial}";
-      fsType = guestContract.disks.runtime.filesystem;
-      noCheck = true;
-      options = [
-        "ro"
-        "nosuid"
-        "nodev"
-        "nofail"
-      ];
-    };
-    # KubeVirt Secret virtiofs mounts do not expose defaultMode, so keep the TLS key behind a
-    # root-only parent directory. The runner runs as root; harnesses run as the unprivileged agent.
-    ${runtimeTLS.private_mount} = {
-      device = runtimeTLS.volume_name;
-      fsType = runtimeTLS.filesystem;
-      noCheck = true;
-      options = [
-        "ro"
-        "nosuid"
-        "nodev"
-        "noexec"
-        "nofail"
-        "x-systemd.requires=systemd-tmpfiles-setup.service"
-      ];
-    };
-    ${runtimeTrust.mount} = {
-      device = runtimeTrust.volume_name;
-      fsType = runtimeTrust.filesystem;
-      noCheck = true;
-      options = [
-        "ro"
-        "nosuid"
-        "nodev"
-        "noexec"
-        "nofail"
-        "x-systemd.requires=systemd-tmpfiles-setup.service"
-      ];
-    };
-  }
-  # KubeVirt builds a ConfigMap disk as an ISO 9660 image with Rock Ridge names. `nofail` leaves a
-  # missing disk to the runner, which requires its mount, rather than to local-fs.target.
-  // lib.mapAttrs' (
-    _: disk:
-    lib.nameValuePair disk.mount {
-      device = "/dev/disk/by-id/virtio-${disk.serial}";
-      fsType = disk.filesystem;
-      noCheck = true;
-      options = [
-        "ro"
-        "nosuid"
-        "nodev"
-        "noexec"
-        "nofail"
-      ];
-    }
-  ) seedDisks;
+  fileSystems =
+    if firecrackerGuest then
+      {
+        ${firecrackerContract.disks.root.mount} = {
+          device = firecrackerContract.disks.root.device;
+          fsType = firecrackerContract.disks.root.filesystem;
+          noCheck = true;
+          options = [ "noatime" ];
+        };
+        ${stateDir} = {
+          device = stateDevice;
+          fsType = stateDisk.filesystem;
+          noCheck = true;
+          options = [
+            "noatime"
+            "nodev"
+            "nosuid"
+          ];
+        };
+        ${workspaceDir} = {
+          device = workspaceDevice;
+          fsType = workspaceDisk.filesystem;
+          noCheck = true;
+          options = [
+            "noatime"
+            "nodev"
+            "nosuid"
+          ];
+        };
+        ${environmentDir} = {
+          device = diskDevice runtimeDisk;
+          fsType = runtimeDisk.filesystem;
+          noCheck = true;
+          options = [
+            "ro"
+            "nosuid"
+            "nodev"
+          ];
+        };
+        ${configDisk.mount} = readOnlyFilesystem configDisk;
+        ${launchDisk.mount} = readOnlyFilesystem launchDisk;
+        ${trustDisk.mount} = readOnlyFilesystem trustDisk;
+      }
+    else
+      {
+        # The KubeVirt filesystem named `state` is the virtiofs tag.
+        ${stateDir} = {
+          device = stateDevice;
+          fsType = stateDisk.filesystem;
+          noCheck = true;
+          options = [
+            "noatime"
+            "nodev"
+            "nosuid"
+          ];
+        };
+        ${workspaceDir} = {
+          device = workspaceDevice;
+          fsType = workspaceDisk.filesystem;
+          options = [
+            "noatime"
+            "nodev"
+            "nosuid"
+          ];
+          autoFormat = true;
+          autoResize = false;
+        };
+        # The Runtime disk is an erofs image on the containerDisk of serial `agentplane-runner`. Unlike
+        # the seed disks below it is executable. `nofail` leaves a missing disk to the runner, which
+        # requires its mount.
+        ${environmentDir} = {
+          device = diskDevice runtimeDisk;
+          fsType = runtimeDisk.filesystem;
+          noCheck = true;
+          options = [
+            "ro"
+            "nosuid"
+            "nodev"
+            "nofail"
+          ];
+        };
+        # KubeVirt Secret virtiofs mounts do not expose defaultMode, so keep the TLS key behind a
+        # root-only parent directory. The runner runs as root; harnesses run as the unprivileged agent.
+        ${runtimeTLS.private_mount} = {
+          device = runtimeTLS.volume_name;
+          fsType = runtimeTLS.filesystem;
+          noCheck = true;
+          options = [
+            "ro"
+            "nosuid"
+            "nodev"
+            "noexec"
+            "nofail"
+            "x-systemd.requires=systemd-tmpfiles-setup.service"
+          ];
+        };
+        ${runtimeTrust.mount} = {
+          device = runtimeTrust.volume_name;
+          fsType = runtimeTrust.filesystem;
+          noCheck = true;
+          options = [
+            "ro"
+            "nosuid"
+            "nodev"
+            "noexec"
+            "nofail"
+            "x-systemd.requires=systemd-tmpfiles-setup.service"
+          ];
+        };
+      }
+      // lib.mapAttrs' (
+        _: disk:
+        lib.nameValuePair disk.mount {
+          device = diskDevice disk;
+          fsType = disk.filesystem;
+          noCheck = true;
+          options = [
+            "ro"
+            "nosuid"
+            "nodev"
+            "noexec"
+            "nofail"
+          ];
+        }
+      ) kubeVirtSeedDisks;
 
   # Ownership, the setgid mode and inherited harness access are persistent tmpfiles policy rather
   # than imperative chown/chmod/setfacl commands. The service below reapplies it after the mount.
   systemd.tmpfiles.rules = [
+    # Runtime journals stay root-owned; the shared Codex process runs as agent.
+    "d ${stateDir}/codex 0700 ${agentUser} ${agentUser} -"
     "d ${workspaceDir} 2770 ${agentUser} ${agentUser} -"
     "z ${workspaceDir} 2770 ${agentUser} ${agentUser} -"
     "a+ ${workspaceDir} - - - - d:user:${toString agentId}:rwx,d:group:${toString agentId}:rwx"
     "d ${runtimeDir} 0755 root root -"
     "d ${builtins.dirOf runtimeTLS.private_mount} 0700 root root -"
+    "d ${runtimeTLS.private_mount} 0700 root root -"
     "d ${runtimeTrust.mount} 0755 root root -"
     "d ${runtimeDir}/execution-service 0700 root root -"
     "L+ ${runtimeTLS.runtime_path} - - - - ${runtimeTLS.private_mount}"
@@ -375,13 +463,53 @@ in
     };
   };
 
+  systemd.services.agentplane-firecracker-thaw = lib.mkIf firecrackerGuest {
+    description = "Set guest time and Runtime credentials before enabling guest networking";
+    wantedBy = [ "network-pre.target" ];
+    before = [ "network-pre.target" ];
+    after = [
+      "local-fs.target"
+      "systemd-tmpfiles-setup.service"
+    ];
+    unitConfig.RequiresMountsFor = [
+      environmentDir
+    ];
+    serviceConfig = {
+      Type = "notify";
+      NotifyAccess = "main";
+      ExecStart = "${environmentDir}/bin/agentplane-firecracker-thaw-agent";
+      Restart = "on-failure";
+      RestartSec = 1;
+      User = "root";
+      UMask = "0077";
+      CapabilityBoundingSet = "CAP_SYS_TIME CAP_NET_BIND_SERVICE";
+      AmbientCapabilities = "CAP_SYS_TIME CAP_NET_BIND_SERVICE";
+      NoNewPrivileges = true;
+      ProtectSystem = "strict";
+      ProtectHome = "read-only";
+      ReadWritePaths = [ runtimeTLS.private_mount ];
+      RestrictAddressFamilies = [
+        "AF_UNIX"
+        "AF_VSOCK"
+      ];
+      LockPersonality = true;
+    };
+  };
+
   # The production guest and the real-manager test fixture consume the same Runtime unit policy.
   # Only the Nix store helper path and workspace preparation dependency need a drop-in.
   systemd.services.agentplane-environment-runtime = {
     overrideStrategy = "asDropin";
     wantedBy = [ "multi-user.target" ];
-    requires = [ "agentplane-home-prepare.service" ];
-    after = [ "agentplane-home-prepare.service" ];
+    requires = [
+      "agentplane-home-prepare.service"
+    ]
+    ++ lib.optionals firecrackerGuest [ "agentplane-firecracker-thaw.service" ];
+    bindsTo = lib.optionals firecrackerGuest [ "agentplane-firecracker-thaw.service" ];
+    after = [
+      "agentplane-home-prepare.service"
+    ]
+    ++ lib.optionals firecrackerGuest [ "agentplane-firecracker-thaw.service" ];
     path = [
       pkgs.coreutils
       pkgs.systemd

@@ -1,0 +1,75 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_testonly = True)
+
+pkg_files(
+    name = "boot_files",
+    srcs = [
+        "//agentplane/system_tests/firecracker/guest:init",
+        "//agentplane/system_tests/firecracker/guest:rootfs.ext4",
+        "//agentplane/system_tests/firecracker/kernel:initramfs.cpio",
+        "//agentplane/system_tests/firecracker/kernel:vmlinux",
+    ],
+    attributes = pkg_attributes(mode = "0644"),
+    renames = {
+        "//agentplane/system_tests/firecracker/guest:init": "init",
+        "//agentplane/system_tests/firecracker/guest:rootfs.ext4": "rootfs.ext4",
+        "//agentplane/system_tests/firecracker/kernel:initramfs.cpio": "initramfs.cpio",
+        "//agentplane/system_tests/firecracker/kernel:vmlinux": "vmlinux",
+    },
+)
+
+pkg_tar(
+    name = "boot_tar",
+    srcs = [":boot_files"],
+)
+
+oci_image(
+    name = "boot_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [":boot_tar"],
+    visibility = ["//agentplane/system_tests/suites:__pkg__"],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:infrastructure",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//kubernetes",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "pytest_plugin",
+    srcs = ["pytest_plugin.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        ":runtime",
+        "//agentplane/system_tests/deployment:virtualization",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_runtime",
+    srcs = ["test_runtime.py"],
+    deps = [
+        ":runtime",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/system_tests/vm:infrastructure",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -114,6 +114,10 @@ def _copy(
             for pattern, log_destination in scopes.items():
                 for path in log_root.glob(pattern):
                     _retain(path, log_destination / path.parent.parent.name, opened, streams, files)
+            for path in storage_root.glob(f"pvc-*_{namespace}_*-state/firecracker/firecracker.log"):
+                _retain(
+                    path, destination / "firecracker" / path.parent.parent.name, opened, streams, files, suffix=".log"
+                )
             for launcher in log_root.glob(f"{namespace}_virt-launcher-*"):
                 pod_uid = launcher.name.rsplit("_", 1)[-1]
                 # Keep QEMU's regular serial file independently of virt-tail/CRI forwarding.
@@ -210,6 +214,7 @@ def capture(
     kubevirt_namespace: str,
     destination: Path,
     validate_shutdown: Callable[[], bool],
+    require_shutdown_marker: bool = True,
     require_boot_evidence: bool = False,
     record_shutdown_diagnostic: bool = False,
 ) -> Iterator[None]:
@@ -223,6 +228,7 @@ def capture(
         f"{namespace}_virt-launcher-*/compute/*.log*": destination / "launchers",
         f"{namespace}_virt-launcher-*/egress-sidecar/*.log*": destination / "relays",
         f"{namespace}_virt-launcher-*/virtiofs-*/*.log*": destination / "virtiofs",
+        f"{namespace}_*/environment-runtime/*.log*": destination / "runtimes",
         f"{kubevirt_namespace}_virt-handler-*/virt-handler/*.log*": destination / "handlers",
     }
     stop = threading.Event()
@@ -250,6 +256,7 @@ def capture(
             if validate_shutdown():
                 shutdown_diagnostic.require_orderly_shutdown(report)
         if validate_shutdown():
-            _require_shutdown(destination / "consoles")
+            if require_shutdown_marker:
+                _require_shutdown(destination / "consoles")
             if require_boot_evidence:
                 _require_boot_evidence(destination / "consoles")

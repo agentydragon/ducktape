@@ -7,14 +7,15 @@ in [the egress spec](../egress/SPEC.md).
 
 ## Where things live
 
-| Path                                  | Owns                                                      |
-| ------------------------------------- | --------------------------------------------------------- |
-| [`suites/`](suites/)                  | CI, manual and live test entrypoints                      |
-| [`scenarios/`](scenarios/)            | Behaviors and assertions against a deployment             |
-| [`driver/`](driver/)                  | Session, Sandbox, API, model and concurrency helpers      |
-| [`deployment/`](deployment/README.md) | Fixture charts, workloads and stack lifecycle             |
-| [`k3s/`](k3s/README.md)               | Retained test node, bootstrap, networking and suite macro |
-| [`vm/`](vm/README.md)                 | VM runtime, storage, guest image and evidence             |
+| Path                                    | Owns                                                      |
+| --------------------------------------- | --------------------------------------------------------- |
+| [`suites/`](suites/)                    | CI, manual and live test entrypoints                      |
+| [`scenarios/`](scenarios/)              | Behaviors and assertions against a deployment             |
+| [`driver/`](driver/)                    | Session, Sandbox, API, model and concurrency helpers      |
+| [`deployment/`](deployment/README.md)   | Fixture charts, workloads and stack lifecycle             |
+| [`k3s/`](k3s/README.md)                 | Retained test node, bootstrap, networking and suite macro |
+| [`firecracker/`](firecracker/README.md) | Firecracker lifecycle adapter and KVM acceptance          |
+| [`vm/`](vm/README.md)                   | VM runtime, storage, guest image and evidence             |
 
 Offline tests stay beside the helper they exercise. The deployment guide owns stack setup and
 artifacts; the VM guide owns guest details. The suite BUILD files and test modules are the source
@@ -203,3 +204,5 @@ kubectl -n agentplane-staging get sandboxes.agentplane.allegedly.works
 A killed test process cannot run fixture teardown. The fixture cleans up Sandboxes it created, but
 a name prefix alone is not safe for an automated sweep because a user could choose the same prefix.
 Add a suite-owned label or namespace before implementing that cleanup.
+
+The [Firecracker CI suite](firecracker/README.md) runs `//agentplane/system_tests/suites:test_firecracker` on the dedicated KVM worker. It verifies same-Pod RAM and native process continuity through suspend/resume with streamed Runtime credential renewal. Cilium enforcement is outside this bare-k3s fixture.

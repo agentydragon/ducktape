@@ -3,6 +3,7 @@ package runtime
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
@@ -123,6 +125,11 @@ type Runtime struct {
 	bootID                 string
 	supervisor             *supervision.Supervisor
 	admissionOpen          bool
+	// A RAM-preserved Firecracker checkpoint closes new work without sealing Sessions.
+	// Its generation is also the tombstone for late PrepareSuspend calls after resume.
+	suspendGeneration      int64
+	suspendIdleSinceMicros int64
+	suspendPrepared        bool
 	executorProxy          executorpb.ExecutorServer
 	executionOwner         *executionLifetime
 	activeAdmissions       uint64
@@ -159,6 +166,7 @@ type Runtime struct {
 	closeOnce              sync.Once
 	closeDone              chan struct{}
 	closeErr               error
+	security               *environmentruntimetransport.OpenedSecurity
 }
 
 func New(config Config) (*Runtime, error) {
@@ -175,8 +183,8 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.Launch.Sandbox.Namespace == "" || config.Launch.Sandbox.Name == "" || config.Launch.Sandbox.UID == "" {
 		return nil, errors.New("environment Runtime requires Sandbox namespace, name and UID")
 	}
-	if err := configuration.ValidateControlIdentity(config.Control, config.Launch.Sandbox); err != nil {
-		return nil, err
+	if err := config.Control.Security.Validate(); err != nil {
+		return nil, fmt.Errorf("Runner control security: %w", err)
 	}
 	if config.Supervision != "pid1" && config.Supervision != "systemd" {
 		return nil, errors.New("environment Runtime requires explicit pid1 or systemd supervision")
@@ -196,11 +204,33 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if err := retained.EnsureDirectory(config.StateDir); err != nil {
 		return nil, err
 	}
+	security, err := config.Control.Security.Open(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("open Runner control security: %w", err)
+	}
+	securityTransferred := false
+	defer func() {
+		if !securityTransferred {
+			_ = security.Close()
+		}
+	}()
+	if config.Control.Security.Mode != environmentruntimetransport.Insecure {
+		identity, err := security.LocalIdentity(x509.ExtKeyUsageServerAuth)
+		if err != nil {
+			return nil, fmt.Errorf("Runner control certificate: %w", err)
+		}
+		namespace, sandboxUID, _, err := environmentruntimetransport.ParseEnvironmentRuntimeURI(identity)
+		if err != nil {
+			return nil, fmt.Errorf("Runner control certificate: %w", err)
+		}
+		if namespace != config.Launch.Sandbox.Namespace || sandboxUID != config.Launch.Sandbox.UID {
+			return nil, errors.New("Runner control certificate does not name the configured Sandbox namespace and UID")
+		}
+	}
 	// Acquire the backing store before preparing any native supervision. The
 	// BoltDB lock excludes another Runtime for the lifetime of this state.
 	lifecycleState := injectedState
 	var lifecycleStore io.Closer
-	var err error
 	if lifecycleState == nil {
 		lifecycleState, lifecycleStore, err = cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), bootstrap.EventRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration(), cosistate.EnvironmentSealRegistration())
 		if err != nil {
@@ -229,6 +259,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	r := &Runtime{
 		config: config, deps: deps, state: environmentState, supervisor: supervisor,
+		security:       security,
 		lifecycleState: lifecycleState, lifecycleStore: lifecycleStore, lifecycleCancel: cancelRuntime, lifecycleDone: make(chan struct{}), lifecycleContext: runtimeCtx,
 		bootID: uuid.NewString(), changes: make(chan struct{}), fatal: make(chan error, 1), bootstrapWait: deps.waitBootstrap,
 		desired: lifecycle.EnvironmentDesired{Mode: lifecycle.Inactive, Generation: 1}, closeDone: make(chan struct{}),
@@ -246,12 +277,13 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	}
 	r.control = control.New(control.Config{
 		SandboxUID: config.Launch.Sandbox.UID, BootID: r.bootID,
-		ListenAddress: config.Control.ListenAddress, Security: config.Control.Security,
+		ListenAddress: config.Control.ListenAddress, Security: security,
 		IsClosing: r.isClosing, AdoptIncarnation: r.adoptIncarnation,
 		Facts: r.facts, Changes: r.changesSince,
 		Interceptor: config.ControlInterceptor,
 	}, r)
 	r.executorProxy = newExecutionProxy(r)
+	securityTransferred = true
 	return r, nil
 }
 
@@ -546,6 +578,9 @@ func (r *Runtime) joinClose() error {
 		if err := r.supervisor.FenceNamespace(context.Background()); err != nil {
 			return fmt.Errorf("fence Pod PID namespace: %w", err)
 		}
+	}
+	if r.security != nil {
+		sessionLossErr = errors.Join(sessionLossErr, r.security.Close())
 	}
 	if r.lifecycleStore != nil {
 		sessionLossErr = errors.Join(sessionLossErr, r.lifecycleStore.Close())
