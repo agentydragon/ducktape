@@ -258,6 +258,11 @@ passing experiments remain validation of collection rather than a shutdown repai
 
 ## Uncached control after observer merges
 
+An additional five-run control on source `c9c703f830462bbadec825c8643554903d459b2c` is
+in [five_run_full_suite_control.md](five_run_full_suite_control.md). All fifteen guests
+completed shutdown; run 2 failed only in the exec-server/test teardown path, not guest
+shutdown.
+
 On devel commit `57305db4d39334d78cfdaec858791dda69325a4a`,
 [six uncached full-suite runs](https://app.buildbuddy.io/invocation/f7a6fc69-875c-4cf1-994e-2fb36e1ddda5)
 with the merged guest and host observers produced five passes and one failure. The failure
