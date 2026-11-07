@@ -349,8 +349,8 @@ flowchart LR
 
 Runner control stays on the Gateway's direct mTLS connection; its private key and control calls do
 not pass through HTTP interception. Separately, the egress sidecar relays runner HTTP(S) traffic to
-the central proxy. In explicit `mtls` sidecar mode, the sidecar presents the same per-incarnation
-Runner certificate to the proxy's TLS-enabled forward listener under
+the central proxy. With TLS transport and SPIFFE authentication selected, the sidecar presents the
+same per-incarnation Runner certificate to the proxy's TLS-enabled forward listener under
 `spiffe://agentplane/environment-runtime/...`; it sends the projected workload bearer separately
 as destination context for legacy authenticated-workload credential substitution. The Certificate
 carries server auth for the Runtime's control listener and client auth for this hop.
