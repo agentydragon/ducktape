@@ -3699,9 +3699,22 @@ before arguments and retain conservative fallback; they acquire no invocation
 receipt. This does not supply skipped-call coverage or extend assertions scoped
 to ordinary call syntax.
 
+Guarded dense-array `map` captures the native method and receiver before
+arguments execute, then consumes that snapshot and the evaluated callback.
+Its current-prefix array descriptor and native method/species proofs remain
+separate. The shared invocation kernel runs each reached callback with the
+element, numeric index and captured receiver. Callback effects, dependencies,
+normal returns and possible throws compose independently; complete timing
+alone supplies no effect coverage. A known callback throw stops later indices.
+The result retains normal callback values in the common weak array heap.
+An invalidated source or unsupported child preserves reached effects and
+returned capabilities for conservative remainder handling, without replaying
+source operands or restarting the native operation. Other iteration rows
+retain their existing conservative value paths.
+
 Guarded dense-array `push` consumes that captured receiver and evaluated
-primitive arguments. An uninterrupted first dense literal allocation without
-spreads supplies a separate descriptor witness: original prototype,
+primitive arguments. An uninterrupted first dense allocation supplies a
+separate descriptor witness: original prototype,
 extensibility, writable own length and no own method replacement. The shared
 transfer rechecks this witness
 and the native prototype guards after argument evaluation, checks the resulting

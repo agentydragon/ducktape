@@ -1,7 +1,9 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::super::allocation_transfer::AllocationContext;
-use super::super::array_transfer::{self, ArrayContext, ArrayPushSelection};
+use super::super::array_transfer::{
+    self, ArrayContext, ArrayIterationSelection, ArrayMethodSelection,
+};
 use super::super::descriptor_transfer::{
     self, AppliedAccessor, DescriptorCall, DescriptorContext, DescriptorHeap,
     NativeObjectPostcondition, OwnDescriptorMapState,
@@ -1557,15 +1559,14 @@ impl OwnDataContext for Executor<'_, '_> {
 }
 
 impl ArrayContext for Executor<'_, '_> {
-    fn writable_array_length(&self, object: u32) -> Option<u32> {
+    fn literal_array_length(&self, object: u32, absent: &[&str]) -> Option<u32> {
+        let properties = self.state.prefix_object_properties.get(&object)?;
         if !self.state.object_accessors_are_settled(&object)
             || self.state.applied_accessors.contains_key(&object)
             || !self.state.dense_arrays.contains_key(&object)
-            || self
-                .state
-                .prefix_object_properties
-                .get(&object)?
-                .contains_key(&Some("push".into()))
+            || absent
+                .iter()
+                .any(|property| properties.contains_key(&Some((*property).to_owned())))
         {
             return None;
         }
@@ -1577,8 +1578,12 @@ impl ArrayContext for Executor<'_, '_> {
         }
     }
 
-    fn array_prototypes_intact(&self) -> bool {
-        self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
+    fn array_slots_intact(&self, slots: &[IntrinsicSlot]) -> bool {
+        Executor::array_slots_intact(self, slots)
+    }
+
+    fn dense_array_slots(&self, object: u32) -> Option<Vec<Values>> {
+        self.settled_dense_array_slots(object)
     }
 
     fn array_dependencies(&self) -> ProofDependencies {
@@ -2244,20 +2249,43 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             },
         ))
     }
-    fn array_push_callee(
+    fn array_method_callee(
         &mut self,
         receivers: &Values,
         property: &str,
-    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
+        span: Span,
+    ) -> Option<(ArrayMethodSelection, EffectCoverageFragment)> {
         if self.retained_query.is_some() {
             return None;
         }
-        let (selection, effects) = array_transfer::select_push(self.executor, receivers, property)?;
+        let (selection, effects) = if let Some((selection, effects)) =
+            array_transfer::select_push(self.executor, receivers, property)
+        {
+            (ArrayMethodSelection::Push(selection), effects)
+        } else {
+            let proof = self
+                .executor
+                .inputs
+                .index
+                .array_iterations
+                .get(&span.into())?;
+            if property != proof.row.member {
+                return None;
+            }
+            let (selection, effects) = array_transfer::select_iteration(
+                self.executor,
+                receivers,
+                span.into(),
+                proof.row,
+                proof.result?,
+            )?;
+            (ArrayMethodSelection::Iteration(selection), effects)
+        };
         for cell in [
-            EffectCell::ObjectShape(selection.object),
+            EffectCell::ObjectShape(selection.object()),
             EffectCell::OwnProperty {
-                origin: selection.object,
-                property: "push".into(),
+                origin: selection.object(),
+                property: property.to_owned(),
             },
         ] {
             self.outcome
@@ -2964,10 +2992,11 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .flatten();
         }
         if let EvaluatedCallee::Member {
-            array_push: Some(selection),
+            array_method: Some(selection),
             receiver,
             ..
         } = callee
+            && let ArrayMethodSelection::Push(selection) = selection.as_ref()
         {
             let args: Vec<_> = arguments
                 .iter()
@@ -5466,25 +5495,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if dense.slots.len() > MAX_SYNCHRONOUS_INVOCATIONS {
             return None;
         }
-        for values in &dense.slots {
-            if values.is_empty()
-                || values.iter().any(|value| match value {
-                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                        (!self.inputs.index.plain_data_objects.contains(object)
-                            && !self.state.ordinary_spread_copies.contains(object))
-                            || !self.state.object_properties_are_settled(object)
-                    }
-                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => self.state.tainted_functions.contains(key),
-                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
-                        self.class_may_run_on_borrowed_receiver(*key)
-                    }
-                    value if value.is_primitive() => false,
-                    _ => true,
-                })
-            {
-                return None;
-            }
+        if !self.array_iteration_values_are_settled(&dense.slots) {
+            return None;
         }
         let callback = self.evaluate(&proof.callback, env, captures);
         let (key, captured) = match callback.iter().collect::<Vec<_>>().as_slice() {
@@ -5500,6 +5512,229 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         Some((proof, source, dense, key, captured))
+    }
+
+    fn array_iteration_values_are_settled(&self, slots: &[Values]) -> bool {
+        slots.iter().all(|values| {
+            !values.is_empty()
+                && values.iter().all(|value| match value {
+                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                        (self.inputs.index.plain_data_objects.contains(object)
+                            || self.state.ordinary_spread_copies.contains(object))
+                            && self.state.object_properties_are_settled(object)
+                    }
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                    | AbstractValue::Closure(key, _) => !self.state.tainted_functions.contains(key),
+                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
+                        !self.class_may_run_on_borrowed_receiver(*key)
+                    }
+                    value => value.is_primitive(),
+                })
+        })
+    }
+
+    fn incomplete_array_iteration_result(
+        &mut self,
+        call: &Call,
+        selection: &ArrayIterationSelection,
+        source: &Values,
+        outcome: &mut Outcome,
+    ) -> CallTransfer {
+        let callbacks = self.callback_values(source);
+        self.literal_heap()
+            .write_property(selection.result, None, &callbacks);
+        self.literal_heap().invalidate_dense_array(selection.result);
+        self.invalidate_writable_object(selection.result);
+        self.state.tainted_objects.insert(selection.result);
+        outcome.unsupported(ExecutionOperation::ArrayIteration, call.owner, call.span);
+        outcome.effect_coverage = EffectCoverageFragment::default();
+        // Keep completed callback returns reachable by the caller's remainder.
+        // It summarizes the unsupported suffix without restarting this operation.
+        CallTransfer::Values(Values::from([
+            AbstractValue::Value(Value::Alloc(Kind::Object, selection.result)),
+            AbstractValue::Value(Value::Top),
+            AbstractValue::Value(Value::Unavailable),
+        ]))
+    }
+
+    fn execute_selected_array_iteration(
+        &mut self,
+        call: &Call,
+        selection: &ArrayIterationSelection,
+        arguments: &[SelectedValue],
+        outcome: &mut Outcome,
+    ) -> CallTransfer {
+        let refused = CallTransfer::UnsupportedOperands(
+            OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
+        );
+        if call.kind != CallKind::Call || selection.site != call.span.into() {
+            return refused;
+        }
+        let [callback] = arguments else {
+            return refused;
+        };
+        let Some((key, callable)) = self.local_call_target(&callback.values) else {
+            return refused;
+        };
+        if callable.generator
+            || callable.opaque
+            || self.inputs.index.async_callables.contains(&key)
+            || callable
+                .params
+                .iter()
+                .any(|parameter| parameter.binding.is_none())
+            || callable.body_facts.ordered_plan().is_none()
+        {
+            return refused;
+        }
+        let callback_owner = callable.owner;
+        let captured = match callback.values.first() {
+            Some(AbstractValue::Closure(_, captured)) => Some(captured.clone()),
+            _ => None,
+        };
+        let Some(caller) = self.local_body_identity_for_call(call) else {
+            return refused;
+        };
+        let Some((dense, dependencies)) = array_transfer::iteration_snapshot(self, selection)
+        else {
+            return refused;
+        };
+        if dense.len() > MAX_SYNCHRONOUS_INVOCATIONS
+            || !self.array_iteration_values_are_settled(&dense)
+        {
+            return refused;
+        }
+        let source = Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Object,
+            selection.object,
+        ))]);
+        let native = LocalBodyIdentity::Native {
+            intrinsic: NativeIntrinsic::Array,
+            property: Some(format!("prototype.{}", selection.row.member)),
+        };
+        outcome.effect_coverage = EffectCoverageFragment::no_effects();
+        outcome.effect_coverage.depend_on(&dependencies);
+        outcome
+            .effect_coverage
+            .selected_local_call(LocalCallReceipt {
+                caller,
+                call_span: call.span,
+                target: native.clone(),
+                dependencies: Box::new(dependencies.clone()),
+            });
+        for cell in [
+            EffectCell::ArrayContents(selection.object),
+            EffectCell::ObjectShape(selection.object),
+            EffectCell::OwnProperty {
+                origin: selection.object,
+                property: "length".into(),
+            },
+            EffectCell::OwnProperty {
+                origin: selection.object,
+                property: "constructor".into(),
+            },
+        ] {
+            outcome
+                .effects
+                .record_heap_read(cell, self.state.assumption.is_none());
+        }
+        self.literal_heap().begin_literal(selection.result);
+        let mut mapped = Vec::new();
+        let mut may_throw = false;
+        for (index, values) in dense.iter().enumerate() {
+            outcome.effects.record_heap_read(
+                EffectCell::OwnProperty {
+                    origin: selection.object,
+                    property: index.to_string(),
+                },
+                self.state.assumption.is_none(),
+            );
+            let mut nested = self.invoke_selected(
+                key,
+                vec![
+                    values.clone(),
+                    Values::from([AbstractValue::Value(Value::Prim(PrimKinds::NUMBER))]),
+                    source.clone(),
+                ],
+                vec![None; 3],
+                captured.clone(),
+                false,
+            );
+            let complete = nested.body_invoked && nested.complete && !nested.unknown_call;
+            let known_throw = complete
+                && nested.thrown.is_some()
+                && nested.returns == Values::from([AbstractValue::Value(Value::Unavailable)])
+                && nested.effect_coverage.known_abrupt_dependencies().is_some();
+            if nested.body_invoked {
+                nested
+                    .effect_coverage
+                    .selected_local_call(LocalCallReceipt {
+                        caller: native.clone(),
+                        call_span: call.span,
+                        target: LocalBodyIdentity::Callable {
+                            key,
+                            owner: callback_owner,
+                        },
+                        dependencies: Box::new(dependencies.clone()),
+                    });
+            }
+            outcome.effect_coverage.compose(&nested.effect_coverage);
+            let thrown = known_throw.then(|| nested.thrown.take()).flatten();
+            let mut returned = nested.returns.clone();
+            may_throw |= returned.remove(&AbstractValue::Value(Value::Unavailable));
+            self.merge_array_effects(outcome, nested);
+            if known_throw {
+                outcome.thrown = thrown;
+                return CallTransfer::Values(Values::new());
+            }
+            self.literal_heap()
+                .write_property(selection.result, None, &returned);
+            if !complete {
+                return self.incomplete_array_iteration_result(call, selection, &source, outcome);
+            }
+            if returned.is_empty() {
+                return CallTransfer::Values(Values::from([AbstractValue::Value(
+                    Value::Unavailable,
+                )]));
+            }
+            if self.settled_dense_array_slots(selection.object).as_ref() != Some(&dense)
+                || !self.array_iteration_values_are_settled(&dense)
+                || !returned
+                    .iter()
+                    .all(|value| self.retainable_iteration_value(value))
+            {
+                return self.incomplete_array_iteration_result(call, selection, &source, outcome);
+            }
+            mapped.push(returned);
+        }
+        let length = mapped.len();
+        self.retain_dense_array(selection.result, mapped);
+        self.literal_heap().complete_array(selection.result, length);
+        for cell in [
+            EffectCell::ArrayContents(selection.result),
+            EffectCell::ObjectShape(selection.result),
+            EffectCell::OwnProperty {
+                origin: selection.result,
+                property: "length".into(),
+            },
+        ]
+        .into_iter()
+        .chain((0..length).map(|index| EffectCell::OwnProperty {
+            origin: selection.result,
+            property: index.to_string(),
+        })) {
+            outcome
+                .effects
+                .record_heap_write(cell, self.state.assumption.is_none());
+        }
+        let mut values = Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Object,
+            selection.result,
+        ))]);
+        if may_throw {
+            values.insert(AbstractValue::Value(Value::Unavailable));
+        }
+        CallTransfer::Values(values)
     }
 
     /// The value an admitted iteration call evaluates to. A fresh array
@@ -13536,6 +13771,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 ) => matches!(receiver.as_ref(), ValueExpr::Binding(_)),
                 _ => false,
             });
+            if let EvaluatedCallee::Member {
+                array_method: Some(selection),
+                ..
+            } = &operands.callee
+                && let ArrayMethodSelection::Iteration(selection) = selection.as_ref()
+            {
+                return self.execute_selected_array_iteration(
+                    call,
+                    selection,
+                    &operands.arguments,
+                    outcome,
+                );
+            }
         }
         if call.kind == CallKind::OpaqueExecution {
             let fact = &self.inputs.facts[call.owner.0];

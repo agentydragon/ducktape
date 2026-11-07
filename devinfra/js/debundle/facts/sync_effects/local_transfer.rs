@@ -4,7 +4,7 @@ use super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, ArrayElement, ArraySpreadResult,
     KeyedCollectionOperationResult, LiteralHeap, LiteralLayout,
 };
-use super::array_transfer::ArrayPushSelection;
+use super::array_transfer::ArrayMethodSelection;
 use super::descriptor_transfer::NativeObjectPostcondition;
 use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
@@ -161,7 +161,7 @@ pub(super) enum EvaluatedCallee {
         receiver: Values,
         targets: Values,
         selection_dependencies: Option<Box<ProofDependencies>>,
-        array_push: Option<Box<ArrayPushSelection>>,
+        array_method: Option<Box<ArrayMethodSelection>>,
     },
     Native {
         selection: Box<NativeCalleeSelection>,
@@ -249,11 +249,12 @@ pub(super) trait LocalContext: OwnDataContext {
     ) -> Option<(Values, LocalValueResult)> {
         None
     }
-    fn array_push_callee(
+    fn array_method_callee(
         &mut self,
         _receivers: &Values,
         _property: &str,
-    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
+        _span: Span,
+    ) -> Option<(ArrayMethodSelection, EffectCoverageFragment)> {
         None
     }
     fn array_creation_started(&mut self, _allocation: u32) {}
@@ -1204,11 +1205,11 @@ fn call_expression(
             LocalCallee::Member {
                 receiver,
                 property,
-                span,
+                span: member_span,
             } => {
-                let mut array_push = None;
+                let mut array_method = None;
                 let (receivers, result, selection_dependencies) = if let Some((receivers, result)) =
-                    context.imported_member_callee(frame, receiver, property, *span)
+                    context.imported_member_callee(frame, receiver, property, *member_span)
                 {
                     (receivers, result, None)
                 } else {
@@ -1221,10 +1222,10 @@ fn call_expression(
                     let module_prefix = context.module_prefix_receiver(receiver, &receivers);
                     let result = if let Some((selection, effects)) = (invocation
                         == ForeignInvocation::Call)
-                        .then(|| context.array_push_callee(&receivers, property))
+                        .then(|| context.array_method_callee(&receivers, property, *span))
                         .flatten()
                     {
-                        array_push = Some(Box::new(selection));
+                        array_method = Some(Box::new(selection));
                         LocalValueResult {
                             allocation: AllocationValue::opaque(Values::new()),
                             effects,
@@ -1232,7 +1233,7 @@ fn call_expression(
                             postcondition: None,
                         }
                     } else {
-                        read_field(context, frame, receiver, &receivers, property, *span)?
+                        read_field(context, frame, receiver, &receivers, property, *member_span)?
                     };
                     let selection_dependencies = module_prefix
                         .then(|| result.effects.lexical_selection_dependencies())
@@ -1249,7 +1250,7 @@ fn call_expression(
                     receiver: receivers,
                     targets: completing(result.allocation.values, frame),
                     selection_dependencies,
-                    array_push,
+                    array_method,
                 }
             }
         }
@@ -1259,7 +1260,7 @@ fn call_expression(
             &callee,
             EvaluatedCallee::Native { .. }
                 | EvaluatedCallee::Member {
-                    array_push: Some(_),
+                    array_method: Some(_),
                     ..
                 }
         )
