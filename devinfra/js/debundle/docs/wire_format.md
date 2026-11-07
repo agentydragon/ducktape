@@ -611,7 +611,16 @@ may include `reason.ordered_call_admission_refusal` for a call whose already
 evaluated operands were declined by the ordered path. General categories are
 `unknown_target`, `multiple_targets`, `non_local_target`,
 `unsupported_receiver`, and `unsupported_native_operation`. Selected array
-iteration uses first-failure post-argument categories: `array_iteration_call_kind_mismatch`,
+iteration can report first-failure pre-argument GetValue selection categories
+for a recognized indexed iteration: `array_iteration_receiver_not_singleton`,
+`array_iteration_receiver_not_object`, `array_iteration_row_shape_unsupported`,
+`array_iteration_method_slot_unavailable`,
+`array_iteration_original_method_selection_unavailable`, and
+`array_iteration_result_allocation_unavailable`. They are attached only when
+the unchanged ordinary call transfer independently returns
+`unsupported_native_operation`; they do not force a refusal. After a successful
+GetValue selection, first-failure post-argument categories are
+`array_iteration_call_kind_mismatch`,
 `array_iteration_call_site_mismatch`, `array_iteration_result_shape_mismatch`,
 `array_iteration_callback_arity_mismatch`,
 `array_iteration_callback_target_unavailable`,
@@ -626,12 +635,12 @@ iteration uses first-failure post-argument categories: `array_iteration_call_kin
 `array_iteration_length_unrepresentable`, `array_iteration_length_mismatch`,
 `array_iteration_exceeds_invocation_limit`, and
 `array_iteration_unsettled_elements`. These new categories identify checks
-after callee and argument evaluation, retain the existing call source site and
-fallback reach, and do not retain target identities or alter call admission,
-effect promotion, reachability, emitted code, or gate acceptance. Callback-body
-result refusals keep the generic `unsupported_native_operation` category. A
-complete effects-only call uses `missing_call_result`; an incomplete invocation
-does not use this field.
+at the stated phase, retain the existing call source site and fallback reach,
+and do not retain target identities or alter call admission, effect promotion,
+reachability, emitted code, or gate acceptance. Callback-body result refusals
+keep the generic `unsupported_native_operation` category. A complete
+effects-only call uses `missing_call_result`; an incomplete invocation does
+not use this field.
 
 ## Ordered local member-read refusal
 

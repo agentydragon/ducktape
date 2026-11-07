@@ -1819,12 +1819,15 @@ records include their limit; each loss carries its lexical statement ordinal and
 when available, its source location. Nested reasons retain their original source
 site. An `unsupported_operation` / `opaque_execution` loss may also carry
 `ordered_call_admission_refusal`, which distinguishes a declined unknown,
-multiple, or non-local target from an unsupported receiver. Selected array
-iteration reports a typed first failure after callee and argument evaluation,
-such as `array_iteration_async_callback` or
-`array_iteration_receiver_descriptor_unavailable`; text output includes this
-detail alongside `unsupported_operation`. This evidence is separate from
-purity reasons and does not certify author contracts. See
+multiple, or non-local target from an unsupported receiver. Array iteration
+refusals identify timing: pre-argument GetValue selection (for example,
+`array_iteration_original_method_selection_unavailable`) versus
+post-argument body admission (for example,
+`array_iteration_async_callback`). A pre-argument reason is included only when
+the unchanged ordinary call transfer independently returns
+`unsupported_native_operation`; it never forces a call refusal. Text output
+shows the phase with the typed reason alongside `unsupported_operation`. This
+evidence is separate from purity reasons and does not certify author contracts. See
 [the report contract](../SPEC.md#synchronous-execution-diagnostics).
 
 For a directly called imported bare callback factory, read the node's

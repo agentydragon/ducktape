@@ -4705,8 +4705,17 @@ required to continue. A call rejected by the ordered operand path retains its
 `unsupported_operation` / `opaque_execution` reason and may carry the typed
 `ordered_call_admission_refusal`: `unknown_target`, `multiple_targets`,
 `non_local_target`, `unsupported_receiver`, or `unsupported_native_operation`.
-For selected array iteration, the field instead names the first failed
-post-argument check: `array_iteration_call_kind_mismatch`,
+For an indexed array-iteration candidate, the field may identify either the
+first failed pre-argument GetValue selection check:
+`array_iteration_receiver_not_singleton`, `array_iteration_receiver_not_object`,
+`array_iteration_row_shape_unsupported`, `array_iteration_method_slot_unavailable`,
+`array_iteration_original_method_selection_unavailable`, or
+`array_iteration_result_allocation_unavailable`. This selection attempt does
+not replace the ordinary member read or force a call refusal. It is attached
+only if that ordinary call transfer independently returns
+`unsupported_native_operation`. After a successful GetValue selection, the
+field can instead name the first failed post-argument body-admission check:
+`array_iteration_call_kind_mismatch`,
 `array_iteration_call_site_mismatch`, `array_iteration_result_shape_mismatch`,
 `array_iteration_callback_arity_mismatch`,
 `array_iteration_callback_target_unavailable`,
@@ -4721,9 +4730,11 @@ post-argument check: `array_iteration_call_kind_mismatch`,
 `array_iteration_length_unrepresentable`, `array_iteration_length_mismatch`,
 `array_iteration_exceeds_invocation_limit`, or
 `array_iteration_unsettled_elements`. These categories retain check order after
-callee and argument evaluation; callback-body result refusals remain
-`unsupported_native_operation`. The reason names the first ordered admission
-check that refused the already evaluated operands.
+callee and argument evaluation. The text explanation labels pre-argument
+selection versus post-argument body admission. Callback-body result refusals
+remain `unsupported_native_operation`. The reason names the first ordered
+admission check that failed at its stated phase; a pre-argument selection
+reason does not suppress argument evaluation.
 Unknown-target classification remains a separate precision loss where the
 existing target rules produce it. Incomplete invocation and missing result
 transfer do not carry this admission reason.

@@ -1701,7 +1701,9 @@ fn async_array_iteration_refusal_names_the_first_post_argument_check() {
     assert!(
         explanation
             .stdout
-            .contains("ordered_call_admission_refusal: array_iteration_async_callback"),
+            .contains(
+                "ordered_call_admission_refusal: array_iteration_async_callback (post-argument body admission)"
+            ),
         "{}",
         explanation.stdout
     );

@@ -93,11 +93,16 @@ pub(super) fn select_iteration(
     site: CallSite,
     row: &'static IterationRow,
     result: Option<u32>,
-) -> Option<(ArrayIterationSelection, EffectCoverageFragment)> {
-    let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
-        receivers.iter().collect::<Vec<_>>().as_slice()
-    else {
-        return None;
+) -> Result<(ArrayIterationSelection, EffectCoverageFragment), OrderedCallAdmissionRefusal> {
+    let mut receiver_values = receivers.iter();
+    let Some(receiver) = receiver_values.next() else {
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationReceiverNotSingleton);
+    };
+    if receiver_values.next().is_some() {
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationReceiverNotSingleton);
+    }
+    let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = receiver else {
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationReceiverNotObject);
     };
     if !matches!(
         row.result,
@@ -109,7 +114,7 @@ pub(super) fn select_iteration(
         || (row.result == IterationResult::Boolean && !matches!(row.member, "some" | "every"))
         || !row.arity.contains(&1)
     {
-        return None;
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationRowShapeUnsupported);
     }
     // The method and own-property shadow check happen before its arguments.
     // Receiver descriptors and result-array species are body premises and
@@ -123,21 +128,26 @@ pub(super) fn select_iteration(
         })
         .copied()
         .collect();
-    if method_slots.is_empty() || !context.array_slots_intact(&method_slots) {
-        return None;
+    if method_slots.is_empty() {
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationMethodSlotUnavailable);
+    }
+    if !context.array_slots_intact(&method_slots) {
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationMethodSlotUnavailable);
     }
     if !context.array_method_selected_from_original_prototype(*object, row.member) {
-        return None;
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationOriginalMethodSelectionUnavailable);
     }
     let result = match row.result {
-        IterationResult::Mapped | IterationResult::Filtered => Some(result?),
+        IterationResult::Mapped | IterationResult::Filtered => Some(
+            result.ok_or(OrderedCallAdmissionRefusal::ArrayIterationResultAllocationUnavailable)?,
+        ),
         IterationResult::Undefined | IterationResult::Boolean => None,
-        _ => return None,
+        _ => return Err(OrderedCallAdmissionRefusal::ArrayIterationRowShapeUnsupported),
     };
     let dependencies = context.array_dependencies();
     let mut effects = EffectCoverageFragment::no_effects();
     effects.depend_on(&dependencies);
-    Some((
+    Ok((
         ArrayIterationSelection {
             object: *object,
             site,

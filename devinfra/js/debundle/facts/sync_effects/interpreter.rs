@@ -2344,23 +2344,27 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         receivers: &Values,
         property: &str,
         span: Span,
-    ) -> Option<(ArrayMethodSelection, EffectCoverageFragment)> {
+    ) -> Result<Option<(ArrayMethodSelection, EffectCoverageFragment)>, OrderedCallAdmissionRefusal>
+    {
         if self.retained_query.is_some() {
-            return None;
+            return Ok(None);
         }
-        let (selection, effects) = if let Some((selection, effects)) =
+        let selected = if let Some((selection, effects)) =
             array_transfer::select_push(self.executor, receivers, property)
         {
-            (ArrayMethodSelection::Push(selection), effects)
+            Some((ArrayMethodSelection::Push(selection), effects))
         } else {
-            let proof = self
+            let Some(proof) = self
                 .executor
                 .inputs
                 .index
                 .array_iterations
-                .get(&span.into())?;
+                .get(&span.into())
+            else {
+                return Ok(None);
+            };
             if property != proof.row.member {
-                return None;
+                return Ok(None);
             }
             let (selection, effects) = array_transfer::select_iteration(
                 self.executor,
@@ -2369,7 +2373,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 proof.row,
                 proof.result,
             )?;
-            (ArrayMethodSelection::Iteration(selection), effects)
+            Some((ArrayMethodSelection::Iteration(selection), effects))
+        };
+        let Some((selection, effects)) = selected else {
+            return Ok(None);
         };
         for cell in [
             EffectCell::ObjectShape(selection.object()),
@@ -2382,7 +2389,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .effects
                 .record_heap_read(cell, self.executor.state.assumption.is_none());
         }
-        Some((selection, effects))
+        Ok(Some((selection, effects)))
     }
     fn array_creation_started(&mut self, allocation: u32) {
         if self
@@ -6073,7 +6080,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         return self.incomplete_array_boolean_result(call, outcome);
                     }
                     _ => {
-                        return refused(OrderedCallAdmissionRefusal::UnsupportedNativeOperation);
+                        return refused(
+                            OrderedCallAdmissionRefusal::ArrayIterationResultShapeMismatch,
+                        );
                     }
                 };
                 if stop {
@@ -6116,7 +6125,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
                 IterationResult::Undefined | IterationResult::Boolean => {}
-                _ => return refused(OrderedCallAdmissionRefusal::UnsupportedNativeOperation),
+                _ => {
+                    return refused(OrderedCallAdmissionRefusal::ArrayIterationResultShapeMismatch);
+                }
             }
         }
         let mut values = match selection.row.result {
@@ -6167,7 +6178,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, result))])
             }
-            _ => return refused(OrderedCallAdmissionRefusal::UnsupportedNativeOperation),
+            _ => return refused(OrderedCallAdmissionRefusal::ArrayIterationResultShapeMismatch),
         };
         if may_throw {
             values.insert(AbstractValue::Value(Value::Unavailable));
@@ -14433,6 +14444,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operands: Option<CallOperands>,
     ) -> CallTransfer {
         let needs_value = operands.is_some();
+        let array_iteration_refusal =
+            operands
+                .as_ref()
+                .and_then(|operands| match &operands.callee {
+                    EvaluatedCallee::Member {
+                        array_iteration_refusal,
+                        ..
+                    } => *array_iteration_refusal,
+                    EvaluatedCallee::Direct(_) | EvaluatedCallee::Native { .. } => None,
+                });
         let native_selection = operands
             .as_ref()
             .and_then(|operands| match &operands.callee {
@@ -14921,7 +14942,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             None
         };
         if let Some(resolution) = native_resolution {
-            return self.execute_native_call_transfer(
+            let transfer = self.execute_native_call_transfer(
                 NativeCallTransferInput {
                     call,
                     arguments: &args,
@@ -14932,6 +14953,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 },
                 outcome,
             );
+            return match transfer {
+                CallTransfer::UnsupportedOperands(
+                    OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
+                ) if let Some(refusal) = array_iteration_refusal => {
+                    CallTransfer::UnsupportedOperands(refusal)
+                }
+                transfer => transfer,
+            };
         }
         if self.host_call_does_not_reenter(call) {
             return CallTransfer::EffectsOnly;

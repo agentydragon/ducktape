@@ -66,9 +66,10 @@ pub enum OrderedFieldReadRefusal {
     MissingHeapValue,
 }
 
-/// The first ordered call admission condition that rejected the evaluated
-/// target and receiver. This describes the refusal only; it does not change
-/// target classification or the conservative fallback.
+/// The first diagnosed condition on an ordered call. Array-iteration variants
+/// distinguish pre-argument GetValue selection from post-argument body
+/// admission. This describes evidence only; it does not change target
+/// classification or the conservative fallback.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OrderedCallAdmissionRefusal {
@@ -99,6 +100,50 @@ pub enum OrderedCallAdmissionRefusal {
     ArrayIterationLengthMismatch,
     ArrayIterationExceedsInvocationLimit,
     ArrayIterationUnsettledElements,
+    /// First failed check while a recognized array-iteration method's
+    /// GetValue is being selected, before argument evaluation. These are
+    /// evidence only and do not replace ordinary member-read or call
+    /// fallbacks.
+    ArrayIterationReceiverNotSingleton,
+    ArrayIterationReceiverNotObject,
+    ArrayIterationRowShapeUnsupported,
+    ArrayIterationMethodSlotUnavailable,
+    ArrayIterationOriginalMethodSelectionUnavailable,
+    ArrayIterationResultAllocationUnavailable,
+}
+
+impl OrderedCallAdmissionRefusal {
+    fn array_iteration_phase(&self) -> Option<&'static str> {
+        match self {
+            Self::ArrayIterationReceiverNotSingleton
+            | Self::ArrayIterationReceiverNotObject
+            | Self::ArrayIterationRowShapeUnsupported
+            | Self::ArrayIterationMethodSlotUnavailable
+            | Self::ArrayIterationOriginalMethodSelectionUnavailable
+            | Self::ArrayIterationResultAllocationUnavailable => {
+                Some("pre-argument GetValue selection")
+            }
+            Self::ArrayIterationCallKindMismatch
+            | Self::ArrayIterationCallSiteMismatch
+            | Self::ArrayIterationResultShapeMismatch
+            | Self::ArrayIterationCallbackArityMismatch
+            | Self::ArrayIterationCallbackTargetUnavailable
+            | Self::ArrayIterationGeneratorCallback
+            | Self::ArrayIterationOpaqueCallback
+            | Self::ArrayIterationAsyncCallback
+            | Self::ArrayIterationCallbackParameterUnsupported
+            | Self::ArrayIterationCallbackPlanUnavailable
+            | Self::ArrayIterationCallerUnavailable
+            | Self::ArrayIterationBodyIntrinsicsUnavailable
+            | Self::ArrayIterationReceiverDescriptorUnavailable
+            | Self::ArrayIterationDenseSnapshotUnavailable
+            | Self::ArrayIterationLengthUnrepresentable
+            | Self::ArrayIterationLengthMismatch
+            | Self::ArrayIterationExceedsInvocationLimit
+            | Self::ArrayIterationUnsettledElements => Some("post-argument body admission"),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -266,6 +311,12 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
                         "; ordered_call_admission_refusal: {}",
                         refusal.as_str().expect("unit variant")
                     )?;
+                    if let Some(phase) = ordered_call_admission_refusal
+                        .as_ref()
+                        .and_then(OrderedCallAdmissionRefusal::array_iteration_phase)
+                    {
+                        write!(f, " ({phase})")?;
+                    }
                 }
                 Ok(())
             }

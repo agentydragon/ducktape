@@ -22,7 +22,9 @@ use super::value_model::{
     AbstractValue, CallSite, Context, PrivateFieldId, PropertyDefinition, ValueExpr, Values,
 };
 use crate::analysis_inputs::{ForeignInvocation, ProofDependencies};
-use crate::execution_evidence::{OrderedFieldReadRefusal, SkippedCallReason};
+use crate::execution_evidence::{
+    OrderedCallAdmissionRefusal, OrderedFieldReadRefusal, SkippedCallReason,
+};
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
@@ -175,6 +177,10 @@ pub(super) enum EvaluatedCallee {
         targets: Values,
         selection_dependencies: Option<Box<ProofDependencies>>,
         array_method: Option<Box<ArrayMethodSelection>>,
+        /// A recognized array-iteration selection that failed before argument
+        /// evaluation. The call transfer may use it only to refine an already
+        /// generic native refusal; ordinary GetValue fallback remains intact.
+        array_iteration_refusal: Option<OrderedCallAdmissionRefusal>,
     },
     Native {
         selection: Box<NativeCalleeSelection>,
@@ -240,7 +246,8 @@ pub(super) trait LocalContext: OwnDataContext {
         None
     }
     /// Select an exact intrinsic before arguments run. A missing selection
-    /// keeps the ordinary binding/member transfer and conservative fallback.
+    /// keeps the ordinary binding/member transfer and conservative fallback;
+    /// a refusal is diagnostic-only and still uses that ordinary transfer.
     fn native_callee(
         &mut self,
         _frame: &mut LocalFrame,
@@ -267,8 +274,9 @@ pub(super) trait LocalContext: OwnDataContext {
         _receivers: &Values,
         _property: &str,
         _span: Span,
-    ) -> Option<(ArrayMethodSelection, EffectCoverageFragment)> {
-        None
+    ) -> Result<Option<(ArrayMethodSelection, EffectCoverageFragment)>, OrderedCallAdmissionRefusal>
+    {
+        Ok(None)
     }
     fn array_creation_started(&mut self, _allocation: u32) {}
     fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
@@ -1268,6 +1276,7 @@ fn call_expression(
                 span: member_span,
             } => {
                 let mut array_method = None;
+                let mut array_iteration_refusal = None;
                 let (receivers, result, selection_dependencies) = if let Some((receivers, result)) =
                     context.imported_member_callee(frame, receiver, property, *member_span)
                 {
@@ -1280,27 +1289,40 @@ fn call_expression(
                         return Some(SelectedValue::raw(Values::new()));
                     }
                     let module_prefix = context.module_prefix_receiver(receiver, &receivers);
-                    let result = if let Some((selection, effects)) = (invocation
-                        == ForeignInvocation::Call)
-                        .then(|| context.array_method_callee(&receivers, property, *span))
-                        .flatten()
-                    {
-                        array_method = Some(Box::new(selection));
-                        LocalValueResult {
-                            allocation: AllocationValue::opaque(Values::new()),
-                            effects,
-                            selection: None,
-                            postcondition: None,
-                        }
+                    let array_selection = if invocation == ForeignInvocation::Call {
+                        context.array_method_callee(&receivers, property, *span)
                     } else {
-                        read_field(
+                        Ok(None)
+                    };
+                    let result = match array_selection {
+                        Ok(Some((selection, effects))) => {
+                            array_method = Some(Box::new(selection));
+                            LocalValueResult {
+                                allocation: AllocationValue::opaque(Values::new()),
+                                effects,
+                                selection: None,
+                                postcondition: None,
+                            }
+                        }
+                        Ok(None) => read_field(
                             context,
                             frame,
                             Some(receiver),
                             &receivers,
                             property,
                             *member_span,
-                        )?
+                        )?,
+                        Err(refusal) => {
+                            array_iteration_refusal = Some(refusal);
+                            read_field(
+                                context,
+                                frame,
+                                Some(receiver),
+                                &receivers,
+                                property,
+                                *member_span,
+                            )?
+                        }
                     };
                     let selection_dependencies = module_prefix
                         .then(|| result.effects.lexical_selection_dependencies())
@@ -1318,6 +1340,7 @@ fn call_expression(
                     targets: completing(result.allocation.values, frame),
                     selection_dependencies,
                     array_method,
+                    array_iteration_refusal,
                 }
             }
         }
