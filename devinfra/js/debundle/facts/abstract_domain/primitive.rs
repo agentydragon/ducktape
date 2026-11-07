@@ -74,8 +74,13 @@ fn unary(op: UnaryOp, operand: Option<PrimKinds>) -> PrimKinds {
 }
 
 /// ECMA-262 § 13.4 update expressions.
-fn update(operand: Option<PrimKinds>) -> PrimKinds {
+pub(crate) fn update(operand: Option<PrimKinds>) -> PrimKinds {
     to_numeric(operand)
+}
+
+/// Symbol conversion throws; BigInt growth may exceed the engine's size limit.
+pub(crate) fn update_throws(operand: PrimKinds) -> bool {
+    operand.intersects(PrimKinds::SYMBOL.union(PrimKinds::BIGINT))
 }
 
 /// ECMA-262 § 13.15.3 `ApplyStringOrNumericBinaryOperator` and the relational

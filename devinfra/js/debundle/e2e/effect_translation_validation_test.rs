@@ -1767,6 +1767,100 @@ fn scalar_call_receipt_accepts_independent_statement_inversion() {
 }
 
 #[test]
+fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
+    for (body, expected) in [
+        ("let value = 1; return value++;", "7 1\n"),
+        ("let value = 1; return ++value;", "7 2\n"),
+        ("let value = 2; return value--;", "7 2\n"),
+        ("let value = 2; return --value;", "7 1\n"),
+        ("let value = '4'; return ++value;", "7 5\n"),
+        ("let value = 1; value++; return value;", "7 2\n"),
+    ] {
+        let source = format!(
+            "function bump() {{ {body} }}\nconst independent = 7;\nvar result = bump();\nconsole.log(independent, result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "update",
+                &[Member::new("bump"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_inline_operation_receipt(&fixture, "result", 1, body);
+        let report = fixture.effect_translation_validation();
+        assert_eq!(report["swapped_pairs"], 1, "{body}: {report:#}");
+        assert_eq!(
+            report["decision"]["status"], "accepted",
+            "{body}: {report:#}"
+        );
+        assert_eq!(
+            report["decision"]["scope"], "statement_order_commutation",
+            "{body}: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
+    for (body, error) in [
+        ("const value = 1; return value++;", "TypeError"),
+        ("return value++; let value = 1;", "ReferenceError"),
+        ("let value = Symbol(); return value++;", "TypeError"),
+    ] {
+        let source =
+            format!("function bump() {{ {body} }}\nvar result = bump();\nconsole.log(result);\n");
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[Member::new("bump"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_error(&fixture, error);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "{body}: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn numeric_local_updates_refuse_possible_bigint_throw_and_object_coercion() {
+    for (body, expected) in [
+        ("let value = 1n; return value++;", "1n 0\n"),
+        (
+            "let value = { valueOf() { return ++calls; } }; return value++;",
+            "1 1\n",
+        ),
+    ] {
+        let source = format!(
+            "let calls = 0;\nfunction bump() {{ {body} }}\nvar result = bump();\nconsole.log(result, calls);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("calls"),
+                    Member::new("bump"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "{body}: {execution:#}"
+        );
+    }
+}
+
+#[test]
 fn noncoercing_scalar_operators_do_not_cover_abrupt_children() {
     for expression in ["void later", "!later", "later === later"] {
         let source = format!(

@@ -143,8 +143,8 @@ pub(super) struct LocalTransferResult {
 pub(super) trait LocalContext: OwnDataContext {
     fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
     fn instantiate_parameter_bindings(&mut self, _frame: &mut LocalFrame) {}
-    /// Effects of actual declarative-cell creation or initialization. This
-    /// excludes evaluating an initializer and stores through captured cells.
+    /// Effects of declarative-cell creation, initialization, or a checked
+    /// store to an initialized local. Captured cells remain separate.
     fn declarative_binding_operation(
         &self,
         _binding: &Id,
@@ -510,6 +510,9 @@ fn expression(
             value: node,
             span,
         } => assign_expression(context, binding, node, span, body, frame, judgment),
+        LocalExpression::UpdateBinding { binding, span } => {
+            update_binding_expression(context, binding, *span, body, frame, judgment)
+        }
         LocalExpression::Call {
             callee,
             arguments,
@@ -792,13 +795,33 @@ fn assign_expression(
         .effect_coverage
         .compose(&EffectCoverageFragment::default());
     let selected = expression(context, node, body, frame, judgment)?;
+    store_binding(
+        context, body, frame, judgment, binding, selected, *span, false,
+    )
+}
+
+fn store_binding(
+    context: &mut impl LocalContext,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+    binding: &Id,
+    selected: SelectedValue,
+    span: Span,
+    update: bool,
+) -> Option<SelectedValue> {
     let values = selected.values;
     if values.is_empty() {
         return Some(SelectedValue::raw(values));
     }
     let Some(kind) = body.bindings.get(binding) else {
+        if update {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+        }
         frame.binding_selections.remove(binding);
-        let result = context.assign_capture(frame, binding, &values, *span)?;
+        let result = context.assign_capture(frame, binding, &values, span)?;
         judgment.compose(&result.judgment);
         return Some(completing_selected(
             SelectedValue::raw(result.values),
@@ -816,10 +839,29 @@ fn assign_expression(
                 .expect("instantiated local binding")
                 .contains(&AbstractValue::Value(Value::Unavailable)))
     {
+        if update {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+        }
         frame
             .returns
             .insert(AbstractValue::Value(Value::Unavailable));
         return Some(SelectedValue::raw(Values::new()));
+    }
+    if update
+        && matches!(kind, LocalBinding::Parameter | LocalBinding::Let)
+        && frame.initialized_bindings.contains(binding)
+    {
+        // The adapter's declarative-cell proof already rejects live captured
+        // cells. Assignment remains on its existing unknown-coverage path.
+        frame
+            .effect_coverage
+            .compose(&context.declarative_binding_operation(binding, frame));
+    } else if update {
+        frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
     }
     frame.environment.insert(binding.clone(), values.clone());
     if let Some(selection) = selected
@@ -835,6 +877,42 @@ fn assign_expression(
         values,
         selection: frame.binding_selections.get(binding).cloned(),
     })
+}
+
+fn update_binding_expression(
+    context: &mut impl LocalContext,
+    binding: &Id,
+    span: Span,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let operand = read_binding_selected(context, binding, frame, judgment)?;
+    if operand.values.is_empty() {
+        return Some(operand);
+    }
+    let Some(result) = allocation_transfer::update_result(&operand.values) else {
+        judgment.compose(&AllocationJudgment::Opaque);
+        frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
+        context.binary_fallback(frame, &operand.values, span);
+        return None;
+    };
+    judgment.compose(&result.judgment);
+    let effects = if result
+        .values
+        .contains(&AbstractValue::Value(Value::Unavailable))
+    {
+        EffectCoverageFragment::default()
+    } else {
+        EffectCoverageFragment::no_effects()
+    };
+    frame.effect_coverage.compose(&effects);
+    let selected = completing_selected(SelectedValue::raw(result.values), frame);
+    store_binding(
+        context, body, frame, judgment, binding, selected, span, true,
+    )
 }
 
 fn call_expression(
