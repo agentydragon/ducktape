@@ -9,6 +9,7 @@ use source_identity::SourceUnitOrdinal;
 pub(super) enum ModelOperation {
     ExecuteArrayIteration {
         span: CallSite,
+        owner: SourceUnitOrdinal,
         environment: Context,
         captures: Context,
         outcome: Box<Outcome>,
@@ -41,12 +42,14 @@ pub(super) fn dispatch(executor: &mut Executor<'_, '_>, operation: ModelOperatio
     match operation {
         ModelOperation::ExecuteArrayIteration {
             span,
+            owner,
             environment,
             captures,
             mut outcome,
         } => {
             let handled = executor.execute_array_iteration_transfer(
                 span,
+                owner,
                 &environment,
                 &captures,
                 &mut outcome,

@@ -709,6 +709,67 @@ pub(super) enum PrimitiveOperationResult {
     CoercionRequired,
 }
 
+/// Abstract `ToBoolean` outcomes for values that still have a normal
+/// completion. Callers split `Unavailable` first so truthiness never erases
+/// an abrupt alternative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Truthiness {
+    AlwaysTruthy,
+    AlwaysFalsy,
+    Maybe,
+}
+
+/// Classify only truthiness implied by an abstract value's runtime kind.
+/// Primitive type summaries do not retain literal booleans, numbers or
+/// strings, so those kinds can be either truthy or falsy. Unknown carriers
+/// preserve both alternatives.
+pub(super) fn truthiness(values: &Values) -> Option<Truthiness> {
+    let mut may_be_truthy = false;
+    let mut may_be_falsy = false;
+    let maybe_truthy_primitive = PrimKinds::BOOLEAN
+        .union(PrimKinds::NUMBER)
+        .union(PrimKinds::BIGINT)
+        .union(PrimKinds::STRING);
+    let maybe_falsy_primitive = maybe_truthy_primitive
+        .union(PrimKinds::NULL)
+        .union(PrimKinds::UNDEFINED);
+
+    for value in values {
+        match value {
+            AbstractValue::Value(Value::Prim(kinds)) => {
+                may_be_truthy |= kinds.intersects(maybe_truthy_primitive.union(PrimKinds::SYMBOL));
+                may_be_falsy |= kinds.intersects(maybe_falsy_primitive);
+            }
+            AbstractValue::Value(Value::Alloc(_, _))
+            | AbstractValue::Closure(_, _)
+            | AbstractValue::ClassMembers(_)
+            | AbstractValue::Instance(_, _, _)
+            | AbstractValue::ArrayIntrinsic
+            | AbstractValue::GlobalObject
+            | AbstractValue::ObjectAssign => may_be_truthy = true,
+            AbstractValue::Value(Value::Unavailable) => return None,
+            AbstractValue::Value(Value::Top)
+            | AbstractValue::SymbolicInput(_)
+            | AbstractValue::CallbackFactory
+            | AbstractValue::InlineCallbackFactory
+            | AbstractValue::DeferredCallbacks(_)
+            | AbstractValue::AuditedRetainedResult(_, _)
+            | AbstractValue::OwnDescriptorMap(_)
+            | AbstractValue::ForeignDeferredRecord => {
+                may_be_truthy = true;
+                may_be_falsy = true;
+            }
+        }
+    }
+
+    match (may_be_truthy, may_be_falsy) {
+        (true, false) => Some(Truthiness::AlwaysTruthy),
+        (false, true) => Some(Truthiness::AlwaysFalsy),
+        (true, true) => Some(Truthiness::Maybe),
+        (false, false) => None,
+    }
+}
+
 fn primitive_operand_kinds(values: &Values) -> Option<PrimKinds> {
     let mut result = PrimKinds::NONE;
     for value in values {

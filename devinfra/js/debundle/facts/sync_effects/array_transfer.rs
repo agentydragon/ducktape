@@ -45,64 +45,6 @@ pub(super) struct ArrayIterationSelection {
     pub(super) dependencies: ProofDependencies,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum FilterInclusion {
-    Include,
-    Exclude,
-    Maybe,
-}
-
-/// Classify only truthiness that follows from the abstract value's runtime
-/// kind. Primitive type summaries do not retain literal booleans, numbers or
-/// strings, so those kinds may be either truthy or falsy. Unsupported carriers
-/// likewise preserve both outcomes instead of manufacturing dense slots.
-pub(super) fn filter_inclusion(values: &Values) -> Option<FilterInclusion> {
-    let mut may_be_truthy = false;
-    let mut may_be_falsy = false;
-    let maybe_truthy_primitive = PrimKinds::BOOLEAN
-        .union(PrimKinds::NUMBER)
-        .union(PrimKinds::BIGINT)
-        .union(PrimKinds::STRING);
-    let maybe_falsy_primitive = maybe_truthy_primitive
-        .union(PrimKinds::NULL)
-        .union(PrimKinds::UNDEFINED);
-
-    for value in values {
-        match value {
-            AbstractValue::Value(Value::Prim(kinds)) => {
-                may_be_truthy |= kinds.intersects(maybe_truthy_primitive.union(PrimKinds::SYMBOL));
-                may_be_falsy |= kinds.intersects(maybe_falsy_primitive);
-            }
-            AbstractValue::Value(Value::Alloc(_, _))
-            | AbstractValue::Closure(_, _)
-            | AbstractValue::ClassMembers(_)
-            | AbstractValue::Instance(_, _, _)
-            | AbstractValue::ArrayIntrinsic
-            | AbstractValue::GlobalObject
-            | AbstractValue::ObjectAssign => may_be_truthy = true,
-            AbstractValue::Value(Value::Unavailable) => return None,
-            AbstractValue::Value(Value::Top)
-            | AbstractValue::SymbolicInput(_)
-            | AbstractValue::CallbackFactory
-            | AbstractValue::InlineCallbackFactory
-            | AbstractValue::DeferredCallbacks(_)
-            | AbstractValue::AuditedRetainedResult(_, _)
-            | AbstractValue::OwnDescriptorMap(_)
-            | AbstractValue::ForeignDeferredRecord => {
-                may_be_truthy = true;
-                may_be_falsy = true;
-            }
-        }
-    }
-
-    match (may_be_truthy, may_be_falsy) {
-        (true, false) => Some(FilterInclusion::Include),
-        (false, true) => Some(FilterInclusion::Exclude),
-        (true, true) => Some(FilterInclusion::Maybe),
-        (false, false) => None,
-    }
-}
-
 #[derive(Clone)]
 pub(super) enum ArrayMethodSelection {
     Push(ArrayPushSelection),

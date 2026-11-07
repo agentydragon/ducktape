@@ -1,6 +1,6 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
-use super::super::allocation_transfer::AllocationContext;
+use super::super::allocation_transfer::{self, AllocationContext};
 use super::super::array_transfer::{
     self, ArrayContext, ArrayIterationSelection, ArrayMethodSelection,
 };
@@ -5996,6 +5996,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.thrown = thrown;
                 return CallTransfer::Values(Values::new());
             }
+            if selection.row.result == IterationResult::Mapped {
+                let result = selection.result.expect("mapped row has an array result");
+                // Retain every reached normal callback result before a later
+                // admission or settlement failure makes the result opaque.
+                self.literal_heap().write_property(result, None, &returned);
+            }
             if !complete {
                 return self.incomplete_array_iteration_result(call, selection, &source, outcome);
             }
@@ -6015,22 +6021,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             match selection.row.result {
                 IterationResult::Mapped => {
-                    let result = selection.result.expect("mapped row has an array result");
-                    self.literal_heap().write_property(result, None, &returned);
                     result_slots.push(returned);
                 }
                 IterationResult::Filtered => {
-                    let Some(inclusion) = array_transfer::filter_inclusion(&returned) else {
+                    let Some(inclusion) = allocation_transfer::truthiness(&returned) else {
                         return self
                             .incomplete_array_iteration_result(call, selection, &source, outcome);
                     };
                     match inclusion {
-                        array_transfer::FilterInclusion::Include => {
+                        allocation_transfer::Truthiness::AlwaysTruthy => {
                             possible_filtered_contents.extend(values.iter().cloned());
                             result_slots.push(values.clone());
                         }
-                        array_transfer::FilterInclusion::Exclude => {}
-                        array_transfer::FilterInclusion::Maybe => {
+                        allocation_transfer::Truthiness::AlwaysFalsy => {}
+                        allocation_transfer::Truthiness::Maybe => {
                             filter_truthiness_unknown = true;
                             possible_filtered_contents.extend(values.iter().cloned());
                         }
@@ -6142,6 +6146,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn execute_array_iteration(
         &mut self,
         span: CallSite,
+        owner: SourceUnitOrdinal,
         env: &Context,
         captures: &Context,
         outcome: &mut Outcome,
@@ -6149,6 +6154,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let result = self.request(RuntimeOperation::Model(
             super::runtime_models::ModelOperation::ExecuteArrayIteration {
                 span,
+                owner,
                 environment: env.clone(),
                 captures: captures.clone(),
                 outcome: Box::new(std::mem::take(outcome)),
@@ -6207,6 +6213,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn execute_array_iteration_transfer(
         &mut self,
         span: CallSite,
+        owner: SourceUnitOrdinal,
         env: &Context,
         captures: &Context,
         outcome: &mut Outcome,
@@ -6247,23 +6254,34 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let previous_unsupported = self.state.array_iteration_unsupported;
             self.state.array_iteration_unsupported = false;
             self.state.array_iteration_depth += 1;
-            let mut nested = self.invoke(key, arguments, captured.clone(), false);
+            let nested = self.invoke(key, arguments, captured.clone(), false);
             self.state.array_iteration_depth -= 1;
             let unsupported = self.state.array_iteration_unsupported;
             self.state.array_iteration_unsupported |= previous_unsupported;
-            let known_throw = nested.body_invoked
-                && nested.complete
-                && !nested.unknown_call
-                && nested.thrown.is_some()
-                && nested.returns == Values::from([AbstractValue::Value(Value::Unavailable)])
-                && nested.effect_coverage.known_abrupt_dependencies().is_some();
-            let thrown = known_throw.then(|| nested.thrown.take()).flatten();
             let mut returned = nested.returns.clone();
-            returned.remove(&AbstractValue::Value(Value::Unavailable));
+            let may_throw = returned.remove(&AbstractValue::Value(Value::Unavailable));
             let callback_executed_completely = nested.body_invoked && nested.complete;
             self.merge_array_effects(outcome, nested);
-            if known_throw {
-                outcome.thrown = thrown;
+            if row.result == IterationResult::Mapped {
+                self.literal_heap().write_property(result, None, &returned);
+            }
+            if may_throw {
+                // This legacy plan has no captured pre-argument method
+                // selection, so neither a pure nor mixed callback throw proves
+                // that the intrinsic invoked it or that the call was abrupt.
+                // Retain reached normal map values, then force the actual
+                // caller fallback to summarize the remaining operation and
+                // its callback capabilities without replaying operands.
+                outcome.effect_coverage.uncertain_completion();
+                outcome.unsupported(
+                    ExecutionOperation::ArrayIteration,
+                    owner,
+                    span.source_span(),
+                );
+                if row.result != IterationResult::Undefined {
+                    self.literal_heap().invalidate_dense_array(result);
+                    self.state.tainted_objects.insert(result);
+                }
                 return true;
             }
             if returned.is_empty() {
@@ -6382,20 +6400,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
                 IterationResult::Filtered => {
-                    let Some(inclusion) = array_transfer::filter_inclusion(&returned) else {
+                    let Some(inclusion) = allocation_transfer::truthiness(&returned) else {
                         slots = None;
                         possible_filtered_contents.extend(values.iter().cloned());
                         continue;
                     };
                     match inclusion {
-                        array_transfer::FilterInclusion::Include => {
+                        allocation_transfer::Truthiness::AlwaysTruthy => {
                             possible_filtered_contents.extend(values.iter().cloned());
                             if let Some(slots) = &mut slots {
                                 slots.push(values.clone());
                             }
                         }
-                        array_transfer::FilterInclusion::Exclude => {}
-                        array_transfer::FilterInclusion::Maybe => {
+                        allocation_transfer::Truthiness::AlwaysFalsy => {}
+                        allocation_transfer::Truthiness::Maybe => {
                             slots = None;
                             possible_filtered_contents.extend(values.iter().cloned());
                         }
@@ -15035,7 +15053,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if call.kind == CallKind::Call
             && !needs_value
-            && self.execute_array_iteration(call.span.into(), env, captures, outcome)
+            && self.execute_array_iteration(call.span.into(), call.owner, env, captures, outcome)
         {
             return CallTransfer::EffectsOnly;
         }

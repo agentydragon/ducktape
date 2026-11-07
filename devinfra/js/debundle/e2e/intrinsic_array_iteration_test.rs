@@ -29,10 +29,6 @@ fn assert_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &
     );
 }
 
-fn assert_selected_map_receipt(fixture: &Fixture, binding: &str) {
-    assert_selected_iteration_receipt(fixture, binding, "map");
-}
-
 fn assert_no_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &str) {
     let expected = format!("prototype.{method}");
     let graph = fixture.dependency_graph();
@@ -69,7 +65,7 @@ fn ordered_map_results_have_covered_effects_for_an_actual_relocation() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "0 2,3 1\n");
-    assert_selected_map_receipt(&fixture, "mapped");
+    assert_selected_iteration_receipt(&fixture, "mapped", "map");
     let assessment = fixture.effect_translation_validation();
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -88,7 +84,7 @@ fn ordered_map_uses_the_receiver_selected_before_its_argument_runs() {
         vec![],
     ));
     assert_preserved_entry_output(&fixture, "1 7 8\n");
-    assert_selected_map_receipt(&fixture, "mapped");
+    assert_selected_iteration_receipt(&fixture, "mapped", "map");
     let graph = fixture.dependency_graph();
     let node = |binding| {
         graph
@@ -126,7 +122,7 @@ fn ordered_map_known_throw_stops_before_the_next_index() {
         vec![],
     ));
     assert_preserved_entry_output(&fixture, "1 1\n");
-    assert_selected_map_receipt(&fixture, "observed");
+    assert_selected_iteration_receipt(&fixture, "observed", "map");
 }
 
 #[test]
@@ -171,6 +167,151 @@ fn filter_uses_predicate_truth_at_runtime_without_faking_exact_slots() {
     assert_selected_iteration_receipt(&fixture, "excluded", "filter");
     assert_selected_iteration_receipt(&fixture, "included", "filter");
     assert_no_selected_iteration_receipt(&fixture, "mapped", "map");
+}
+
+#[test]
+fn filter_definite_truthiness_keeps_original_elements_for_later_iteration() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [{ id: 'a' }, { id: 'b' }];\nconst excluded = entries.filter(() => null);\nconst included = entries.filter(() => ({}));\nconst mapped = included.map(entry => entry.id);\nconsole.log(excluded.length, included[0] === entries[0], mapped.join(','));\n",
+        vec![
+            logical_module("entries", &[Member::new("entries")]),
+            logical_module("excluded", &[Member::new("excluded")]),
+            logical_module("included", &[Member::new("included")]),
+            logical_module("mapped", &[Member::new("mapped")]),
+        ],
+    ));
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "array-filter-definite-truthiness",
+    );
+    assert_preserved_entry_output(&fixture, "0 true a,b\n");
+    assert_selected_iteration_receipt(&fixture, "excluded", "filter");
+    assert_selected_iteration_receipt(&fixture, "included", "filter");
+    assert_selected_iteration_receipt(&fixture, "mapped", "map");
+}
+
+#[test]
+fn reached_map_callback_return_survives_an_invalidated_suffix() {
+    let source = "let later = 0;\nconst entries = [{ id: 'a' }, { id: 'b' }];\nconst result = entries.map((entry, index, array) => { const readLater = () => later; if (index === 0) array[1] = entry; return readLater; });\nconst observed = result[0]();\nlater = 42;\nconsole.log(observed);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "array-map-reached-return-before-incomplete-suffix",
+    );
+    assert_preserved_entry_output(&fixture, "0\n");
+
+    let split = vec![
+        logical_module_with_anon(
+            "registry",
+            &[
+                Member::new("entries"),
+                Member::new("result"),
+                Member::new("observed"),
+            ],
+            &[
+                "const result = entries.map((entry, index, array) => { const readLater = () => later; if (index === 0) array[1] = entry; return readLater; });",
+                "const observed = result[0]();",
+            ],
+        ),
+        logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+    ];
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(source, split));
+    save_relocation_reports(
+        &rejected.report_root,
+        &rejected.chunk_id,
+        "array-map-reached-return-before-incomplete-suffix-rejected",
+    );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_ne!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+}
+
+#[test]
+fn mixed_legacy_callback_completion_does_not_hide_later_or_tail_effects() {
+    let source = "let later = 0;\nlet calls = 0;\nlet second = -1;\nlet tail = 0;\nconst entries = [1, 2];\nfunction callback(value) { calls++; if (value === 1 && later) throw 'stop'; if (value === 2) second = later; return value; }\ntry { entries.forEach(callback); } catch (error) {}\ntail++;\nlater = 42;\nconsole.log(calls, second, tail);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "array-iteration-mixed-callback-completion",
+    );
+    assert_preserved_entry_output(&fixture, "2 0 1\n");
+
+    let split = vec![
+        logical_module_with_anon(
+            "iteration",
+            &[
+                Member::new("entries"),
+                Member::new("calls"),
+                Member::new("second"),
+                Member::new("tail"),
+                Member::new("callback"),
+            ],
+            &[
+                "try { entries.forEach(callback); } catch (error) {}",
+                "tail++;",
+            ],
+        ),
+        logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+    ];
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(source, split));
+    save_relocation_reports(
+        &rejected.report_root,
+        &rejected.chunk_id,
+        "array-iteration-mixed-callback-completion-rejected",
+    );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_ne!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+}
+
+#[test]
+fn legacy_iteration_does_not_promote_a_custom_method_callback_throw() {
+    let source = "let later = 0;\nlet custom_calls = 0;\nlet callback_calls = 0;\nlet observed = -1;\nlet tail = 0;\nconst entries = [1];\nconst custom = { forEach() { custom_calls++; observed = later; } };\nObject.setPrototypeOf(entries, custom);\nentries.forEach((Object.setPrototypeOf(entries, Array.prototype), () => { callback_calls++; throw 'callback'; }));\ntail++;\nlater = 42;\nconsole.log(custom_calls, callback_calls, tail, observed);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "array-iteration-restored-prototype-custom-method",
+    );
+    assert_preserved_entry_output(&fixture, "1 0 1 0\n");
+
+    let split = vec![
+        logical_module_with_anon(
+            "iteration",
+            &[
+                Member::new("entries"),
+                Member::new("custom"),
+                Member::new("custom_calls"),
+                Member::new("callback_calls"),
+                Member::new("observed"),
+                Member::new("tail"),
+            ],
+            &[
+                "Object.setPrototypeOf(entries, custom);",
+                "entries.forEach((Object.setPrototypeOf(entries, Array.prototype), () => { callback_calls++; throw 'callback'; }));",
+                "tail++;",
+            ],
+        ),
+        logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+    ];
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(source, split));
+    save_relocation_reports(
+        &rejected.report_root,
+        &rejected.chunk_id,
+        "array-iteration-restored-prototype-custom-method-rejected",
+    );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_ne!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
 }
 
 #[test]
@@ -641,7 +782,7 @@ fn empty_builtin_iteration_never_invokes_its_callback() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "0\n");
-    assert_selected_map_receipt(&fixture, "result");
+    assert_selected_iteration_receipt(&fixture, "result", "map");
 }
 
 #[test]
