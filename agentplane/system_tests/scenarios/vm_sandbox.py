@@ -216,6 +216,15 @@ async def vm_sandbox_turn(
     )
     assert systemctl_denial is not None, turn.transcript
     assert "PING" in turn.answer, turn.transcript
+    rules_turn = await agent.run_shell(model, "agentplane --json egress rules")
+    rules_output = rules_turn.tool_outputs[-1]
+    start = rules_output.find("{")
+    assert start >= 0, rules_turn.transcript
+    rules, _ = json.JSONDecoder().raw_decode(rules_output[start:])
+    assert rules["subject"] == {
+        "namespace": view.execution_account.account.namespace,
+        "name": view.execution_account.account.name,
+    }, rules_turn.transcript
     await runner_credentials.assert_vm_runner_identity_unchanged(
         cluster, view.kubernetes_diagnostics.pod.name, identity
     )

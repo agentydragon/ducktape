@@ -239,6 +239,16 @@ async def the_model_call_itself_goes_through_the_proxy(
         await model.reply(await model.request(), Text("ok"))
     turn = answered.result()
 
+    rules_turn = await agent.run_shell(model, "agentplane --json egress rules")
+    rules_output = rules_turn.tool_outputs[-1]
+    start = rules_output.find("{")
+    assert start >= 0, rules_turn.transcript
+    rules, _ = json.JSONDecoder().raw_decode(rules_output[start:])
+    assert rules["subject"] == {
+        "namespace": view.execution_account.account.namespace,
+        "name": view.execution_account.account.name,
+    }, rules_turn.transcript
+
     served = await _decision_for(
         cluster, client, view.target.name, view.target.uid, f"llm-ingress.{cluster.namespace}.svc.cluster.local"
     )

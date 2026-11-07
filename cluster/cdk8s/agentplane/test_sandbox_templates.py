@@ -331,6 +331,14 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
         if source["serviceAccountToken"]["path"] == "token"
     )
     assert auth["token_file"] == f"{token_mount['mountPath']}/{hop_token['path']}"
+    rules_route = runner_settings["platform_routes"]["egress-rules"]
+    assert rules_route["token_file"] == auth["token_file"]
+    assert rules_route["listen_address"] == "127.0.0.1:3133"
+    assert rules_route["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
+    runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
+    env = {entry["name"]: entry.get("value") for entry in runner["env"]}
+    assert env["AGENTPLANE_EGRESS_URL"] == "http://127.0.0.1:3133"
+    assert env["AGENTPLANE_EGRESS_CREDENTIAL"] == "platform-route"
     for name, route in runner_settings["platform_routes"].items():
         _, port = route["listen_address"].rsplit(":", 1)
         assert route["listen_address"] == f"127.0.0.1:{port}"

@@ -448,13 +448,12 @@ py_library(
     srcs = ["platform_instructions.py"],
     deps = [
         ":actions",
-        ":egress",
         ":environment",
         ":notifications",
+        ":platform_routes",
         ":session_dispatcher",
         "//agentplane/egress:resources",
         "//agentplane/session_instructions:platform_instructions",
-        "//cluster/cdk8s:service_ref",
     ],
 )
 
@@ -1337,6 +1336,7 @@ py_library(
     name = "platform_routes",
     srcs = ["platform_routes.py"],
     deps = [
+        ":egress",
         ":history_service",
         ":runner_gateway",
         ":sandbox_pod",
@@ -1344,6 +1344,7 @@ py_library(
         "//agentplane/egress:platform_routes",
         "//agentplane/history_service:settings",
         "//agentplane/runner_gateway:api",
+        "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",

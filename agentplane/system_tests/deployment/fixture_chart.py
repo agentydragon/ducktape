@@ -518,7 +518,6 @@ def build_chart(
         env,
         name=POD_TEMPLATE,
         image=ENVIRONMENT_TOOLS_IMAGE,
-        egress_api_service=agent_api,
         storage_class="local-path",
         vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
         environment_runtime_resources=k8s.ResourceRequirements(

@@ -1,8 +1,8 @@
 # Agent CLI
 
 `agentplane` ([`cli/`](../cli/)) is a Go command an agent runs from its shell to call the generated
-Action Service, Session Dispatcher, Environment Discovery/Lifecycle and History Service gRPC APIs, and the Notification Service and Egress
-rules HTTP APIs through the egress proxy. It adds no authority or state and no backend logic. What it takes off each agent
+Action Service, Session Dispatcher, Environment Discovery/Lifecycle, History Service and Egress rules
+gRPC APIs, and the Notification Service HTTP API through the egress proxy. It adds no authority or state and no backend logic. What it takes off each agent
 is the part `curl` leaves to every model turn: JSON quoting, the idempotency and recovery protocol, long
 waits, telling an egress refusal from a service refusal, and exit status. `agentplane --help` is what an
 agent reads first; each command's `--help` says what it wraps and the exit codes that matter.
@@ -66,7 +66,7 @@ group, so another service joins as one more group under them.
 | `notifications cancel ID`                                                                                                                            | `DELETE /v1/subscriptions/{id}`                                         |
 | `notifications send SESSION_ID {--body TEXT \| --body-file FILE\|-} [--from-session ID] [--key KEY]`                                                 | `POST /v1/messages`                                                     |
 | `notifications message ID`                                                                                                                           | `GET /v1/messages/{id}`                                                 |
-| `egress rules`                                                                                                                                       | `GET /v1/rules`                                                         |
+| `egress rules`                                                                                                                                       | `EgressRules.GetRules`                                                  |
 
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
 
@@ -165,7 +165,7 @@ Left out on purpose:
   as decimal strings, matching protobuf JSON for `uint64`; this corrects the prior numeric JSON shape.
   Action JSON is therefore a deliberate format change from the previous HTTP client's snake_case fields
   and lowercase state names; update scripts that read `--json` before using this CLI version.
-- Notifications and Egress keep their service JSON objects. A gRPC-Gateway response wraps each answer in
+- Notifications keep their service JSON objects. Egress rules emit ProtoJSON. A gRPC-Gateway response wraps each answer in
   a named field (`{"subscription": {...}}`, `{"subscriptions": [...]}`); the `notifications` commands
   generally print that field's value. `notifications inbox read --json` prints the full response with its
   `inbox`, `entries` and optional `notice`; `notifications inbox ack --json` prints the updated inbox.
@@ -196,13 +196,13 @@ Left out on purpose:
 
 The CLI reads the environment of the harness and of every command it runs. There are no config files and
 no discovery calls, so no command depends on a service it does not talk to. Actions and Sessions use
-generated gRPC over HTTP/2; Notifications and Egress rules use HTTP.
+generated gRPC over HTTP/2, as does Egress; Notifications use HTTP.
 
 | Variable                                                                                                                                                                  | Value                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`                                                                                             | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
-| `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                                                                                   | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                              |
+| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`, `AGENTPLANE_EGRESS_URL`                                                                    | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
+| `AGENTPLANE_NOTIFICATIONS_URL`                                                                                                                                            | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder substituted by the egress proxy or direct sidecar route                                    |
 | `AGENTPLANE_SESSION_ID`                                                                                                                                                   | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
 
 Managed Pod and VM environments supply the Session Dispatcher URL and inert credential placeholder
@@ -220,18 +220,18 @@ Session to receive the current prompt and environment. Stored prompts and Histor
 The HTTP clients use `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` from the harness. The
 Action and Session gRPC clients use `HTTPS_PROXY` for proxy resolution even when their configured service URL is
 `http`; they open an HTTP CONNECT tunnel, carrying h2c to the egress proxy. `NO_PROXY` excludes targets
-from both clients. `subscribe` also accepts `--session ID`, which wins over the metadata variable.
+from both clients. Egress rules use a local sidecar gRPC route, bypassing the forward proxy. `subscribe` also accepts `--session ID`, which wins over the metadata variable.
 Only that Session ID is sent to the subscription API; the service resolves its exact native placement.
 The CLI reads a raw Session ID; it has no Sandbox identity or destination envelope.
 
 Credential scope:
 
-- The CLI holds only a placeholder. Actions and Sessions send it as `authorization: Bearer <placeholder>` gRPC
-  metadata on each RPC; Notifications and Egress send it as an HTTP `Authorization` header. It never
+- The CLI holds only a placeholder. Actions, Sessions and Egress send it as `authorization: Bearer <placeholder>` gRPC
+  metadata on each RPC; Notifications send it as an HTTP `Authorization` header. It never
   prints the value and has no flag to supply another credential, bypass the proxy, or skip certificate
   verification. The HTTP clients follow no redirect.
-- Authority is whatever the egress proxy substitutes for the placeholder: the Sandbox's ServiceAccount,
-  exactly as for `curl` ([workload authentication](workload_authentication.md)). `actions policy` names
+- Authority is the Sandbox's ServiceAccount, substituted by the egress proxy or the direct sidecar route,
+  as appropriate ([workload authentication](workload_authentication.md)). `actions policy` names
   that account in `subject`.
 - A destination and Session ID address an inbox. They are not credentials.
 - Variable names avoid `TOKEN`, `KEY` and `SECRET`, which a harness that filters credential-looking
@@ -239,7 +239,7 @@ Credential scope:
 
 ## Errors and exit codes
 
-Action and Session RPC failures use the returned gRPC status code and message. HTTP API failures use the HTTP status,
+Action, Session and Egress RPC failures use the returned gRPC status code and message. HTTP API failures use the HTTP status,
 refusal headers, and, for a gRPC-Gateway service, the response body. The central proxy sets
 `x-agentplane-egress` (`denied; reason=...`) and the Pod sidecar sets `x-agentplane-egress-sidecar`
 (`reason=...`) on their HTTP refusals ([egress spec](../egress/SPEC.md)). Error envelopes use the same

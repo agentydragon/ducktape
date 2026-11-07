@@ -74,6 +74,8 @@ CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE",
 
 def audience_token_file(audience: str) -> str:
     """The sidecar-only file holding this Pod's projected token for `audience`."""
+    if audience == WORKLOAD_TOKEN_AUDIENCE:
+        return f"{_EGRESS_TOKEN_DIR}/token"
     return f"{_EGRESS_TOKEN_DIR}/{_SUBSTITUTABLE_AUDIENCE_FILES[audience]}"
 
 
