@@ -1,5 +1,6 @@
 """VM-only per-action volumes, guest configuration and evidence collection."""
 
+import contextlib
 import json
 import os
 from collections.abc import Callable, Iterator
@@ -12,6 +13,7 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.k3s.baseline import K3s
 from agentplane.system_tests.vm import (
     block_storage,
+    boot_rcu,
     guest_logs,
     host_qemu,
     infrastructure as vm_infrastructure,
@@ -19,11 +21,21 @@ from agentplane.system_tests.vm import (
 )
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
+BOOT_RCU_OBSERVER_ENV = "AGENTPLANE_VM_BOOT_RCU_OBSERVER"
+
+
+def _opt_in(name: str) -> bool:
+    value = os.environ.get(name, "0")
+    if value not in {"0", "1"}:
+        raise ValueError(f"{name} must be '0' or '1', got {value!r}")
+    return value == "1"
+
 
 class VmRuntime:
     def __init__(self, work: Path) -> None:
         self.releases = vm_infrastructure.releases()
         self._storage = block_storage.BlockStorage(work)
+        self._boot_rcu_observer = False
 
     def __enter__(self) -> VmRuntime:
         self._storage.__enter__()
@@ -57,6 +69,8 @@ class VmRuntime:
         return k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "-o", "jsonpath={.metadata.uid}")
 
     def configure(self, objects: list[dict[str, Any]]) -> None:
+        self._boot_rcu_observer = _opt_in(BOOT_RCU_OBSERVER_ENV)
+        vm_sandboxes.select_boot_rcu_observer(objects, enabled=self._boot_rcu_observer)
         vm_sandboxes.select_boot_evidence(objects, enabled=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1")
         vm_sandboxes.select_libvirt_monitor_debug(
             objects, enabled=os.environ.get("AGENTPLANE_VM_LIBVIRT_MONITOR_DEBUG") == "1"
@@ -83,21 +97,60 @@ class VmRuntime:
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> Iterator[None]:
         artifacts = undeclared_outputs_dir() / "vm-artifacts"
         passive_virtiofsd_timeline = host_qemu.virtiofsd_timeline_enabled()
-        with (
-            guest_logs.capture(
-                log_root=Path("/var/log/pods"),
-                pod_root=Path("/var/lib/kubelet/pods"),
-                storage_root=k3s.data_dir / "storage",
-                namespace=namespace,
-                kubevirt_namespace=vm_infrastructure.KUBEVIRT_NAMESPACE,
-                destination=artifacts,
-                validate_shutdown=validate_shutdown,
-                require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
-                record_shutdown_diagnostic=os.environ.get("AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC") == "1",
-            ),
-            host_qemu.capture(k3s.kubectl, namespace, artifacts, passive_virtiofsd_timeline=passive_virtiofsd_timeline),
-        ):
-            yield
+        host_boot_samples = artifacts / "boot-rcu-host" / "full-suite.jsonl"
+        active_error: BaseException | None = None
+        try:
+            with (
+                guest_logs.capture(
+                    log_root=Path("/var/log/pods"),
+                    pod_root=Path("/var/lib/kubelet/pods"),
+                    storage_root=k3s.data_dir / "storage",
+                    namespace=namespace,
+                    kubevirt_namespace=vm_infrastructure.KUBEVIRT_NAMESPACE,
+                    destination=artifacts,
+                    validate_shutdown=validate_shutdown,
+                    require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
+                    record_shutdown_diagnostic=os.environ.get("AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC") == "1",
+                ),
+                boot_rcu.capture_namespace(k3s.kubectl, namespace, host_boot_samples)
+                if self._boot_rcu_observer
+                else contextlib.nullcontext(),
+                host_qemu.capture(
+                    k3s.kubectl, namespace, artifacts, passive_virtiofsd_timeline=passive_virtiofsd_timeline
+                ),
+            ):
+                yield
+        except BaseException as error:
+            active_error = error
+            raise
+        finally:
+            if self._boot_rcu_observer:
+                try:
+                    boot_rcu.summarize_guest_serials(
+                        artifacts, namespace, host_boot_samples.with_name("full-suite-summary.json")
+                    )
+                except Exception as summary_error:
+                    marker_error: Exception | None = None
+                    try:
+                        boot_rcu.record_guest_summary_failure(artifacts, summary_error)
+                    except Exception as error:
+                        marker_error = error
+                    if active_error is not None:
+                        active_error.add_note(
+                            "Opt-in boot RCU guest-summary generation failed "
+                            f"({type(summary_error).__name__}); "
+                            + (
+                                "a failure marker was written."
+                                if marker_error is None
+                                else f"writing its marker also failed ({type(marker_error).__name__})."
+                            )
+                        )
+                    else:
+                        if marker_error is not None:
+                            summary_error.add_note(
+                                f"Also failed to write boot RCU summary failure marker ({type(marker_error).__name__})."
+                            )
+                        raise
 
     def report(self, k3s: K3s, namespace: str) -> str:
         if not host_qemu.virtiofsd_timeline_enabled():

@@ -10,6 +10,7 @@ import tarfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest_bazel
 from python.runfiles import Runfiles
@@ -31,6 +32,39 @@ def test_launcher_selection_requires_exact_vmi_owner_uid() -> None:
 
     assert boot_rcu._launcher_pod(kubectl, "scope", "target-vmi") == ("target", "target-pod")
     assert boot_rcu._launcher_pod(kubectl, "scope", "absent-vmi") is None
+
+
+def _launcher_pod_json(*, pod_uid: str = "pod-uid", vmi_uid: str = "vmi-uid") -> dict[str, Any]:
+    return {
+        "metadata": {
+            "namespace": "scope",
+            "name": "virt-launcher-test",
+            "uid": pod_uid,
+            "labels": {
+                "agentplane.allegedly.works/sandbox": "sandbox-a",
+                "kubevirt.io/created-by": vmi_uid,
+                "vmi.kubevirt.io/id": "test-vmi",
+            },
+            "ownerReferences": [{"kind": "VirtualMachineInstance", "name": "test-vmi", "uid": vmi_uid}],
+        },
+        "status": {"phase": "Running"},
+    }
+
+
+def test_namespace_launcher_identity_requires_sandbox_vmi_owner_and_kubevirt_labels() -> None:
+    def kubectl(*args: str, **kwargs: object) -> str:
+        assert args[0:3] == ("get", "pods", "-n")
+        assert "kubevirt.io=virt-launcher" in args
+        assert kwargs["timeout"] == boot_rcu.POD_QUERY_TIMEOUT_SECONDS
+        valid = _launcher_pod_json()
+        mismatched_created_by = _launcher_pod_json(pod_uid="pod-wrong")
+        mismatched_created_by["metadata"]["labels"]["kubevirt.io/created-by"] = "other-vmi"
+        return json.dumps({"items": [valid, mismatched_created_by]})
+
+    launchers, rejected = boot_rcu._namespace_launchers(kubectl, "scope")
+    assert [launcher["pod_uid"] for launcher in launchers] == ["pod-uid"]
+    assert launchers[0]["vmi_uid"] == "vmi-uid"
+    assert rejected == 1
 
 
 def test_qemu_sample_selects_exact_pod_cgroup_and_bounds_threads(tmp_path: Path, monkeypatch) -> None:
@@ -79,6 +113,126 @@ def test_qemu_scan_reports_unreadable_process_as_incomplete(tmp_path: Path, monk
         "process_scan_truncated": False,
         "process_scan_incomplete": True,
     }
+
+
+def test_multi_launcher_qemu_sample_matches_exact_pod_uid(tmp_path: Path) -> None:
+    uid = "6e8d7cc0-a974-4051-ba60-103c789005b1"
+    process = tmp_path / "100"
+    process.mkdir()
+    (process / "comm").write_text("qemu-kvm\n")
+    (process / "cgroup").write_text(f"0::/kubepods.slice/pod{uid.replace('-', '_')}/compute\n")
+    task = process / "task" / "100"
+    task.mkdir(parents=True)
+    (task / "comm").write_text("CPU 0/TCG\n")
+    (task / "stat").write_text("100 (CPU 0/TCG) S " + "0 " * 11 + "7 8 " + "0 " * 30)
+    (task / "schedstat").write_text("42 19 2\n")
+    (task / "wchan").write_text("futex_wait_queue\n")
+
+    qemus, scan = boot_rcu._sample_qemus(tmp_path, [uid, "other"])
+    assert qemus[uid]["pid"] == 100
+    assert qemus[uid]["matching_qemu_processes"] == 1
+    assert qemus["other"]["matching_qemu_processes"] == 0
+    assert scan["process_scan_incomplete"] is False
+
+
+def test_namespace_collector_records_exact_identity_and_teardown(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(boot_rcu, "FULL_SUITE_MAX_SAMPLES", 2)
+    monkeypatch.setattr(boot_rcu, "FULL_SUITE_INTERVAL_SECONDS", 0.01)
+    destination = tmp_path / "boot-rcu-host" / "full-suite.jsonl"
+
+    def kubectl(*_args: str, **_kwargs: object) -> str:
+        return json.dumps({"items": [_launcher_pod_json()]})
+
+    stop, thread = boot_rcu.start_namespace(kubectl, "scope", destination, proc_root=tmp_path / "empty-proc")
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    boot_rcu.stop_capture(stop, thread)
+
+    records = [json.loads(line) for line in destination.read_text().splitlines()]
+    assert len(records) == 2
+    assert records[0]["launchers"][0]["pod_uid"] == "pod-uid"
+    assert records[0]["launchers"][0]["vmi_uid"] == "vmi-uid"
+    assert records[0]["launchers"][0]["host_qemu"]["matching_qemu_processes"] == 0
+    summary = json.loads(destination.with_name("full-suite-summary.json").read_text())
+    assert summary["status"] == "observer_stopped"
+    assert summary["collector_exited_cleanly"] is True
+    assert summary["stop_reason"] == "sample_limit"
+    assert summary["window_exhausted"] is True
+    assert summary["pre_launch_poll_count"] == 1
+    assert summary["first_launcher_observed_at_utc"] is not None
+    assert summary["sampling_elapsed_seconds"] < boot_rcu.FULL_SUITE_WINDOW_SECONDS
+    assert summary["pods"][0]["pod_uid"] == "pod-uid"
+    assert summary["pods"][0]["samples"] == 2
+
+
+def test_namespace_collector_preserves_api_error_as_incomplete_not_absent(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(boot_rcu, "FULL_SUITE_MAX_SAMPLES", 2)
+    monkeypatch.setattr(boot_rcu, "FULL_SUITE_INTERVAL_SECONDS", 0.01)
+    destination = tmp_path / "full-suite.jsonl"
+    calls = 0
+
+    def failed_kubectl(*_args: str, **_kwargs: object) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return json.dumps({"items": [_launcher_pod_json()]})
+        raise RuntimeError("API unavailable")
+
+    stop, thread = boot_rcu.start_namespace(failed_kubectl, "scope", destination, proc_root=tmp_path)
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    boot_rcu.stop_capture(stop, thread)
+    records = [json.loads(line) for line in destination.read_text().splitlines()]
+    assert records[0]["launchers"][0]["pod_uid"] == "pod-uid"
+    assert records[1]["capture_error"] == "RuntimeError"
+    summary = json.loads(destination.with_name("full-suite-summary.json").read_text())
+    assert summary["query_failures"] == 1
+    assert summary["pods"][0]["pod_uid"] == "pod-uid"
+
+
+def test_namespace_collector_bounds_wait_for_first_launcher(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(boot_rcu, "FULL_SUITE_PRE_LAUNCH_SECONDS", 0.02)
+    monkeypatch.setattr(boot_rcu, "FULL_SUITE_INTERVAL_SECONDS", 0.005)
+    destination = tmp_path / "full-suite.jsonl"
+    stop, thread = boot_rcu.start_namespace(
+        lambda *_args, **_kwargs: '{"items": []}', "scope", destination, proc_root=tmp_path
+    )
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    boot_rcu.stop_capture(stop, thread)
+    summary = json.loads(destination.with_name("full-suite-summary.json").read_text())
+    assert summary["stop_reason"] == "first_launcher_timeout"
+    assert summary["samples_written"] == 0
+    assert summary["first_launcher_observed_at_utc"] is None
+    assert destination.read_bytes() == b""
+
+
+def test_guest_serial_summary_correlates_by_launcher_uid_and_reports_missing(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vm-artifacts"
+    pod_uid = "pod-uid"
+    serial = artifact_root / "serial" / f"scope_virt-launcher-test_{pod_uid}" / "virt-serial0-log"
+    serial.mkdir(parents=True)
+    (serial / "virt-serial0-log.log").write_bytes(
+        b"\n".join(
+            [
+                b"AGENTPLANE_BOOT_RCU_SAMPLE_BEGIN seq=0",
+                b"AGENTPLANE_BOOT_RCU_SAMPLE_END seq=0",
+                b"AGENTPLANE_BOOT_RCU_SAMPLE_BEGIN seq=1",
+                b"AGENTPLANE_BOOT_RCU_SAMPLE_END seq=1",
+                b"AGENTPLANE_BOOT_RCU_OBSERVER_COMPLETE samples=2",
+            ]
+        )
+    )
+    host_summary = artifact_root / "boot-rcu-host" / "full-suite-summary.json"
+    host_summary.parent.mkdir(parents=True)
+    host_summary.write_text(json.dumps({"pods": [{"pod_uid": pod_uid}, {"pod_uid": "missing-uid"}]}))
+
+    report = boot_rcu.summarize_guest_serials(artifact_root, "scope", host_summary)
+    rows = {row["pod_uid"]: row for row in json.loads(report.read_text())["rows"]}
+    assert rows[pod_uid]["guest_observer_complete"] is True
+    assert rows[pod_uid]["host_observed"] is True
+    assert rows["missing-uid"]["status"] == "missing"
+    assert rows["missing-uid"]["host_observed"] is True
 
 
 def test_output_byte_cap_keeps_complete_jsonl_records(tmp_path: Path, monkeypatch) -> None:
@@ -212,6 +366,34 @@ def test_guest_records_preserve_exact_reporter_receipts_on_shared_tty(tmp_path: 
         assert receipt.rstrip(b"\n") not in record.group(0)
         assert b"AGENTPLANE_BOOT_RCU_SAMPLE_ERROR" not in record.group(0)
     assert lines.count(b"AGENTPLANE_BOOT_RCU_OBSERVER_COMPLETE samples=20") == 1
+
+
+def test_guest_window_argument_selects_360_bounded_samples(tmp_path: Path) -> None:
+    runfiles = Runfiles.CreateOrRaise()
+    script = runfiles.Rlocation(os.environ["BOOT_RCU_OBSERVER_RLOCATION"])
+    busybox_tar = runfiles.Rlocation(os.environ["BOOT_RCU_BUSYBOX_RLOCATION"])
+    assert script is not None
+    assert busybox_tar is not None
+    busybox = tmp_path / "busybox"
+    with tarfile.open(busybox_tar) as archive:
+        member = next(member for member in archive if member.name.endswith("bin/busybox"))
+        source = archive.extractfile(member)
+        assert source is not None
+        busybox.write_bytes(source.read())
+    busybox.chmod(0o755)
+    cmdline = tmp_path / "cmdline"
+    cmdline.write_text("console=ttyS0 agentplane.boot-rcu-observe=1 agentplane.boot-rcu-observe-window=360\n")
+    env = os.environ | {
+        "AGENTPLANE_BOOT_RCU_BUSYBOX": str(busybox),
+        "AGENTPLANE_BOOT_RCU_CMDLINE_PATH": str(cmdline),
+        "AGENTPLANE_BOOT_RCU_INTERVAL": "0.001",
+        "AGENTPLANE_BOOT_RCU_TMPDIR": str(tmp_path),
+    }
+    env.pop("AGENTPLANE_BOOT_RCU_SAMPLES", None)
+    result = subprocess.run([str(busybox), "sh", str(script)], check=True, capture_output=True, env=env, timeout=45)
+    serial = result.stdout.replace(b"\r\n", b"\n")
+    assert serial.count(b"AGENTPLANE_BOOT_RCU_SAMPLE_BEGIN seq=") == 360
+    assert b"AGENTPLANE_BOOT_RCU_OBSERVER_COMPLETE samples=360\n" in serial
 
 
 if __name__ == "__main__":

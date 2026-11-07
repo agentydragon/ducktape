@@ -4,7 +4,16 @@
 set -u
 export PATH=/usr/bin:/usr/sbin
 busybox=${AGENTPLANE_BOOT_RCU_BUSYBOX:-/usr/bin/busybox}
-sample_limit=${AGENTPLANE_BOOT_RCU_SAMPLES:-120}
+if [ "${AGENTPLANE_BOOT_RCU_SAMPLES+x}" = x ]; then
+	sample_limit=$AGENTPLANE_BOOT_RCU_SAMPLES
+else
+	sample_limit=120
+	cmdline_path=${AGENTPLANE_BOOT_RCU_CMDLINE_PATH:-/proc/cmdline}
+	cmdline=$("$busybox" head -c 4096 "$cmdline_path" 2>/dev/null || true)
+	case " $cmdline " in
+		*" agentplane.boot-rcu-observe-window=360 "*) sample_limit=360 ;;
+	esac
+fi
 sample_interval=${AGENTPLANE_BOOT_RCU_INTERVAL:-1}
 sample_root=${AGENTPLANE_BOOT_RCU_TMPDIR:-/run}
 sample_dir=$("$busybox" mktemp -d "$sample_root/agentplane-boot-rcu.XXXXXX") || exit 1
