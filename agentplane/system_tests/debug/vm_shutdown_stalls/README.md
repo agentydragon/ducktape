@@ -299,3 +299,12 @@ serial shows `mount-monitor-dispatch` entering and leaving rate limiting, follow
 shutdown proof and powerdown. Its host snapshot at 21:16:10.028 UTC captured a running QEMU
 domain shortly before proof; one vCPU was halted in the register sample. These individual
 observations therefore do not establish a stuck manager or vCPU.
+
+## Full-stack one-guest control with passive virtiofsd timeline
+
+The [five-run uncached control](fullstack_five_unperturbed/README.md) used the reviewed
+#14710 head containing #14712's proof markers, with five concurrent RBE actions and the
+opt-in passive virtiofsd timeline. All five guests completed the ordered unmount proof and
+powered down without a forced domain destroy. Its byte-exact diagnostic subset and per-file
+checksums are retained alongside the run report. This healthy batch is not a reproduction
+or a causal explanation of the historical stall.
