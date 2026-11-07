@@ -160,7 +160,9 @@ def test_shutdown_sysrq_is_opt_in_and_applies_once_per_vm_template(
     runtime.configure(objects)
 
     def args(obj: dict[str, Any]) -> str:
-        return obj["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+        value = obj["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+        assert isinstance(value, str)
+        return value
 
     assert all(vm_sandboxes.SHUTDOWN_SYSRQ_ARG not in args(obj).split() for obj in objects[:2])
     monkeypatch.setenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", "1")
