@@ -243,6 +243,7 @@ func (s *sidecar) proxyHandler() http.Handler {
 			s.handleConnect(w, r)
 			return
 		}
+		absolute := r.URL.Scheme == "http" && r.URL.Host != ""
 		if r.URL.Scheme == "" && r.URL.Host == "" && r.Host != "" {
 			// Local clients may send origin-form requests to the proxy listener.
 			// Only absolute-form requests select a privileged workload route.

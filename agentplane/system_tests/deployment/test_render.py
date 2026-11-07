@@ -307,11 +307,11 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert not any(
         source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress" for source in runner_token_sources
     )
-    rules_authority = f"egress.{NAMESPACE}.svc.cluster.local:80"
-    assert sidecar_settings["workload_routes"][rules_authority]["upstream"] == (
-        f"egress.{NAMESPACE}.svc.cluster.local:80"
-    )
-    assert runtime_env["AGENTPLANE_EGRESS_URL"] == f"http://egress.{NAMESPACE}.svc.cluster.local"
+    rules_route = sidecar_settings["platform_routes"]["egress-rules"]
+    assert rules_route["transport"] == {"mode": "tls_connect", "server_uri": "spiffe://agentplane/egress-proxy"}
+    assert rules_route["upstream"] in egress_config["tls_passthrough_targets"]
+    assert runtime_env["AGENTPLANE_EGRESS_GRPC_URL"] == f"http://{rules_route['listen_address']}"
+    assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in runtime_env
     assert sidecar_settings["proxy"]["transport"]["mode"] == "tls"
     assert sidecar_settings["proxy"]["transport"]["auth"]["mode"] == "spiffe"
     for name in ("sandbox", "sandbox-build"):
@@ -489,8 +489,8 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     assert config["model_config_service"]["target"].rsplit(":", 1)[1] == relay_address.rsplit(":", 1)[1]
     assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"] == "http://10.0.2.1:3133"
     assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_URL"] == "http://10.0.2.1:3134"
-    assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
-    assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
+    assert "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL" not in config["harness_environment"]["values"]
+    assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in config["harness_environment"]["values"]
     oom_config_map = _resource(vm_fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
     oom_resources = oom_config["environment"]["resources"]

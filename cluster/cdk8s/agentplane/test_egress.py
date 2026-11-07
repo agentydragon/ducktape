@@ -344,9 +344,6 @@ def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(staging_ma
     dispatcher_origin = (
         f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
     )
-    http_origin = (
-        f"{session_dispatcher.http_service(namespace).fqdn}:{session_dispatcher.http_service(namespace).port.number}"
-    )
     basic = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
     assert all(
         session_dispatcher.service(namespace).fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"]
@@ -362,8 +359,8 @@ def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(staging_ma
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
         routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
-        configured.extend((origin, routes[origin]) for origin in (dispatcher_origin, http_origin) if origin in routes)
-    assert {origin for origin, _ in configured} == {dispatcher_origin, http_origin}
+        configured.extend((origin, routes[origin]) for origin in (dispatcher_origin,) if origin in routes)
+    assert {origin for origin, _ in configured} == {dispatcher_origin}
     for _, route in configured:
         assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
         assert route["server_uri"] == runner_gateway.WORKLOAD_URI
