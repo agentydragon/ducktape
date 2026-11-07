@@ -22,6 +22,103 @@ spec:
   storageClassName: piraeus-ssd-2-autodiskful
   volumeMode: Filesystem
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: session-backup-data-hdd
+  namespace: session-backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: piraeus-hdd-2
+  volumeMode: Filesystem
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: session-backup-hdd-copy
+  name: session-backup-hdd-copy
+  namespace: session-backup
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: session-backup-hdd-copy
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: session-backup-hdd-copy
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: session-backup
+              topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - sleep
+            - infinity
+          image: docker.io/chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
+          imagePullPolicy: IfNotPresent
+          name: copy
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /source
+              name: source
+              readOnly: true
+            - mountPath: /destination
+              name: destination
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: source
+          persistentVolumeClaim:
+            claimName: session-backup-data
+            readOnly: true
+        - name: destination
+          persistentVolumeClaim:
+            claimName: session-backup-data-hdd
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: session-backup-hdd-copy
+  namespace: session-backup
+spec:
+  egressDeny:
+    - toEntities:
+        - all
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: session-backup-hdd-copy
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
