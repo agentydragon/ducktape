@@ -62,7 +62,7 @@ it("preserves the Action facade's raw HTTP error body", async () => {
   await expect(startMcpLinkage("example", [], fetcher)).rejects.toMatchObject({
     status: 409,
     code: undefined,
-    message: body,
+    body,
   });
 });
 

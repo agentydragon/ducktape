@@ -128,13 +128,13 @@ it("maps unset ProtoJSON message fields to absent optional links", async () => {
 });
 
 it.each([
-  ['{"code":10,"message":"changed"}', 10],
-  ["gateway unavailable", undefined],
-])("preserves HTTP error details before protobuf decoding: %s", async (body, code) => {
+  { wire: '{"code":10,"message":"changed"}', body: { code: 10, message: "changed" }, code: 10 },
+  { wire: "gateway unavailable", body: "gateway unavailable", code: undefined },
+])("preserves HTTP error details before protobuf decoding: $wire", async ({ wire, body, code }) => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => new Response(body, { status: 409 }))
+    vi.fn(async () => new Response(wire, { status: 409 }))
   );
 
-  await expect(listModels()).rejects.toMatchObject({ status: 409, code, message: body });
+  await expect(listModels()).rejects.toMatchObject({ status: 409, code, body });
 });
