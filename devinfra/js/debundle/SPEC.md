@@ -765,6 +765,13 @@ defaults and declaration initializers compose their own effects separately.
 Successful static own-data reads and writable own-data writes also compose
 these domains after the shared slot proof. Their actual property cells remain
 in the heap ledger; closed coverage does not make a heap access effect-free.
+For a checked local base-class construction, a completed constructor activation
+may carry its actually defined public own data fields onto the constructed
+instance value. A later singleton read uses that descriptor witness and the
+current settled class-origin heap value. Projected members, incomplete
+construction, escapes, possible mutation, accessors and absent fields do not
+inherit the witness. It proves neither a distinct instance allocation nor a
+writable slot.
 The receipt retains current-prefix proof dependencies, while receiver, callee,
 argument and RHS evaluation compose their own effects. Accessors, missing or
 inherited slots, unsettled receivers and unproved writable descriptors do not

@@ -353,9 +353,13 @@ pub(super) struct SymbolicInputId {
 }
 
 /// Provenance of a local class capability; neither variant proves allocation identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum InstanceOrigin {
-    Constructed,
+    /// Present data descriptors established by this completed constructor
+    /// activation. The pooled class heap still supplies their possible values.
+    Constructed {
+        own_data: BTreeSet<String>,
+    },
     Projected,
 }
 

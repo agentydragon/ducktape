@@ -61,6 +61,15 @@ struct ConstructorReceiver {
 }
 
 impl LocalFrame {
+    /// A descriptor proof from the current checked base-class activation only.
+    /// Callers must still require normal, complete constructor execution.
+    pub(super) fn constructed_own_data(&self) -> BTreeSet<String> {
+        self.constructor_receiver
+            .as_ref()
+            .map(|receiver| receiver.public_fields.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
     pub(super) fn new(environment: Context) -> Self {
         Self {
             inputs: environment.values().flatten().cloned().collect(),
