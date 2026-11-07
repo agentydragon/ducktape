@@ -1017,21 +1017,10 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
     let covered_creation = context.source_covered()
         && properties.iter().enumerate().all(|(position, definition)| {
             context.literal_property_kind(allocation, position) == definition.kind()
-                && definition
-                    .name()
-                    .is_some_and(|name| match definition.kind() {
-                        // Own-data syntax such as shorthand `{ __proto__ }`
-                        // creates an own property. Legacy colon-form
-                        // `__proto__: value` is lowered without a data name
-                        // and marks the source expression uncovered.
-                        LiteralPropertyKind::Data => true,
-                        // Static definitions install fresh own descriptors; their
-                        // callable child proves creation without running its body.
-                        LiteralPropertyKind::Method
-                        | LiteralPropertyKind::Getter
-                        | LiteralPropertyKind::Setter => true,
-                        LiteralPropertyKind::Opaque => false,
-                    })
+                // Shorthand `__proto__` is named own-data syntax. The legacy
+                // colon form is lowered without a data name and stays opaque.
+                && definition.name().is_some()
+                && !matches!(definition.kind(), LiteralPropertyKind::Opaque)
         });
     context.literal_creation_operation(covered_creation);
     let mut writable_properties = BTreeSet::new();
