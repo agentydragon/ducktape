@@ -13637,10 +13637,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         && !body.generator
                         && (body.calls.is_empty()
                             || (body.body_facts.ordered_plan().is_some()
-                                && body
-                                    .calls
-                                    .iter()
-                                    .all(|call| call.kind == CallKind::ImplicitCoercion)))
+                                && body.calls.iter().all(|call| {
+                                    matches!(
+                                        call.kind,
+                                        CallKind::ImplicitCoercion | CallKind::BindingUpdate
+                                    )
+                                })))
                         && !body.reads.iter().any(|id| id.0.as_ref() == "arguments")
                         && self
                             .inputs
@@ -14025,7 +14027,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
             }
         }
-        if call.kind == CallKind::OpaqueExecution {
+        if matches!(
+            call.kind,
+            CallKind::OpaqueExecution | CallKind::BindingUpdate
+        ) {
             let fact = &self.inputs.facts[call.owner.0];
             let mut reached: Values = env
                 .values()

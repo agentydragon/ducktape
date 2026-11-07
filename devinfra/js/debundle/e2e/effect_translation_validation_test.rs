@@ -4262,16 +4262,18 @@ fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
 }
 
 #[test]
-fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
-    for (body, expected) in [
-        ("let value = 1n; return value++;", "1n 0\n"),
+fn numeric_local_updates_distinguish_captured_cells_from_unknown_coercion() {
+    for (body, expected, covered_calls) in [
+        ("let value = 1n; return value++;", "1n 0\n", None),
         (
             "let value = { valueOf() { return ++calls; } }; return value++;",
             "1 1\n",
+            None,
         ),
         (
             "let value = 1; const read = () => value; value++; return read();",
             "2 0\n",
+            Some(2),
         ),
     ] {
         let source = format!(
@@ -4290,11 +4292,37 @@ fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
         ));
         assert_preserved_entry_output(&fixture, expected);
         let execution = binding_execution_report(&fixture, "result");
-        assert_eq!(
-            execution["binding_effect_authority"]["authority"],
-            "ordered_root_initializer_uncovered",
-            "{body}: {execution:#}"
-        );
+        if let Some(calls) = covered_calls {
+            assert_operation_receipt(&fixture, "result", calls);
+            let heap = &execution["heap_frontier"];
+            let accesses = &heap["non_assumed_heap_accesses"];
+            let cell = accesses["reads"]["sample"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|cell| cell["kind"] == "lexical_cell")
+                .expect("the captured read retains its actual cell");
+            assert!(
+                accesses["writes"]["sample"]
+                    .as_array()
+                    .unwrap()
+                    .contains(cell),
+                "the update and closure read must address the same captured cell: {heap:#}"
+            );
+            assert!(
+                heap["composed_synchronous_calls"]["allocations"]["sample"]
+                    .as_array()
+                    .unwrap()
+                    .contains(cell),
+                "the receipt must retain creation of the captured cell: {heap:#}"
+            );
+        } else {
+            assert_eq!(
+                execution["binding_effect_authority"]["authority"],
+                "ordered_root_initializer_uncovered",
+                "{body}: {execution:#}"
+            );
+        }
     }
 }
 
