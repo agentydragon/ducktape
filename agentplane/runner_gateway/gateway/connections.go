@@ -62,14 +62,20 @@ func newConnections() *connections {
 	return &connections{local: make(map[string]*runnerConnection), leaseEpochs: make(map[string]uint64)}
 }
 
-func (c *connections) accept(connection *runnerConnection) {
+func (c *connections) accept(connection *runnerConnection) error {
 	c.mu.Lock()
+	if current := c.local[connection.identity.Uid]; current != nil && current.epoch >= connection.epoch ||
+		c.leaseEpochs[connection.identity.Uid] > connection.epoch {
+		c.mu.Unlock()
+		return errSupersededConnection
+	}
 	previous := c.local[connection.identity.Uid]
 	c.local[connection.identity.Uid] = connection
 	c.mu.Unlock()
 	if previous != nil {
 		previous.end(errSupersededConnection)
 	}
+	return nil
 }
 
 func (c *connections) remove(connection *runnerConnection, err error) {
