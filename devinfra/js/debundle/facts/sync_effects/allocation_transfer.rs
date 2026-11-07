@@ -13,11 +13,12 @@ use crate::facts::abstract_domain::builtins::{
     ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
 };
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
+use crate::facts::abstract_domain::primitive;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
-use swc_ecma_ast::Id;
+use swc_ecma_ast::{BinaryOp, Id};
 
 #[derive(Clone)]
 pub(super) enum AllocationJudgment {
@@ -80,6 +81,39 @@ pub(super) trait AllocationContext {
     ) -> Option<AllocationValue> {
         None
     }
+}
+
+/// Transfer a binary operation over values whose kinds are already known to
+/// be primitive. An object or unknown value declines so the caller can use its
+/// application fallback after evaluating both operands exactly once.
+pub(super) fn binary(
+    op: BinaryOp,
+    left: &Values,
+    right: &Values,
+    mut judgment: AllocationJudgment,
+) -> Option<AllocationValue> {
+    let primitive_kinds = |values: &Values| {
+        values.iter().try_fold(PrimKinds::NONE, |kinds, value| {
+            let AbstractValue::Value(Value::Prim(operand)) = value else {
+                return None;
+            };
+            Some(kinds.union(*operand))
+        })
+    };
+    let left_kinds = primitive_kinds(left)?;
+    let right_kinds = primitive_kinds(right)?;
+    let result_kinds = primitive::binary_result(op, left_kinds, right_kinds)?;
+    let may_throw = primitive::binary_throws(op, left_kinds, right_kinds);
+
+    let mut values = Values::new();
+    if result_kinds != PrimKinds::NONE {
+        values.insert(AbstractValue::Value(Value::Prim(result_kinds)));
+    }
+    if may_throw || values.is_empty() {
+        judgment = AllocationJudgment::Opaque;
+        values.insert(AbstractValue::Value(Value::Unavailable));
+    }
+    Some(AllocationValue { values, judgment })
 }
 
 /// Transfer the exact zero-argument keyed-collection constructor row. Provider

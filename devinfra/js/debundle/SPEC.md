@@ -3074,6 +3074,19 @@ methods requiring `this` stay conservative. Invocation and fallback use the
 captured receiver even if an argument rebinds its source cell. Computed or
 dynamic receivers, optional calls, spread arguments and direct eval remain
 outside this ordered grammar.
+
+Eager binary expressions in these ordered callable bodies evaluate their left
+and right operands once, in source order. When both results are known
+primitives, the shared primitive transfer supplies the result kind and records
+a no-effect operation receipt only when the operation cannot throw for those
+kinds. A possible Symbol or BigInt throw leaves effect and completion coverage
+unknown. If either operand is an object or unknown value, the existing
+coercion fallback receives both already evaluated operands, so user coercion
+runs after the right operand and is not replayed. Short-circuit operators,
+`in`, `instanceof`, and strict equality remain outside this transfer. This
+does not admit a binary root initializer or a provider summary containing
+calls.
+
 Guarded dense-array `push` consumes that captured receiver and evaluated
 primitive arguments. An uninterrupted first dense literal allocation without
 spreads supplies a separate descriptor witness: original prototype,
