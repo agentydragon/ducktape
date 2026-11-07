@@ -1053,6 +1053,7 @@ impl AssignmentAnalysis {
         let required_provider_targets = facts
             .iter()
             .flat_map(analysis::facts::StatementFacts::required_conditional_provider_targets)
+            .map(provider_target_key)
             .collect();
         let provider_targets =
             assess_provider_targets(required_provider_targets, provider_target_evidence);
