@@ -14,7 +14,7 @@ trace_supported=no
 trace_reason=unavailable
 trace_hits_total=0
 trace_buffer_kib=1024
-trace_line_limit=1536
+trace_scan_line_limit=20000
 
 emit() {
 	printf '\nAGENTPLANE_CGROUP_PILOT_%s\n' "$*" >"$record_file"
@@ -130,19 +130,51 @@ trace_cpu_stats() {
 	phase=$1
 	for cpu in cpu0 cpu1; do
 		stats_file=$tracefs/per_cpu/$cpu/stats
-		if [ -r "$stats_file" ]; then
+		captured_stats=$scratch/trace-stats-$phase-$cpu
+		if [ -r "$stats_file" ] && "$busybox" head -c 2048 "$stats_file" >"$captured_stats"; then
 			stats=$("$busybox" awk '
 				BEGIN { overrun = "unavailable"; commit = "unavailable"; dropped = "unavailable" }
 				$1 == "overrun:" { overrun = $2 }
 				$1 == "commit" && $2 == "overrun:" { commit = $3 }
 				$1 == "dropped" && $2 == "events:" { dropped = $3 }
 				END { printf "overrun=%s commit_overrun=%s dropped=%s", overrun, commit, dropped }
-			' "$stats_file")
+			' "$captured_stats")
 			emit "TRACE_CPU_STATS step=$step phase=$phase cpu=$cpu $stats"
 		else
+			printf 'unavailable\n' >"$captured_stats"
 			emit "TRACE_CPU_STATS step=$step phase=$phase cpu=$cpu unavailable"
 		fi
 	done
+}
+
+trace_integrity() {
+	for cpu in cpu0 cpu1; do
+		status=$("$busybox" awk '
+			FNR == 1 { phase++ }
+			$1 == "overrun:" { counter[phase, "overrun"] = $2 }
+			$1 == "commit" && $2 == "overrun:" { counter[phase, "commit"] = $3 }
+			$1 == "dropped" && $2 == "events:" { counter[phase, "dropped"] = $3 }
+			END {
+				for (i = 1; i <= 2; i++) {
+					for (j = 1; j <= 3; j++) {
+						key = j == 1 ? "overrun" : (j == 2 ? "commit" : "dropped")
+						if (!((i, key) in counter) || counter[i, key] !~ /^[0-9]+$/) { print "unavailable"; exit }
+					}
+				}
+				for (j = 1; j <= 3; j++) {
+					key = j == 1 ? "overrun" : (j == 2 ? "commit" : "dropped")
+					if (counter[2, key] > counter[1, key]) { print "overflow_or_drop"; exit }
+					if (counter[2, key] < counter[1, key]) { print "counter_reset"; exit }
+				}
+				print "clean"
+			}
+		' "$scratch/trace-stats-before-$cpu" "$scratch/trace-stats-after-$cpu")
+		if [ "$status" != clean ]; then
+			printf '%s:%s' "$cpu" "$status"
+			return
+		fi
+	done
+	printf 'clean'
 }
 
 change_property() {
@@ -172,25 +204,20 @@ change_property() {
 		printf '0\n' >"$tracefs/tracing_on"
 		trace_cpu_stats after
 		trace_lines=$("$busybox" wc -l <"$tracefs/trace")
-		if [ "$value" = yes ]; then
-			if [ "$trace_lines" -gt "$trace_line_limit" ]; then
-				trace_excerpt_truncated=yes
-				retained_lines=$trace_line_limit
-			else
-				trace_excerpt_truncated=no
-				retained_lines=$trace_lines
-			fi
-			emit "TRACE_EXCERPT step=$step total_lines=$trace_lines retained_lines=$retained_lines truncated=$trace_excerpt_truncated ring_kib=$trace_buffer_actual"
-			line_number=0
-			"$busybox" head -n "$trace_line_limit" "$tracefs/trace" >"$scratch/trace-excerpt"
-			while IFS= read -r trace_line; do
-				line_number=$((line_number + 1))
-				if [ "${#trace_line}" -gt 512 ]; then trace_line_truncated=yes; else trace_line_truncated=no; fi
-				trace_line=$(printf '%s' "$trace_line" | "$busybox" head -c 512)
-				emit "TRACE_LINE step=$step n=$line_number truncated=$trace_line_truncated text=$trace_line"
-			done <"$scratch/trace-excerpt"
+		integrity=$(trace_integrity)
+		emit "TRACE_INTEGRITY step=$step total_lines=$trace_lines ring_kib=$trace_buffer_actual counters=$integrity"
+		if [ "$value" != yes ]; then
+			emit "TRACE_CHAIN step=$step status=not_requested reason=off_step"
+		elif [ "$trace_lines" -gt "$trace_scan_line_limit" ]; then
+			emit "TRACE_CHAIN step=$step status=unproven reason=trace_lines_exceed_limit limit=$trace_scan_line_limit"
 		else
-			emit "TRACE_EXCERPT step=$step total_lines=$trace_lines retained_lines=0 reason=off_step ring_kib=$trace_buffer_actual"
+			if "$busybox" awk -v "integrity=$integrity" -f /usr/sbin/agentplane-cgroup-pilot-trace.awk "$tracefs/trace" >"$scratch/trace-chain"; then
+				while IFS= read -r trace_chain; do
+					emit "TRACE_CHAIN step=$step $trace_chain"
+				done <"$scratch/trace-chain"
+			else
+				emit "TRACE_CHAIN step=$step status=unproven reason=parser_failed"
+			fi
 		fi
 		trace_hits=$("$busybox" grep -c 'cgroup_update_dfl_csses' "$tracefs/trace" || true)
 		trace_lock=$("$busybox" grep -c 'percpu_down_write' "$tracefs/trace" || true)
