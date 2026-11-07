@@ -10,7 +10,8 @@ use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
     ClassConstructorBody, ClassDefinition, ClassFieldKey, ConstructorPhase,
     DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCall, LocalCallee,
-    LocalExpression, LocalInvocation, LocalOperation, LocalRegion, ObjectBindingProperty,
+    LocalExpression, LocalInvocation, LocalOperation, LocalRegion, ObjectBindingPattern,
+    ObjectBindingProperty,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::property_inference::DescriptorAttributes;
@@ -1989,42 +1990,10 @@ fn execute_operations(
                 initialize_binding(context, body, frame, binding, selected);
             }
             LocalOperation::InitializeObject { pattern, value } => {
-                let Some(receivers) = expression(context, value, body, frame, judgment) else {
-                    context.unproved_binding_targets(frame, &pattern.properties);
-                    return None;
-                };
-                if receivers.values.is_empty() {
-                    return Some(abrupt_exit(frame));
-                }
-                // Keep the evaluated graph reachable if a later property is
-                // refused. Neither its RHS nor its earlier reads run again.
-                frame.inputs.extend(receivers.values.iter().cloned());
-                for (index, property) in pattern.properties.iter().enumerate() {
-                    let Some(result) = read_field(
-                        context,
-                        frame,
-                        None,
-                        &receivers.values,
-                        &property.property,
-                        property.span,
-                    ) else {
-                        context.unproved_binding_targets(frame, &pattern.properties[index..]);
-                        return None;
-                    };
-                    frame.effect_coverage.compose(&result.effects);
-                    judgment.compose(&result.allocation.judgment);
-                    let selected = completing_selected(
-                        SelectedValue {
-                            values: result.allocation.values,
-                            selection: result.selection,
-                            postcondition: result.postcondition,
-                        },
-                        frame,
-                    );
-                    if selected.values.is_empty() {
-                        return Some(abrupt_exit(frame));
-                    }
-                    initialize_binding(context, body, frame, &property.binding, selected);
+                let completion =
+                    initialize_object_binding(context, body, pattern, value, frame, judgment)?;
+                if completion.is_break() {
+                    return Some(completion);
                 }
             }
             LocalOperation::Evaluate(node) => {
@@ -2073,6 +2042,57 @@ fn execute_operations(
         }
     }
     Some(Continue(()))
+}
+
+// Object-binding receivers and property transfer results are needed only by
+// this operation, not by every ordinary recursive callable activation.
+#[inline(never)]
+fn initialize_object_binding(
+    context: &mut impl LocalContext,
+    body: &LocalBody,
+    pattern: &ObjectBindingPattern,
+    value: &LocalExpression,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<std::ops::ControlFlow<RegionExit>> {
+    let Some(receivers) = expression(context, value, body, frame, judgment) else {
+        context.unproved_binding_targets(frame, &pattern.properties);
+        return None;
+    };
+    if receivers.values.is_empty() {
+        return Some(abrupt_exit(frame));
+    }
+    // Keep the evaluated graph reachable if a later property is
+    // refused. Neither its RHS nor its earlier reads run again.
+    frame.inputs.extend(receivers.values.iter().cloned());
+    for (index, property) in pattern.properties.iter().enumerate() {
+        let Some(result) = read_field(
+            context,
+            frame,
+            None,
+            &receivers.values,
+            &property.property,
+            property.span,
+        ) else {
+            context.unproved_binding_targets(frame, &pattern.properties[index..]);
+            return None;
+        };
+        frame.effect_coverage.compose(&result.effects);
+        judgment.compose(&result.allocation.judgment);
+        let selected = completing_selected(
+            SelectedValue {
+                values: result.allocation.values,
+                selection: result.selection,
+                postcondition: result.postcondition,
+            },
+            frame,
+        );
+        if selected.values.is_empty() {
+            return Some(abrupt_exit(frame));
+        }
+        initialize_binding(context, body, frame, &property.binding, selected);
+    }
+    Some(std::ops::ControlFlow::Continue(()))
 }
 
 // Keep handler environments and completion routing out of ordinary deep
