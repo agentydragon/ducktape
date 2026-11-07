@@ -22,6 +22,17 @@ func TestHTTPServerServesHumaOpenAPIDocument(t *testing.T) {
 	assertSaneOpenAPI(t, recorder.Body.Bytes())
 }
 
+func TestExportOpenAPIExcludesMigratedSystemStatusRoute(t *testing.T) {
+	var output bytes.Buffer
+	if err := exportOpenAPI(&output); err != nil {
+		t.Fatal(err)
+	}
+	document := assertSaneOpenAPI(t, output.Bytes())
+	if _, ok := document.Paths["/system/status"]; ok {
+		t.Fatal("Huma OpenAPI document still includes the migrated GET /system/status route")
+	}
+}
+
 func TestExportOpenAPISandboxFormSchema(t *testing.T) {
 	var output bytes.Buffer
 	if err := exportOpenAPI(&output); err != nil {

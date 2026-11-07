@@ -510,7 +510,6 @@ py_library(
     deps = [
         ":database",
         ":environment",
-        ":mcp_routes",
         ":notifications",
         ":service_workload",
         "//agentplane:crd_group",
@@ -523,7 +522,6 @@ py_library(
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
-        "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
@@ -566,6 +564,7 @@ py_library(
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:secret_ref",
@@ -868,6 +867,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
+        ":mcp_edge",
         ":telemetry",
         "//:conftest",
         "@pypi//cdk8s",

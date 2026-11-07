@@ -467,9 +467,14 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 	_, err = service.linkages.CompleteCallback(t.Context(), &linkage_servicepb.CompleteCallbackRequest{
 		State: oauthprovider.State(t, started.GetAuthorizationUrl()), Code: oauthprovider.RefusedCode,
 	})
+	failureStatus := status.Convert(err)
 	details := status.Convert(err).Details()
 	if status.Code(err) != codes.Unavailable || len(details) != 1 {
 		t.Fatalf("a refused exchange returned %v", err)
+	}
+	if got := failureStatus.Message(); got != "MCP authorization code exchange failed" ||
+		strings.Contains(got, oauthprovider.RefusedError) || strings.Contains(got, oauthprovider.RefusedErrorDescription) {
+		t.Fatalf("a refused exchange exposed provider error text in its status message: %q", got)
 	}
 	info, ok := details[0].(*errdetails.ErrorInfo)
 	if !ok || info.GetReason() != "MCP_TOKEN_EXCHANGE_FAILED" || info.GetDomain() != "agentplane.actions" {

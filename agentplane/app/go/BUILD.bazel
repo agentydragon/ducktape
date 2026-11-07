@@ -26,6 +26,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/app/go",
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service:linkage_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
         "//agentplane/action_service:web_push_service_go_proto",
         "//agentplane/app:app_service_go_proto",
@@ -86,6 +87,7 @@ go_library(
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/log",
         "@io_k8s_utils//ptr",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
@@ -209,6 +211,18 @@ go_test(
 )
 
 go_test(
+    name = "statusapi_test",
+    srcs = ["statusapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/status",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)
+
+go_test(
     name = "policyapi_test",
     srcs = ["policyapi_test.go"],
     embed = [":main_lib"],
@@ -259,6 +273,7 @@ go_test(
     srcs = ["operatorapi_test.go"],
     embed = [":main_lib"],
     deps = [
+        "//agentplane/action_service:linkage_service_go_proto",
         "//agentplane/app/go/auth",
         "//agentplane/app/go/policyaccess",
         "//agentplane/egress/api/v1alpha1",
@@ -268,6 +283,12 @@ go_test(
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
     ],
 )
 

@@ -2,6 +2,13 @@
 
 Gaps to close if a workflow needs them; none is committed.
 
+## Consolidate frontend configuration types on protobuf
+
+Use the generated protobuf types as the shared frontend configuration contract, including frontend
+search-link settings. Remove redundant hand-written configuration types and intermediate projections
+where they represent the same data; retain explicit adapters only where the UI needs a distinct shape.
+Audit other frontend configuration types for the same duplication.
+
 ## Thread tool schemas generated from their implementations
 
 `threads/shell_calls.ts` mirrors Claude Code's

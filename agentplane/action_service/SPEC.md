@@ -6,11 +6,11 @@ Caller-provided provenance never assigns authority. A caller-scoped idempotency 
 once: a repeated key is refused, and the request it named is recovered by looking it up by key,
 never by another submission.
 
-The service publishes an agent overview at `/llms.txt`, linked Markdown workflow guides under
-`/docs/agents/`, and request/response schemas at `/openapi.json`. These static documentation
-surfaces do not require caller admission.
-The shared guide assets also supply MCP Edge's read-only `get_guide` tool. Documentation describes
-workflows; live Action schemas, policy and backend admission determine current capabilities and access.
+The shared guide assets supply MCP Edge's read-only `get_guide` tool and the CLI's offline
+`agentplane actions guide [NAME]` command. Older runner images without the guide subcommand may
+temporarily use the existing HTTP documentation paths through the configured proxy; remove that
+fallback after the old image rollout is complete. Documentation describes workflows; live Action
+schemas, policy and backend admission determine current capabilities and access.
 
 The public `LinkageService` gRPC API completes MCP OAuth callbacks and returns the shared Client ID Metadata
 Document. It requires no bearer: callback state is a single-use, expiring capability and the metadata is public.
@@ -197,7 +197,7 @@ notification content or decision buttons, and owns their presentation.
 `ActionService.GetActionRequest` reads the current receipt once. `WatchActionRequest` streams that
 receipt immediately and then on committed changes until `WatchUntil` holds or the client deadline
 ends; the last received receipt is current state. The HTTP/JSON facade exposes the generated stream
-route described by `/openapi.json`. The receipt read has no `wait_seconds` or `wait_until` query
+route. The receipt read has no `wait_seconds` or `wait_until` query
 parameters.
 
 Every Action Service watch bounds waiting for a stream write to clear transport backpressure at five

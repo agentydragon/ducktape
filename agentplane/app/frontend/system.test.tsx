@@ -4,8 +4,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { ComponentStatus } from "./schema";
-import { api } from "./client";
+import type { SystemComponentStatus } from "./system_status_client";
+import * as systemStatusClient from "./system_status_client";
 import { SystemStatus } from "./system";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -22,13 +22,13 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-const HEALTHY: ComponentStatus = {
+const HEALTHY: SystemComponentStatus = {
   name: "Healthy component",
   state: "ok",
   detail: null,
   checked_at: "2026-01-01T00:00:00Z",
 };
-const DOWN: ComponentStatus = {
+const DOWN: SystemComponentStatus = {
   name: "Down component",
   state: "down",
   detail: "UNAVAILABLE: test connection refused",
@@ -50,10 +50,10 @@ async function render(): Promise<HTMLDivElement> {
   return container;
 }
 
-/** `api.GET` answering its successive calls with the given lists. */
-function answer(...lists: ComponentStatus[][]) {
-  const get = vi.spyOn(api, "GET");
-  for (const data of lists) get.mockResolvedValueOnce({ data, response: new Response() } as never);
+/** `getSystemStatus` answering its successive calls with the given lists. */
+function answer(...lists: SystemComponentStatus[][]) {
+  const get = vi.spyOn(systemStatusClient, "getSystemStatus");
+  for (const data of lists) get.mockResolvedValueOnce(data);
   return get;
 }
 
@@ -83,10 +83,7 @@ it("asks again every 15 seconds and shows the newer answer", async () => {
 });
 
 it("reports a failed read instead of an empty list", async () => {
-  vi.spyOn(api, "GET").mockResolvedValue({
-    error: { detail: "test upstream unavailable" },
-    response: new Response(null, { status: 503 }),
-  } as never);
+  vi.spyOn(systemStatusClient, "getSystemStatus").mockRejectedValue(new Error("test upstream unavailable"));
   const container = await render();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("test upstream unavailable");
 });

@@ -149,9 +149,13 @@ shown as unavailable, while suspended Sandboxes show that diagnostics are unavai
 Idle Sessions can be archived while their harness process remains live. The UI disables archive for
 observable active turns, setup, or a pending local launch; the server checks whether Session work is
 unfinished before accepting the archive request.
-The app's protobuf-defined `AppService` serves the generated HTTP facade at
-`POST /sandboxes/{name}/sessions` and `GET /sandboxes/{name}/runner-status`. The status route
-returns the existing `EnvironmentRuntimeStatus` message and reads the current Runner over native gRPC.
+The app's protobuf-defined `AppService` serves generated HTTP routes at
+`POST /sandboxes/{name}/sessions`, `GET /sandboxes/{name}/runner-status`, and
+`GET /upstream/app/v1/system/status`. The Runner status route returns the existing
+`EnvironmentRuntimeStatus` message and reads the current Runner over native gRPC. System status
+returns a `components` list using the generated component-state enum, optional error detail, and
+ProtoJSON `checkedAt` timestamp. It uses the same authenticated caller boundary and refreshes every
+15 seconds in the browser.
 It is an interface for the app's human frontend, not an API for in-cluster services. Backend callers
 use the [Session Dispatcher](../runner_gateway/dispatcher/README.md) directly with a complete
 `SessionSpec` and do not depend on app orchestration. The app interface resolves the Sandbox's
@@ -550,7 +554,7 @@ surface.
 
 The app connects to the Connection Service through the separately configured `connection_service_url`
 and to the Action Service gRPC APIs through `action_federation.service_url`. The public MCP-linkage
-OAuth callback remains a narrow HTTP call to the Action Service. Staging points
+OAuth callback terminates at the app and calls `LinkageService.CompleteCallback` over gRPC. Staging points
 `connection_service_url` at the MCP edge and `action_federation.service_url` at the Action Service.
 Each service has its own gRPC health probe.
 
@@ -562,9 +566,9 @@ joins their latest states by group key/server ID without coupling their change r
 disconnect use the app's `POST /upstream/actions/v1/operator/mcp-servers/{id}/linkage/start` and
 `.../linkage/disconnect` routes, which call the Operator Action Service with the request-bound
 operator bearer. The provider's
-registered redirect remains the public `GET /mcp-linkage/callback`; the app forwards its state and
-code to the Action Service's public callback and returns the browser to `/#/mcp-servers`. The Go callback's
-ProtoJSON response is not part of the browser contract. What a link authorizes and when a linked
+registered redirect remains the app's public `GET /mcp-linkage/callback`; the app forwards the
+one-shot state capability and authorization code to Action Service and returns the browser to
+`/#/mcp-servers`. No operator bearer is sent with this callback. What a link authorizes and when a linked
 group becomes available is the Action Service's contract
 ([its README](../action_service/README.md#action-catalog)).
 

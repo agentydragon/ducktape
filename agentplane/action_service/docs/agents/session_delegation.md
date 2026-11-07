@@ -208,6 +208,7 @@ Direct MCP tools normally return the Action's structured result after their boun
 structured response instead contains an Action `request_id` and `state`, that is a lifecycle receipt,
 not the Session result; continue with `get_action_result` for that same request. Generic Action calls
 and CLI workflows likewise need their Action result read after the receipt. For Action lifecycle
-details use [/docs/agents/action_lifecycle.md](/docs/agents/action_lifecycle.md); for lost responses
-and unknown outcomes use [/docs/agents/recovery.md](/docs/agents/recovery.md). An MCP-only client can
-fetch the recovery guide with `get_guide({"name":"recovery"})`.
+details read `agentplane actions guide action_lifecycle`; for lost responses and unknown outcomes
+read `agentplane actions guide recovery`. MCP clients can request those guides with
+`get_guide({"name":"action_lifecycle"})` and `get_guide({"name":"recovery"})`.
+If the CLI image lacks the `guide` subcommand, use the temporary old-runner links in the index.

@@ -7,14 +7,16 @@ is the part `curl` leaves to every model turn: JSON quoting, the idempotency and
 waits, telling an egress refusal from a service refusal, and exit status. `agentplane --help` is what an
 agent reads first; each command's `--help` says what it wraps and the exit codes that matter.
 For the end-to-end child Session workflow, read the Actions
-[Session delegation guide](../action_service/docs/agents/session_delegation.md), also served from
-its `/llms.txt` index and through MCP `get_guide(name="session_delegation")`.
+[Session delegation guide](../action_service/docs/agents/session_delegation.md) with
+`agentplane actions guide session_delegation` or MCP `get_guide(name="session_delegation")`. Older
+runner images without the guide command can temporarily fetch the same guides from the Action
+Service's HTTP documentation index; remove that fallback after the old image rollout is complete.
 
 The CLI overlaps `curl` and the Action Service's MCP tools on purpose. All three reach one backend
 authority (the Sandbox's ServiceAccount, through the proxy) and differ in what the caller has to write.
-The Actions and Session Dispatcher protos are the references for the generated gRPC clients; the served
-`/llms.txt` guides and `/openapi.json` are the HTTP reference. The older hand-written Actions route
-reference is removed when this API ships. MCP serves clients that only speak MCP
+The Actions and Session Dispatcher protos are the references for the generated gRPC clients. The
+guides describe workflows; live service APIs determine available operations and schemas. The older
+hand-written Actions route reference is removed when this API ships. MCP serves clients that only speak MCP
 ([principles](principles.md#agent-facing-affordances-are-scriptable-apis)); the CLI serves an agent scripting
 from its shell. None owns state the others lack. It is the CLI of the
 [approved transport direction](runner_delivery_and_harness_design.md#api-transports-and-agent-workflows):
@@ -38,6 +40,7 @@ group, so another service joins as one more group under them.
 | `actions list [GROUP]`                                                                                                                               | the same, one Action per line                                           |
 | `actions show GROUP/ACTION`                                                                                                                          | `ActionService.GetAction`                                               |
 | `actions policy`                                                                                                                                     | `ActionService.GetActionPolicy`                                         |
+| `actions guide [NAME]`                                                                                                                               | bundled Action Service workflow guidance; no service call               |
 | `actions submit GROUP/ACTION --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--key KEY] [--wait [--until decision\|terminal]]`       | `SubmitActionRequest`, then optional watch                              |
 | `actions get {ID \| --key KEY}`                                                                                                                      | `GetActionRequest` or `ListActionRequests` by key                       |
 | `actions result {ID \| --key KEY}`                                                                                                                   | watch to terminal, then the stored result                               |

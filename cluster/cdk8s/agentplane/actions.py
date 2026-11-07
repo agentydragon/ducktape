@@ -1,6 +1,5 @@
 """The Action Service: its Deployment, RBAC, ConfigMaps,
-Service, NetworkPolicy, ServiceMonitor, optional PodDisruptionBudget, the public HTTPRoute of
-an environment with an Action Service hostname, and the admission policy on the launcher grants of
+Service, NetworkPolicy, ServiceMonitor, optional PodDisruptionBudget, and the admission policy on the launcher grants of
 an environment with the orchestration_v1 group. Staging's policy sets are added by its chart.
 """
 
@@ -49,7 +48,6 @@ from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -376,14 +374,8 @@ class Actions(Construct):
             add_launcher_admission(self, env.namespace)
 
     def add_platform_resources(self) -> None:
-        """Add the Cilium policy and metrics scrape used by fleet environments, and the public route
-        of one with a `hostname`."""
-        hostname = self.env.actions.hostname
-        if hostname is not None:
-            self._add_http_route(hostname)
-        elif self.env.actions.mcp_client_metadata is not None:
-            raise ValueError("mcp_client_metadata needs an Action Service hostname to publish it")
-        self._add_network_policy(public=hostname is not None)
+        """Add the Cilium policy and metrics scrape used by fleet environments."""
+        self._add_network_policy()
         ServiceMonitor(
             self,
             "service-monitor",
@@ -589,31 +581,7 @@ class Actions(Construct):
             )
         return workload
 
-    def _add_http_route(self, hostname: str) -> None:
-        # Actions publishes only its upstream Client ID Metadata Document; the MCP edge owns /mcp and OAuth.
-        client_metadata_paths = []
-        client_metadata = self.env.actions.mcp_client_metadata
-        if client_metadata is not None:
-            metadata_url = client_metadata.url
-            if metadata_url.host != hostname or metadata_url.port != 443:
-                raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
-            assert metadata_url.path is not None
-            client_metadata_paths.append(metadata_url.path)
-        paths = tuple(sorted(set(client_metadata_paths)))
-        if not paths:
-            raise ValueError("Action Service hostname needs client metadata")
-        https_route(
-            self,
-            "httproute",
-            metadata=ApiObjectMetadata(name=f"{NAME}-mcp", namespace=self.env.namespace),
-            hostnames=[hostname],
-            backend=self.service,
-            paths=paths,
-            timeout="3600s",
-        )
-
-    def _add_network_policy(self, *, public: bool) -> None:
-        """`public` admits the Gateway, which serves the public route."""
+    def _add_network_policy(self) -> None:
         namespace = self.env.namespace
         NetworkPolicy(
             self,
@@ -621,7 +589,6 @@ class Actions(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
-                *([IngressRule.from_gateway(self.service.pod_port)] if public else []),
                 cilium.SCRAPERS.admit(self.service.pod_port),
                 notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.

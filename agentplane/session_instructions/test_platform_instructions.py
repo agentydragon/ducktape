@@ -18,6 +18,12 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
     assert "http://test-actions.invalid" in guide
     assert "http://test-sessions.invalid" in guide
     assert "agentplane egress rules" in guide
+    assert "agentplane actions guide [NAME]" in guide
+    assert "image without that subcommand" in guide
+    assert "fetch the Actions `/llms.txt` index" in guide
+    assert "temporary fallback until old runner images are retired" in guide
+    assert "/openapi.json" not in guide
+    assert "/docs/agents/" not in guide
     assert "kubectl --server <host> --token <placeholder>" in guide
     match runtime:
         case SessionRuntime.NATIVE_HARNESS:

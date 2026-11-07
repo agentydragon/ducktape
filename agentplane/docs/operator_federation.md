@@ -62,8 +62,9 @@ missing, trailing-slash, and foreign origins fail. Kubernetes-token callers keep
 non-ambient authentication and never enter the operator Action path. Responses are `no-store`,
 except where a route states its own `Cache-Control`: Electric shapes are `private, no-cache`, stored
 but served only after a request the app authorizes. The Go app uses structured JSON `slog` and does
-not install HTTP request access logging. Callback failure metadata uses a sanitized Action Service
-URL with user information, query, and fragment removed.
+not install HTTP request access logging. MCP callback failure metadata identifies
+`LinkageService.CompleteCallback` without exposing an Action Service URL, callback state, code, or
+provider error details.
 Already-admitted requests are not retrospectively cancelled by logout; revocation gates the next
 request. An Action facade watch under `/upstream/actions/v1/` is bound to the operator session row:
 deleting the row notifies every replica, and the stream ends at its own row's deletion or expiry.
