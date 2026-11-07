@@ -240,8 +240,10 @@ py_test(
     name = "test_runtime",
     srcs = ["test_runtime.py"],
     deps = [
+        ":host_qemu",
         ":infrastructure",
         ":runtime",
+        ":sandboxes",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:rendered_fixture",

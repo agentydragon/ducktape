@@ -10,7 +10,7 @@ import pytest_bazel
 
 from agentplane.system_tests.deployment import rendered_fixture, stack
 from agentplane.system_tests.k3s import baseline
-from agentplane.system_tests.vm import infrastructure as vm_infrastructure
+from agentplane.system_tests.vm import host_qemu, infrastructure as vm_infrastructure, sandboxes as vm_sandboxes
 from agentplane.system_tests.vm.runtime import VmRuntime
 
 
@@ -68,6 +68,21 @@ def test_vm_clean_certification_requires_empty_vm_inventory_and_removed_storage_
             assert stack._certify_baseline(node, fixture, runtime, marker, resources, volumes) == 0
             assert runtime.closed
             assert json.loads((tmp_path / "server.json").read_text())["state"] == "clean"
+
+
+def test_vm_runtime_skips_qmp_report_probe_for_opted_in_passive_timeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setenv(host_qemu.VIRTIOFSD_TIMELINE_ENV, "1")
+    monkeypatch.setattr(vm_infrastructure, "releases", list)
+    monkeypatch.setattr(host_qemu, "snapshot_pending", lambda *_args: calls.append("qmp"))
+    monkeypatch.setattr(vm_sandboxes, "report", lambda *_args: "report")
+
+    runtime = VmRuntime(tmp_path)
+    k3s = baseline.K3s(tmp_path, tmp_path / "unused-binary")
+    assert runtime.report(k3s, "systest") == "report"
+    assert calls == []
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+HOST_VIRTIOFSD_SNAPSHOT phase=shutdown sample=4 timestamp=2026-11-07T02:46:53.725+00:00
+launcher=systest_virt-launcher-vm-shutdown-diagnostic-7jg6c_2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89 pod_uid=2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89
+observer=local-proc-only qmp=disabled
+HOST_VIRTIOFSD_PROCESS_SCAN scanned=0 matching_pod=0 threads=0 pod_uid=2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89
+HOST_VIRTIOFSD_PROCESS_MATCH_NONE pod_uid=2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89

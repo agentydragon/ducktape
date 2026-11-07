@@ -1,0 +1,808 @@
+HOST_VIRTIOFSD_SNAPSHOT phase=shutdown sample=0 timestamp=2026-11-07T02:46:45.725+00:00
+launcher=systest_virt-launcher-vm-shutdown-diagnostic-7jg6c_2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89 pod_uid=2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89
+observer=local-proc-only qmp=disabled
+HOST_VIRTIOFSD_PID 3685 container_id=614e7766d77c9843dc76cc2e5af0179640458dd0ca7246dc8274b536f744d05a container_name=virtiofs-state
+COMM: virtiofsd
+STATUS: Name:	virtiofsd
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3685
+Ngid:	0
+Pid:	3685
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3685	1
+NSpid:	3685	1
+NSpgid:	3685	1
+NSsid:	3685	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   16424 kB
+VmRSS:	   16424 kB
+RssAnon:	     252 kB
+RssFile:	    1904 kB
+RssShmem:	   14268 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     224 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	40
+nonvoluntary_ctxt_switches:	2
+WCHAN: futex_wait_queue_me
+SYSCALL: 202 0x7efeb46d2910 0x109 0x8 0x0 0x0 0xffffffff 0x7ffd7d6d2f40 0x7efeb496638a
+STACK: [<0>] futex_wait_queue_me+0xa7/0x100
+[<0>] futex_wait+0x105/0x250
+[<0>] do_futex+0x19e/0xb60
+[<0>] __x64_sys_futex+0x78/0x1e0
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 3685
+COMM: virtiofsd
+STATUS: Name:	virtiofsd
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3685
+Ngid:	0
+Pid:	3685
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3685	1
+NSpid:	3685	1
+NSpgid:	3685	1
+NSsid:	3685	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   16424 kB
+VmRSS:	   16424 kB
+RssAnon:	     252 kB
+RssFile:	    1904 kB
+RssShmem:	   14268 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     224 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	40
+nonvoluntary_ctxt_switches:	2
+WCHAN: futex_wait_queue_me
+SYSCALL: 202 0x7efeb46d2910 0x109 0x8 0x0 0x0 0xffffffff 0x7ffd7d6d2f40 0x7efeb496638a
+STACK: [<0>] futex_wait_queue_me+0xa7/0x100
+[<0>] futex_wait+0x105/0x250
+[<0>] do_futex+0x19e/0xb60
+[<0>] __x64_sys_futex+0x78/0x1e0
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 3710
+COMM: vring_worker
+STATUS: Name:	vring_worker
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3685
+Ngid:	0
+Pid:	3710
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3685	1
+NSpid:	3710	7
+NSpgid:	3685	1
+NSsid:	3685	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   16424 kB
+VmRSS:	   16424 kB
+RssAnon:	     252 kB
+RssFile:	    1904 kB
+RssShmem:	   14268 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     224 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	1160
+nonvoluntary_ctxt_switches:	1
+WCHAN: do_epoll_wait
+SYSCALL: 232 0x8 0x7efeb0000c90 0x64 0xffffffff 0x0 0x5fffffff 0x7efeb48d5b20 0x7efeb49eda0e
+STACK: [<0>] do_epoll_wait+0x645/0x7c0
+[<0>] __x64_sys_epoll_wait+0x60/0x100
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 4052
+COMM: virtiofsd-backe
+STATUS: Name:	virtiofsd-backe
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3685
+Ngid:	0
+Pid:	4052
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3685	1
+NSpid:	4052	8
+NSpgid:	3685	1
+NSsid:	3685	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   16424 kB
+VmRSS:	   16424 kB
+RssAnon:	     252 kB
+RssFile:	    1904 kB
+RssShmem:	   14268 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     224 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	14
+nonvoluntary_ctxt_switches:	0
+WCHAN: unix_stream_read_generic
+SYSCALL: 47 0xa 0x7efeb46d16f0 0x0 0x1fb70 0x0 0x0 0x7efeb46d16b0 0x7efeb49eef7f
+STACK: [<0>] unix_stream_read_generic+0x5af/0xbd0
+[<0>] unix_stream_recvmsg+0x88/0x90
+[<0>] ____sys_recvmsg+0x177/0x190
+[<0>] ___sys_recvmsg+0x8c/0x110
+[<0>] __sys_recvmsg+0x5f/0xb0
+[<0>] __x64_sys_recvmsg+0x1d/0x20
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_PID 3724 container_id=2dd5bbc0bfc6292ebacac29c47f165676c2a40eba58e4d0f8c7e0b701599def9 container_name=virtiofs-agentplane-environment-runtime-trust
+COMM: virtiofsd
+STATUS: Name:	virtiofsd
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3724
+Ngid:	0
+Pid:	3724
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3724	1
+NSpid:	3724	1
+NSpgid:	3724	1
+NSsid:	3724	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    2128 kB
+VmRSS:	    2128 kB
+RssAnon:	     180 kB
+RssFile:	    1948 kB
+RssShmem:	       0 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     104 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	52
+nonvoluntary_ctxt_switches:	0
+WCHAN: futex_wait_queue_me
+SYSCALL: 202 0x7f63a93f7910 0x109 0x8 0x0 0x0 0xffffffff 0x7ffe3193b750 0x7f63a968b38a
+STACK: [<0>] futex_wait_queue_me+0xa7/0x100
+[<0>] futex_wait+0x105/0x250
+[<0>] do_futex+0x19e/0xb60
+[<0>] __x64_sys_futex+0x78/0x1e0
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 3724
+COMM: virtiofsd
+STATUS: Name:	virtiofsd
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3724
+Ngid:	0
+Pid:	3724
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3724	1
+NSpid:	3724	1
+NSpgid:	3724	1
+NSsid:	3724	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    2128 kB
+VmRSS:	    2128 kB
+RssAnon:	     180 kB
+RssFile:	    1948 kB
+RssShmem:	       0 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     104 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	52
+nonvoluntary_ctxt_switches:	0
+WCHAN: futex_wait_queue_me
+SYSCALL: 202 0x7f63a93f7910 0x109 0x8 0x0 0x0 0xffffffff 0x7ffe3193b750 0x7f63a968b38a
+STACK: [<0>] futex_wait_queue_me+0xa7/0x100
+[<0>] futex_wait+0x105/0x250
+[<0>] do_futex+0x19e/0xb60
+[<0>] __x64_sys_futex+0x78/0x1e0
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 3738
+COMM: vring_worker
+STATUS: Name:	vring_worker
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3724
+Ngid:	0
+Pid:	3738
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3724	1
+NSpid:	3738	7
+NSpgid:	3724	1
+NSsid:	3724	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    2128 kB
+VmRSS:	    2128 kB
+RssAnon:	     180 kB
+RssFile:	    1948 kB
+RssShmem:	       0 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     104 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	40
+nonvoluntary_ctxt_switches:	0
+WCHAN: do_epoll_wait
+SYSCALL: 232 0x8 0x7f63a4000c90 0x64 0xffffffff 0x0 0x5fffffff 0x7f63a95fab20 0x7f63a9712a0e
+STACK: [<0>] do_epoll_wait+0x645/0x7c0
+[<0>] __x64_sys_epoll_wait+0x60/0x100
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 4053
+COMM: virtiofsd-backe
+STATUS: Name:	virtiofsd-backe
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3724
+Ngid:	0
+Pid:	4053
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3724	1
+NSpid:	4053	8
+NSpgid:	3724	1
+NSsid:	3724	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    2128 kB
+VmRSS:	    2128 kB
+RssAnon:	     180 kB
+RssFile:	    1948 kB
+RssShmem:	       0 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     104 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	15
+nonvoluntary_ctxt_switches:	0
+WCHAN: unix_stream_read_generic
+SYSCALL: 47 0xa 0x7f63a93f66f0 0x0 0x1fb70 0x0 0x0 0x7f63a93f66b0 0x7f63a9713f7f
+STACK: [<0>] unix_stream_read_generic+0x5af/0xbd0
+[<0>] unix_stream_recvmsg+0x88/0x90
+[<0>] ____sys_recvmsg+0x177/0x190
+[<0>] ___sys_recvmsg+0x8c/0x110
+[<0>] __sys_recvmsg+0x5f/0xb0
+[<0>] __x64_sys_recvmsg+0x1d/0x20
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_PID 3753 container_id=ebb9db52a29051aef00b1728586cf12064e3ec41f2adf80f6456a5fd192c45db container_name=virtiofs-agentplane-environment-runtime-tls
+COMM: virtiofsd
+STATUS: Name:	virtiofsd
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3753
+Ngid:	0
+Pid:	3753
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3753	1
+NSpid:	3753	1
+NSpgid:	3753	1
+NSsid:	3753	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    3840 kB
+VmRSS:	    3840 kB
+RssAnon:	     328 kB
+RssFile:	    3512 kB
+RssShmem:	       0 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     108 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	44
+nonvoluntary_ctxt_switches:	0
+WCHAN: futex_wait_queue_me
+SYSCALL: 202 0x7feb55d61910 0x109 0x8 0x0 0x0 0xffffffff 0x7fff4a934dd0 0x7feb55ff538a
+STACK: [<0>] futex_wait_queue_me+0xa7/0x100
+[<0>] futex_wait+0x105/0x250
+[<0>] do_futex+0x19e/0xb60
+[<0>] __x64_sys_futex+0x78/0x1e0
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 3753
+COMM: virtiofsd
+STATUS: Name:	virtiofsd
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3753
+Ngid:	0
+Pid:	3753
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3753	1
+NSpid:	3753	1
+NSpgid:	3753	1
+NSsid:	3753	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    3840 kB
+VmRSS:	    3840 kB
+RssAnon:	     328 kB
+RssFile:	    3512 kB
+RssShmem:	       0 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     108 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	44
+nonvoluntary_ctxt_switches:	0
+WCHAN: futex_wait_queue_me
+SYSCALL: 202 0x7feb55d61910 0x109 0x8 0x0 0x0 0xffffffff 0x7fff4a934dd0 0x7feb55ff538a
+STACK: [<0>] futex_wait_queue_me+0xa7/0x100
+[<0>] futex_wait+0x105/0x250
+[<0>] do_futex+0x19e/0xb60
+[<0>] __x64_sys_futex+0x78/0x1e0
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 3765
+COMM: vring_worker
+STATUS: Name:	vring_worker
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3753
+Ngid:	0
+Pid:	3765
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3753	1
+NSpid:	3765	7
+NSpgid:	3753	1
+NSsid:	3753	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    3840 kB
+VmRSS:	    3840 kB
+RssAnon:	     328 kB
+RssFile:	    3512 kB
+RssShmem:	       0 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     108 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	72
+nonvoluntary_ctxt_switches:	0
+WCHAN: do_epoll_wait
+SYSCALL: 232 0x8 0x7feb50000c90 0x64 0xffffffff 0x0 0x5fffffff 0x7feb55f64b20 0x7feb5607ca0e
+STACK: [<0>] do_epoll_wait+0x645/0x7c0
+[<0>] __x64_sys_epoll_wait+0x60/0x100
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_HOST_TID 4051
+COMM: virtiofsd-backe
+STATUS: Name:	virtiofsd-backe
+Umask:	0000
+State:	S (sleeping)
+Tgid:	3753
+Ngid:	0
+Pid:	4051
+PPid:	3366
+TracerPid:	0
+Uid:	107	107	107	107
+Gid:	107	107	107	107
+FDSize:	64
+Groups:	107 
+NStgid:	3753	1
+NSpid:	4051	8
+NSpgid:	3753	1
+NSsid:	3753	1
+VmPeak:	 1713492 kB
+VmSize:	 1713492 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    3840 kB
+VmRSS:	    3840 kB
+RssAnon:	     328 kB
+RssFile:	    3512 kB
+RssShmem:	       0 kB
+VmData:	    4624 kB
+VmStk:	     132 kB
+VmExe:	    1960 kB
+VmLib:	    1808 kB
+VmPTE:	     108 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	3
+SigQ:	0/78006
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200001000
+SigCgt:	0000000100004441
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	0000000000000000
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread force mitigated
+SpeculationIndirectBranch:	conditional force disabled
+Cpus_allowed:	7ff
+Cpus_allowed_list:	0-10
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	21
+nonvoluntary_ctxt_switches:	1
+WCHAN: unix_stream_read_generic
+SYSCALL: 47 0xa 0x7feb55d606f0 0x0 0x1fb70 0x0 0x0 0x7feb55d606b0 0x7feb5607df7f
+STACK: [<0>] unix_stream_read_generic+0x5af/0xbd0
+[<0>] unix_stream_recvmsg+0x88/0x90
+[<0>] ____sys_recvmsg+0x177/0x190
+[<0>] ___sys_recvmsg+0x8c/0x110
+[<0>] __sys_recvmsg+0x5f/0xb0
+[<0>] __x64_sys_recvmsg+0x1d/0x20
+[<0>] do_syscall_64+0x3b/0x90
+[<0>] entry_SYSCALL_64_after_hwframe+0x44/0xae
+HOST_VIRTIOFSD_PROCESS_SCAN scanned=3 matching_pod=3 threads=9 pod_uid=2a3f6bdf-805a-4784-8c5e-5ef4ac7fba89
