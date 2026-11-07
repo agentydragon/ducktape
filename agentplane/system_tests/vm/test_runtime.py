@@ -150,6 +150,30 @@ def test_boot_rcu_observer_rejects_malformed_opt_in(tmp_path: Path, monkeypatch:
         runtime.configure([_vm_template("base")])
 
 
+def test_shutdown_sysrq_is_opt_in_and_applies_once_per_vm_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", raising=False)
+    monkeypatch.setattr(vm_infrastructure, "releases", list)
+    objects = [_vm_template("base"), _vm_template("oom"), {"kind": "ConfigMap", "metadata": {"name": "other"}}]
+    runtime = VmRuntime(tmp_path)
+    runtime.configure(objects)
+
+    def args(obj: dict[str, Any]) -> str:
+        value = obj["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+        assert isinstance(value, str)
+        return value
+
+    assert all(vm_sandboxes.SHUTDOWN_SYSRQ_ARG not in args(obj).split() for obj in objects[:2])
+    monkeypatch.setenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", "1")
+    runtime.configure(objects)
+    runtime.configure(objects)
+    assert all(args(obj).split().count(vm_sandboxes.SHUTDOWN_SYSRQ_ARG) == 1 for obj in objects[:2])
+    monkeypatch.setenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", "invalid")
+    with pytest.raises(ValueError, match="AGENTPLANE_VM_SHUTDOWN_SYSRQ"):
+        runtime.configure(objects)
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 def test_boot_rcu_capture_lifecycle_is_opt_in_and_wraps_host_capture(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool

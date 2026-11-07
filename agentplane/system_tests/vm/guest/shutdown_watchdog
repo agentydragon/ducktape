@@ -6,6 +6,17 @@ export PATH=/usr/sbin:/usr/bin
 # Keep the reader open so repeated power-button notifications can write without blocking.
 exec 3</run/agentplane-shutdown-watchdog/request
 read -r request <&3
+# This experimental worker is independent of the sampling loop, which itself can
+# block. It is enabled only for the disposable direct-VMI diagnostic.
+case " $(/usr/bin/busybox cat /proc/cmdline) " in
+*" agentplane.shutdown-sysrq=1 "*)
+	if /usr/bin/busybox mkdir /run/agentplane-shutdown-sysrq; then
+		/usr/sbin/agentplane-shutdown-sysrq /run/agentplane-shutdown-sysrq/proof /proc/sysrq-trigger 12 &
+	else
+		echo "AGENTPLANE_SYSRQ_UNAVAILABLE reason=arm_directory"
+	fi
+	;;
+esac
 child_snapshot_tick=0
 while :; do
 	echo "AGENTPLANE_SHUTDOWN_SNAPSHOT_BEGIN"

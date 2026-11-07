@@ -42,6 +42,7 @@ _CYCLES_ENV = "AGENTPLANE_TCG_VMI_CYCLES"
 _DEBUG_KERNEL_ARGS_ENV = "AGENTPLANE_TCG_VMI_DEBUG_KERNEL_ARGS"
 _DEBUG_KERNEL_ARGS = "systemd.log_level=debug systemd.log_target=console loglevel=8"
 _BOOT_RCU_ENV = "AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER"
+_SHUTDOWN_SYSRQ_ENV = "AGENTPLANE_TCG_VMI_SHUTDOWN_SYSRQ"
 _SYNTHETIC_SLICE_ENV = "AGENTPLANE_TCG_VMI_SYNTHETIC_SLICE_PROBE"
 _SYNTHETIC_SLICE_SUCCESS = "AGENTPLANE_SYNTHETIC_SLICE_SUCCESS"
 _SYNTHETIC_SLICE_WAIT_SECONDS = 90
@@ -88,6 +89,16 @@ def _boot_rcu_observer() -> bool:
             return True
         case value:
             raise ValueError(f"{_BOOT_RCU_ENV} must be '0' or '1', got {value!r}")
+
+
+def _shutdown_sysrq() -> bool:
+    match os.environ.get(_SHUTDOWN_SYSRQ_ENV, "0"):
+        case "0":
+            return False
+        case "1":
+            return True
+        case value:
+            raise ValueError(f"{_SHUTDOWN_SYSRQ_ENV} must be '0' or '1', got {value!r}")
 
 
 def _synthetic_slice_probe() -> bool:
@@ -270,6 +281,7 @@ def _vmi(
     *,
     debug_kernel_args: bool = False,
     boot_rcu_observe: bool = False,
+    shutdown_sysrq: bool = False,
     synthetic_slice_probe: bool = False,
     cgroup_pilot: bool = False,
     cgroup_stress: bool = False,
@@ -298,6 +310,7 @@ def _vmi(
                             "systemd.mask=agentplane-environment-runtime.service"
                             + (f" {_DEBUG_KERNEL_ARGS}" if debug_kernel_args else "")
                             + (" agentplane.boot-rcu-observe=1" if boot_rcu_observe else "")
+                            + (" agentplane.shutdown-sysrq=1" if shutdown_sysrq else "")
                             + (" agentplane.synthetic-slice-probe=1" if synthetic_slice_probe else "")
                             + (" agentplane.cgroup-pilot=1" if cgroup_pilot else "")
                             + (" agentplane.cgroup-stress=1" if cgroup_stress else "")
@@ -1628,6 +1641,7 @@ def _run_cycle(
     skip_virtiofs_policy: bool,
     debug_kernel_args: bool,
     boot_rcu_observe: bool,
+    shutdown_sysrq: bool,
     synthetic_slice_probe: bool,
     cgroup_pilot: bool,
     cgroup_stress: bool,
@@ -1677,6 +1691,7 @@ def _run_cycle(
             guest_image_manifest,
             debug_kernel_args=debug_kernel_args,
             boot_rcu_observe=boot_rcu_observe,
+            shutdown_sysrq=shutdown_sysrq,
             synthetic_slice_probe=synthetic_slice_probe,
             cgroup_pilot=cgroup_pilot,
             cgroup_stress=cgroup_stress,
@@ -1732,6 +1747,7 @@ def _run_cycle(
                         "policy_enabled": not skip_virtiofs_policy,
                         "debug_kernel_args": debug_kernel_args,
                         "boot_rcu_observer": boot_rcu_observe,
+                        "shutdown_sysrq": shutdown_sysrq,
                         "synthetic_slice_probe": synthetic_slice_probe,
                         "cgroup_pilot": cgroup_pilot,
                         "cgroup_stress": cgroup_stress,
@@ -1888,6 +1904,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     skip_virtiofs_policy = _skip_virtiofs_shutdown_policy()
     debug_kernel_args = _debug_kernel_args()
     boot_rcu_observe = _boot_rcu_observer()
+    shutdown_sysrq = _shutdown_sysrq()
     synthetic_slice_probe = _synthetic_slice_probe()
     cgroup_pilot = _cgroup_pilot()
     cgroup_stress = _cgroup_stress()
@@ -1918,6 +1935,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 "policy_enabled": not skip_virtiofs_policy,
                 "debug_kernel_args": debug_kernel_args,
                 "boot_rcu_observer": boot_rcu_observe,
+                "shutdown_sysrq": shutdown_sysrq,
                 "synthetic_slice_probe": synthetic_slice_probe,
                 "cgroup_pilot": cgroup_pilot,
                 "cgroup_stress": cgroup_stress,
@@ -1949,6 +1967,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 skip_virtiofs_policy=skip_virtiofs_policy,
                 debug_kernel_args=debug_kernel_args,
                 boot_rcu_observe=boot_rcu_observe,
+                shutdown_sysrq=shutdown_sysrq,
                 synthetic_slice_probe=synthetic_slice_probe,
                 cgroup_pilot=cgroup_pilot,
                 cgroup_stress=cgroup_stress,

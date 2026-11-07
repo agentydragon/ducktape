@@ -572,6 +572,27 @@ py_test(
 )
 
 py_test(
+    name = "test_shutdown_sysrq",
+    size = "small",
+    srcs = ["test_shutdown_sysrq.py"],
+    data = [
+        "//agentplane/system_tests/vm/guest:shutdown_sysrq",
+        "@trixie_vm_guest//busybox-static:data",
+    ],
+    env = {
+        "SYSRQ_SCRIPT_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:shutdown_sysrq)",
+        "SYSRQ_BUSYBOX_RLOCATION": "$(rlocationpath @trixie_vm_guest//busybox-static:data)",
+    },
+    main = "test_shutdown_sysrq.py",
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
     name = "test_shutdown_watchdog_children",
     size = "small",
     srcs = ["test_shutdown_watchdog_children.py"],
