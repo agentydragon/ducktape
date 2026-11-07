@@ -238,6 +238,7 @@ def test_retains_unlinked_firecracker_console_and_only_namespace_logs(tmp_path: 
     with (
         capture(
             log_root=logs,
+            pod_root=tmp_path / "kubelet-pods",
             storage_root=storage,
             namespace="systest",
             kubevirt_namespace="kubevirt",
@@ -254,7 +255,7 @@ def test_retains_unlinked_firecracker_console_and_only_namespace_logs(tmp_path: 
         original.flush()
         wait_for("VMM_AFTER_UNLINK")
 
-    retained_console = list((outputs / "firecracker").rglob("firecracker.log-*"))
+    retained_console = list((outputs / "firecracker").rglob("*-firecracker.log.log"))
     assert len(retained_console) == 1
     assert retained_console[0].read_text() == "VMM_START\nVMM_AFTER_UNLINK\n"
     assert [path.read_text() for path in (outputs / "runtimes").rglob("*.cri.log")] == ["CRI_RUNTIME\n"]

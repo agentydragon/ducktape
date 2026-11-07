@@ -77,6 +77,7 @@ class Runtime:
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> AbstractContextManager[None]:
         return guest_logs.capture(
             log_root=Path("/var/log/pods"),
+            pod_root=Path("/var/lib/kubelet/pods"),
             storage_root=k3s.data_dir / "storage",
             namespace=namespace,
             kubevirt_namespace=infrastructure.KUBEVIRT_NAMESPACE,
