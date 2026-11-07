@@ -7,8 +7,7 @@ import (
 	"fmt"
 )
 
-// Agents holds guides bundled in the CLI and MCP edge. The HTTP server retains temporary
-// compatibility routes for older runner images.
+// Agents holds guides bundled in the CLI and MCP edge.
 //
 //go:embed agents
 var Agents embed.FS

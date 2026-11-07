@@ -31,8 +31,6 @@ const (
 	UpdatesChannel = "agentplane_mcp_linkage_updates"
 	// ClientMetadataPath serves the shared Client ID Metadata Document.
 	ClientMetadataPath = "/oauth/client-metadata.json"
-	// CallbackPath is where an operator's browser returns from the authorization server.
-	CallbackPath = "/v1/mcp-linkage/callback"
 
 	// flowLifetime is how long a started link waits for its callback.
 	flowLifetime = 10 * time.Minute

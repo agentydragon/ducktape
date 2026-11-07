@@ -48,7 +48,8 @@ public control RPCs are in [Environment Runtime control](../control/environment_
   in that order; callers supply only the task. They are fixed because a `spec` supplied on reopening
   must equal the stored one.
   Platform guidance supplies deployment service addresses and essential constraints; detailed
-  workflows are discoverable through the independent services' `/llms.txt` indexes.
+  Action workflows are available through `agentplane actions guide`; Notifications serves its
+  own `/llms.txt` index.
 - For a Claude Session the Runtime asks the workload-authenticated LLM ingress for `ModelConfig` when a
   session or model selection is made. Its `total_context_budget_tokens` is a client
   budget shared by input and output, not a provider maximum or an output request cap.

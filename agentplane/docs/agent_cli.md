@@ -8,9 +8,7 @@ waits, telling an egress refusal from a service refusal, and exit status. `agent
 agent reads first; each command's `--help` says what it wraps and the exit codes that matter.
 For the end-to-end child Session workflow, read the Actions
 [Session delegation guide](../action_service/docs/agents/session_delegation.md) with
-`agentplane actions guide session_delegation` or MCP `get_guide(name="session_delegation")`. Older
-runner images without the guide command can temporarily fetch the same guides from the Action
-Service's HTTP documentation index; remove that fallback after the old image rollout is complete.
+`agentplane actions guide session_delegation` or MCP `get_guide(name="session_delegation")`.
 
 The CLI overlaps `curl` and the Action Service's MCP tools on purpose. All three reach one backend
 authority (the Sandbox's ServiceAccount, through the proxy) and differ in what the caller has to write.
