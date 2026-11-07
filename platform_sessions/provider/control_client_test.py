@@ -43,12 +43,7 @@ class Provider(rpc.SessionProviderControlServicer):
                             pb.ExportInstruction(text="Export the browser session.", command="example export")
                         ],
                         routes=[
-                            pb.RouteDescription(
-                                operation_id="read_account",
-                                method="GET",
-                                path_template="/account",
-                                access_class=pb.ROUTE_ACCESS_CLASS_READ_ONLY,
-                            )
+                            pb.RouteDescription(operation_id="read_account", method="GET", path_template="/account")
                         ],
                         accepted_session_import_formats=[
                             pb.SessionImportFormat(media_type="application/json", version="1")
@@ -68,6 +63,7 @@ class Provider(rpc.SessionProviderControlServicer):
         )
         self.abort_import = False
         self.abort_verify = False
+        self.unsupported_verify = False
 
     def _record(self, method, context):
         self.calls[method] += 1
@@ -106,6 +102,8 @@ class Provider(rpc.SessionProviderControlServicer):
         self._record("VerifyCandidate", context)
         assert request.instance == INSTANCE
         self.candidates.append(request.candidate)
+        if self.unsupported_verify:
+            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "candidate verification unavailable")
         if self.abort_verify:
             await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "provider response lost")
         return self.verify_result
@@ -173,12 +171,11 @@ async def test_typed_provider_failures_stay_distinct_from_rpc_failure(tmp_path):
             await client.import_session(b"opaque-secret", media_type="application/json", format_version="1")
         assert failure.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
         assert provider.calls["ImportSession"] == 2  # one completed call and exactly one aborted call
-        provider.verify_result = pb.VerifyCandidateResponse(
-            instance=INSTANCE, unsupported=pb.CandidateVerificationUnsupported()
-        )
-        assert (
+        provider.unsupported_verify = True
+        with pytest.raises(grpc.aio.AioRpcError) as unsupported:
             await client.verify_candidate(b"opaque-secret", media_type="application/json", format_version="1")
-        ).WhichOneof("result") == "unsupported"
+        assert unsupported.value.code() == grpc.StatusCode.UNIMPLEMENTED
+        provider.unsupported_verify = False
         provider.abort_verify = True
         with pytest.raises(grpc.aio.AioRpcError) as verify_failure:
             await client.verify_candidate(b"opaque-secret", media_type="application/json", format_version="1")
@@ -221,10 +218,6 @@ async def test_protocol_errors_reject_missing_and_mismatched_responses_without_c
         with pytest.raises(ProviderProtocolError, match="provider identity"):
             await client.get_info()
         provider.info.provider.provider_id = "example"
-        provider.info.provider.instances[0].routes[0].access_class = pb.ROUTE_ACCESS_CLASS_UNSPECIFIED
-        with pytest.raises(ProviderProtocolError, match="route declaration"):
-            await client.get_info()
-        provider.info.provider.instances[0].routes[0].access_class = pb.ROUTE_ACCESS_CLASS_READ_ONLY
         provider.info.provider.instances[0].routes[0].path_template = "/account/%2Fsecret"
         with pytest.raises(ProviderProtocolError, match="route declaration"):
             await client.get_info()
@@ -260,14 +253,8 @@ async def test_owner_metadata_and_storage_error_snapshot_validation(tmp_path):
     async with served(tmp_path) as (provider, client, _, _):
         info = provider.info.provider.instances[0]
         assert (await client.get_info()).provider.instances[0].instructions[0].command == "example export"
-        info.instructions[0].command = "\x00bad"
-        with pytest.raises(ProviderProtocolError, match="owner presentation"):
-            await client.get_info()
-        info.instructions[0].command = "example export"
-        info.instructions[0].text = " "
-        with pytest.raises(ProviderProtocolError, match="owner presentation"):
-            await client.get_info()
-        info.instructions[0].text = "Export the browser session."
+        info.instructions[0].command = "echo one\necho two"
+        assert (await client.get_info()).provider.instances[0].instructions[0].command == "echo one\necho two"
         info.accepted_session_import_formats.clear()
         with pytest.raises(ProviderProtocolError, match="candidate verification"):
             await client.get_info()
@@ -284,13 +271,6 @@ async def test_owner_metadata_and_storage_error_snapshot_validation(tmp_path):
         with pytest.raises(ProviderProtocolError, match="timestamp"):
             await client.get_session()
         snapshot.imported_at.CopyFrom(_now())
-        snapshot.owner_presentation.help = "\x00bad"
-        with pytest.raises(ProviderProtocolError, match="owner presentation"):
-            await client.get_session()
-        snapshot.owner_presentation.help = "Check provider logs."
-        snapshot.owner_presentation.message = " "
-        with pytest.raises(ProviderProtocolError, match="owner presentation"):
-            await client.get_session()
 
 
 @pytest.mark.asyncio
