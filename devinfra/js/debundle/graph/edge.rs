@@ -378,7 +378,7 @@ impl fmt::Display for EffectCellReport {
         match self {
             Self::Binding { binding } => write!(f, "binding `{binding}`"),
             Self::LexicalCell { origin, instance } => {
-                write!(f, "lexical cell #{origin} instance {}", instance.0)
+                write!(f, "lexical cell #{origin} instance {instance}")
             }
             Self::GlobalProp { key } => write!(f, "global property `{key}`"),
             Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
