@@ -29,10 +29,8 @@ fn unexpected_exit_preserves_cross_chunk_outputs_for_node_inspection() {
     let mut opts = FixtureOpts::new(
         r#"import { h as x } from "./provider.js";
 console.log(x());
-const guard = 0;
-export { x, guard };
 "#,
-        vec![logical_module("guard", &[Member::new("guard")])],
+        vec![],
     )
     .with_chunk_id("static/importer");
     opts.unassigned_mode = unassigned_mode_inline();
