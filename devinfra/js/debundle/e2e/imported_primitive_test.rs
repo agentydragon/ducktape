@@ -232,6 +232,57 @@ fn called_primitive_binary_return_has_a_receipt_for_an_actual_inversion() {
     assert_called_operation_receipt(&fixture, "computed", "add");
 }
 
+#[test]
+fn called_primitive_template_return_has_a_receipt_for_an_actual_inversion() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  const before = 0;\n\
+                  function render() { return `bytes:${bytes}`; }\n\
+                  const computed = render();\n\
+                  const after = 1;\n\
+                  console.log(before, computed, after);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("compute", &[Member::new("render"), Member::new("computed")]),
+                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "0 bytes:2 1\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the template return must cross an executable anchor: {assessment:#}"
+    );
+    let graph = fixture.dependency_graph();
+    let position = |binding| {
+        let ordinal = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == source_unit_for_binding(&graph, binding))
+            .unwrap()
+            .statement_ordinal
+            .0;
+        assessment["emitted_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|row| row.as_u64() == Some(ordinal as u64))
+            .unwrap()
+    };
+    assert!(
+        position("computed") < position("before") || position("after") < position("computed"),
+        "the call result must cross an executable anchor: {assessment:#}"
+    );
+    assert_called_operation_receipt(&fixture, "computed", "render");
+}
+
 fn assert_uncovered_root_read(fixture: &Fixture, binding: &str) {
     let graph = fixture.dependency_graph();
     let node = graph
@@ -277,6 +328,56 @@ fn object_binary_coercion_fallback_keeps_right_operand_before_value_of() {
         )],
     ));
     assert_preserved_entry_output(&fixture, "rightcoerce 3\n");
+    assert_uncovered_root_read(&fixture, "computed");
+}
+
+#[test]
+fn object_template_coercion_uses_string_hint_before_next_substitution() {
+    let source = "let trace = '';\n\
+                  const value = { [Symbol.toPrimitive](hint) { trace += hint; return 2; } };\n\
+                  function next() { trace += 'next'; return 3; }\n\
+                  function render() { return `${value}:${next()}`; }\n\
+                  const computed = render();\n\
+                  console.log(trace, computed);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("trace"),
+                Member::new("value"),
+                Member::new("next"),
+                Member::new("render"),
+                Member::new("computed"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "stringnext 2:3\n");
+    assert_uncovered_root_read(&fixture, "computed");
+}
+
+#[test]
+fn symbol_template_coercion_stops_before_the_next_substitution() {
+    let source = "import { token } from './peer.js';\n\
+                  function next() { throw new Error('next ran'); }\n\
+                  function render() { return `${token}${next()}`; }\n\
+                  const computed = render();\n\
+                  console.log(computed);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("next"),
+                    Member::new("render"),
+                    Member::new("computed"),
+                ],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", "export const token = Symbol.for('token');\n")]),
+    );
+    assert_preserved_entry_error(&fixture, "TypeError");
     assert_uncovered_root_read(&fixture, "computed");
 }
 

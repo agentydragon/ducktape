@@ -13,6 +13,7 @@ use super::value_model::{AbstractValue, CallSite, Context, PropertyDefinition, V
 use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::Id;
@@ -486,6 +487,10 @@ fn expression(
         LocalExpression::Sequence(expressions) => {
             sequence_expression(context, expressions, body, frame, judgment)
         }
+        LocalExpression::Template {
+            substitutions,
+            span,
+        } => template_expression(context, substitutions, *span, body, frame, judgment),
         LocalExpression::Binary {
             op,
             left,
@@ -580,6 +585,50 @@ fn binary_expression(
         SelectedValue::raw(transfer.values),
         frame,
     ))
+}
+
+fn template_expression(
+    context: &mut impl LocalContext,
+    substitutions: &[LocalExpression],
+    span: Span,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let string = Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]);
+    for substitution in substitutions {
+        let operand = expression(context, substitution, body, frame, judgment)?;
+        if operand.values.is_empty() {
+            return Some(operand);
+        }
+        // String concatenation has the same primitive ToString result and
+        // abrupt alternatives. Object conversion needs a separate string-hint
+        // proof, so it retains the existing conservative fallback.
+        let Some(transfer) = allocation_transfer::binary(
+            swc_ecma_ast::BinaryOp::Add,
+            &string,
+            &operand.values,
+            AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        ) else {
+            judgment.compose(&AllocationJudgment::Opaque);
+            context.binary_fallback(frame, &operand.values, span);
+            return None;
+        };
+        judgment.compose(&transfer.judgment);
+        let effects = if transfer
+            .values
+            .contains(&AbstractValue::Value(Value::Unavailable))
+        {
+            EffectCoverageFragment::default()
+        } else {
+            EffectCoverageFragment::no_effects()
+        };
+        frame.effect_coverage.compose(&effects);
+        if completing(transfer.values, frame).is_empty() {
+            return Some(SelectedValue::raw(Values::new()));
+        }
+    }
+    Some(completing_selected(SelectedValue::raw(string), frame))
 }
 
 fn value_expression(
