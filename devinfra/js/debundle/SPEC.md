@@ -524,9 +524,12 @@ effect footprint is empty. Dependency-bearing re-exports (`export ... from`)
 retain conservative dependency-evaluation coverage; default export expressions
 and declarations retain their normal evaluation effects. Structural facts,
 heap and synchronous analyses, and saved analysis share this classification.
-Twenty deterministic examples bound default output: rows with modeled cells
-are preferred, then the earliest Havoc-only rows fill unused slots; selected
-rows retain sweep order. Truncation and coverage limitations remain explicit.
+Twenty deterministic examples bound default output. They rank rows with
+non-`execution_progress` data cells or an observed `execution_progress`
+conflict first, potential-control-only rows second, and cell-free Havoc rows
+last. Earlier rows win within each tier; examples are emitted in tier order.
+Truncation and coverage limitations remain explicit, and the full JSONL stream
+retains the complete sweep order and every cell.
 `run --effect-conflicts-jsonl` additionally streams every pair, cell, access
 provenance, premise disposition and endpoint opacity
 to `effect_conflicts.jsonl` in each chunk's report directory, using the same
