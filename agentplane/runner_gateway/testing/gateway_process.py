@@ -236,10 +236,9 @@ async def run_gateway(
                 environment_runtime_ca, "spiffe://agentplane/runner-gateway", settings_directory
             )
             runner_security = MTLS(
-                mode="mtls",
                 tls=TLS(
                     cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(environment_runtime_ca_file)
-                ),
+                )
             )
             effective_settings = Settings(
                 sandbox_namespace=namespace,
@@ -266,10 +265,7 @@ async def run_gateway(
             )
             # These runtime-source settings stay out of the YAML, especially the database Secret.
             settings = effective_settings.model_dump(
-                mode="json",
-                exclude_none=True,
-                exclude_unset=True,
-                exclude={"dispatcher_database_url", "pod_name", "pod_ip"},
+                mode="json", exclude_none=True, exclude={"dispatcher_database_url", "pod_name", "pod_ip"}
             )
             for caller_list in (
                 "dispatcher_callers",

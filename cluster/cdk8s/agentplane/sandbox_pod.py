@@ -187,10 +187,13 @@ def add_sidecar_settings(
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
     settings = sidecar_config.Settings(
-        proxy_host=egress.proxy(env.namespace).fqdn,
-        proxy_port=egress.PROXY_PORT,
+        proxy=sidecar_config.Proxy(
+            address=f"{egress.proxy(env.namespace).fqdn}:{egress.PROXY_PORT}",
+            transport=sidecar_config.PlaintextProxyTransport(
+                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=Path(_EGRESS_TOKEN_DIR) / "token")
+            ),
+        ),
         readiness_listen_address=sidecar_config.READINESS_LISTEN_ADDRESS,
-        token_file=Path(_EGRESS_TOKEN_DIR) / "token",
         audience_token_files={
             audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
         },
@@ -203,7 +206,7 @@ def add_sidecar_settings(
         scope,
         f"{name}-settings",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-        content=yaml_config(settings, exclude_none=True),
+        content=yaml_config(settings.model_dump(mode="json", exclude_none=True)),
         path=_SIDECAR_SETTINGS_PATH,
     )
 

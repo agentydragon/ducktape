@@ -1458,6 +1458,11 @@ data:
       - agentplane-notifications
       - agentplane-runner-ingress
       - session-dispatcher
+    forward:
+      listen_address: 0.0.0.0:8888
+      auth:
+        - mode: kubernetes_bearer
+          audience: agentplane-egress
 immutable: false
 ---
 apiVersion: v1
@@ -1513,8 +1518,6 @@ spec:
               value: agentplane-staging
             - name: AGENTPLANE_EGRESS_CREDENTIALS_NAMESPACE
               value: agentplane-staging-egress-credentials
-            - name: AGENTPLANE_EGRESS_LISTEN_ADDRESS
-              value: 0.0.0.0:8888
             - name: AGENTPLANE_EGRESS_ADMIN_LISTEN_ADDRESS
               value: 0.0.0.0:8081
             - name: AGENTPLANE_EGRESS_AGENT_API_LISTEN_ADDRESS
@@ -1525,8 +1528,6 @@ spec:
               value: /etc/agentplane-egress/ca/tls.key
             - name: AGENTPLANE_EGRESS_UPSTREAM_CA_FILE
               value: /etc/agentplane-egress/upstream-ca/ca-certificates.crt
-            - name: AGENTPLANE_EGRESS_TOKEN_AUDIENCE
-              value: agentplane-egress
             - name: AGENTPLANE_EGRESS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -4769,9 +4770,13 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    token_file: /var/run/agentplane-egress/token
+    proxy:
+      address: egress.agentplane-staging.svc.cluster.local:8888
+      transport:
+        mode: plaintext
+        auth:
+          mode: kubernetes_bearer
+          token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
@@ -4785,6 +4790,7 @@ data:
       telemetry:
         listen_address: 127.0.0.1:3132
         upstream: alloy.monitoring.svc.cluster.local:4317
+    listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
 ---
@@ -5165,9 +5171,13 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    token_file: /var/run/agentplane-egress/token
+    proxy:
+      address: egress.agentplane-staging.svc.cluster.local:8888
+      transport:
+        mode: plaintext
+        auth:
+          mode: kubernetes_bearer
+          token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
@@ -8377,14 +8387,20 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    token_file: /var/run/agentplane-egress/token
+    proxy:
+      address: egress.agentplane-staging.svc.cluster.local:8888
+      transport:
+        mode: plaintext
+        auth:
+          mode: kubernetes_bearer
+          token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+    platform_routes: {}
+    listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
 ---

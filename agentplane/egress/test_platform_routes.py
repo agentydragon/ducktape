@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 
 UNARY = "/test.Echo/Unary"
@@ -95,7 +96,11 @@ async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> Asy
     }
     async with (
         SidecarProcess(
-            proxy_host="127.0.0.1", proxy_port=1, token_file=token_file, platform_routes=route_config
+            proxy=Proxy(
+                address="127.0.0.1:1",
+                transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=token_file)),
+            ),
+            platform_routes=route_config,
         ) as sidecar,
         grpc.aio.insecure_channel(
             f"{sidecar.platform_route_listeners['control'].host}:{sidecar.platform_route_listeners['control'].port}"

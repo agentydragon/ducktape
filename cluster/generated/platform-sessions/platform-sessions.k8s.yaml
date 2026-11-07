@@ -401,6 +401,8 @@ spec:
               name: http
             - containerPort: 9090
               name: metrics
+            - containerPort: 9091
+              name: blueshield-mon
           readinessProbe:
             httpGet:
               path: /healthz
@@ -531,6 +533,9 @@ spec:
     - interval: 1m
       path: /metrics
       port: metrics
+    - interval: 1m
+      path: /metrics
+      port: blueshield-mon
   selector:
     matchLabels:
       app: platform-sessions

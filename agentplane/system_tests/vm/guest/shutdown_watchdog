@@ -23,54 +23,7 @@ while :; do
 	/usr/bin/busybox ps -o pid,ppid,stat,comm
 	# PID 1 can be idle in epoll_wait while a tracked stop job's child is stuck.
 	if [ "$child_snapshot_tick" -eq 0 ]; then
-		echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_BEGIN interval_seconds=10 selected_only=shutdown_helpers"
-		# PID 1's child list is whitespace-separated. Filter helper names before the detail cap,
-		# so unrelated daemons cannot crowd out umount, sd-sync, or journal shutdown work.
-		children=$(/usr/bin/busybox cat /proc/1/task/1/children 2>/dev/null || true)
-		child_count=0
-		selected_count=0
-		truncated_count=0
-		for pid in $children; do
-			child_count=$((child_count + 1))
-			child_dir="/proc/$pid"
-			child_comm=$(/usr/bin/busybox cat "$child_dir/comm" 2>/dev/null || true)
-			child_cmdline=$(/usr/bin/busybox head -c 1024 "$child_dir/cmdline" 2>/dev/null | /usr/bin/busybox tr '\000' ' ' || true)
-			child_exe=${child_cmdline%% *}
-			child_exe=${child_exe##*/}
-			case "$child_comm:$child_exe" in
-			"(sd-sync):"* | "(sd-umount):"* | "(sd-remount):"* | sync:* | umount:* | umount.*:* | mount:* | mount.*:* | journalctl:* | systemd-journal:* | systemd-shutdown:* | systemd-shutdow:* | poweroff:* | reboot:* | halt:* | shutdown:*) ;;
-			*) continue ;;
-			esac
-			if [ "$selected_count" -ge 16 ]; then
-				truncated_count=$((truncated_count + 1))
-				continue
-			fi
-			selected_count=$((selected_count + 1))
-			echo "AGENTPLANE_SHUTDOWN_PID1_CHILD pid=$pid comm=$child_comm"
-			echo "AGENTPLANE_SHUTDOWN_PID1_CHILD_${pid}_cmdline max_bytes=1024"
-			if [ -n "$child_cmdline" ]; then
-				echo "$child_cmdline"
-			else
-				echo "Child $pid cmdline unavailable or empty"
-			fi
-			for field in wchan syscall stack; do
-				case "$field" in
-				wchan) max_bytes=128 ;;
-				syscall) max_bytes=256 ;;
-				stack) max_bytes=2048 ;;
-				esac
-				echo "AGENTPLANE_SHUTDOWN_PID1_CHILD_${pid}_${field} max_bytes=$max_bytes"
-				/usr/bin/busybox head -c "$max_bytes" "$child_dir/$field" 2>/dev/null || echo "Child $pid $field unavailable"
-				echo
-			done
-		done
-		if [ "$child_count" -eq 0 ]; then
-			echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_EMPTY_OR_UNAVAILABLE"
-		fi
-		if [ "$truncated_count" -gt 0 ]; then
-			echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_TRUNCATED max=16 additional_matches=$truncated_count"
-		fi
-		echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_END total=$child_count selected=$selected_count"
+		/usr/sbin/agentplane-shutdown-watchdog-children
 	else
 		echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_SKIPPED interval_seconds=10"
 	fi

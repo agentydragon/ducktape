@@ -56,13 +56,18 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
     settings = sidecar_config.Settings(
-        proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, token_file=Path(_TOKEN_DIR) / "token"
+        proxy=sidecar_config.Proxy(
+            address=f"{GATEWAY.fqdn}:{GATEWAY.pod_port}",
+            transport=sidecar_config.PlaintextProxyTransport(
+                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=Path(_TOKEN_DIR) / "token")
+            ),
+        )
     )
     return SettingsFile(
         scope,
         "egress-sidecar-settings",
         metadata=ApiObjectMetadata(name=_SETTINGS_CONFIG_MAP, namespace=NAMESPACE),
-        content=yaml_config(settings),
+        content=yaml_config(settings.model_dump(mode="json", exclude_none=True)),
         path=_SETTINGS_PATH,
     ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.Settings.config_file_env)
 

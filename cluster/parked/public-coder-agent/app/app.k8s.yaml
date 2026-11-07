@@ -436,9 +436,17 @@ metadata:
   namespace: public-coder-agent
 data:
   settings.yaml: |
-    proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    token_file: /var/run/agentplane-egress/token
+    proxy:
+      address: egress.agentplane-staging.svc.cluster.local:8888
+      transport:
+        mode: plaintext
+        auth:
+          mode: kubernetes_bearer
+          token_file: /var/run/agentplane-egress/token
+    audience_token_files: {}
+    platform_routes: {}
+    listen_address: 127.0.0.1:3128
+    readiness_listen_address: 0.0.0.0:3129
 immutable: false
 ---
 apiVersion: apps/v1

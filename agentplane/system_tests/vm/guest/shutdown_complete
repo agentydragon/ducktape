@@ -1,10 +1,19 @@
 #!/usr/bin/busybox sh
 # The unit stops after the runner and both mount units. Refuse proof on failed unmounts.
 set -eu
+echo "AGENTPLANE_SHUTDOWN_PROOF_ENTER"
 for directory in /state/workspaces /state; do
+	echo "AGENTPLANE_SHUTDOWN_PROOF_CHECK_BEGIN mountpoint=$directory"
 	if findmnt --mountpoint "$directory" >/dev/null; then
+		findmnt_status=0
+		echo "AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=$directory findmnt_status=$findmnt_status"
 		echo "Agentplane storage is still mounted: $directory" >&2
+		echo "AGENTPLANE_SHUTDOWN_PROOF_EXIT status=1 reason=mountpoint_still_mounted"
 		exit 1
+	else
+		findmnt_status=$?
+		echo "AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=$directory findmnt_status=$findmnt_status"
 	fi
 done
 echo "AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
+echo "AGENTPLANE_SHUTDOWN_PROOF_EXIT status=0"

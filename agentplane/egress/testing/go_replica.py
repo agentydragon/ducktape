@@ -50,7 +50,10 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
                 {
                     **settings.model_dump(mode="json", exclude_none=True),
                     "database_url": database_url,
-                    "listen_address": f"fd:{proxy_listener.socket.fileno()}",
+                    "forward": {
+                        **settings.forward.model_dump(mode="json"),
+                        "listen_address": f"fd:{proxy_listener.socket.fileno()}",
+                    },
                     "admin_listen_address": f"fd:{admin_listener.socket.fileno()}",
                     "agent_api_listen_address": f"fd:{agent_api_listener.socket.fileno()}",
                 }

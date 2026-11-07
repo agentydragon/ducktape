@@ -24,14 +24,14 @@ class TLS(BaseModel):
 class MTLS(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    mode: Literal["mtls"]
+    mode: Literal["mtls"] = "mtls"
     tls: TLS
 
 
 class Insecure(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    mode: Literal["insecure"]
+    mode: Literal["insecure"] = "insecure"
 
 
 Security = Annotated[MTLS | Insecure, Field(discriminator="mode")]

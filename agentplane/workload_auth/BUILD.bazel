@@ -11,3 +11,13 @@ py_library(
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
 )
+
+py_library(
+    name = "listener",
+    srcs = ["listener.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
+)

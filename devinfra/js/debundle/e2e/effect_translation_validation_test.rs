@@ -3516,8 +3516,8 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
         );
     }
     assert_eq!(
-        report["coverage"]["owner_coverage_refusals"]["initializer_result_unproved"], 1,
-        "the first declarator's forward read cannot prove its initializer value: {report:#}"
+        report["coverage"]["owner_coverage_refusals"]["uninitialized_read"], 1,
+        "the first declarator's ordered read observes a TDZ cell: {report:#}"
     );
 }
 

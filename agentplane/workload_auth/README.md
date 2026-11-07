@@ -1,5 +1,11 @@
 # Workload authentication
 
+[`listener`](listener/config.go) and [`listener.py`](listener.py) define the shared authoring
+and Go decoding contract for workload listeners: a listen address and an explicit list of
+supported authentication methods. `kubernetes_bearer` requires an audience. Unsupported modes,
+empty lists, duplicates and unknown fields fail configuration loading; configuring a method does
+not grant its caller authorization. The egress proxy consumes this contract.
+
 [`auth`](auth/auth.go) provides the TokenReview resolver used by Agentplane services. Each
 service constructs a `Resolver` with its accepted audience and allowed namespaces. Its namespace
 allowlist is checked for every request.
