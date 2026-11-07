@@ -5,7 +5,7 @@ use super::value_model::{AbstractValue, CallSite, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::EffectCell;
 use crate::facts::abstract_domain::builtins::{
-    ARRAY_PROTOTYPE_SLOTS, IterationResult, IterationRow,
+    ARRAY_PROTOTYPE_SLOTS, ArgSel, IterationResult, IterationRow,
 };
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -92,7 +92,11 @@ pub(super) fn select_iteration(
     else {
         return None;
     };
-    if row.result != IterationResult::Mapped || !context.array_slots_intact(row.requires) {
+    if row.result != IterationResult::Mapped
+        || !matches!(row.invokes, ArgSel::Arg(0))
+        || !row.arity.contains(&1)
+        || !context.array_slots_intact(row.requires)
+    {
         return None;
     }
     context.literal_array_length(*object, &[row.member, "constructor"])?;
