@@ -243,6 +243,7 @@ class EnvironmentSandbox(Construct):
             )
 
         if env.firecracker_sandboxes:
+            guest_gateway = environment_firecracker.GATEWAY
             state_volume = template.spec["stateVolume"]
             claim = {
                 **state_volume["claim"],
@@ -267,13 +268,9 @@ class EnvironmentSandbox(Construct):
                 workspace_volume=firecracker_workspace,
                 runner_image=environment_vm.RUNNER_DISK_IMAGE,
                 platform_instructions=platform_instructions(
-                    env,
-                    session_runtime=SessionRuntime.NATIVE_HARNESS,
-                    egress_host=environment_firecracker.GATEWAY,
+                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
                 ),
-                harness_env=agent_cli_environment(
-                    service_urls(env, egress_host=environment_firecracker.GATEWAY)
-                ),
+                harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
                 image_pull_secret_name=image_pull_secret_name,
                 session_reconcile_concurrency=session_reconcile_concurrency,
                 codex_readiness=vm_codex_readiness,

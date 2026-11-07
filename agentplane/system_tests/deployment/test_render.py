@@ -618,6 +618,7 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
     config = json.loads(
         _resource(fixture.objects, "ConfigMap", "environment-firecracker-config")["data"]["environment-runtime.json"]
     )
+    assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"] == "http://192.0.2.1:3133"
     assert config["control"]["security"] == {
         "mode": "mtls",
         "tls": {"workload_api_socket": "unix:///run/agentplane/environment-runtime-tls/workload.sock"},
