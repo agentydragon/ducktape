@@ -13,19 +13,24 @@ import (
 
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgresql://user:never-print-this@db/egress"
 
+// settingsWithForward supplies the independent forward auth required by tests of other settings.
+func settingsWithForward(t *testing.T, contents string) string {
+	t.Helper()
+	return configtest.WriteSettings(t, `forward:
+  listen_address: 0.0.0.0:8888
+  auth:
+    - mode: kubernetes_bearer
+      audience: hop
+`+contents)
+}
+
 // required is the environment of a deployment that sets every setting without a default.
 func required(t *testing.T, extra ...string) []string {
 	t.Helper()
 	return append([]string{
 		settingPrefix + "RULES_NAMESPACE=rules", settingPrefix + "CREDENTIALS_NAMESPACE=secrets",
 		settingPrefix + "CA_CERT=/ca.crt", settingPrefix + "CA_KEY=/ca.key",
-		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
-forward:
-  listen_address: 0.0.0.0:8888
-  auth:
-    - mode: kubernetes_bearer
-      audience: hop
-`), databaseURLEnv,
+		settingPrefix + "CONFIG_FILE=" + settingsWithForward(t, "allowed_service_account_namespaces: [ns]\n"), databaseURLEnv,
 	}, extra...)
 }
 
@@ -60,10 +65,10 @@ admin_listen_address: 127.0.0.1:1111
 func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 	for _, bad := range [][]string{
 		{settingPrefix + "DECISION_BATCH_SIZE=0"},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\nlisten_address: 127.0.0.1:8888\n")},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\ntoken_audience: legacy\n")},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\nlog_levels: {agentplane.other: INFO}\n")},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\nexempt_networks: [not-a-prefix]\n")},
+		{settingPrefix + "CONFIG_FILE=" + settingsWithForward(t, "allowed_service_account_namespaces: [ns]\nlisten_address: 127.0.0.1:8888\n")},
+		{settingPrefix + "CONFIG_FILE=" + settingsWithForward(t, "allowed_service_account_namespaces: [ns]\ntoken_audience: legacy\n")},
+		{settingPrefix + "CONFIG_FILE=" + settingsWithForward(t, "allowed_service_account_namespaces: [ns]\nlog_levels: {agentplane.other: INFO}\n")},
+		{settingPrefix + "CONFIG_FILE=" + settingsWithForward(t, "allowed_service_account_namespaces: [ns]\nexempt_networks: [not-a-prefix]\n")},
 	} {
 		_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, bad...))
 		if err == nil {
@@ -141,7 +146,7 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 			if namespaces != "" {
 				contents = "allowed_service_account_namespaces: " + namespaces + "\n"
 			}
-			environ := required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents))
+			environ := required(t, settingPrefix+"CONFIG_FILE="+settingsWithForward(t, contents))
 			if _, err := configtest.Load(t, settingPrefix, loadConfig, environ); err == nil {
 				t.Fatal("ran with no usable workload namespace")
 			}
@@ -160,7 +165,7 @@ func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 }
 
 func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
-	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
+	path := settingsWithForward(t, `allowed_service_account_namespaces: [ns]
 admin_grpc_audience: file-audience
 admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
 `)
@@ -192,7 +197,7 @@ func TestAdminGRPCIsAllOrNothing(t *testing.T) {
 		"caller with a deep path":  audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			path := configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\n"+contents)
+			path := settingsWithForward(t, "allowed_service_account_namespaces: [ns]\n"+contents)
 			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
 				t.Fatal("accepted")
 			}

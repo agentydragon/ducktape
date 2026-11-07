@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	workloadlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 )
 
 func writeSettingsFile(t *testing.T, content string) string {
@@ -50,7 +52,7 @@ listen_address: 127.0.0.1:0
 	}
 	if config.Proxy.Address != "egress.example:9001" ||
 		config.Proxy.Transport.Mode != proxyTransportPlaintext ||
-		config.Proxy.Transport.Auth.Mode != proxyAuthKubernetesBearer ||
+		config.Proxy.Transport.Auth.Mode != workloadlistener.KubernetesBearer ||
 		config.Proxy.Transport.Auth.TokenFile != "/var/run/egress/token" {
 		t.Fatalf("unexpected proxy settings: %+v", config)
 	}
