@@ -4,11 +4,12 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
+import type * as GmailClient from "../../gmail_client";
 import { renderResultPreview } from "../result_entry";
 import { gmailResultPreviews } from "./responses";
 
 vi.mock("../../gmail_client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../gmail_client")>()),
+  ...(await importOriginal<typeof GmailClient>()),
   fetchGmailLabelNames: vi.fn().mockResolvedValue(new Map()),
 }));
 
@@ -56,9 +57,11 @@ describe("gmailResultPreviews", () => {
     try {
       await act(async () => {
         root.render(
-          createElement(MantineProvider, {
-            children: renderResultPreview(gmailResultPreviews.threads_get, { id: "t1", snippet: "hi" }, "compact"),
-          })
+          createElement(
+            MantineProvider,
+            null,
+            renderResultPreview(gmailResultPreviews.threads_get, { id: "t1", snippet: "hi" }, "compact")
+          )
         );
       });
       expect(container.textContent).toContain("(no subject)");
