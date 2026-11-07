@@ -3,6 +3,8 @@
 BEGIN {
     if (integrity == "")
         integrity = "clean"
+    roots = 0
+    roots_other_pid = 0
 }
 function function_name(body, name) {
     name = body
@@ -26,6 +28,10 @@ integrity != "clean" { next }
     sub(/^.*\|[[:space:]]*/, "", body)
 
     if (body ~ /^cgroup_subtree_control_write\(\)[[:space:]]*\{$/) {
+        if (writer_pid != "" && raw !~ ("-" writer_pid "[[:space:]]")) {
+            roots_other_pid++
+            next
+        }
         roots++
         depth = 1
         stack[1] = "cgroup_subtree_control_write"

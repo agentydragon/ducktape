@@ -496,6 +496,32 @@ py_test(
 )
 
 py_test(
+    name = "test_tcg_vmi_shutdown_delegated_cgroup_stress",
+    size = "small",
+    srcs = ["test_tcg_vmi_shutdown.py"],
+    args = ["-k=delegated_cgroup_stress"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    main = "test_tcg_vmi_shutdown.py",
+    deps = [
+        ":boot_rcu",
+        ":guest_logs",
+        ":host_qemu",
+        ":infrastructure",
+        ":shutdown_diagnostic",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/k3s:baseline",
+        "//cluster/cdk8s/agentplane:launcher_relay",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
     name = "test_cgroup_pilot_trace",
     size = "small",
     srcs = ["test_cgroup_pilot_trace.py"],
@@ -508,6 +534,31 @@ py_test(
         "CGROUP_PILOT_TRACE_AWK_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:cgroup_pilot_trace.awk)",
     },
     main = "test_cgroup_pilot_trace.py",
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_delegated_cgroup_stress",
+    size = "small",
+    srcs = ["test_delegated_cgroup_stress.py"],
+    data = [
+        "//agentplane/system_tests/vm/guest:agentplane-delegated-cgroup-stress.service",
+        "//agentplane/system_tests/vm/guest:agentplane-delegated-cgroup-stress.timer",
+        "//agentplane/system_tests/vm/guest:delegated_cgroup_stress",
+        "@trixie_vm_guest//busybox-static:data",
+    ],
+    env = {
+        "DELEGATED_CGROUP_STRESS_SCRIPT_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:delegated_cgroup_stress)",
+        "DELEGATED_CGROUP_STRESS_SERVICE_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:agentplane-delegated-cgroup-stress.service)",
+        "DELEGATED_CGROUP_STRESS_TIMER_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:agentplane-delegated-cgroup-stress.timer)",
+        "DELEGATED_CGROUP_STRESS_BUSYBOX_RLOCATION": "$(rlocationpath @trixie_vm_guest//busybox-static:data)",
+    },
+    main = "test_delegated_cgroup_stress.py",
     deps = [
         "//:conftest",
         "//agentplane/system_tests:conftest",
