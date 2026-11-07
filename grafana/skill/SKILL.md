@@ -85,6 +85,14 @@ The verifier fails on any of these conditions:
   placeholders in titles must expand to visible text; structural row titles are
   not panel titles and are skipped.
 
+The direct query probe forwards ClickHouse `rawSql` and its plugin macros to the
+ClickHouse datasource. For Prometheus, it expands `$__rate_interval` using the
+query's Min step or datasource scrape interval and Grafana's documented formula.
+The browser check still inspects the actual request for unresolved macros.
+ClickHouse SQL with dashboard template variables remains unsupported by the
+direct probe because its frontend SQL formatting is plugin-specific; the
+verifier fails explicitly rather than sending an uninterpolated query.
+
 The browser verifier scrolls to the end of the dashboard so repeated rows and
 their panels are rendered even when the dashboard expands beyond a fixed number
 of viewports. It waits for datasource query requests to finish after each scroll
