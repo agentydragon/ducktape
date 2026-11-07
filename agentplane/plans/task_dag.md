@@ -2829,10 +2829,10 @@ Generate TypeScript request/response messages and codecs from the same protos; r
 OpenAPI-derived contracts, mirrored wire types and handwritten route implementations as callers move.
 UI-specific view models and adapters may remain.
 
-Remaining scope includes frontend configuration and the Sandbox creation form; the Action policy
-inventory and Sandbox policy grant/revoke operations; system status; and the Thread event and
-Sandbox console streams. Inventory other remaining app-owned contracts and raw streams before
-converting them. Electric synchronization remains a protocol-specific transport for now.
+Remaining scope includes frontend configuration and the Sandbox creation form; Sandbox policy
+grant/revoke operations; system status; and the Thread event and Sandbox console streams. Inventory
+other remaining app-owned contracts and raw streams before converting them. Electric synchronization
+remains a protocol-specific transport for now.
 Login/OAuth redirects, static assets, health probes, API documentation and OTLP telemetry are also
 protocol-specific HTTP surfaces, not application RPCs to convert mechanically.
 

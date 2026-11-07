@@ -1,0 +1,29 @@
+# Opt-in five-pair cgroup controller stress
+
+The [compact two-pair pilot](cgroup_two_pair_pilot.md#compact-witness-pilot) proved that an ordinary `systemctl set-property --runtime` change on a live service in `pilot.slice` can enter one closed PID 1 `cgroup_subtree_control_write` → `cgroup_update_dfl_csses` → `percpu_down_write` → `rcu_sync_enter` call chain. Both `on` transitions finished cleanly. This arm repeats the controller-set transition five times in one fresh two-vCPU TCG guest to look for an RCU/readiness wedge under a bounded, explicitly perturbed workload. It does not write cgroup control files directly or start Agentplane Runtime.
+
+`AGENTPLANE_TCG_VMI_CGROUP_STRESS=1` is opt-in, mutually exclusive with the two-pair pilot and synthetic slice probe, and requires the 1 Hz guest boot observer. It adds only `agentplane.cgroup-stress=1` to the guest kernel arguments. The policy remains on unless separately opted out, and debug kernel arguments remain off by default. A conditioned timer starts a separate service at 30 guest uptime seconds. It uses the pilot's live BusyBox resident in `pilot.slice` and performs exactly five `IOAccounting=yes/no` pairs through systemd. Before and after **every** property request it records guest uptime, resident PID/liveness, and both root and slice controller masks; it fails as unexercised unless both masks alternate as requested and the resident remains alive.
+
+The first `on` step requires a clean per-CPU trace and one closed nested PID 1 call-chain witness, using the compact extractor. Immediately afterward the probe writes `tracing_on=0`, resets `current_tracer=nop`, clears its PID and graph filters, and records the observed trace state. The remaining nine requests are measured by property status and controller-set changes; their specific kernel call paths are not individually proven. The guest script stops as unexercised before starting another request at 60 seconds of active work or after 75 seconds, leaving the existing 90-second service timeout, 12-second per-property timeout and 120-second driver milestone unchanged. The driver requires the witness, trace-off record, ten ordered successful results, and all alternating root/slice masks before it sends ACPI. A missing witness, mask mismatch, vanished resident, budget exhaustion or missing milestone stops the arm; budget exhaustion is an incomplete workload, not a kernel stall.
+
+The successful two-pair probe took about 35 guest seconds: roughly 11 seconds of trace setup and four changes of 4.5–6.2 seconds. Six additional changes conservatively add about 37 seconds, within the 75-second active budget, while an outer fresh-cluster action may take roughly 9–10 minutes. This is a modest bounded stress arm, not a high-throughput cgroup fuzzer. Its writes target `pilot.slice/cgroup.subtree_control`, whereas the historical full guest's blocked PID 1 stack was in the **root** cgroup. A clean result cannot exclude the original full-stack failure, and any stall must be classified against the retained guest observer, host samples and exact VMI/Pod UIDs.
+
+```bash
+bbr test //agentplane/system_tests/vm:test_tcg_vmi_shutdown \
+  --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 \
+  --test_env=AGENTPLANE_TCG_VMI_CYCLES=1 \
+  --test_env=AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER=1 \
+  --test_env=AGENTPLANE_TCG_VMI_CGROUP_STRESS=1 \
+  --test_env=AGENTPLANE_TCG_VMI_CGROUP_PILOT=0 \
+  --test_env=AGENTPLANE_TCG_VMI_SYNTHETIC_SLICE_PROBE=0 \
+  --test_env=AGENTPLANE_TCG_VMI_SKIP_VIRTIOFS_POLICY=0 \
+  --test_env=AGENTPLANE_TCG_VMI_DEBUG_KERNEL_ARGS=0
+```
+
+The retained per-cycle output includes `cgroup-stress-console.txt`, guest and passive host boot observations, exact VMI and launcher Pod UIDs, and, when the workload milestone succeeds, ACPI/shutdown proof. The test runs UID-checked namespace/PVC/PV cleanup even after a failed milestone. Raw outputs stay in BuildBuddy and task-local scratch; this note records only bounded, sanitized findings.
+
+## First smoke: resident activation wiring failure
+
+The first uncached [smoke invocation](https://app.buildbuddy.io/invocation/f4ca9cf7-1857-403b-8ae2-32cb754151a4) ran from exact source `8ca0ebaa5f7234e83f1a7e5cfc503e68403dc811`, with one policy-on cycle, the 1 Hz boot observer enabled, and debug kernel arguments off. The guest printed `AGENTPLANE_CGROUP_STRESS_BEGIN` around uptime 35 seconds, then `UNEXERCISED reason=resident_not_running` around uptime 56 seconds. It emitted no snapshot, property result, trace witness, or success record. The measured path had zero guest ACPI receipts and no QMP powerdown; this is not a post-ACPI shutdown stall. PID 1 was sampled in `do_epoll_wait` near the failure while interrupt and RCU counters advanced. The retained identity records VMI UID `afa0da74-df4d-4170-9b7f-c3b916baf918` and launcher Pod UID `a520ee01-d75c-4c2b-92ed-4cf4072c940b`. Failure cleanup returned without an added error, but its retained pre-cleanup artifacts do not establish whether VMI deletion was graceful or forced.
+
+The cause was a harness wiring error: the script asked systemd to start `agentplane-cgroup-pilot-resident.service`, whose `ConditionKernelCommandLine=agentplane.cgroup-pilot=1` did not match this guest's `agentplane.cgroup-stress=1`. The follow-up source selects a separate stress-conditioned resident unit, with a focused cross-artifact test checking both boot arguments, selected unit and systemd condition. This first smoke exercised no controller transition and contributes no kernel-stall evidence.

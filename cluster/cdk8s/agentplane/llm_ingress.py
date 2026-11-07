@@ -65,6 +65,11 @@ def proxied_url(namespace: str) -> str:
     return f"http://{llm.fqdn}:{llm.port.number}"
 
 
+def grpc_service(namespace: str) -> ServiceRef:
+    """Native model configuration API on the same ingress Pods."""
+    return ServiceRef(name=_NAME, port=Port(name="grpc", number=8081), pods=service(namespace).pods)
+
+
 class LlmIngress(Construct):
     """ServiceAccount, cluster TokenReview RBAC, the settings ConfigMap, Deployment,
     and Service for the LLM ingress. Fleet Cilium policy is added separately.
@@ -88,6 +93,7 @@ class LlmIngress(Construct):
         self.registry_secret_name = registry_secret_name
         self.memory_limit = memory_limit
         self.service = service(env.namespace)
+        self.grpc_service = grpc_service(env.namespace)
 
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
         # calls TokenReview as itself, so it needs its own mounted token.
@@ -200,7 +206,7 @@ class LlmIngress(Construct):
                 .key("api-key")
                 .env_value(self, "litellm-key-secret"),
             },
-            ports=[self.service.port.container_port()],
+            ports=[self.service.port.container_port(), self.grpc_service.port.container_port()],
             readiness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
@@ -230,7 +236,7 @@ class LlmIngress(Construct):
             "service",
             metadata=ApiObjectMetadata(name=self.service.name, namespace=self.env.namespace),
             selector=deployment,
-            ports=[self.service.port.service_port()],
+            ports=[self.service.port.service_port(), self.grpc_service.port.service_port()],
         )
 
     def _add_network_policy(self) -> None:

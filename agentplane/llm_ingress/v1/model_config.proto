@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package agentplane.llm_ingress.v1;
+option go_package = "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1;modelconfigpb";
+
+// ModelConfigService exposes runner-facing configuration for model routes.
+service ModelConfigService {
+  rpc GetModelConfig(GetModelConfigRequest) returns (GetModelConfigResponse);
+}
+
+message GetModelConfigRequest {
+  string model = 1;
+}
+
+message GetModelConfigResponse {
+  // Absent means the route has no configured budget and the harness uses its default.
+  optional int64 total_context_budget_tokens = 1;
+}

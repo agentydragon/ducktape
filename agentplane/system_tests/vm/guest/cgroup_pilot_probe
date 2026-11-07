@@ -2,7 +2,22 @@
 # Opt-in, bounded systemd controller changes with a live descendant task.
 set -eu
 busybox=/usr/bin/busybox
-unit=agentplane-cgroup-pilot-resident.service
+case ${AGENTPLANE_CGROUP_MODE:-pilot} in
+pilot)
+	mode=pilot
+	marker=AGENTPLANE_CGROUP_PILOT
+	pairs=2
+	unit=agentplane-cgroup-pilot-resident.service
+	;;
+stress)
+	mode=stress
+	marker=AGENTPLANE_CGROUP_STRESS
+	pairs=5
+	unit=agentplane-cgroup-stress-resident.service
+	;;
+*) exit 2 ;;
+esac
+probe_start_uptime=$("$busybox" awk '{print int($1)}' /proc/uptime)
 slice=/sys/fs/cgroup/pilot.slice
 tracefs=/sys/kernel/tracing
 scratch=$("$busybox" mktemp -d /run/agentplane-cgroup-pilot.XXXXXX)
@@ -15,9 +30,10 @@ trace_reason=unavailable
 trace_hits_total=0
 trace_buffer_kib=1024
 trace_scan_line_limit=20000
+first_witness_proven=no
 
 emit() {
-	printf '\nAGENTPLANE_CGROUP_PILOT_%s\n' "$*" >"$record_file"
+	printf '\n%s_%s\n' "$marker" "$*" >"$record_file"
 	bytes=$("$busybox" wc -c <"$record_file")
 	[ "$bytes" -le 2048 ] || exit 1
 	"$busybox" dd if="$record_file" bs=2048 count=1 2>/dev/null
@@ -45,6 +61,22 @@ mask() {
 		"$busybox" head -c 128 "$1" | "$busybox" tr ' ' ',' | "$busybox" tr -d '\n'
 	else
 		printf 'unavailable'
+	fi
+}
+
+has_io() {
+	case ",$1," in
+	*,io,*) printf yes ;;
+	*) printf no ;;
+	esac
+}
+
+stress_budget() {
+	[ "$mode" = stress ] || return 0
+	elapsed=$("$busybox" awk -v start="$probe_start_uptime" '{print int($1) - start}' /proc/uptime)
+	if [ "$elapsed" -ge 60 ]; then
+		emit "UNEXERCISED step=$step reason=active_budget_before_property elapsed=$elapsed limit=75"
+		exit 1
 	fi
 }
 
@@ -180,10 +212,20 @@ trace_integrity() {
 change_property() {
 	step=$1
 	value=$2
+	stress_budget
 	snapshot "${step}_before"
 	if [ "$resident" != yes ]; then
 		emit "UNEXERCISED step=$step reason=no_descendant_task"
 		exit 1
+	fi
+	if [ "$mode" = stress ]; then
+		if [ "$value" = yes ]; then expected_before=no; else expected_before=yes; fi
+		root_before=$(has_io "$root_mask")
+		slice_before=$(has_io "$slice_mask")
+		if [ "$root_before" != "$expected_before" ] || [ "$slice_before" != "$expected_before" ]; then
+			emit "UNEXERCISED step=$step reason=pre_mask_not_transition root_io=$root_before slice_io=$slice_before expected=$expected_before"
+			exit 1
+		fi
 	fi
 	if [ "$trace_supported" = yes ]; then
 		printf '0\n' >"$tracefs/tracing_on"
@@ -212,6 +254,9 @@ change_property() {
 			emit "TRACE_CHAIN step=$step status=unproven reason=trace_lines_exceed_limit limit=$trace_scan_line_limit"
 		else
 			if "$busybox" awk -v "integrity=$integrity" -f /usr/sbin/agentplane-cgroup-pilot-trace.awk "$tracefs/trace" >"$scratch/trace-chain"; then
+				if [ "$step" = pair1_on ] && [ "$integrity" = clean ] && "$busybox" grep -q '^status=proven ' "$scratch/trace-chain"; then
+					first_witness_proven=yes
+				fi
 				while IFS= read -r trace_chain; do
 					emit "TRACE_CHAIN step=$step $trace_chain"
 				done <"$scratch/trace-chain"
@@ -226,17 +271,30 @@ change_property() {
 	fi
 	snapshot "${step}_after"
 	emit "RESULT step=$step value=$value property_status=$property_status trace=$trace_reason update_hits=$trace_hits lock_hits=$trace_lock rcu_hits=$trace_rcu"
-	case ",$slice_mask," in
-	*,io,*) io_enabled=yes ;;
-	*) io_enabled=no ;;
-	esac
+	io_enabled=$(has_io "$slice_mask")
 	if [ "$property_status" -ne 0 ] || [ "$resident" != yes ] || [ "$io_enabled" != "$value" ]; then
 		emit "UNEXERCISED step=$step property_status=$property_status resident=$resident io_enabled=$io_enabled expected=$value"
 		exit 1
 	fi
+	if [ "$mode" = stress ]; then
+		root_io_enabled=$(has_io "$root_mask")
+		if [ "$root_io_enabled" != "$value" ]; then
+			emit "UNEXERCISED step=$step reason=root_mask_mismatch root_io=$root_io_enabled expected=$value"
+			exit 1
+		fi
+		elapsed=$("$busybox" awk -v start="$probe_start_uptime" '{print int($1) - start}' /proc/uptime)
+		if [ "$elapsed" -gt 75 ]; then
+			emit "UNEXERCISED step=$step reason=active_budget_after_property elapsed=$elapsed limit=75"
+			exit 1
+		fi
+	fi
 }
 
-emit 'BEGIN pairs=2 direct_root_writes=none'
+if [ "$mode" = stress ]; then
+	emit "BEGIN pairs=$pairs direct_root_writes=none active_budget_seconds=75"
+else
+	emit 'BEGIN pairs=2 direct_root_writes=none'
+fi
 /usr/bin/systemctl start --no-block "$unit"
 attempt=0
 until resident_alive; do
@@ -250,8 +308,29 @@ done
 snapshot baseline
 setup_trace
 emit "TRACE_SETUP status=$trace_reason"
-change_property pair1_on yes
-change_property pair1_off no
-change_property pair2_on yes
-change_property pair2_off no
-emit "SUCCESS transitions=4 trace=$trace_reason trace_hits_total=$trace_hits_total"
+pair=1
+while [ "$pair" -le "$pairs" ]; do
+	change_property "pair${pair}_on" yes
+	if [ "$mode" = stress ] && [ "$pair" -eq 1 ]; then
+		if [ "$first_witness_proven" != yes ]; then
+			emit 'UNEXERCISED step=pair1_on reason=first_witness_unproven'
+			exit 1
+		fi
+		printf '0\n' >"$tracefs/tracing_on"
+		printf 'nop\n' >"$tracefs/current_tracer"
+		printf '\n' >"$tracefs/set_ftrace_pid"
+		printf '\n' >"$tracefs/set_graph_function"
+		trace_supported=no
+		tracing_now=$("$busybox" cat "$tracefs/tracing_on")
+		tracer_now=$("$busybox" cat "$tracefs/current_tracer")
+		emit "TRACE_PHASE after=pair1_on tracing_on=$tracing_now current_tracer=$tracer_now"
+		if [ "$tracing_now" != 0 ] || [ "$tracer_now" != nop ]; then
+			emit 'UNEXERCISED step=pair1_on reason=tracer_reset_failed'
+			exit 1
+		fi
+		trace_reason=disabled_after_first_witness
+	fi
+	change_property "pair${pair}_off" no
+	pair=$((pair + 1))
+done
+emit "SUCCESS transitions=$((pairs * 2)) trace=$trace_reason trace_hits_total=$trace_hits_total"

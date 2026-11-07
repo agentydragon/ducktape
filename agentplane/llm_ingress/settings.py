@@ -56,4 +56,5 @@ class Settings(YamlFileSettings):
     log_levels: LogLevels
     host: str = Field(default="0.0.0.0", description="Listener bind address.")
     port: int = Field(default=8080, description="Listener port.")
+    grpc_port: int = Field(default=8081, description="Native gRPC listener port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")

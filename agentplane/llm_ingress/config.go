@@ -70,6 +70,7 @@ type config struct {
 	LogLevels                       map[string]string `mapstructure:"log_levels"`
 	Host                            string            `mapstructure:"host"`
 	Port                            int               `mapstructure:"port"`
+	GRPCPort                        int               `mapstructure:"grpc_port"`
 	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 }
 
@@ -77,6 +78,7 @@ func defaultConfig() config {
 	return config{
 		Host:      "0.0.0.0",
 		Port:      8080,
+		GRPCPort:  8081,
 		LogLevels: map[string]string{},
 	}
 }
@@ -87,7 +89,7 @@ func loadConfig() (config, error) {
 	settings.SetEnvPrefix("AGENTPLANE_LLM_INGRESS")
 	for _, key := range []string{
 		"token_audience", "log_llm_requests", "codex_model_catalog_file", "litellm_url", "litellm_key", "host", "port",
-		"kubeconfig",
+		"grpc_port", "kubeconfig",
 	} {
 		settings.MustBindEnv(key)
 	}
@@ -133,8 +135,8 @@ func validateConfig(c *config) error {
 	if err := validateAttribution(c.Attribution); err != nil {
 		return err
 	}
-	if c.Host == "" || c.Port < 0 || c.Port > 65535 {
-		return errors.New("host must be non-empty and port must be between 0 and 65535")
+	if c.Host == "" || c.Port < 0 || c.Port > 65535 || c.GRPCPort < 0 || c.GRPCPort > 65535 {
+		return errors.New("host must be non-empty and ports must be between 0 and 65535")
 	}
 	for _, model := range c.Models {
 		if model.Model == "" || model.TotalContextBudgetTokens <= 0 {

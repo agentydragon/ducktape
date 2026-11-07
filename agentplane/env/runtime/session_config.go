@@ -2,17 +2,17 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
+	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 func (c *Config) resolveSessionReconcileConcurrency() error {
@@ -38,48 +38,32 @@ func (c Config) ResolveModelConfig(ctx context.Context, harness sessionpb.Harnes
 	if harness == sessionpb.Harness_HARNESS_CODEX {
 		return nil, nil
 	}
-	u, err := launch.PlatformURL("/agentplane/model-config")
+	client := c.ModelConfigClient
+	if client == nil {
+		if c.ModelConfigService == nil {
+			return nil, errors.New("model configuration service is not configured")
+		}
+		conn, err := grpc.NewClient(c.ModelConfigService.Target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), observability.GRPCClientOption())
+		if err != nil {
+			return nil, fmt.Errorf("configure model configuration service: %w", err)
+		}
+		defer conn.Close()
+		client = modelconfigpb.NewModelConfigServiceClient(conn)
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.ModelConfigService.Bearer)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	response, err := client.GetModelConfig(ctx, &modelconfigpb.GetModelConfigRequest{Model: model})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("model configuration lookup failed: %w", err)
 	}
-	q := url.Values{}
-	q.Set("model", model)
-	u.RawQuery = q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+launch.Token)
-	client := http.Client{Timeout: 10 * time.Second}
-	if c.HTTPClient != nil {
-		client = *c.HTTPClient
-	}
-	client.Transport = observability.HTTPTransport(client.Transport)
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("could not query the LLM proxy for model configuration: %w", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("LLM proxy model-config lookup failed with HTTP %d", res.StatusCode)
-	}
-	var payload *struct {
-		Model  string `json:"model"`
-		Budget int    `json:"total_context_budget_tokens"`
-	}
-	decoder := json.NewDecoder(io.LimitReader(res.Body, 65537))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil {
-		return nil, fmt.Errorf("LLM proxy returned malformed model configuration: %w", err)
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return nil, errors.New("LLM proxy returned trailing model configuration data")
-	}
-	if payload == nil {
+	if response.TotalContextBudgetTokens == nil {
 		return nil, nil
 	}
-	if payload.Model != model || payload.Budget <= 0 {
-		return nil, errors.New("LLM proxy returned invalid model configuration")
+	budget := response.GetTotalContextBudgetTokens()
+	if budget <= 0 || int64(int(budget)) != budget {
+		return nil, errors.New("model configuration service returned invalid budget")
 	}
-	return &payload.Budget, nil
+	result := int(budget)
+	return &result, nil
 }

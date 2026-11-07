@@ -3,7 +3,7 @@
 The durable command queue is the Dispatcher role of the
 [Runner Gateway](../README.md). The Go integration app and the Notification Service use the
 Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
-to the shared listener on `8080` and its port `8081` to the HTTP/JSON facade. The worker delivers through the Runner proxy once
+to the shared listener on `8080`. The worker delivers through the Runner proxy once
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
 The manual queue, replica and wake probes are documented in the
@@ -21,12 +21,7 @@ The manual queue, replica and wake probes are documented in the
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
   commands, so a caller holding a few of them does not replay a whole Session.
-- **HTTP/JSON form**: every RPC also answers over HTTP on the Gateway's optional `http_listen_address` setting,
-  [generated from the proto](../../docs/grpc_services.md#httpjson-facades): Session reads use
-  `/v1/sessions` and `/v1/sessions/{session_id}`, command reads use `/v1/dispatches`, commands as
-  `POST /v1/sessions/{session_id}:<verb>` and creation as `POST /v1/sessions`,
-  `POST /v1/dispatches/{command_id}:cancel`. Both transports use the same ServiceAccount TokenReview and
-  per-Session owner checks; a browser reaches it through the app's authenticated command facade.
+- **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
   `DELIVERY_STATE_HARNESS_CONFIRMED`, `DELIVERY_STATE_NO_OP`, `DELIVERY_STATE_FAILED`,

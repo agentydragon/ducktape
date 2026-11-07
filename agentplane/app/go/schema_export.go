@@ -19,7 +19,8 @@ func exportOpenAPI(writer io.Writer) error {
 		return fmt.Errorf("register core routes: %w", err)
 	}
 	RegisterPolicyRoutes(server, config, nil, (*policyaccess.Access)(nil))
-	RegisterOperatorRoutes(server, nil, nil, "")
+	RegisterOperatorRoutes(server, nil, "")
+	RegisterStatusRoutes(server, nil)
 
 	encoded, err := json.MarshalIndent(server.api.OpenAPI(), "", "  ")
 	if err != nil {

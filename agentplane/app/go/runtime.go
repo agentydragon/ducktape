@@ -333,7 +333,7 @@ func run(ctx context.Context, config Config) error {
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
-	RegisterOperatorRoutes(server, policies, actionCallbackHTTP, config.ActionFederation.ServiceURL)
+	RegisterOperatorRoutes(server, actionCallbackHTTP, config.ActionFederation.ServiceURL)
 	if err := RegisterStatusRoutes(server, app); err != nil {
 		return fmt.Errorf("register System status facade: %w", err)
 	}

@@ -89,7 +89,6 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
     """Keep stable Services in their root Flux owner, targeting the shared listener."""
     proxy = runner_gateway.service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
-    dispatcher_http = session_dispatcher.http_service(env.namespace)
     k8s.KubeService(
         scope,
         "runner-gateway-service",
@@ -110,8 +109,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
                     port=dispatcher.port.number,
                     target_port=k8s.IntOrString.from_number(dispatcher.pod_port),
                     protocol="TCP",
-                ),
-                dispatcher_http.port.k8s_service_port(),
+                )
             ],
         ),
     )
@@ -154,7 +152,6 @@ class RunnerGateway(Construct):
         self.dispatcher_callers = dispatcher_callers
         self.sandbox_controller_pods = sandbox_controller[1]
         proxy = runner_gateway.service(namespace)
-        dispatcher_http = session_dispatcher.http_service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
         # the per-Sandbox control Service with this projected Gateway-audience token.
@@ -165,7 +162,6 @@ class RunnerGateway(Construct):
             for field, value in {
                 "sandbox_namespace": namespace,
                 "listen_address": f"0.0.0.0:{_GRPC_PORT}",
-                "http_listen_address": f"0.0.0.0:{dispatcher_http.pod_port}",
                 "runner_token_file": _RUNNER_TOKEN_FILE,
                 "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
                 "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
@@ -242,7 +238,6 @@ class RunnerGateway(Construct):
             self,
             env,
             serves=[proxy],
-            extra_ports=[dispatcher_http.container_port()],
             container="runner-gateway",
             image=image,
             env_variables={
@@ -315,7 +310,6 @@ class RunnerGateway(Construct):
         namespace = self.env.namespace
         proxy = runner_gateway.service(namespace)
         dispatcher = dispatcher_service(namespace)
-        dispatcher_http = session_dispatcher.http_service(namespace)
         NetworkPolicy(
             self,
             "network-policy",
@@ -332,10 +326,7 @@ class RunnerGateway(Construct):
                 # Sandbox-audience bearer remains the Gateway's caller identity.
                 egress.proxy(namespace).pods.admit(dispatcher.pod_port),
                 self.sandbox_controller_pods.admit(proxy.pod_port),
-                *(
-                    pods.admit(dispatcher.pod_port, dispatcher_http.pod_port)
-                    for pods in self.dispatcher_callers.values()
-                ),
+                *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
             ],
             egress=[
                 cilium.dns_egress(),

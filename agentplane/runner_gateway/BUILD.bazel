@@ -152,7 +152,6 @@ go_library(
     deps = [
         "//agentplane/environment_runtime_transport",
         "//agentplane/environments/v1:environment_service_go_proto",
-        "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
         "//agentplane/net/listener",
         "//agentplane/observability",
@@ -205,7 +204,6 @@ go_test(
     name = "config_test",
     srcs = [
         "config_test.go",
-        "listener_test.go",
     ],
     embed = [":main_lib"],
     deps = [

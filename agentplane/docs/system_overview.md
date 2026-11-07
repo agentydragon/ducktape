@@ -118,6 +118,8 @@ flowchart LR
     guest --> relay --> egress
     sidecar -.->|rules gRPC| egress
     relay -.->|rules gRPC| egress
+    sidecar -.->|notifications gRPC| notif
+    relay -.->|notifications gRPC| notif
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
@@ -129,6 +131,10 @@ flowchart LR
     agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| sidecar
     guest -.->|dials SessionJournalIngress.Push| relay
     relay -.->|outbound ingress route| hs
+    runner -.->|model configuration gRPC| sidecar
+    sidecar -.->|model configuration gRPC| llm
+    guest -.->|model configuration gRPC| relay
+    relay -.->|model configuration gRPC| llm
     guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
 
