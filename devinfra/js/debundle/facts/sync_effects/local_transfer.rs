@@ -491,7 +491,7 @@ fn expression(
             left,
             right,
             span,
-        } => binary_expression(context, *op, left, right, *span, body, frame, judgment),
+        } => binary_expression(context, *op, (left, right), *span, body, frame, judgment),
         LocalExpression::Closure(callable) => {
             closure_expression(context, callable, frame, judgment)
         }
@@ -535,8 +535,7 @@ fn expression(
 fn binary_expression(
     context: &mut impl LocalContext,
     op: swc_ecma_ast::BinaryOp,
-    left: &LocalExpression,
-    right: &LocalExpression,
+    (left, right): (&LocalExpression, &LocalExpression),
     span: Span,
     body: &LocalBody,
     frame: &mut LocalFrame,
