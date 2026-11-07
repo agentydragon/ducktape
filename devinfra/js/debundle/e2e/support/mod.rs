@@ -100,6 +100,74 @@ pub enum FixtureRunOutcome {
     Rejected(RejectedFixture),
 }
 
+/// A conservative progress-cell conflict is a rejection with incomplete
+/// execution authority, not an observed throw. Keep those diagnostics and
+/// their provenance explicit wherever tests rely on the changed verdict.
+pub fn assert_potential_suppression_rejection(
+    assessment: &Value,
+    effects: &Value,
+    expected_status: &str,
+) {
+    assert_eq!(assessment["status"], expected_status, "{assessment:#}");
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["uncovered_modeled_may_conflict"], true,
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["premise_contradiction"], false,
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["counts"]["uncovered_pairs"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "the candidate must retain an uncovered conflict pair: {assessment:#}"
+    );
+
+    assert_eq!(effects["decision"]["status"], "conflict", "{effects:#}");
+    assert_eq!(
+        effects["decision"]["uncovered_modeled_may_conflict"], true,
+        "{effects:#}"
+    );
+    assert_eq!(
+        effects["decision"]["premise_contradiction"], false,
+        "{effects:#}"
+    );
+    assert_eq!(
+        effects["counts"]["premise_contradictions"], 0,
+        "{effects:#}"
+    );
+    let unknown_coverage = effects["coverage"]["unknown_coverage"]
+        .as_object()
+        .expect("the rejection must retain its effect-domain coverage report");
+    assert!(
+        unknown_coverage
+            .values()
+            .any(|count| count.as_u64().is_some_and(|count| count > 0)),
+        "the changed conflict must not erase unknown effect coverage: {effects:#}"
+    );
+    assert!(
+        effects["examples"].as_array().is_some_and(|examples| {
+            examples.iter().any(|example| {
+                example["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| {
+                        cell["cell"]["kind"] == "execution_progress"
+                            && cell["observed_conflict"] == false
+                            && ["first_write", "later_write"]
+                                .iter()
+                                .any(|field| cell[*field]["kind"] == "potential_suppression")
+                    })
+                })
+            })
+        }),
+        "the conflict must show a non-observed potential-suppression progress write: {effects:#}"
+    );
+}
+
 impl Fixture {
     pub fn candidate_relocation_assessment(&self) -> Value {
         read_json(

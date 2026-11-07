@@ -69,7 +69,8 @@ fn initializer_override_keeps_callback_read_dependency() {
     // The source-only assertion removes the initializer's syntactic S edge;
     // it does not cover the opaque global factory's heap or host operations.
     let assessment = fixture.candidate_relocation_assessment();
-    assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
+    let effects = fixture.effect_translation_validation();
+    assert_potential_suppression_rejection(&assessment, &effects, "blocked_by_effect");
     let graph = fixture.dependency_graph();
     let caller_source_unit = source_unit_for_binding(&graph, "A");
     let seed_source_unit = source_unit_for_binding(&graph, "seed");

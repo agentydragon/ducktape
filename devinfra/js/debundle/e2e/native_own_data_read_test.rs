@@ -65,11 +65,11 @@ fn assert_opaque_neighbor_rejected(outcome: FixtureRunOutcome, audited_read: boo
 
     let assessment = rejected.candidate_relocation_assessment();
     assert_eq!(assessment["emitted_order"], serde_json::json!([0, 2, 1, 3]));
-    assert_eq!(assessment["decision"]["status"], "incomplete");
     assert_eq!(assessment["decision"]["uncovered_havoc"], true);
     assert_eq!(assessment["counts"]["uncovered_pairs"], 1);
 
     let effects = rejected.effect_translation_validation();
+    assert_potential_suppression_rejection(&assessment, &effects, "blocked_by_effect");
     assert_eq!(effects["swapped_pairs"], 1);
     let pair = &effects["examples"][0];
     assert_eq!(pair["runs_first"]["module"], "alias");
@@ -216,7 +216,6 @@ fn resolved_member_certifies_only_the_selected_alias_without_covering_decoration
     };
     assert_eq!(fixture.status, Some(1), "{}", fixture.stderr);
     let assessment = fixture.candidate_relocation_assessment();
-    assert_eq!(assessment["decision"]["status"], "incomplete");
     assert_eq!(assessment["decision"]["uncovered_havoc"], true);
     assert_eq!(assessment["counts"]["uncovered_pairs"], 4);
     assert_eq!(
@@ -224,6 +223,7 @@ fn resolved_member_certifies_only_the_selected_alias_without_covering_decoration
         serde_json::json!([0, 1, 2, 3, 5, 6, 7, 8, 4, 9])
     );
     let effects = fixture.effect_translation_validation();
+    assert_potential_suppression_rejection(&assessment, &effects, "blocked_by_effect");
     let pairs = effects["examples"].as_array().unwrap();
     assert_eq!(pairs.len(), 4);
     for pair in pairs {
@@ -751,10 +751,10 @@ fn known_exact_slot_writes_contradict_only_the_relevant_premise() {
     assert_eq!(fixture.status, Some(1), "{}", fixture.stderr);
     let assessment = fixture.candidate_relocation_assessment();
     assert_eq!(assessment["emitted_order"], serde_json::json!([1, 0]));
-    assert_eq!(assessment["decision"]["status"], "incomplete");
     assert_eq!(assessment["counts"]["premise_contradictions"], 0);
     assert_eq!(assessment["counts"]["uncovered_pairs"], 1);
     let effects = fixture.effect_translation_validation();
+    assert_potential_suppression_rejection(&assessment, &effects, "blocked_by_effect");
     let pair = &effects["examples"][0];
     assert_eq!(pair["runs_first"]["unit"], 1);
     assert_eq!(pair["runs_later"]["unit"], 0);

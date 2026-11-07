@@ -3023,7 +3023,11 @@ fn assert_accepted_chunk_relocation(
     assert_eq!(report["counts"]["pairs"], 0, "{report:#}");
 }
 
-fn assert_incomplete_chunk_relocation(invocation: &StagedInvocation, chunk: &str) {
+fn assert_potential_suppression_chunk_relocation(
+    invocation: &StagedInvocation,
+    chunk: &str,
+    expected_status: &str,
+) {
     assert_eq!(
         invocation.result.status.code(),
         Some(3),
@@ -3031,12 +3035,11 @@ fn assert_incomplete_chunk_relocation(invocation: &StagedInvocation, chunk: &str
         invocation.result.stderr
     );
     let report = candidate_relocation_report(invocation, chunk);
-    assert_eq!(report["status"], "incomplete");
-    assert_eq!(report["decision"]["uncovered_havoc"], true);
-}
-
-fn assert_incomplete_relocation(invocation: &StagedInvocation) {
-    assert_incomplete_chunk_relocation(invocation, "static/app");
+    assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
+    let effects = read_json(&invocation.output_root().join(format!(
+        "reports/tree/{chunk}/effect_translation_validation.json"
+    )));
+    assert_potential_suppression_rejection(&report, &effects, expected_status);
 }
 
 fn assert_class_declaration_receipt(
@@ -3154,7 +3157,7 @@ fn assert_export_filter_staged_statuses(invocation: &StagedInvocation) {
         invocation.result.stderr
     );
     assert_accepted_chunk_relocation(invocation, "static/app", json!([2, 1, 3, 0, 4, 5]), 4);
-    assert_incomplete_chunk_relocation(invocation, "static/peer");
+    assert_potential_suppression_chunk_relocation(invocation, "static/peer", "blocked_by_effect");
     let peer_graph: Value = read_gzip_json(
         &invocation
             .output_root()
@@ -5666,7 +5669,11 @@ fn assert_set_spread_saved_replay(
             );
         }
         if rejects_opaque_neighbor {
-            assert_incomplete_relocation(&direct);
+            assert_potential_suppression_chunk_relocation(
+                &direct,
+                "static/app",
+                "blocked_by_effect",
+            );
         } else {
             assert_ok(&direct.result, "direct Set spread run");
         }
@@ -5685,7 +5692,11 @@ fn assert_set_spread_saved_replay(
             );
         }
         if rejects_opaque_neighbor {
-            assert_incomplete_relocation(&loaded);
+            assert_potential_suppression_chunk_relocation(
+                &loaded,
+                "static/app",
+                "blocked_by_effect",
+            );
         } else {
             assert_ok(&loaded.result, "Set spread run from saved analysis");
         }
@@ -5783,7 +5794,7 @@ fn assert_set_spread_saved_replay(
 
             let report = candidate_relocation_report(invocation, "static/app");
             if rejects_opaque_neighbor {
-                assert_eq!(report["status"], "incomplete", "{report:#}");
+                assert_eq!(report["status"], "blocked_by_effect", "{report:#}");
                 assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
                 assert_eq!(
                     report["emitted_order"],

@@ -601,7 +601,12 @@ fn module_home_fixture() -> GraphFixture {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(assessment["status"], "incomplete", "{assessment}");
+    let effects: Value = read_json(
+        &fixture
+            .graph
+            .with_file_name("effect_translation_validation.json"),
+    );
+    assert_potential_suppression_rejection(&assessment, &effects, "blocked_by_effect");
     fixture
 }
 
