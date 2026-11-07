@@ -6072,7 +6072,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     (_, allocation_transfer::Truthiness::Maybe) => {
                         return self.incomplete_array_boolean_result(call, outcome);
                     }
-                    _ => return refused,
+                    _ => {
+                        return refused(OrderedCallAdmissionRefusal::UnsupportedNativeOperation);
+                    }
                 };
                 if stop {
                     let mut values =
@@ -6114,7 +6116,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
                 IterationResult::Undefined | IterationResult::Boolean => {}
-                _ => return refused,
+                _ => return refused(OrderedCallAdmissionRefusal::UnsupportedNativeOperation),
             }
         }
         let mut values = match selection.row.result {
@@ -6165,7 +6167,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, result))])
             }
-            _ => return refused,
+            _ => return refused(OrderedCallAdmissionRefusal::UnsupportedNativeOperation),
         };
         if may_throw {
             values.insert(AbstractValue::Value(Value::Unavailable));
