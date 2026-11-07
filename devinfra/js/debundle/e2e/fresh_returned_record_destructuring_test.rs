@@ -267,6 +267,24 @@ fn rebound_factory_selects_the_executed_replacement() {
 }
 
 #[test]
+fn unknown_replacement_discards_the_previous_callable_selection() {
+    let source = declarations(
+        "function factory() { return { selected: () => 1 }; }\n\
+         factory = () => ({ selected: () => 2 });\n\
+         factory = globalThis.usePreviousFactory ? factory : () => ({ selected: () => 3 });",
+    )
+    .replace(
+        "console.log(typeof first, typeof middle, typeof last);",
+        "console.log(first(), middle(), last());",
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_preserved_entry_output(&fixture, "3 3 3\n");
+    for binding in ["first", "middle", "last"] {
+        assert_object_binding_uncovered(&fixture, binding, None);
+    }
+}
+
+#[test]
 fn effectful_replacement_factory_keeps_its_body_effects() {
     let source = declarations(
         "function factory() { return { selected: () => 1 }; }\nfactory = () => { console.log('replacement'); return { selected: () => 2 }; };",

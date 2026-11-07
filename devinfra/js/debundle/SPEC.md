@@ -963,6 +963,10 @@ unsettled reach invalidate that evidence. A successful selected direct local
 call records its exact caller body, source call-site, target body, and
 consumed prefix prerequisites, including each memo-reused use. A static
 module-slot callee retains its GetValue receipt before argument evaluation.
+A direct call through a replaced hoisted binding may use the executed RHS's
+matching callable selection and its dependencies. Only the shortcut that uses
+the source hoisted declaration requires the target to equal that declaration;
+an unknown later store cannot reuse the replacement's earlier selection.
 Closure-allocation root initializers use the same kernel and retain the actual
 creation's callable-selection receipt when publishing their binding; a stored
 function value alone cannot establish that provenance. Creation defers bodies

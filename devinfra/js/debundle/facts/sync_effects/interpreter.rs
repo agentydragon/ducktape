@@ -14883,12 +14883,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && call.kind == CallKind::Call
             && !call.has_spread
             && !operands_may_throw
-            && (direct_binding.is_some() || member_selection || selected_value.is_some())
             && let Some((key, callable)) = self.local_call_target(&targets)
             && let Some(caller) = self.local_body_identity_for_call(call)
-            && direct_binding
-                .is_none_or(|binding| self.inputs.index.hoisted_bindings.get(binding) == Some(&key))
-        {
+            // An executed replacement carries its own matching selection;
+            // only the source-hoisted shortcut requires the original key.
+            && (selected_value.is_some()
+                || member_selection
+                || direct_binding.is_some_and(|binding| {
+                    self.inputs.index.hoisted_bindings.get(binding) == Some(&key)
+                })) {
             let mut prerequisites = self.boxed_settled_prefix_dependencies();
             if let Some(selection) = &selected_member_dependencies {
                 prerequisites.extend(selection);
