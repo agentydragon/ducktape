@@ -313,6 +313,11 @@ spec:
       name: plaid-spend
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'platform-sessions-gateway'
+      kind: ImageRepository
+      name: platform-sessions-gateway
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'props-backend'
       kind: ImageRepository
       name: props-backend

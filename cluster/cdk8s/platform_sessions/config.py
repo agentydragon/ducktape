@@ -29,7 +29,7 @@ BLUE_SHIELD_READ_PATHS = (
     "member/mhr/labresults/v2",
 )
 
-INTEGRATIONS = {
+INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
     "integrations": [
         {"id": "openai", "type": "openai", "state_dir": "/data/session/openai"},
         {"id": "anthropic", "type": "anthropic", "state_dir": "/data/session/anthropic"},

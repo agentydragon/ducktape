@@ -1,0 +1,492 @@
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-blueshield-control
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-blueshield-control
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-blueshield-control
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-blueshield-control
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-blueshield-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-blueshield-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-blueshield-owner
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-blueshield-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-blueshield-route
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-blueshield-route
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-blueshield-route
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-blueshield-route
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-blueshield.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-blueshield-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-gateway
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-gateway.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-gateway-tls
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-blueshield
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-blueshield
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-blueshield
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-blueshield
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: seaweedfs-ovh-ssd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: platform-sessions-blueshield
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-blueshield
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --integration-config
+            - /etc/platform-sessions/provider-integrations.json
+            - --instance-id
+            - blueshield
+            - --control-address
+            - 0.0.0.0:8444
+            - --control-token-file
+            - /var/run/provider-credentials/control
+            - --owner-token-file
+            - /var/run/provider-credentials/owner
+            - --route-token-file
+            - /var/run/provider-credentials/route
+            - --http-port
+            - "8443"
+            - --metrics-port
+            - "9091"
+            - --tls-cert
+            - /var/run/provider-tls/tls.crt
+            - --tls-key
+            - /var/run/provider-tls/tls.key
+          env:
+            - name: HOME
+              value: /tmp
+          image: git.allegedly.works/ducktape-ci/platform-sessions-blueshield:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          name: provider
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 8444
+              name: grpc
+            - containerPort: 9091
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/platform-sessions
+              name: config
+              readOnly: true
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/provider-tls
+              name: tls
+              readOnly: true
+            - mountPath: /data
+              name: data
+            - mountPath: /tmp
+              name: tmp
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: platform-sessions-remote-config
+          name: config
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-blueshield-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-blueshield-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-blueshield-route
+        - name: tls
+          secret:
+            secretName: platform-sessions-blueshield-tls
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-sessions-blueshield
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-blueshield
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: platform-sessions-blueshield
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-gateway
+  namespace: platform-sessions
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: platform-sessions-gateway
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-gateway
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: PLATFORM_SESSIONS_PUBLIC_BASE_URL
+              value: https://platform-sessions.allegedly.works
+            - name: PLATFORM_SESSIONS_INTEGRATION_CONFIG
+              valueFrom:
+                configMapKeyRef:
+                  key: gateway-integrations.json
+                  name: platform-sessions-remote-config
+            - name: PLATFORM_SESSIONS_BEARERS
+              valueFrom:
+                configMapKeyRef:
+                  key: bearers.json
+                  name: platform-sessions-remote-config
+            - name: PLATFORM_SESSIONS_PROVIDER_CONNECTIONS
+              valueFrom:
+                configMapKeyRef:
+                  key: connections.json
+                  name: platform-sessions-remote-config
+            - name: PLATFORM_SESSIONS_GRPC_ADDRESS
+              value: 0.0.0.0:8444
+            - name: PLATFORM_SESSIONS_GRPC_OWNER_TOKEN_FILE
+              value: /var/run/platform-sessions/owner
+            - name: PLATFORM_SESSIONS_GRPC_TLS_CERT
+              value: /var/run/gateway-tls/tls.crt
+            - name: PLATFORM_SESSIONS_GRPC_TLS_KEY
+              value: /var/run/gateway-tls/tls.key
+          envFrom:
+            - secretRef:
+                name: platform-sessions-oidc
+          image: git.allegedly.works/ducktape-ci/platform-sessions-gateway:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          name: gateway
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 8444
+              name: grpc
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/platform-sessions
+              name: bearers
+              readOnly: true
+            - mountPath: /var/run/provider-trust
+              name: trust
+              readOnly: true
+            - mountPath: /var/run/gateway-tls
+              name: tls
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-blueshield-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-blueshield-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-blueshield-route
+        - name: bearers
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-owner-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: blueshield-read
+                  name: platform-sessions-blueshield-read-bearer
+        - configMap:
+            items:
+              - key: ca-certificates.crt
+                path: ca.crt
+            name: cluster-internal-ca-bundle
+          name: trust
+        - name: tls
+          secret:
+            secretName: platform-sessions-gateway-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-gateway
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-gateway

@@ -85,6 +85,7 @@ IMAGES = (
     "plaid-mcp-server",
     "plaid-mcp-sync",
     "plaid-spend",
+    "platform-sessions-gateway",
     "props-backend",
     "props-llm-proxy",
     "props-registry-proxy",
