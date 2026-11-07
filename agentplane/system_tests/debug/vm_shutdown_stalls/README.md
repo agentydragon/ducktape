@@ -5,6 +5,8 @@ For a smaller direct-QEMU software-emulation experiment and its retained logs, s
 [libvirt_monitor/README.md](libvirt_monitor/README.md) describes opt-in per-VM QMP logs.
 The direct-VMI experiment using the real CI guest and a bounded policy A/B is documented in
 [standalone_kubevirt/README.md](standalone_kubevirt/README.md).
+The assessment and proposed experiment for capturing additional guest stacks are in
+[stack_capture/epistemic_state.md](stack_capture/epistemic_state.md).
 The source-backed Linux and QEMU comparisons for the readiness-cleanup RCU wait are in
 [upstream_rcu_tcg_analogues.md](upstream_rcu_tcg_analogues.md).
 The one-guest full-stack smoke for the opt-in passive virtiofsd timeline is documented in
