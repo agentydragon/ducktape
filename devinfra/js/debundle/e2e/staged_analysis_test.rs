@@ -1306,6 +1306,67 @@ fn assert_staged_progress_pair(
     );
 }
 
+fn assert_caught_binary_throw_receipt(invocation: &StagedInvocation) {
+    let graph: Value = read_gzip_json(
+        &invocation
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let result = graph_node_for_binding(&graph, "result");
+    let execution = &result["synchronous_execution"];
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    let receipt = &authority["receipt"];
+    assert_eq!(receipt["root_kind"], "binding_initializer", "{receipt:#}");
+    assert_eq!(receipt["binding"], "result", "{receipt:#}");
+    let initialize_owner = graph_node_for_binding(&graph, "initialize")["statement_ordinal"];
+    let calls = receipt["calls"].as_array().expect("root call receipt");
+    assert!(
+        calls.iter().any(|call| {
+            call["caller"]["kind"] == "root_initializer"
+                && call["target"]["kind"] == "callable"
+                && call["target"]["owner"] == initialize_owner
+        }),
+        "the result initializer must retain its selected initialize body: {receipt:#}"
+    );
+    let skipped_calls = receipt["skipped_calls"]
+        .as_array()
+        .expect("root skipped-call receipts");
+    assert!(
+        skipped_calls.iter().any(|skipped| {
+            if skipped["reason"] != "known_throw"
+                || skipped["caller"]["kind"] != "callable"
+                || skipped["caller"]["owner"] != initialize_owner
+            {
+                return false;
+            }
+            let region_start = skipped["region_span"]["start"].as_u64();
+            let region_end = skipped["region_span"]["end"].as_u64();
+            let frontier = skipped["frontier_span"]["start"].as_u64();
+            let call_start = skipped["call_span"]["start"].as_u64();
+            let call_end = skipped["call_span"]["end"].as_u64();
+            matches!(
+                (region_start, region_end, frontier, call_start, call_end),
+                (Some(region_start), Some(region_end), Some(frontier), Some(call_start), Some(call_end))
+                    if region_start <= frontier && frontier < call_start && call_start < call_end && call_end <= region_end
+            )
+        }),
+        "the initialize try suffix call must be skipped after the caught binary throw: {receipt:#}"
+    );
+
+    let independent = graph_node_for_binding(&graph, "independent");
+    let independent_execution = &independent["synchronous_execution"];
+    assert_eq!(
+        independent_execution["complete"], true,
+        "the independent root owner keeps its own completion metadata: {independent_execution:#}"
+    );
+    assert_eq!(
+        independent_execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "the independent root owner keeps its own typed authority: {independent_execution:#}"
+    );
+}
+
 fn conditional_foreign_body_used(graph: &Value, binding: &str) -> bool {
     graph_node_for_binding(graph, binding)["synchronous_execution"]["inference_uses"]
         .as_array()
@@ -3549,9 +3610,10 @@ export { result, suffix };\n";
 #[test]
 fn primitive_binary_throw_is_caught_with_direct_and_saved_root_completion() {
     let source = "let state = 0;\n\
+function afterThrow() { state = 99; }\n\
 function initialize() {\n\
   state = 1;\n\
-  try { state = 1n + 2; state = 99; } catch (error) { state = state + 1; }\n\
+  try { state = 1n + 2; afterThrow(); } catch (error) { state = state + 1; }\n\
   return state;\n\
 }\n\
 const result = initialize();\n\
@@ -3573,6 +3635,7 @@ console.log(result, state, independent);\n";
     assert_same_invocation_trees(&direct, &saved);
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "2 2 2\n", "");
     for (invocation, reports) in [(&direct, &direct_reports), (&saved, &saved_reports)] {
+        assert_caught_binary_throw_receipt(invocation);
         let report: Value = read_json(&reports.join("effect_translation_validation.json"));
         assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
         assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
@@ -3641,7 +3704,7 @@ function recover() {\n\
     return value;\n\
   } catch (error) {\n\
     state = state + 1;\n\
-    return error.name;\n\
+    return state;\n\
   }\n\
 }\n\
 console.log('prefix');\n\
@@ -3661,7 +3724,7 @@ console.log(result, state);\n";
 
     assert_node_output(
         &staged.root().join("snapshot/static/app.js"),
-        "prefix\nsuffix\nTypeError 1\n",
+        "prefix\nsuffix\n1\n",
         "",
     );
     for (invocation, reports) in [(&direct, &direct_reports), (&saved, &saved_reports)] {
@@ -3676,7 +3739,7 @@ console.log(result, state);\n";
         assert_potential_suppression_rejection(&assessment, &effects, "blocked_by_effect");
         assert_node_output(
             &invocation.output_root().join("app/static/app/entry.js"),
-            "suffix\nprefix\nTypeError 1\n",
+            "suffix\nprefix\n1\n",
             "",
         );
         assert_staged_progress_pair(reports, "suffix", "result", false);
