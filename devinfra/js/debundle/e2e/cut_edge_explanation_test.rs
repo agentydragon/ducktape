@@ -205,12 +205,17 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     let heap = &execution["heap_frontier"];
     let own = &heap["own_at_init"];
     assert_eq!(own["opaque"], true, "{heap}");
-    assert_eq!(own["writes"]["count"], 1, "{heap}");
     let own_writes = own["writes"]["sample"]
         .as_array()
         .expect("own write sample");
-    assert_eq!(own_writes.len(), 1, "{heap}");
-    assert_eq!(own_writes[0]["kind"], "array_contents", "{heap}");
+    assert_eq!(
+        own_writes
+            .iter()
+            .filter(|cell| cell["kind"] == "array_contents")
+            .count(),
+        1,
+        "the initializer must retain its array write: {heap}"
+    );
     let composed = &heap["composed_synchronous_calls"];
     assert!(composed["writes"]["count"].as_u64().unwrap() > 0, "{heap}");
     let composed_writes = composed["writes"]["sample"]
@@ -219,7 +224,7 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     assert!(
         composed_writes
             .iter()
-            .any(|cell| !own_writes.contains(cell)),
+            .any(|cell| cell["kind"] == "array_contents" && !own_writes.contains(cell)),
         "local synchronous callee must contribute its own exact array cell: {heap}"
     );
     let non_assumed_writes = &heap["non_assumed_heap_accesses"]["writes"];

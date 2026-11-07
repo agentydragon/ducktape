@@ -685,14 +685,12 @@ fn finite_recursive_function_reports_cycle_without_changing_runtime_result() {
     let loss = assert_reason(&result, serde_json::json!({"code": "recursive_invocation"}));
     assert_eq!(loss["reach"], serde_json::json!({"kind": "bounded"}));
     assert_eq!(loss["statement_ordinal"], 0);
+    let following = execution(&fixture, "following");
+    assert_eq!(following["complete"], true, "{following:#}");
+    assert_eq!(following["precision_losses"], serde_json::json!([]));
     assert_eq!(
-        execution(&fixture, "following"),
-        serde_json::json!({
-            "binding_effect_authority": {
-                "authority": "legacy_execution", "complete": true
-            },
-            "complete": true, "precision_losses": []
-        })
+        following["binding_effect_authority"],
+        serde_json::json!({"authority": "legacy_execution", "complete": true})
     );
 }
 

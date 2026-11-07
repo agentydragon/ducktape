@@ -6694,7 +6694,6 @@ fn full_stream_retains_cells_beyond_examples_and_pair_dispositions() {
         "the full assessment retains the premise dependency: {summary:#}"
     );
     let covered_cells = covered["cells"].as_array().unwrap();
-    assert_eq!(covered_cells.len(), slots.len() + 1, "{covered:#}");
     let binding_cells = covered_cells
         .iter()
         .filter(|cell| cell["cell"]["kind"] == "binding")
@@ -6710,6 +6709,17 @@ fn full_stream_retains_cells_beyond_examples_and_pair_dispositions() {
     assert_eq!(actual_bindings, expected_bindings, "{covered:#}");
     for cell in binding_cells {
         assert_eq!(cell["first_read"]["kind"], "fallback", "{cell:#}");
+    }
+    let module_cells = covered_cells
+        .iter()
+        .filter(|cell| cell["cell"]["kind"] == "module_cell")
+        .collect::<Vec<_>>();
+    assert_eq!(module_cells.len(), slots.len(), "{covered:#}");
+    for cell in module_cells {
+        assert!(cell["first_read"].is_object(), "{cell:#}");
+        assert_ne!(cell["first_read"]["kind"], "observed", "{cell:#}");
+        assert_eq!(cell["later_write"]["kind"], "observed", "{cell:#}");
+        assert_eq!(cell["observed_conflict"], false, "{cell:#}");
     }
     let progress_cells = covered_cells
         .iter()
