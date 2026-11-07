@@ -56,7 +56,7 @@ mod collector;
 mod dynamic_scope;
 mod evaluation_effects;
 mod global_object;
-mod heap_contents;
+pub(crate) mod heap_contents;
 mod initialization_effects;
 mod item_views;
 mod lazy_boundary;
