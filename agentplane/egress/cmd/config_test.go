@@ -54,7 +54,7 @@ admin_listen_address: 127.0.0.1:1111
 		t.Fatal(err)
 	}
 	if c.Forward.ListenAddress != "127.0.0.1:5555" || c.Forward.BearerAudience() != "file-hop-audience" ||
-		c.AdminListenAddress != "127.0.0.1:1111" || c.AgentAPIListenAddress != "0.0.0.0:8082" ||
+		c.AdminListenAddress != "127.0.0.1:1111" ||
 		!slices.Equal(c.AllowedServiceAccountNamespaces, []string{"file-namespace"}) ||
 		!slices.Equal(c.ProjectedTokenAudiences, []string{"file-audience"}) ||
 		!slices.Equal(c.ExemptNetworks, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}) {

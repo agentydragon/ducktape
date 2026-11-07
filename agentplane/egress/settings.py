@@ -37,7 +37,7 @@ class Settings(BaseModel):
     forward: Listener = Field(description="Proxy listener address and workload authentication allowlist.")
     admin_listen_address: str = Field(
         default="0.0.0.0:8081",
-        description="Admin listener address serving gRPC health and, when configured, the EgressAdmin API.",
+        description="Shared gRPC listener address serving rules, health and, when configured, EgressAdmin.",
     )
     admin_grpc_audience: str | None = Field(
         default=None,
@@ -48,9 +48,6 @@ class Settings(BaseModel):
         default=None,
         min_length=1,
         description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
-    )
-    agent_api_listen_address: str = Field(
-        default="0.0.0.0:8082", description="Agent-facing listener address serving /v1/rules."
     )
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")

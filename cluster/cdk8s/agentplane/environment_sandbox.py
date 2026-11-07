@@ -55,7 +55,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
-from cluster.cdk8s.service_ref import Pods, ServiceRef
+from cluster.cdk8s.service_ref import Pods
 from cluster.cdk8s.settings_file import SettingsFile
 
 # The Pod name label selects every Environment Runtime workload for the network fence.
@@ -165,7 +165,6 @@ class EnvironmentSandbox(Construct):
         image: str,
         key_files: Sequence[KeyFile] = (),
         vm_workspace_storage_class: str | None = None,
-        egress_api_service: ServiceRef | None = None,
         storage_class: str = _STORAGE_CLASS,
         environment_runtime_resources: k8s.ResourceRequirements | None = None,
         executor_resources: k8s.ResourceRequirements | None = None,
@@ -198,7 +197,6 @@ class EnvironmentSandbox(Construct):
             sidecar_resources=sidecar_resources,
             image_pull_secret_name=image_pull_secret_name,
             trust_mounts=trust_mounts,
-            egress_api_service=egress_api_service,
             session_reconcile_concurrency=session_reconcile_concurrency,
             codex_readiness=pod_codex_readiness,
             disable_otel_sdk=disable_otel_sdk,
@@ -231,14 +229,9 @@ class EnvironmentSandbox(Construct):
                     vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
                 ),
                 platform_instructions=platform_instructions(
-                    env,
-                    session_runtime=SessionRuntime.NATIVE_HARNESS,
-                    egress_api_service=egress_api_service,
-                    egress_host=launcher_relay.GUEST_GATEWAY,
+                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=launcher_relay.GUEST_GATEWAY
                 ),
-                harness_env=agent_cli_environment(
-                    service_urls(env, egress_api_service=egress_api_service, egress_host=launcher_relay.GUEST_GATEWAY)
-                ),
+                harness_env=agent_cli_environment(service_urls(env, egress_host=launcher_relay.GUEST_GATEWAY)),
                 session_reconcile_concurrency=session_reconcile_concurrency,
                 codex_readiness=vm_codex_readiness,
             )
@@ -286,7 +279,6 @@ class EnvironmentSandboxTemplate(Construct):
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
-        egress_api_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         codex_readiness: CodexReadiness | None = None,
         disable_otel_sdk: bool = False,
@@ -297,7 +289,6 @@ class EnvironmentSandboxTemplate(Construct):
         self.image = image
         self.key_files = tuple(key_files)
         self.config_map_name = f"{name}-config"
-        self.egress_api_service = egress_api_service
         self.storage_class = storage_class
         self.environment_runtime_resources = environment_runtime_resources
         self.executor_resources = executor_resources
@@ -307,7 +298,7 @@ class EnvironmentSandboxTemplate(Construct):
         self.session_reconcile_concurrency = session_reconcile_concurrency
         self.codex_readiness = codex_readiness
         self.disable_otel_sdk = disable_otel_sdk
-        self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
+        self.agent_cli_env = agent_cli_environment(service_urls(env))
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
         # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
@@ -402,9 +393,7 @@ class EnvironmentSandboxTemplate(Construct):
                 ),
             ),
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
-            platform_instructions=platform_instructions(
-                self.env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_api_service=self.egress_api_service
-            ),
+            platform_instructions=platform_instructions(self.env, session_runtime=SessionRuntime.NATIVE_HARNESS),
             harness_environment=configuration.EnvironmentVariables(
                 inherit=tuple(dict.fromkeys((*self.env.harness_inherited_env, *harness_env))),
                 values={"HOME": _HOME_DIR},

@@ -6,7 +6,6 @@ go_library(
     name = "cmd",
     srcs = [
         "admin_grpc.go",
-        "agent_api.go",
         "config.go",
         "main.go",
     ],
@@ -16,7 +15,6 @@ go_library(
         "//agentplane/egress:egress_admin_go_proto",
         "//agentplane/egress:egress_rules_go_proto",
         "//agentplane/egress/admin",
-        "//agentplane/egress/docs",
         "//agentplane/egress/history",
         "//agentplane/egress/history_migrations",
         "//agentplane/egress/identity",
@@ -25,7 +23,6 @@ go_library(
         "//agentplane/egress/proxy",
         "//agentplane/egress/rules",
         "//agentplane/egress/upstream",
-        "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
         "//agentplane/net/listener",
         "//agentplane/observability",
@@ -54,7 +51,6 @@ go_test(
     name = "listener_test",
     srcs = [
         "admin_grpc_test.go",
-        "agent_api_test.go",
     ],
     embed = [":cmd"],
     deps = [
@@ -75,7 +71,6 @@ go_test(
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
 

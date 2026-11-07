@@ -18,9 +18,8 @@ permissions, or auto-approved Actions before requesting an Action that needs man
 
 ## Workflows
 
-- [Credentials and refusals](/docs/agents/credentials.md), also `agentplane egress guide credentials`: Read before using an unfamiliar credential or diagnosing a failed proxied call.
+- `agentplane egress guide credentials`: Read before using an unfamiliar credential or diagnosing a failed proxied call.
 
 ## Reference
 
-- [HTTP reference](/openapi.json): OpenAPI document of `GET /v1/rules`: its response fields and errors.
-- [Effective rules](/v1/rules): Your current destinations, request scopes, credential identities, and presentation targets.
+- `agentplane egress rules --json`: Your current destinations, request scopes, credential identities, and presentation targets.

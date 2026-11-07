@@ -156,11 +156,6 @@ def proxy(namespace: str) -> ServiceRef:
     return ServiceRef(name=NAME, port=Port(name="proxy", number=PROXY_PORT), pods=_pods(namespace))
 
 
-def agent_api(namespace: str) -> ServiceRef:
-    """The API agents read their rules from, on the proxy's Service."""
-    return ServiceRef(name=NAME, port=Port(name="http", number=80), pods=_pods(namespace), target_port=8082)
-
-
 def admin(namespace: str) -> ServiceRef:
     """The admin API the app calls, on a Service of its own."""
     return ServiceRef(name=f"{NAME}-admin", port=Port(name="admin", number=8081), pods=_pods(namespace))
@@ -468,15 +463,6 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                     ],
                 }
             ),
-            # Narrowed, unlike the services above: this host is also the proxy's own listener, and a
-            # rule matches hosts, not ports.
-            Rule.egress(
-                hosts=[agent_api(namespace).fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
             # The API server, inside `basic` rather than behind a policy a launch opts into: every
             # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
             # caller happened to name a policy. Every Sandbox discovers this credential through
@@ -660,7 +646,6 @@ class Egress(Construct):
         database_url: EnvValue,
         runners: Pods,
         admin_grpc_callers: Sequence[ServiceAccountRef],
-        agent_api_service: ServiceRef | None = None,
         litellm_host: str | None = None,
         litellm_cluster_internal: bool = True,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
@@ -673,7 +658,6 @@ class Egress(Construct):
         self.env = env
         self.database_url = database_url
         self.proxy = proxy(env.namespace)
-        self.agent_api = agent_api_service or agent_api(env.namespace)
         self.admin = admin(env.namespace)
         self.runners = runners
         self.placement = placement
@@ -859,7 +843,7 @@ class Egress(Construct):
         workload = add_service_workload(
             self,
             self.env,
-            serves=[self.agent_api, self.proxy],
+            serves=[self.proxy],
             container="proxy",
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
             env_variables={**setting_env, env_name(Settings, "database_url"): self.database_url, **self.container_env},
@@ -922,12 +906,10 @@ class Egress(Construct):
                     runners.cilium, cilium.endpoint_labels(namespace, "sandbox"), ports=[self.proxy.pod_port]
                 ),
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.admin.pod_port]),
-                self.agent_api.pods.admit(self.agent_api.pod_port),
             ],
             egress=[
                 database.egress(namespace),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
-                self.agent_api.egress(),
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),
                 session_dispatcher.service(namespace).egress(),

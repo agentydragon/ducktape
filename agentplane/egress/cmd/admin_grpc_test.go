@@ -14,7 +14,6 @@ import (
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
-	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -81,21 +80,21 @@ type idleHistory struct{}
 
 func (idleHistory) Health() history.Health { return history.Health{} }
 
-func testRulesAuth(t *testing.T) (*auth.Resolver, *identity.Verifier, *policy.Index) {
+func testRulesAuth(t *testing.T) (*auth.Resolver, *policy.Index) {
 	t.Helper()
 	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{"test-ns"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resolver, identity.NewVerifier(resolver, nil), policy.NewIndex()
+	return resolver, policy.NewIndex()
 }
 
 func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	c := config{AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"}}
-	resolver, verifier, index := testRulesAuth(t)
+	resolver, index := testRulesAuth(t)
 	server, err := newAdminServer(c, api.TokenReviews(), admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
-	}, resolver, verifier, index)
+	}, resolver, index)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,8 +164,8 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 // Kubernetes' native grpc probes send no bearer, so health is served whether or not the EgressAdmin
 // API is configured.
 func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
-	resolver, verifier, index := testRulesAuth(t)
-	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}}, resolver, verifier, index)
+	resolver, index := testRulesAuth(t)
+	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}}, resolver, index)
 	if err != nil {
 		t.Fatal(err)
 	}

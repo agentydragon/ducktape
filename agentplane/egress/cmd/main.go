@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
-	"github.com/agentydragon/ducktape/agentplane/egress/docs"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	historymigrations "github.com/agentydragon/ducktape/agentplane/egress/history_migrations"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
@@ -175,20 +173,15 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer proxyListener.Close()
-	agentAPIListener, err := openListener("agent API", c.AgentAPIListenAddress)
-	if err != nil {
-		return err
-	}
-	defer agentAPIListener.Close()
 	adminListener, err := openListener("admin", c.AdminListenAddress)
 	if err != nil {
 		return err
 	}
 	defer adminListener.Close()
-	return serve(ctx, c, proxyListener, agentAPIListener, adminListener)
+	return serve(ctx, c, proxyListener, adminListener)
 }
 
-func serve(ctx context.Context, c config, proxyListener, agentAPIListener, adminListener net.Listener) error {
+func serve(ctx context.Context, c config, proxyListener, adminListener net.Listener) error {
 	base, err := kubernetesConfig(c.Kubeconfig)
 	if err != nil {
 		return err
@@ -246,21 +239,9 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	if err != nil {
 		return err
 	}
-	agentDocs, err := fs.Sub(docs.Agents, "agents")
-	if err != nil {
-		return err
-	}
-
-	// The facade outlives the termination signal so that reads admitted before it finish while draining.
-	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopFacade()
-	agentAPIServer, err := newAgentAPI(facadeContext, verifier, index, agentDocs, docs.OpenAPI)
-	if err != nil {
-		return err
-	}
 	adminServer, err := newAdminServer(c, reviews.TokenReviews(), admin.ServiceOptions{
 		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health, Credentials: index,
-	}, rulesResolver, verifier, index)
+	}, rulesResolver, index)
 	if err != nil {
 		return err
 	}
@@ -268,13 +249,12 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { watcher.Run(ctx); return nil })
 	group.Go(func() error { return serving("proxy", egress.Serve(proxyListener)) })
-	group.Go(func() error { return agentAPIServer.Serve(agentAPIListener) })
 	// The admin listener is the readiness probe and readiness gates every Service this Pod backs, so
 	// it starts accepting last: the readiness check answering means the listeners above are serving.
 	group.Go(func() error { return serving("admin", adminServer.Serve(adminListener)) })
 	group.Go(func() error {
 		<-ctx.Done()
-		return drain(egress, index, agentAPIServer, adminServer)
+		return drain(egress, index, adminServer)
 	})
 	return group.Wait()
 }
@@ -286,7 +266,7 @@ type shutdowner interface {
 
 // drain marks the proxy unready, lets admitted requests finish, then stops the other listeners. The
 // admin listener outlives the proxy's drain so the kubelet can see the Pod go unready.
-func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer shutdowner) error {
+func drain(egress *proxy.Proxy, index *policy.Index, adminServer shutdowner) error {
 	slog.Info("draining")
 	index.Health.MarkDraining()
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
@@ -294,5 +274,5 @@ func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer
 	if err := egress.Drain(ctx); err != nil {
 		slog.Warn("drain deadline reached; closing remaining connections", "error", err)
 	}
-	return errors.Join(agentAPIServer.Shutdown(ctx), adminServer.Shutdown(ctx))
+	return adminServer.Shutdown(ctx)
 }

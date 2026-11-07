@@ -233,7 +233,6 @@ def environment_chart(
         image=environment_tools_image,
         key_files=environment_runtime_key_files,
         image_pull_secret_name=sandbox_pod.SECRET_NAME,
-        egress_api_service=egress.agent_api(env.namespace),
     ).add_platform_resources()
     sandbox_controller.SandboxController(
         chart,

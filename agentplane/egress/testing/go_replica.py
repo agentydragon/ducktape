@@ -42,7 +42,6 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
     with ExitStack() as listeners:
         proxy_listener = listeners.enter_context(listen_tcp())
         admin_listener = listeners.enter_context(listen_tcp())
-        agent_api_listener = listeners.enter_context(listen_tcp())
         config = directory / f"go-replica-{proxy_listener.port}.yaml"
         config.touch(mode=0o600)
         config.write_text(
@@ -55,7 +54,6 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
                         "listen_address": f"fd:{proxy_listener.socket.fileno()}",
                     },
                     "admin_listen_address": f"fd:{admin_listener.socket.fileno()}",
-                    "agent_api_listen_address": f"fd:{agent_api_listener.socket.fileno()}",
                 }
             )
         )
@@ -64,11 +62,7 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
             env={"AGENTPLANE_EGRESS_CONFIG_FILE": str(config)},
             stderr=config.with_suffix(".stderr"),
             health_port=admin_listener.port,
-            pass_fds=(
-                proxy_listener.socket.fileno(),
-                admin_listener.socket.fileno(),
-                agent_api_listener.socket.fileno(),
-            ),
+            pass_fds=(proxy_listener.socket.fileno(), admin_listener.socket.fileno()),
             grace_s=_GRACE_SECONDS,
         ) as process:
             # The child inherited the listeners and has reported ready. Release the parent copies

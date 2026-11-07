@@ -230,7 +230,6 @@ py_library(
         "//agentplane/system_tests/vm:configuration",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
-        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/agentplane:actions",
         "//cluster/cdk8s/agentplane:app",
         "//cluster/cdk8s/agentplane:app_settings",

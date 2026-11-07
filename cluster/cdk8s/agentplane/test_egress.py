@@ -26,7 +26,6 @@ from cluster.cdk8s.agentplane.egress import (
     KUBERNETES_CREDENTIAL,
     KUBERNETES_HOST,
     PUBLIC_INTERNET_POLICY,
-    agent_api,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
@@ -135,17 +134,6 @@ def test_public_internet_is_available_but_never_implicitly_granted(staging_manif
                 ]
             else:
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
-
-
-def test_agent_egress_api_uses_its_canonical_service(staging_manifests: list[dict[str, Any]]) -> None:
-    policy = one(
-        doc for doc in staging_manifests if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
-    )
-    canonical_host = agent_api(staging.ENV.namespace).fqdn
-    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule.get("hosts", []))
-    assert rule["hosts"] == [canonical_host]
-    assert rule["methods"] == ["GET"]
-    assert rule["paths"] == ["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"]
 
 
 def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_manifests: list[dict[str, Any]]) -> None:

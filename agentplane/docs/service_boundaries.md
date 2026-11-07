@@ -65,8 +65,8 @@ session into a backend dependency.
 
 A service does not acquire an HTTP facade merely because it serves gRPC. A facade needs an explicit
 direct HTTP-client contract independent of the browser app. Existing published service HTTP APIs
-remain available to such clients: Notifications and egress rules have HTTP CLI consumers; Actions,
-Connections and Dispatcher also publish direct HTTP APIs. The Actions CLI itself uses native gRPC.
+remain available to such clients: Notifications has HTTP CLI consumers; Actions, Connections and
+Dispatcher also publish direct HTTP APIs. The Actions and Egress CLIs use native gRPC.
 Removing a published API requires its own caller/contract review; the app does not consume those
 facades. Agents and automation must remain able to use backend APIs while the app is unavailable.
 Consolidating their HTTP endpoints would require an independent API gateway, not routing them through

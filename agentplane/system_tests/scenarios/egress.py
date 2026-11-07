@@ -315,7 +315,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     agent = await Agent.create(
         client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=offered_model
     )
-    command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}{path}"
+    command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}:{runtime_grant.PORT}{path}"
 
     await agent.run_shell(model, command)
     refused = await _decision_for(cluster, client, view.target.name, view.target.uid, host)

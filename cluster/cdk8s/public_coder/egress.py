@@ -204,14 +204,6 @@ def add_gateway_resources(
                 paths=["/_matrix/client/v3/login"],
                 credential_ref=PolicySetSpecRulesCredentialRef(name=MATRIX_CREDENTIAL),
             ),
-            # Discovery only, not the broader basic policy's LLM/Actions/Kubernetes grants.
-            Rule.egress(
-                hosts=[GATEWAY.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/v1/rules", "/openapi.json"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
             Rule.egress(
                 hosts=[actions.service("agentplane-staging").fqdn],
                 cluster_internal=True,
