@@ -26,4 +26,3 @@ execution result are authoritative; approval alone is not success.
 - `action_lifecycle`: Read before submitting an Action or following its result.
 - `recovery`: Read after a lost response, timeout, uncertain execution, or before switching to an alternative.
 - `kubernetes`: Read when checking Kubernetes permissions, using admin Actions, or requesting additional PolicySets.
-
