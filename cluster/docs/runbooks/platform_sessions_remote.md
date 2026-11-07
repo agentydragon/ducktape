@@ -4,7 +4,8 @@ The `platform-sessions-remote` Flux Kustomization prepares a gateway and a Blue 
 provider in separate Deployments. Both have zero replicas and the gateway Service has no
 public route. The running `platform-sessions` service still owns every real session. The
 remote gateway is configured for Blue Shield only, so routing the existing public Service
-to it now would break every other integration.
+to it now would break every other integration. The Blue Shield provider exposes its probe
+metrics; the Go gateway does not yet expose gateway-wide Prometheus metrics.
 
 The Blue Shield PVC uses `seaweedfs-ovh-ssd` and stays unbound until a pod consumes it.
 The remote Kustomization does not wait for resource health for this reason; its readiness
