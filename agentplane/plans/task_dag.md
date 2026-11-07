@@ -2135,7 +2135,25 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
+    THREAD_EVENTS_SSE_RETIREMENT[Selected, unscheduled: retire App Thread-events SSE]
 ```
+
+### `THREAD_EVENTS_SSE_RETIREMENT` — retire App Thread-events SSE
+
+**Selected, unscheduled; operator direction, 2026-11-07 UTC.** Retire the App's handwritten
+`GET /threads/{thread_id}/events/stream` after moving its supported callers to an appropriate
+History-backed contract. History's native `FollowSession` gRPC stream already supplies committed
+entries, cursor-based replay and follow, but it is not an exact replacement: the App validates the
+Thread and cursor, emits attachment and terminal feed state, and can wait for a named command's
+admission. `FollowSession` has no generated HTTP facade. The browser uses Electric; the App test
+client, bridge tests and system Thread-stream scenarios still use SSE. Inventory supported and
+external callers before removal.
+
+Preserve caller authorization, retained history, cursor and reconnect semantics, command-admission
+waiting and terminal/error behavior where callers need them. Choose which behavior belongs in the
+History contract or its callers; migrate test and supported clients without silently bypassing the
+App's access checks. **Exit:** supported callers and equivalent behavioral coverage use the selected
+contract, and the obsolete SSE route and its route-specific code are removed.
 
 [`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
 which other consumers may move to it. Automatic titles remain deferred under
@@ -2879,8 +2897,9 @@ OpenAPI-derived contracts, mirrored wire types and handwritten route implementat
 UI-specific view models and adapters may remain.
 
 Remaining scope includes frontend configuration; Sandbox policy grant/revoke operations; system
-status; and the Thread event and Sandbox console streams. Inventory other remaining app-owned
-contracts and raw streams before converting them. Electric synchronization remains a
+status; and the Sandbox console stream. Thread event stream retirement is tracked separately in
+`THREAD_EVENTS_SSE_RETIREMENT` (section 11). Inventory other remaining app-owned contracts and raw
+streams before converting them. Electric synchronization remains a
 protocol-specific transport for now.
 Login/OAuth redirects, static assets, health probes, API documentation and OTLP telemetry are also
 protocol-specific HTTP surfaces, not application RPCs to convert mechanically.
