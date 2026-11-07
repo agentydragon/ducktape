@@ -1752,7 +1752,7 @@ fn capture_free_conditional_provider_target_survives_moved_wrapper_and_saved_ana
 
 #[test]
 fn complete_module_cell_writer_census_withholds_conditional_provider_bodies() {
-    const APP: &str = "import { wrap, value } from './peer.js';\nconst wrapped = wrap({});\nconst observed = value({});\nconsole.log(observed, typeof wrapped);\n";
+    const BRIDGE: &str = "export { wrap, value } from './peer.js';\n";
     for (label, extra_writer) in [
         (
             "nested_post_await",
@@ -1770,36 +1770,48 @@ fn complete_module_cell_writer_census_withholds_conditional_provider_bodies() {
         let provider = format!(
             "export let count = 0;\nexport function wrap(record) {{ count++; return {{}}; }}\nexport function value(record) {{ return count; }}\n{extra_writer}"
         );
-        let (staged, _fixture) = staged(
-            FixtureOpts::new(APP, vec![logical_module("work", &[Member::new("wrapped")])])
-                .with_extra_chunks(&[("static/peer", &provider)])
+        for (route, source) in [("direct", "./peer.js"), ("forwarded", "./bridge.js")] {
+            let app = format!(
+                "import {{ wrap, value }} from '{source}';\nconst wrapped = wrap({{}});\nconst observed = value({{}});\nconsole.log(observed, typeof wrapped);\n"
+            );
+            let (staged, _fixture) = staged(
+                FixtureOpts::new(
+                    &app,
+                    vec![logical_module("work", &[Member::new("wrapped")])],
+                )
+                .with_extra_chunks(&[("static/peer", &provider), ("static/bridge", BRIDGE)])
                 .with_unassigned_mode(unassigned_mode_inline()),
-        );
-        let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
-        for invocation in [&direct, &saved] {
-            assert_node_output(
-                &invocation.output_root().join("app/static/app/entry.js"),
-                "1 object\n",
-                "",
             );
-            let graph: Value = read_gzip_json(
-                &invocation
-                    .output_root()
-                    .join("reports/tree/static/app/dependency_graph.json.gz"),
-            );
-            assert!(
-                !conditional_foreign_body_used(&graph, "wrapped"),
-                "{label}: {graph:#}"
-            );
-            assert!(
-                !conditional_foreign_body_used(&graph, "observed"),
-                "{label}: {graph:#}"
-            );
-            let report = candidate_relocation_report(invocation, "static/app");
-            assert!(
-                module_initialization_cells(&report, "required_cells").is_empty(),
-                "{label}: {report:#}"
-            );
+            let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+            for invocation in [&direct, &saved] {
+                assert_node_output(
+                    &invocation.output_root().join("app/static/app/entry.js"),
+                    "1 object\n",
+                    "",
+                );
+                let graph: Value = read_gzip_json(
+                    &invocation
+                        .output_root()
+                        .join("reports/tree/static/app/dependency_graph.json.gz"),
+                );
+                assert!(
+                    !conditional_foreign_body_used(&graph, "wrapped"),
+                    "{label}/{route}: {graph:#}"
+                );
+                assert!(
+                    !conditional_foreign_body_used(&graph, "observed"),
+                    "{label}/{route}: {graph:#}"
+                );
+                let report = candidate_relocation_report(invocation, "static/app");
+                assert!(
+                    module_initialization_cells(&report, "required_cells").is_empty(),
+                    "{label}/{route}: {report:#}"
+                );
+                assert!(
+                    provider_targets(&report, "required_targets").is_empty(),
+                    "{label}/{route}: {report:#}"
+                );
+            }
         }
     }
 }

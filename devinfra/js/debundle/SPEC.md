@@ -592,6 +592,10 @@ call, which must check its actual input and retain its own callsite obligation.
 Named import/re-export forwarding is resolved through canonical source facts;
 the derived body retains the ultimate provider identity, while its summary is
 published at the import-facing export. Missing or cyclic routes remain unknown.
+The shared source-analysis closure follows canonical static requests, including
+export-from dependencies of re-export-only modules. Frontend premise resolution,
+the provider writer/native census and saved analysis use that same closure;
+including a provider does not discharge request-mode or initialization checks.
 When an ordinary foreign-return summary supplies an independently closed body
 receipt, execution uses that receipt and its dependencies directly; it does not
 apply an unused conditional specialization or attach that specialization's
