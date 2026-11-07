@@ -45,6 +45,9 @@ _BOOT_RCU_ENV = "AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER"
 _SYNTHETIC_SLICE_ENV = "AGENTPLANE_TCG_VMI_SYNTHETIC_SLICE_PROBE"
 _SYNTHETIC_SLICE_SUCCESS = "AGENTPLANE_SYNTHETIC_SLICE_SUCCESS"
 _SYNTHETIC_SLICE_WAIT_SECONDS = 90
+_CGROUP_PILOT_ENV = "AGENTPLANE_TCG_VMI_CGROUP_PILOT"
+_CGROUP_PILOT_WAIT_SECONDS = 120
+_CGROUP_PILOT_STEPS = ("pair1_on", "pair1_off", "pair2_on", "pair2_off")
 
 
 def _cycle_count() -> int:
@@ -86,6 +89,16 @@ def _synthetic_slice_probe() -> bool:
             return True
         case value:
             raise ValueError(f"{_SYNTHETIC_SLICE_ENV} must be '0' or '1', got {value!r}")
+
+
+def _cgroup_pilot() -> bool:
+    match os.environ.get(_CGROUP_PILOT_ENV, "0"):
+        case "0":
+            return False
+        case "1":
+            return True
+        case value:
+            raise ValueError(f"{_CGROUP_PILOT_ENV} must be '0' or '1', got {value!r}")
 
 
 def _skip_virtiofs_shutdown_policy() -> bool:
@@ -229,6 +242,7 @@ def _vmi(
     debug_kernel_args: bool = False,
     boot_rcu_observe: bool = False,
     synthetic_slice_probe: bool = False,
+    cgroup_pilot: bool = False,
 ) -> dict[str, Any]:
     boot_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-boot:unset"))
     root_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-root:unset"))
@@ -254,6 +268,7 @@ def _vmi(
                             + (f" {_DEBUG_KERNEL_ARGS}" if debug_kernel_args else "")
                             + (" agentplane.boot-rcu-observe=1" if boot_rcu_observe else "")
                             + (" agentplane.synthetic-slice-probe=1" if synthetic_slice_probe else "")
+                            + (" agentplane.cgroup-pilot=1" if cgroup_pilot else "")
                         ),
                         "container": {
                             "image": boot_image,
@@ -573,6 +588,40 @@ def _wait_for_synthetic_slice(k3s: baseline.K3s, namespace: str, pod: str, outpu
     raise TimeoutError(
         f"synthetic slice did not complete baseline/active/after/success milestones "
         f"within {_SYNTHETIC_SLICE_WAIT_SECONDS}s; see {output}"
+    )
+
+
+def _cgroup_pilot_complete(console: str) -> bool:
+    records = [line.rstrip("\r") for line in console.splitlines()]
+    if any(record.startswith("AGENTPLANE_CGROUP_PILOT_UNEXERCISED ") for record in records):
+        return False
+    next_step = 0
+    for record in records:
+        if next_step < len(_CGROUP_PILOT_STEPS) and record.startswith(
+            f"AGENTPLANE_CGROUP_PILOT_RESULT step={_CGROUP_PILOT_STEPS[next_step]} "
+        ):
+            next_step += 1
+        elif next_step == len(_CGROUP_PILOT_STEPS) and record.startswith(
+            "AGENTPLANE_CGROUP_PILOT_SUCCESS transitions=4 "
+        ):
+            return True
+    return False
+
+
+def _wait_for_cgroup_pilot(k3s: baseline.K3s, namespace: str, pod: str, output: Path) -> None:
+    deadline = time.monotonic() + _CGROUP_PILOT_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        console = k3s.kubectl(
+            "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
+        )
+        output.write_text(console)
+        if any(line.rstrip("\r").startswith("AGENTPLANE_CGROUP_PILOT_UNEXERCISED ") for line in console.splitlines()):
+            raise RuntimeError(f"cgroup pilot did not exercise the requested transition; see {output}")
+        if _cgroup_pilot_complete(console):
+            return
+        time.sleep(1)
+    raise TimeoutError(
+        f"cgroup pilot did not complete four ordered property changes within {_CGROUP_PILOT_WAIT_SECONDS}s; see {output}"
     )
 
 
@@ -1004,6 +1053,60 @@ def test_synthetic_slice_success_requires_ordered_exact_guest_lines(
     assert output.read_text() == complete
 
 
+def test_cgroup_pilot_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_CGROUP_PILOT_ENV, raising=False)
+    assert _cgroup_pilot() is False
+    monkeypatch.setenv(_CGROUP_PILOT_ENV, "1")
+    assert _cgroup_pilot() is True
+    monkeypatch.setenv(_CGROUP_PILOT_ENV, "true")
+    with pytest.raises(ValueError, match="must be '0' or '1'"):
+        _cgroup_pilot()
+
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
+    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, cgroup_pilot=True)
+    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert observed_args == f"{plain_args} agentplane.cgroup-pilot=1"
+    observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
+    assert observed == plain
+
+
+def test_cgroup_pilot_requires_all_ordered_exact_results_before_acpi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    results = [
+        f"AGENTPLANE_CGROUP_PILOT_RESULT step={step} value={'yes' if step.endswith('_on') else 'no'} property_status=0 trace=unavailable hits=unavailable"
+        for step in _CGROUP_PILOT_STEPS
+    ]
+    success = "AGENTPLANE_CGROUP_PILOT_SUCCESS transitions=4 trace=unavailable trace_hits_total=0"
+    complete = "\n".join(("AGENTPLANE_CGROUP_PILOT_BEGIN pairs=2 direct_root_writes=none", *results, success)) + "\n"
+    assert _cgroup_pilot_complete(complete)
+    assert not _cgroup_pilot_complete("\n".join((results[1], results[0], *results[2:], success)))
+    assert not _cgroup_pilot_complete(complete.replace(f"{results[2]}\n", ""))
+    assert not _cgroup_pilot_complete(complete.replace(f"{success}\n", f"noise{success}\n"))
+    assert not _cgroup_pilot_complete(complete + "AGENTPLANE_CGROUP_PILOT_UNEXERCISED step=pair2_off\n")
+
+    class FakeK3s:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def kubectl(self, *_args: str, **_kwargs: Any) -> str:
+            self.calls += 1
+            return complete.replace(f"{success}\n", "") if self.calls == 1 else complete
+
+    fake = FakeK3s()
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    output = tmp_path / "cgroup-pilot-console.txt"
+    _wait_for_cgroup_pilot(cast(baseline.K3s, fake), "scope", "launcher", output)
+    assert fake.calls == 2
+    assert output.read_text() == complete
+
+
 def test_shutdown_policy_lifecycle_sample_distinguishes_absent_from_api_error_and_replaced_pod() -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
 
@@ -1063,6 +1166,7 @@ def _run_cycle(
     debug_kernel_args: bool,
     boot_rcu_observe: bool,
     synthetic_slice_probe: bool,
+    cgroup_pilot: bool,
 ) -> None:
     """Run one isolated VMI lifecycle and keep its evidence before cleanup."""
     output.mkdir(parents=True, exist_ok=True)
@@ -1109,6 +1213,7 @@ def _run_cycle(
             debug_kernel_args=debug_kernel_args,
             boot_rcu_observe=boot_rcu_observe,
             synthetic_slice_probe=synthetic_slice_probe,
+            cgroup_pilot=cgroup_pilot,
         )
         (output / "vmi.json").write_text(json.dumps(vmi, indent=2, sort_keys=True))
 
@@ -1161,6 +1266,7 @@ def _run_cycle(
                         "debug_kernel_args": debug_kernel_args,
                         "boot_rcu_observer": boot_rcu_observe,
                         "synthetic_slice_probe": synthetic_slice_probe,
+                        "cgroup_pilot": cgroup_pilot,
                     },
                     indent=2,
                     sort_keys=True,
@@ -1208,6 +1314,8 @@ def _run_cycle(
             (output / "guest-boot-console.txt").write_text(_wait_for_guest_boot(k3s, namespace_name, pod_name))
             if synthetic_slice_probe:
                 _wait_for_synthetic_slice(k3s, namespace_name, pod_name, output / "synthetic-slice-console.txt")
+            if cgroup_pilot:
+                _wait_for_cgroup_pilot(k3s, namespace_name, pod_name, output / "cgroup-pilot-console.txt")
             _, qemu_cmdline = _qemu_evidence(k3s, namespace_name, pod_name, output)
             (output / "qemu-pre-shutdown.txt").write_text(
                 f"namespace_uid={namespace_uid}\nvmi_uid={vmi_uid}\npvc_uid={pvc['metadata']['uid']}\n"
@@ -1306,8 +1414,13 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     debug_kernel_args = _debug_kernel_args()
     boot_rcu_observe = _boot_rcu_observer()
     synthetic_slice_probe = _synthetic_slice_probe()
+    cgroup_pilot = _cgroup_pilot()
     if synthetic_slice_probe and not boot_rcu_observe:
         raise ValueError(f"{_SYNTHETIC_SLICE_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
+    if cgroup_pilot and not boot_rcu_observe:
+        raise ValueError(f"{_CGROUP_PILOT_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
+    if cgroup_pilot and synthetic_slice_probe:
+        raise ValueError(f"{_CGROUP_PILOT_ENV}=1 cannot run with {_SYNTHETIC_SLICE_ENV}=1")
     (output / "run-config.json").write_text(
         json.dumps(
             {
@@ -1316,6 +1429,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 "debug_kernel_args": debug_kernel_args,
                 "boot_rcu_observer": boot_rcu_observe,
                 "synthetic_slice_probe": synthetic_slice_probe,
+                "cgroup_pilot": cgroup_pilot,
                 "debug_kernel_args_value": _DEBUG_KERNEL_ARGS if debug_kernel_args else "",
             },
             indent=2,
@@ -1344,6 +1458,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 debug_kernel_args=debug_kernel_args,
                 boot_rcu_observe=boot_rcu_observe,
                 synthetic_slice_probe=synthetic_slice_probe,
+                cgroup_pilot=cgroup_pilot,
             )
     except BaseException as error:
         primary_error = error

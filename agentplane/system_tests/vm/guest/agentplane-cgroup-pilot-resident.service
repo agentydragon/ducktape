@@ -1,0 +1,9 @@
+[Unit]
+Description=Resident descendant task for opt-in cgroup pilot
+ConditionKernelCommandLine=agentplane.cgroup-pilot=1
+
+[Service]
+Type=simple
+Slice=pilot.slice
+ExecStart=/usr/bin/busybox sleep 120
+TimeoutStartSec=15s
