@@ -22,6 +22,7 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.vm.launcher_topology import assert_admitted_launcher_topology, is_vm_template
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 POD_TEMPLATE = "environment-tools"
@@ -116,7 +117,16 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 created = await client.create_sandbox(request)
             # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
             owned.append((created.name, created.uid))
-            return await wait_until_running(client, created)
+            view = await wait_until_running(client, created)
+            if is_vm_template(template):
+                if not view.kubernetes_diagnostics.HasField("pod"):
+                    raise SandboxNotReadyError(
+                        f"VM Sandbox {view.target.name} ({view.target.uid}) reached Ready without a launcher Pod identity"
+                    )
+                await assert_admitted_launcher_topology(
+                    cluster, view.target.name, view.target.uid, view.kubernetes_diagnostics.pod
+                )
+            return view
 
         yield create
 

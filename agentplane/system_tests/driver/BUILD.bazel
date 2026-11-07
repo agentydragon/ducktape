@@ -304,6 +304,7 @@ py_library(
         "//agentplane/app/testing:client",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests/vm:launcher_topology",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",

@@ -44,3 +44,12 @@ capture.
 
 The end-of-case VM report also samples launchers without proof, including cleanup blocked
 at runner quiescence before ACPI. A `report` sample does not imply a shutdown request occurred.
+
+When a VM Sandbox first reports Ready, the shared Sandbox driver reads the admitted launcher Pod
+and its owning VMI, correlating their UIDs, namespace and KubeVirt labels before checking topology.
+It requires each PVC-, Secret- or ConfigMap-backed VMI virtiofs filesystem to appear as a running,
+Ready `initContainer` with `restartPolicy: Always`. It intersects volume sources with the VMI's
+actual `virtiofs` devices, so block disks such as `/state/workspaces` and non-file-backed
+ContainerPath daemons are excluded. The sanitized observation is retained at
+`vm-artifacts/launcher-topology/<launcher-pod-uid>.json` on both pass and failure; API or
+incarnation convergence failures are reported separately from an admitted-topology violation.
