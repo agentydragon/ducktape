@@ -1,4 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -10,8 +12,39 @@ go_binary(
         "//platform_sessions/frontend",
         "//platform_sessions/management/gateway",
         "//platform_sessions/provider/v1:session_provider_go_proto",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials",
     ],
+)
+
+pkg_tar(
+    name = "gateway_binary_layer",
+    srcs = [":platform_sessions_gateway"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+)
+
+pkg_tar(
+    name = "management_openapi_layer",
+    srcs = ["//platform_sessions/management/v1:management_openapi"],
+    package_dir = "/usr/local/share/platform-sessions",
+)
+
+oci_image(
+    name = "image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/platform_sessions_gateway"],
+    env = {
+        "PLATFORM_SESSIONS_MANAGEMENT_OPENAPI": "/usr/local/share/platform-sessions/management_openapi.swagger.json",
+        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+    },
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":gateway_binary_layer",
+        ":management_openapi_layer",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+    workdir = "/",
 )
