@@ -114,5 +114,20 @@ def test_watchdog_marks_a_truncated_proof_process_tree_incomplete(tmp_path: Path
     assert "findmnt_snapshots=0 complete=0" in output
 
 
+def test_watchdog_counts_only_findmnt_processes_with_recorded_snapshots(tmp_path: Path) -> None:
+    proc_root = tmp_path / "proc"
+    _write_process(proc_root, 1, "systemd", children=[41])
+    _write_process(proc_root, 41, "sh", cmdline=b"agentplane-shutdown-complete\0", children=list(range(42, 58)))
+    for pid in range(42, 58):
+        _write_process(proc_root, pid, "findmnt")
+
+    output = _run_scan(tmp_path, [41])
+
+    assert "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_TRUNCATED max=16 omitted=1" in output
+    assert "AGENTPLANE_SHUTDOWN_PROOF_DESCENDANT_SCAN_INCOMPLETE pid=41 max_nodes=64" in output
+    assert "findmnt_snapshots=15 complete=0" in output
+    assert output.count("role=findmnt") == 15
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

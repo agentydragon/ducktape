@@ -111,13 +111,13 @@ for proof_pid in $proof_pids; do
 				echo "AGENTPLANE_SHUTDOWN_PROOF_DESCENDANT_UNAVAILABLE pid=$proof_node reason=comm_unavailable"
 				proof_tree_incomplete=1
 			elif [ "$proof_node_comm" = findmnt ]; then
-				proof_findmnt_snapshots=$((proof_findmnt_snapshots + 1))
 				if [ "$selected_count" -ge "$max_selected_children" ]; then
 					truncated_count=$((truncated_count + 1))
 					proof_tree_incomplete=1
 				else
 					snapshot_child "$proof_node" findmnt
 					selected_count=$((selected_count + 1))
+					proof_findmnt_snapshots=$((proof_findmnt_snapshots + 1))
 				fi
 			fi
 		fi
