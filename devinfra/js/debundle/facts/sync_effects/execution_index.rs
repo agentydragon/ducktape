@@ -15052,10 +15052,6 @@ fn binding_store_evidence(site: &BindingStoreSite) -> BindingCellStoreEvidence {
     }
 }
 
-fn span_contains(outer: Span, inner: Span) -> bool {
-    inner.lo.0 >= outer.lo.0 && inner.hi.0 <= outer.hi.0
-}
-
 fn has_nested_binding_store(index: &ExecutionIndex, outer: &BindingStoreSite) -> bool {
     index
         .binding_store_sites

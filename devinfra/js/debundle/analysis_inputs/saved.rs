@@ -7,7 +7,6 @@ use std::sync::Arc;
 use analysis_codec::{ContextOrdinals, SavedModuleCell};
 use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
-use source_identity::ModuleCellId;
 
 use super::{
     CallableSummary, ConditionalForeignBody, ForeignBodyEffects, HostBehaviorKey,
