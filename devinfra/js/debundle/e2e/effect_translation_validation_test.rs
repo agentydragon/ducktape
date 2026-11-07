@@ -1553,7 +1553,7 @@ fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
 }
 
 #[test]
-fn local_declaration_operations_compose_lexical_receipts() {
+fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
     for body in [
         "const local = seed; return local;",
         "let local = seed; return local;",
@@ -1597,8 +1597,8 @@ fn local_declaration_operations_compose_lexical_receipts() {
         let report = fixture.effect_translation_validation();
         for domain in ["global_properties", "general_heap", "host_effects"] {
             assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], 2,
-                "lexical declarations cannot certify another effect domain: {body}: {report:#}"
+                report["coverage"]["unknown_coverage"][domain], 1,
+                "the private cell has no nonlexical effects; only output remains unknown: {body}: {report:#}"
             );
         }
     }
@@ -1949,60 +1949,69 @@ fn noncoercing_scalar_operators_refuse_unproved_getters() {
 
 #[test]
 fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
-    for (seed, helper, invocation, lexical_authority) in [
+    for (seed, helper, invocation, lexical_authority, unknown) in [
         (
             "41",
             "function readSeed(unused) { return seed; }",
             "readSeed()",
             "operation_receipt",
+            1,
         ),
         (
             "41",
             "function readSeed(unused = seed) { return seed; }",
             "readSeed()",
             "operation_receipt",
+            1,
         ),
         (
             "41",
             "function readSeed(...unused) { return seed; }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "41",
             "function readSeed() { void arguments; return seed; }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "41",
             "function readSeed(unused) { return seed; }",
             "readSeed(seed)",
             "operation_receipt",
+            1,
         ),
         (
             "41",
             "function readSeed() { const local = seed; return local; }",
             "readSeed()",
             "operation_receipt",
+            1,
         ),
         (
             "({value: 41})",
             "function readSeed() { return seed.value.toString(); }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "41",
             "function readSeed() { return Math.abs(-41); }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
         (
             "41",
             "function readSeed() { return globalThis.Number(41); }",
             "readSeed()",
             "ordered_root_initializer_uncovered",
+            2,
         ),
     ] {
         let source = format!(
@@ -2023,8 +2032,8 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
         let report = fixture.effect_translation_validation();
         for domain in ["global_properties", "general_heap", "host_effects"] {
             assert_eq!(
-                report["coverage"]["unknown_coverage"][domain], 2,
-                "the initializer and output call must remain unknown for {helper} / {invocation}: {report:#}"
+                report["coverage"]["unknown_coverage"][domain], unknown,
+                "only proved private-cell operations can close the initializer; output remains unknown for {helper} / {invocation}: {report:#}"
             );
         }
         let graph = fixture.dependency_graph();
@@ -2099,7 +2108,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             "number",
             2,
         ),
-        ("function make() { return seed; let unused; }", "number", 2),
+        ("function make() { return seed; let unused; }", "number", 1),
         (
             "function make() { return seed; function unused() {} }",
             "number",
@@ -2127,6 +2136,13 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             )],
         ));
         assert_preserved_entry_output(&fixture, &format!("{result_kind}\n"));
+        if helper == "function make() { return seed; let unused; }" {
+            let execution = binding_execution_report(&fixture, "result");
+            assert_eq!(
+                execution["binding_effect_authority"]["authority"], "operation_receipt",
+                "unreached private let still creates a local cell without exterior effects: {execution:#}"
+            );
+        }
         let report = fixture.effect_translation_validation();
         for domain in ["global_properties", "general_heap", "host_effects"] {
             assert_eq!(
