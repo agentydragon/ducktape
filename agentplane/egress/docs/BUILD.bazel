@@ -18,5 +18,5 @@ go_library(
     srcs = ["docs.go"],
     embedsrcs = glob(["agents/**"]) + [":openapi_json"],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/docs",
-    visibility = ["//agentplane/egress:__subpackages__"],
+    visibility = ["//agentplane:__subpackages__"],
 )

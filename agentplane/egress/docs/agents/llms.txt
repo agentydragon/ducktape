@@ -18,7 +18,7 @@ permissions, or auto-approved Actions before requesting an Action that needs man
 
 ## Workflows
 
-- [Credentials and refusals](/docs/agents/credentials.md): Read before using an unfamiliar credential or diagnosing a failed proxied call.
+- [Credentials and refusals](/docs/agents/credentials.md), also `agentplane egress guide credentials`: Read before using an unfamiliar credential or diagnosing a failed proxied call.
 
 ## Reference
 

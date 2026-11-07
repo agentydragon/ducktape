@@ -65,3 +65,22 @@ func TestRulesTextShowsHowToPresentTheCredential(t *testing.T) {
 		})
 	}
 }
+
+func TestEgressGuidesAreAvailableWithoutServiceConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"egress", "guide"}, "# Agentplane egress"},
+		{[]string{"egress", "guide", "credentials"}, "# Use credentials through the proxy"},
+	} {
+		code, stdout, stderr := invoke(nil, tc.args...)
+		if code != 0 || !strings.Contains(stdout, tc.want) {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q", tc.args, code, stdout, stderr)
+		}
+	}
+	code, _, _ := invoke(nil, "egress", "guide", "unknown")
+	if code != 2 {
+		t.Errorf("unknown guide: exit %d, want 2", code)
+	}
+}
