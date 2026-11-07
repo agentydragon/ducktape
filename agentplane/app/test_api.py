@@ -204,8 +204,8 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
 async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.AsyncClient) -> None:
     frontend = await http.get("/upstream/app-config/v1/frontend-config")
     assert frontend.status_code == 200, frontend.text
-    # ProtoJSON omits absent message-valued fields; the frontend adapter maps both to null.
-    assert frontend.json() == {}
+    # The generated gateway encodes unset message fields as ProtoJSON null; the frontend adapter maps both to null.
+    assert frontend.json() == {"frontendConfig": {"traceSearch": None, "langfuseSearch": None}}
 
     legacy_frontend = await http.get("/frontend-config")
     assert legacy_frontend.status_code == 404, legacy_frontend.text

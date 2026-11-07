@@ -79,7 +79,7 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		},
 		{
 			path: "/upstream/app-config/v1/frontend-config",
-			want: `{"traceSearch":{"grafanaBaseUrl":"https://grafana.example.test/","tempoDatasourceUid":"fixture-tempo","deploymentEnvironment":"fixture"},"langfuseSearch":{"baseUrl":"https://langfuse.example.test/","projectId":"fixture-project","sessionMetadataKey":"session","sandboxNamespaceMetadataKey":"namespace","sandboxServiceAccountMetadataKey":"account"}}`,
+			want: `{"frontendConfig":{"traceSearch":{"grafanaBaseUrl":"https://grafana.example.test/","tempoDatasourceUid":"fixture-tempo","deploymentEnvironment":"fixture"},"langfuseSearch":{"baseUrl":"https://langfuse.example.test/","projectId":"fixture-project","sessionMetadataKey":"session","sandboxNamespaceMetadataKey":"namespace","sandboxServiceAccountMetadataKey":"account"}}}`,
 		},
 	} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)

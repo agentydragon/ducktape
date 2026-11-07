@@ -198,7 +198,9 @@ Thread names are set, changed, or cleared explicitly by operators in the thread 
 
 The app ConfigMap groups browser-safe links under one optional `frontend_config` key. The generated
 `GET /upstream/app-config/v1/frontend-config` response contains only the explicitly whitelisted
-settings below; when the deployment does not supply the object, both fields are absent.
+settings below under `frontendConfig`; when the deployment does not supply either setting,
+ProtoJSON returns both nested message fields as `null`, which the browser adapter maps to `null`
+view-model fields.
 
 `frontend_config.trace_search` is null unless the app configures a Grafana base URL, Tempo datasource
 UID, and deployment environment. When configured, Sandbox, Session, and active Thread ellipsis menus

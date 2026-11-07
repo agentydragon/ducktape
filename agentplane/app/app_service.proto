@@ -22,7 +22,7 @@ service AppService {
   }
 
   // Browser-safe deployment settings for optional search links.
-  rpc GetFrontendConfig(google.protobuf.Empty) returns (FrontendConfig) {
+  rpc GetFrontendConfig(GetFrontendConfigRequest) returns (GetFrontendConfigResponse) {
     option (google.api.http) = {get: "/v1/frontend-config"};
   }
 
@@ -102,6 +102,12 @@ message HarnessModelOffers {
 
 message ListSandboxPresetsResponse {
   repeated SandboxPreset presets = 1;
+}
+
+message GetFrontendConfigRequest {}
+
+message GetFrontendConfigResponse {
+  FrontendConfig frontend_config = 1;
 }
 
 message FrontendConfig {

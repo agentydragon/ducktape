@@ -26,17 +26,19 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
       }
       if (path.endsWith("/frontend-config")) {
         return Response.json({
-          traceSearch: {
-            grafanaBaseUrl: "https://grafana.example.test/",
-            tempoDatasourceUid: "fixture-tempo",
-            deploymentEnvironment: "fixture",
-          },
-          langfuseSearch: {
-            baseUrl: "https://langfuse.example.test/",
-            projectId: "fixture-project",
-            sessionMetadataKey: "session",
-            sandboxNamespaceMetadataKey: "namespace",
-            sandboxServiceAccountMetadataKey: "account",
+          frontendConfig: {
+            traceSearch: {
+              grafanaBaseUrl: "https://grafana.example.test/",
+              tempoDatasourceUid: "fixture-tempo",
+              deploymentEnvironment: "fixture",
+            },
+            langfuseSearch: {
+              baseUrl: "https://langfuse.example.test/",
+              projectId: "fixture-project",
+              sessionMetadataKey: "session",
+              sandboxNamespaceMetadataKey: "namespace",
+              sandboxServiceAccountMetadataKey: "account",
+            },
           },
         });
       }
@@ -106,7 +108,10 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
   ]);
 });
 
-it("maps omitted ProtoJSON message fields to absent optional links", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({})));
+it("maps unset ProtoJSON message fields to absent optional links", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ frontendConfig: { traceSearch: null, langfuseSearch: null } }))
+  );
   await expect(getFrontendConfig()).resolves.toEqual({ trace_search: null, langfuse_search: null });
 });

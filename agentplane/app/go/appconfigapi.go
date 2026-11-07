@@ -75,21 +75,21 @@ func (s *appService) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb
 	return response, nil
 }
 
-func (s *appService) GetFrontendConfig(context.Context, *emptypb.Empty) (*apppb.FrontendConfig, error) {
-	response := &apppb.FrontendConfig{}
+func (s *appService) GetFrontendConfig(context.Context, *apppb.GetFrontendConfigRequest) (*apppb.GetFrontendConfigResponse, error) {
+	config := &apppb.FrontendConfig{}
 	if settings := s.config.FrontendConfig.TraceSearch; settings != nil {
-		response.TraceSearch = &apppb.TraceSearchSettings{
+		config.TraceSearch = &apppb.TraceSearchSettings{
 			GrafanaBaseUrl: settings.GrafanaBaseURL, TempoDatasourceUid: settings.TempoDatasourceUID,
 			DeploymentEnvironment: settings.DeploymentEnvironment,
 		}
 	}
 	if settings := s.config.FrontendConfig.LangfuseSearch; settings != nil {
-		response.LangfuseSearch = &apppb.LangfuseSearchSettings{
+		config.LangfuseSearch = &apppb.LangfuseSearchSettings{
 			BaseUrl: settings.BaseURL, ProjectId: settings.ProjectID,
 			SessionMetadataKey:               settings.SessionMetadataKey,
 			SandboxNamespaceMetadataKey:      settings.SandboxNamespaceMetadataKey,
 			SandboxServiceAccountMetadataKey: settings.SandboxServiceAccountMetadataKey,
 		}
 	}
-	return response, nil
+	return &apppb.GetFrontendConfigResponse{FrontendConfig: config}, nil
 }

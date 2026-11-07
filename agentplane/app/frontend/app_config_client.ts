@@ -3,9 +3,9 @@ import { fromJson, type JsonValue as ProtoJsonValue } from "@bufbuild/protobuf";
 import { fetchWithLogin, HttpError } from "./client";
 import {
   ListModelsResponseSchema,
-  FrontendConfigSchema,
+  GetFrontendConfigResponseSchema,
   ListSandboxPresetsResponseSchema,
-  type FrontendConfig as ProtoFrontendConfig,
+  type GetFrontendConfigResponse as ProtoGetFrontendConfigResponse,
   type ListModelsResponse,
   type ListSandboxPresetsResponse,
 } from "../app_service_pb";
@@ -134,16 +134,20 @@ export async function listSandboxPresets(): Promise<SandboxPresetView[]> {
 }
 
 export async function getFrontendConfig(): Promise<FrontendConfig> {
-  const response: ProtoFrontendConfig = fromJson(FrontendConfigSchema, await call("/frontend-config"));
+  const response: ProtoGetFrontendConfigResponse = fromJson(
+    GetFrontendConfigResponseSchema,
+    await call("/frontend-config")
+  );
+  const config = response.frontendConfig;
   return {
-    trace_search: response.traceSearch
+    trace_search: config?.traceSearch
       ? {
           grafana_base_url: response.traceSearch.grafanaBaseUrl,
           tempo_datasource_uid: response.traceSearch.tempoDatasourceUid,
           deployment_environment: response.traceSearch.deploymentEnvironment,
         }
       : null,
-    langfuse_search: response.langfuseSearch
+    langfuse_search: config?.langfuseSearch
       ? {
           base_url: response.langfuseSearch.baseUrl,
           project_id: response.langfuseSearch.projectId,
