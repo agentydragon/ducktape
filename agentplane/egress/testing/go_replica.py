@@ -23,7 +23,7 @@ _GRACE_SECONDS = 55
 class GoReplica:
     proxy_listener: Listener
     process: GoProcess
-    agent_api_listener: Listener
+    admin_listener: Listener
 
     def terminate(self) -> None:
         self.process.terminate()
@@ -33,9 +33,7 @@ class GoReplica:
 
 
 @asynccontextmanager
-async def go_replica(
-    settings: Settings, *, directory: Path, tunnel_agent_api: bool = False
-) -> AsyncIterator[GoReplica]:
+async def go_replica(settings: Settings, *, directory: Path, tunnel_rules: bool = False) -> AsyncIterator[GoReplica]:
     """The Go proxy on `settings`, with normal startup initializing `settings.database_url`.
 
     The Go binary reads the same YAML keys the Python `Settings` model authors, so a key one side
@@ -47,6 +45,15 @@ async def go_replica(
         admin_listener = listeners.enter_context(listen_tcp())
         config = directory / f"go-replica-{proxy_listener.port}.yaml"
         config.touch(mode=0o600)
+        settings = (
+            settings.model_copy(
+                update={
+                    "tls_passthrough_targets": [*settings.tls_passthrough_targets, f"localhost:{admin_listener.port}"]
+                }
+            )
+            if tunnel_rules
+            else settings
+        )
         config.write_text(
             json.dumps(
                 {
@@ -71,4 +78,4 @@ async def go_replica(
             # The child inherited the listeners and has reported ready. Release the parent copies
             # before yielding so a later replica can safely reuse the descriptor numbers.
             listeners.close()
-            yield GoReplica(proxy_listener, process, agent_api_listener)
+            yield GoReplica(proxy_listener, process, admin_listener)

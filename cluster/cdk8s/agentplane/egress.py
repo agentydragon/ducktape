@@ -699,7 +699,7 @@ class Egress(Construct):
             ).model_dump(mode="json", exclude_none=True),
         }
         if enable_svid_auth:
-            content["tls_passthrough_targets"] = [f"{self.agent_api.fqdn}:{self.agent_api.port.number}"]
+            content["tls_passthrough_targets"] = [f"{self.admin.fqdn}:{self.admin.pod_port}"]
             content["forward"] = Listener(
                 listen_address=f"0.0.0.0:{self.proxy.pod_port}",
                 tls=TLS(
@@ -969,9 +969,15 @@ class Egress(Construct):
                     runners.cilium, cilium.endpoint_labels(namespace, "sandbox"), ports=[self.proxy.pod_port]
                 ),
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.admin.pod_port]),
+                *(
+                    [IngressRule.from_endpoints(self.proxy.pods.cilium, ports=[self.admin.pod_port])]
+                    if self.enable_svid_auth
+                    else []
+                ),
             ],
             egress=[
                 database.egress(namespace),
+                *([self.admin.egress()] if self.enable_svid_auth else []),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),

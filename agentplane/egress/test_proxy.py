@@ -33,15 +33,10 @@ from sqlalchemy import create_engine, text
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.egress import egress_rules_pb2, egress_rules_pb2_grpc
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.sidecar_config import (
-    KubernetesBearerProxyAuth,
-    PlaintextProxyTransport,
-    Proxy,
-    SpiffeProxyAuth,
-    TLSProxyTransport,
-)
+from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -411,7 +406,7 @@ async def _running_egress(tmp_path: Path, history_db_url: str, *, mixed_listener
             svid_cert=svid_server,
             svid_ca_file=svid_ca_file,
         )
-        async with go_replica(settings, directory=tmp_path, tunnel_agent_api=mixed_listener) as running:
+        async with go_replica(settings, directory=tmp_path, tunnel_rules=mixed_listener) as running:
             yield Egress(
                 replica=running,
                 token=seeded.hop_token,
@@ -1239,29 +1234,44 @@ async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.M
     assert "proxy-authorization" not in headers
 
 
-async def test_rules_api_uses_forward_listener_authentication(mixed_egress: Egress) -> None:
+def rules_credentials(egress: Egress, certificate: tuple[Path, Path] | None = None) -> grpc.ChannelCredentials:
+    return grpc.ssl_channel_credentials(
+        root_certificates=egress.runtime_ca.cert_pem,
+        private_key=certificate[1].read_bytes() if certificate is not None else None,
+        certificate_chain=certificate[0].read_bytes() if certificate is not None else None,
+    )
+
+
+async def test_rules_grpc_uses_forward_listener_authentication(mixed_egress: Egress) -> None:
     egress = mixed_egress
-    url = f"https://localhost:{egress.replica.agent_api_listener.port}/v1/rules"
+    target = f"localhost:{egress.replica.admin_listener.port}"
     certificate = issue_runner_svid(egress, egress.tmp_path / "rules-client")
-    svid_tls = proxy_svid_client_context(egress, certificate)
-    bearer_tls = proxy_bearer_client_context(egress)
-    async with aiohttp.ClientSession() as client:
-        for security, headers in (
-            (svid_tls, {"X-Agentplane-Subject": f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"}),
-            (bearer_tls, {"Authorization": f"Bearer {egress.token}"}),
+    request = egress_rules_pb2.GetRulesRequest()
+    async with (
+        grpc.aio.secure_channel(target, rules_credentials(egress, certificate)) as svid_channel,
+        grpc.aio.secure_channel(target, rules_credentials(egress)) as bearer_channel,
+        grpc.aio.insecure_channel(target) as plaintext_channel,
+    ):
+        svid = egress_rules_pb2_grpc.EgressRulesStub(svid_channel)
+        bearer = egress_rules_pb2_grpc.EgressRulesStub(bearer_channel)
+        plaintext = egress_rules_pb2_grpc.EgressRulesStub(plaintext_channel)
+        for client, metadata in (
+            (svid, (("x-agentplane-subject", f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"),)),
+            (bearer, (("authorization", f"Bearer {egress.token}"),)),
         ):
-            async with client.get(url, ssl=security, headers=headers) as response:
-                assert response.status == 200, await response.text()
-                body = await response.json()
-                assert body["subject"] == {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX_A}
-        for security, headers in (
-            (svid_tls, {"Authorization": f"Bearer {egress.token}"}),
-            (bearer_tls, {}),
-            (bearer_tls, {"Authorization": f"Bearer {egress.projected_token}"}),
+            response = await client.GetRules(request, metadata=metadata, timeout=5)
+            assert response.subject.namespace == SANDBOX_NAMESPACE
+            assert response.subject.name == SANDBOX_A
+        for client, metadata in (
+            (svid, (("authorization", f"Bearer {egress.token}"),)),
+            (bearer, ()),
+            (bearer, (("authorization", f"Bearer {egress.projected_token}"),)),
+            (plaintext, (("authorization", f"Bearer {egress.token}"),)),
         ):
-            async with client.get(url, ssl=security, headers=headers) as response:
-                assert response.status == 401
-        # The same open TLS connection cannot outlive credential acceptance.
+            with pytest.raises(grpc.aio.AioRpcError) as failure:
+                await client.GetRules(request, metadata=metadata, timeout=5)
+            assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        # Reusing the same authenticated HTTP/2 connection must recheck acceptance on every RPC.
         await cast(
             CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api)
         ).patch_namespaced_custom_object_status(
@@ -1273,53 +1283,13 @@ async def test_rules_api_uses_forward_listener_authentication(mixed_egress: Egre
             {"status": {"runnerCredential": {"acceptedId": ROTATED_RUNNER_CREDENTIAL_ID}}},
             _content_type="application/merge-patch+json",
         )
-        async with client.get(url, ssl=svid_tls) as response:
-            assert response.status == 401
-
-
-async def test_rules_api_sidecar_uses_only_its_workload_identity(mixed_egress: Egress) -> None:
-    egress = mixed_egress
-    authority = f"localhost:{egress.replica.agent_api_listener.port}"
-    url = f"http://{authority}/v1/rules"
-    client_certificate = issue_runner_svid(egress, egress.tmp_path / "rules-sidecar-client")
-    runtime_ca_file = write_ca(egress.runtime_ca, egress.tmp_path, "rules-sidecar-runtime")[0]
-    caller_token = await egress.api.workload_token(
-        ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B), [AUDIENCE]
-    )
-    hop_token_file = egress.tmp_path / "rules-sidecar-hop-token"
-    hop_token_file.write_text(egress.token)
-    authentications = (
-        SpiffeProxyAuth(cert_file=client_certificate[0], key_file=client_certificate[1]),
-        KubernetesBearerProxyAuth(token_file=hop_token_file),
-    )
-
-    async with aiohttp.ClientSession() as client:
-        for authentication in authentications:
-            async with (
-                SidecarProcess(
-                    proxy=Proxy(
-                        address=f"{egress.proxy_listener.host}:{egress.proxy_listener.port}",
-                        transport=TLSProxyTransport(ca_file=runtime_ca_file, auth=authentication),
-                    ),
-                    rules_api=authority,
-                ) as sidecar,
-                client.get(
-                    url,
-                    proxy=f"http://{sidecar.proxy_listener.host}:{sidecar.proxy_listener.port}",
-                    headers={
-                        "Authorization": f"Bearer {caller_token}",
-                        "Proxy-Authorization": f"Bearer {caller_token}",
-                        "X-Agentplane-Subject": f"{SANDBOX_NAMESPACE}/{SANDBOX_B}",
-                    },
-                ) as response,
-            ):
-                assert response.status == 200, await response.text()
-                body = await response.json()
-                assert body["subject"] == {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX_A}
+        with pytest.raises(grpc.aio.AioRpcError) as failure:
+            await svid.GetRules(request, timeout=5)
+        assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
 
 @pytest.mark.parametrize("leaf", ["forged", "expired"])
-async def test_rules_api_rejects_invalid_client_leaf(mixed_egress: Egress, leaf: str) -> None:
+async def test_rules_grpc_rejects_invalid_client_leaf(mixed_egress: Egress, leaf: str) -> None:
     egress = mixed_egress
     directory = egress.tmp_path / f"rules-{leaf}"
     directory.mkdir()
@@ -1331,18 +1301,17 @@ async def test_rules_api_rejects_invalid_client_leaf(mixed_egress: Egress, leaf:
         dns_name="localhost",
         valid_for=datetime.timedelta(milliseconds=100) if leaf == "expired" else None,
     )
-    security = proxy_svid_client_context(egress, certificate)
     if leaf == "expired":
         expires = x509.load_pem_x509_certificate(certificate[0].read_bytes()).not_valid_after_utc
         remaining = expires - datetime.datetime.now(datetime.UTC)
         if remaining >= datetime.timedelta(0):
             await asyncio.sleep(remaining.total_seconds() + 0.01)
-    async with aiohttp.ClientSession() as client:
-        with pytest.raises(aiohttp.ClientConnectionError):
-            async with client.get(
-                f"https://localhost:{egress.replica.agent_api_listener.port}/v1/rules", ssl=security
-            ) as response:
-                await response.read()
+    async with grpc.aio.secure_channel(
+        f"localhost:{egress.replica.admin_listener.port}", rules_credentials(egress, certificate)
+    ) as channel:
+        with pytest.raises(grpc.aio.AioRpcError) as failure:
+            await egress_rules_pb2_grpc.EgressRulesStub(channel).GetRules(egress_rules_pb2.GetRulesRequest(), timeout=5)
+        assert failure.value.code() == grpc.StatusCode.UNAVAILABLE
 
 
 if __name__ == "__main__":

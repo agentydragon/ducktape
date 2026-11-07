@@ -6,10 +6,10 @@ package agentplane.egress;
 import "agentplane/proto/identity.proto";
 
 service EgressRules {
-  // The egress rules of the ServiceAccount the caller's bearer proves, redacted.
+  // The egress rules of the authenticated caller's ServiceAccount, redacted.
   //
   // The answer holds no credential value and no Secret it is read from. The caller is the
-  // ServiceAccount of the bearer and nothing else; no field of the request selects a subject.
+  // ServiceAccount resolved from its verified credential; no field of the request selects a subject.
   rpc GetRules(GetRulesRequest) returns (GetRulesResponse);
 }
 

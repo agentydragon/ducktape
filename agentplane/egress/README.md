@@ -199,7 +199,127 @@ both appends the key to the local outgoing gRPC context and retains it in the ne
 
 ## Rules API
 
-`EgressRules.GetRules` is the generated facade behind the authenticated Rules API. Its in-process
-channel preserves the API middleware's verified principal and cancellation, without a loopback
-socket or forwarded identity metadata. Authentication failure is `401`; unavailable verification
-is `503`. The response contains only that ServiceAccount's redacted rules and credential guidance.
+`agentplane egress rules` calls native `EgressRules.GetRules` through the sidecar's local gRPC
+route on port 3133. `http://127.0.0.1:3133` denotes local plaintext gRPC. The sidecar holds the
+credential and presents either the legacy projected bearer or the runner SVID to the destination.
+SVID calls establish verified TLS through an opaque central CONNECT to the shared gRPC port 8081;
+the server verifies its actual peer using the forward hop's authentication policy. No identity is
+asserted by the proxy. Rules has no separate audience, certificate or HTTP API. Health probes and
+operator RPCs keep their independent authorization on that shared port.
+
+## Admin gRPC API
+
+`EgressAdmin` (<egress_admin.proto>) serves the operator reads on the admin listener:
+`ListDecisions` lists a subject's recent decisions, `WatchDecisions` sends that list on subscribing and
+again each time it differs, and `GetHealth` carries the readiness verdict as `ready` with the facts it
+rests on (`decision_history`, the refresh ages). All three read through the same `Decisions`,
+`Changes`, history counters and `Index`.
+
+The standard `grpc.health.v1.Health` service is served on the same listener for Kubernetes' native `grpc` probes:
+the empty service is readiness and the service `livez` liveness, which stays `SERVING` while the process
+answers so a recoverable watch outage never restarts it. It admits every caller, because the kubelet
+sends no bearer; `GetHealth` does not. `Watch` is not served.
+
+The same port hosts `EgressRules.GetRules` under the forward hop's authentication policy,
+independently of the admin allowlist. The sidecar offers the local gRPC Rules route described above.
+
+The admin listener serves gRPC alone. On shutdown it ends the open watches, then stops gracefully: the
+other calls in flight finish within the drain deadline.
+
+Every `EgressAdmin` call admits only the ServiceAccounts in `admin_grpc_callers`, each proving itself by
+a bearer of audience `admin_grpc_audience` that is reviewed for every call (an acceptance is reused
+for 30 s), before anything is read
+(<../docs/grpc_services.md>). Watches periodically revalidate authorization and end on revocation or when the proxy drains;
+reconnecting callers are admitted afresh.
+
+The health service is always mounted. `EgressAdmin` is mounted only when `admin_grpc_audience` and
+`admin_grpc_callers` (`namespace/name` entries) are both set; without them the listener still serves health and rules.
+
+## ServiceAccount permissions
+
+In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egresscredentials`, `policysets` and `policybindings`, and `patch` on
+`policybindings/status`. With SPIFFE enabled, each Sandbox namespace grants only `get`, `list` and `watch` on `sandboxes`.
+The proxy reads neither Pods nor ServiceAccounts. Legacy bearer verification uses TokenReview
+and needs no namespace Role. In the credentials namespace
+(required `--credentials-namespace`): `get`, `list`, `watch` on
+`secrets`, and nothing else. Cluster-wide: `create` on `tokenreviews.authentication.k8s.io`. There
+is no leader election: every replica applies the same `EgressReady` under one field manager, and
+writes only when the condition it decides differs from the one the binding carries.
+
+Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by
+label: a namespace-wide read where the sandboxes run would hand the proxy the model key and the
+database credential along with the ones it is meant to substitute. Staging uses
+`agentplane-staging-egress-credentials`.
+
+### Rejected: binding a bearer to its Pod's source address
+
+Reading the calling Pod and refusing a connection whose source is not that Pod's IP, on every
+request including cache hits, stops a token copied out of its Pod from being replayed elsewhere in
+the cluster. It costs a `pods` read in every `allowed_service_account_namespaces` entry, a permission the proxy deliberately does not hold. Without it the exposure is bounded (<SPEC.md> § Identity): one
+in-cluster workload borrowing another's egress rules, not a way past the egress policy. Restore it if that
+borrowing becomes a real concern — a compromised sidecar reading another Pod's projected token, or
+a namespace whose Pod specs are not ours — with a pod IP on the principal, the check in `identity`,
+the peer-address read in `proxy`, and that `pods` read.
+
+## Decision history
+
+`history.Log.Record` puts an immutable `decision.Record` on a bounded queue (2,000 by default,
+`decision_queue_size`) and returns; admission never waits for the database, and a record that does
+not fit is counted and dropped. One writer drains up to 100 records per batch (`decision_batch_size`),
+waking at least once a minute when idle, over a pool of two connections whose operations, connection
+waits and connects are each bounded to two seconds. A batch gets three attempts with exponential
+backoff from one second; a retry reuses the batch's event IDs and decision timestamps, and the insert
+is `ON CONFLICT (event_id) DO NOTHING`. Records already past the retention window are dropped before
+the write and counted as expired. Shutdown flushes for five seconds and counts what remains as
+shutdown loss. `GetHealth` reports the counters as `decision_history`.
+
+After every batch or idle wake the writer deletes at most 1,000 expired rows, selected `FOR UPDATE
+SKIP LOCKED` on the `(decided_at, event_id)` index so concurrent replicas neither block nor
+contend. Indexed deletion is used rather than time partitions: no measured volume justifies
+partition management, and event-ID idempotence stays global. Monitor database size and
+`cleanup_failures`; sustained ingestion beyond cleanup capacity is the signal to revisit that.
+
+The API's `at` field is the `decided_at` column; `ingested_at` is the row's insertion timestamp.
+`Store.Recent` takes the newest `decision_history_size` rows (200 by default, at most
+1,000) inside the retention window and returns them oldest first.
+
+The schema is Goose SQL in `history_migrations/history/`, tracked by `egress_goose_version`.
+Staging and testing each hold an `egress` database in their CNPG cluster. Both use Goose;
+Alembic is no longer a migration owner. Existing history rows and
+the inert `egress_alembic_version` table remain in place. The proxy migrates before starting its
+listeners or workers, so a failed migration keeps that Pod unready while previous proxies keep enforcing.
+
+## Open questions
+
+- **Whether an agent also reads its own recent decisions.** Shared history answers "why was I
+  denied", and a failure the agent can diagnose itself is the practical win; nothing serves it to
+  the agent-facing surface today.
+- **Whether that surface versions separately from the operator API.** Agents are long-lived and
+  roll independently of the app, so the two may not be able to move together for long.
+
+## Replica lifecycle
+
+Readiness (the empty health service and `GetHealth`'s `ready`) and every CONNECT/HTTP admission share `Index` availability: all four watched kinds must be
+initially synced, and none may be failing. A kind fails when one of its list or watch requests fails
+or client-go's watch error handler reports an abnormal end, and recovers on its next successful list
+or watch; `GetHealth` names each failing kind with its error and since when. client-go owns the
+watch timeouts, resumes and relists, and its HTTP/2 health checks turn a dead connection into a
+failed request. DB health does not participate. The `livez` health service only proves the admin listener answers; a recoverable watch outage does not
+cause a restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
+a changed egress-policy decision denies that admission without forwarding or replay.
+Revocation is eventually observed independently by each watch, not globally linearizable.
+
+SIGTERM/SIGINT marks the index draining, so readiness fails and the listener closes at once.
+Admitted requests (HTTP responses, WebSockets, gRPC streams) drain for up to 20 seconds, then
+the remaining tunnels are closed; idle tunnels close immediately. The shared gRPC server shuts down
+within the same bound and the decision queue is flushed for at most five seconds.
+Deployment termination grace must cover those budgets.
+There is no transparent TCP/HTTP2 migration, request replay, or promise to finish an unbounded stream.
+Staging runs two replicas with `RollingUpdate` (`maxUnavailable: 0`, `maxSurge: 1`) and a
+PodDisruptionBudget of one available, so an image roll never takes a ready endpoint away before its
+replacement is ready, and a voluntary eviction keeps one.
+
+Both replicas are pinned to the `hil-ovh` zone by node selector with no anti-affinity or topology
+spread, so they may share a node; the PDB limits voluntary evictions, not involuntary failures.
+Testing runs one replica with `Recreate`. Both use a 60-second
+termination grace and gRPC health probes on the admin listener: readiness on the empty service, liveness on `livez`.

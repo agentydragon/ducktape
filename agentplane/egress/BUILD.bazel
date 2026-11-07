@@ -60,6 +60,8 @@ py_test(
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
+        "//agentplane/egress:egress_rules_pb2",
+        "//agentplane/egress:egress_rules_pb2_grpc",
         "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/testing:kubernetes",
@@ -217,6 +219,17 @@ proto_library(
     deps = [
         "//agentplane/proto:identity_proto",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "egress_rules_pb2",
+    deps = [":egress_rules_proto"],
+)
+
+py_grpc_service_library(
+    name = "egress_rules_pb2_grpc",
+    proto = ":egress_rules_proto",
+    py_proto = ":egress_rules_pb2",
 )
 
 go_proto_library(
