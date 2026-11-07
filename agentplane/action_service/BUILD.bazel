@@ -4,7 +4,6 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
@@ -181,13 +180,6 @@ ts_proto_library(
     ],
 )
 
-# The agent-facing reference. Operator-only RPCs are a second proto so that this document describes only what an
-# agent may call.
-proto_openapi(
-    name = "action_service_openapi",
-    proto = ":action_service_proto",
-)
-
 proto_library(
     name = "operator_action_service_proto",
     srcs = ["operator_action_service.proto"],
@@ -280,10 +272,8 @@ go_library(
     name = "main_lib",
     srcs = [
         "config.go",
-        "docs.go",
         "main.go",
     ],
-    embedsrcs = [":action_service_openapi"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service",
     deps = [
         ":action_service_go_proto",
@@ -292,7 +282,6 @@ go_library(
         ":web_push_service_go_proto",
         "//agentplane/action_service/api",
         "//agentplane/action_service/catalog",
-        "//agentplane/action_service/docs",
         "//agentplane/action_service/informer",
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/mcpexec",
@@ -306,7 +295,6 @@ go_library(
         "//agentplane/action_service/worker",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/bearer",
-        "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/observability",
@@ -322,7 +310,6 @@ go_library(
         "//agentplane/workload_auth/grpc",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
-        "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_github_spf13_viper//:viper",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/runtime",
@@ -371,13 +358,6 @@ go_test(
         "//agentplane/testing/configtest",
         "//agentplane/workload_auth/auth",
     ],
-)
-
-go_test(
-    name = "docs_test",
-    srcs = ["docs_test.go"],
-    embed = [":main_lib"],
-    deps = ["//agentplane/testing/agentdocs"],
 )
 
 go_test(

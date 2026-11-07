@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -98,7 +97,7 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	connection, err := grpc.NewClient(strings.TrimPrefix(service.url, "http://"), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,17 +108,5 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a reader's GetPushConfig over gRPC: %v", err)
 	}
-	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/operator/push/config", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	call.Header.Set("Authorization", "Bearer "+readerToken)
-	response, err := http.DefaultClient.Do(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusUnauthorized {
-		t.Errorf("a reader's GetPushConfig over HTTP: %d", response.StatusCode)
-	}
+
 }

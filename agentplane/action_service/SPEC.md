@@ -6,15 +6,13 @@ Caller-provided provenance never assigns authority. A caller-scoped idempotency 
 once: a repeated key is refused, and the request it named is recovered by looking it up by key,
 never by another submission.
 
-The service publishes an agent overview at `/llms.txt`, linked Markdown workflow guides under
-`/docs/agents/`, and request/response schemas at `/openapi.json`. These static documentation
-surfaces do not require caller admission.
-The shared guide assets also supply MCP Edge's read-only `get_guide` tool. Documentation describes
+The `agentplane actions guide` command and MCP Edge's read-only `get_guide` tool use the shared
+agent-facing Markdown guide assets. Documentation describes
 workflows; live Action schemas, policy and backend admission determine current capabilities and access.
 
 The public `LinkageService` gRPC API completes MCP OAuth callbacks and returns the shared Client ID Metadata
 Document. It requires no bearer: callback state is a single-use, expiring capability and the metadata is public.
-The existing HTTP callback and document are also served during the transport migration.
+The app and MCP edge present these operations over HTTP at the public protocol boundary.
 
 ## Durable storage
 
@@ -184,13 +182,13 @@ notification content or decision buttons, and owns their presentation.
 
 `ActionService.GetActionRequest` reads the current receipt once. `WatchActionRequest` streams that
 receipt immediately and then on committed changes until `WatchUntil` holds or the client deadline
-ends; the last received receipt is current state. The HTTP/JSON facade exposes the generated stream
-route described by `/openapi.json`. The receipt read has no `wait_seconds` or `wait_until` query
+ends; the last received receipt is current state. The app's generated HTTP/JSON facade exposes the stream.
+The receipt read has no `wait_seconds` or `wait_until` query
 parameters.
 
 Every Action Service watch bounds waiting for a stream write to clear transport backpressure at five
 seconds; an exceeded bound ends the stream with `DEADLINE_EXCEEDED`. That bound does not guarantee
-when the peer receives a frame: the HTTP/2 facade may have queued it before the flush. Idle drain
+when the peer receives a frame: a facade may have queued it before the flush. Idle drain
 behavior keeps each watch's protocol: watches with a `reconnect_required` frame send it when no write
 is outstanding, while a drain that ends an outstanding write ends the stream without another frame.
 
@@ -219,7 +217,7 @@ ServiceAccount, then calls Action Service with that workload identity. Action Se
 serve the external MCP or OAuth endpoints.
 
 The edge exposes a generic MCP frontend backed by Action Service, with the same catalog,
-admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
+admission, Decision, Execution, and receipt authority as its gRPC interface. Its fixed tools
 discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result
 reads as the tool that ran answered, an MCP backend's own result exactly with every content block, and a
 request without one says what it is waiting on or why it has none. A submission answers the same way once
@@ -250,12 +248,12 @@ authorization.
 Refresh and bearer admission resolve current canonical grant validity and the current Connection
 binding. External receipts and idempotency are ServiceAccount-scoped. Connections retain their grant
 history; accepted Actions retain their submitting account independently of later Connection changes.
-In-cluster Actions RPCs and their HTTP facade use live ServiceAccount authentication; workload tokens
+In-cluster Actions RPCs use live ServiceAccount authentication; workload tokens
 do not authenticate to `/mcp`. Neither path accepts operator credentials as a caller bypass. OAuth protocol state is durable across replacement and replicas. Recoverable upstream refresh
 tokens are stored in the service database; issued opaque token values are stored only as hashes. Enabling these contracts does not imply deployed client acceptance.
 
 MCP cancellation uses the same owner-only, pre-dispatch-claim cutoff and typed outcomes as the
-HTTP cancellation route. It requires no version and never stops in-progress execution. This is
+gRPC cancellation method. It requires no version and never stops in-progress execution. This is
 an explicit tool operation, separate from cancelling or disconnecting a receipt wait.
 
 ## Execution ownership and shutdown
@@ -266,7 +264,7 @@ Renewal proves that the local owner is alive, not that the backend is making pro
 ownership, inability to renew, or an execution deadline stops local waiting and reports an unknown
 outcome. None is evidence that a remote side effect stopped or permission to replay it.
 
-Termination removes readiness and refuses new traffic before waiting for HTTP shutdown. Queued
+Termination removes readiness and refuses new traffic before draining gRPC. Queued
 work is left unclaimed for another replica. A claim already in progress belongs to the draining
 replica, which keeps execution and executor liveness active while waiting for its outcome.
 Completed work is persisted before adapters and database connections close. The drain has a bounded

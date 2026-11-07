@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "discovery.go",
         "flow.go",
-        "http.go",
         "linkage.go",
         "refresh.go",
         "rpc.go",
@@ -30,7 +29,6 @@ go_library(
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_oauth2//:oauth2",
     ],
@@ -54,6 +52,7 @@ go_test(
     embed = [":linkage"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/action_service:linkage_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
         "//agentplane/action_service/migrations",
         "//agentplane/action_service/store",
@@ -63,6 +62,8 @@ go_test(
         "//agentplane/testing/postgres",
         "@com_github_lib_pq//:pq",
         "@io_k8s_apimachinery//pkg/util/wait",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )

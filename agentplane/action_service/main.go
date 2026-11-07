@@ -1,8 +1,5 @@
-// Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
-// `ActionService`'s submission, request reads, watches and cancellation, its catalog reads and watch and the Action
-// policy, `OperatorActionService`'s Decisions and MCP server linkages, and `WebPushService`, over gRPC and their HTTP
-// facade under /v1/, the MCP linkage's OAuth callback and Client ID Metadata Document, the agent documentation, the
-// standard gRPC health service and the process's Prometheus metrics at /metrics. It runs the dispatch worker, which
+// Command actions is the Go Action Service, over the Action Service's PostgreSQL database. It serves Action,
+// operator, linkage, Web Push and health APIs over gRPC. It runs the dispatch worker, which
 // runs the Actions of the sandbox, orchestration_v1 and MCP groups, refreshes linked OAuth tokens, pushes requests
 // awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index equal to the API
 // server's.
@@ -13,7 +10,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"maps"
 	"net"
@@ -29,7 +25,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
-	"github.com/agentydragon/ducktape/agentplane/action_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
@@ -46,7 +41,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -60,7 +54,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -74,8 +67,6 @@ const (
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop, as the Python
 	// service's graceful shutdown does.
 	shutdownGrace = 5 * time.Second
-	// readHeaderTimeout bounds a request's headers.
-	readHeaderTimeout = 10 * time.Second
 	// maxConnections and idleConnections size the pool as the Python service's: four kept and two more under load.
 	maxConnections  = 6
 	idleConnections = 4
@@ -336,23 +327,8 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	return api.NewGate(options), nil
 }
 
-// newRoutes is the listener's HTTP routes but the linkages': the HTTP form of the gRPC services under /v1/ (served by
-// httpFacade), the agent documentation, which needs neither the database nor a peer, and the metrics.
-func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
-	agentGuides, err := fs.Sub(docs.Agents, "agents")
-	if err != nil {
-		return nil, err
-	}
-	routes := http.NewServeMux()
-	routes.Handle("/v1/", httpFacade)
-	routes.Handle("/metrics", promhttp.Handler())
-	facade.MountAgentDocs(routes, agentGuides, openAPI)
-	return routes, nil
-}
-
-// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
-// tokens, delivers Web Push and keeps the policy index until ctx ends or the listener fails. gRPC and the HTTP routes
-// share the listener, each served natively (graceful.Shared), so a sandbox reaches both at one address. The worker,
+// serve answers gRPC on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
+// tokens, delivers Web Push and keeps the policy index until ctx ends or the listener fails. The worker,
 // the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listener's shutdown, and serve
 // returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
@@ -507,30 +483,6 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	// The callback is public: its single-use state, not a bearer, authorizes completion.
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
-	// The facade is the listener's own client: its gRPC calls come back to the gRPC server sharing it, so the
-	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
-	// while draining.
-	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopFacade()
-	registrations := []facade.Registration{
-		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
-		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
-		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
-	}
-	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, registrations...)
-	if err != nil {
-		return err
-	}
-	routes, err := newRoutes(httpFacade)
-	if err != nil {
-		return err
-	}
-	// The OAuth provider's redirect to the callback and the authorization server's fetch of the document carry no
-	// bearer, so they are plain HTTP beside the facade.
-	linkages.Mount(routes)
-	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
-	shared := graceful.NewShared(listener, grpcServer, server)
-
 	working, drain := context.WithCancel(ctx)
 	var supervising sync.WaitGroup
 	for _, executor := range supervisors {
@@ -577,8 +529,8 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		defer close(worked)
 		dispatcher.Run(working, wakeups)
 	}()
-	failed := make(chan error, 3)
-	shared.Serve(failed)
+	failed := make(chan error, 1)
+	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(listener)) }()
 	var result error
 	select {
 	case result = <-failed:
@@ -590,7 +542,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
-	shared.Shutdown(stopped)
+	graceful.Stop(stopped, grpcServer)
 	<-worked
 	supervising.Wait()
 	return result

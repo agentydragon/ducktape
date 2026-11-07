@@ -1,12 +1,12 @@
 # Agentplane Action Service
 
 This package is the standalone canonical coordinator for ActionRequests. It owns its PostgreSQL
-schema and `/v1/action-requests` lifecycle; the Agentplane integration app, Haku Console, BFFs, and
+schema and ActionRequest lifecycle; the Agentplane integration app, Haku Console, BFFs, and
 external harnesses remain clients rather than state owners.
 
-Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked lifecycle, recovery and
-Kubernetes/grant workflows. The generated HTTP/JSON API reference is `/openapi.json`; update the guides
-when those contracts change.
+Agent entry point: `agentplane actions guide` ([source](docs/agents/llms.txt)), with lifecycle,
+recovery and Kubernetes/grant workflows. The service API is defined by its protobuf contracts;
+the integration app exposes its own generated HTTP/JSON facade for browser clients.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
@@ -401,12 +401,13 @@ and on a fresh connection after failure. Correlate with backend/proxy evidence; 
 retry `tools/call` or report recovery merely because catalog refresh succeeds. Deployment and live
 reproduction require separate authorization; unit/HTTP-peer tests do not establish the live cause.
 
-Operators follow linkage on the generated HTTP/JSON facade at
+Operators follow linkage through the app's generated HTTP/JSON facade at
 `GET /v1/operator/mcp-servers:watch`: newline-delimited ProtoJSON frames contain bounded snapshot
 chunks, `snapshot_complete`, later `upsert` frames, or `reconnect_required`. They manage it with
 `POST /v1/operator/mcp-servers/{server_id}/linkage/start` and `POST .../linkage/disconnect`; the
-provider returns to the unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only
-an unconsumed, unexpired flow matching `state`. Operators also read `GET /v1/action-groups` directly
+provider returns to the app's unauthenticated `GET /mcp-linkage/callback?state&code`, which calls
+`LinkageService.CompleteCallback` with the single-use state. Operators also read `GET /v1/action-groups`
+through the app's facade
 (it accepts either bearer scheme): the same group diagnostics above (lifecycle, reason, last
 discovery, failures, retry time), for every mcp-kind group regardless of auth mechanism, so a
 static-bearer group's connectivity is visible to operators too, not only OAuth-linked ones. Startup
@@ -416,9 +417,9 @@ joins supervisors and bounded connection cleanup after draining service tasks, t
 and database resources.
 
 Each linked MCP server is configured with either a fixed `client_id` or `use_shared_cimd`. The
-Action Service has one `mcp_client_metadata` setting for its public CIMD identity, served without
-authentication at `/oauth/client-metadata.json` on its origin; that exact path is added to its
-public HTTPRoute. The document uses its own URL as `client_id`, lists the callbacks of every
+Action Service has one `mcp_client_metadata` setting for its public CIMD identity. The MCP edge serves
+the document without authentication at `/oauth/client-metadata.json`, retrieving it from Actions over
+gRPC. The document uses its own URL as `client_id`, lists the callbacks of every
 configured MCP linkage using it, and declares public token authentication. Link start uses the
 shared CIMD only when authorization-server discovery advertises
 `client_id_metadata_document_supported`; it fails closed otherwise.
@@ -604,7 +605,7 @@ the integration app's ordinary operator session and canonical Decision contract.
 ## Shutdown budgets
 
 SIGTERM/SIGINT mark readiness unavailable, stop admission, and drain dispatch and background
-supervisors. The Go HTTP server allows five seconds for open calls to finish before closing its
+supervisors. The gRPC server allows five seconds for open calls to finish before closing its
 connections; execution shutdown is owned by the worker. Both deployments allow 60 seconds for
 termination. Go probes use gRPC health: the default readiness service and `livez` for liveness.
 See [service shutdown](main.go) and [execution ownership](SPEC.md#execution-ownership-and-shutdown).
