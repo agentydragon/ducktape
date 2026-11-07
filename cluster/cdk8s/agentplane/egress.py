@@ -567,8 +567,7 @@ class Egress(Construct):
             ],
             "projected_token_audiences": [KUBERNETES_AUDIENCE],
             "tls_passthrough_targets": [
-                f"{service.fqdn}:{service.port.number}"
-                for service in (self.admin, *tls_passthrough_services)
+                f"{service.fqdn}:{service.port.number}" for service in (self.admin, *tls_passthrough_services)
             ],
             "forward": Listener(
                 listen_address=f"0.0.0.0:{self.proxy.pod_port}",
@@ -818,9 +817,7 @@ class Egress(Construct):
                     runners.cilium, cilium.endpoint_labels(namespace, "sandbox"), ports=[self.proxy.pod_port]
                 ),
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.admin.pod_port]),
-                *(
-                    [IngressRule.from_endpoints(self.proxy.pods.cilium, ports=[self.admin.pod_port])]
-                ),
+                IngressRule.from_endpoints(self.proxy.pods.cilium, ports=[self.admin.pod_port]),
             ],
             egress=[
                 database.egress(namespace),

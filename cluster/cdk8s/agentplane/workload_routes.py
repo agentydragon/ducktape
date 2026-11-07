@@ -4,13 +4,10 @@ from pathlib import Path
 
 from agentplane.egress.sidecar_config import RUNNER_TLS_MOUNT_PATH, WorkloadRoute
 from agentplane.environment_runtime_transport.config import TLS
-from cluster.cdk8s.agentplane import actions, egress, llm_ingress, notifications, runner_gateway, session_dispatcher
-from cluster.cdk8s.service_ref import ServiceRef
+from cluster.cdk8s.agentplane import actions, llm_ingress, notifications, runner_gateway, session_dispatcher
 
 
-def sidecar_routes(namespace: str, *, rules_origin: ServiceRef | None = None) -> dict[str, WorkloadRoute]:
-    rules_origin = rules_origin or egress.agent_api(namespace)
-    rules_destination = rules_origin
+def sidecar_routes(namespace: str) -> dict[str, WorkloadRoute]:
     notification_origin = notifications.http_service(namespace)
     notification_destination = notifications.workload_service(namespace)
     dispatcher_origin = session_dispatcher.service(namespace)
@@ -32,11 +29,6 @@ def sidecar_routes(namespace: str, *, rules_origin: ServiceRef | None = None) ->
         tls=security,
     )
     return {
-        f"{rules_origin.fqdn}:{rules_origin.port.number}": WorkloadRoute(
-            upstream=f"{rules_destination.fqdn}:{rules_destination.port.number}",
-            server_uri="spiffe://agentplane/egress-proxy",
-            tls=security,
-        ),
         f"{notification_origin.fqdn}:{notification_origin.port.number}": WorkloadRoute(
             upstream=f"{notification_destination.fqdn}:{notification_destination.port.number}",
             server_uri=notifications.WORKLOAD_URI,

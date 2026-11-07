@@ -22,30 +22,6 @@ func rulesWith(targets string) string {
 		{"hosts":["open.example.test"],"credential":null}]}]}`, targets)
 }
 
-func TestHTTPBearerCredentialIsOptional(t *testing.T) {
-	for _, tc := range []struct {
-		name, credential, wantAuthorization string
-	}{
-		{name: "unset"},
-		{name: "configured", credential: testCredential, wantAuthorization: "Bearer " + testCredential},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-				reply(w, http.StatusOK, `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}`)
-			})
-			env := map[string]string{"AGENTPLANE_EGRESS_URL": f.URL}
-			if tc.credential != "" {
-				env["AGENTPLANE_EGRESS_CREDENTIAL"] = tc.credential
-			}
-			code, _, stderr := invoke(env, "egress", "rules", "--json")
-			requests := f.requests(http.MethodGet)
-			if code != 0 || len(requests) != 1 || requests[0].authorization != tc.wantAuthorization {
-				t.Fatalf("exit %d, requests %+v, stderr %q; want one request with Authorization %q", code, requests, stderr, tc.wantAuthorization)
-			}
-		})
-	}
-}
-
 func TestRulesTextShowsHowToPresentTheCredential(t *testing.T) {
 	const rule = "test-policy  api.example.test  GET  *  credential test-credential: send "
 	const openRule = "test-policy  open.example.test  *  *"

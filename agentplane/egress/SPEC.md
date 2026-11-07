@@ -6,31 +6,19 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Configuration
 
-The forward listener is configured by `forward.listen_address`, optional serving `forward.tls`,
-and an explicit `forward.auth` list. `kubernetes_bearer` requires an audience; `spiffe` requires
-TLS and trust roots. The sidecar names its central proxy as `proxy.address` (`host:port`) and
-selects a typed `proxy.transport`: plaintext bearer, TLS bearer, or TLS with a SPIFFE client
-certificate. Each method owns its credential settings. Unknown fields, unsupported or duplicate
-modes, incomplete credentials and incompatible transport/auth combinations fail startup.
+The forward listener is configured by `forward.listen_address`, serving `forward.tls`, and an
+explicit `forward.auth` list containing `spiffe` and its trust roots. These structured settings
+are file-only. The sidecar names its central proxy as `proxy.address` (`host:port`) and selects
+TLS with a SPIFFE client certificate. Unknown fields, unsupported or duplicate modes, incomplete
+credentials and incompatible transport/auth combinations fail startup.
 
 ## Identity
 
-- The single forward-proxy listener on port 8888 takes an explicit authentication allowlist. The
-  staging default is token-only and plaintext: every CONNECT and request carries
-  `Proxy-Authorization: Bearer <token>`, the Pod's projected ServiceAccount token for the configured
-  bearer audience. A tunnel's inner requests inherit the tunnel's authenticated context. The proxy
-  strips the hop header and retains its bearer only after successful verification; malformed or
-  rejected replacement headers clear earlier connection context rather than falling back to it.
-- The optional `spiffe` mode adds TLS to that same listener, with the bearer mode still allowed for
-  clients without a certificate. It is off by default and enabled together with a server
-  certificate, trust bundle, Sandbox RBAC and runner ingress rule. In this mixed configuration all
-  clients use TLS. The proxy presents
-  `spiffe://agentplane/egress-proxy`, issued by the environment's Runner Gateway issuer with the
-  server-auth EKU; the trust-manager cluster-internal CA bundle verifies runner clients. The TLS
-  verifier requires the client's explicit client-auth EKU and the canonical URI
+- The single forward listener requires TLS and an explicit SPIFFE authentication entry with trust
+  roots. It presents `spiffe://agentplane/egress-proxy`, issued by the environment's Runner issuer
+  with serverAuth. Clients require clientAuth and the canonical URI
   `spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`.
-- Exactly one enabled credential must be presented: no credential, a disabled mode, and a bearer
-  together with an SVID are refused before policy evaluation. TLS by itself does not select SPIFFE.
+  Plaintext and bearer-only hops are refused, and an additional bearer never replaces an SVID.
 - Each SVID-authenticated request, including requests inherited through a CONNECT tunnel, checks
   the leaf's validity and EKU again and reads the named Sandbox through an uncached API client.
   The live object must still have the URI's UID, a current runner credential whose `id` and
@@ -44,30 +32,24 @@ modes, incomplete credentials and incompatible transport/auth combinations fail 
   evaluation. There is no indefinitely cached Sandbox identity.
 - The resulting policy subject is exactly the Sandbox-owned ServiceAccount at
   `Sandbox.namespace/Sandbox.name`. Neither a certificate subject DN nor a caller-supplied header
-  selects the subject, and the proxy does not read Pods or ServiceAccounts. The optional Sandbox
+  selects the subject, and the proxy does not read Pods or ServiceAccounts. The Sandbox
   reader permission in the proxy's own namespace grants only `get`, `list` and `watch` on Sandboxes.
   A Sandbox name no binding names reaches no rule.
 - A request authenticated with SPIFFE does not need a hop bearer and must not carry one. A sidecar's
-  separately projected workload token is forwarded under `X-Agentplane-Workload-Token` for a
+  separately projected Kubernetes token is forwarded under `X-Agentplane-Workload-Token` for a
   `projectedWorkloadToken` credential. The proxy keeps it only when TokenReview proves the same
   ServiceAccount and Pod UID as the live Sandbox binding and the credential names its configured
   audience; a mismatched token is dropped and a rule needing it refuses with
   `credential-unavailable`.
-- A token on the forward listener is proven by TokenReview against its audience, which
-  names the Pod the API server bound it to; a deleted or replaced Pod fails there once the proxy's
-  reuse of an acceptance (30 s, <../workload_auth/README.md>) lapses. The subject is the
-  ServiceAccount the Pod runs as, whatever else owns the Pod. Authenticating a workload is not
-  admitting it: a subject no binding names reaches no rule.
-- The connection's source address is not checked. A token copied out of its Pod and presented from
-  elsewhere in the cluster is accepted for as long as it is valid, and is refused the same rules as
-  the Pod it was taken from. An SVID copied from a runner is likewise only the transport proof for
-  the live Sandbox and current runner binding named by that SVID.
-- Every bearer-authenticated request reviews its hop bearer with the API server, including
-  requests inside an existing tunnel; an earlier successful review does not authorize a later
-  request. The SPIFFE mode repeats the certificate validity and live Sandbox checks for each request,
-  including those inside a tunnel.
+- A copied SVID proves only the live Sandbox and current runner binding named by that SVID.
+  Each request, including one inherited through a tunnel, repeats validity and live-state checks.
 
 ## Decision
+
+- Exact configured first-party TLS authorities use opaque CONNECT after hop authentication.
+  Each destination terminates TLS, resolves the workload SVID and applies its own authorization.
+  Central cannot read these calls or assert their caller. Other destinations retain normal rules
+  and credential substitution.
 
 - A subject's egress rules come from `PolicyBinding`s. A `PolicyBinding` names one namespaced
   ServiceAccount and `PolicySet` names, and grants the sets' `egress` rules by existing: creating one
@@ -90,24 +72,16 @@ modes, incomplete credentials and incompatible transport/auth combinations fail 
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior; `authenticatedWorkloadToken`, using the
-  bearer from a successfully authenticated bearer hop; or `projectedWorkloadToken`, naming the
-  audience of a token the sidecar presented on the hop. A projected token is resolved per request
-  and must still be bound to the caller being decided; absent, stale, or mismatched context refuses
-  with `credential-unavailable`. An SVID hop supplies no bearer for `authenticatedWorkloadToken`,
-  so a rule using that source refuses rather than forwarding an empty credential.
-- **A projected token is the caller's own identity minted for somewhere else.** The hop bearer
-  carries this proxy's audience, so a destination validating its own — the API server against
-  `--api-audiences` — refuses it; the sidecar projects a second token per configured audience,
-  presents each as `X-Agentplane-Workload-Token: <audience> <token>`, and the proxy consumes that
-  header rather than forwarding it. A presented token is kept only when a TokenReview for that
-  audience resolves it to the same Pod the hop authenticated, and only for an audience this
-  deployment configured; one that fails either is dropped, so the rule naming it refuses with
-  `credential-unavailable` rather than substituting something else. The sidecar drops a client's own
-  copy of the header, and the workload can read neither token: both are projected into the sidecar
-  alone. A tunnel's inner requests inherit what its CONNECT presented, as they inherit its identity.
-  On SPIFFE-authenticated requests the reviewed account namespace/name and Pod UID are compared to the live
-  Sandbox-owned account and runner binding; no ServiceAccount UID is inferred from the certificate.
+  `secretRef`, preserving the central-held Secret behavior; or `projectedWorkloadToken`, naming the
+  audience of a token the sidecar presented on the hop. Absent, stale or mismatched context refuses
+  with `credential-unavailable`.
+- **Kubernetes keeps its projected workload credential.** The sidecar sends it as
+  `X-Agentplane-Workload-Token: <audience> <token>`, and central consumes this header rather than
+  forwarding it. TokenReview must resolve it to the Sandbox's own ServiceAccount and the Pod UID
+  recorded in its live runner binding, for a configured audience. A failed review drops that token;
+  a rule requiring it refuses with `credential-unavailable`. The sidecar replaces caller-supplied
+  copies of the header, and the workload cannot read the projection. A tunnel's inner requests
+  inherit the reviewed token from CONNECT. Other platform services verify SVIDs themselves.
 - A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
   `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
   `basicUsername` and `basicPassword` (the halves of a `Basic base64(username:password)` payload),
@@ -162,8 +136,7 @@ modes, incomplete credentials and incompatible transport/auth combinations fail 
   VM guests). The shared gRPC listener uses the forward listener's authentication policy,
   certificate, trust roots and bearer audience. In SVID mode the sidecar establishes destination
   TLS through an exact opaque CONNECT route; the destination verifies the actual peer and live
-  Sandbox credential. In legacy bearer mode the direct route replaces the inert bearer with its
-  own Pod-bound workload token. No caller header selects the subject.
+  Sandbox credential. No caller header selects the subject.
   The response contains only that ServiceAccount and its redacted rules: hosts, methods, paths,
   credential descriptions, placeholders and presentation targets, never Secret names, keys or
   values. Missing, ambiguous, invalid or stale credentials fail before reading rules; unavailable
