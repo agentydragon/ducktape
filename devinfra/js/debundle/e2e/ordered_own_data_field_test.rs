@@ -31,6 +31,49 @@ fn assert_property_frontier(graph: &DependencyGraphReport, later: usize, earlier
     );
 }
 
+fn assert_binding_own_property_frontier(
+    graph: &DependencyGraphReport,
+    later_binding: &str,
+    earlier_binding: &str,
+    property: &str,
+) {
+    let source_unit = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .unwrap_or_else(|| panic!("missing source unit for {binding}: {graph:#?}"))
+            .id
+            .clone()
+    };
+    let source = source_unit(later_binding);
+    let target = source_unit(earlier_binding);
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && edge.source == source
+                && edge.target == target
+                && serde_json::to_value(&edge.sequenced_cause).unwrap()["rule"] == "cell_order"
+                && serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
+                    .as_array()
+                    .is_some_and(|conflicts| {
+                        conflicts.iter().any(|conflict| {
+                            conflict["kind"] == "write_after_read"
+                                && conflict["cell"]["kind"] == "own_property"
+                                && conflict["cell"]["property"] == property
+                                && conflict["cell"]["origin"].as_u64().is_some()
+                        })
+                    })
+        }),
+        "own-property {property} writer {later_binding} must follow reader {earlier_binding}: {:#?}",
+        graph.edges,
+    );
+}
+
 fn assert_sequenced_order(graph: &DependencyGraphReport, later: usize, earlier: usize) {
     let target = &graph
         .nodes
@@ -402,4 +445,136 @@ fn nested_local_reads_and_writes_compose_into_the_callers_heap_frontier() {
     let graph = fixture.dependency_graph();
     assert_property_frontier(&graph, 2, 1);
     assert_sequenced_order(&graph, 3, 2);
+}
+
+#[test]
+fn a_root_dense_array_length_read_orders_against_push_and_preserves_output() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
+            vec![
+                logical_module("array", &[Member::new("store")]),
+                logical_module(
+                    "read",
+                    &[Member::new("gamma").with_initializer_purity()],
+                ),
+                logical_module("push", &[Member::new("alpha")]),
+                logical_module_with_anon("observe", &[], &["console.log(gamma, alpha);"]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "0 1\n");
+    assert_binding_own_property_frontier(&fixture.dependency_graph(), "alpha", "gamma", "length");
+}
+
+#[test]
+fn push_cannot_be_forced_before_a_root_array_length_read() {
+    let source = "const store = [];\nfunction append() { return store.push(1); }\nconst gamma = store.length;\nconst keep = append;\nconst alpha = append();\nconsole.log(gamma, alpha);\n";
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("array", &[Member::new("store")]),
+                logical_module("push", &[Member::new("append"), Member::new("alpha")]),
+                logical_module(
+                    "read",
+                    &[
+                        Member::new("gamma").with_initializer_purity(),
+                        Member::new("keep"),
+                    ],
+                ),
+                logical_module_with_anon("observe", &[], &["console.log(gamma, alpha);"]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_node_output(
+        &rejected
+            .source_root
+            .join(format!("{}.js", rejected.chunk_id)),
+        "0 1\n",
+        "",
+    );
+    assert_gate_rejected_banner(&rejected.entry_path(), &rejected.report_path("cycles.json"));
+    assert_node_output(&rejected.entry_path(), "1 1\n", "");
+
+    let graph = rejected.dependency_graph();
+    assert_binding_own_property_frontier(&graph, "alpha", "gamma", "length");
+    let cycles = rejected.cycles();
+    assert!(
+        cycles.iter().any(|cycle| {
+            cycle["rejection"] == "mutual_constraining_cycle"
+                && cycle["modules"].as_array().is_some_and(|modules| {
+                    modules
+                        .iter()
+                        .any(|module| module.as_str().is_some_and(|path| path.contains("/read")))
+                        && modules.iter().any(|module| {
+                            module.as_str().is_some_and(|path| path.contains("/push"))
+                        })
+                })
+        }),
+        "the forced module inversion must be refused as a read/push cycle: {cycles:#?}"
+    );
+}
+
+#[test]
+fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
+    let getter = run_fixture(FixtureOpts::new(
+        "const events = [];\nconst record = { get length() { events.push('get'); return 7; } };\nconst gamma = record.length;\nconsole.log(gamma, events.join(','));\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("events"),
+                Member::new("record"),
+                Member::new("gamma"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&getter, "7 get\n");
+    assert_no_fallback_suppressing_authority(&getter, "gamma", "length getter");
+
+    let unknown = run_fixture(FixtureOpts::new(
+        "const store = Math.random() ? [] : [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("store"),
+                Member::new("gamma"),
+                Member::new("alpha"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&unknown, "0 1\n");
+    assert_no_fallback_suppressing_authority(&unknown, "gamma", "unknown or multi-array receiver");
+
+    let holey = run_fixture(FixtureOpts::new(
+        "const store = [, 1];\nconst gamma = store.length;\nconst alpha = store.push(2);\nconsole.log(gamma, alpha);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("store"),
+                Member::new("gamma"),
+                Member::new("alpha"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&holey, "2 3\n");
+    assert_no_fallback_suppressing_authority(&holey, "gamma", "holey array");
+
+    let pooled = run_fixture(FixtureOpts::new(
+        "function make() { return []; }\nconst store = make();\nconst spare = make();\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("make"),
+                Member::new("store"),
+                Member::new("spare"),
+                Member::new("gamma"),
+                Member::new("alpha"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&pooled, "0 1\n");
+    assert_no_fallback_suppressing_authority(&pooled, "gamma", "pooled array literal site");
 }
