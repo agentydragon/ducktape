@@ -697,6 +697,7 @@ pub struct FixtureOpts<'a> {
     pub raw_spec_keys: Vec<(&'a str, serde_json::Value)>,
     pub source: &'a str,
     pub logical_modules: Vec<LogicalModuleEntry>,
+    pub target_dir: &'a str,
     /// Optional `chunk_renames` entry for this chunk. When set, the
     /// spec's top-level `chunk_renames` map carries the rename
     /// members; the materializer applies them in-place to bindings
@@ -785,6 +786,7 @@ impl<'a> FixtureOpts<'a> {
             raw_spec_keys: Vec::new(),
             source,
             logical_modules,
+            target_dir: "modules",
             chunk_renames: None,
             chunk_id: "static/app",
             unassigned_mode: unassigned_mode_catchall_file(None),
@@ -814,6 +816,11 @@ impl<'a> FixtureOpts<'a> {
     /// See [`Self::browser_harness`].
     pub fn with_browser_harness(mut self) -> Self {
         self.browser_harness = true;
+        self
+    }
+
+    pub fn with_target_dir(mut self, target_dir: &'a str) -> Self {
+        self.target_dir = target_dir;
         self
     }
 
@@ -1418,7 +1425,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         materialize_logical_modules: MaterializeLogicalModulesConfig {
             prune_other_chunks: opts.prune_other_chunks,
             report_out_dir: Some(setup.report_root.clone()),
-            target_dir: "modules".to_string(),
+            target_dir: opts.target_dir.to_string(),
             ..Default::default()
         },
         write_js_tree: Some(WriteJsTreeConfig {

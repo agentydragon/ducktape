@@ -1811,70 +1811,85 @@ fn candidate_module_initialization_checks_every_body_and_foreign_reentry() {
 }
 
 #[test]
-fn candidate_module_initialization_rejects_output_path_shadowing() {
+fn candidate_module_initialization_checks_output_path_shadowing() {
     const PROVIDER: &str = "export let count = 0;\nexport function wrap(record) { count++; return {}; }\nexport function value(record) { return count; }\n";
-    let (staged, _fixture) = staged(
-        FixtureOpts::new(
-            "import { wrap as foreignWrap, value as foreignValue } from './peer.js';\nfunction wrap(record) { return {}; }\nfunction value(record) { return 99; }\nconst peerMarker = foreignValue({});\nconst wrapped = foreignWrap({});\nconst observed = foreignValue({});\nconsole.log(observed, typeof wrapped);\n",
-            vec![
-                logical_module("peer", &[Member::new("wrap"), Member::new("value"), Member::new("peerMarker")]),
-                logical_module("work", &[Member::new("wrapped")]),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_node_output(
-        &staged.root().join("snapshot/static/app.js"),
-        "1 object\n",
-        "",
-    );
-    let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
-    for (case, invocation) in [
-        ("provider_shadow_direct", &direct),
-        ("provider_shadow_saved", &saved),
-    ] {
-        let diagnostics = save_relocation_reports(
-            &invocation.output_root().join("reports/tree"),
-            "static/app",
-            case,
-        );
-        for file in ["entry.js", "peer.js", "work.js"] {
-            fs::copy(
-                invocation.output_root().join("app/static/app").join(file),
-                diagnostics.join(file),
+    for (layout, target_dir, shadows_provider) in [("nested", "modules", false), ("flat", "", true)]
+    {
+        let (staged, _fixture) = staged(
+            FixtureOpts::new(
+                "import { wrap as foreignWrap, value as foreignValue } from './peer.js';\nfunction wrap(record) { return {}; }\nfunction value(record) { return 99; }\nconst peerMarker = foreignValue({});\nconst wrapped = foreignWrap({});\nconst observed = foreignValue({});\nconsole.log(observed, typeof wrapped);\n",
+                vec![
+                    logical_module("peer", &[Member::new("wrap"), Member::new("value"), Member::new("peerMarker")]),
+                    logical_module("work", &[Member::new("wrapped")]),
+                ],
             )
-            .expect("preserve emitted provider-shadow imports");
-        }
+            .with_target_dir(target_dir)
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
         assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
+            &staged.root().join("snapshot/static/app.js"),
             "1 object\n",
             "",
         );
-        let graph: Value = read_gzip_json(
-            &invocation
-                .output_root()
-                .join("reports/tree/static/app/dependency_graph.json.gz"),
-        );
-        assert!(
-            conditional_foreign_body_used(&graph, "wrapped"),
-            "{graph:#}"
-        );
-        let report = candidate_relocation_report(invocation, "static/app");
-        let required = module_initialization_cells(&report, "required_cells");
-        let preserved = module_initialization_cells(&report, "preserved_cells");
-        let unproved = module_initialization_cells(&report, "unproved_cells");
-        assert_eq!(required.len(), 1, "{report:#}");
-        assert!(preserved.is_empty(), "{report:#}");
-        assert_eq!(unproved.len(), 1, "{report:#}");
-        assert_eq!(
-            report["module_initialization"]["refusal"], "provider_closure_changed",
-            "{report:#}"
-        );
-        assert_ne!(
-            report["status"], "accepted_within_checked_scope",
-            "{report:#}"
-        );
+        let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+        for (mode, invocation) in [("direct", &direct), ("saved", &saved)] {
+            let consumer_root = invocation.output_root().join("app/static/app");
+            let diagnostics = save_relocation_reports(
+                &invocation.output_root().join("reports/tree"),
+                "static/app",
+                &format!("provider_shadow_{layout}_{mode}"),
+            );
+            for (file, bytes) in module_snapshot(&consumer_root) {
+                let destination = diagnostics
+                    .join("emitted")
+                    .join(file.strip_prefix(&consumer_root).unwrap());
+                fs::create_dir_all(destination.parent().unwrap()).unwrap();
+                fs::write(destination, bytes).unwrap();
+            }
+            let graph: Value = read_gzip_json(
+                &invocation
+                    .output_root()
+                    .join("reports/tree/static/app/dependency_graph.json.gz"),
+            );
+            assert!(
+                conditional_foreign_body_used(&graph, "wrapped"),
+                "{layout}: {graph:#}"
+            );
+            let report = candidate_relocation_report(invocation, "static/app");
+            let required = module_initialization_cells(&report, "required_cells");
+            let preserved = module_initialization_cells(&report, "preserved_cells");
+            let unproved = module_initialization_cells(&report, "unproved_cells");
+            assert_eq!(required.len(), 1, "{layout}: {report:#}");
+            let body_write = composed_module_cell_for_binding(&graph, "wrapped", "writes");
+            assert_same_module_cell_address(&required[0], &body_write);
+            if shadows_provider {
+                assert!(preserved.is_empty(), "{report:#}");
+                assert_eq!(unproved.len(), 1, "{report:#}");
+                assert_eq!(required[0], unproved[0], "{report:#}");
+                assert_eq!(
+                    report["module_initialization"]["refusal"], "provider_closure_changed",
+                    "{report:#}"
+                );
+                assert_ne!(
+                    report["status"], "accepted_within_checked_scope",
+                    "{report:#}"
+                );
+            } else {
+                assert_eq!(preserved.len(), 1, "{report:#}");
+                assert_eq!(required[0], preserved[0], "{report:#}");
+                assert!(unproved.is_empty(), "{report:#}");
+                assert!(
+                    report["module_initialization"]["refusal"].is_null(),
+                    "{report:#}"
+                );
+                assert_eq!(
+                    report["status"], "accepted_within_checked_scope",
+                    "{report:#}"
+                );
+                assert_node_output(&consumer_root.join("entry.js"), "1 object\n", "");
+            }
+        }
     }
 }
 
