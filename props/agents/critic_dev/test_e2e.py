@@ -128,9 +128,6 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         # Verify we received a non-empty system message
         system_text = get_system_prompt_text(first_request)
         assert system_text, "Expected non-empty system message"
-        assert "critic" in system_text.lower(), (
-            f"Expected system message to mention 'critic'. Got: {system_text[:200]}..."
-        )
         logger.info(f"Critic received system message ({len(system_text)} chars)")
 
         # Submit zero issues

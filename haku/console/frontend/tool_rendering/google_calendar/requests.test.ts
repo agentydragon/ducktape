@@ -8,7 +8,7 @@ describe("googleCalendarPreviews", () => {
     expect(humanizeRRule("RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12")).toContain("Tuesday");
   });
 
-  it("renders every Calendar read tool", () => {
+  it("accepts every Calendar read tool", () => {
     expect(renderPreview(googleCalendarPreviews.get_event, { event_id: "evt1" }, "compact")).not.toBeNull();
     expect(renderPreview(googleCalendarPreviews.list_events, { expand_recurring: true }, "detailed")).not.toBeNull();
     expect(
@@ -16,7 +16,7 @@ describe("googleCalendarPreviews", () => {
     ).not.toBeNull();
   });
 
-  it("renders delete_event by its target event id", () => {
+  it("accepts delete_event by its target event id", () => {
     expect(renderPreview(googleCalendarPreviews.delete_event, { event_id: "evt1" }, "compact")).not.toBeNull();
   });
 });

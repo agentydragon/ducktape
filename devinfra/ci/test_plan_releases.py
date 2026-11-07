@@ -203,6 +203,16 @@ def test_skip_ci_releases_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_no_invocation_releases_everything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`release` runs under always(), so a skipped or failed bazel-ci must publish
     everything rather than silently publish nothing."""
+    artifact_targets = json.loads(ARTIFACT_TARGETS.read_text())
+    skills = json.loads(SKILLS_REGISTRY.read_text())["skills"]
+    targets_by_release: dict[str, list[str]] = {}
+    for pin in artifact_targets["pins"].values():
+        targets_by_release.setdefault(pin["release"], []).append(pin["target"])
+    expected_targets_by_pkg = {
+        pkg: " ".join(targets_by_release[pkg]) for pkg in artifact_targets["releases"] if pkg in targets_by_release
+    }
+    expected_targets_by_pkg.update({skill["pkg"]: skill["target"] for skill in skills})
+
     output_file = tmp_path / "gh_output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
     main(
@@ -219,7 +229,9 @@ def test_no_invocation_releases_everything(tmp_path: Path, monkeypatch: pytest.M
     )
     written = output_file.read_text()
     rows = json.loads(written.split("matrix=", 1)[1].splitlines()[0])["include"]
-    assert len(rows) == len(load_releases(ARTIFACT_TARGETS, SKILLS_REGISTRY))
+    actual_targets_by_pkg = {row["pkg"]: row["targets"] for row in rows}
+    assert len(actual_targets_by_pkg) == len(rows), "a release package appears more than once"
+    assert actual_targets_by_pkg == expected_targets_by_pkg
 
 
 def test_every_pin_and_skill_reaches_exactly_one_row() -> None:

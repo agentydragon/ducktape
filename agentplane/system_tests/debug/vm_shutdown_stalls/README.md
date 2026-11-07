@@ -3,6 +3,8 @@
 For a smaller direct-QEMU software-emulation experiment and its retained logs, see
 [tcg_reproduction.md](tcg_reproduction.md). It does not run the full KubeVirt stack.
 [libvirt_monitor/README.md](libvirt_monitor/README.md) describes opt-in per-VM QMP logs.
+The direct-VMI experiment using the real CI guest and a bounded policy A/B is documented in
+[standalone_kubevirt/README.md](standalone_kubevirt/README.md).
 
 ## Observed failure
 

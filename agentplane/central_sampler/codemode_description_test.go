@@ -2,6 +2,8 @@ package centralsampler
 
 import (
 	"encoding/json"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,34 +16,83 @@ func TestExecDescriptionDeclaresEveryNestedToolInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(definitions) == 0 {
+		t.Fatal("exec description has no nested tool definitions")
+	}
 	if strings.Contains(description, "{{") {
 		t.Fatalf("exec description kept a template placeholder: %s", description)
 	}
 	for _, definition := range definitions {
-		if !strings.Contains(description, "### `"+definition.Name+"`") {
-			t.Fatalf("exec description has no section for %s", definition.Name)
+		heading := toolHeading(normalizeCodeModeIdentifier(definition.Name), definition.Name)
+		sectionMarker := "\n\n" + heading + "\n"
+		if count := strings.Count(description, sectionMarker); count != 1 {
+			t.Fatalf("exec description has %d sections for %s, want exactly one", count, definition.Name)
 		}
-		declaration := definition.Name + "(input: string)"
+		sectionStart := strings.Index(description, sectionMarker) + len(sectionMarker)
+		sectionEnd := strings.Index(description[sectionStart:], "\n\n### ")
+		section := description[sectionStart:]
+		if sectionEnd >= 0 {
+			section = section[:sectionEnd]
+		}
+		const codeFence = "```ts\n"
+		if count := strings.Count(section, codeFence); count != 1 {
+			t.Fatalf("section for %s has %d TypeScript declarations, want exactly one", definition.Name, count)
+		}
+		declarationStart := strings.Index(section, codeFence) + len(codeFence)
+		declarationEnd := strings.Index(section[declarationStart:], "\n```")
+		if declarationEnd < 0 {
+			t.Fatalf("section for %s has an unterminated TypeScript declaration", definition.Name)
+		}
+		declaration := section[declarationStart : declarationStart+declarationEnd]
 		if definition.Kind == "function" {
 			schema, err := schemaValue(definition.InputSchema)
 			if err != nil {
 				t.Fatal(err)
 			}
-			for property := range schema.(map[string]any)["properties"].(map[string]any) {
-				if !strings.Contains(description, property) {
+			properties := schema.(map[string]any)["properties"].(map[string]any)
+			declarationPrefix := "declare const tools: { " + normalizeCodeModeIdentifier(definition.Name) + "(args: "
+			if strings.Count(declaration, declarationPrefix) != 1 {
+				t.Fatalf("section for %s lacks its own tool declaration: %s", definition.Name, declaration)
+			}
+			argumentsStart := strings.Index(declaration, declarationPrefix) + len(declarationPrefix)
+			argumentsEnd := strings.Index(declaration[argumentsStart:], "): Promise<")
+			if argumentsEnd < 0 {
+				t.Fatalf("section for %s has an unterminated argument declaration: %s", definition.Name, declaration)
+			}
+			arguments := declaration[argumentsStart : argumentsStart+argumentsEnd]
+			for property := range properties {
+				if !hasTypeScriptProperty(arguments, property) {
 					t.Fatalf("exec description does not declare %s.%s", definition.Name, property)
 				}
 			}
-			declaration = definition.Name + "(args: "
-		}
-		if !strings.Contains(description, "declare const tools: { "+declaration) {
-			t.Fatalf("exec description lacks %s declaration: %s", definition.Name, description)
+		} else {
+			declarationPrefix := "declare const tools: { " + normalizeCodeModeIdentifier(definition.Name) + "(input: string)"
+			if !strings.Contains(declaration, declarationPrefix) {
+				t.Fatalf("section for %s lacks its own tool declaration: %s", definition.Name, declaration)
+			}
 		}
 	}
 }
 
+func hasTypeScriptProperty(declaration, name string) bool {
+	property := name
+	if normalizeCodeModeIdentifier(name) != name {
+		encoded, err := json.Marshal(name)
+		if err != nil {
+			return false
+		}
+		property = string(encoded)
+	}
+	pattern := regexp.MustCompile(`(^|[;{\n])\s*` + regexp.QuoteMeta(property) + `[?]?:`)
+	return pattern.MatchString(declaration)
+}
+
 func TestHostToolDefinitionsCarryDeclarationsWithoutSchemas(t *testing.T) {
-	definitions, err := hostToolDefinitions(toolDefinitions())
+	source := toolDefinitions()
+	if len(source) == 0 {
+		t.Fatal("toolDefinitions returned no tools")
+	}
+	definitions, err := hostToolDefinitions(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,13 +104,33 @@ func TestHostToolDefinitionsCarryDeclarationsWithoutSchemas(t *testing.T) {
 	if err := json.Unmarshal(encoded, &wire); err != nil {
 		t.Fatal(err)
 	}
+	wantNames := make([]string, 0, len(source))
+	for _, definition := range source {
+		wantNames = append(wantNames, definition.Name)
+	}
+	slices.Sort(wantNames)
+	gotNames := make([]string, 0, len(wire))
 	for _, definition := range wire {
+		name, ok := definition["name"].(string)
+		if !ok {
+			t.Fatalf("host definition has no string name: %v", definition)
+		}
+		gotNames = append(gotNames, name)
 		if definition["input_schema"] != nil || definition["output_schema"] != nil {
 			t.Fatalf("host definition kept a schema: %v", definition)
 		}
-		if !strings.Contains(definition["description"].(string), "exec tool declaration:") {
+		description, ok := definition["description"].(string)
+		if !ok || !strings.Contains(description, "exec tool declaration:") {
 			t.Fatalf("host definition description lacks its declaration: %v", definition)
 		}
+		declaration := "declare const tools: { " + normalizeCodeModeIdentifier(name) + "("
+		if strings.Count(description, declaration) != 1 {
+			t.Fatalf("host definition for %s has %d matching declarations, want exactly one: %s", name, strings.Count(description, declaration), description)
+		}
+	}
+	slices.Sort(gotNames)
+	if !slices.Equal(gotNames, wantNames) {
+		t.Fatalf("host definition names = %v, want exactly one of each source tool name %v", gotNames, wantNames)
 	}
 }
 

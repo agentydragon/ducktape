@@ -17,7 +17,7 @@ const STOCK_ADD_OK_ROW = {
 };
 
 describe("grocyResultPreviews", () => {
-  it("renders stock_add rows (ok + failed mixed), in both variants", () => {
+  it("accepts stock_add rows (ok + failed mixed), in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
         renderResultPreview(
@@ -29,7 +29,7 @@ describe("grocyResultPreviews", () => {
     }
   });
 
-  it("renders products_create rows with only created_object_id (grocy_mcp's CreateOk today)", () => {
+  it("accepts products_create rows with only created_object_id (grocy_mcp's CreateOk today)", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
         renderResultPreview(
@@ -44,7 +44,7 @@ describe("grocyResultPreviews", () => {
     }
   });
 
-  it("renders shopping_list_items_add rows, including note-only items (null product/qu)", () => {
+  it("accepts shopping_list_items_add rows, including note-only items (null product/qu)", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
         renderResultPreview(
@@ -59,7 +59,7 @@ describe("grocyResultPreviews", () => {
     }
   });
 
-  it("renders stock_entry_edit rows with the updated entry and changed fields", () => {
+  it("accepts stock_entry_edit rows with the updated entry and changed fields", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
         renderResultPreview(
@@ -86,7 +86,7 @@ describe("grocyResultPreviews", () => {
     }
   });
 
-  it("renders Grocy read and shopping-list removal results", () => {
+  it("accepts Grocy read and shopping-list removal results", () => {
     const cases = [
       [
         grocyResultPreviews.stock_get,

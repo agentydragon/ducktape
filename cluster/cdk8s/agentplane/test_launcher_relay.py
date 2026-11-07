@@ -68,13 +68,25 @@ def policy() -> dict:
 
 
 def policy_file(
-    tmp_path: Path, policy: dict, *, vm_uid: str, vm_owner_kind: str, account_owner_uid: str, vmi_volumes: list[dict]
+    tmp_path: Path,
+    policy: dict,
+    *,
+    vm_uid: str,
+    vm_owner_kind: str,
+    account_owner_uid: str,
+    vmi_volumes: list[dict] | None,
+    vmi_filesystems: list[dict] | None,
 ) -> Path:
     policy = deepcopy(policy)
+    vmi_spec: dict = {"domain": {"devices": {}}}
+    if vmi_volumes is not None:
+        vmi_spec["volumes"] = vmi_volumes
+    if vmi_filesystems is not None:
+        vmi_spec["domain"]["devices"]["filesystems"] = vmi_filesystems
     reads = {
         "vmi": {
             "metadata": {"uid": "vmi-uid", "ownerReferences": [owner("kubevirt.io/v1", "VirtualMachine", vm_uid)]},
-            "spec": {"volumes": vmi_volumes},
+            "spec": vmi_spec,
         },
         "vm": {
             "metadata": {"uid": "vm-uid", "ownerReferences": [owner(f"{GROUP}/{VERSION}", vm_owner_kind, "sb-uid")]}
@@ -120,7 +132,8 @@ def apply(
     vm_uid: str = "vm-uid",
     vm_owner_kind: str = "Sandbox",
     account_owner_uid: str = "sb-uid",
-    vmi_volumes: tuple[dict, ...] = (),
+    vmi_volumes: tuple[dict, ...] | None = (),
+    vmi_filesystems: tuple[dict, ...] | None = (),
 ) -> KyvernoApplyResult:
     path = tmp_path / "pod.yaml"
     path.write_text(yaml.safe_dump(resource))
@@ -131,7 +144,8 @@ def apply(
             vm_uid=vm_uid,
             vm_owner_kind=vm_owner_kind,
             account_owner_uid=account_owner_uid,
-            vmi_volumes=list(vmi_volumes),
+            vmi_volumes=list(vmi_volumes) if vmi_volumes is not None else None,
+            vmi_filesystems=list(vmi_filesystems) if vmi_filesystems is not None else None,
         ),
         path,
         {"request.userInfo.username": username, "request.operation": operation},
@@ -220,7 +234,8 @@ def test_keeps_filesystem_daemons_until_compute_exits(tmp_path: Path, policy: di
         {"name": "config", "containerPath": {"path": "/config"}},
     )
 
-    first = apply(tmp_path, policy, resource, vmi_volumes=volumes)
+    filesystems = tuple({"name": volume["name"], "virtiofs": {}} for volume in volumes)
+    first = apply(tmp_path, policy, resource, vmi_volumes=volumes, vmi_filesystems=filesystems)
     assert first.ok, first.stdout
     mutated = one(first.mutated_resources)
     spec = mutated["spec"]
@@ -235,9 +250,110 @@ def test_keeps_filesystem_daemons_until_compute_exits(tmp_path: Path, policy: di
         daemon["name"]: {**daemon, "restartPolicy": "Always"} for daemon in daemons
     }
 
-    second = apply(tmp_path, policy, deepcopy(mutated), vmi_volumes=volumes)
+    second = apply(tmp_path, policy, deepcopy(mutated), vmi_volumes=volumes, vmi_filesystems=filesystems)
     assert second.ok, second.stdout
     assert second.mutated_resources == first.mutated_resources
+
+
+_STATE_VOLUME = {"name": "state", "persistentVolumeClaim": {"claimName": "state"}}
+_STATE_FILESYSTEM = {"name": "state", "virtiofs": {}}
+_STATE_DAEMON = {"name": "virtiofs-state", "image": "launcher:test", "command": ["/usr/libexec/virtiofsd"]}
+
+
+@pytest.mark.parametrize(
+    "defect", ["ordinary-wrong-command", "native-wrong-command", "missing", "duplicate", "non-restartable"]
+)
+def test_fails_closed_for_eligible_daemon(tmp_path: Path, policy: dict, defect: str) -> None:
+    resource = launcher()
+    daemon = deepcopy(_STATE_DAEMON)
+    if defect == "ordinary-wrong-command":
+        daemon["command"] = ["/bin/false"]
+        resource["spec"]["containers"].append(daemon)
+    elif defect == "native-wrong-command":
+        daemon["command"] = ["/bin/false"]
+        daemon["restartPolicy"] = "Always"
+        resource["spec"]["initContainers"] = [daemon]
+    elif defect == "duplicate":
+        daemon["restartPolicy"] = "Always"
+        resource["spec"]["initContainers"] = [daemon]
+        # The ordinary copy is deliberately malformed so the mutation cannot
+        # move it; post-mutation validation must reject both classes occupied.
+        resource["spec"]["containers"].append({**daemon, "command": ["/bin/false"]})
+    elif defect == "non-restartable":
+        resource["spec"]["initContainers"] = [daemon]
+    result = apply(tmp_path, policy, resource, vmi_volumes=(_STATE_VOLUME,), vmi_filesystems=(_STATE_FILESYSTEM,))
+    assert result.failed > 0, result.stdout
+
+    # With just the new guard removed, the other real Kyverno rules admit this
+    # launcher's unchanged daemon layout; the guard is what closes this gap.
+    old_policy = deepcopy(policy)
+    old_policy["spec"]["rules"] = [
+        rule for rule in old_policy["spec"]["rules"] if rule["name"] != "require-native-virtiofs-daemons"
+    ]
+    prior = apply(tmp_path, old_policy, resource, vmi_volumes=(_STATE_VOLUME,), vmi_filesystems=(_STATE_FILESYSTEM,))
+    assert prior.ok, prior.stdout
+
+
+def test_rejects_missing_second_eligible_daemon(tmp_path: Path, policy: dict) -> None:
+    resource = launcher()
+    resource["spec"]["containers"].append(deepcopy(_STATE_DAEMON))
+    result = apply(
+        tmp_path,
+        policy,
+        resource,
+        vmi_volumes=(_STATE_VOLUME, {"name": "trust", "configMap": {"name": "trust"}}),
+        vmi_filesystems=(_STATE_FILESYSTEM, {"name": "trust", "virtiofs": {}}),
+    )
+    assert result.failed > 0, result.stdout
+
+
+@pytest.mark.parametrize(
+    ("volume", "filesystem"),
+    [
+        ({"name": "config", "containerPath": {"path": "/config"}}, {"name": "config", "virtiofs": {}}),
+        ({"name": "config", "persistentVolumeClaim": {"claimName": "disk-only"}}, None),
+        ({"name": "config", "secret": {"secretName": "disk-only"}}, None),
+        ({"name": "config", "configMap": {"name": "disk-only"}}, None),
+    ],
+)
+def test_leaves_noneligible_daemon_ordinary(
+    tmp_path: Path, policy: dict, volume: dict, filesystem: dict | None
+) -> None:
+    resource = launcher()
+    daemon = {**_STATE_DAEMON, "name": "virtiofs-config"}
+    resource["spec"]["containers"].append(daemon)
+    result = apply(
+        tmp_path, policy, resource, vmi_volumes=(volume,), vmi_filesystems=(filesystem,) if filesystem else ()
+    )
+    assert result.ok, result.stdout
+    mutated = one(result.mutated_resources)
+    assert one(c for c in mutated["spec"]["containers"] if c["name"] == daemon["name"]) == daemon
+    assert all(c["name"] != daemon["name"] for c in mutated["spec"]["initContainers"])
+
+
+@pytest.mark.parametrize(
+    ("volumes", "filesystems"),
+    [
+        pytest.param((_STATE_VOLUME,), None, id="backed-volume-absent-filesystems"),
+        pytest.param((_STATE_VOLUME,), (), id="backed-volume-empty-filesystems"),
+        pytest.param(None, (_STATE_FILESYSTEM,), id="absent-volumes-filesystem"),
+        pytest.param((), (_STATE_FILESYSTEM,), id="empty-volumes-filesystem"),
+        pytest.param(None, None, id="both-fields-absent"),
+        pytest.param(
+            ({"name": "state", "containerPath": {"path": "/state"}},), (_STATE_FILESYSTEM,), id="container-path-only"
+        ),
+    ],
+)
+def test_omitted_vmi_arrays_have_no_eligible_daemon(
+    tmp_path: Path, policy: dict, volumes: tuple[dict, ...] | None, filesystems: tuple[dict, ...] | None
+) -> None:
+    resource = launcher()
+    resource["spec"]["containers"].append(deepcopy(_STATE_DAEMON))
+    result = apply(tmp_path, policy, resource, vmi_volumes=volumes, vmi_filesystems=filesystems)
+    assert result.ok, result.stdout
+    mutated = one(result.mutated_resources)
+    assert one(c for c in mutated["spec"]["containers"] if c["name"] == _STATE_DAEMON["name"]) == _STATE_DAEMON
+    assert all(c["name"] != _STATE_DAEMON["name"] for c in mutated["spec"]["initContainers"])
 
 
 @pytest.mark.parametrize(
