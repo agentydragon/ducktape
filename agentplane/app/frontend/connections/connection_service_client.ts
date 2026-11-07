@@ -1,5 +1,5 @@
 /** Browser adapters for ConnectionService's generated HTTP/JSON facade. */
-import { create, fromJson, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, fromJsonString, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 
 import { fetchWithLogin, HttpError } from "../client";
@@ -72,19 +72,6 @@ function required<T>(value: T | undefined, field: string): T {
   return value;
 }
 
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (typeof value !== "object") return false;
-  return Object.values(value).every(isJsonValue);
-}
-
-function readJsonValue(value: unknown, label: string): JsonValue {
-  if (!isJsonValue(value)) throw new Error(`Invalid JSON in ${label}`);
-  return value;
-}
-
 function readJsonObject(value: JsonValue, label: string): JsonObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`Invalid ${label}`);
@@ -100,7 +87,7 @@ function parseJsonOrText(text: string): unknown {
   }
 }
 
-async function callFacade(method: FacadeMethod, path: string, body?: JsonValue): Promise<JsonValue> {
+async function callFacade(method: FacadeMethod, path: string, body?: JsonValue): Promise<string> {
   const headers = new Headers({ Accept: "application/json" });
   const init: RequestInit = { method, headers };
   if (body !== undefined) {
@@ -108,9 +95,9 @@ async function callFacade(method: FacadeMethod, path: string, body?: JsonValue):
     init.body = JSON.stringify(body);
   }
   const response = await fetchWithLogin(path, init);
-  const payload = parseJsonOrText(await response.text());
-  if (!response.ok) throw new HttpError(response, payload);
-  return readJsonValue(payload, "ConnectionService response");
+  const text = await response.text();
+  if (!response.ok) throw new HttpError(response, parseJsonOrText(text));
+  return text;
 }
 
 function withoutPathField(body: JsonObject, field: string): JsonObject {
@@ -184,13 +171,13 @@ export function adaptConnection(message: ConnectionMessage): Connection {
 }
 
 export function adaptConnectionWatchFrame(
-  value: unknown
+  value: JsonValue
 ):
   | { kind: "snapshot"; connections: Connection[] }
   | { kind: "snapshot_complete" }
   | { kind: "upsert"; connection: Connection }
   | { kind: "reconnect_required" } {
-  const message = fromJson(WatchConnectionsResponseSchema, readJsonValue(value, "ConnectionService watch frame"));
+  const message = fromJson(WatchConnectionsResponseSchema, value);
   switch (message.frame.case) {
     case "snapshot":
       return { kind: "snapshot", connections: message.frame.value.connections.map(adaptConnection) };
@@ -206,12 +193,12 @@ export function adaptConnectionWatchFrame(
 }
 
 export async function listConnections(): Promise<Connection[]> {
-  const response = fromJson(ListConnectionsResponseSchema, await callFacade("GET", `${OPERATOR}/connections`));
+  const response = fromJsonString(ListConnectionsResponseSchema, await callFacade("GET", `${OPERATOR}/connections`));
   return response.connections.map(adaptConnection);
 }
 
 export async function connectionServiceAccounts(): Promise<CallerServiceAccount[]> {
-  const response = fromJson(
+  const response = fromJsonString(
     ListCallerServiceAccountsResponseSchema,
     await callFacade("GET", `${OPERATOR}/caller-service-accounts`)
   );
@@ -233,7 +220,7 @@ export async function renameConnection(connection: Connection, displayName: stri
     readJsonObject(toJson(UpdateConnectionRequestSchema, request), "update request"),
     "connectionId"
   );
-  const response = fromJson(
+  const response = fromJsonString(
     UpdateConnectionResponseSchema,
     await callFacade("PATCH", `${OPERATOR}/connections/${encodeURIComponent(connection.id)}`, body)
   );
@@ -250,7 +237,7 @@ export async function rebindConnection(connection: Connection, caller: CallerSer
     readJsonObject(toJson(RebindConnectionRequestSchema, request), "rebind request"),
     "connectionId"
   );
-  const response = fromJson(
+  const response = fromJsonString(
     RebindConnectionResponseSchema,
     await callFacade("POST", `${OPERATOR}/connections/${encodeURIComponent(connection.id)}/rebind`, body)
   );
@@ -266,7 +253,7 @@ export async function unbindConnection(connection: Connection): Promise<Connecti
     readJsonObject(toJson(UnbindConnectionRequestSchema, request), "unbind request"),
     "connectionId"
   );
-  const response = fromJson(
+  const response = fromJsonString(
     UnbindConnectionResponseSchema,
     await callFacade("POST", `${OPERATOR}/connections/${encodeURIComponent(connection.id)}/unbind`, body)
   );
@@ -284,9 +271,9 @@ export async function previewConsent(handle: string): Promise<ConsentPreview> {
     callFacade("GET", `${OPERATOR}/caller-service-accounts`),
     callFacade("GET", `${OPERATOR}/connections`),
   ]);
-  const preview = fromJson(PreviewConnectionEnrollmentResponseSchema, previewValue);
-  const callers = fromJson(ListCallerServiceAccountsResponseSchema, callersValue);
-  const connections = fromJson(ListConnectionsResponseSchema, connectionsValue);
+  const preview = fromJsonString(PreviewConnectionEnrollmentResponseSchema, previewValue);
+  const callers = fromJsonString(ListCallerServiceAccountsResponseSchema, callersValue);
+  const connections = fromJsonString(ListConnectionsResponseSchema, connectionsValue);
   return {
     enrollment: {
       client_id: preview.clientId,
@@ -340,7 +327,7 @@ export async function decideConsent(handle: string, decision: ConsentDecision): 
     readJsonObject(toJson(DecideConnectionEnrollmentRequestSchema, request), "decision request"),
     "handle"
   );
-  const response = fromJson(
+  const response = fromJsonString(
     DecideConnectionEnrollmentResponseSchema,
     await callFacade("POST", `${OPERATOR}/connection-enrollments/${encodeURIComponent(handle)}/decision`, body)
   );

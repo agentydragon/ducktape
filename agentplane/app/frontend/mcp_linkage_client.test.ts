@@ -55,6 +55,17 @@ it("starts linkage through the generated facade request and returns its authoriz
   expect(JSON.parse(String(init?.body))).toEqual({ scopes: ["openid", "read"] });
 });
 
+it("preserves the Action facade's raw HTTP error body", async () => {
+  const body = '{"code":10,"message":"changed"}';
+  const fetcher = vi.fn(async () => new Response(body, { status: 409 }));
+
+  await expect(startMcpLinkage("example", [], fetcher)).rejects.toMatchObject({
+    status: 409,
+    code: undefined,
+    message: body,
+  });
+});
+
 it("decodes disconnect's ProtoJSON linkage without the old OpenAPI model", async () => {
   const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
     Response.json({

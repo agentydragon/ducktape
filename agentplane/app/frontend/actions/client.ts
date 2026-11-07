@@ -1,4 +1,4 @@
-import { create, fromJson, toJson, type JsonValue as ProtoJsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, fromJsonString, toJson } from "@bufbuild/protobuf";
 
 import { fetchWithLogin, HttpError } from "../client";
 import type { StreamConnection } from "../stream_reader";
@@ -152,27 +152,10 @@ function validateActionGroup(value: ActionGroup): ActionGroup {
   return value;
 }
 
-function protoJson(value: unknown): ProtoJsonValue {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) return value.map(protoJson);
-  if (typeof value === "object") {
-    const result: { [key: string]: ProtoJsonValue } = {};
-    for (const [key, child] of Object.entries(value)) result[key] = protoJson(child);
-    return result;
-  }
-  throw new Error("The Action Service returned a non-JSON value.");
-}
-
-async function readJson(
-  url: string,
-  init: RequestInit = {},
-  fetcher: Fetcher = fetchWithLogin
-): Promise<ProtoJsonValue> {
+async function readText(url: string, init: RequestInit = {}, fetcher: Fetcher = fetchWithLogin): Promise<string> {
   const response = await fetcher(url, init);
   if (!response.ok) throw new HttpError(response, await response.text());
-  return protoJson(await response.json());
+  return response.text();
 }
 
 function actionStateJson(value: ActionState): string {
@@ -191,22 +174,22 @@ export async function listActionRequests(
 ): Promise<ActionRequest[]> {
   const query = new URLSearchParams();
   if (state !== undefined) query.set("state", actionStateJson(state));
-  const response = fromJson(
+  const response = fromJsonString(
     ListActionRequestsResponseSchema,
-    await readJson(`${ACTIONS_PATH}/v1/action-requests${query.size ? `?${query}` : ""}`, {}, fetcher)
+    await readText(`${ACTIONS_PATH}/v1/action-requests${query.size ? `?${query}` : ""}`, {}, fetcher)
   );
   return response.actionRequests.map(validateActionRequest);
 }
 
 export async function listActionGroups(): Promise<ActionGroup[]> {
-  const response = fromJson(ListActionGroupsResponseSchema, await readJson(`${ACTIONS_PATH}/v1/action-groups`));
+  const response = fromJsonString(ListActionGroupsResponseSchema, await readText(`${ACTIONS_PATH}/v1/action-groups`));
   return response.actionGroups.map(validateActionGroup);
 }
 
 export async function getAction(requestId: string): Promise<ActionRequest> {
-  const response = fromJson(
+  const response = fromJsonString(
     GetActionRequestResponseSchema,
-    await readJson(`${ACTIONS_PATH}/v1/action-requests/${encodeURIComponent(requestId)}`)
+    await readText(`${ACTIONS_PATH}/v1/action-requests/${encodeURIComponent(requestId)}`)
   );
   return validateActionRequest(required(response.actionRequest, "request"));
 }
@@ -217,9 +200,9 @@ export async function actionHistory(
 ): Promise<ListActionRequestHistoryResponse> {
   const query = new URLSearchParams({ limit: "50", includeAutoAllowed: String(includeAutoAllowed) });
   if (cursor !== undefined) query.set("cursor", cursor);
-  const response = fromJson(
+  const response = fromJsonString(
     ListActionRequestHistoryResponseSchema,
-    await readJson(`${ACTIONS_PATH}/v1/action-requests:history?${query}`)
+    await readText(`${ACTIONS_PATH}/v1/action-requests:history?${query}`)
   );
   response.actionRequests.forEach(validateActionRequest);
   return response;
@@ -237,9 +220,9 @@ export async function decideActionById(
     expectedVersion,
     idempotencyKey: crypto.randomUUID(),
   });
-  const response = fromJson(
+  const response = fromJsonString(
     DecideActionRequestResponseSchema,
-    await readJson(
+    await readText(
       `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}/decision`,
       {
         method: "POST",
@@ -277,7 +260,7 @@ export function followActionRequests(handlers: {
   return followWatch(`${ACTIONS_PATH}/v1/action-requests:watch?${query}`, {
     ...handlers,
     onFrame: (result) => {
-      const message = fromJson(WatchActionRequestsResponseSchema, protoJson(result));
+      const message = fromJson(WatchActionRequestsResponseSchema, result);
       switch (message.frame.case) {
         case "snapshot":
           handlers.onFrame({
@@ -309,7 +292,7 @@ export function followActionGroups(handlers: {
   return followWatch(`${ACTIONS_PATH}/v1/action-groups:watch`, {
     ...handlers,
     onFrame: (result) => {
-      const message = fromJson(WatchActionGroupsResponseSchema, protoJson(result));
+      const message = fromJson(WatchActionGroupsResponseSchema, result);
       switch (message.frame.case) {
         case "snapshot":
           handlers.onFrame({ kind: "snapshot", groups: message.frame.value.actionGroups.map(validateActionGroup) });

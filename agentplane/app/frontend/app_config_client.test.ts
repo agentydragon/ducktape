@@ -126,3 +126,15 @@ it("maps unset ProtoJSON message fields to absent optional links", async () => {
   );
   await expect(getFrontendConfig()).resolves.toEqual({ trace_search: null, langfuse_search: null });
 });
+
+it.each([
+  ['{"code":10,"message":"changed"}', 10],
+  ["gateway unavailable", undefined],
+])("preserves HTTP error details before protobuf decoding: %s", async (body, code) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(body, { status: 409 }))
+  );
+
+  await expect(listModels()).rejects.toMatchObject({ status: 409, code, message: body });
+});

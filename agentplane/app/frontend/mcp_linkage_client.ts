@@ -1,4 +1,4 @@
-import { create, fromJson, toJson, type JsonValue as ProtoJsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, fromJsonString, toJson } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
 import { fetchWithLogin, HttpError } from "./client";
@@ -37,27 +37,10 @@ export type McpLinkageWatchFrame =
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-function jsonValue(value: unknown): ProtoJsonValue {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) return value.map(jsonValue);
-  if (typeof value === "object") {
-    const result: { [key: string]: ProtoJsonValue } = {};
-    for (const [key, child] of Object.entries(value)) result[key] = jsonValue(child);
-    return result;
-  }
-  throw new Error("The Action Service returned a non-JSON value.");
-}
-
-async function readJson(
-  url: string,
-  init: RequestInit = {},
-  fetcher: Fetcher = fetchWithLogin
-): Promise<ProtoJsonValue> {
+async function readText(url: string, init: RequestInit = {}, fetcher: Fetcher = fetchWithLogin): Promise<string> {
   const response = await fetcher(url, init);
   if (!response.ok) throw new HttpError(response, await response.text());
-  return jsonValue(await response.json());
+  return response.text();
 }
 
 function required<T>(value: T | undefined, field: string): T {
@@ -123,9 +106,9 @@ export async function startMcpLinkage(
   fetcher: Fetcher = fetchWithLogin
 ): Promise<string> {
   const request = create(StartMcpServerLinkageRequestSchema, { scopes });
-  const response = fromJson(
+  const response = fromJsonString(
     StartMcpServerLinkageResponseSchema,
-    await readJson(
+    await readText(
       `${ACTION_FACADE}/v1/operator/mcp-servers/${encodeURIComponent(serverId)}/linkage/start`,
       {
         method: "POST",
@@ -144,9 +127,9 @@ export async function disconnectMcpLinkage(
   serverId: string,
   fetcher: Fetcher = fetchWithLogin
 ): Promise<McpLinkageView> {
-  const response = fromJson(
+  const response = fromJsonString(
     DisconnectMcpServerResponseSchema,
-    await readJson(
+    await readText(
       `${ACTION_FACADE}/v1/operator/mcp-servers/${encodeURIComponent(serverId)}/linkage/disconnect`,
       { method: "POST" },
       fetcher
@@ -163,7 +146,7 @@ export function followMcpLinkages(handlers: {
   return followWatch(`${ACTION_FACADE}/v1/operator/mcp-servers:watch`, {
     ...handlers,
     onFrame: (result) => {
-      const response = fromJson(WatchMcpServersResponseSchema, jsonValue(result));
+      const response = fromJson(WatchMcpServersResponseSchema, result);
       switch (response.frame.case) {
         case "snapshot":
           handlers.onFrame({ kind: "snapshot", linkages: response.frame.value.linkages.map(linkageView) });

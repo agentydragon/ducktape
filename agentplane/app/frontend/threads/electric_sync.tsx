@@ -32,7 +32,6 @@ import { z } from "zod";
 
 import { displayableError, fetchWithLogin } from "../client";
 import { threadScope } from "./client";
-import { protoJson } from "./proto_json";
 import { backoff, type StreamConnection } from "../stream_reader";
 import { followWatch } from "../watch_stream";
 import {
@@ -1113,7 +1112,7 @@ class ThreadEpochs extends Listeners {
     this.#stopScopeWatch = followWatch("/upstream/history/v1/session-summaries:watch", {
       onOpen: () => {},
       onFrame: (value) => {
-        const frame = fromJson(WatchSessionSummariesResponseSchema, protoJson(value));
+        const frame = fromJson(WatchSessionSummariesResponseSchema, value);
         switch (frame.observation.case) {
           case "changed":
           case "reconnectRequired":
