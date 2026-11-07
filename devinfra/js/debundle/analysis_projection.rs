@@ -147,9 +147,10 @@ pub fn project_chunk_options(
         .collect()
 }
 
-/// Static-import provider closure shared by frontend premise resolution and
-/// staged analysis. Import records come from the one shallow source pass that
-/// prepared the artifact; the resolver uses the same artifact index as emit.
+/// Static-request provider closure shared by frontend premise resolution and
+/// staged analysis. Canonical requests include export-from dependencies, even
+/// in modules with no import declarations. Including a request here grants no
+/// availability proof; unsupported request modes retain their later refusals.
 pub fn selected_static_import_closure(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
@@ -172,9 +173,9 @@ pub fn selected_static_import_closure(
             continue;
         };
         let entry_file = &chunk_artifact.analysis.entry_file;
-        for import in &chunk_artifact.analysis.imports {
+        for request in &chunk_artifact.analysis.runtime_facts.static_requests {
             let Some(target) = indexes.resolve_runtime_import_reference(
-                &import.source,
+                &request.specifier,
                 chunk_id,
                 entry_file,
                 &artifact.chunk_table,

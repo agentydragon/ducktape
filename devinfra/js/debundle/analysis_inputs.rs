@@ -984,10 +984,12 @@ pub struct AnalysisInputs {
     /// established each one. These may depend on defining-chunk author
     /// contracts; they are never local author assumptions.
     pub imported_callables: BTreeMap<String, CallableSummary>,
-    /// Inferred values of direct ESM import bindings, keyed by local binding
-    /// name: each stable exported value projected through the import
-    /// resolver. Used only to suppress ToPrimitive callback promotion, never
-    /// eager reads.
+    /// Source-proved imported primitive values admitted to ordinary candidate
+    /// execution, keyed by local binding name. The program-summary adapter
+    /// supplies one only alongside a matching `imported_primitive_reads`
+    /// entry; raw exported kinds alone do not prove a normal imported
+    /// `GetValue`. This value supports ordinary transfer, while the separate
+    /// read capability supplies its normal-read effect coverage.
     pub imported_values: BTreeMap<String, crate::facts::abstract_domain::value::Value>,
     /// Imported stable primitive reads with exact source-cell provenance and
     /// an acyclic, fully resolved static dependency closure. This is an
