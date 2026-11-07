@@ -3724,7 +3724,7 @@ console.log(result, state);\n";
 
     assert_node_output(
         &staged.root().join("snapshot/static/app.js"),
-        "prefix\nsuffix\n1\n",
+        "prefix\nsuffix\n1 1\n",
         "",
     );
     for (invocation, reports) in [(&direct, &direct_reports), (&saved, &saved_reports)] {
@@ -3739,7 +3739,7 @@ console.log(result, state);\n";
         assert_potential_suppression_rejection(&assessment, &effects, "blocked_by_effect");
         assert_node_output(
             &invocation.output_root().join("app/static/app/entry.js"),
-            "suffix\nprefix\n1\n",
+            "suffix\nprefix\n1 1\n",
             "",
         );
         assert_staged_progress_pair(reports, "suffix", "result", false);
