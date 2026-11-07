@@ -27,11 +27,17 @@ def _proto_openapi_impl(ctx):
     # In downstream workspaces this module's sources are under external/<repo>/,
     # while protoc imports them by their paths within that repository.
     repo_prefix = "external/{}/".format(ctx.label.workspace_name) if ctx.label.workspace_name else ""
-    go_import_path = ",".join([
-        "M{}={}".format(source.path.removeprefix(repo_prefix), source.dirname.removeprefix(repo_prefix))
-        for source in proto_info.transitive_sources.to_list()
-        if source.owner.workspace_name == ctx.label.workspace_name
-    ])
+    go_import_paths = []
+    for source in proto_info.transitive_sources.to_list():
+        if source.owner.workspace_name != ctx.label.workspace_name:
+            continue
+        import_path = source.dirname.removeprefix(repo_prefix)
+        # The direct input uses its exec-root path; imports inside that input use
+        # paths relative to the owning repository. Map both spellings.
+        go_import_paths.append("M{}={}".format(source.path, import_path))
+        if repo_prefix:
+            go_import_paths.append("M{}={}".format(source.path.removeprefix(repo_prefix), import_path))
+    go_import_path = ",".join(go_import_paths)
     ctx.actions.run(
         executable = ctx.executable._protoc,
         arguments = [
