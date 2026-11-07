@@ -692,7 +692,7 @@ impl LocalContext for ProviderContext<'_> {
     fn unproved_field_read(
         &mut self,
         _frame: &mut LocalFrame,
-        _receiver: &Id,
+        _receiver: Option<&Id>,
         _receivers: &Values,
         _property: &str,
         _span: Span,

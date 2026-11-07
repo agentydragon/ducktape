@@ -705,6 +705,13 @@ pub enum BindingEffectAuthorityReport {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         initializer_span: Option<swc_common::Span>,
     },
+    OrderedRootObjectBindingUncovered {
+        owner: SourceUnitOrdinal,
+        pattern_span: swc_common::Span,
+        declarator_span: swc_common::Span,
+        initializer_span: swc_common::Span,
+        targets: Vec<ObjectBindingTarget>,
+    },
     OrderedRootClassDeclarationUncovered {
         owner: SourceUnitOrdinal,
         binding: String,
@@ -743,6 +750,12 @@ pub enum LexicalEffectRoot {
         binding: String,
         initializer_span: swc_common::Span,
     },
+    ObjectBindingInitializer {
+        pattern_span: swc_common::Span,
+        declarator_span: swc_common::Span,
+        initializer_span: swc_common::Span,
+        targets: Vec<ObjectBindingTarget>,
+    },
     ClassDeclaration {
         binding: String,
         declaration_span: swc_common::Span,
@@ -750,6 +763,14 @@ pub enum LexicalEffectRoot {
     ExpressionStatement {
         expression_span: swc_common::Span,
     },
+}
+
+/// One property read and target initialization in source order.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ObjectBindingTarget {
+    pub property: String,
+    pub binding: String,
+    pub span: swc_common::Span,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

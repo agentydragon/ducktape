@@ -1,8 +1,91 @@
 //! Immediate reads of known own data fields do not run getter code.
 //! The factory's eager effects and unsupported result shapes remain ordered.
 
+use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalEffectRoot};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+
+fn assert_object_binding_receipt(fixture: &Fixture, binding: &str, expected: &[(&str, &str)]) {
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap();
+    let execution = node.synchronous_execution.as_ref().unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        &execution.binding_effect_authority
+    else {
+        panic!("object binding must retain exact operation authority: {execution:#?}");
+    };
+    assert_eq!(receipt.owner, node.statement_ordinal);
+    let LexicalEffectRoot::ObjectBindingInitializer {
+        pattern_span,
+        declarator_span,
+        initializer_span,
+        targets,
+    } = &receipt.root
+    else {
+        panic!("all targets must belong to the original object-binding root: {receipt:#?}");
+    };
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| (target.property.as_str(), target.binding.as_str()))
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert!(
+        declarator_span.lo <= pattern_span.lo
+            && pattern_span.hi <= initializer_span.lo
+            && initializer_span.hi <= declarator_span.hi
+    );
+    for target in targets {
+        assert!(pattern_span.lo <= target.span.lo && target.span.hi <= pattern_span.hi);
+        assert!(
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == target.binding)
+        );
+    }
+}
+
+fn assert_object_binding_uncovered(
+    fixture: &Fixture,
+    binding: &str,
+    prefix_property: Option<&str>,
+) {
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap();
+    let execution = node.synchronous_execution.as_ref().unwrap();
+    assert!(
+        matches!(
+            &execution.binding_effect_authority,
+            Some(BindingEffectAuthorityReport::OrderedRootObjectBindingUncovered { .. })
+        ),
+        "{execution:#?}"
+    );
+    if let Some(property) = prefix_property {
+        let heap = execution
+            .heap_frontier
+            .as_ref()
+            .expect("executed prefix property read remains visible");
+        assert!(heap.non_assumed_heap_accesses.reads.sample.iter().any(|cell| matches!(cell, analysis::graph::EffectCellReport::OwnProperty { property: read, .. } if read == property)), "{heap:#?}");
+    }
+}
 
 fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
     let rejected = run_rejection_fixture(split(source));
@@ -70,6 +153,9 @@ export { first, middle, last };
         ],
     ));
     assert_preserved_entry_output(&fixture, "ready ready ready\n");
+    for binding in ["first", "middle", "last"] {
+        assert_object_binding_receipt(&fixture, binding, &[("selected", binding)]);
+    }
     let graph = fixture.dependency_graph();
     let first = source_unit_for_binding(&graph, "first");
     let seed = source_unit_for_binding(&graph, "seed");
@@ -95,6 +181,9 @@ export { first, middle, last };
         ],
     ));
     assert_preserved_entry_output(&fixture, "1 2 3\n");
+    for binding in ["first", "middle", "last"] {
+        assert_object_binding_receipt(&fixture, binding, &[("selected", binding)]);
+    }
 }
 
 #[test]
@@ -171,4 +260,115 @@ fn defaults_rest_and_nested_patterns_stay_conservative() {
         );
         assert!(first_reasons(&source).contains(&analysis::PurityRule::DestructuringPattern));
     }
+}
+
+#[test]
+fn multiple_object_targets_evaluate_rhs_once_and_keep_callable_captures() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"
+let calls = 0;
+function factory() { calls++; return { left: () => second, right: 42 }; }
+const { left: first, right: second } = factory();
+console.log(calls, first(), second);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "1 42 42\n");
+    assert_object_binding_receipt(&fixture, "first", &[("left", "first"), ("right", "second")]);
+}
+
+#[test]
+fn callable_local_object_binding_uses_the_same_ordered_operations() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"
+function factory() {
+    const { left: first, right: second } = { left: () => 40, right: 2 };
+    return first() + second;
+}
+const result = factory();
+console.log(result);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "42\n");
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .unwrap();
+    assert!(matches!(
+        &result
+            .synchronous_execution
+            .as_ref()
+            .unwrap()
+            .binding_effect_authority,
+        Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+    ));
+}
+
+#[test]
+fn later_unproved_property_retains_prefix_without_sealing_or_replaying_rhs() {
+    for (property, expected) in [
+        (
+            "get right() { console.log(first); return 2; }",
+            "1\n1 1 2\n",
+        ),
+        ("other: 2", "1 1 undefined\n"),
+    ] {
+        let source = format!(
+            "let calls = 0; function factory() {{ calls++; return {{ left: 1, {property} }}; }} const {{ left: first, right: second }} = factory(); console.log(calls, first, second);"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_object_binding_uncovered(&fixture, "first", Some("left"));
+    }
+}
+
+#[test]
+fn abrupt_object_binding_rhs_never_seals_target_initialization() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function factory() { throw 'rhs failure'; } const { left: first, right: second } = factory();",
+        vec![],
+    ));
+    assert_preserved_entry_error(&fixture, "rhs failure");
+    assert_object_binding_uncovered(&fixture, "first", None);
+}
+
+#[test]
+fn unproved_getter_result_keeps_the_normal_callback_continuation_reachable() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"
+const events = [];
+const { left: first, right: callback } = { left: 1, get right() { return () => events.push('callback'); } };
+callback();
+console.log(first, events.join(','));
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "1 callback\n");
+    assert_object_binding_uncovered(&fixture, "first", Some("left"));
+    let graph = fixture.dependency_graph();
+    let call = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 2)
+        .unwrap();
+    let execution = call.synchronous_execution.as_ref().unwrap();
+    assert!(
+        execution.precision_losses.iter().any(|loss| loss.reason
+            == analysis::execution_evidence::ExecutionPrecisionLossReason::UnknownCallTarget),
+        "the normal Top alternative must reach call fallback rather than being pruned as definite TDZ: {execution:#?}"
+    );
+    let events = source_unit_for_binding(&graph, "events");
+    assert!(
+        graph.edges.iter().any(|edge| edge.source == call.id
+            && edge.target == events
+            && edge.edge_kind == analysis_model::DepKind::EagerUse),
+        "the callback continuation must retain its events dependency: {graph:#?}"
+    );
 }

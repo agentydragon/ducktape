@@ -14,7 +14,7 @@ use super::super::effect_coverage::{
 };
 use super::super::local_operations::{
     ClassConstructorBody, ConstructorPhase, DeferredCallableCreation, LocalBinding, LocalBody,
-    LocalCallee, LocalExpression, LocalOperation,
+    LocalCallee, LocalExpression, LocalOperation, ObjectBindingProperty,
 };
 use super::super::local_transfer::{
     self, BindingOperation, CallableSelection, EvaluatedCallee, KnownThrow, LocalContext,
@@ -2575,6 +2575,41 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         }
     }
     fn local_binding_stored(&mut self, binding: &Id, frame: &LocalFrame) {
+        if matches!(self.scope, LocalExecutionScope::Root)
+            && self.body.bindings.contains_key(binding)
+            && self.executor.inputs.top_bindings.contains(binding)
+        {
+            let values = frame.environment[binding].clone();
+            let retained = self
+                .executor
+                .state
+                .prefix_values
+                .entry(binding.clone())
+                .or_default();
+            retained.extend(values);
+            self.executor
+                .state
+                .prefix_callable_selections
+                .remove(binding);
+            if let Some(selection) = frame
+                .binding_selections
+                .get(binding)
+                .filter(|selection| selection.matches(retained))
+            {
+                self.executor
+                    .state
+                    .prefix_callable_selections
+                    .insert(binding.clone(), selection.clone());
+            }
+            self.executor
+                .state
+                .initialized_bindings
+                .insert(binding.clone());
+            self.executor.state.prefix_revision =
+                self.executor.state.prefix_revision.wrapping_add(1);
+            return;
+        }
+
         if !self.executor.state.active_cells.contains_key(binding)
             && self
                 .executor
@@ -3357,12 +3392,25 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn unproved_field_read(
         &mut self,
         frame: &mut LocalFrame,
-        receiver: &Id,
+        receiver: Option<&Id>,
         receivers: &Values,
         property: &str,
         span: Span,
         refusal: OrderedFieldReadRefusal,
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        let Some(receiver) = receiver else {
+            self.fallback(
+                frame,
+                receivers.clone(),
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::MemberRead,
+                    ordered_field_read_refusal: Some(refusal),
+                    ordered_call_admission_refusal: None,
+                },
+                span,
+            );
+            return None;
+        };
         if matches!(self.scope, LocalExecutionScope::Root)
             && let Some(read) = self.executor.present_own_data_read(receivers, property)
         {
@@ -3436,6 +3484,39 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             span,
         );
         None
+    }
+    fn unproved_binding_targets(
+        &mut self,
+        frame: &mut LocalFrame,
+        targets: &[ObjectBindingProperty],
+    ) {
+        // The earlier fallback retained all RHS/prefix capabilities and effects.
+        // Keep both normal and abrupt possibilities for an unexecuted suffix;
+        // no target initialization or source operation receipt is claimed.
+        for target in targets {
+            frame
+                .environment
+                .entry(target.binding.clone())
+                .or_default()
+                .extend(unknown());
+            frame.binding_selections.remove(&target.binding);
+            frame.binding_postconditions.remove(&target.binding);
+            if matches!(self.scope, LocalExecutionScope::Root)
+                && self.executor.inputs.top_bindings.contains(&target.binding)
+            {
+                self.executor
+                    .state
+                    .prefix_values
+                    .entry(target.binding.clone())
+                    .or_default()
+                    .extend(unknown());
+                self.executor
+                    .state
+                    .prefix_callable_selections
+                    .remove(&target.binding);
+            }
+        }
+        self.executor.state.prefix_revision = self.executor.state.prefix_revision.wrapping_add(1);
     }
     fn unproved_field_write(
         &mut self,
@@ -16577,6 +16658,50 @@ impl Executor<'_, '_> {
                                 .any(|call| call.kind == CallKind::LocalMemberRead))
                         || body.terminal_call_root().is_some())
             });
+        let ordered_object_binding = (matches!(fact.kind, StatementKind::VarDecl)
+            && fact.rebinds.eager.is_empty()
+            && fact.global_writes.is_empty()
+            && !inputs.exported_owners.contains(&owner)
+            && index.dynamic_scope_owners.is_empty()
+            && !index.opaque_top.contains(&owner)
+            && index.top_property_writes[owner.0].is_empty()
+            && index.top_member_value_writes[owner.0].is_empty()
+            && index.top_callback_result_writes[owner.0].is_empty()
+            && index.top_exported_values[owner.0].is_empty())
+        .then(|| index.ordered_roots.get(&owner))
+        .flatten()
+        .filter(|root| {
+            let RootEffectSource::ObjectBindingInitializer {
+                pattern,
+                declarator_span,
+                initializer_span,
+            } = &root.identity.source
+            else {
+                return false;
+            };
+            let [
+                LocalOperation::InitializeObject {
+                    pattern: operation_pattern,
+                    ..
+                },
+            ] = root.body.operations.as_ref()
+            else {
+                return false;
+            };
+            root.identity.owner == owner
+                && pattern == operation_pattern
+                && root.body.source_span == Some(*declarator_span)
+                && root.body.root_expression_span() == Some(*initializer_span)
+                && pattern.properties.len() == fact.declared.len()
+                && assignments.len() == pattern.properties.len()
+                && pattern.properties.iter().all(|property| {
+                    fact.declared.contains(&property.binding)
+                        && assignments
+                            .iter()
+                            .any(|(binding, _)| binding == &property.binding)
+                })
+                && root.body.captured_writes().is_empty()
+        });
         let ordered_class = (matches!(fact.kind, StatementKind::ClassDecl)
             && fact.declared.len() == 1
             && fact.rebinds.eager.is_empty()
@@ -16602,7 +16727,7 @@ impl Executor<'_, '_> {
                         ValueExpr::Binding(exported) if exported == binding)
                         || matches!(value, ValueExpr::Alloc(Kind::Class, exported) if exported == class))
             });
-        let ordered_root = ordered_initializer.or(ordered_class).or_else(|| {
+        let ordered_root = ordered_initializer.or(ordered_object_binding).or(ordered_class).or_else(|| {
             (matches!(fact.kind, StatementKind::SideEffect)
                 && fact.declared.is_empty()
                 // This validated whole-expression protocol already has a
@@ -16865,7 +16990,12 @@ impl Executor<'_, '_> {
         }
         // Ordered expression stores have already executed their RHS and
         // updated the real module cells. A flat projection would replay them.
-        for (id, expression) in assignments.iter().filter(|_| !ordered_expression) {
+        // A pattern publishes each actual target through the root adapter.
+        // Selection means consumed, even when a later slot refused coverage.
+        for (id, expression) in assignments
+            .iter()
+            .filter(|_| !ordered_expression && ordered_object_binding.is_none())
+        {
             if !needed.contains(id) && initializer_source.is_none() {
                 continue;
             }
@@ -16966,11 +17096,13 @@ impl Executor<'_, '_> {
                 self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
             }
         }
-        self.state.initialized_bindings.extend(
-            index.top_definite_initializers[fact.ordinal.0]
-                .iter()
-                .cloned(),
-        );
+        if ordered_object_binding.is_none() {
+            self.state.initialized_bindings.extend(
+                index.top_definite_initializers[fact.ordinal.0]
+                    .iter()
+                    .cloned(),
+            );
+        }
         for expression in &index.top_exported_values[fact.ordinal.0] {
             let values = self.evaluate(expression, &top_env, &top_captures);
             self.state.exported_runtime_values.extend(values);
@@ -17154,11 +17286,7 @@ impl Executor<'_, '_> {
             let receipt = effect_root_identity.as_ref().and_then(|source| {
                 (identity.owner == owner
                     && identity == *source
-                    && identity
-                        .binding_initialization()
-                        .is_none_or(|(binding, _)| {
-                            self.state.initialized_bindings.contains(binding)
-                        })
+                    && identity.targets_initialized(&self.state.initialized_bindings)
                     && !outcome.unknown_call
                     && outcome.effects.uninitialized_reads.is_empty()
                     && outcome.effects.fallback_only.reads.is_empty()

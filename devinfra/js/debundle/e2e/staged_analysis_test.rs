@@ -1008,6 +1008,35 @@ fn linkage_export_effects_survive_saved_analysis() {
     );
 }
 
+#[test]
+fn object_binding_root_targets_and_receipts_survive_saved_analysis() {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        "const { left: first, right: second } = { left: () => 40, right: 2 }; console.log(first() + second);",
+        vec![],
+    ));
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct object binding");
+    let graph: Value = read_gzip_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let receipt = &graph_node_for_binding(&graph, "first")["synchronous_execution"]["binding_effect_authority"];
+    assert_eq!(receipt["authority"], "operation_receipt");
+    assert_eq!(
+        receipt["receipt"]["root_kind"],
+        "object_binding_initializer"
+    );
+    let targets = receipt["receipt"]["targets"].as_array().unwrap();
+    assert_eq!(targets.len(), 2);
+    assert_eq!(targets[0]["binding"], "first");
+    assert_eq!(targets[1]["binding"], "second");
+    let artifact = path(&staged.artifact).to_owned();
+    let restored = staged.run(&["--analysis", artifact.as_str()]);
+    assert_ok(&restored.result, "restored object binding");
+    assert_same_invocation_trees(&direct, &restored);
+}
+
 fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
     let (staged, _fixture) = staged(opts);
     let direct = staged.run(run_args);
