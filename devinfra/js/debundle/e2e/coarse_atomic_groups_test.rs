@@ -155,7 +155,7 @@ console.log(Q);
     assert_export_named_specifiers(
         &std::fs::read_to_string(alias_module).unwrap(),
         "a",
-        &[Some("Q")],
+        &[Some("Q"), None],
     );
     assert_export_named_specifiers(
         &std::fs::read_to_string(binding_module).unwrap(),
