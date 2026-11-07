@@ -13391,21 +13391,10 @@ impl Visit for ExecutionIndex {
             && let Expr::Member(member) = callee.unwrap_parens()
             && let MemberProp::Ident(property) = &member.prop
             && let Some(row) = iteration_row(property.sym.as_ref(), &call.args)
-            && let ArgSel::Arg(callback) = row.invokes
+            && matches!(row.invokes, ArgSel::Arg(_))
         {
-            self.array_iterations.insert(
-                call.span.into(),
-                ArrayIteration {
-                    row,
-                    source: ValueExpr::from_expr(&member.obj),
-                    callback: ValueExpr::from_expr(&call.args[callback].expr),
-                    initial: call
-                        .args
-                        .get(1)
-                        .map(|initial| ValueExpr::from_expr(&initial.expr)),
-                    result: None,
-                },
-            );
+            self.array_iterations
+                .insert(call.span.into(), ArrayIteration { row, result: None });
         }
         if let Callee::Expr(callee) = &call.callee
             && let Expr::Member(member) = callee.unwrap_parens()

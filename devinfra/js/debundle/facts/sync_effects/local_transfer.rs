@@ -3,7 +3,7 @@
 use super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
-use super::array_transfer::ArrayPushSelection;
+use super::array_transfer::{ArrayIterationSelection, ArrayPushSelection};
 use super::effect_coverage::EffectCoverageFragment;
 use super::local_operations::{
     DeferredCallableCreation, LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
@@ -110,6 +110,7 @@ pub(super) enum EvaluatedCallee {
         targets: Values,
         selection_dependencies: Option<Box<ProofDependencies>>,
         array_push: Option<Box<ArrayPushSelection>>,
+        array_iteration: Option<Box<ArrayIterationSelection>>,
     },
 }
 
@@ -166,6 +167,14 @@ pub(super) trait LocalContext: OwnDataContext {
         _receivers: &Values,
         _property: &str,
     ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
+        None
+    }
+    fn array_iteration_callee(
+        &mut self,
+        _receivers: &Values,
+        _property: &str,
+        _span: Span,
+    ) -> Option<(ArrayIterationSelection, EffectCoverageFragment)> {
         None
     }
     /// Conditions under which the current settled prefix is valid. The
@@ -937,10 +946,20 @@ fn call_expression(
             frame.inputs.extend(receivers.iter().cloned());
             let module_prefix = context.module_prefix_receiver(receiver, &receivers);
             let mut array_push = None;
+            let mut array_iteration = None;
             let result = if let Some((selection, effects)) =
                 context.array_push_callee(&receivers, property)
             {
                 array_push = Some(Box::new(selection));
+                LocalValueResult {
+                    allocation: AllocationValue::opaque(Values::new()),
+                    effects,
+                    selection: None,
+                }
+            } else if let Some((selection, effects)) =
+                context.array_iteration_callee(&receivers, property, *span)
+            {
+                array_iteration = Some(Box::new(selection));
                 LocalValueResult {
                     allocation: AllocationValue::opaque(Values::new()),
                     effects,
@@ -962,6 +981,7 @@ fn call_expression(
                 targets: completing(result.allocation.values, frame),
                 selection_dependencies,
                 array_push,
+                array_iteration,
             }
         }
     };
@@ -970,6 +990,9 @@ fn call_expression(
             &callee,
             EvaluatedCallee::Member {
                 array_push: Some(_),
+                ..
+            } | EvaluatedCallee::Member {
+                array_iteration: Some(_),
                 ..
             }
         )

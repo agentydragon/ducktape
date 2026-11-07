@@ -1,5 +1,101 @@
 //! Builtin iteration preserves real callback effects and retained array values.
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+use serde_json::Value;
+
+fn binding_execution(fixture: &Fixture, binding: &str) -> Value {
+    let graph = fixture.dependency_graph();
+    let unit = source_unit_for_binding(&graph, binding);
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == unit)
+        .expect("binding source unit");
+    serde_json::to_value(
+        node.synchronous_execution
+            .as_ref()
+            .expect("synchronous execution report"),
+    )
+    .expect("serialize execution report")
+}
+
+fn assert_native_map_receipt(fixture: &Fixture, binding: &str) {
+    let execution = binding_execution(fixture, binding);
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    let calls = authority["receipt"]["calls"]
+        .as_array()
+        .expect("operation receipt calls");
+    let map = calls
+        .iter()
+        .find(|call| {
+            call["target"]["kind"] == "native"
+                && call["target"]["intrinsic"] == "array"
+                && call["target"]["property"] == "prototype.map"
+        })
+        .unwrap_or_else(|| panic!("missing selected Array.prototype.map edge: {execution:#}"));
+    assert_eq!(map["caller"]["kind"], "root_initializer", "{map:#}");
+}
+
+fn assert_no_native_iteration_receipt(fixture: &Fixture, property: &str) {
+    let expected_property = format!("prototype.{property}");
+    let graph = fixture.dependency_graph();
+    let reports: Vec<_> = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.synchronous_execution.as_ref())
+        .collect();
+    assert!(
+        !reports.is_empty(),
+        "fixture must publish execution reports"
+    );
+    for execution in reports {
+        let execution = serde_json::to_value(execution).expect("serialize execution report");
+        let calls = execution
+            .pointer("/binding_effect_authority/receipt/calls")
+            .and_then(Value::as_array);
+        assert!(
+            calls.is_none_or(|calls| !calls.iter().any(|call| {
+                call["target"]["kind"] == "native"
+                    && call["target"]["intrinsic"] == "array"
+                    && call["target"]["property"].as_str() == Some(expected_property.as_str())
+            })),
+            "iteration without a completed selected transfer must not publish a native {property} receipt: {execution:#}"
+        );
+    }
+}
+
+fn assert_unsupported_iteration_keeps_source_output(
+    collection: &str,
+    expected: &str,
+    property: &str,
+) {
+    let source = format!(
+        "let later = 0;\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nlet observed = -1;\nconst result = {collection};\nlater = 42;\nconsole.log(JSON.stringify(result), observed, entries[0].executor());\n"
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_preserved_entry_output(&fixture, expected);
+    assert_no_native_iteration_receipt(&fixture, property);
+
+    let split = vec![
+        logical_module_with_anon(
+            "registry",
+            &[
+                Member::new("entries"),
+                Member::new("observed"),
+                Member::new("result"),
+            ],
+            &[],
+        ),
+        logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+    ];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(&source, split),
+        &["registry", "values/later"],
+        &[],
+    );
+}
 
 fn assert_early_iteration_rejected(
     declarations: &str,
@@ -95,25 +191,188 @@ fn assert_iteration_split_accepted_after(
 }
 
 #[test]
+fn selected_native_map_has_an_operation_receipt() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [1, 2];\nconst mapped = entries.map(value => value + 1);\nconsole.log(mapped.join(','));\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "2,3\n");
+    assert_native_map_receipt(&fixture, "mapped");
+}
+
+#[test]
+fn native_map_keeps_its_receiver_when_an_argument_rebinds_the_source_cell() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const original = [1, 2];\nconst replacement = [10, 20];\nlet receiver = original;\nconst mapped = receiver.map((receiver = replacement, value => value + 1));\nconsole.log(mapped[0], receiver[0]);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "2 10\n");
+    assert_native_map_receipt(&fixture, "mapped");
+}
+
+#[test]
+fn a_custom_prototype_method_selected_before_arguments_is_not_reinterpreted_after_restore() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const nativeMap = Array.prototype.map;\nconst entries = [1, 2];\nArray.prototype.map = function () { return ['custom']; };\nconst mapped = entries.map((Array.prototype.map = nativeMap, value => value + 1));\nconsole.log(mapped[0]);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "custom\n");
+    let execution = binding_execution(&fixture, "mapped");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "a custom method selected before the argument must not gain native receipt after the argument restores the prototype: {execution:#}"
+    );
+}
+
+#[test]
+fn flattened_effect_only_iteration_keeps_custom_method_fallback_and_refuses_receipt() {
+    let source = "let later = 0;\nconst nativeMap = Array.prototype.map;\nconst entries = [1, 2];\nlet observed = -1;\nArray.prototype.map = function () { return ['custom']; };\nif (true) entries.map((Array.prototype.map = nativeMap, value => { observed = later; return value + 1; }));\nlater = 42;\nconsole.log(observed);\n";
+    let steps = [
+        "Array.prototype.map = function () { return ['custom']; };",
+        "if (true) entries.map((Array.prototype.map = nativeMap, value => { observed = later; return value + 1; }));",
+    ];
+    let split = vec![
+        logical_module_with_anon(
+            "registry",
+            &[
+                Member::new("nativeMap"),
+                Member::new("entries"),
+                Member::new("observed"),
+            ],
+            &steps,
+        ),
+        logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+    ];
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "-1\n");
+    assert_no_native_iteration_receipt(&fixture, "map");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, split),
+        &["registry", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn throw_only_map_callback_does_not_certify_a_native_map_result() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [1];\nconst mapped = entries.map(() => { throw new Error('callback failure'); });\nconsole.log(mapped[0]);\n",
+        vec![],
+    ));
+    assert_preserved_entry_error(&fixture, "Error");
+    assert_no_native_iteration_receipt(&fixture, "map");
+}
+
+#[test]
+fn mixed_map_callback_completion_does_not_certify_a_native_map_result() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [1, 2];\nconst mapped = entries.map(value => { if (value === 2) throw new Error('callback failure'); return value; });\nconsole.log(mapped[0]);\n",
+        vec![],
+    ));
+    assert_preserved_entry_error(&fixture, "Error");
+    assert_no_native_iteration_receipt(&fixture, "map");
+}
+
+#[test]
+fn repeated_local_map_site_uses_each_activation_receiver() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function mapValues(values) { return values.map(value => value * 2); }\nconst first = mapValues([3]);\nconst second = mapValues([7]);\nconsole.log(first[0], second[0]);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "6 14\n");
+}
+
+#[test]
 fn iteration_rows_run_callbacks_without_invoking_stored_element_callbacks() {
     for (collection, expected) in [
-        ("entries.some(entry => entry.id === 'b')", "true 42\n"),
-        ("entries.every(entry => entry.size > 0)", "true 42\n"),
-        ("entries.findIndex(entry => entry.id === 'b')", "1 42\n"),
-        ("entries.find(entry => entry.id === 'b').size", "2 42\n"),
-        (
-            "entries.reduce((total, entry) => total + entry.size, 0)",
-            "3 42\n",
-        ),
-        ("entries.reduce((first, entry) => first).id", "\"a\" 42\n"),
-        (
-            "entries.flatMap(entry => [entry.id, entry.size])",
-            "[\"a\",1,\"b\",2] 42\n",
-        ),
-        ("entries.flatMap(entry => entry.id)", "[\"a\",\"b\"] 42\n"),
+        ("entries.forEach(entry => entry.size)", "undefined 42\n"),
+        ("entries.map(entry => entry.size)", "[1,2] 42\n"),
     ] {
         assert_iteration_split_accepted(collection, "", expected);
     }
+}
+
+#[test]
+fn unsupported_iteration_result_shapes_keep_conservative_callback_effects() {
+    for (collection, expected, property) in [
+        (
+            "entries.some(entry => { observed = later; return entry.id === 'b'; })",
+            "true 0 42\n",
+            "some",
+        ),
+        (
+            "entries.every(entry => { observed = later; return entry.size > 0; })",
+            "true 0 42\n",
+            "every",
+        ),
+        (
+            "entries.findIndex(entry => { observed = later; return entry.id === 'b'; })",
+            "1 0 42\n",
+            "findIndex",
+        ),
+        (
+            "entries.find(entry => { observed = later; return entry.id === 'b'; })",
+            "{\"id\":\"b\",\"size\":2} 0 42\n",
+            "find",
+        ),
+        (
+            "entries.reduce((total, entry) => { observed = later; return total + entry.size; }, 0)",
+            "3 0 42\n",
+            "reduce",
+        ),
+        (
+            "entries.reduce((first, entry) => { observed = later; return first; })",
+            "{\"id\":\"a\",\"size\":1} 0 42\n",
+            "reduce",
+        ),
+        (
+            "entries.flatMap(entry => { observed = later; return [entry.id, entry.size]; })",
+            "[\"a\",1,\"b\",2] 0 42\n",
+            "flatMap",
+        ),
+        (
+            "entries.flatMap(entry => { observed = later; return entry.id; })",
+            "[\"a\",\"b\"] 0 42\n",
+            "flatMap",
+        ),
+    ] {
+        assert_unsupported_iteration_keeps_source_output(collection, expected, property);
+    }
+}
+
+#[test]
+fn filter_excluding_the_first_element_does_not_certify_positional_slots() {
+    let source = "let later = 0;\nconst entries = [1, 2];\nlet observed = -1;\nconst filtered = entries.filter(value => { observed = later; return value === 2; });\nlater = 42;\nconsole.log(filtered[0], observed);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "2 0\n");
+    assert_no_native_iteration_receipt(&fixture, "filter");
+    let split = vec![
+        logical_module_with_anon(
+            "registry",
+            &[
+                Member::new("entries"),
+                Member::new("observed"),
+                Member::new("filtered"),
+            ],
+            &[],
+        ),
+        logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+    ];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, split),
+        &["registry", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn short_circuiting_some_does_not_certify_an_unreachable_throwing_suffix() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [1, 2];\nconst result = entries.some(value => value === 1 || (() => { throw new Error('unreachable'); })());\nconsole.log(result);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "true\n");
+    assert_no_native_iteration_receipt(&fixture, "some");
 }
 
 /// Rows require only the Array prototype properties they read: writes to the

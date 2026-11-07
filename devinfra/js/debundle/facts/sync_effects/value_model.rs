@@ -389,10 +389,6 @@ pub(super) enum AbstractValue {
 #[derive(Debug, Clone)]
 pub(super) struct ArrayIteration {
     pub(super) row: &'static IterationRow,
-    pub(super) source: ValueExpr,
-    pub(super) callback: ValueExpr,
-    /// `reduce`'s initial accumulator.
-    pub(super) initial: Option<ValueExpr>,
     pub(super) result: Option<u32>,
 }
 
@@ -407,17 +403,6 @@ pub(super) struct ArrayElement {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct DenseArray {
     pub(super) slots: Vec<Values>,
-}
-
-/// Result of transferring the ordinary Array iterator over a settled dense
-/// array at one interpreter prefix. Operation adapters check their own
-/// iterator-protocol premises; this transfer supplies the exact receiver and
-/// ordered heap slots. Operand evaluation keeps possible throws in its
-/// existing `Unavailable` path; a transfer refuses any non-singleton value.
-#[derive(Debug, Clone, PartialEq)]
-pub(super) enum DenseArrayIterationTransfer {
-    Refused,
-    Yielded { source: u32, slots: Vec<Values> },
 }
 
 #[derive(Debug, Clone)]

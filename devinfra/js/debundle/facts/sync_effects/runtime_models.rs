@@ -1,15 +1,15 @@
 //! Deterministic synchronous models that consume a settled runtime prefix.
 
-use super::super::value_model::{AbstractValue, CallSite, Context, Values};
+use super::super::value_model::{AbstractValue, Values};
+use super::array_transfer::{ArrayIterationExecution, ArrayIterationSelection};
 use super::interpreter::{Executor, Outcome, ValidatedMetadataDecoration};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use source_identity::SourceUnitOrdinal;
 
 pub(super) enum ModelOperation {
     ExecuteArrayIteration {
-        span: CallSite,
-        environment: Context,
-        captures: Context,
+        selection: ArrayIterationSelection,
+        arguments: Vec<Values>,
         outcome: Box<Outcome>,
     },
     ConstructLocalClass {
@@ -27,7 +27,7 @@ pub(super) enum ModelOperation {
 #[derive(Clone)]
 pub(super) enum ModelResult {
     ArrayIteration {
-        handled: bool,
+        execution: Option<Box<ArrayIterationExecution>>,
         outcome: Box<Outcome>,
     },
     LocalClassConstruction(
@@ -41,18 +41,16 @@ pub(super) enum ModelResult {
 pub(super) fn dispatch(executor: &mut Executor<'_, '_>, operation: ModelOperation) -> ModelResult {
     match operation {
         ModelOperation::ExecuteArrayIteration {
-            span,
-            environment,
-            captures,
+            selection,
+            arguments,
             mut outcome,
         } => {
-            let handled = executor.execute_array_iteration_transfer(
-                span,
-                &environment,
-                &captures,
-                &mut outcome,
-            );
-            ModelResult::ArrayIteration { handled, outcome }
+            let execution =
+                executor.execute_array_iteration_transfer(&selection, &arguments, &mut outcome);
+            ModelResult::ArrayIteration {
+                execution: execution.map(Box::new),
+                outcome,
+            }
         }
         ModelOperation::ConstructLocalClass { key, arguments } => {
             ModelResult::LocalClassConstruction(Box::new(

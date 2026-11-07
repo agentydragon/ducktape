@@ -1,7 +1,9 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::super::allocation_transfer::AllocationContext;
-use super::super::array_transfer::{self, ArrayContext, ArrayPushSelection};
+use super::super::array_transfer::{
+    self, ArrayContext, ArrayIterationExecution, ArrayIterationSelection, ArrayPushSelection,
+};
 use super::super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
     RootInitializerIdentity,
@@ -17,10 +19,9 @@ use super::super::noninvoking_initialization::{
 };
 use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::super::value_model::{
-    AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
-    DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, InstanceOrigin, LexicalCaptures,
-    LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
-    canonical_array_index,
+    AbstractValue, CallSite, CaptureInterner, Captured, CapturedContext, Context, DenseArray,
+    FrozenNamespaceProof, InstanceOrigin, LexicalCaptures, LexicalCellId, MemberKey,
+    OwnPropertyShape, RetainedResultKind, ValueExpr, Values, canonical_array_index,
 };
 use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
@@ -1507,6 +1508,50 @@ impl ArrayContext for Executor<'_, '_> {
         }
     }
 
+    fn array_method_selected_from_original_prototype(&self, object: u32, property: &str) -> bool {
+        matches!(
+            self.state.writable_prefix.get(&object),
+            Some(super::super::allocation_transfer::WritablePrefixState::DenseArray { .. })
+        ) && self.state.object_properties_are_settled(&object)
+            && self
+                .state
+                .prefix_object_properties
+                .get(&object)
+                .is_some_and(|properties| !properties.contains_key(&Some(property.to_owned())))
+            && !self
+                .state
+                .applied_accessors
+                .get(&object)
+                .is_some_and(|accessors| accessors.contains_key(property))
+    }
+
+    fn literal_array_length(&self, object: u32, absent: &[&str]) -> Option<u32> {
+        let properties = self.state.prefix_object_properties.get(&object)?;
+        if !self.state.object_accessors_are_settled(&object)
+            || self.state.applied_accessors.contains_key(&object)
+            || !self.state.dense_arrays.contains_key(&object)
+            || absent
+                .iter()
+                .any(|property| properties.contains_key(&Some((*property).to_owned())))
+        {
+            return None;
+        }
+        match self.state.writable_prefix.get(&object)? {
+            super::super::allocation_transfer::WritablePrefixState::DenseArray { length } => {
+                Some(*length)
+            }
+            _ => None,
+        }
+    }
+
+    fn array_slots_intact(&self, slots: &[IntrinsicSlot]) -> bool {
+        Executor::array_slots_intact(self, slots)
+    }
+
+    fn dense_array_slots(&self, object: u32) -> Option<Vec<Values>> {
+        self.settled_dense_array_slots(object)
+    }
+
     fn array_prototypes_intact(&self) -> bool {
         self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
     }
@@ -1748,6 +1793,45 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             crate::facts::EffectCell::OwnProperty {
                 origin: selection.object,
                 property: "push".into(),
+            },
+        ] {
+            self.outcome
+                .effects
+                .record_heap_read(cell, self.executor.state.assumption.is_none());
+        }
+        Some((selection, effects))
+    }
+    fn array_iteration_callee(
+        &mut self,
+        receivers: &Values,
+        property: &str,
+        span: Span,
+    ) -> Option<(ArrayIterationSelection, EffectCoverageFragment)> {
+        let site = CallSite::from(span);
+        let proof = self.executor.inputs.index.array_iterations.get(&site)?;
+        if property != proof.row.member || !matches!(property, "map" | "forEach") {
+            return None;
+        }
+        let call = self
+            .calls()
+            .iter()
+            .find(|call| call.kind == CallKind::Call && call.span == span)?;
+        if call.has_spread {
+            return None;
+        }
+        let (selection, effects) = array_transfer::select_iteration(
+            self.executor,
+            receivers,
+            site,
+            proof.row,
+            proof.result,
+            call.args.len(),
+        )?;
+        for cell in [
+            crate::facts::EffectCell::ObjectShape(selection.object),
+            crate::facts::EffectCell::OwnProperty {
+                origin: selection.object,
+                property: property.to_owned(),
             },
         ] {
             self.outcome
@@ -4174,35 +4258,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .flatten()
     }
 
-    /// Transfer the ordinary dense-array iterator over the evaluated operand's
-    /// prefix heap. The operation adapter supplies its already-defined native
-    /// protocol premise (Set's typed certificate or a spread's exact Array
-    /// slots) at the same point the previous dense-source check consulted it.
-    fn dense_array_iteration_transfer(
-        &self,
-        values: &Values,
-        protocol_intact: impl FnOnce() -> bool,
-    ) -> DenseArrayIterationTransfer {
-        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
-            values.iter().collect::<Vec<_>>().as_slice()
-        else {
-            return DenseArrayIterationTransfer::Refused;
-        };
-        // Exact singleton matching rejects an Unavailable throw alternative
-        // before consulting protocol slots, as the previous dense-source
-        // guard did.
-        if !protocol_intact() {
-            return DenseArrayIterationTransfer::Refused;
-        }
-        match self.settled_dense_array_slots(*object) {
-            Some(slots) => DenseArrayIterationTransfer::Yielded {
-                source: *object,
-                slots,
-            },
-            None => DenseArrayIterationTransfer::Refused,
-        }
-    }
-
     fn dense_array_push_receiver(&self, receiver: &Values) -> Option<u32> {
         let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
             receiver.iter().collect::<Vec<_>>().as_slice()
@@ -4364,77 +4419,82 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         result
     }
 
-    fn array_iteration_plan(
-        &mut self,
-        span: CallSite,
-        env: &Context,
-        captures: &Context,
-    ) -> Option<(
-        ArrayIteration,
-        u32,
-        DenseArray,
-        u32,
-        Option<CapturedContext>,
-    )> {
-        let proof = self.inputs.index.array_iterations.get(&span)?.clone();
-        proof.result?;
-        let values = self.evaluate(&proof.source, env, captures);
-        let DenseArrayIterationTransfer::Yielded { source, slots } = self
-            .dense_array_iteration_transfer(&values, || {
-                self.array_slots_intact(proof.row.requires)
-            })
+    fn array_iteration_callback(
+        &self,
+        selection: &ArrayIterationSelection,
+        arguments: &[Values],
+    ) -> Option<(u32, Option<CapturedContext>)> {
+        let ArgSel::Arg(index) = selection.row.invokes else {
+            return None;
+        };
+        match arguments.get(index)?.iter().collect::<Vec<_>>().as_slice() {
+            [AbstractValue::Value(Value::Alloc(Kind::Function, key))] => Some((*key, None)),
+            [AbstractValue::Closure(key, captured)] => Some((*key, Some(captured.clone()))),
+            _ => None,
+        }
+    }
+
+    fn array_iteration_callback_is_admissible(&self, key: u32) -> bool {
+        let Some(callable) = self.inputs.index.callables.get(&key) else {
+            return false;
+        };
+        !callable.generator
+            && !self.inputs.index.async_callables.contains(&key)
+            && callable.params.iter().all(|param| param.binding.is_some())
+    }
+
+    /// Read only possible custom-method callbacks from a receiver already
+    /// evaluated by the flattened fallback. This does not prove selection or
+    /// admit the native iteration transfer.
+    fn array_iteration_member_targets(&mut self, receivers: &Values, property: &str) -> Values {
+        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
+            receivers.iter().collect::<Vec<_>>().as_slice()
         else {
-            return None;
+            return unknown();
         };
-        let dense = DenseArray { slots };
-        if dense.slots.len() > MAX_SYNCHRONOUS_INVOCATIONS {
-            return None;
-        }
-        for values in &dense.slots {
-            if values.is_empty()
-                || values.iter().any(|value| match value {
-                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                        (!self.inputs.index.plain_data_objects.contains(object)
-                            && !self.state.ordinary_spread_copies.contains(object))
-                            || !self.state.object_properties_are_settled(object)
-                    }
-                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => self.state.tainted_functions.contains(key),
-                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
-                        self.class_may_run_on_borrowed_receiver(*key)
-                    }
-                    value if value.is_primitive() => false,
-                    _ => true,
-                })
-            {
-                return None;
-            }
-        }
-        let callback = self.evaluate(&proof.callback, env, captures);
-        let (key, captured) = match callback.iter().collect::<Vec<_>>().as_slice() {
-            [AbstractValue::Value(Value::Alloc(Kind::Function, key))] => (*key, None),
-            [AbstractValue::Closure(key, captured)] => (*key, Some(captured.clone())),
-            _ => return None,
-        };
-        let callable = self.inputs.index.callables.get(&key)?;
-        if callable.generator
-            || self.inputs.index.async_callables.contains(&key)
-            || callable.params.iter().any(|param| param.binding.is_none())
+        let mut values = Values::new();
+        if !self.state.object_properties_are_settled(object)
+            || !self.payload_lookup_is_data(*object, Some(property))
         {
-            return None;
+            values.insert(AbstractValue::Value(Value::Top));
+            return values;
         }
-        Some((proof, source, dense, key, captured))
+        if let Some(properties) = self.state.prefix_object_properties.get(object) {
+            if let Some(found) = properties.get(&Some(property.to_owned())) {
+                values.extend(found.iter().cloned());
+            } else if self.absent_plain_data_property(*object, property) {
+                values.insert(AbstractValue::UNDEFINED);
+            } else {
+                values.insert(AbstractValue::Value(Value::Top));
+            }
+            values.extend(
+                properties
+                    .get(&None)
+                    .into_iter()
+                    .flat_map(|found| found.iter().cloned()),
+            );
+        } else if let Some(found) = self.inputs.flow.values_of_property(*object, property) {
+            values.extend(from_flow(found.clone()));
+        } else {
+            values.insert(AbstractValue::Value(Value::Top));
+        }
+        values
     }
 
     /// The value an admitted iteration call evaluates to. A fresh array
     /// result is its allocation, whose slots the transfer retains; the
     /// accumulator is what the transfer last stored.
-    fn array_iteration_result(&mut self, proof: &ArrayIteration, dense: &DenseArray) -> Values {
-        let result = proof.result.unwrap();
-        match proof.row.result {
+    fn array_iteration_result(
+        &mut self,
+        selection: &ArrayIterationSelection,
+        dense: &DenseArray,
+    ) -> Values {
+        match selection.row.result {
             IterationResult::Undefined => Values::from([AbstractValue::UNDEFINED]),
             IterationResult::Mapped | IterationResult::Filtered | IterationResult::FlatMapped => {
-                Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, result))])
+                selection.result.map_or_else(unknown, |result| {
+                    Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, result))])
+                })
             }
             IterationResult::Boolean => {
                 Values::from([AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN))])
@@ -4449,11 +4509,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             // Not yet transferred: what the accumulator can hold is unknown,
             // but every callback it can reach stays retained.
-            IterationResult::Accumulated => match self.state.accumulated_values.get(&result) {
+            IterationResult::Accumulated => match selection
+                .result
+                .and_then(|result| self.state.accumulated_values.get(&result))
+            {
                 Some(values) => values.clone(),
                 None => {
                     let mut reachable: Values = dense.slots.iter().flatten().cloned().collect();
-                    reachable.insert(AbstractValue::Value(Value::Alloc(Kind::Object, result)));
+                    if let Some(result) = selection.result {
+                        reachable.insert(AbstractValue::Value(Value::Alloc(Kind::Object, result)));
+                    }
                     let callbacks = self.callback_values(&reachable);
                     Values::from([
                         self.deferred_callbacks(callbacks),
@@ -4474,28 +4539,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn execute_array_iteration(
         &mut self,
-        span: CallSite,
-        env: &Context,
-        captures: &Context,
+        selection: ArrayIterationSelection,
+        arguments: Vec<Values>,
         outcome: &mut Outcome,
-    ) -> bool {
+    ) -> Option<ArrayIterationExecution> {
         let result = self.request(RuntimeOperation::Model(
             super::runtime_models::ModelOperation::ExecuteArrayIteration {
-                span,
-                environment: env.clone(),
-                captures: captures.clone(),
+                selection,
+                arguments,
                 outcome: Box::new(std::mem::take(outcome)),
             },
         ));
         let RuntimeValue::Model(super::runtime_models::ModelResult::ArrayIteration {
-            handled,
+            execution,
             outcome: model_outcome,
         }) = result
         else {
             unreachable!("array iteration models produce iteration results");
         };
         *outcome = *model_outcome;
-        handled
+        execution.map(|execution| *execution)
     }
 
     /// Whether a callback result can be stored in a fresh result array, or
@@ -4539,18 +4602,48 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     pub(super) fn execute_array_iteration_transfer(
         &mut self,
-        span: CallSite,
-        env: &Context,
-        captures: &Context,
+        selection: &ArrayIterationSelection,
+        arguments: &[Values],
         outcome: &mut Outcome,
-    ) -> bool {
-        let Some((proof, source, dense, key, captured)) =
-            self.array_iteration_plan(span, env, captures)
-        else {
-            return false;
+    ) -> Option<ArrayIterationExecution> {
+        let (source_slots, dependencies) = array_transfer::iteration_snapshot(self, selection)?;
+        if source_slots.len() > MAX_SYNCHRONOUS_INVOCATIONS {
+            return None;
+        }
+        for values in &source_slots {
+            if values.is_empty()
+                || values.iter().any(|value| match value {
+                    AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                        (!self.inputs.index.plain_data_objects.contains(object)
+                            && !self.state.ordinary_spread_copies.contains(object))
+                            || !self.state.object_properties_are_settled(object)
+                    }
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                    | AbstractValue::Closure(key, _) => self.state.tainted_functions.contains(key),
+                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
+                        self.class_may_run_on_borrowed_receiver(*key)
+                    }
+                    value if value.is_primitive() => false,
+                    _ => true,
+                })
+            {
+                return None;
+            }
+        }
+        let (key, captured) = self.array_iteration_callback(selection, arguments)?;
+        if !self.array_iteration_callback_is_admissible(key) {
+            return None;
+        }
+        self.queries.assume(&dependencies);
+        let row = selection.row;
+        let result = selection.result;
+        if row.result != IterationResult::Undefined && result.is_none() {
+            return None;
+        }
+        let source = selection.object;
+        let dense = DenseArray {
+            slots: source_slots,
         };
-        let row = proof.row;
-        let result = proof.result.unwrap();
         let source_values =
             Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, source))]);
         let original_callbacks = self.callback_values(&source_values);
@@ -4558,10 +4651,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.state
             .array_iteration_protected_objects
             .extend(protected_objects);
-        let mut accumulator = proof
-            .initial
-            .as_ref()
-            .map(|initial| self.evaluate(initial, env, captures));
+        let mut effect_coverage = EffectCoverageFragment::lexical_operation();
+        effect_coverage.depend_on(&dependencies);
+        let mut accumulator = (row.result == IterationResult::Accumulated)
+            .then(|| arguments.get(1).cloned())
+            .flatten();
         let mut slots = Some(Vec::new());
         for values in &dense.slots {
             if row.result == IterationResult::Accumulated && accumulator.is_none() {
@@ -4584,15 +4678,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let unsupported = self.state.array_iteration_unsupported;
             self.state.array_iteration_unsupported |= previous_unsupported;
             let returned = nested.returns.clone();
-            let callback_executed_completely = nested.body_invoked && nested.complete;
+            let callback_completed_normally = nested.body_invoked
+                && nested.complete
+                && !returned.is_empty()
+                && !returned.contains(&AbstractValue::Value(Value::Unavailable));
+            effect_coverage.compose(&nested.effect_coverage);
             self.merge_array_effects(outcome, nested);
-            let current_source = self.evaluate(&proof.source, env, captures);
-            let current_source = self.dense_array_iteration_transfer(&current_source, || {
-                self.array_slots_intact(row.requires)
-            });
-            let valid = !unsupported && matches!(current_source,
-                DenseArrayIterationTransfer::Yielded { source: current_object, slots }
-                    if current_object == source && slots == dense.slots)
+            let current_source = array_transfer::iteration_snapshot(self, selection);
+            let valid = callback_completed_normally
+                && !unsupported
+                && current_source.is_some_and(|(slots, _)| slots == dense.slots)
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if !self.state.object_properties_are_settled(object)))
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)))
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Instance(key, _, InstanceOrigin::Constructed) if self.class_may_run_on_borrowed_receiver(*key)));
@@ -4606,7 +4701,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     || returned
                         .iter()
                         .all(|value| self.retainable_iteration_value(value))
-                    || callback_executed_completely)
+                    || callback_completed_normally)
                 && (row.result != IterationResult::FlatMapped
                     || returned
                         .iter()
@@ -4621,15 +4716,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     },
                     |this| this.promote_lazy_owner(callback_owner, effect_owner, outcome),
                 );
-                self.state.tainted_objects.insert(result);
-                self.state
-                    .prefix_object_properties
-                    .entry(result)
-                    .or_default()
-                    .entry(None)
-                    .or_default()
-                    .extend(original_callbacks.iter().cloned());
+                if let Some(result) = result {
+                    self.state.tainted_objects.insert(result);
+                    self.state
+                        .prefix_object_properties
+                        .entry(result)
+                        .or_default()
+                        .entry(None)
+                        .or_default()
+                        .extend(original_callbacks.iter().cloned());
+                }
                 if row.result == IterationResult::Accumulated {
+                    let result = result?;
                     let mut retained = original_callbacks.clone();
                     retained.extend(self.callback_values(&returned));
                     retained.extend(accumulator.iter().flatten().cloned());
@@ -4642,13 +4740,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.invoke_possible_callbacks_at(
                     &[original_callbacks],
                     false,
-                    Some(span.source_span()),
+                    Some(selection.site.source_span()),
                     outcome,
                 );
-                return false;
+                return None;
             }
             match row.result {
                 IterationResult::Mapped => {
+                    let result = result?;
                     let contents = self
                         .state
                         .prefix_object_properties
@@ -4748,6 +4847,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         match row.result {
             IterationResult::Mapped | IterationResult::Filtered | IterationResult::FlatMapped => {
+                let result = result?;
                 match slots {
                     Some(slots) => self.retain_dense_array(result, slots),
                     None => {
@@ -4763,6 +4863,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             IterationResult::Accumulated => {
                 // An empty receiver without an initial value throws.
+                let result = result?;
                 let values = accumulator
                     .unwrap_or_else(|| Values::from([AbstractValue::Value(Value::Unavailable)]));
                 self.join_accumulated_value(result, values);
@@ -4772,7 +4873,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             | IterationResult::Element
             | IterationResult::Index => {}
         }
-        true
+        let values = self.array_iteration_result(selection, &dense);
+        Some(ArrayIterationExecution {
+            values,
+            effect_coverage,
+        })
     }
 
     /// Repeated evaluations of one `reduce` call join their accumulators.
@@ -10368,10 +10473,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if self.state.frozen_namespace_calls.contains(span) {
                     return self.evaluate(&args[0], env, captures);
                 }
-                if let Some((proof, _, dense, _, _)) =
-                    self.array_iteration_plan(*span, env, captures)
-                {
-                    return self.array_iteration_result(&proof, &dense);
+                let site = CallSite::from(*span);
+                if self.inputs.index.array_iterations.contains_key(&site) {
+                    // A value query is not an executed call occurrence. Only
+                    // the ordered local transfer receives selected operands;
+                    // the flattened root lane cannot publish or replay one.
+                    return Values::from([
+                        AbstractValue::Value(Value::Top),
+                        AbstractValue::Value(Value::Unavailable),
+                    ]);
                 }
                 let targets = self.evaluate(callee, env, captures);
                 if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable))
@@ -11425,6 +11535,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operands: Option<CallOperands>,
     ) -> CallTransfer {
         let needs_value = operands.is_some();
+        let flattened_root_iteration = operands.is_none()
+            && call.kind == CallKind::Call
+            && self
+                .inputs
+                .index
+                .array_iterations
+                .contains_key(&CallSite::from(call.span));
         let selected_member_dependencies =
             operands
                 .as_ref()
@@ -11835,15 +11952,66 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.invoke_possible_callbacks_at(&[possible_values], false, Some(call.span), outcome);
             return CallTransfer::EffectsOnly;
         }
-        let (targets, mut args, prepared_receiver) = match operands {
+        let (targets, mut args, prepared_receiver, mut array_iteration_selection) = match operands {
             Some(operands) => {
                 assert_eq!(operands.arguments.len(), call.args.len());
                 match operands.callee {
-                    EvaluatedCallee::Direct(targets) => (targets.values, operands.arguments, None),
+                    EvaluatedCallee::Direct(targets) => {
+                        (targets.values, operands.arguments, None, None)
+                    }
                     EvaluatedCallee::Member {
-                        receiver, targets, ..
-                    } => (targets, operands.arguments, Some(receiver)),
+                        receiver,
+                        targets,
+                        array_iteration,
+                        ..
+                    } => (
+                        targets,
+                        operands.arguments,
+                        Some(receiver),
+                        array_iteration.map(|selection| *selection),
+                    ),
                 }
+            }
+            None if flattened_root_iteration => {
+                // The root call census is flattened and may follow owner-level
+                // writes. It cannot prove either that this call ran or that
+                // the current method value predates argument effects. Retain
+                // every visible capability through the ordinary opaque-call
+                // fallback instead of granting an iteration transfer.
+                let (receiver_values, callee_values) = match &call.callee {
+                    ValueExpr::Member(receiver, Some(property), MemberKey::Static, _)
+                        if matches!(receiver.as_ref(), ValueExpr::Binding(_)) =>
+                    {
+                        let receivers = self.evaluate(receiver, env, captures);
+                        let targets = self.array_iteration_member_targets(&receivers, property);
+                        (receivers, targets)
+                    }
+                    ValueExpr::Member(_, _, _, _) => {
+                        (unknown(), self.evaluate(&call.callee, env, captures))
+                    }
+                    _ => (Values::new(), self.evaluate(&call.callee, env, captures)),
+                };
+                let args: Vec<_> = call
+                    .args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, env, captures))
+                    .collect();
+                let mut possible = callee_values;
+                possible.extend(receiver_values);
+                possible.extend(args.iter().flatten().cloned());
+                self.expose_class_capabilities(&possible);
+                self.taint_objects(&possible);
+                outcome.lose_call_target(call.owner, call.span);
+                outcome.unknown_call = true;
+                self.note_unknown_call(call);
+                self.promote_escaped_callbacks(&possible, outcome);
+                self.invoke_possible_callbacks_at(
+                    &[possible],
+                    call.no_sync_arguments,
+                    Some(call.span),
+                    outcome,
+                );
+                return CallTransfer::EffectsOnly;
             }
             None => {
                 let targets = self.evaluate(&call.callee, env, captures);
@@ -11856,7 +12024,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .iter()
                     .map(|arg| self.evaluate(arg, env, captures))
                     .collect();
-                (targets, args, None)
+                (targets, args, None, None)
             }
         };
         let operands_may_throw = targets.contains(&AbstractValue::Value(Value::Unavailable))
@@ -11872,6 +12040,78 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         for values in &mut args {
             values.remove(&AbstractValue::Value(Value::Unavailable));
+        }
+        let selected_iteration = array_iteration_selection.as_ref().map(|selection| {
+            (
+                selection.row.member.to_owned(),
+                selection.dependencies.clone(),
+            )
+        });
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && let Some(selection) = array_iteration_selection.take()
+        {
+            if let Some(mut execution) =
+                self.execute_array_iteration(selection, args.clone(), outcome)
+            {
+                if operands_may_throw {
+                    execution
+                        .values
+                        .insert(AbstractValue::Value(Value::Unavailable));
+                }
+                if needs_value {
+                    outcome.effect_coverage = execution.effect_coverage.clone();
+                }
+                if needs_value
+                    && !operands_may_throw
+                    && !execution
+                        .values
+                        .contains(&AbstractValue::Value(Value::Unavailable))
+                    && outcome.complete
+                    && !outcome.unknown_call
+                    && self.state.assumption.is_none()
+                    && let (Some((property, dependencies)), Some(caller)) =
+                        (selected_iteration, self.local_body_identity_for_call(call))
+                {
+                    outcome
+                        .effect_coverage
+                        .selected_local_call(LocalCallReceipt {
+                            caller,
+                            call_span: call.span,
+                            target: LocalBodyIdentity::Native {
+                                intrinsic: NativeIntrinsic::Array,
+                                property: Some(format!("prototype.{property}")),
+                            },
+                            dependencies: Box::new(dependencies),
+                        });
+                }
+                return CallTransfer::requested(needs_value, || execution.values);
+            }
+
+            // A selected native call whose row model cannot prove normal
+            // completion retains the effects reached so far, then falls back
+            // with the actual receiver and arguments. Do not let the empty
+            // native-target placeholder look like a missing callee.
+            let mut possible: Values = args.iter().flatten().cloned().collect();
+            possible.extend(prepared_receiver.iter().flatten().cloned());
+            self.expose_class_capabilities(&possible);
+            self.taint_objects(&possible);
+            outcome.lose_call_target(call.owner, call.span);
+            outcome.unknown_call = true;
+            self.note_unknown_call(call);
+            self.promote_escaped_callbacks(&possible, outcome);
+            self.invoke_possible_callbacks_at(
+                &[possible],
+                call.no_sync_arguments,
+                Some(call.span),
+                outcome,
+            );
+            return CallTransfer::requested(needs_value, || {
+                Values::from([
+                    AbstractValue::Value(Value::Top),
+                    AbstractValue::Value(Value::Unavailable),
+                ])
+            });
         }
         // The provider body runs no other code and writes only its own
         // allocations. The call stays impure for purity and S-chain order.
@@ -12125,12 +12365,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.taint_objects(&entries);
             return CallTransfer::EffectsOnly;
         }
-        if call.kind == CallKind::Call
-            && !needs_value
-            && self.execute_array_iteration(call.span.into(), env, captures, outcome)
-        {
-            return CallTransfer::EffectsOnly;
-        }
         // Known local methods still receive an implicit `this` capability.
         // Its effects are not resolved by invoke, so it can mutate any retained
         // array reachable from the receiver before a later intrinsic iteration.
@@ -12164,14 +12398,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // does not prove that the foreign call preserves its contents.
             opaque_args.push(receiver_values);
         }
-        if !needs_value
-            && let Some(proof) = self.inputs.index.array_iterations.get(&call.span.into())
-        {
-            let source = self.evaluate(&proof.source.clone(), env, captures);
-            self.promote_escaped_callbacks(&source, outcome);
-            opaque_args.push(source);
-        }
-
         if let Some(callbacks) = from_entries_source_callbacks {
             opaque_args.push(callbacks);
         }

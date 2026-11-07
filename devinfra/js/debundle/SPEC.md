@@ -4380,6 +4380,32 @@ The independent descriptor/length witness can admit subsequent primitive pushes
 through the shared ordered transfer described above; it cannot restore element
 snapshots or certify other array methods.
 
+Selected dense-array iteration also uses the shared call transfer. It captures
+the selected native method and receiver before evaluating arguments, then gives
+the model those exact values and the arguments evaluated once in source order.
+It checks the method's original-prototype identity before arguments and
+rechecks mutable receiver contents, callback admissibility, and remaining row
+premises after arguments. If an argument rebinds the receiver binding, the
+transfer still uses the captured array. A selected custom method that is later
+followed by a prototype restore stays on the conservative path; the later
+prototype value cannot replace the captured callee.
+
+Ordered root-initializer and local calls return the iteration result from their
+own `CallTransfer` and do not use a source-span result cache. The flattened root
+call census cannot prove that a call beneath top-level control executed, or
+that owner-level writes did not precede method selection. Those calls retain
+the ordinary opaque-call callback fallback and cannot receive a native
+iteration transfer. Evaluation-only value queries also stay unknown and never
+reevaluate receiver, callback, or argument expressions. This handoff does not
+widen iteration rows or change the existing completion and legacy-authority
+rules. Native selected-call execution is admitted only for `map` and
+`forEach`: `forEach` transfers effects and its `undefined` result without a
+result allocation, while `map` requires its checked result allocation. Other
+recognized rows remain on conservative fallback because their current shared
+result protocol does not prove exact positional or short-circuit behavior;
+for example, `filter` cannot retain every input slot when a predicate may
+exclude an earlier element.
+
 ## Runtime resource destinations
 
 The browser harness `reports/runtime.json` lists statically recognized dynamic

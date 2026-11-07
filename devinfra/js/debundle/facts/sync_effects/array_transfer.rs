@@ -1,9 +1,11 @@
 //! Native array operations over an uninterrupted literal's descriptor state.
 
 use super::effect_coverage::EffectCoverageFragment;
-use super::value_model::{AbstractValue, Values};
+use super::value_model::{AbstractValue, CallSite, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::EffectCell;
+use crate::facts::abstract_domain::builtins::{ArgSel, IterationResult, IterationRow};
+use crate::facts::abstract_domain::integrity::IntrinsicSlot;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 
@@ -12,6 +14,13 @@ pub(super) trait ArrayContext {
     /// and no own `push`. Reused allocation sites and descriptor changes lose
     /// this witness even if their pooled element values are still available.
     fn writable_array_length(&self, object: u32) -> Option<u32>;
+    /// Whether this array's method GetValue selects the original Array
+    /// prototype property at the current prefix. Check before arguments.
+    fn array_method_selected_from_original_prototype(&self, object: u32, property: &str) -> bool;
+    /// Current exact length with the listed own properties absent.
+    fn literal_array_length(&self, object: u32, absent: &[&str]) -> Option<u32>;
+    fn array_slots_intact(&self, slots: &[IntrinsicSlot]) -> bool;
+    fn dense_array_slots(&self, object: u32) -> Option<Vec<Values>>;
     fn array_prototypes_intact(&self) -> bool;
     fn array_dependencies(&self) -> ProofDependencies;
     fn append_primitives(&mut self, object: u32, length: u32, arguments: &[Values]);
@@ -23,6 +32,25 @@ pub(super) trait ArrayContext {
 pub(super) struct ArrayPushSelection {
     pub(super) object: u32,
     dependencies: ProofDependencies,
+}
+
+/// Captured native GetValue identity. It is created before arguments; the
+/// receiver contents and any body-only premises are checked after them.
+#[derive(Clone)]
+pub(super) struct ArrayIterationSelection {
+    pub(super) object: u32,
+    pub(super) site: CallSite,
+    pub(super) row: &'static IterationRow,
+    pub(super) result: Option<u32>,
+    pub(super) dependencies: ProofDependencies,
+}
+
+/// Result of one completed ordered native iteration invocation. The same
+/// call transfer returns values and effects to its caller without replay.
+#[derive(Clone)]
+pub(super) struct ArrayIterationExecution {
+    pub(super) values: Values,
+    pub(super) effect_coverage: EffectCoverageFragment,
 }
 
 pub(super) fn select_push(
@@ -49,6 +77,88 @@ pub(super) fn select_push(
         },
         effects,
     ))
+}
+
+pub(super) fn select_iteration(
+    context: &impl ArrayContext,
+    receivers: &Values,
+    site: CallSite,
+    row: &'static IterationRow,
+    result: Option<u32>,
+    argument_count: usize,
+) -> Option<(ArrayIterationSelection, EffectCoverageFragment)> {
+    let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
+        receivers.iter().collect::<Vec<_>>().as_slice()
+    else {
+        return None;
+    };
+    if !row.arity.contains(&argument_count)
+        || !matches!(row.invokes, ArgSel::Arg(index) if index < argument_count)
+    {
+        return None;
+    }
+    let method_slots: Vec<_> = row
+        .requires
+        .iter()
+        .filter(|slot| {
+            matches!(slot,
+                IntrinsicSlot::PrototypeProperty(_, member) if *member == row.member)
+        })
+        .copied()
+        .collect();
+    if method_slots.is_empty()
+        || !context.array_slots_intact(&method_slots)
+        || !context.array_method_selected_from_original_prototype(*object, row.member)
+    {
+        return None;
+    }
+    let dependencies = context.array_dependencies();
+    let mut effects = EffectCoverageFragment::no_effects();
+    effects.depend_on(&dependencies);
+    Some((
+        ArrayIterationSelection {
+            object: *object,
+            site,
+            row,
+            result,
+            dependencies,
+        },
+        effects,
+    ))
+}
+
+/// Recheck the mutable receiver and body-only native premises after arguments.
+/// The selected method slot is excluded because GetValue already chose it.
+pub(super) fn iteration_snapshot(
+    context: &impl ArrayContext,
+    selection: &ArrayIterationSelection,
+) -> Option<(Vec<Values>, ProofDependencies)> {
+    let body_slots: Vec<_> = selection
+        .row
+        .requires
+        .iter()
+        .filter(|slot| {
+            !matches!(slot,
+                IntrinsicSlot::PrototypeProperty(_, member) if *member == selection.row.member)
+        })
+        .copied()
+        .collect();
+    if !context.array_slots_intact(&body_slots) {
+        return None;
+    }
+    let absent = if selection.row.result == IterationResult::Mapped {
+        &["constructor"][..]
+    } else {
+        &[][..]
+    };
+    let length = context.literal_array_length(selection.object, absent)?;
+    let slots = context.dense_array_slots(selection.object)?;
+    if usize::try_from(length).ok()? != slots.len() {
+        return None;
+    }
+    let mut dependencies = selection.dependencies.clone();
+    dependencies.extend(&context.array_dependencies());
+    Some((slots, dependencies))
 }
 
 pub(super) struct ArrayPushResult {
