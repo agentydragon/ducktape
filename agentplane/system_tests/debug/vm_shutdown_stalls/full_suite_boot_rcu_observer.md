@@ -51,3 +51,29 @@ alter the standalone TCG VMI's topology, and a passing test only verifies
 capture and ordinary test lifecycle, not coverage of an intermittent boot or
 shutdown failure. Any sample, time, identity, or byte bound reached must be
 considered when interpreting absent evidence.
+
+## Clean-base smoke
+
+On 2026-11-07, the opt-in command below passed once on BuildBuddy invocation
+[109b700e-0bbc-4fb5-85c8-5881987d1ca1](https://app.buildbuddy.io/invocation/109b700e-0bbc-4fb5-85c8-5881987d1ca1):
+
+```sh
+bbr test //agentplane/system_tests/suites:test_vm \
+  --test_env=AGENTPLANE_VM_BOOT_RCU_OBSERVER=1 \
+  --nocache_test_results
+```
+
+The runner fetched base `83ddf8b1b0a6f4d96708fdfbbbf74b1dbed1e7fd` and applied
+the observer patch with SHA-256
+`b691af2bd8fdf0b9a737cd58e8d4f5aa22e31d89b6db59eceffd2e4d148253f9`. This run
+predates the later mypy-only correction to the summary counter updates. The
+suite passed in 379.7 seconds. Host sampling wrote 180 of 360 allowed records
+over 179.5 seconds, with no API failures, truncation, or incomplete process
+scans. All three observed launcher Pod/VMI identities had QEMU matches in at
+least 105 samples and later had deletion timestamps. Guest serials contained
+86 samples for `vm-1`, 65 for `vm-2`, and 79 for `vm-codex-oom`; each sample
+started and ended without sample errors or serial truncation. Each guest also
+logged shutdown proof exit status 0 and `reboot: Power down`. The observer did
+not reach its 360-sample completion receipt before test teardown, so these are
+partial captures, not a complete 360-second boot window. This single healthy
+run did not reproduce the intermittent failure.

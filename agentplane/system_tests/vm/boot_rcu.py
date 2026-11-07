@@ -134,6 +134,14 @@ def _append_bounded(path: Path, record: dict[str, object], *, max_bytes: int | N
     return True
 
 
+def _increment_integer_field(fields: dict[str, object], name: str, increment: int = 1) -> None:
+    """Increment a JSON summary counter after validating its current value."""
+    current = fields[name]
+    if not isinstance(current, int):
+        raise TypeError(f"summary field {name!r} is not an integer")
+    fields[name] = current + increment
+
+
 def _namespace_launchers(kubectl: Callable[..., str], namespace: str) -> tuple[list[dict[str, str]], int]:
     """Resolve only current sandbox launcher identities from one namespace Pod snapshot.
 
@@ -374,12 +382,12 @@ def start_namespace(
                                 "deletion_timestamp_seen": False,
                             },
                         )
-                        stats["samples"] = int(stats["samples"]) + 1
-                        stats["qemu_process_samples"] = int(stats["qemu_process_samples"]) + int(
-                            qemu.get("matching_qemu_processes", 0) == 1
+                        _increment_integer_field(stats, "samples")
+                        _increment_integer_field(
+                            stats, "qemu_process_samples", int(qemu.get("matching_qemu_processes", 0) == 1)
                         )
-                        stats["process_scan_incomplete_samples"] = int(stats["process_scan_incomplete_samples"]) + int(
-                            bool(qemu.get("process_scan_incomplete"))
+                        _increment_integer_field(
+                            stats, "process_scan_incomplete_samples", int(bool(qemu.get("process_scan_incomplete")))
                         )
                         stats["deletion_timestamp_seen"] = bool(stats["deletion_timestamp_seen"]) or bool(
                             pod["deletion_timestamp"]
@@ -491,15 +499,15 @@ def summarize_guest_serials(artifact_root: Path, namespace: str, host_summary: P
 
     rows = []
     for pod_uid in sorted(host_uids | set(guest_dirs)):
-        directory = guest_dirs.get(pod_uid)
+        guest_directory = guest_dirs.get(pod_uid)
         started: set[int] = set()
         ended: set[int] = set()
         completed_samples: int | None = None
         sample_errors = 0
         bytes_scanned = files_scanned = 0
         truncated = False
-        if directory is not None:
-            for serial in sorted(directory.rglob("*.log")):
+        if guest_directory is not None:
+            for serial in sorted(guest_directory.rglob("*.log")):
                 if files_scanned >= FULL_SUITE_MAX_SERIAL_FILES or bytes_scanned >= FULL_SUITE_MAX_SERIAL_BYTES:
                     truncated = True
                     break
@@ -531,7 +539,7 @@ def summarize_guest_serials(artifact_root: Path, namespace: str, host_summary: P
             {
                 "pod_uid": pod_uid,
                 "host_observed": pod_uid in host_uids,
-                "serial_directory_present": directory is not None,
+                "serial_directory_present": guest_directory is not None,
                 "guest_samples_started": len(started),
                 "guest_samples_ended": len(ended),
                 "guest_completion_receipt_samples": completed_samples,
@@ -540,10 +548,14 @@ def summarize_guest_serials(artifact_root: Path, namespace: str, host_summary: P
                 "serial_files_scanned": files_scanned,
                 "serial_bytes_scanned": bytes_scanned,
                 "serial_scan_truncated": truncated,
-                "status": "complete" if complete else "missing" if directory is None else "partial-or-not-finished",
+                "status": "complete"
+                if complete
+                else "missing"
+                if guest_directory is None
+                else "partial-or-not-finished",
             }
         )
-    summary = {
+    summary: dict[str, object] = {
         "namespace": namespace,
         "host_summary": str(host_summary.name),
         "host_summary_error": host_summary_error,
