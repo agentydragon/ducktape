@@ -300,7 +300,7 @@ impl Outcome {
             .heap_contents
             .extend(&std::mem::take(&mut nested.heap_contents));
         if let Some(receipts) = std::mem::take(&mut nested.operation_support_receipts) {
-            for receipt in *receipts {
+            for receipt in receipts.into_vec() {
                 self.effects.record_operation_support(receipt);
             }
         }
@@ -17487,16 +17487,18 @@ impl Executor<'_, '_> {
                 .and_then(|proof| {
                     RootNormalCompletion::from_completed_initialization(owner, proof)
                 });
-            outcome.effects.root_normal_completion = normal_dependencies.or_else(|| {
-                let source = effect_root_identity.as_ref()?;
-                let dependencies = outcome.effect_coverage.normal_dependencies()?;
-                RootNormalCompletion::from_root(
-                    source,
-                    owner,
-                    &self.state.initialized_bindings,
-                    dependencies,
-                )
-            });
+            outcome.effects.root_normal_completion = normal_dependencies
+                .or_else(|| {
+                    let source = effect_root_identity.as_ref()?;
+                    let dependencies = outcome.effect_coverage.normal_dependencies()?;
+                    RootNormalCompletion::from_root(
+                        source,
+                        owner,
+                        &self.state.initialized_bindings,
+                        dependencies,
+                    )
+                })
+                .map(Box::new);
         }
         // A potential or unknown suppression remains a conservative fence
         // write, but only an exact outward known throw is marked observed for
@@ -17511,7 +17513,7 @@ impl Executor<'_, '_> {
             )
         {
             outcome.effects.root_outward_throw =
-                RootOutwardThrow::from_root(source, owner, dependencies);
+                RootOutwardThrow::from_root(source, owner, dependencies).map(Box::new);
         }
         if let Some(identity) = outcome.root_effect_identity.take() {
             let expected_root_calls: BTreeSet<_> = calls

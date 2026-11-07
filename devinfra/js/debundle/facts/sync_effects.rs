@@ -5,10 +5,12 @@ mod array_transfer;
 mod callable_body_facts;
 mod descriptor_transfer;
 mod effect_coverage;
+#[cfg(test)]
+pub(crate) use effect_coverage::OperationSupportOperation;
 pub use effect_coverage::OperationSupportReceipt;
 pub(crate) use effect_coverage::{
     BindingEffectAuthority, BindingEffectCoverage, EffectCoverageFragment,
-    OperationSupportOperation, SavedBindingEffectCoverage, SavedEffectCoverageFragment,
+    SavedBindingEffectCoverage, SavedEffectCoverageFragment,
 };
 pub(crate) mod execution_index;
 mod local_operations;

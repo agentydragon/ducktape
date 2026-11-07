@@ -2925,17 +2925,14 @@ fn own_data_descriptor_support_report_matches_direct_and_saved_analysis() {
     let (staged, _fixture) = staged(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module(
-                    "a_mutator",
-                    &[
-                        Member::new("target"),
-                        Member::new("descriptors"),
-                        Member::new("applied"),
-                    ],
-                ),
-                logical_module("z_observer", &[Member::new("observed")]),
-            ],
+            vec![logical_module(
+                "a_mutator",
+                &[
+                    Member::new("target"),
+                    Member::new("descriptors"),
+                    Member::new("applied"),
+                ],
+            )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
     );
@@ -2946,6 +2943,15 @@ fn own_data_descriptor_support_report_matches_direct_and_saved_analysis() {
         Some(3),
         "{}",
         direct.result.stderr
+    );
+    let direct_report = candidate_relocation_report(&direct, "static/app");
+    assert_eq!(
+        direct_report["decision"]["status"], "conflict",
+        "{direct_report:#}"
+    );
+    assert!(
+        direct_report["swapped_pairs"].as_u64().unwrap() > 0,
+        "{direct_report:#}"
     );
     let assert_support_receipt = |invocation: &StagedInvocation| {
         let rows = read_jsonl(
