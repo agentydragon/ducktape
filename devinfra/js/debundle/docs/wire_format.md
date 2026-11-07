@@ -221,8 +221,17 @@ suffixes. This control relation is separate from may-effect domain closure;
 the exact initializer receipt for lazy function creation can prove normality
 without certifying its deferred body effects. Internal caught throws and
 returns do not write the outer fence when the shared root transfer proves
-normal completion. The report's `relocation_dependencies` includes the typed
-conditions consumed by this completion projection.
+normal completion. A missing normal receipt is serialized with the
+`potential_suppression` evidence basis; it remains a conservative modeled
+conflict but does not claim an observed throw or contradict a pair premise.
+Only an exact root-level outward known throw with covered abrupt-effect
+dependencies has observed progress-write evidence. The report's
+`relocation_dependencies` includes the typed conditions consumed by this
+completion projection.
+Saved synchronous facts require both `root_normal_completion` and
+`root_outward_throw` fields, using `null` when absent. A throw receipt requires
+its proof dependencies. Missing fields fail decoding; they never silently erase
+control evidence or downgrade an observed throw to potential suppression.
 
 `candidate_relocation_assessment.json` pairs the same emitted statement order
 and single effect sweep with typed structural placement obligations from the

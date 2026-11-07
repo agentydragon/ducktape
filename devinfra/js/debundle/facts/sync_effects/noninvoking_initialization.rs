@@ -183,6 +183,19 @@ pub(crate) struct RootNormalCompletion {
 }
 
 impl RootNormalCompletion {
+    /// An exact completed-initializer receipt is itself whole-root normality
+    /// evidence. It need not also have an operation-root identity, which is
+    /// absent for some scalar and non-invoking function-creation roots.
+    pub(crate) fn from_completed_initialization(
+        owner: SourceUnitOrdinal,
+        proof: &CompletedInitialization,
+    ) -> Option<Self> {
+        proof.covers(owner).then(|| Self {
+            owner,
+            dependencies: proof.dependencies().clone(),
+        })
+    }
+
     /// Seal normal completion only for the exact whole-owner root selected by
     /// the shared executor. A completed-initializer theorem may supply the
     /// normality proof even when unrelated may-effect domains remain unknown.
@@ -196,6 +209,36 @@ impl RootNormalCompletion {
             return None;
         }
         Some(Self {
+            owner,
+            dependencies,
+        })
+    }
+
+    pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
+        self.owner == owner
+    }
+
+    pub(crate) fn dependencies(&self) -> &ProofDependencies {
+        &self.dependencies
+    }
+}
+
+/// Exact-root evidence that the shared transfer reached an outward known
+/// throw. Missing normal-completion evidence alone never creates this receipt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RootOutwardThrow {
+    owner: SourceUnitOrdinal,
+    dependencies: ProofDependencies,
+}
+
+impl RootOutwardThrow {
+    /// Seal only a known throw returned from the exact owner root.
+    pub(super) fn from_root(
+        source: &RootEffectIdentity,
+        owner: SourceUnitOrdinal,
+        dependencies: ProofDependencies,
+    ) -> Option<Self> {
+        (source.owner == owner).then_some(Self {
             owner,
             dependencies,
         })

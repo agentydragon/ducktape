@@ -40,6 +40,9 @@ fn not_truncated(value: &bool) -> bool {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum InitializationEffectBasis {
     Observed,
+    /// Conservative initialization-control write from missing normality
+    /// evidence; this may suppress later units but is not a proved event.
+    PotentialSuppression,
     Fallback {
         reason: AssumedEffectReason,
     },
@@ -412,8 +415,16 @@ impl StatementFacts {
                 .as_ref()
                 .filter(|proof| proof.covers(self.ordinal))
         });
-        effects.control_dependencies =
-            normal_completion.map(|proof| Cow::Borrowed(proof.dependencies()));
+        let outward_throw = self.synchronous_calls.as_ref().and_then(|calls| {
+            calls
+                .root_outward_throw
+                .as_ref()
+                .filter(|proof| proof.covers(self.ordinal))
+        });
+        effects.control_dependencies = normal_completion
+            .map(|proof| proof.dependencies())
+            .or_else(|| outward_throw.map(|proof| proof.dependencies()))
+            .map(Cow::Borrowed);
         // Empty source-prefix effects are not an inert certificate. Only an
         // exact whole-owner normal receipt can establish inertness; all other
         // evaluated owners read the shared progress cell, and owners without
@@ -423,7 +434,11 @@ impl StatementFacts {
             record(&mut effects.reads, EffectCell::ExecutionProgress, None);
         }
         if normal_completion.is_none() {
-            record(&mut effects.writes, EffectCell::ExecutionProgress, None);
+            if outward_throw.is_some() {
+                record(&mut effects.writes, EffectCell::ExecutionProgress, None);
+            } else {
+                record_potential_suppression(&mut effects.writes, EffectCell::ExecutionProgress);
+            }
         }
         effects
     }
@@ -457,4 +472,16 @@ fn record(
             global_may_access_count: 0,
             global_may_accesses_truncated: false,
         });
+}
+
+fn record_potential_suppression(
+    target: &mut BTreeMap<EffectCell, InitializationEffectEvidence>,
+    cell: EffectCell,
+) {
+    target.entry(cell).or_insert(InitializationEffectEvidence {
+        basis: InitializationEffectBasis::PotentialSuppression,
+        global_may_accesses: Vec::new(),
+        global_may_access_count: 0,
+        global_may_accesses_truncated: false,
+    });
 }

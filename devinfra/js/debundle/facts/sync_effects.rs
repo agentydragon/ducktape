@@ -8,8 +8,7 @@ mod effect_coverage;
 pub use effect_coverage::OperationSupportReceipt;
 pub(crate) use effect_coverage::{
     BindingEffectAuthority, BindingEffectCoverage, EffectCoverageFragment,
-    OperationSupportLocation, OperationSupportOperation, SavedBindingEffectCoverage,
-    SavedEffectCoverageFragment,
+    OperationSupportOperation, SavedBindingEffectCoverage, SavedEffectCoverageFragment,
 };
 pub(crate) mod execution_index;
 mod local_operations;
