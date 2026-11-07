@@ -13,7 +13,7 @@ import grpc
 import pytest
 import yaml
 from kubernetes_asyncio import client as k8s
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_exception, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
@@ -34,6 +34,13 @@ from agentplane.system_tests.driver.sandbox import (
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, session_until
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+
+
+def _retry_list_sessions_poll_error(error: BaseException) -> bool:
+    """Retry an unsettled snapshot or a transient failure from the read-only poll."""
+    return isinstance(error, AssertionError) or (
+        isinstance(error, grpc.aio.AioRpcError) and error.code() == grpc.StatusCode.UNAVAILABLE
+    )
 
 
 @asynccontextmanager
@@ -309,7 +316,9 @@ async def deployed_session_command_cannot_cross_deletion(
             async with asyncio.timeout(120):
                 await model.hold(await model.request())
             async for attempt in AsyncRetrying(
-                stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+                stop=stop_after_delay(30),
+                wait=wait_fixed(0.1),
+                retry=retry_if_exception(_retry_list_sessions_poll_error),
             ):
                 with attempt:
                     snapshot = await runner.ListSessions(
@@ -463,7 +472,7 @@ async def deployed_session_command_cannot_cross_deletion(
         )
         replacement_metadata = _metadata(gateway, cluster, name, replacement)
         async for attempt in AsyncRetrying(
-            stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+            stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception(_retry_list_sessions_poll_error)
         ):
             with attempt:
                 sessions = await runner.ListSessions(
