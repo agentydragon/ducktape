@@ -32,6 +32,45 @@ py_library(
     ],
 )
 
+py_library(
+    name = "binding",
+    srcs = ["binding.py"],
+    deps = [
+        ":control_client",
+        ":management_adapter",
+        "//platform_sessions:proxy",
+        "//platform_sessions:registry",
+        "//platform_sessions:remote_transport",
+        "@pypi//grpcio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "binding_test",
+    srcs = ["binding_test.py"],
+    deps = [
+        ":binding",
+        "//:conftest",
+        "//platform_sessions:auth",
+        "//platform_sessions:host",
+        "//platform_sessions:provider_proxy",
+        "//platform_sessions:proxy",
+        "//platform_sessions:registry",
+        "//platform_sessions:routes",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "//platform_sessions/provider/v1:session_provider_pb2_grpc",
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        "@pypi//httpx",
+        "@pypi//httpx2",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "management_adapter_test",
     srcs = ["management_adapter_test.py"],
