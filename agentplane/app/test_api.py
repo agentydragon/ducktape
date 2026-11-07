@@ -192,7 +192,8 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
     paths = document["paths"]
     schemas = document["components"]["schemas"]
 
-    assert "/frontend-config" in paths
+    assert "/frontend-config" not in paths
+    assert "FrontendConfig" not in schemas
 
     form_properties = schemas["SandboxFormOutputBody"]["properties"]
     assert {"policy_sets", "new_sandbox_defaults"} <= form_properties.keys()
@@ -201,9 +202,13 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
 
 
 async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.AsyncClient) -> None:
-    frontend = await http.get("/frontend-config")
+    frontend = await http.get("/upstream/app-config/v1/frontend-config")
     assert frontend.status_code == 200, frontend.text
-    assert frontend.json() == {"trace_search": None, "langfuse_search": None}
+    # ProtoJSON omits absent message-valued fields; the frontend adapter maps both to null.
+    assert frontend.json() == {}
+
+    legacy_frontend = await http.get("/frontend-config")
+    assert legacy_frontend.status_code == 404, legacy_frontend.text
 
     models = await http.get("/upstream/app-config/v1/models")
     assert models.status_code == 200, models.text

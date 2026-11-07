@@ -105,3 +105,8 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
     "/upstream/app-config/v1/presets",
   ]);
 });
+
+it("maps omitted ProtoJSON message fields to absent optional links", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({})));
+  await expect(getFrontendConfig()).resolves.toEqual({ trace_search: null, langfuse_search: null });
+});
