@@ -124,12 +124,18 @@ func TestALinkReplacesTheTokenAndADisconnectDiscardsIt(t *testing.T) {
 		}
 		state := oauthprovider.State(t, started.GetAuthorizationUrl())
 		response, err := callback(t, base, state, "test-code")
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		f.changed(t, "a link")
 		linked := response.GetLinkage()
 		body, err := protojson.Marshal(linked)
-		if err != nil { t.Fatal(err) }
-		if strings.Contains(string(body), want.token) { t.Error("the callback's answer carries the access token") }
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), want.token) {
+			t.Error("the callback's answer carries the access token")
+		}
 		if linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED {
 			t.Errorf("link %d: the linkage is %v", i, linked)
 		}
@@ -177,15 +183,21 @@ func TestACallbackItCannotFinishIsRefused(t *testing.T) {
 	if _, err := callback(t, base, "test-unknown-state", "test-code"); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("a callback of an unknown flow answered %v", err)
 	}
-	if _, err := f.db.ExecContext(t.Context(), "UPDATE mcp_linkage_flow SET expires_at = now() - interval '1 second'"); err != nil { t.Fatal(err) }
+	if _, err := f.db.ExecContext(t.Context(), "UPDATE mcp_linkage_flow SET expires_at = now() - interval '1 second'"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := callback(t, base, state, "test-code"); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("a callback of an expired flow answered %v", err)
 	}
 	started, err = authority.Start(t.Context(), testServer, nil, operator)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	other := provider.Server("test-other-server")
 	_, err = callback(t, linkage.NewService(f.authority(t, other)), oauthprovider.State(t, started.GetAuthorizationUrl()), "test-code")
-	if status.Code(err) != codes.NotFound { t.Errorf("a removed server's flow answered %v", err) }
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("a removed server's flow answered %v", err)
+	}
 	if len(provider.Requests("authorization_code")) != 0 {
 		t.Error("a refused callback exchanged its code")
 	}
@@ -208,7 +220,9 @@ func TestTheSharedClientIDMetadataDocumentNamesEveryRedirectOfItsServers(t *test
 		cimdServer(provider, "test-third", oauthprovider.RedirectURI),
 		provider.Server("test-registered"))
 	response, err := linkage.NewService(authority).GetClientMetadata(t.Context(), &linkage_servicepb.GetClientMetadataRequest{})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	body := response.GetJsonDocument()
 	var document map[string]any
 	if err := json.Unmarshal(body, &document); err != nil {

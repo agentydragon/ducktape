@@ -76,7 +76,7 @@ type running struct {
 	actions   action_servicepb.ActionServiceClient
 	operators operator_action_servicepb.OperatorActionServiceClient
 	linkages  linkage_servicepb.LinkageServiceClient
-	address string
+	address   string
 	// store is the service's database, and updates is signalled on every Event committed to it.
 	store   *store.Store
 	updates <-chan struct{}
@@ -144,7 +144,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
 		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
 		linkages:  linkage_servicepb.NewLinkageServiceClient(connection),
-		address: listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
+		address:   listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
 
@@ -425,11 +425,12 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 	}
 
 	metadataResponse, err := service.linkages.GetClientMetadata(t.Context(), &linkage_servicepb.GetClientMetadataRequest{})
-	var document struct { ClientID string `json:"client_id"` }
+	var document struct {
+		ClientID string `json:"client_id"`
+	}
 	if err != nil || json.Unmarshal(metadataResponse.GetJsonDocument(), &document) != nil || document.ClientID != metadata.URL {
 		t.Fatalf("the gRPC metadata document answered %q, %v", metadataResponse.GetJsonDocument(), err)
 	}
-
 }
 
 func TestTheServiceAnswersAReadersReadsOverGRPC(t *testing.T) {
@@ -452,8 +453,6 @@ func TestTheServiceAnswersAReadersReadsOverGRPC(t *testing.T) {
 	if err != nil || got.GetActionRequest().GetId() != submitted.ID.String() {
 		t.Errorf("gRPC receipt: %v, %v", got, err)
 	}
-
-
 }
 
 // No operator is configured here, so the operator services refuse every bearer; refusing one shows a service is
@@ -469,7 +468,6 @@ func TestTheServiceGatesTheOperatorServicesOverGRPC(t *testing.T) {
 	if _, err := service.operators.DecideActionRequest(asReader, decision); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a reader's Decision over gRPC: %v", err)
 	}
-
 }
 
 // setCallerLabel sets or removes the caller label on the account's ServiceAccount, which it creates when absent.
@@ -529,7 +527,6 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 			&action_servicepb.ListActionRequestsRequest{}); status.Code(err) != codes.Unauthenticated {
 			t.Errorf("%s, over gRPC: %v, want UNAUTHENTICATED", when, err)
 		}
-
 	}
 	refused("unlabeled")
 
@@ -594,7 +591,6 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 		if _, err := submit(service, group, "test-refused"); status.Code(err) != want {
 			t.Errorf("%s over gRPC: %v, want %v", group, err, want)
 		}
-
 	}
 
 	// The policy index never lists, so it admits no caller.
@@ -602,7 +598,6 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 	if _, err := submit(unindexed, "test-mcp", "test-unindexed"); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("without the policy index, over gRPC: %v, want UNAUTHENTICATED", err)
 	}
-
 }
 
 func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
@@ -654,8 +649,6 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the caller's policy: %v, %v", got, err)
 	}
-
-
 }
 
 // A sandbox group's Actions are declared, so its view holds still between the reads, where an MCP group's health moves
@@ -677,6 +670,4 @@ func TestTheServiceAnswersItsCatalogOverGRPC(t *testing.T) {
 	if err != nil || !proto.Equal(got.GetAction(), action) {
 		t.Errorf("gRPC Action: %v, %v", got, err)
 	}
-
-
 }

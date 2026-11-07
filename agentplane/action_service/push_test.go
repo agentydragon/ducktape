@@ -108,5 +108,4 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a reader's GetPushConfig over gRPC: %v", err)
 	}
-
 }
