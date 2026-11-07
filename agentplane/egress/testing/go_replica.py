@@ -33,7 +33,9 @@ class GoReplica:
 
 
 @asynccontextmanager
-async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[GoReplica]:
+async def go_replica(
+    settings: Settings, *, directory: Path, tunnel_agent_api: bool = False
+) -> AsyncIterator[GoReplica]:
     """The Go proxy on `settings`, with normal startup initializing `settings.database_url`.
 
     The Go binary reads the same YAML keys the Python `Settings` model authors, so a key one side

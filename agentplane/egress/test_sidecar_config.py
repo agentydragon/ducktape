@@ -1,5 +1,7 @@
 """The sidecar authoring union keeps invalid hop combinations out of rendered settings."""
 
+import json
+
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
@@ -29,7 +31,7 @@ from agentplane.egress.sidecar_config import Proxy
 )
 def test_rejects_invalid_auth_transport_combinations(transport: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
-        Proxy.model_validate({"address": "egress.example:8888", "transport": transport})
+        Proxy.model_validate_json(json.dumps({"address": "egress.example:8888", "transport": transport}))
 
 
 @pytest.mark.parametrize(
@@ -47,11 +49,13 @@ def test_rejects_invalid_auth_transport_combinations(transport: dict[str, object
 )
 def test_proxy_address_requires_exact_host_port(address: str) -> None:
     with pytest.raises(ValidationError):
-        Proxy.model_validate(
-            {
-                "address": address,
-                "transport": {"mode": "plaintext", "auth": {"mode": "kubernetes_bearer", "token_file": "/token"}},
-            }
+        Proxy.model_validate_json(
+            json.dumps(
+                {
+                    "address": address,
+                    "transport": {"mode": "plaintext", "auth": {"mode": "kubernetes_bearer", "token_file": "/token"}},
+                }
+            )
         )
 
 

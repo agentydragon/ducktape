@@ -97,13 +97,17 @@ type Source interface{ isSource() }
 // SecretKey reads a key of a Secret in the credentials namespace.
 type SecretKey struct{ Name, Key string }
 
-// ProjectedWorkloadToken selects the destination audience the sidecar projected and presented on
-// the hop. The proxy never implicitly reuses the hop credential; it reviews the named token as the
-// same Pod that authenticated the hop before substitution.
+// AuthenticatedWorkloadToken is the bearer retained from this request's successful workload authentication.
+type AuthenticatedWorkloadToken struct{}
+
+// ProjectedWorkloadToken is a token for another audience, projected into the sidecar and presented
+// on the hop. The hop bearer carries the proxy's own audience, so a destination validating its own
+// refuses it; this source is the same Pod's identity minted for that destination instead.
 type ProjectedWorkloadToken struct{ Audience string }
 
-func (SecretKey) isSource()              {}
-func (ProjectedWorkloadToken) isSource() {}
+func (SecretKey) isSource()                  {}
+func (AuthenticatedWorkloadToken) isSource() {}
+func (ProjectedWorkloadToken) isSource()     {}
 
 // Credential is a credential a sandbox may present without holding, named so that its
 // placeholder is unique.
@@ -162,6 +166,9 @@ func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
 	if source.SecretRef != nil {
 		parsed = append(parsed, SecretKey{Name: source.SecretRef.Name, Key: source.SecretRef.Key})
 	}
+	if source.AuthenticatedWorkloadToken != nil {
+		parsed = append(parsed, AuthenticatedWorkloadToken{})
+	}
 	if source.ProjectedWorkloadToken != nil {
 		if source.ProjectedWorkloadToken.Audience == "" {
 			return nil, errors.New("projectedWorkloadToken.audience is required")
@@ -169,7 +176,7 @@ func sourceFromAPI(source egressapi.CredentialSource) (Source, error) {
 		parsed = append(parsed, ProjectedWorkloadToken{Audience: source.ProjectedWorkloadToken.Audience})
 	}
 	if len(parsed) != 1 {
-		return nil, errors.New("source must set exactly one of secretRef or projectedWorkloadToken")
+		return nil, errors.New("source must set exactly one of secretRef, authenticatedWorkloadToken or projectedWorkloadToken")
 	}
 	return parsed[0], nil
 }

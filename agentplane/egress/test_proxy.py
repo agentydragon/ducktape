@@ -35,7 +35,13 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
+from agentplane.egress.sidecar_config import (
+    KubernetesBearerProxyAuth,
+    PlaintextProxyTransport,
+    Proxy,
+    SpiffeProxyAuth,
+    TLSProxyTransport,
+)
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -405,7 +411,7 @@ async def _running_egress(tmp_path: Path, history_db_url: str, *, mixed_listener
             svid_cert=svid_server,
             svid_ca_file=svid_ca_file,
         )
-        async with go_replica(settings, directory=tmp_path) as running:
+        async with go_replica(settings, directory=tmp_path, tunnel_agent_api=mixed_listener) as running:
             yield Egress(
                 replica=running,
                 token=seeded.hop_token,
@@ -1269,6 +1275,45 @@ async def test_rules_api_uses_forward_listener_authentication(mixed_egress: Egre
         )
         async with client.get(url, ssl=svid_tls) as response:
             assert response.status == 401
+
+
+async def test_rules_api_sidecar_uses_only_its_workload_identity(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    authority = f"localhost:{egress.replica.agent_api_listener.port}"
+    url = f"http://{authority}/v1/rules"
+    client_certificate = issue_runner_svid(egress, egress.tmp_path / "rules-sidecar-client")
+    runtime_ca_file = write_ca(egress.runtime_ca, egress.tmp_path, "rules-sidecar-runtime")[0]
+    caller_token = await egress.api.pod_token(SANDBOX_NAMESPACE, SANDBOX_B, [AUDIENCE])
+    hop_token_file = egress.tmp_path / "rules-sidecar-hop-token"
+    hop_token_file.write_text(egress.token)
+    authentications = (
+        SpiffeProxyAuth(cert_file=client_certificate[0], key_file=client_certificate[1]),
+        KubernetesBearerProxyAuth(token_file=hop_token_file),
+    )
+
+    async with aiohttp.ClientSession() as client:
+        for authentication in authentications:
+            async with (
+                SidecarProcess(
+                    proxy=Proxy(
+                        address=f"{egress.proxy_listener.host}:{egress.proxy_listener.port}",
+                        transport=TLSProxyTransport(ca_file=runtime_ca_file, auth=authentication),
+                    ),
+                    rules_api=authority,
+                ) as sidecar,
+                client.get(
+                    url,
+                    proxy=f"http://{sidecar.proxy_listener.host}:{sidecar.proxy_listener.port}",
+                    headers={
+                        "Authorization": f"Bearer {caller_token}",
+                        "Proxy-Authorization": f"Bearer {caller_token}",
+                        "X-Agentplane-Subject": f"{SANDBOX_NAMESPACE}/{SANDBOX_B}",
+                    },
+                ) as response,
+            ):
+                assert response.status == 200, await response.text()
+                body = await response.json()
+                assert body["subject"] == {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX_A}
 
 
 @pytest.mark.parametrize("leaf", ["forged", "expired"])

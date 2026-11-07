@@ -90,10 +90,12 @@ modes, incomplete credentials and incompatible transport/auth combinations fail 
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior; or `projectedWorkloadToken`, naming the
+  `secretRef`, preserving the central-held Secret behavior; `authenticatedWorkloadToken`, using the
+  bearer from a successfully authenticated bearer hop; or `projectedWorkloadToken`, naming the
   audience of a token the sidecar presented on the hop. A projected token is resolved per request
   and must still be bound to the caller being decided; absent, stale, or mismatched context refuses
-  with `credential-unavailable`.
+  with `credential-unavailable`. An SVID hop supplies no bearer for `authenticatedWorkloadToken`,
+  so a rule using that source refuses rather than forwarding an empty credential.
 - **A projected token is the caller's own identity minted for somewhere else.** The hop bearer
   carries this proxy's audience, so a destination validating its own — the API server against
   `--api-audiences` — refuses it; the sidecar projects a second token per configured audience,

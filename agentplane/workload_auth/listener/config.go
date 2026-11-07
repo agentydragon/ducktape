@@ -9,6 +9,7 @@ import (
 	"reflect"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/go-viper/mapstructure/v2"
 )
 
 type Mode string
@@ -64,47 +65,43 @@ func AuthenticationDecodeHook(from, to reflect.Type, data any) (any, error) {
 	mode := Mode(modeText)
 	switch mode {
 	case SPIFFE:
-		if err := rejectUnexpectedAuthenticationFields(fields, "mode", "ca_file"); err != nil {
+		var auth struct {
+			Mode   Mode   `mapstructure:"mode"`
+			CAFile string `mapstructure:"ca_file"`
+		}
+		if err := decodeAuthenticationFields(fields, &auth); err != nil {
 			return nil, err
 		}
-		caFile, err := requiredAuthenticationString(fields, "ca_file")
-		if err != nil {
-			return nil, err
+		if auth.CAFile == "" {
+			return nil, errors.New("authentication field \"ca_file\" must be a non-empty string")
 		}
-		return &SPIFFEAuth{CAFile: caFile}, nil
+		return &SPIFFEAuth{CAFile: auth.CAFile}, nil
 	case KubernetesBearer:
-		if err := rejectUnexpectedAuthenticationFields(fields, "mode", "audience"); err != nil {
+		var auth struct {
+			Mode     Mode   `mapstructure:"mode"`
+			Audience string `mapstructure:"audience"`
+		}
+		if err := decodeAuthenticationFields(fields, &auth); err != nil {
 			return nil, err
 		}
-		audience, err := requiredAuthenticationString(fields, "audience")
-		if err != nil {
-			return nil, err
+		if auth.Audience == "" {
+			return nil, errors.New("authentication field \"audience\" must be a non-empty string")
 		}
-		return &KubernetesBearerAuth{Audience: audience}, nil
+		return &KubernetesBearerAuth{Audience: auth.Audience}, nil
 	default:
 		return nil, fmt.Errorf("unknown authentication mode %q", mode)
 	}
 }
 
-func requiredAuthenticationString(fields map[string]any, name string) (string, error) {
-	value, ok := fields[name]
-	if !ok {
-		return "", fmt.Errorf("authentication field %q is required", name)
+func decodeAuthenticationFields(fields map[string]any, result any) error {
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result: result, TagName: "mapstructure", ErrorUnused: true,
+		MatchName: func(mapKey, fieldName string) bool { return mapKey == fieldName },
+	})
+	if err != nil {
+		return err
 	}
-	text, ok := value.(string)
-	if !ok || text == "" {
-		return "", fmt.Errorf("authentication field %q must be a non-empty string", name)
-	}
-	return text, nil
-}
-
-func rejectUnexpectedAuthenticationFields(fields map[string]any, allowedFirst, allowedSecond string) error {
-	for name := range fields {
-		if name != allowedFirst && name != allowedSecond {
-			return fmt.Errorf("unexpected authentication field %q", name)
-		}
-	}
-	return nil
+	return decoder.Decode(fields)
 }
 
 type Config struct {

@@ -198,6 +198,10 @@ does not require an HTTP facade.
   registration does not support streaming; app-owned watches can forward the same typed responses
   through its standard stream encoder. Calls to other services remain native gRPC, and remotely
   callable gRPC service APIs use a native listener.
+  **Rules API:** its HTTP boundary verifies the actual workload TLS peer or bearer and supplies the
+  admitted principal to its unary servicer through generated `HandlerServer` registration. It has
+  no gRPC interceptors to bypass and passes no caller assertion over a socket. Request context and
+  cancellation stay in process.
 - **Exposure:** only an RPC with a rule is on HTTP, so the full-duplex
   `SessionJournalIngress.Push` and the private `Runner` service stay native gRPC. Operator and workload
   callers get separate proto services (`OperatorActionService` beside `ActionService`,

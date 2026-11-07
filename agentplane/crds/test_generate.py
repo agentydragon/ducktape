@@ -75,9 +75,10 @@ def test_credential_schema_preserves_source_and_target_constraints(runfiles: Run
         assert spec["properties"]["targets"]["minItems"] == 1
 
         source = spec["properties"]["source"]
-        assert set(source["properties"]) == {"secretRef", "projectedWorkloadToken"}
+        assert source["properties"]["authenticatedWorkloadToken"]["maxProperties"] == 0
         validator = Draft4Validator(source, registry=Registry())
         assert validator.is_valid({"secretRef": {"name": "token", "key": "value"}})
+        assert validator.is_valid({"authenticatedWorkloadToken": {}})
         assert validator.is_valid({"projectedWorkloadToken": {"audience": "api"}})
         assert "filter(x,x==true).size() == 1" in source["x-kubernetes-validations"][0]["rule"]
 

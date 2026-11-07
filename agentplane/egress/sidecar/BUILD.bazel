@@ -8,7 +8,7 @@ go_library(
         "main.go",
         "platform_routes.go",
         "relay.go",
-        "workload_routes.go",
+        "rules_api.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/sidecar",
     visibility = ["//agentplane/egress:__pkg__"],
@@ -40,7 +40,6 @@ go_test(
         "config_test.go",
         "platform_routes_test.go",
         "relay_test.go",
-        "workload_routes_test.go",
     ],
     embed = [":runtime"],
     deps = [

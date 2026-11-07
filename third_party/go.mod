@@ -349,10 +349,7 @@ require (
 // Indirect dependencies of client-go's tools/remotecommand, which the Action Service's sandbox Actions exec into a box
 // through
 require (
-	github.com/bufbuild/protocompile v0.9.0
-	github.com/fullstorydev/grpchan v1.1.2
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
-	github.com/jhump/protoreflect v1.15.6
 	github.com/moby/spdystream v0.5.1 // indirect
 	go.uber.org/mock v0.5.1
 	k8s.io/streaming v0.37.0 // indirect

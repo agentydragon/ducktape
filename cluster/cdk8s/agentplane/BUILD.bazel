@@ -430,7 +430,6 @@ py_library(
         ":platform_routes",
         ":sandbox_pod",
         ":telemetry",
-        ":workload_routes",
         "//agentplane:crd_group",
         "//agentplane/egress:resources",
         "//agentplane/egress:sidecar_config",
@@ -1430,16 +1429,5 @@ py_test(
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "workload_routes",
-    srcs = ["workload_routes.py"],
-    deps = [
-        ":egress",
-        "//agentplane/egress:sidecar_config",
-        "//agentplane/environment_runtime_transport:config",
-        "//cluster/cdk8s:service_ref",
     ],
 )

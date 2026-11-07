@@ -5,7 +5,10 @@ go_library(
     srcs = ["config.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/listener",
     visibility = ["//agentplane:__subpackages__"],
-    deps = ["//agentplane/environment_runtime_transport"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "@com_github_go_viper_mapstructure_v2//:mapstructure",
+    ],
 )
 
 go_test(

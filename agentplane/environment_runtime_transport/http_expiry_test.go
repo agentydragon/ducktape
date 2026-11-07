@@ -69,6 +69,9 @@ func TestProxyTLSConnectionExpiresAndReloadsTheSameRuntimeIdentity(t *testing.T)
 	}
 	first := dial()
 	defer first.Close()
+	if _, ok := first.(*tls.Conn); !ok {
+		t.Fatalf("ClientTLSConnection returned %T; want the concrete TLS connection for HTTP transport", first)
+	}
 	var firstSerial string
 	select {
 	case firstSerial = <-serials:
@@ -98,6 +101,89 @@ func TestProxyTLSConnectionExpiresAndReloadsTheSameRuntimeIdentity(t *testing.T)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("rotated SVID was not accepted")
+	}
+}
+
+func TestClientTLSConnectionWithoutClientCertificateExpiresAtPeerNotAfter(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	proxy := ca.IssueWithValidity(
+		t,
+		environment_runtime_transport.EgressProxyURI,
+		time.Now().Add(-time.Minute),
+		time.Now().Add(1200*time.Millisecond),
+		x509.ExtKeyUsageServerAuth,
+	)
+	pair, err := tls.LoadX509KeyPair(proxy.CertFile, proxy.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS := &tls.Config{Certificates: []tls.Certificate{pair}, ClientAuth: tls.RequestClientCert}
+	clientTLS, err := (environment_runtime_transport.Config{CAFile: proxy.CAFile}).ProxyServerTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, serverStates := startTLSServer(t, serverTLS)
+	defer listener.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := environment_runtime_transport.ClientTLSConnection(ctx, raw, clientTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	select {
+	case state := <-serverStates:
+		if len(state.PeerCertificates) != 0 {
+			t.Fatalf("bearer TLS presented %d peer certificates; want none", len(state.PeerCertificates))
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("bearer TLS handshake did not complete")
+	}
+	_ = client.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := client.Read(make([]byte, 1)); err == nil || isTimeout(err) {
+		t.Fatalf("bearer TLS connection survived authenticated peer certificate expiry: %v", err)
+	}
+}
+
+func TestClientTLSConnectionRejectsConfiguredClientCertificateWithoutSelection(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	proxy := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	pair, err := tls.LoadX509KeyPair(proxy.CertFile, proxy.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS := &tls.Config{Certificates: []tls.Certificate{pair}, ClientAuth: tls.RequestClientCert}
+	clientTLS, err := (environment_runtime_transport.Config{CAFile: proxy.CAFile}).ProxyServerTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	callbackCalled := false
+	clientTLS.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		callbackCalled = true
+		return nil, nil
+	}
+	listener, _ := startTLSServer(t, serverTLS)
+	defer listener.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := environment_runtime_transport.ClientTLSConnection(ctx, raw, clientTLS)
+	if client != nil {
+		_ = client.Close()
+		t.Fatal("TLS connection succeeded without the configured client certificate")
+	}
+	if err == nil {
+		t.Fatal("TLS connection succeeded without the configured client certificate")
+	}
+	if !callbackCalled {
+		t.Fatal("TLS server did not request the configured client certificate")
 	}
 }
 
@@ -228,4 +314,27 @@ func isTimeout(err error) bool {
 		return true
 	}
 	return false
+}
+
+func startTLSServer(t *testing.T, config *tls.Config) (net.Listener, <-chan tls.ConnectionState) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := make(chan tls.ConnectionState, 1)
+	go func() {
+		raw, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer raw.Close()
+		secured := tls.Server(raw, config)
+		if err := secured.Handshake(); err != nil {
+			return
+		}
+		states <- secured.ConnectionState()
+		_, _ = secured.Read(make([]byte, 1))
+	}()
+	return listener, states
 }

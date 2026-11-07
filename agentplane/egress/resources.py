@@ -125,11 +125,20 @@ Target = Annotated[
 ]
 
 
-class ProjectedWorkloadTokenSource(_Wire):
-    """A destination-audience token projected into the sidecar and presented on the hop.
+class AuthenticatedWorkloadTokenSource(_Wire):
+    """The bearer retained from this request's successful workload authentication."""
 
-    The proxy uses only the token explicitly presented for this audience and reviewed as the same
-    Pod that authenticated the hop; it never implicitly reuses the hop credential.
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+
+class ProjectedWorkloadTokenSource(_Wire):
+    """A token for another audience, projected into the sidecar and presented on the hop.
+
+    The hop bearer proves the caller to this proxy and carries the proxy's own audience, so a
+    destination validating its own -- the API server against `--api-audiences` above all -- refuses
+    it. This source is the same Pod's identity minted for that destination instead: the sidecar
+    holds it, the workload never does, and the proxy substitutes it only after reviewing it as the
+    very Pod that authenticated.
     """
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
@@ -147,13 +156,16 @@ class CredentialSource(_Wire):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
     secret_ref: SecretKeyRef | None = None
+    authenticated_workload_token: AuthenticatedWorkloadTokenSource | None = None
     projected_workload_token: ProjectedWorkloadTokenSource | None = None
 
     @model_validator(mode="after")
     def _one_source(self) -> CredentialSource:
-        sources = (self.secret_ref, self.projected_workload_token)
+        sources = (self.secret_ref, self.authenticated_workload_token, self.projected_workload_token)
         if sum(source is not None for source in sources) != 1:
-            raise ValueError("source must set exactly one of secretRef or projectedWorkloadToken")
+            raise ValueError(
+                "source must set exactly one of secretRef, authenticatedWorkloadToken or projectedWorkloadToken"
+            )
         return self
 
 

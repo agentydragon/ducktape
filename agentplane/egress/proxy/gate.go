@@ -96,7 +96,7 @@ func (p *Proxy) decide(
 		request.Path = req.URL.RequestURI()
 	}
 	workload := &policy.WorkloadContext{
-		Caller: caller, PodUID: who.principal.PodUID, Projected: who.projected,
+		Bearer: who.bearer, Caller: caller, PodUID: who.principal.PodUID, Projected: who.projected,
 	}
 	first := p.options.Policy.Evaluate(caller, request, workload)
 	admitted, ok := first.(policy.Allowed)

@@ -20,7 +20,7 @@ func credential(source egressapi.CredentialSource, targets ...egressapi.Target) 
 var (
 	bearer       = egressapi.Target{Method: egressapi.SchemeToken, Header: "Authorization", Scheme: "Bearer"}
 	secretSource = egressapi.CredentialSource{SecretRef: &egressapi.SecretKeyRef{Name: "pat", Key: "token"}}
-	projected    = egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{Audience: "https://k8s.test"}}
+	workload     = egressapi.CredentialSource{AuthenticatedWorkloadToken: &egressapi.AuthenticatedWorkloadTokenSource{}}
 )
 
 func TestCredentialFromAPISources(t *testing.T) {
@@ -28,8 +28,12 @@ func TestCredentialFromAPISources(t *testing.T) {
 		source egressapi.CredentialSource
 		want   Source
 	}{
-		"secret":    {secretSource, SecretKey{Name: "pat", Key: "token"}},
-		"projected": {projected, ProjectedWorkloadToken{Audience: "https://k8s.test"}},
+		"secret":   {secretSource, SecretKey{Name: "pat", Key: "token"}},
+		"workload": {workload, AuthenticatedWorkloadToken{}},
+		"projected": {
+			egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{Audience: "https://k8s.test"}},
+			ProjectedWorkloadToken{Audience: "https://k8s.test"},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := CredentialFromAPI(credential(tc.source, bearer))
@@ -56,7 +60,7 @@ func TestCredentialFromAPITargets(t *testing.T) {
 		"json field":     {egressapi.Target{Method: egressapi.JSONField, Field: "password"}, JSONField{Field: "password"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := CredentialFromAPI(credential(projected, tc.target))
+			got, err := CredentialFromAPI(credential(workload, tc.target))
 			if err != nil || got.Targets[0] != tc.want {
 				t.Fatalf("got %#v, %v", got.Targets, err)
 			}
@@ -68,28 +72,28 @@ func TestCredentialFromAPITargets(t *testing.T) {
 }
 
 func TestCredentialFromAPIRefusesWhatItDoesNotUnderstand(t *testing.T) {
-	noDescription := credential(projected, bearer)
+	noDescription := credential(workload, bearer)
 	noDescription.Spec.Description = ""
-	noName := credential(projected, bearer)
+	noName := credential(workload, bearer)
 	noName.Name = ""
 	for name, credential := range map[string]*egressapi.EgressCredential{
 		"no name":                    noName,
 		"no description":             noDescription,
 		"no source":                  credential(egressapi.CredentialSource{}, bearer),
-		"two sources":                credential(egressapi.CredentialSource{SecretRef: secretSource.SecretRef, ProjectedWorkloadToken: projected.ProjectedWorkloadToken}, bearer),
+		"two sources":                credential(egressapi.CredentialSource{SecretRef: secretSource.SecretRef, AuthenticatedWorkloadToken: workload.AuthenticatedWorkloadToken}, bearer),
 		"projected without audience": credential(egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{}}, bearer),
-		"no targets":                 credential(projected),
-		"scheme token without scheme": credential(projected,
+		"no targets":                 credential(workload),
+		"scheme token without scheme": credential(workload,
 			egressapi.Target{Method: egressapi.SchemeToken, Header: "Authorization"}),
-		"scheme on a basic target": credential(projected,
+		"scheme on a basic target": credential(workload,
 			egressapi.Target{Method: egressapi.BasicWhole, Header: "Authorization", Scheme: "Bearer"}),
-		"header on a json target": credential(projected,
+		"header on a json target": credential(workload,
 			egressapi.Target{Method: egressapi.JSONField, Header: "X", Field: "password"}),
-		"field on a header target": credential(projected,
+		"field on a header target": credential(workload,
 			egressapi.Target{Method: egressapi.WholeValue, Header: "X", Field: "password"}),
-		"json target without a field": credential(projected, egressapi.Target{Method: egressapi.JSONField}),
-		"unknown method":              credential(projected, egressapi.Target{Method: "bearer", Header: "X"}),
-		"no header":                   credential(projected, egressapi.Target{Method: egressapi.WholeValue}),
+		"json target without a field": credential(workload, egressapi.Target{Method: egressapi.JSONField}),
+		"unknown method":              credential(workload, egressapi.Target{Method: "bearer", Header: "X"}),
+		"no header":                   credential(workload, egressapi.Target{Method: egressapi.WholeValue}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := CredentialFromAPI(credential); err == nil {

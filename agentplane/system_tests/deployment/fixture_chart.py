@@ -166,7 +166,12 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
 
 
 def environment(
-    *, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORIGIN, central_sampler: bool = False
+    *,
+    vm_sandboxes: bool,
+    runner_egress_mtls: bool,
+    models: Models,
+    app_origin: str = APP_ORIGIN,
+    central_sampler: bool = False,
 ) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
     app_login = login_client(app_origin)
@@ -280,7 +285,7 @@ def environment(
             hostname=None,
         ),
         vm_sandboxes=vm_sandboxes,
-        runner_egress_mtls=not vm_sandboxes,
+        runner_egress_mtls=runner_egress_mtls,
         vm_resources=vm_configuration.RESOURCES if vm_sandboxes else None,
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
@@ -342,10 +347,13 @@ def objects(
     cluster_ca: str,
     models: Models,
     vm_sandboxes: bool,
+    runner_egress_mtls: bool,
     central_sampler: bool = False,
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
-    env = environment(vm_sandboxes=vm_sandboxes, models=models, central_sampler=central_sampler)
+    env = environment(
+        vm_sandboxes=vm_sandboxes, runner_egress_mtls=runner_egress_mtls, models=models, central_sampler=central_sampler
+    )
     fixture = build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -78,14 +79,11 @@ type proxyConfig struct {
 // UnmarshalYAML is the narrow boundary that converts the tagged YAML auth and
 // transport objects into sealed Go variants. Variant fields remain strict.
 func (c *proxyConfig) UnmarshalYAML(node *yaml.Node) error {
-	if err := ensureKnownKeys(node, "address", "transport"); err != nil {
-		return err
-	}
 	var raw struct {
 		Address   string    `yaml:"address"`
 		Transport yaml.Node `yaml:"transport"`
 	}
-	if err := node.Decode(&raw); err != nil {
+	if err := decodeKnownFields(node, &raw); err != nil {
 		return err
 	}
 	if raw.Address == "" {
@@ -102,95 +100,81 @@ func (c *proxyConfig) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-func ensureKnownKeys(node *yaml.Node, allowed ...string) error {
-	if node.Kind != yaml.MappingNode {
-		return errors.New("must be an object")
+func decodeKnownFields(node *yaml.Node, result any) error {
+	var contents bytes.Buffer
+	if err := yaml.NewEncoder(&contents).Encode(node); err != nil {
+		return err
 	}
-	known := make(map[string]struct{}, len(allowed))
-	for _, key := range allowed {
-		known[key] = struct{}{}
-	}
-	seen := make(map[string]struct{}, len(node.Content)/2)
-	for index := 0; index < len(node.Content); index += 2 {
-		key := node.Content[index].Value
-		if _, okay := known[key]; !okay {
-			return fmt.Errorf("unknown field %q", key)
-		}
-		if _, okay := seen[key]; okay {
-			return fmt.Errorf("duplicate field %q", key)
-		}
-		seen[key] = struct{}{}
-	}
-	return nil
+	decoder := yaml.NewDecoder(&contents)
+	decoder.KnownFields(true)
+	return decoder.Decode(result)
 }
 
 func decodeProxyAuth(node *yaml.Node) (proxyAuth, error) {
-	var tag struct {
-		Mode listener.Mode `yaml:"mode"`
+	var auth struct {
+		Mode      listener.Mode `yaml:"mode"`
+		CertFile  yaml.Node     `yaml:"cert_file"`
+		KeyFile   yaml.Node     `yaml:"key_file"`
+		TokenFile yaml.Node     `yaml:"token_file"`
 	}
-	if err := node.Decode(&tag); err != nil {
+	if err := decodeKnownFields(node, &auth); err != nil {
 		return nil, err
 	}
-	switch tag.Mode {
+	switch auth.Mode {
 	case listener.SPIFFE:
-		if err := ensureKnownKeys(node, "mode", "cert_file", "key_file"); err != nil {
-			return nil, err
+		if auth.TokenFile.Kind != 0 {
+			return nil, errors.New("SPIFFE authentication cannot set token_file")
 		}
-		var auth struct {
-			Mode     listener.Mode `yaml:"mode"`
-			CertFile string        `yaml:"cert_file"`
-			KeyFile  string        `yaml:"key_file"`
+		certFile, err := requiredYAMLString(&auth.CertFile, "cert_file")
+		if err != nil || !filepath.IsAbs(certFile) {
+			return nil, errors.New("SPIFFE authentication requires an absolute cert_file")
 		}
-		if err := node.Decode(&auth); err != nil {
-			return nil, err
+		keyFile, err := requiredYAMLString(&auth.KeyFile, "key_file")
+		if err != nil || !filepath.IsAbs(keyFile) {
+			return nil, errors.New("SPIFFE authentication requires an absolute key_file")
 		}
-		for name, path := range map[string]string{
-			"cert_file": auth.CertFile,
-			"key_file":  auth.KeyFile,
-		} {
-			if path == "" || !filepath.IsAbs(path) {
-				return nil, fmt.Errorf("SPIFFE authentication requires an absolute %s", name)
-			}
-		}
-		return spiffeProxyAuth{CertFile: auth.CertFile, KeyFile: auth.KeyFile}, nil
+		return spiffeProxyAuth{CertFile: certFile, KeyFile: keyFile}, nil
 	case listener.KubernetesBearer:
-		if err := ensureKnownKeys(node, "mode", "token_file"); err != nil {
-			return nil, err
+		if auth.CertFile.Kind != 0 || auth.KeyFile.Kind != 0 {
+			return nil, errors.New("kubernetes_bearer authentication cannot set SPIFFE certificate files")
 		}
-		var auth struct {
-			Mode      listener.Mode `yaml:"mode"`
-			TokenFile string        `yaml:"token_file"`
-		}
-		if err := node.Decode(&auth); err != nil {
-			return nil, err
-		}
-		if auth.TokenFile == "" || !filepath.IsAbs(auth.TokenFile) {
+		tokenFile, err := requiredYAMLString(&auth.TokenFile, "token_file")
+		if err != nil || !filepath.IsAbs(tokenFile) {
 			return nil, errors.New("kubernetes_bearer authentication requires an absolute token_file")
 		}
-		return kubernetesBearerProxyAuth{TokenFile: auth.TokenFile}, nil
+		return kubernetesBearerProxyAuth{TokenFile: tokenFile}, nil
 	default:
-		return nil, fmt.Errorf("mode must be %q or %q: %q", listener.SPIFFE, listener.KubernetesBearer, tag.Mode)
+		return nil, fmt.Errorf("mode must be %q or %q: %q", listener.SPIFFE, listener.KubernetesBearer, auth.Mode)
 	}
 }
 
-func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
-	var tag struct {
-		Mode proxyTransportMode `yaml:"mode"`
+func requiredYAMLString(node *yaml.Node, name string) (string, error) {
+	if node.Kind == 0 {
+		return "", fmt.Errorf("%s is required", name)
 	}
-	if err := node.Decode(&tag); err != nil {
+	var value string
+	if err := node.Decode(&value); err != nil {
+		return "", fmt.Errorf("%s must be a string: %w", name, err)
+	}
+	if value == "" {
+		return "", fmt.Errorf("%s must not be empty", name)
+	}
+	return value, nil
+}
+
+func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
+	var transport struct {
+		Mode   proxyTransportMode `yaml:"mode"`
+		CAFile yaml.Node          `yaml:"ca_file"`
+		Auth   yaml.Node          `yaml:"auth"`
+	}
+	if err := decodeKnownFields(node, &transport); err != nil {
 		return nil, err
 	}
-	switch tag.Mode {
+	switch transport.Mode {
 	case proxyTransportPlaintext:
-		if err := ensureKnownKeys(node, "mode", "auth"); err != nil {
-			return nil, err
-		}
-		var transport struct {
-			Mode proxyTransportMode `yaml:"mode"`
-			Auth yaml.Node          `yaml:"auth"`
-		}
-		if err := node.Decode(&transport); err != nil {
-			return nil, err
+		if transport.CAFile.Kind != 0 {
+			return nil, errors.New("plaintext transport cannot set ca_file")
 		}
 		if transport.Auth.Kind == 0 {
 			return nil, errors.New("plaintext transport requires bearer auth")
@@ -205,18 +189,8 @@ func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
 		}
 		return plaintextProxyTransportConfig{Auth: bearer}, nil
 	case proxyTransportTLS:
-		if err := ensureKnownKeys(node, "mode", "ca_file", "auth"); err != nil {
-			return nil, err
-		}
-		var transport struct {
-			Mode   proxyTransportMode `yaml:"mode"`
-			CAFile string             `yaml:"ca_file"`
-			Auth   yaml.Node          `yaml:"auth"`
-		}
-		if err := node.Decode(&transport); err != nil {
-			return nil, err
-		}
-		if transport.CAFile == "" || !filepath.IsAbs(transport.CAFile) {
+		caFile, err := requiredYAMLString(&transport.CAFile, "ca_file")
+		if err != nil || !filepath.IsAbs(caFile) {
 			return nil, errors.New("TLS transport requires an absolute ca_file")
 		}
 		if transport.Auth.Kind == 0 {
@@ -226,16 +200,16 @@ func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("auth: %w", err)
 		}
-		return tlsProxyTransportConfig{CAFile: transport.CAFile, Auth: auth}, nil
+		return tlsProxyTransportConfig{CAFile: caFile, Auth: auth}, nil
 	default:
-		return nil, fmt.Errorf("mode must be %q or %q: %q", proxyTransportPlaintext, proxyTransportTLS, tag.Mode)
+		return nil, fmt.Errorf("mode must be %q or %q: %q", proxyTransportPlaintext, proxyTransportTLS, transport.Mode)
 	}
 }
 
 type config struct {
 	Proxy                  proxyConfig                    `yaml:"proxy"`
 	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
-	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
+	RulesAPI               string                         `yaml:"rules_api,omitempty"`
 	PlatformRoutes         map[string]platformRouteConfig `yaml:"platform_routes"`
 	ListenAddress          string                         `yaml:"listen_address"`
 	ReadinessListenAddress string                         `yaml:"readiness_listen_address"`
@@ -249,7 +223,6 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	c := config{
 		AudienceTokenFiles:     make(map[string]string),
-		WorkloadRoutes:         make(map[string]workloadRouteConfig),
 		PlatformRoutes:         make(map[string]platformRouteConfig),
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "0.0.0.0:3129",
@@ -285,31 +258,35 @@ func (c config) validate() error {
 			return fmt.Errorf("platform route %q requires listen_address and upstream", name)
 		}
 	}
-	if c.WorkloadRoutes == nil {
-		return errors.New("workload_routes must be an object")
-	}
-	for authority, route := range c.WorkloadRoutes {
-		if err := validateWorkloadRoute(authority, route); err != nil {
-			return fmt.Errorf("workload route %q: %w", authority, err)
+	if c.RulesAPI != "" {
+		if _, ok := c.Proxy.Transport.(tlsProxyTransportConfig); !ok {
+			return errors.New("rules_api requires TLS proxy transport")
+		}
+		if err := validateAuthority(c.RulesAPI); err != nil {
+			return fmt.Errorf("rules_api: %w", err)
 		}
 	}
 	return nil
 }
 
-func (p proxyConfig) validate() error {
-	if p.Address == "" {
-		return errors.New("proxy.address is required")
+func validateAuthority(address string) error {
+	if strings.ContainsAny(address, "/\\?#@ \t\r\n") {
+		return fmt.Errorf("expected an exact host:port: %q", address)
 	}
-	if strings.ContainsAny(p.Address, "/\\?#@ \t\r\n") {
-		return fmt.Errorf("proxy.address must be a host:port: %q", p.Address)
-	}
-	host, port, err := net.SplitHostPort(p.Address)
+	host, port, err := net.SplitHostPort(address)
 	if err != nil || host == "" {
-		return fmt.Errorf("proxy.address must be a host:port: %q", p.Address)
+		return fmt.Errorf("expected an exact host:port: %q", address)
 	}
 	number, err := strconv.Atoi(port)
 	if err != nil || number < 1 || number > 65535 {
-		return fmt.Errorf("proxy.address port must be in 1..65535: %q", p.Address)
+		return fmt.Errorf("port must be in 1..65535: %q", address)
+	}
+	return nil
+}
+
+func (p proxyConfig) validate() error {
+	if err := validateAuthority(p.Address); err != nil {
+		return fmt.Errorf("proxy.address: %w", err)
 	}
 	if p.Transport == nil {
 		return errors.New("proxy.transport is required")

@@ -32,7 +32,6 @@ go_library(
         "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_auth/listener",
-        "@com_github_fullstorydev_grpchan//inprocgrpc",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_spf13_viper//:viper",

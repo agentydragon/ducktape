@@ -12,20 +12,29 @@ type SecretKeyRef struct {
 	Key string `json:"key"`
 }
 
-// ProjectedWorkloadTokenSource selects the token the sidecar projected for a destination audience.
+// AuthenticatedWorkloadTokenSource selects the bearer retained from the current request's or
+// tunnel's successful workload authentication. The proxy never copies an unvalidated
+// Proxy-Authorization header, and resolution fails when authenticated context is absent or no
+// longer bound.
+// +kubebuilder:validation:MaxProperties=0
+type AuthenticatedWorkloadTokenSource struct{}
+
+// ProjectedWorkloadTokenSource selects the token the sidecar projected for an audience.
 type ProjectedWorkloadTokenSource struct {
-	// The source names the audience the destination expects. The proxy substitutes only a token the
-	// sidecar presented for this audience and it reviewed as the same Pod that authenticated the hop;
-	// it never implicitly reuses the hop credential.
+	// The hop bearer carries the proxy's own audience, so a destination that validates its own
+	// refuses it; this is the same Pod's identity minted for that destination instead. The proxy
+	// substitutes it only after reviewing it as the very Pod that authenticated the hop, and only
+	// for an audience its own configuration lists.
 	// +kubebuilder:validation:MinLength=1
 	Audience string `json:"audience"`
 }
 
 // CredentialSource is exactly one source for the substituted value.
-// +kubebuilder:validation:ExactlyOneOf=secretRef;projectedWorkloadToken
+// +kubebuilder:validation:ExactlyOneOf=secretRef;authenticatedWorkloadToken;projectedWorkloadToken
 type CredentialSource struct {
-	SecretRef              *SecretKeyRef                 `json:"secretRef,omitempty"`
-	ProjectedWorkloadToken *ProjectedWorkloadTokenSource `json:"projectedWorkloadToken,omitempty"`
+	SecretRef                  *SecretKeyRef                     `json:"secretRef,omitempty"`
+	AuthenticatedWorkloadToken *AuthenticatedWorkloadTokenSource `json:"authenticatedWorkloadToken,omitempty"`
+	ProjectedWorkloadToken     *ProjectedWorkloadTokenSource     `json:"projectedWorkloadToken,omitempty"`
 }
 
 // TargetMethod is how a target's value is parsed.

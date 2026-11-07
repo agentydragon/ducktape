@@ -53,7 +53,6 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     sandbox_pod,
     telemetry,
-    workload_routes,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
@@ -479,6 +478,7 @@ class EnvironmentSandboxTemplate(Construct):
 
     def _add_sidecar_settings(self, *, name: str, listen_host: str | None = None) -> SettingsFile:
         bind_host = listen_host or "127.0.0.1"
+        api = self.egress_api_service or egress.agent_api(self.env.namespace)
         if self.env.runner_egress_mtls:
             tls_path = Path(sidecar_config.RUNNER_TLS_MOUNT_PATH)
             proxy_transport: sidecar_config.ProxyTransport = sidecar_config.TLSProxyTransport(
@@ -494,11 +494,7 @@ class EnvironmentSandboxTemplate(Construct):
             self.env,
             name=name,
             platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
-            workload_routes=(
-                workload_routes.sidecar_routes(self.env.namespace, rules_origin=self.egress_api_service)
-                if self.env.runner_egress_mtls
-                else {}
-            ),
+            rules_api=(f"{api.fqdn}:{api.port.number}" if self.env.runner_egress_mtls else None),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
             proxy_transport=proxy_transport,
         )

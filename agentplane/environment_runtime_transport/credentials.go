@@ -130,17 +130,6 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
 }
 
-// WorkloadServerCredentials creates mTLS server credentials for the fixed
-// egress identity and a live EnvironmentRuntime peer. Established connections
-// close when either selected leaf certificate expires.
-func (c Config) WorkloadServerCredentials(localURI string) (credentials.TransportCredentials, error) {
-	config, err := c.WorkloadServerTLSConfig(localURI)
-	if err != nil {
-		return nil, err
-	}
-	return newExpiringCredentials(config, true), nil
-}
-
 // ClientTLSConfig creates HTTPS proxy credentials pinned to the egress proxy's
 // fixed SPIFFE identity. The file source reloads projected certificate, key,
 // and CA bundle replacements while keeping the client identity pinned.

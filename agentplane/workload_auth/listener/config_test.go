@@ -1,6 +1,42 @@
 package listener
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestAuthenticationDecodeHookKeepsVariantsClosed(t *testing.T) {
+	target := reflect.TypeOf((*Authentication)(nil)).Elem()
+	for name, data := range map[string]map[string]any{
+		"unknown field":                  {"mode": "kubernetes_bearer", "audience": "hop", "ignored": true},
+		"irrelevant empty field":         {"mode": "spiffe", "ca_file": "/roots.pem", "audience": ""},
+		"wrongly cased field":            {"mode": "kubernetes_bearer", "Audience": "hop"},
+		"empty required field":           {"mode": "spiffe", "ca_file": ""},
+		"wrong field type":               {"mode": "kubernetes_bearer", "audience": 42},
+		"missing required variant field": {"mode": "kubernetes_bearer"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := AuthenticationDecodeHook(reflect.TypeOf(data), target, data); err == nil {
+				t.Fatal("invalid authentication accepted")
+			}
+		})
+	}
+
+	for name, data := range map[string]map[string]any{
+		"SPIFFE":            {"mode": "spiffe", "ca_file": "/roots.pem"},
+		"Kubernetes bearer": {"mode": "kubernetes_bearer", "audience": "hop"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			decoded, err := AuthenticationDecodeHook(reflect.TypeOf(data), target, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := decoded.(Authentication); !ok {
+				t.Fatalf("decoded value %T does not implement Authentication", decoded)
+			}
+		})
+	}
+}
 
 func TestSelectionIsAnAllowlistNotFallbackOrder(t *testing.T) {
 	for _, methods := range [][]Authentication{

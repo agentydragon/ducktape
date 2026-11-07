@@ -15,18 +15,42 @@ import (
 // and closes the connection when either selected leaf expires. Proxy clients use
 // it so a persistent HTTP connection reconnects with rotated file credentials.
 func ClientTLSConnection(ctx context.Context, raw net.Conn, security *tls.Config) (net.Conn, error) {
-	config, selected := trackedTLSConfig(security)
-	connection := tls.Client(raw, config)
+	config := security.Clone()
+	var selected *tls.Certificate
+	if len(config.Certificates) > 0 {
+		selected = &config.Certificates[0]
+	}
+	if getClientCertificate := config.GetClientCertificate; getClientCertificate != nil {
+		config.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			certificate, err := getClientCertificate(info)
+			if err != nil {
+				return certificate, err
+			}
+			if certificate == nil {
+				return nil, fmt.Errorf("TLS client certificate source returned no certificate")
+			}
+			selected = certificate
+			return certificate, nil
+		}
+	}
+	lifetime, cancelLifetime := context.WithCancel(context.Background())
+	connection := tls.Client(&expiringConn{Conn: raw, cancelExpiry: cancelLifetime}, config)
 	if err := connection.HandshakeContext(ctx); err != nil {
 		_ = connection.Close()
 		return nil, err
 	}
-	localNotAfter, err := selected.notAfter()
-	if err != nil {
-		_ = connection.Close()
-		return nil, err
+	var localNotAfter time.Time
+	if len(config.Certificates) > 0 || config.GetClientCertificate != nil {
+		var err error
+		localNotAfter, err = certificateNotAfter(selected)
+		if err != nil {
+			_ = connection.Close()
+			return nil, err
+		}
 	}
-	return &expiringConn{Conn: connection, cancelExpiry: CloseTLSConnAtCertificateExpiry(connection, localNotAfter)}, nil
+	stopExpiry := CloseTLSConnAtCertificateExpiry(connection, localNotAfter)
+	context.AfterFunc(lifetime, stopExpiry)
+	return connection, nil
 }
 
 // HTTPServerTLSExpiryConnState closes TLS connections when their local or peer
@@ -78,117 +102,22 @@ func (c *expiringConn) Close() error {
 	return c.closeErr
 }
 
-type certificateExpiry struct {
-	mu      sync.Mutex
-	leafEnd time.Time
-	err     error
-}
-
-func (e *certificateExpiry) record(certificate *tls.Certificate) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func certificateNotAfter(certificate *tls.Certificate) (time.Time, error) {
 	if certificate == nil {
-		e.err = fmt.Errorf("TLS handshake selected no local certificate")
-		return
+		return time.Time{}, fmt.Errorf("TLS handshake selected no local certificate")
 	}
 	leaf := certificate.Leaf
 	if leaf == nil && len(certificate.Certificate) > 0 {
 		var err error
 		leaf, err = x509.ParseCertificate(certificate.Certificate[0])
 		if err != nil {
-			e.err = fmt.Errorf("parse local leaf certificate: %w", err)
-			return
+			return time.Time{}, fmt.Errorf("parse local leaf certificate: %w", err)
 		}
 	}
 	if leaf == nil {
-		e.err = fmt.Errorf("TLS handshake selected a certificate without a leaf")
-		return
+		return time.Time{}, fmt.Errorf("TLS handshake selected a certificate without a leaf")
 	}
-	e.leafEnd = leaf.NotAfter
-}
-
-func (e *certificateExpiry) notAfter() (time.Time, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.err != nil {
-		return time.Time{}, e.err
-	}
-	if e.leafEnd.IsZero() {
-		return time.Time{}, fmt.Errorf("TLS handshake did not select a local certificate")
-	}
-	return e.leafEnd, nil
-}
-
-func trackedTLSConfig(source *tls.Config) (*tls.Config, *certificateExpiry) {
-	config := source.Clone()
-	expiry := &certificateExpiry{}
-	if len(config.Certificates) > 0 {
-		expiry.record(&config.Certificates[0])
-	}
-	if getClientCertificate := config.GetClientCertificate; getClientCertificate != nil {
-		config.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			certificate, err := getClientCertificate(info)
-			if err == nil {
-				expiry.record(certificate)
-			}
-			return certificate, err
-		}
-	}
-	if getCertificate := config.GetCertificate; getCertificate != nil {
-		config.GetCertificate = func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			certificate, err := getCertificate(info)
-			if err == nil {
-				expiry.record(certificate)
-			}
-			return certificate, err
-		}
-	}
-	if getConfigForClient := config.GetConfigForClient; getConfigForClient != nil {
-		config.GetConfigForClient = func(info *tls.ClientHelloInfo) (*tls.Config, error) {
-			selected, err := getConfigForClient(info)
-			if err != nil || selected == nil {
-				return selected, err
-			}
-			return trackedConfigCallbacks(selected, expiry), nil
-		}
-	}
-	return config, expiry
-}
-
-func trackedConfigCallbacks(source *tls.Config, expiry *certificateExpiry) *tls.Config {
-	config := source.Clone()
-	if len(config.Certificates) > 0 {
-		expiry.record(&config.Certificates[0])
-	}
-	if getCertificate := config.GetCertificate; getCertificate != nil {
-		config.GetCertificate = func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			certificate, err := getCertificate(info)
-			if err == nil {
-				expiry.record(certificate)
-			}
-			return certificate, err
-		}
-	}
-	if getClientCertificate := config.GetClientCertificate; getClientCertificate != nil {
-		config.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			certificate, err := getClientCertificate(info)
-			if err == nil {
-				expiry.record(certificate)
-			}
-			return certificate, err
-		}
-	}
-	return config
-}
-
-func earliestExpiry(expiries ...time.Time) time.Time {
-	var earliest time.Time
-	for _, expiry := range expiries {
-		if !expiry.IsZero() && (earliest.IsZero() || expiry.Before(earliest)) {
-			earliest = expiry
-		}
-	}
-	return earliest
+	return leaf.NotAfter, nil
 }
 
 // CloseTLSConnAtCertificateExpiry closes conn at the earlier of its local leaf
@@ -201,7 +130,10 @@ func CloseTLSConnAtCertificateExpiry(conn *tls.Conn, localNotAfter time.Time) fu
 	if len(state.PeerCertificates) > 0 {
 		peerNotAfter = state.PeerCertificates[0].NotAfter
 	}
-	expiresAt := earliestExpiry(localNotAfter, peerNotAfter)
+	expiresAt := localNotAfter
+	if expiresAt.IsZero() || (!peerNotAfter.IsZero() && peerNotAfter.Before(expiresAt)) {
+		expiresAt = peerNotAfter
+	}
 	if expiresAt.IsZero() {
 		return func() {}
 	}

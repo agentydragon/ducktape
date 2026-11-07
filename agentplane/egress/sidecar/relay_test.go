@@ -196,7 +196,6 @@ func startTestSidecar(t *testing.T, proxyPort int, tokenFile string, audiences m
 		Proxy:                  proxy,
 		AudienceTokenFiles:     audiences,
 		PlatformRoutes:         map[string]platformRouteConfig{},
-		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
 		ReadinessListenAddress: "127.0.0.1:0",
 	})
@@ -208,13 +207,14 @@ func startTestSidecar(t *testing.T, proxyPort int, tokenFile string, audiences m
 		t.Fatal(err)
 	}
 	s.proxyListener = listener
+	s.proxyServer = &http.Server{Handler: s.proxyHandler(), MaxHeaderBytes: maxHeadBytes}
 	finished := make(chan error, 1)
-	go func() { finished <- s.acceptLoop() }()
+	go func() { finished <- s.proxyServer.Serve(&trackingListener{Listener: listener, sidecar: s}) }()
 	t.Cleanup(func() {
 		s.stopProxy()
 		select {
 		case err := <-finished:
-			if err != nil {
+			if err != nil && err != http.ErrServerClosed {
 				t.Errorf("sidecar accept loop: %v", err)
 			}
 		case <-time.After(5 * time.Second):
@@ -281,6 +281,24 @@ func dialSidecar(t *testing.T, address string) net.Conn {
 	t.Cleanup(func() { _ = conn.Close() })
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	return conn
+}
+
+func dialConfiguredSidecar(t *testing.T, s *sidecar) net.Conn {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: s.proxyHandler(), MaxHeaderBytes: maxHeadBytes}
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		_ = server.Close()
+		if err := <-done; err != nil && err != http.ErrServerClosed {
+			t.Errorf("sidecar server: %v", err)
+		}
+	})
+	return dialSidecar(t, listener.Addr().String())
 }
 
 // exchangeRaw writes raw bytes on one connection and reads responses until the sidecar ends it.
@@ -426,13 +444,11 @@ func TestMTLSFailureDoesNotRetryAsToken(t *testing.T) {
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "127.0.0.1:3129",
 		PlatformRoutes:         map[string]platformRouteConfig{},
-		WorkloadRoutes:         map[string]workloadRouteConfig{},
 	})
 	if err != nil {
 		t.Fatalf("configure valid client mTLS identity: %v", err)
 	}
-	server, client := net.Pipe()
-	go s.handle(server)
+	client := dialConfiguredSidecar(t, s)
 	request, err := http.NewRequest(http.MethodGet, "http://upstream.test/path", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -486,7 +502,6 @@ func TestNewSidecarFailsClosedWhenMTLSFilesAreUnavailable(t *testing.T) {
 			},
 		},
 		PlatformRoutes: map[string]platformRouteConfig{},
-		WorkloadRoutes: map[string]workloadRouteConfig{},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err == nil {
@@ -526,14 +541,12 @@ func TestMTLSDoesNotRequireDestinationBearer(t *testing.T) {
 			},
 		},
 		PlatformRoutes: map[string]platformRouteConfig{},
-		WorkloadRoutes: map[string]workloadRouteConfig{},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, client := net.Pipe()
-	go s.handle(server)
+	client := dialConfiguredSidecar(t, s)
 	request, err := http.NewRequest(http.MethodGet, "http://upstream.test/path", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -575,7 +588,6 @@ func TestNewSidecarRejectsMissingBearerAtStartup(t *testing.T) {
 			},
 		},
 		PlatformRoutes: map[string]platformRouteConfig{},
-		WorkloadRoutes: map[string]workloadRouteConfig{},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err == nil {
@@ -590,7 +602,6 @@ func TestNewSidecarRejectsMissingBearerAtStartup(t *testing.T) {
 			},
 		},
 		PlatformRoutes: map[string]platformRouteConfig{},
-		WorkloadRoutes: map[string]workloadRouteConfig{},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err == nil {
@@ -680,7 +691,8 @@ func TestSidecarMalformedRequestIsRefused(t *testing.T) {
 	central := startTestCentralProxy(t)
 	address := startTestSidecar(t, central.port(), writeTestToken(t, "token-1"), nil)
 	responses := exchangeRaw(t, address, "not http at all\r\n\r\n")
-	if len(responses) != 1 || responses[0].status != http.StatusBadRequest || responses[0].refusal != "reason=bad-request" {
+	// net/http.Server rejects malformed request lines before invoking the handler.
+	if len(responses) != 1 || responses[0].status != http.StatusBadRequest {
 		t.Fatalf("malformed request responses = %+v", responses)
 	}
 	if central.connections.Load() != 0 {
@@ -694,7 +706,9 @@ func TestSidecarOversizedHeadIsRefused(t *testing.T) {
 	// The sidecar stops reading at the limit, so its close may reset the connection before the
 	// refusal is read; either way nothing reaches the central proxy.
 	responses := exchangeRaw(t, address, "GET http://upstream.test/ HTTP/1.1\r\nHost: upstream.test\r\nX-Padding: "+strings.Repeat("a", 2*maxHeadBytes)+"\r\n\r\n")
-	if len(responses) > 1 || (len(responses) == 1 && (responses[0].status != http.StatusBadRequest || responses[0].refusal != "reason=bad-request")) {
+	// net/http.Server's parser may return 431 or close a connection whose oversized write is
+	// still in flight. Either outcome must stop before a central proxy connection is made.
+	if len(responses) > 1 || (len(responses) == 1 && responses[0].status != http.StatusRequestHeaderFieldsTooLarge) {
 		t.Fatalf("oversized head responses = %+v", responses)
 	}
 	if central.connections.Load() != 0 {

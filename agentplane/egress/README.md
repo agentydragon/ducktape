@@ -155,6 +155,9 @@ boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
 
 ## Projected workload credentials
 
+`authenticatedWorkloadToken` remains supported for bearer-authenticated hops and uses only their
+verified bearer. An SVID hop has no such bearer; destinations use explicit audience projections.
+
 For a trusted first-party destination that directly validates the Sandbox Pod's projected workload
 token, an `EgressCredential` can name the token audience and exact target. The sidecar presents that
 projection to central, which reviews it against the authenticated caller before substitution.
