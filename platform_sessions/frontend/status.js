@@ -122,6 +122,7 @@ const importErrorMessages = {
   upstream_unavailable:
     "Could not connect to the provider. The import may have completed; check the session status before retrying.",
   invalid_response: "The provider returned an unexpected response. Check the session status before retrying.",
+  storage_error: "Could not access session storage. Check the session status and service logs before retrying.",
 };
 
 function importErrorMessage(data, status) {

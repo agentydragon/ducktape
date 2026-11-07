@@ -219,6 +219,44 @@ async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> N
         assert len(provider.probes) == 1
 
 
+async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_status() -> None:
+    class Provider(SyntheticProvider):
+        outcome = pb.ImportSessionResponse(
+            failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=429)
+        )
+
+        async def import_session(
+            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+        ) -> pb.ImportSessionResponse:
+            return self.outcome
+
+    provider = Provider()
+    request = pb.ImportSessionRequest(
+        instance=instance_ref(),
+        media_type=_CANDIDATE_MEDIA_TYPE,
+        format_version=_CANDIDATE_VERSION,
+        candidate=_CANDIDATE,
+    )
+    async with served_provider(provider) as (client, _):
+        result = await client.ImportSession(request)
+        assert result.WhichOneof("result") == "failure"
+        assert result.failure.upstream_http_status == 429
+        provider.outcome = pb.ImportSessionResponse(
+            outcome_unknown=pb.OperationOutcomeUnknown(
+                credential_rotation_may_have_occurred=True, reason=pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+            )
+        )
+        result = await client.ImportSession(request)
+        assert result.WhichOneof("result") == "outcome_unknown"
+        assert result.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+        provider.outcome = pb.ImportSessionResponse(
+            failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429)
+        )
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.ImportSession(request)
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+
+
 async def test_backend_result_requires_oneof_and_cannot_spoof_instance() -> None:
     class Provider(SyntheticProvider):
         result = pb.ImportSessionResponse()
