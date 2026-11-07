@@ -35,18 +35,39 @@ function node(tag = "div") {
   };
 }
 
-function page(providers) {
+function page(providers, grpc = false) {
   const nodes = Object.fromEntries(Array.from(html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g), ([, id]) => [id, node()]));
   nodes.instance = node("select");
   const calls = [];
   const timers = [];
-  const replies = new Map([["/api/integrations", response(providers)]]);
+  const replies = grpc
+    ? new Map([
+        [
+          "/api/v1/instances",
+          response({
+            instances: providers.map((provider) => ({
+              ref: { instanceId: provider.id, providerId: provider.type },
+              info: { instructions: provider.instructions },
+            })),
+          }),
+        ],
+      ])
+    : new Map([["/api/integrations", response(providers)]]);
   for (const provider of providers) {
-    replies.set(`/api/integrations/${provider.id}`, response({ state: "ready", message: "Connected", details: [] }));
+    const path = grpc ? `/api/v1/instances/${provider.id}/session` : `/api/integrations/${provider.id}`;
+    const status = grpc
+      ? { snapshot: { state: "SESSION_STATE_VERIFIED", ownerPresentation: { message: "Connected" } } }
+      : { state: "ready", message: "Connected", details: [] };
+    replies.set(path, response(status));
   }
   let redirect;
   const context = {
-    document: { getElementById: (id) => nodes[id], createElement: (tag) => node(tag) },
+    document: {
+      body: { dataset: { management: grpc ? "grpc" : "legacy" } },
+      getElementById: (id) => nodes[id],
+      createElement: (tag) => node(tag),
+    },
+    btoa: (value) => Buffer.from(value, "binary").toString("base64"),
     window: {
       location: {
         assign: (url) => {
@@ -207,3 +228,26 @@ const genericCard = generic.nodes.integrations.children[0];
 assert.equal(genericCard.children[1].textContent, "Session needs reauthentication");
 assert.equal(genericCard.children[3].children[0].textContent, "Last check result");
 assert.equal(genericCard.children[3].children[1].textContent, "reauth required");
+
+const grpcUi = page([entry("account", "alpha")], true);
+await settle();
+await settle();
+assert.equal(grpcUi.nodes.integrations.children[0].children[1].textContent, "Connected");
+grpcUi.nodes.session.value = exportedSession("alpha", { cookie: "synthetic" });
+grpcUi.replies.set("/api/v1/instances/account:importSession", response({ installed: {} }));
+await grpcUi.nodes["session-form"].listeners.submit(event);
+const grpcRequest = grpcUi.calls.findLast(({ url }) => url.endsWith(":importSession"));
+const grpcBody = JSON.parse(grpcRequest.options.body);
+assert.equal(grpcBody.mediaType, "application/json");
+assert.deepEqual(
+  JSON.parse(Buffer.from(grpcBody.candidate, "base64").toString()),
+  JSON.parse(exportedSession("alpha", { cookie: "synthetic" }))
+);
+assert.match(grpcUi.nodes.result.textContent, /session imported/);
+grpcUi.nodes.session.value = exportedSession("alpha", { cookie: "synthetic" });
+grpcUi.replies.set(
+  "/api/v1/instances/account:importSession",
+  response({ outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_TIMEOUT" } })
+);
+await grpcUi.nodes["session-form"].listeners.submit(event);
+assert.match(grpcUi.nodes.result.textContent, /may have completed/);
