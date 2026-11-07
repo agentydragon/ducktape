@@ -31,7 +31,7 @@ pub(super) struct ModuleBodyFacts {
     pub(super) leading_static_import_requests: usize,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct IndexedStaticModuleRequest {
     pub(super) item_index: usize,
     pub(super) request: StaticModuleRequest,

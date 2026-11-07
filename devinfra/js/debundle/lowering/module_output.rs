@@ -287,7 +287,7 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
     // `source_import_cache` is shared across parallel per-plan
     // workers; the `Mutex` serialises the BTreeMap lookups but the
     // critical section is short (a key lookup + possible insert).
-    let mut runtime_reimports = {
+    let runtime_reimports = {
         let mut cache = source_import_cache
             .lock()
             .expect("source_import_cache poisoned");
