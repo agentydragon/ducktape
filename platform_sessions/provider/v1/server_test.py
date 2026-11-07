@@ -10,9 +10,6 @@ import pytest_bazel
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc
 from platform_sessions.provider.v1.server import (
-    CandidateVerificationOutcome,
-    ImportSessionOutcome,
-    ProbeOutcome,
     ProbeSource,
     ProviderBackend,
     SessionProviderControlService,
@@ -31,8 +28,8 @@ class SyntheticProvider(ProviderBackend):
         self.imported_candidates: list[bytes] = []
         self.probes: list[ProbeSource] = []
         self.verified_candidates: list[bytes] = []
-        self.probe_outcome: ProbeOutcome = pb.ProbeVerified()
-        self.candidate_verification_outcome: CandidateVerificationOutcome = pb.CandidateVerified()
+        self.probe_outcome = pb.ProbeResult(verified=pb.ProbeVerified())
+        self.candidate_verification_outcome = pb.VerifyCandidateResponse(verified=pb.CandidateVerified())
         self.probe_error: Exception | None = None
         self.session_reads = 0
 
@@ -45,9 +42,6 @@ class SyntheticProvider(ProviderBackend):
             instances=[
                 pb.ProviderInstanceInfo(
                     instance_id="primary",
-                    routes=[
-                        pb.RouteDescription(operation_id="list-items", method="POST", path_template="/api/items/query")
-                    ],
                     accepted_session_import_formats=[
                         pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE, version=_CANDIDATE_VERSION)
                     ],
@@ -59,9 +53,6 @@ class SyntheticProvider(ProviderBackend):
                 ),
                 pb.ProviderInstanceInfo(
                     instance_id="without-verification",
-                    routes=[
-                        pb.RouteDescription(operation_id="list-items", method="POST", path_template="/api/items/query")
-                    ],
                     accepted_session_import_formats=[
                         pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE, version=_CANDIDATE_VERSION)
                     ],
@@ -78,25 +69,25 @@ class SyntheticProvider(ProviderBackend):
 
     async def import_session(
         self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-    ) -> ImportSessionOutcome:
+    ) -> pb.ImportSessionResponse:
         assert instance_id == "primary"
         assert (media_type, format_version) == (_CANDIDATE_MEDIA_TYPE, _CANDIDATE_VERSION)
         self.imported_candidates.append(candidate)
-        return pb.SessionInstalled()
+        return pb.ImportSessionResponse(installed=pb.SessionInstalled())
 
     async def probe(self, instance_id: str, *, source: ProbeSource):
         assert instance_id == "primary"
         self.probes.append(source)
         if self.probe_error is not None:
             raise self.probe_error
-        if isinstance(self.probe_outcome, pb.OperationOutcomeUnknown):
+        if self.probe_outcome.WhichOneof("result") == "outcome_unknown":
             self.snapshot.state = pb.SESSION_STATE_OUTCOME_UNKNOWN
             self.snapshot.state_changed_at.GetCurrentTime()
         return self.probe_outcome
 
     async def verify_candidate(
         self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-    ) -> CandidateVerificationOutcome:
+    ) -> pb.VerifyCandidateResponse:
         assert instance_id == "primary"
         assert (media_type, format_version) == (_CANDIDATE_MEDIA_TYPE, _CANDIDATE_VERSION)
         self.verified_candidates.append(candidate)
@@ -129,7 +120,6 @@ async def test_info_candidate_verification_is_separate_from_installed_session_pr
     async with served_provider(provider) as (client, _service):
         info = await client.GetInfo(pb.GetInfoRequest())
         assert len(info.provider.instances) == 2
-        assert info.provider.instances[0].routes[0] == info.provider.instances[1].routes[0]
         assert info.provider.instances[0].supports_candidate_verification
         assert info.provider.instances[0].instructions[0].text == "Export a session from the provider account."
         assert not info.provider.instances[0].instructions[0].HasField("command")
@@ -184,7 +174,9 @@ async def test_advertised_candidate_verification_requires_an_implementation() ->
 
 async def test_ambiguous_candidate_verification_does_not_change_installed_snapshot() -> None:
     provider = SyntheticProvider()
-    provider.candidate_verification_outcome = pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
+    provider.candidate_verification_outcome = pb.VerifyCandidateResponse(
+        outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
+    )
     async with served_provider(provider) as (client, _service):
         result = await client.VerifyCandidate(
             pb.VerifyCandidateRequest(
@@ -204,7 +196,9 @@ async def test_ambiguous_candidate_verification_does_not_change_installed_snapsh
 
 async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> None:
     provider = SyntheticProvider()
-    provider.probe_outcome = pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
+    provider.probe_outcome = pb.ProbeResult(
+        outcome_unknown=pb.OperationOutcomeUnknown(credential_rotation_may_have_occurred=True)
+    )
     async with served_provider(provider) as (client, _service):
         imported = await client.ImportSession(
             pb.ImportSessionRequest(
@@ -227,13 +221,13 @@ async def test_import_probe_results_are_typed_and_candidate_is_not_echoed() -> N
 
 async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_status() -> None:
     class Provider(SyntheticProvider):
-        outcome: ImportSessionOutcome = pb.ImportFailure(
-            reason=pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=429
+        outcome = pb.ImportSessionResponse(
+            failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=429)
         )
 
         async def import_session(
             self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-        ) -> ImportSessionOutcome:
+        ) -> pb.ImportSessionResponse:
             return self.outcome
 
     provider = Provider()
@@ -247,33 +241,71 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
         result = await client.ImportSession(request)
         assert result.WhichOneof("result") == "failure"
         assert result.failure.upstream_http_status == 429
-        provider.outcome = pb.OperationOutcomeUnknown(
-            credential_rotation_may_have_occurred=True, reason=pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+        provider.outcome = pb.ImportSessionResponse(
+            outcome_unknown=pb.OperationOutcomeUnknown(
+                credential_rotation_may_have_occurred=True, reason=pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+            )
         )
         result = await client.ImportSession(request)
         assert result.WhichOneof("result") == "outcome_unknown"
         assert result.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
-        provider.outcome = pb.OperationOutcomeUnknown(
-            credential_rotation_may_have_occurred=True,
-            reason=pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
-            upstream_http_status=429,
+        provider.outcome = pb.ImportSessionResponse(
+            outcome_unknown=pb.OperationOutcomeUnknown(
+                credential_rotation_may_have_occurred=True,
+                reason=pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
+                upstream_http_status=429,
+            )
         )
         result = await client.ImportSession(request)
         assert result.WhichOneof("result") == "outcome_unknown"
         assert result.outcome_unknown.upstream_http_status == 429
-        provider.outcome.upstream_http_status = 999
+        provider.outcome.outcome_unknown.upstream_http_status = 999
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.ImportSession(request)
         assert error.value.code() == grpc.StatusCode.INTERNAL
-        provider.outcome = pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429)
+        provider.outcome = pb.ImportSessionResponse(
+            failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429)
+        )
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.ImportSession(request)
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+
+
+async def test_backend_result_requires_oneof_and_cannot_spoof_instance() -> None:
+    class Provider(SyntheticProvider):
+        result = pb.ImportSessionResponse()
+
+        async def import_session(
+            self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
+        ) -> pb.ImportSessionResponse:
+            return self.result
+
+    provider = Provider()
+    request = pb.ImportSessionRequest(
+        instance=instance_ref(),
+        media_type=_CANDIDATE_MEDIA_TYPE,
+        format_version=_CANDIDATE_VERSION,
+        candidate=_CANDIDATE,
+    )
+    async with served_provider(provider) as (client, _):
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.ImportSession(request)
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+        provider.result = pb.ImportSessionResponse(
+            instance=pb.InstanceRef(provider_id="wrong", instance_id="wrong"), installed=pb.SessionInstalled()
+        )
+        response = await client.ImportSession(request)
+        assert response.instance == request.instance
+        assert response.WhichOneof("result") == "installed"
+        provider.probe_outcome = pb.ProbeResult()
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
         assert error.value.code() == grpc.StatusCode.INTERNAL
 
 
 async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> None:
     provider = SyntheticProvider()
-    provider.probe_outcome = pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_STORAGE_ERROR)
+    provider.probe_outcome = pb.ProbeResult(failure=pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_STORAGE_ERROR))
     async with served_provider(provider) as (client, _service):
         result = await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
         assert result.result.WhichOneof("result") == "failure"
@@ -284,7 +316,7 @@ async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> Non
 
 async def test_probe_failure_unspecified_reason_is_a_provider_protocol_error() -> None:
     provider = SyntheticProvider()
-    provider.probe_outcome = pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_UNSPECIFIED)
+    provider.probe_outcome = pb.ProbeResult(failure=pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_UNSPECIFIED))
     async with served_provider(provider) as (client, _service):
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
@@ -294,7 +326,7 @@ async def test_probe_failure_unspecified_reason_is_a_provider_protocol_error() -
 
 async def test_probe_without_an_installed_session_has_its_own_result() -> None:
     provider = SyntheticProvider()
-    provider.probe_outcome = pb.ProbeNoSession()
+    provider.probe_outcome = pb.ProbeResult(no_session=pb.ProbeNoSession())
     async with served_provider(provider) as (client, _service):
         result = await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=pb.PROBE_SOURCE_MANUAL))
         assert result.result.WhichOneof("result") == "no_session"
@@ -422,23 +454,6 @@ async def test_snapshot_supports_owner_presentation_imported_at_and_storage_erro
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
         assert error.value.code() == grpc.StatusCode.INTERNAL
-
-
-@pytest.mark.parametrize(
-    "path", ["/api/items?limit=5", "/api/items#fragment", "/api\\items", "/api/%GG", "/api/%2fitems"]
-)
-def test_provider_info_rejects_ambiguous_route_paths(path: str) -> None:
-    provider = SyntheticProvider()
-    info = provider.info
-    info.instances[0].routes[0].path_template = path
-
-    class InvalidInfoProvider(SyntheticProvider):
-        @property
-        def info(self) -> pb.ProviderInfo:
-            return info
-
-    with pytest.raises(ValueError, match="invalid method or path"):
-        SessionProviderControlService(InvalidInfoProvider())
 
 
 if __name__ == "__main__":
