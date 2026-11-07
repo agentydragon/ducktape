@@ -70,6 +70,9 @@ def _provider_image(instance: str) -> str:
     return _provider_name(instance)
 
 
+PROVIDER_IMAGES = tuple(sorted({_provider_image(instance) for instance in PROVIDERS}))
+
+
 # A separate ConfigMap prevents preparing the new deployment from rolling the live service.
 CONFIG = ConfigMapArgs(
     name="platform-sessions-remote-config",
@@ -347,7 +350,7 @@ def add_resources(chart: Chart) -> None:
     for instance in PROVIDERS:
         _add_provider(chart, instance)
         _provider_workload(chart, instance)
-    for image in sorted({_provider_image(instance) for instance in PROVIDERS}):
+    for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
     Certificate(
         chart,

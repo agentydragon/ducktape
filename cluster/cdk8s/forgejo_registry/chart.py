@@ -29,7 +29,7 @@ from cluster.cdk8s.forgejo_registry import image_automation as forgejo_image_aut
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.platform_sessions import app as platform_sessions_app
+from cluster.cdk8s.platform_sessions import app as platform_sessions_app, remote as platform_sessions_remote
 from cluster.cdk8s.providers.flux.notification import Receiver, ReceiverResource
 
 NAME = "forgejo-images"
@@ -129,6 +129,12 @@ def chart(app: App) -> Chart:
                 platform_sessions_app.NAME,
                 namespace=forgejo_image_automation.NAMESPACE,
                 filter=f"req.package.name == '{platform_sessions_app.NAME}'",
+            ),
+            *(
+                ReceiverResource.image_repository(
+                    image, namespace=forgejo_image_automation.NAMESPACE, filter=f"req.package.name == '{image}'"
+                )
+                for image in platform_sessions_remote.PROVIDER_IMAGES
             ),
             ReceiverResource.image_update_automation(AUTOMATION_NAME, namespace=forgejo_image_automation.NAMESPACE),
         ],
