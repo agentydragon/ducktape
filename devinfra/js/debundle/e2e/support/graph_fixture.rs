@@ -341,12 +341,22 @@ impl GraphFixture {
     /// Both edit modes must refuse for the intended reason, without changing
     /// any spec bytes or creating/deleting files (including nested modules).
     pub fn assert_rejected_unchanged(&self, args: &[&str], diagnostics: &[&str]) {
-        self.assert_rejected_unchanged_with_graph(args, diagnostics, true);
+        self.assert_rejected_unchanged_with_graph(args, diagnostics, true, None);
     }
 
     /// Test an explicitly unverified edit without supplying a saved graph.
     pub fn assert_rejected_unchanged_without_graph(&self, args: &[&str], diagnostics: &[&str]) {
-        self.assert_rejected_unchanged_with_graph(args, diagnostics, false);
+        self.assert_rejected_unchanged_with_graph(args, diagnostics, false, None);
+    }
+
+    /// An invalid edit can fail before producing a candidate assessment report.
+    pub fn assert_error_unchanged_with_assessment(
+        &self,
+        args: &[&str],
+        analysis: &Path,
+        diagnostics: &[&str],
+    ) {
+        self.assert_rejected_unchanged_with_graph(args, diagnostics, true, Some(analysis));
     }
 
     fn assert_rejected_unchanged_with_graph(
@@ -354,6 +364,7 @@ impl GraphFixture {
         args: &[&str],
         diagnostics: &[&str],
         with_graph: bool,
+        analysis: Option<&Path>,
     ) {
         fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
             let mut files = BTreeMap::new();
@@ -374,7 +385,11 @@ impl GraphFixture {
             if dry_run {
                 args.push("--dry-run");
             }
-            let mut command = self.process(&args);
+            let mut command = if let Some(analysis) = analysis {
+                self.process_with_assessment(&args, analysis)
+            } else {
+                self.process(&args)
+            };
             if !with_graph {
                 command.env_remove("DEBUNDLE_GRAPH");
             }
