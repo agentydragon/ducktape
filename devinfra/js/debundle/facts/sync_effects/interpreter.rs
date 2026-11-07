@@ -1470,6 +1470,20 @@ impl OwnDataContext for Executor<'_, '_> {
                 .get(&allocation)
                 .is_some_and(|properties| properties.contains_key(property))
     }
+
+    fn first_generation_dense_array_length(&self, allocation: u32) -> Option<u32> {
+        if !self.inputs.index.array_elements.contains_key(&allocation)
+            || !self.state.dense_arrays.contains_key(&allocation)
+        {
+            return None;
+        }
+        match self.state.writable_prefix.get(&allocation) {
+            Some(super::super::allocation_transfer::WritablePrefixState::DenseArray { length }) => {
+                Some(*length)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl ArrayContext for Executor<'_, '_> {
@@ -9739,18 +9753,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn present_own_data_read(&self, receivers: &Values, property: &str) -> Option<OwnDataRead> {
-        let slot = own_data_transfer::resolve_slot(
+        let slot = own_data_transfer::resolve_present_read(
             self,
             receivers,
             property,
             OwnDataOwnership::CurrentPrefix,
         )
         .ok()?;
-        if !self.inputs.index.plain_data_objects.contains(&slot.object)
+        if !slot.is_array_specific()
+            && !self
+                .inputs
+                .index
+                .plain_data_objects
+                .contains(&slot.object())
             || self
                 .state
                 .applied_accessors
-                .get(&slot.object)
+                .get(&slot.object())
                 .is_some_and(|accessors| accessors.contains_key(property))
         {
             return None;
