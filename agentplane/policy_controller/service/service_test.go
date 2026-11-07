@@ -226,3 +226,28 @@ func TestSetWatchRemovesSetsWhenBindingIsRevoked(t *testing.T) {
 		t.Fatalf("removed = %v", frame)
 	}
 }
+
+func TestListPolicySetNamesReturnsOneSortedCallerVisibleSnapshot(t *testing.T) {
+	otherNamespace := policySet("other-namespace")
+	otherNamespace.Namespace = "other-policies"
+	api, _, _ := fixture(
+		t,
+		binding("one", "alice", "base"), policySet("z-private"), policySet("base"), policySet("alpha"), otherNamespace,
+	)
+
+	for _, test := range []struct {
+		token string
+		want  []string
+	}{
+		{token: "app", want: []string{"alpha", "base", "z-private"}},
+		{token: "alice", want: []string{"base"}},
+	} {
+		response, err := api.ListPolicySetNames(tokenContext(t, test.token), &policypb.ListPolicySetNamesRequest{})
+		if err != nil {
+			t.Fatalf("ListPolicySetNames(%s): %v", test.token, err)
+		}
+		if !reflect.DeepEqual(response.GetNames(), test.want) {
+			t.Errorf("ListPolicySetNames(%s) = %v, want %v", test.token, response.GetNames(), test.want)
+		}
+	}
+}

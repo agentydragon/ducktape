@@ -58,11 +58,13 @@ not exist. It is checked once the subject resolves and holds even when applying 
 ## Policy resource watches
 
 `PolicyService` serves the policy namespace on every controller replica. `WatchPolicyBindings`
-observes bindings for one ServiceAccount; `WatchPolicySets` observes PolicySets. A directly
-configured reader may select another subject and see every set; other authenticated ServiceAccounts
-may read their own bindings and only sets named by those bindings. Losing a binding removes a set
-from that caller's view when no other binding names it. The server reviews the PolicyService-audience
-bearer at admission, before writes, and while idle; a changed or refused identity ends the stream.
+observes bindings for one ServiceAccount; `WatchPolicySets` observes PolicySets; and
+`ListPolicySetNames` returns one sorted snapshot of the PolicySet names visible to the caller. A
+directly configured reader may select another subject and see every set; other authenticated
+ServiceAccounts may read their own bindings and only sets named by those bindings. Losing a binding
+removes a set from that caller's view when no other binding names it. The server reviews the
+PolicyService-audience bearer at admission, before writes, and while idle; a changed or refused
+identity ends the stream.
 
 Each stream sends snapshot chunks, `snapshot_complete`, then coalesced resource upserts and
 UID-fenced removals. It opens Kubernetes watches before reading the snapshot, so an intervening
