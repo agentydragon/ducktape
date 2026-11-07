@@ -540,9 +540,10 @@ debundle run \
 If the gate rejects an assignment, `debundle run` emits each nonempty
 structured evidence report (`cycles.json`, `atomic_group_conflicts.json`) under
 `reports/tree/<chunk-id>/`. Both can be present when a split atomic group also
-forms a blocking SCC; the atomic conflict remains the primary verdict and
-diagnostic. `graph_summary.json` records both counts. A missing `cycles.json`
-means zero blocking SCCs only for a complete, current report set. `debundle run --dry-run` runs pipeline
+forms a blocking SCC; the atomic conflict is shown first as the structural
+diagnostic, with the cycle report as additional evidence. `graph_summary.json`
+records both counts. A missing `cycles.json` means zero blocking SCCs only for
+a complete, current report set. `debundle run --dry-run` runs pipeline
 parse/facts/gate checks without writing emitted JS or reports; a gate
 rejection still writes its rejection evidence. Full graph serialization is
 opt-in with `--graphs`, including for rejected runs. Graph-backed queries require
@@ -1480,8 +1481,8 @@ chooser](../skills/shared/initialization_contracts.md#choose-the-contract-for-th
 to select its scope and audit obligations. A rejection alone does not establish
 purity, callback timing, or a host/runtime premise.
 
-When validation refuses a mutating command, the diagnostic names exactly
-what's wrong:
+When `debundle run` refuses an assignment, the diagnostic names exactly what's
+wrong:
 
 **Atom split** (refused by the realizability gate). Lists each split atom:
 which source units it covers, which modules its members would land in, and the
@@ -1519,14 +1520,12 @@ can inspect how the selected claims are tied together.
 when a `:readable` field collides). Lists each collision: the existing
 binding holding the name, the binding the rename would have given it.
 
-Both diagnostic shapes go to stderr; the command exits non-zero. Under a
-JSON format a realizability-gate rejection additionally prints one
-structured object on stdout: `{verb, action: "rejected", rejection}`, where
-`rejection.kind` is `atom_split` (with `conflicts`, the canonical
-`AtomicGroupConflictReport` projection) or `unrealizable_cycles` (with
-`blocking_sccs`, the canonical `BlockingSccEntry` projection). These are
-the **same wire shapes** `atomic_group_conflicts.json` / `cycles.json` carry
-— there is no parallel rejection schema.
+Both pipeline diagnostic shapes go to stderr; the command exits non-zero.
+Pipeline reports are written as `atomic_group_conflicts.json` and/or
+`cycles.json`, as described in [Running the pipeline](#running-the-pipeline).
+Verified ownership edits use the canonical candidate assessment. A JSON
+rejection includes the assessment report that refused the write; it does not
+use the pipeline's `atom_split` / `unrealizable_cycles` envelope.
 
 Each cycle's `rejection` distinguishes `mutual_constraining_cycle`,
 `esm_evaluation_tdz`, and `tdz_after_collapsing_pass_one`. The last runs Pass 2
@@ -1534,19 +1533,13 @@ after hypothetically co-locating every Pass-1 SCC and applies to that collapsed
 assignment. Its owner list can include otherwise viable modules. When reducing
 ownership, first try a candidate resolving the actual mutual/direct cycles,
 then rerun the normal gate on that candidate. This can preserve a broad group
-that would be lost by removing the union of every diagnostic's owners. Atomic
-coverage and both gate checks still apply to the resulting assignment.
+that would be lost by removing the union of every diagnostic's owners. The
+normal pipeline gate still applies to the resulting assignment.
 
-Edit-gate rejections (including `--dry-run` probes) also write those
-artifacts to disk as siblings of `--graph` — the default location the
-`gate` queries read — so the documented follow-up queries work on the
-rejection that was just reported. The two artifacts may coexist, with the
-atomic conflict remaining the primary verdict. After graph, assignment and
-shared validation complete, the edit gate replaces prior rejection artifacts
-with each nonempty current report; a passing assignment leaves neither file.
-A preflight error leaves the last completed gate result intact. `debundle run`
-(and `run --dry-run`) writes the same files under `reports/tree/<chunk>/`,
-which is the same sibling-of-`dependency_graph.json.gz` layout.
+Ownership-edit rejections do not write or replace these pipeline artifacts.
+The `gate` queries and `spec propose-commutations` read reports from the
+pipeline assignment; rerun `debundle run` to refresh them after changing
+ownership.
 
 A `commuting_statements` entry the graph build rejects (contradicted by a
 source fact, or inerting no edge; [SPEC](../SPEC.md#commuting-statements))
@@ -1649,7 +1642,7 @@ wrong promoted callback.
 For a blocking SCC whose cut is `sequenced` edges with opaque effects, the
 remedy may be a `commuting_statements` entry ([SPEC](../SPEC.md#commuting-statements))
 rather than co-location. `spec propose-commutations` drafts those entries
-mechanically from the rejection the pipeline or an edit gate wrote:
+mechanically from the rejection the pipeline wrote:
 
 ```sh
 debundle spec propose-commutations \

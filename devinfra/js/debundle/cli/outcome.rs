@@ -7,15 +7,14 @@
 //! `verb` / `action` / `gate` / `files_written` / `files_deleted`;
 //! verb-specific fields (`moves_applied`, `binding`, …) flatten in
 //! alongside it. A refused verified write carries the canonical candidate
-//! assessment that caused the refusal. The historical graph-gate rejection
-//! envelope remains for diagnostic callers. See docs/cli.md § "Rejection diagnostics".
+//! assessment that caused the refusal. Pipeline graph diagnostics retain
+//! their report files and CLI queries. See docs/cli.md § "Rejection diagnostics".
 
 use anyhow::Result;
 use peel::OutputFormat;
 use serde::Serialize;
 
 use crate::candidate_assessment::CandidateAssessmentRejection;
-use crate::edit_gate::GateRejection;
 
 /// How a mutating verb's edit was validated, reported in the outcome
 /// so machine readers can tell a gate-checked apply from a
@@ -99,42 +98,26 @@ pub fn print_outcome_json<T: Serialize>(value: &T, format: OutputFormat) -> Resu
     Ok(())
 }
 
-/// If `err` is a realizability-gate rejection and a JSON format is
-/// selected (explicitly or because stdout is a pipe), mirror the
-/// stderr blame report as a structured [`GateRejectionOutcome`] on
-/// stdout so machine readers don't have to scrape prose. The error
-/// still propagates — the command exits non-zero either way.
+/// If `err` is a verified candidate-assessment rejection and JSON output is
+/// selected, include the same canonical report that caused the refusal.
 pub fn emit_gate_rejection_json(
     verb: &'static str,
     format: Option<OutputFormat>,
     err: &anyhow::Error,
 ) {
-    if let Some(rejection) = err.downcast_ref::<CandidateAssessmentRejection>() {
-        let format = OutputFormat::resolve(format);
-        if format != OutputFormat::Text {
-            print_outcome_json(
-                &GateRejectionOutcome {
-                    verb,
-                    action: "rejected",
-                    rejection: &rejection.report,
-                },
-                format,
-            )
-            .expect("candidate rejection serializes");
-        }
-        return;
-    }
-    let Some(rejection) = err.downcast_ref::<GateRejection>() else {
+    let Some(rejection) = err.downcast_ref::<CandidateAssessmentRejection>() else {
         return;
     };
     let format = OutputFormat::resolve(format);
-    if format == OutputFormat::Text {
-        return;
+    if format != OutputFormat::Text {
+        print_outcome_json(
+            &GateRejectionOutcome {
+                verb,
+                action: "rejected",
+                rejection: &rejection.report,
+            },
+            format,
+        )
+        .expect("candidate rejection serializes");
     }
-    let outcome = GateRejectionOutcome {
-        verb,
-        action: "rejected",
-        rejection: &rejection.report,
-    };
-    print_outcome_json(&outcome, format).expect("rejection outcome serializes");
 }

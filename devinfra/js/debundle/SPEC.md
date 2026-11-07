@@ -229,13 +229,15 @@ positionally aligned with `binding_names`.
 
 For a rejected assignment, `atomic_group_conflicts.json` and `cycles.json` are
 each emitted when their corresponding evidence is nonempty, and may coexist.
-An atomic-group conflict remains the primary gate verdict when both are present;
-the cycle report is secondary evidence. `graph_summary.json` records both
+These are legacy structural diagnostic projections; when both are present,
+the atomic-group conflict is shown first. `graph_summary.json` records both
 counts. A missing `cycles.json` means zero blocking SCCs only when the current
-report set completed successfully. Edit-gate writers apply the same report
-selection to the post-edit assignment and replace prior rejection artifacts
-after graph, assignment and shared validation complete. A preflight error leaves
-the last completed gate result intact.
+pipeline report set completed successfully. These reports describe the
+pipeline assignment and do not provide a separate verified-edit verdict.
+Verified ownership admission uses the canonical candidate assessment, which
+combines structural obligations with effect, placement, and
+module-initialization evidence. Ownership edits do not rewrite the pipeline's
+graph reports.
 
 Each atomic conflict report includes a deterministic witness between the first
 claim and the first later claim assigned to a different module. It records a
