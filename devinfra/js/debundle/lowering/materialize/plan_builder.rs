@@ -1234,7 +1234,7 @@ impl ChunkPlanBuilder {
         precomputed: &DependencyGraphAndAtomicGroups,
         layout: &SourceUnitLayout,
         opted_in_owner_paths: &[String],
-        single_authored_owner_groups: &BTreeSet<Vec<SourceUnitId>>,
+        single_authored_owner_groups: &BTreeMap<Vec<SourceUnitId>, String>,
     ) -> Result<()> {
         if opted_in_owner_paths.is_empty() {
             return Ok(());
@@ -1263,7 +1263,7 @@ impl ChunkPlanBuilder {
             let member_key: Vec<_> = members.iter().copied().collect();
             // Ownership subsets must not turn a two-owner authored atom into
             // an eligible one-owner atom by removing one of its owners.
-            if !single_authored_owner_groups.contains(&member_key) {
+            if !single_authored_owner_groups.contains_key(&member_key) {
                 continue;
             }
             let mut current_owners = BTreeSet::<usize>::new();
@@ -1318,7 +1318,10 @@ impl ChunkPlanBuilder {
             else {
                 bail!("atomic group owner index {owner_index} is outside the module plan");
             };
-            if owner_role != ModuleRole::Specified || !opted_in_owner_paths.contains(&owner_path) {
+            if owner_role != ModuleRole::Specified
+                || !opted_in_owner_paths.contains(&owner_path)
+                || single_authored_owner_groups.get(&member_key) != Some(&owner_path)
+            {
                 continue;
             }
             if unowned_bindings.is_empty() && unowned_anonymous.is_empty() {
@@ -1372,9 +1375,9 @@ impl ChunkPlanBuilder {
         precomputed: &DependencyGraphAndAtomicGroups,
         layout: &SourceUnitLayout,
         opted_in_owner_paths: &[String],
-    ) -> Result<BTreeSet<Vec<SourceUnitId>>> {
+    ) -> Result<BTreeMap<Vec<SourceUnitId>, String>> {
         if opted_in_owner_paths.is_empty() {
-            return Ok(BTreeSet::new());
+            return Ok(BTreeMap::new());
         }
 
         let dependency_graph = &precomputed.dependency_graph;
@@ -1397,7 +1400,7 @@ impl ChunkPlanBuilder {
             .collect();
         atomic_groups.sort_by_key(|members| members.iter().next().copied());
 
-        let mut eligible_groups = BTreeSet::new();
+        let mut eligible_groups = BTreeMap::new();
         for members in atomic_groups {
             let mut current_owners = BTreeSet::<usize>::new();
             let mut has_imported_binding = false;
@@ -1439,7 +1442,10 @@ impl ChunkPlanBuilder {
             if owner_plan.role == ModuleRole::Specified
                 && opted_in_owner_paths.contains(owner_plan.target_path.as_str())
             {
-                eligible_groups.insert(members.iter().copied().collect());
+                eligible_groups.insert(
+                    members.iter().copied().collect(),
+                    owner_plan.target_path.clone(),
+                );
             }
         }
         Ok(eligible_groups)

@@ -481,7 +481,7 @@ pub(super) fn finish_logical_chunk(
             &source_unit_layout,
             chunk_unassigned_mode.partial_atomic_group_completion_owners(),
         )?,
-        _ => BTreeSet::new(),
+        _ => BTreeMap::new(),
     };
     // Selector outcomes, resolved-member anchors, and analysis assumptions
     // have already been collected from the complete authored ownership.
