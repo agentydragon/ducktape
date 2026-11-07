@@ -3239,8 +3239,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ) else {
             return false;
         };
-        // Identity discharges this lookup only. An operation-use record is
-        // reserved for the separately admitted invocation.
+        // Identity discharges this lookup only. Heap read analysis records
+        // the exact read use; invocation uses require separate admission.
         self.record_proof_dependencies(
             NativeIntegrityGuard::NativeCallIdentity,
             &premise.dependencies,
@@ -11620,7 +11620,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return CallTransfer::EffectsOnly;
         }
         if call.kind == CallKind::LocalMemberRead {
-            if self.native_member_lookup_is_data(&call.callee, None) {
+            if self.native_member_lookup_is_data(&call.callee, Some(call.span.lo.0)) {
                 return CallTransfer::EffectsOnly;
             }
             if self.closed_enum_member_read(&call.callee) {

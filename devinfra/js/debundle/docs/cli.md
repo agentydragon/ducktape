@@ -1876,6 +1876,11 @@ Captured ordinary-object values). `native_operation_inputs` applies separately
 to each selected consuming site; `map_empty` can select every direct `new Map()`
 data field of one checked object initializer. It does not discharge a census witness (SPEC.md §
 Native integrity inputs).
+`symbol_well_known_class_keys` instead selects exact eager reads of
+`Symbol.asyncIterator`, `Symbol.asyncDispose` and `Symbol.dispose` in computed
+ordinary method keys of one checked class-variable initializer. Each read
+requires the existing own-data proof and retains its own evidence; static
+field initializers keep ordinary effects.
 For `set_from_primitive_array`, a dense array may contain primitive literals
 and earlier direct top-level primitive-literal `var`/`let`/`const` bindings
 whose canonical identities have no other declaration or write. The exact

@@ -1061,6 +1061,8 @@ pub enum NativeOperationKind {
     SetFromSetSpread,
     /// One static own-data function property read on the original Object constructor.
     ObjectOwnDataFunctionRead,
+    /// Exact well-known Symbol data reads in a direct class initializer's method keys.
+    SymbolWellKnownClassKeys,
     ArraySpreadFromPrimitiveArrays,
     PromiseResolve,
 }

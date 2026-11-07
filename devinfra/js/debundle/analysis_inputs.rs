@@ -716,7 +716,7 @@ pub struct SelectedNativeOperationInput {
     pub selected_statement_span: Span,
 }
 
-/// Resolved author input for one exact native operation call. Spans and `Id`
+/// Resolved author input for one exact native operation read or call. Spans and `Id`
 /// are session-local; serialized evidence uses stable source provenance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedNativeOperationInput {
@@ -726,11 +726,11 @@ pub struct ResolvedNativeOperationInput {
     /// analysis view splits a multi-declarator declaration into source units.
     pub selected_statement_span: Span,
     pub declaration_span: Span,
-    /// The complete binding initializer, including the object for a map_empty
-    /// input that selects several field constructions.
+    /// The complete binding initializer, including an object or class when
+    /// the input selects several contained operation sites.
     pub initializer_span: Span,
-    /// One exact operation site; several map_empty records can share the same
-    /// author reference and object initializer without certifying its result.
+    /// One exact read or call site; several records can share the same author
+    /// reference and containing initializer without certifying its result.
     pub call_span: Span,
     pub initializer_ordinal: SourceUnitOrdinal,
     /// Exact operand of an admitted Set spread, if this is a spread operation.
