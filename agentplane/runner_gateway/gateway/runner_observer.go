@@ -288,6 +288,12 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
 			err = g.validateRunnerDestination(validateCtx, destination)
 			if err == nil && connection == nil {
+				// Refresh the claim without publishing facts before local installation.
+				// A replacement observer may have claimed the Lease while the first state
+				// message was in flight; only the current holder can renew this epoch.
+				err = g.records.renew(validateCtx, destination.identity, epoch, time.Now(), nil)
+			}
+			if err == nil && connection == nil {
 				connection = &runnerConnection{
 					identity: destination.identity, podUID: destination.podUID, epoch: epoch,
 					bootID: response.EnvironmentRuntimeBootId, ended: make(chan struct{}), closeDirect: cancel,

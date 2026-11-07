@@ -114,7 +114,7 @@ func (p *pausedBootIDLeases) Update(ctx context.Context, lease *coordinationv1.L
 	return updated, err
 }
 
-func startObservedRunner(t *testing.T, f *sandboxFixture, g *Gateway, runner *observedRunner) runnerDestination {
+func startObservedRunner(t *testing.T, f *sandboxFixture, g *Gateway, runner environmentruntimepb.EnvironmentRuntimeServer) runnerDestination {
 	t.Helper()
 	destination, err := g.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
@@ -134,6 +134,22 @@ func startObservedRunner(t *testing.T, f *sandboxFixture, g *Gateway, runner *ob
 	t.Cleanup(server.Stop)
 	destination.target = listener.Addr().String()
 	return destination
+}
+
+type delayedFirstStateRunner struct {
+	*observedRunner
+	watchStarted chan struct{}
+	release      chan struct{}
+}
+
+func (r *delayedFirstStateRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+	close(r.watchStarted)
+	select {
+	case <-r.release:
+	case <-stream.Context().Done():
+		return stream.Context().Err()
+	}
+	return r.observedRunner.WatchState(request, stream)
 }
 
 func TestFirstRunnerBootIDIsPublishedAfterLocalConnection(t *testing.T) {
@@ -271,6 +287,48 @@ func TestRejectedBootIDPublicationRemovesLocalConnection(t *testing.T) {
 	}
 	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" {
 		t.Fatalf("rejected observation published readiness: %#v", lease.Annotations)
+	}
+}
+
+func TestSupersededClaimCannotInstallConnectionBeforeBootID(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30")
+	runner := &delayedFirstStateRunner{
+		observedRunner: &observedRunner{bootID: "first-boot"},
+		watchStarted:   make(chan struct{}), release: make(chan struct{}),
+	}
+	destination := startObservedRunner(t, f, g, runner)
+	finished := make(chan error, 1)
+	go func() { finished <- g.observeRunner(t.Context(), destination) }()
+	select {
+	case <-runner.watchStarted:
+	case err := <-finished:
+		t.Fatalf("observer stopped before first watch: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("observer did not start its first watch")
+	}
+	newEpoch, err := g.records.claim(t.Context(), destination.identity, destination.podUID)
+	if err != nil || newEpoch < 2 {
+		t.Fatalf("failed to supersede the original claim: epoch %d, %v", newEpoch, err)
+	}
+	close(runner.release)
+	select {
+	case err := <-finished:
+		if status.Code(err) != codes.Aborted {
+			t.Fatalf("superseded observer = %v, want Aborted", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("superseded observer did not stop")
+	}
+	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
+		t.Fatalf("superseded observer installed a local connection: %v", err)
+	}
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" || lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != newEpoch {
+		t.Fatalf("superseded observer published readiness: %#v", lease)
 	}
 }
 
