@@ -45,12 +45,7 @@ class SyntheticProvider(ProviderBackend):
                 pb.ProviderInstanceInfo(
                     instance_id="primary",
                     routes=[
-                        pb.RouteDescription(
-                            operation_id="list-items",
-                            method="POST",
-                            path_template="/api/items/query",
-                            access_class=pb.ROUTE_ACCESS_CLASS_READ_ONLY,
-                        )
+                        pb.RouteDescription(operation_id="list-items", method="POST", path_template="/api/items/query")
                     ],
                     accepted_session_import_formats=[
                         pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE, version=_CANDIDATE_VERSION)
@@ -64,12 +59,7 @@ class SyntheticProvider(ProviderBackend):
                 pb.ProviderInstanceInfo(
                     instance_id="without-verification",
                     routes=[
-                        pb.RouteDescription(
-                            operation_id="list-items",
-                            method="POST",
-                            path_template="/api/items/query",
-                            access_class=pb.ROUTE_ACCESS_CLASS_READ_ONLY,
-                        )
+                        pb.RouteDescription(operation_id="list-items", method="POST", path_template="/api/items/query")
                     ],
                     accepted_session_import_formats=[
                         pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE, version=_CANDIDATE_VERSION)
@@ -139,7 +129,6 @@ async def test_info_candidate_verification_is_separate_from_installed_session_pr
         info = await client.GetInfo(pb.GetInfoRequest())
         assert len(info.provider.instances) == 2
         assert info.provider.instances[0].routes[0] == info.provider.instances[1].routes[0]
-        assert info.provider.instances[0].routes[0].access_class == pb.ROUTE_ACCESS_CLASS_READ_ONLY
         assert info.provider.instances[0].supports_candidate_verification
         assert info.provider.instances[0].instructions[0].text == "Export a session from the provider account."
         assert not info.provider.instances[0].instructions[0].HasField("command")
@@ -161,16 +150,35 @@ async def test_info_candidate_verification_is_separate_from_installed_session_pr
         assert snapshot.snapshot.state == pb.SESSION_STATE_NO_SESSION
         assert not snapshot.snapshot.HasField("last_probe")
 
-        unsupported = await client.VerifyCandidate(
-            pb.VerifyCandidateRequest(
-                instance=instance_ref("without-verification"),
-                media_type=_CANDIDATE_MEDIA_TYPE,
-                format_version=_CANDIDATE_VERSION,
-                candidate=_CANDIDATE,
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.VerifyCandidate(
+                pb.VerifyCandidateRequest(
+                    instance=instance_ref("without-verification"),
+                    media_type=_CANDIDATE_MEDIA_TYPE,
+                    format_version=_CANDIDATE_VERSION,
+                    candidate=_CANDIDATE,
+                )
             )
-        )
-        assert unsupported.WhichOneof("result") == "unsupported"
+        assert error.value.code() == grpc.StatusCode.UNIMPLEMENTED
         assert provider.verified_candidates == [_CANDIDATE]
+
+
+async def test_advertised_candidate_verification_requires_an_implementation() -> None:
+    class MissingVerification(SyntheticProvider):
+        verify_candidate = ProviderBackend.verify_candidate
+
+    async with served_provider(MissingVerification()) as (client, _service):
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.VerifyCandidate(
+                pb.VerifyCandidateRequest(
+                    instance=instance_ref(),
+                    media_type=_CANDIDATE_MEDIA_TYPE,
+                    format_version=_CANDIDATE_VERSION,
+                    candidate=_CANDIDATE,
+                )
+            )
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+        assert _CANDIDATE.decode() not in (error.value.details() or "")
 
 
 async def test_ambiguous_candidate_verification_does_not_change_installed_snapshot() -> None:
@@ -364,29 +372,6 @@ async def test_snapshot_supports_owner_presentation_imported_at_and_storage_erro
         )
         provider.snapshot.state_changed_at.GetCurrentTime()
         provider.snapshot.imported_at.seconds = 253402300800
-        with pytest.raises(grpc.aio.AioRpcError) as error:
-            await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
-        assert error.value.code() == grpc.StatusCode.INTERNAL
-
-
-def test_provider_info_rejects_invalid_export_instruction_text() -> None:
-    provider = SyntheticProvider()
-    info = provider.info
-    info.instances[0].instructions[0].text = "\x01hidden control character"
-
-    class InvalidInfoProvider(SyntheticProvider):
-        @property
-        def info(self) -> pb.ProviderInfo:
-            return info
-
-    with pytest.raises(ValueError, match="export instruction text"):
-        SessionProviderControlService(InvalidInfoProvider())
-
-
-async def test_snapshot_rejects_invalid_owner_presentation() -> None:
-    provider = SyntheticProvider()
-    provider.snapshot.owner_presentation.message = ""
-    async with served_provider(provider) as (client, _service):
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
         assert error.value.code() == grpc.StatusCode.INTERNAL

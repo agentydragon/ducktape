@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import unicodedata
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from enum import Enum
@@ -19,10 +18,6 @@ from platform_sessions.routes import Route
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
-_MAX_INSTRUCTION_TEXT_BYTES = 2048
-_MAX_INSTRUCTION_COMMAND_BYTES = 128
-_MAX_OWNER_MESSAGE_BYTES = 512
-_MAX_OWNER_HELP_BYTES = 4096
 
 type ImportSessionOutcome = (
     pb.SessionInstalled
@@ -91,10 +86,9 @@ class ProviderBackend(ABC):
 
     async def verify_candidate(
         self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-    ) -> CandidateVerificationOutcome | pb.CandidateVerificationUnsupported:
+    ) -> CandidateVerificationOutcome:
         """Verify a candidate without installing it or updating installed-session probe state."""
-        del instance_id, media_type, format_version, candidate
-        return pb.CandidateVerificationUnsupported()
+        raise NotImplementedError("Provider advertised candidate verification without implementing it")
 
 
 class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
@@ -211,8 +205,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id)
         )
         if not self._supports_candidate_verification[instance_id]:
-            response.unsupported.SetInParent()
-            return response
+            await self._abort(context, grpc.StatusCode.UNIMPLEMENTED, "Candidate verification is not supported")
         if (request.media_type, request.format_version) not in self._accepted_formats[instance_id]:
             response.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
             return response
@@ -285,15 +278,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 if not all(item) or item in accepted_formats:
                     raise ValueError("session import formats must be complete and unique")
                 accepted_formats.add(item)
-            for instruction in instance.instructions:
-                if not SessionProviderControlService._valid_owner_text(
-                    instruction.text, max_bytes=_MAX_INSTRUCTION_TEXT_BYTES
-                ):
-                    raise ValueError("provider export instruction text is invalid")
-                if instruction.HasField("command") and not SessionProviderControlService._valid_owner_text(
-                    instruction.command, max_bytes=_MAX_INSTRUCTION_COMMAND_BYTES, allow_newlines=False
-                ):
-                    raise ValueError("provider export instruction command is invalid")
             operation_ids: set[str] = set()
             for route in instance.routes:
                 if not route.operation_id or route.operation_id in operation_ids:
@@ -303,12 +287,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                     Route(route.method, route.path_template)
                 except ValueError as error:
                     raise ValueError("provider route descriptor has an invalid method or path") from error
-                if route.access_class not in (
-                    pb.ROUTE_ACCESS_CLASS_READ_ONLY,
-                    pb.ROUTE_ACCESS_CLASS_STATE_CHANGING,
-                    pb.ROUTE_ACCESS_CLASS_MIXED_OR_UNKNOWN,
-                ):
-                    raise ValueError("route access class must be explicit")
 
     @staticmethod
     def _validate_origin_path(path: str) -> None:
@@ -343,16 +321,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             snapshot.imported_at
         ):
             return False
-        if snapshot.HasField("owner_presentation"):
-            presentation = snapshot.owner_presentation
-            if not SessionProviderControlService._valid_owner_text(
-                presentation.message, max_bytes=_MAX_OWNER_MESSAGE_BYTES
-            ):
-                return False
-            if presentation.HasField("help") and not SessionProviderControlService._valid_owner_text(
-                presentation.help, max_bytes=_MAX_OWNER_HELP_BYTES
-            ):
-                return False
         if snapshot.HasField("last_probe"):
             result = snapshot.last_probe
             if not SessionProviderControlService._valid_probe_result(result):
@@ -385,13 +353,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         except OverflowError, ValueError:
             return False
         return True
-
-    @staticmethod
-    def _valid_owner_text(value: str, *, max_bytes: int, allow_newlines: bool = True) -> bool:
-        if not value.strip() or len(value.encode("utf-8")) > max_bytes:
-            return False
-        allowed_controls = {"\t", "\n", "\r"} if allow_newlines else set()
-        return all(unicodedata.category(character) != "Cc" or character in allowed_controls for character in value)
 
     async def _set_import_outcome(
         self, response: pb.ImportSessionResponse, outcome: ImportSessionOutcome, context: grpc.aio.ServicerContext
@@ -450,7 +411,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
     async def _set_candidate_verification_outcome(
         self,
         response: pb.VerifyCandidateResponse,
-        outcome: CandidateVerificationOutcome | pb.CandidateVerificationUnsupported,
+        outcome: CandidateVerificationOutcome,
         context: grpc.aio.ServicerContext,
     ) -> None:
         if isinstance(outcome, pb.CandidateVerified):
@@ -471,8 +432,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             response.upstream_unavailable.CopyFrom(outcome)
         elif isinstance(outcome, pb.OperationOutcomeUnknown):
             response.outcome_unknown.CopyFrom(outcome)
-        elif isinstance(outcome, pb.CandidateVerificationUnsupported):
-            await self._abort(context, grpc.StatusCode.INTERNAL, "provider capability contradicted its result")
         else:
             logger.error("provider control operation returned an invalid result operation=verify_candidate")
             await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")

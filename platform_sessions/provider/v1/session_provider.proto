@@ -71,10 +71,9 @@ message ProviderInstanceInfo {
 }
 
 message ExportInstruction {
-  // Nonempty UTF-8 owner guidance, at most 2,048 bytes.
+  // Owner guidance for exporting a session.
   string text = 1;
-  // Optional nonempty user-facing export command, at most 128 bytes. The owner UI may display
-  // it for copying; the service must never execute it.
+  // Optional export command for the owner to copy. The service must never execute it.
   optional string command = 2;
 }
 
@@ -86,21 +85,9 @@ message RouteDescription {
   // Origin-relative upstream path template handled by the provider's private HTTP data plane.
   // This is descriptive routing metadata, not an arbitrary destination URL.
   string path_template = 3;
-  // Explicit provider classification. UNSPECIFIED is an invalid descriptor; the gateway must deny
-  // MIXED_OR_UNKNOWN routes unless its policy explicitly grants that class. Neither method nor
-  // path implies an access class.
-  RouteAccessClass access_class = 4;
+  reserved 4;
+  reserved "access_class";
   string summary = 5;
-}
-
-enum RouteAccessClass {
-  ROUTE_ACCESS_CLASS_UNSPECIFIED = 0;
-  // The operation only reads upstream state according to the provider's reviewed contract.
-  ROUTE_ACCESS_CLASS_READ_ONLY = 1;
-  // The operation changes upstream state.
-  ROUTE_ACCESS_CLASS_STATE_CHANGING = 2;
-  // The provider cannot make a narrower claim; gateway policy must treat it conservatively.
-  ROUTE_ACCESS_CLASS_MIXED_OR_UNKNOWN = 3;
 }
 
 message SessionImportFormat {
@@ -140,9 +127,9 @@ message SessionSnapshot {
 }
 
 message OwnerPresentation {
-  // Nonempty sanitized text, at most 512 bytes.
+  // Owner-facing status text.
   string message = 1;
-  // Optional nonempty sanitized help text, at most 4,096 bytes.
+  // Optional owner-facing help text.
   optional string help = 2;
 }
 
@@ -230,6 +217,8 @@ message VerifyCandidateRequest {
 
 message VerifyCandidateResponse {
   InstanceRef instance = 1;
+  reserved 16;
+  reserved "unsupported";
   // This result belongs to the submitted candidate and never updates the installed session's
   // SessionSnapshot or its last_probe field. Every completed call sets exactly one result.
   oneof result {
@@ -239,13 +228,10 @@ message VerifyCandidateResponse {
     ChallengeRequired challenge_required = 13;
     UpstreamUnavailable upstream_unavailable = 14;
     OperationOutcomeUnknown outcome_unknown = 15;
-    CandidateVerificationUnsupported unsupported = 16;
   }
 }
 
 message CandidateVerified {}
-
-message CandidateVerificationUnsupported {}
 
 message ProbeResult {
   google.protobuf.Timestamp completed_at = 1;
