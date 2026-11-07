@@ -1358,7 +1358,7 @@ fn assert_reexported_value_input_provider_is_in_saved_summary(bridge: &str) {
     };
     let (staged, _fixture) = staged(
         FixtureOpts::new(
-            "import './setup.js';\nimport './bridge.js';\nconst result = globalThis.runtimeSettings.state.value;\nconsole.log(result);\nexport { result };\n",
+            "import './setup.js';\nimport './bridge.js';\nconst result = 41;\nconsole.log(result, globalThis.runtimeSettings.state.ready);\nexport { result };\n",
             vec![logical_module("all", &[Member::new("result")])],
         )
         .with_extra_chunks(&[
@@ -1388,7 +1388,7 @@ fn assert_reexported_value_input_provider_is_in_saved_summary(bridge: &str) {
     let direct_entry = direct.output_root().join("app/static/app/entry.js");
     let saved_entry = saved.output_root().join("app/static/app/entry.js");
     for entry in [&source_entry, &direct_entry, &saved_entry] {
-        assert_node_output(entry, "41\n", "");
+        assert_node_output(entry, "41 true\n", "");
     }
 
     for invocation in [&direct, &saved] {
