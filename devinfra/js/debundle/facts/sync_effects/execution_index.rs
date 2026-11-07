@@ -1363,6 +1363,8 @@ struct Callable {
     dynamic_property_effect: bool,
     dynamic_property_receivers: Vec<ValueExpr>,
     implicit_capture: bool,
+    lexical_this: bool,
+    meta_property: bool,
     opaque: bool,
     generator: bool,
     may_fall_through: bool,
@@ -1604,6 +1606,8 @@ impl Default for Callable {
             dynamic_property_effect: false,
             dynamic_property_receivers: Vec::new(),
             implicit_capture: false,
+            lexical_this: false,
+            meta_property: false,
             opaque: false,
             generator: false,
             may_fall_through: true,
@@ -12260,11 +12264,24 @@ impl Visit for ExecutionIndex {
         if let Some(key) = self.current {
             self.callables.get_mut(&key).unwrap().implicit_capture = true;
         }
+        // Arrow chains inherit the same lexical receiver. An ordinary
+        // function/method establishes a new dynamic receiver boundary.
+        for key in self.prototype_capture_stack.iter().rev() {
+            if !matches!(
+                self.callable_creations.get(key),
+                Some(DeferredCallableCreation::Arrow(_))
+            ) {
+                break;
+            }
+            self.callables.get_mut(key).unwrap().lexical_this = true;
+        }
     }
 
     fn visit_meta_prop_expr(&mut self, _: &MetaPropExpr) {
         if let Some(key) = self.current {
-            self.callables.get_mut(&key).unwrap().implicit_capture = true;
+            let callable = self.callables.get_mut(&key).unwrap();
+            callable.implicit_capture = true;
+            callable.meta_property = true;
         }
     }
 

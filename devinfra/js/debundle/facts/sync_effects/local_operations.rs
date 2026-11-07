@@ -815,7 +815,7 @@ impl LocalExpression {
                     span: update.span,
                 })
             }
-            Expr::This(_) if class_template => Some(Self::This),
+            Expr::This(_) => Some(Self::This),
             _ => {
                 let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
                 let keyed_collection_new = is_keyed_collection_new(&value);

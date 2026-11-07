@@ -817,6 +817,16 @@ static method/getter/setter descriptor definitions when their ordered canonical
 tags match; each callable child still supplies its own creation fragment.
 Defining an accessor does not invoke it. Computed keys, opaque definitions and
 the data-property `__proto__` form remain outside this definition proof.
+Constructor arrows that use lexical `this`, including nested arrow chains,
+retain the actual receiver separately from source home-object containment and
+lexical binding cells. Capture identity includes that receiver. Its class
+capability, constructor inputs and weak pooled heap remain reachable through
+publication, cell retention and bounded fallback. Invocation supplies the
+captured receiver to the shared kernel; reading an available receiver executes
+no user code. A missing receiver, meta property or unsupported receiver operation
+keeps conservative fallback. Ordinary functions establish their own receiver
+boundary. Capturing a receiver never transfers the constructor activation's
+freshness, descriptor or private-slot proof to another invocation.
 Base-class provider queries also retain their actual shared constructor-body
 fragment independently of the fresh-instance and retained-argument proof. The
 shared kernel executes field initializers, including implicit `undefined`

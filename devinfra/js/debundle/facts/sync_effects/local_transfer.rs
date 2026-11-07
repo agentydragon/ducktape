@@ -45,8 +45,8 @@ pub(super) struct LocalFrame {
     pub(super) returns: Values,
     /// An actual source throw, separate from unknown abrupt/TDZ alternatives.
     pub(super) thrown: Option<Box<KnownThrow>>,
-    /// Set only by checked base construction. Other local calls do
-    /// not acquire a receiver just because their syntax mentions `this`.
+    /// Supplied by checked base construction or an actual lexical capture.
+    /// Syntax alone never grants a receiver or the constructor proof below.
     pub(super) this_values: Option<Values>,
     constructor_receiver: Option<ConstructorReceiver>,
 }
@@ -769,10 +769,11 @@ fn expression(
             Some(SelectedValue::raw(result.allocation.values))
         }
         LocalExpression::This => {
+            let values = frame.this_values.clone()?;
             frame
                 .effect_coverage
-                .compose(&EffectCoverageFragment::default());
-            frame.this_values.clone().map(SelectedValue::raw)
+                .compose(&EffectCoverageFragment::no_effects());
+            Some(SelectedValue::raw(values))
         }
         LocalExpression::Record {
             allocation,

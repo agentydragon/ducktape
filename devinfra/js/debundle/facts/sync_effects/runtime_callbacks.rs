@@ -31,6 +31,7 @@ pub(super) struct BoundedInvocationFallbackRequest {
     pub(super) owner: SourceUnitOrdinal,
     pub(super) arguments: Vec<Values>,
     pub(super) captured: Context,
+    pub(super) receiver: Option<Values>,
     pub(super) reason: ExecutionPrecisionLossReason,
     pub(super) reach: HavocReach,
     pub(super) span: Span,
