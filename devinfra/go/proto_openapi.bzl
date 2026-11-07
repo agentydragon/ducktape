@@ -24,10 +24,13 @@ def _proto_openapi_impl(ctx):
     # The plugin insists on a Go import path for every file it reads, though none reaches the document;
     # `go_proto_library` supplies the real one to the Go compilers, so a proto here carries no `go_package`.
     # External protos (googleapis) declare their own `go_package`.
+    # In downstream workspaces this module's sources are under external/<repo>/,
+    # while protoc imports them by their paths within that repository.
+    repo_prefix = "external/{}/".format(ctx.label.workspace_name) if ctx.label.workspace_name else ""
     go_import_path = ",".join([
-        "M{}={}".format(source.path, source.dirname)
+        "M{}={}".format(source.path.removeprefix(repo_prefix), source.dirname.removeprefix(repo_prefix))
         for source in proto_info.transitive_sources.to_list()
-        if not source.path.startswith("external/")
+        if source.owner.workspace_name == ctx.label.workspace_name
     ])
     ctx.actions.run(
         executable = ctx.executable._protoc,
