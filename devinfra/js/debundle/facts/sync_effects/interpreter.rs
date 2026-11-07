@@ -3093,6 +3093,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         self.outcome
             .inherit_completeness(outcome.complete, outcome.effects.precision_losses);
         if matches!(transfer, CallTransfer::SummarizedOpaque(_))
+            && invocation == ForeignInvocation::Call
             && matches!(self.scope, LocalExecutionScope::Root)
             && self.executor.state.active_cells.is_empty()
             && self.body.terminal_call_root() == Some(span)
