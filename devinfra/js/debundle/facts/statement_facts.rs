@@ -450,6 +450,13 @@ impl StatementFacts {
     }
 }
 
+/// Identity in a chunk's declarative-cell arena. Slots are never reused; saved
+/// effects preserve the identity without retaining its runtime value graph.
+/// Immutable function-name views are not new activation-cell effects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct LexicalCellId(pub(crate) usize);
+
 /// One outer-observable storage location a statement can read or
 /// write. `EffectCell::Binding(name)` covers identifier reads
 /// (`Foo` or `Foo.bar` triggers a read of `Foo`) and rebind writes;
@@ -461,9 +468,12 @@ impl StatementFacts {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum EffectCell {
     Binding(Id),
-    /// A captured declarative binding, pooled across activations by its
-    /// canonical declaration offset. No singleton or private-birth proof.
-    LexicalCell(u32),
+    /// The actual captured cell, with its canonical declaration offset.
+    /// Identity does not prove initialization, contents, or private ownership.
+    LexicalCell {
+        origin: u32,
+        instance: LexicalCellId,
+    },
     GlobalProp(String),
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
@@ -500,7 +510,7 @@ impl EffectCell {
         match self {
             Self::Binding(_) | Self::GlobalProp(_) => false,
             Self::ArrayContents(_)
-            | Self::LexicalCell(_)
+            | Self::LexicalCell { .. }
             | Self::SetContents(_)
             | Self::GlobalSymbolRegistry
             | Self::ObjectShape(_)

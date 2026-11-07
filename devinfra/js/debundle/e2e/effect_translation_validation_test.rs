@@ -164,8 +164,8 @@ fn named_callee_keeps_self_identity_before_defaults_and_through_capture() {
         ),
         (
             "named-self-capture",
-            "const factory = function self() { return () => self; }; const captured = factory(); const result = captured(); console.log(result === factory);\n",
-            "true\n",
+            "const factory = function self() { return () => self; }; const captured = factory(); const other = factory(); const result = captured(); console.log(result === factory, other() === factory);\n",
+            "true true\n",
         ),
     ] {
         let (fixture, _) = accepted_primitive_fixture_with_reports(
@@ -174,6 +174,21 @@ fn named_callee_keeps_self_identity_before_defaults_and_through_capture() {
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_operation_receipt(&fixture, "result", 1);
+        if case == "named-self-capture" {
+            for binding in ["captured", "other", "result"] {
+                let execution = binding_execution_report(&fixture, binding);
+                for access in ["allocations", "reads", "writes"] {
+                    assert!(
+                        execution["heap_frontier"]["composed_synchronous_calls"][access]["sample"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .all(|cell| cell["kind"] != "lexical_cell"),
+                        "an immutable name view is not a new activation storage location: {execution:#}"
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -503,41 +518,90 @@ fn captured_cell_effects_preserve_observer_write_conflicts() {
     ] {
         assert_operation_receipt(&aliases, binding, calls);
     }
-    let source = "function make() { let state = 1; return { read: () => state, write: () => state = 42 }; } const api = make(); const before = api.read(); const after = api.write(); console.log(before, after);\n";
-    let colocated = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&colocated, "1 42\n");
-    let fixture = run_rejection_fixture_with_args(
-        FixtureOpts::new(
-            source,
-            vec![logical_module(
-                "writer",
-                &[
-                    Member::new("make"),
-                    Member::new("api"),
-                    Member::new("after"),
-                ],
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["--effect-conflicts-jsonl"],
-        1,
-    );
-    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
-    let pair = rows
-        .iter()
-        .find(|pair| pair["runs_first"]["unit"] == 3 && pair["runs_later"]["unit"] == 2)
-        .unwrap_or_else(|| panic!("captured write crossed its earlier observer: {rows:#?}"));
-    assert_eq!(pair["havoc"], false, "{pair:#}");
-    assert!(
-        pair["cells"]
+    for (source, writer_bindings) in [
+        (
+            "function make() { let state = 1; return { read: () => state, write: () => state = 42 }; } const api = make(); const before = api.read(); const after = api.write(); console.log(before, after);\n",
+            &["make", "api", "after"][..],
+        ),
+        (
+            "function make() { let state = 1; return () => ({ read: () => state, write: () => state = 42 }); } const build = make(); const left = build(); const right = build(); const before = left.read(); const after = right.write(); console.log(before, after);\n",
+            &["make", "build", "left", "right", "after"][..],
+        ),
+    ] {
+        let colocated = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&colocated, "1 42\n");
+        let before = binding_execution_report(&colocated, "before");
+        let after = binding_execution_report(&colocated, "after");
+        let cell = before["heap_frontier"]["non_assumed_heap_accesses"]["reads"]["sample"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|cell| cell["cell"]["kind"] == "lexical_cell"
-                && !cell["first_write"].is_null()
-                && !cell["later_read"].is_null()),
-        "{pair:#}"
-    );
+            .find(|cell| cell["kind"] == "lexical_cell")
+            .unwrap();
+        assert!(cell["instance"].is_number(), "{cell:#}");
+        assert!(
+            after["heap_frontier"]["non_assumed_heap_accesses"]["writes"]["sample"]
+                .as_array()
+                .unwrap()
+                .contains(cell),
+            "aliases, including inner factory activations, must address the same outer cell: {before:#} {after:#}"
+        );
+        let members: Vec<_> = writer_bindings
+            .iter()
+            .map(|binding| Member::new(binding))
+            .collect();
+        let fixture = run_rejection_fixture_with_args(
+            FixtureOpts::new(source, vec![logical_module("writer", &members)])
+                .with_unassigned_mode(unassigned_mode_inline()),
+            &["--effect-conflicts-jsonl"],
+            1,
+        );
+        let graph = fixture.dependency_graph();
+        let before_unit = source_unit_for_binding(&graph, "before").0;
+        let after_unit = source_unit_for_binding(&graph, "after").0;
+        let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+        let pair = rows
+            .iter()
+            .find(|pair| {
+                pair["runs_first"]["unit"] == after_unit
+                    && pair["runs_later"]["unit"] == before_unit
+            })
+            .unwrap_or_else(|| panic!("captured write crossed its earlier observer: {rows:#?}"));
+        assert_eq!(pair["havoc"], false, "{pair:#}");
+        assert!(
+            pair["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|access| &access["cell"] == cell
+                    && !access["first_write"].is_null()
+                    && !access["later_read"].is_null()),
+            "{pair:#}"
+        );
+    }
+}
+
+#[test]
+fn escaped_and_recursive_capture_paths_keep_uncovered_effects() {
+    for (source, expected) in [
+        (
+            "function make() { let state = 1; const read = () => state; globalThis.saved = read; globalThis.reenter?.(read); return read; } const selected = make(); console.log(selected());\n",
+            "1\n",
+        ),
+        (
+            "function make(count) { let state = count; const read = () => state; return count ? make(count - 1) : read; } const selected = make(1); console.log(selected());\n",
+            "0\n",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, expected);
+        let execution = binding_execution_report(&fixture, "selected");
+        assert_eq!(execution["complete"], false, "{execution:#}");
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "opaque escape and recursive source summaries cannot mint addressed-cell coverage: {execution:#}"
+        );
+    }
 }
 
 #[test]

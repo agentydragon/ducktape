@@ -6,6 +6,52 @@ use analysis::reports::schema::{
 };
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+use std::collections::BTreeSet;
+
+fn assert_distinct_captured_cells(fixture: &Fixture, bindings: &[&str]) {
+    let graph = fixture.dependency_graph();
+    let mut origins = BTreeSet::new();
+    let mut instances = BTreeSet::new();
+    for binding in bindings {
+        let unit = source_unit_for_binding(&graph, binding);
+        let node = graph.nodes.iter().find(|node| node.id == unit).unwrap();
+        let heap = node
+            .synchronous_execution
+            .as_ref()
+            .unwrap()
+            .heap_frontier
+            .as_ref()
+            .unwrap();
+        let cells: Vec<_> = heap
+            .composed_synchronous_calls
+            .allocations
+            .sample
+            .iter()
+            .filter(|cell| matches!(cell, analysis::graph::EffectCellReport::LexicalCell { .. }))
+            .collect();
+        assert_eq!(cells.len(), 1, "{binding}: {heap:#?}");
+        let cell = cells[0];
+        let analysis::graph::EffectCellReport::LexicalCell { origin, instance } = cell else {
+            unreachable!()
+        };
+        origins.insert(*origin);
+        instances.insert(*instance);
+        assert!(
+            heap.non_assumed_heap_accesses.writes.sample.contains(cell),
+            "initialization must write the cell it created: {heap:#?}"
+        );
+    }
+    assert_eq!(
+        origins.len(),
+        1,
+        "one source declaration in every activation"
+    );
+    assert_eq!(
+        instances.len(),
+        bindings.len(),
+        "actual activations have different cells"
+    );
+}
 
 fn assert_object_binding_receipt(fixture: &Fixture, binding: &str, expected: &[(&str, &str)]) {
     let graph = fixture.dependency_graph();
@@ -135,6 +181,30 @@ fn fresh_factory_returned_record_can_split() {
     );
     let fixture = run_fixture(split(&source));
     assert_preserved_entry_output(&fixture, "function function function\n");
+    assert!(
+        fixture.effect_translation_validation()["swapped_pairs"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    for binding in ["first", "middle", "last"] {
+        assert_object_binding_receipt(&fixture, binding, &[("selected", binding)]);
+    }
+    assert_distinct_captured_cells(&fixture, &["first", "middle", "last"]);
+}
+
+#[test]
+fn independent_factory_cells_preserve_their_returned_readers() {
+    let source = "function factory(seed) { return { selected: () => seed }; }\nconst { selected: first } = factory(1);\nconst { selected: middle } = factory(2);\nconst { selected: last } = factory(3);\nconsole.log(first(), middle(), last());\nexport { first, middle, last };\n";
+    let fixture = run_fixture(split(source));
+    assert_preserved_entry_output(&fixture, "1 2 3\n");
+    assert!(
+        fixture.effect_translation_validation()["swapped_pairs"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_distinct_captured_cells(&fixture, &["first", "middle", "last"]);
 }
 
 #[test]

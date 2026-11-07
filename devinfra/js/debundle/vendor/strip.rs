@@ -535,11 +535,12 @@ fn sweep_unreachable_top_level(
             EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
                 born_in_dropped_item(*origin)
             }
-            // Property, receiver, and brand origins can cover repeated runtime
-            // instances; source containment alone does not prove private state.
+            // Source containment does not prove private property/brand state.
+            // Exact captured-cell identity likewise proves no escape/liveness
+            // condition that would permit dropping its accesses here.
             EffectCell::OwnProperty { .. }
             | EffectCell::PrivateSlot { .. }
-            | EffectCell::LexicalCell(_)
+            | EffectCell::LexicalCell { .. }
             | EffectCell::ObjectShape(_)
             | EffectCell::DescriptorMapContents(_) => false,
             EffectCell::Binding(id) => {
@@ -1179,7 +1180,9 @@ fn format_live_trace(
 fn format_effect_cell(cell: &EffectCell) -> String {
     match cell {
         EffectCell::Binding(id) => format!("binding `{}`", id_name(id)),
-        EffectCell::LexicalCell(origin) => format!("lexical cell #{origin}"),
+        EffectCell::LexicalCell { origin, instance } => {
+            format!("lexical cell #{origin} instance {}", instance.0)
+        }
         EffectCell::GlobalProp(key) => format!("global `{key}`"),
         EffectCell::GlobalSymbolRegistry => "global symbol registry".to_owned(),
         EffectCell::ArrayContents(origin) => format!("array contents #{origin}"),

@@ -1009,6 +1009,121 @@ fn linkage_export_effects_survive_saved_analysis() {
 }
 
 #[test]
+fn activation_cell_instances_and_alias_conflicts_survive_saved_analysis() {
+    for independent in [true, false] {
+        let (source, modules, original, emitted) = if independent {
+            (
+                "function make(seed) { return { selected: () => seed }; } const { selected: first } = make(1); const { selected: middle } = make(2); const { selected: last } = make(3); console.log(first(), middle(), last());\n",
+                vec![
+                    logical_module("outer", &[Member::new("first"), Member::new("last")]),
+                    logical_module("inner", &[Member::new("middle")]),
+                ],
+                "1 2 3\n",
+                "1 2 3\n",
+            )
+        } else {
+            (
+                "function make() { let state = 1; return { read: () => state, write: () => state = 42 }; } const api = make(); const before = api.read(); const after = api.write(); console.log(before, after);\n",
+                vec![logical_module(
+                    "writer",
+                    &[
+                        Member::new("make"),
+                        Member::new("api"),
+                        Member::new("after"),
+                    ],
+                )],
+                "1 42\n",
+                "42 42\n",
+            )
+        };
+        let opts = FixtureOpts::new(source, modules);
+        let opts = if independent {
+            opts
+        } else {
+            opts.with_unassigned_mode(unassigned_mode_inline())
+        };
+        let (staged, _fixture) = staged(opts);
+        assert_node_output(&staged.root().join("snapshot/static/app.js"), original, "");
+        let direct = staged.run(&["--emit-on-rejection", "--effect-conflicts-jsonl"]);
+        let restored = staged.run(&[
+            "--emit-on-rejection",
+            "--effect-conflicts-jsonl",
+            "--analysis",
+            path(&staged.artifact),
+        ]);
+        for invocation in [&direct, &restored] {
+            assert_eq!(
+                invocation.result.status.code(),
+                Some(if independent { 0 } else { 3 }),
+                "{}",
+                invocation.result.stderr
+            );
+            assert_node_output(
+                &invocation.output_root().join("app/static/app/entry.js"),
+                emitted,
+                "",
+            );
+            let graph: Value = read_gzip_json(
+                &invocation
+                    .output_root()
+                    .join("reports/tree/static/app/dependency_graph.json.gz"),
+            );
+            let report = candidate_relocation_report(invocation, "static/app");
+            assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+            if independent {
+                assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+                let mut origins = BTreeSet::new();
+                let mut instances = BTreeSet::new();
+                for binding in ["first", "middle", "last"] {
+                    let execution =
+                        &graph_node_for_binding(&graph, binding)["synchronous_execution"];
+                    assert_eq!(
+                        execution["binding_effect_authority"]["authority"], "operation_receipt",
+                        "{execution:#}"
+                    );
+                    let cell = execution["heap_frontier"]["composed_synchronous_calls"]["allocations"]["sample"].as_array().unwrap().iter().find(|cell| cell["kind"] == "lexical_cell").unwrap();
+                    origins.insert(cell["origin"].as_u64().unwrap());
+                    instances.insert(cell["instance"].as_u64().unwrap());
+                }
+                assert_eq!(origins.len(), 1);
+                assert_eq!(instances.len(), 3);
+            } else {
+                assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+                let before = &graph_node_for_binding(&graph, "before")["synchronous_execution"];
+                let after = &graph_node_for_binding(&graph, "after")["synchronous_execution"];
+                let cell = before["heap_frontier"]["non_assumed_heap_accesses"]["reads"]["sample"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|cell| cell["kind"] == "lexical_cell")
+                    .unwrap();
+                assert!(cell["instance"].is_number());
+                assert!(
+                    after["heap_frontier"]["non_assumed_heap_accesses"]["writes"]["sample"]
+                        .as_array()
+                        .unwrap()
+                        .contains(cell)
+                );
+                let rows = read_jsonl(
+                    &invocation
+                        .output_root()
+                        .join("reports/tree/static/app/effect_conflicts.jsonl"),
+                );
+                assert!(
+                    rows.iter()
+                        .flat_map(|row| row["cells"].as_array().unwrap())
+                        .any(|access| &access["cell"] == cell
+                            && !access["first_write"].is_null()
+                            && !access["later_read"].is_null()),
+                    "{rows:#?}"
+                );
+            }
+        }
+        assert_same_invocation_trees(&direct, &restored);
+    }
+}
+
+#[test]
 fn object_binding_root_targets_and_receipts_survive_saved_analysis() {
     let (staged, _fixture) = staged(FixtureOpts::new(
         "const { left: first, right: second } = { left: () => 40, right: 2 }; console.log(first() + second);",

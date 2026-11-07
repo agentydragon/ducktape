@@ -10,7 +10,7 @@ use swc_ecma_ast::Id;
 use crate::ModuleId;
 use crate::analysis_inputs::CommutingStatementsRef;
 use crate::execution_evidence::AssumedEffectReason;
-use crate::facts::{DataflowOpacityCause, EffectCell};
+use crate::facts::{DataflowOpacityCause, EffectCell, LexicalCellId};
 
 use super::build::PremiseVerdict;
 
@@ -309,6 +309,7 @@ pub enum EffectCellReport {
     },
     LexicalCell {
         origin: u32,
+        instance: LexicalCellId,
     },
     GlobalProp {
         key: String,
@@ -343,7 +344,10 @@ impl From<&EffectCell> for EffectCellReport {
             EffectCell::Binding(id) => Self::Binding {
                 binding: id.0.clone(),
             },
-            EffectCell::LexicalCell(origin) => Self::LexicalCell { origin: *origin },
+            EffectCell::LexicalCell { origin, instance } => Self::LexicalCell {
+                origin: *origin,
+                instance: *instance,
+            },
             EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
             EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
             EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
@@ -373,7 +377,9 @@ impl fmt::Display for EffectCellReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Binding { binding } => write!(f, "binding `{binding}`"),
-            Self::LexicalCell { origin } => write!(f, "lexical cell #{origin}"),
+            Self::LexicalCell { origin, instance } => {
+                write!(f, "lexical cell #{origin} instance {}", instance.0)
+            }
             Self::GlobalProp { key } => write!(f, "global property `{key}`"),
             Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
             Self::SetContents { origin } => write!(f, "Set contents #{origin}"),

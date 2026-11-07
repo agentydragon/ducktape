@@ -129,7 +129,7 @@ pub use initialization_effects::{
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{
-    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, PositionBucketed, StatementEffectSummary,
-    StatementFacts, StatementKind, StructuralChunkAnalysis, StructuralChunkSourceFacts,
-    StructuralStatementFacts,
+    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, LexicalCellId, PositionBucketed,
+    StatementEffectSummary, StatementFacts, StatementKind, StructuralChunkAnalysis,
+    StructuralChunkSourceFacts, StructuralStatementFacts,
 };
