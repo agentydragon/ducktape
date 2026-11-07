@@ -4746,22 +4746,32 @@ data:
       ingress:
         listen_address: 127.0.0.1:3131
         upstream: history-service.agentplane-staging.svc.cluster.local:8081
-        token_file: /var/run/agentplane-egress/runner-ingress-token
+        transport:
+          mode: plaintext
+          token_file: /var/run/agentplane-egress/runner-ingress-token
       telemetry:
         listen_address: 127.0.0.1:3132
         upstream: alloy.monitoring.svc.cluster.local:4317
+        transport:
+          mode: plaintext
       egress-rules:
         listen_address: 127.0.0.1:3133
         upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
-        token_file: /var/run/agentplane-egress/token
+        transport:
+          mode: plaintext
+          token_file: /var/run/agentplane-egress/token
       notifications:
         listen_address: 127.0.0.1:3134
         upstream: notifications.agentplane-staging.svc.cluster.local:8080
-        token_file: /var/run/agentplane-egress/notifications-token
+        transport:
+          mode: plaintext
+          token_file: /var/run/agentplane-egress/notifications-token
       model-config:
         listen_address: 127.0.0.1:3135
         upstream: llm-ingress.agentplane-staging.svc.cluster.local:8081
-        token_file: /var/run/agentplane-egress/token
+        transport:
+          mode: plaintext
+          token_file: /var/run/agentplane-egress/token
     listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
@@ -5164,22 +5174,32 @@ data:
       ingress:
         listen_address: 0.0.0.0:3131
         upstream: history-service.agentplane-staging.svc.cluster.local:8081
-        token_file: /var/run/agentplane-egress/runner-ingress-token
+        transport:
+          mode: plaintext
+          token_file: /var/run/agentplane-egress/runner-ingress-token
       telemetry:
         listen_address: 0.0.0.0:3132
         upstream: alloy.monitoring.svc.cluster.local:4317
+        transport:
+          mode: plaintext
       egress-rules:
         listen_address: 0.0.0.0:3133
         upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
-        token_file: /var/run/agentplane-egress/token
+        transport:
+          mode: plaintext
+          token_file: /var/run/agentplane-egress/token
       notifications:
         listen_address: 0.0.0.0:3134
         upstream: notifications.agentplane-staging.svc.cluster.local:8080
-        token_file: /var/run/agentplane-egress/notifications-token
+        transport:
+          mode: plaintext
+          token_file: /var/run/agentplane-egress/notifications-token
       model-config:
         listen_address: 0.0.0.0:3135
         upstream: llm-ingress.agentplane-staging.svc.cluster.local:8081
-        token_file: /var/run/agentplane-egress/token
+        transport:
+          mode: plaintext
+          token_file: /var/run/agentplane-egress/token
     listen_address: 0.0.0.0:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false

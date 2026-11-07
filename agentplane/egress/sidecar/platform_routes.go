@@ -76,11 +76,13 @@ func (s *sidecar) bindPlatformRoutesWithKeepalive(
 			// Keep the configured authority intact: the central proxy resolves it
 			// after applying its hostname policy and destination TLS identity.
 			clientTarget = "passthrough:///" + config.Upstream
+			security := proxyTransport.security.Clone()
+			security.NextProtos = []string{"h2"}
 			dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
 				if address != config.Upstream {
 					return nil, fmt.Errorf("unexpected platform route destination %q", address)
 				}
-				return s.dialTLSRoute(ctx, address, proxyTransport.security)
+				return s.dialTLSRoute(ctx, address, security)
 			}))
 		default:
 			stopPlatformRoutes(started)

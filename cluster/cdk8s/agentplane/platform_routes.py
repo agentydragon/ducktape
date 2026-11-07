@@ -80,7 +80,6 @@ def routes(namespace: str, *, runner_egress_mtls: bool = False) -> tuple[Route, 
     )
 
 
-
 def sidecar_routes(
     namespace: str, *, listen_host: str = "127.0.0.1", runner_egress_mtls: bool = False
 ) -> dict[str, PlatformRoute]:
