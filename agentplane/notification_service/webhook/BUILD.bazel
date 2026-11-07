@@ -10,6 +10,7 @@ go_library(
         "//agentplane/notification_service/github",
         "//agentplane/notification_service/github/settings",
         "//agentplane/notification_service/store",
+        "@com_github_google_go_github_v88//github",
         "@com_github_google_uuid//:uuid",
     ],
 )
