@@ -2146,9 +2146,12 @@ and store through the same local or captured-cell path as assignment. Prefix
 and postfix results retain only possible Number or BigInt kinds; the analysis
 does not infer exact old or new values. A proved primitive Number conversion
 can carry a local binding-effect receipt when the target is an initialized,
-uncaptured mutable `let` or parameter. `var`, captured stores, const/TDZ errors,
-possible Symbol or BigInt throws, and object coercion remain uncovered or take
-the conservative fallback. Member updates are outside this ordered subset.
+mutable `let` or parameter and its cell operation is covered. An uncaptured
+activation-local cell has no exterior effects; actual captured cells require
+their own checked initialization and recorded read/write footprints. Unknown
+cell state, `var`, const/TDZ errors, possible Symbol or BigInt throws, and
+object coercion remain uncovered or take the conservative fallback. Member
+updates are outside this ordered subset.
 Static field assignments through a local or parameter binding also execute in
 order when the receiver is one settled ordinary record allocated during this
 invocation and the field is an existing own data property. This permits local
