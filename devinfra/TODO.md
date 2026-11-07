@@ -23,6 +23,9 @@ another merger. Preserve each owner's validation/serialization mode and stream/W
 models; reject incompatible duplicate names instead of silently keeping or replacing one schema.
 Done: emitted refs resolve, conflicting-name fixtures fail clearly, and existing consumer typechecks
 and representative wire payloads pass. No collision in current production models was demonstrated.
+The [Pydantic registration spike](x/pydantic_schema_registration/README.md) records allocator behavior
+and owner-specific migration recommendations; this item remains open until the four production
+exporters are migrated.
 
 ## Generated Python import indexing (schema audit F)
 
