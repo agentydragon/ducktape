@@ -154,6 +154,9 @@ let
         mcp = pkgs.callPackage ./mcp.nix {
           python3Packages = pyfinal;
         };
+        authlib = pkgs.callPackage ./authlib.nix {
+          python3Packages = pyfinal;
+        };
         inherit (fastmcpPackages) fastmcp fastmcp-slim;
       };
   };
