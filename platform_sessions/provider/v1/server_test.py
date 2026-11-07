@@ -10,7 +10,6 @@ import pytest_bazel
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc
 from platform_sessions.provider.v1.server import (
-    ProbeSource,
     ProviderBackend,
     SessionProviderControlService,
     add_session_provider_control_service,
@@ -26,7 +25,7 @@ class SyntheticProvider(ProviderBackend):
         self.snapshot = pb.SessionSnapshot(state=pb.SESSION_STATE_NO_SESSION)
         self.snapshot.state_changed_at.GetCurrentTime()
         self.imported_candidates: list[bytes] = []
-        self.probes: list[ProbeSource] = []
+        self.probes: list[pb.ProbeSource] = []
         self.verified_candidates: list[bytes] = []
         self.probe_outcome = pb.ProbeResult(outcome=pb.PROBE_OUTCOME_VERIFIED)
         self.candidate_verification_outcome = pb.VerifyCandidateResponse(outcome=pb.VERIFY_OUTCOME_VERIFIED)
@@ -75,7 +74,7 @@ class SyntheticProvider(ProviderBackend):
         self.imported_candidates.append(candidate)
         return pb.ImportSessionResponse(outcome=pb.IMPORT_OUTCOME_INSTALLED)
 
-    async def probe(self, instance_id: str, *, source: ProbeSource):
+    async def probe(self, instance_id: str, *, source: pb.ProbeSource):
         assert instance_id == "primary"
         self.probes.append(source)
         if self.probe_error is not None:
@@ -319,7 +318,7 @@ async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> Non
         assert result.result.outcome == pb.PROBE_OUTCOME_FAILURE
         assert result.result.failure.reason == pb.PROBE_FAILURE_REASON_STORAGE_ERROR
         assert result.result.source == pb.PROBE_SOURCE_MANUAL
-        assert provider.probes == [ProbeSource.MANUAL]
+        assert provider.probes == [pb.PROBE_SOURCE_MANUAL]
 
 
 async def test_probe_failure_unspecified_reason_is_a_provider_protocol_error() -> None:
@@ -413,7 +412,7 @@ async def test_backend_exception_is_sanitized_and_never_retried(caplog: pytest.L
         assert details == "provider operation failed"
         assert "synthetic-secret" not in details
         assert "synthetic-secret" not in caplog.text
-        assert provider.probes == [ProbeSource.MANUAL]
+        assert provider.probes == [pb.PROBE_SOURCE_MANUAL]
 
 
 async def test_invalid_provider_snapshot_is_not_sent_as_success() -> None:

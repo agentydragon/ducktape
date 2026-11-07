@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from enum import Enum
 from typing import NoReturn, TypeVar, override
 
 import grpc
@@ -16,13 +15,6 @@ from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_pr
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
-
-
-class ProbeSource(Enum):
-    """Explicit source of a provider probe request."""
-
-    SCHEDULED = pb.PROBE_SOURCE_SCHEDULED
-    MANUAL = pb.PROBE_SOURCE_MANUAL
 
 
 class ProviderBackend(ABC):
@@ -54,7 +46,7 @@ class ProviderBackend(ABC):
         """Install and durably persist a candidate; never log or return candidate bytes."""
 
     @abstractmethod
-    async def probe(self, instance_id: str, *, source: ProbeSource) -> pb.ProbeResult:
+    async def probe(self, instance_id: str, *, source: pb.ProbeSource) -> pb.ProbeResult:
         """Verify one session and persist any credential rotation before returning."""
 
     async def verify_candidate(
@@ -159,12 +151,11 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         if request.source not in (pb.PROBE_SOURCE_SCHEDULED, pb.PROBE_SOURCE_MANUAL):
             await self._abort(context, grpc.StatusCode.INVALID_ARGUMENT, "probe source is required")
 
-        source = ProbeSource(request.source)
         outcome = await self._call_provider(
             context,
             operation="probe",
             instance_id=instance_id,
-            action=lambda: self._provider.probe(instance_id, source=source),
+            action=lambda: self._provider.probe(instance_id, source=request.source),
         )
         try:
             if not isinstance(outcome, pb.ProbeResult):
