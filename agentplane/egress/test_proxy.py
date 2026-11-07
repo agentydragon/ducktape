@@ -1283,7 +1283,9 @@ async def test_rules_api_sidecar_uses_only_its_workload_identity(mixed_egress: E
     url = f"http://{authority}/v1/rules"
     client_certificate = issue_runner_svid(egress, egress.tmp_path / "rules-sidecar-client")
     runtime_ca_file = write_ca(egress.runtime_ca, egress.tmp_path, "rules-sidecar-runtime")[0]
-    caller_token = await egress.api.pod_token(SANDBOX_NAMESPACE, SANDBOX_B, [AUDIENCE])
+    caller_token = await egress.api.workload_token(
+        ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B), [AUDIENCE]
+    )
     hop_token_file = egress.tmp_path / "rules-sidecar-hop-token"
     hop_token_file.write_text(egress.token)
     authentications = (
