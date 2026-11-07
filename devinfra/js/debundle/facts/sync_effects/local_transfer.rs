@@ -10,7 +10,7 @@ use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
     ClassConstructorBody, ClassDefinition, ClassFieldKey, ConstructorPhase,
     DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCall, LocalCallee,
-    LocalExpression, LocalInvocation, LocalOperation, LocalRegion,
+    LocalExpression, LocalInvocation, LocalOperation, LocalRegion, ObjectBindingProperty,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::property_inference::DescriptorAttributes;
@@ -374,12 +374,20 @@ pub(super) trait LocalContext: OwnDataContext {
     fn unproved_field_read(
         &mut self,
         frame: &mut LocalFrame,
-        receiver: &Id,
+        receiver: Option<&Id>,
         receivers: &Values,
         property: &str,
         span: Span,
         refusal: OrderedFieldReadRefusal,
     ) -> Option<AllocationValue>;
+    /// Retain possible normal values for targets after an already summarized
+    /// unknown binding operation. This does not execute or initialize them.
+    fn unproved_binding_targets(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _targets: &[ObjectBindingProperty],
+    ) {
+    }
     /// Application execution summarizes the remainder; a strict query refuses
     /// certification. Neither consumer retries already executed operations.
     fn unproved_field_write(
@@ -628,7 +636,7 @@ fn own_data_field(
 fn read_field(
     context: &mut impl LocalContext,
     frame: &mut LocalFrame,
-    receiver: &Id,
+    receiver: Option<&Id>,
     receivers: &Values,
     property: &str,
     span: Span,
@@ -1242,7 +1250,14 @@ fn call_expression(
                             postcondition: None,
                         }
                     } else {
-                        read_field(context, frame, receiver, &receivers, property, *member_span)?
+                        read_field(
+                            context,
+                            frame,
+                            Some(receiver),
+                            &receivers,
+                            property,
+                            *member_span,
+                        )?
                     };
                     let selection_dependencies = module_prefix
                         .then(|| result.effects.lexical_selection_dependencies())
@@ -1339,7 +1354,7 @@ fn read_field_expression(
     if receivers.is_empty() {
         return Some(SelectedValue::raw(Values::new()));
     }
-    let result = read_field(context, frame, receiver, &receivers, property, *span)?;
+    let result = read_field(context, frame, Some(receiver), &receivers, property, *span)?;
     frame.effect_coverage.compose(&result.effects);
     judgment.compose(&result.allocation.judgment);
     Some(completing_selected(
@@ -1907,6 +1922,43 @@ fn abrupt_exit(frame: &mut LocalFrame) -> std::ops::ControlFlow<RegionExit> {
     })
 }
 
+fn initialize_binding(
+    context: &mut impl LocalContext,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    binding: &Id,
+    selected: SelectedValue,
+) {
+    let SelectedValue {
+        values,
+        selection,
+        postcondition,
+    } = selected;
+    if matches!(body.bindings[binding], LocalBinding::Const)
+        && let Some(proof) = postcondition.filter(|proof| proof.matches(&values))
+    {
+        frame.binding_postconditions.insert(binding.clone(), proof);
+    } else {
+        frame.binding_postconditions.remove(binding);
+    }
+    let selection = selection.filter(|selection| selection.matches(&values));
+    frame.environment.insert(binding.clone(), values);
+    if let Some(selection) = selection {
+        frame.binding_selections.insert(binding.clone(), selection);
+    } else {
+        frame.binding_selections.remove(binding);
+    }
+    context.local_binding_stored(binding, frame);
+    frame.initialized_bindings.insert(binding.clone());
+    frame
+        .effect_coverage
+        .compose(&context.declarative_binding_operation(
+            binding,
+            frame,
+            BindingOperation::Initialize,
+        ));
+}
+
 fn execute_operations(
     context: &mut impl LocalContext,
     body: &LocalBody,
@@ -1934,34 +1986,46 @@ fn execute_operations(
                 if selected.values.is_empty() {
                     return Some(abrupt_exit(frame));
                 }
-                let SelectedValue {
-                    values,
-                    selection,
-                    postcondition,
-                } = selected;
-                if matches!(body.bindings[binding], LocalBinding::Const)
-                    && let Some(proof) = postcondition.filter(|proof| proof.matches(&values))
-                {
-                    frame.binding_postconditions.insert(binding.clone(), proof);
-                } else {
-                    frame.binding_postconditions.remove(binding);
+                initialize_binding(context, body, frame, binding, selected);
+            }
+            LocalOperation::InitializeObject { pattern, value } => {
+                let Some(receivers) = expression(context, value, body, frame, judgment) else {
+                    context.unproved_binding_targets(frame, &pattern.properties);
+                    return None;
+                };
+                if receivers.values.is_empty() {
+                    return Some(abrupt_exit(frame));
                 }
-                let selection = selection.filter(|selection| selection.matches(&values));
-                frame.environment.insert(binding.clone(), values);
-                if let Some(selection) = selection {
-                    frame.binding_selections.insert(binding.clone(), selection);
-                } else {
-                    frame.binding_selections.remove(binding);
-                }
-                context.local_binding_stored(binding, frame);
-                frame.initialized_bindings.insert(binding.clone());
-                frame
-                    .effect_coverage
-                    .compose(&context.declarative_binding_operation(
-                        binding,
+                // Keep the evaluated graph reachable if a later property is
+                // refused. Neither its RHS nor its earlier reads run again.
+                frame.inputs.extend(receivers.values.iter().cloned());
+                for (index, property) in pattern.properties.iter().enumerate() {
+                    let Some(result) = read_field(
+                        context,
                         frame,
-                        BindingOperation::Initialize,
-                    ));
+                        None,
+                        &receivers.values,
+                        &property.property,
+                        property.span,
+                    ) else {
+                        context.unproved_binding_targets(frame, &pattern.properties[index..]);
+                        return None;
+                    };
+                    frame.effect_coverage.compose(&result.effects);
+                    judgment.compose(&result.allocation.judgment);
+                    let selected = completing_selected(
+                        SelectedValue {
+                            values: result.allocation.values,
+                            selection: result.selection,
+                            postcondition: result.postcondition,
+                        },
+                        frame,
+                    );
+                    if selected.values.is_empty() {
+                        return Some(abrupt_exit(frame));
+                    }
+                    initialize_binding(context, body, frame, &property.binding, selected);
+                }
             }
             LocalOperation::Evaluate(node) => {
                 if expression(context, node, body, frame, judgment)?

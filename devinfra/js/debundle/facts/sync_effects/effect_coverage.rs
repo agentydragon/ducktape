@@ -1,5 +1,6 @@
 //! Nonterminal receipts from operations executed by the ordered local kernel.
 
+use super::local_operations::{ObjectBindingPattern, ObjectBindingProperty};
 use super::value_model::CallSite;
 use crate::analysis_inputs::{NativeIntrinsic, NativeOperationInputEvidence, ProofDependencies};
 use crate::execution_evidence::{ExecutionPrecisionLoss, SkippedCallReason};
@@ -49,9 +50,22 @@ pub(crate) struct RootEffectIdentity {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum RootEffectSource {
-    BindingInitializer { binding: Id, initializer_span: Span },
-    ClassDeclaration { binding: Id, declaration_span: Span },
-    ExpressionStatement { expression_span: Span },
+    BindingInitializer {
+        binding: Id,
+        initializer_span: Span,
+    },
+    ObjectBindingInitializer {
+        pattern: ObjectBindingPattern,
+        declarator_span: Span,
+        initializer_span: Span,
+    },
+    ClassDeclaration {
+        binding: Id,
+        declaration_span: Span,
+    },
+    ExpressionStatement {
+        expression_span: Span,
+    },
 }
 
 impl RootEffectIdentity {
@@ -65,13 +79,29 @@ impl RootEffectIdentity {
                 binding,
                 declaration_span,
             } => Some((binding, *declaration_span)),
-            RootEffectSource::ExpressionStatement { .. } => None,
+            RootEffectSource::ExpressionStatement { .. }
+            | RootEffectSource::ObjectBindingInitializer { .. } => None,
+        }
+    }
+
+    pub(super) fn targets_initialized(&self, initialized: &std::collections::BTreeSet<Id>) -> bool {
+        match &self.source {
+            RootEffectSource::ObjectBindingInitializer { pattern, .. } => pattern
+                .properties
+                .iter()
+                .all(|property| initialized.contains(&property.binding)),
+            _ => self
+                .binding_initialization()
+                .is_none_or(|(binding, _)| initialized.contains(binding)),
         }
     }
 
     pub(super) fn body_identity(&self) -> LocalBodyIdentity {
         match self.source {
             RootEffectSource::BindingInitializer {
+                initializer_span, ..
+            }
+            | RootEffectSource::ObjectBindingInitializer {
                 initializer_span, ..
             } => LocalBodyIdentity::RootInitializer {
                 owner: self.owner,
@@ -346,6 +376,17 @@ impl BindingEffectCoverage {
                         binding: binding.0.to_string(),
                         initializer_span: Some(*initializer_span),
                     },
+                    RootEffectSource::ObjectBindingInitializer {
+                        pattern,
+                        declarator_span,
+                        initializer_span,
+                    } => BindingEffectAuthorityReport::OrderedRootObjectBindingUncovered {
+                        owner: identity.owner,
+                        pattern_span: pattern.span,
+                        declarator_span: *declarator_span,
+                        initializer_span: *initializer_span,
+                        targets: pattern.to_report(),
+                    },
                     RootEffectSource::ClassDeclaration {
                         binding,
                         declaration_span,
@@ -434,6 +475,12 @@ pub(crate) struct SavedRootEffectIdentity {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum SavedRootEffectSource {
+    ObjectBindingInitializer {
+        pattern_span: Span,
+        properties: Vec<SavedObjectBindingProperty>,
+        declarator_span: Span,
+        initializer_span: Span,
+    },
     BindingInitializer {
         binding: SavedBinding,
         initializer_span: Span,
@@ -447,6 +494,13 @@ enum SavedRootEffectSource {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SavedObjectBindingProperty {
+    property: String,
+    binding: SavedBinding,
+    span: Span,
+}
+
 impl SavedRootEffectIdentity {
     fn snapshot(identity: &RootEffectIdentity, ordinals: &ContextOrdinals) -> Result<Self> {
         Ok(Self {
@@ -457,6 +511,26 @@ impl SavedRootEffectIdentity {
                     initializer_span,
                 } => SavedRootEffectSource::BindingInitializer {
                     binding: ordinals.snapshot_binding(binding)?,
+                    initializer_span: *initializer_span,
+                },
+                RootEffectSource::ObjectBindingInitializer {
+                    pattern,
+                    declarator_span,
+                    initializer_span,
+                } => SavedRootEffectSource::ObjectBindingInitializer {
+                    pattern_span: pattern.span,
+                    properties: pattern
+                        .properties
+                        .iter()
+                        .map(|property| {
+                            Ok(SavedObjectBindingProperty {
+                                property: property.property.clone(),
+                                binding: ordinals.snapshot_binding(&property.binding)?,
+                                span: property.span,
+                            })
+                        })
+                        .collect::<Result<_>>()?,
+                    declarator_span: *declarator_span,
                     initializer_span: *initializer_span,
                 },
                 RootEffectSource::ClassDeclaration {
@@ -484,6 +558,28 @@ impl SavedRootEffectIdentity {
                     initializer_span,
                 } => RootEffectSource::BindingInitializer {
                     binding: ordinals.restore_binding(binding)?,
+                    initializer_span,
+                },
+                SavedRootEffectSource::ObjectBindingInitializer {
+                    pattern_span,
+                    properties,
+                    declarator_span,
+                    initializer_span,
+                } => RootEffectSource::ObjectBindingInitializer {
+                    pattern: ObjectBindingPattern {
+                        span: pattern_span,
+                        properties: properties
+                            .into_iter()
+                            .map(|property| {
+                                Ok(ObjectBindingProperty {
+                                    property: property.property,
+                                    binding: ordinals.restore_binding(property.binding)?,
+                                    span: property.span,
+                                })
+                            })
+                            .collect::<Result<_>>()?,
+                    },
+                    declarator_span,
                     initializer_span,
                 },
                 SavedRootEffectSource::ClassDeclaration {
@@ -548,6 +644,16 @@ impl LexicalBindingEffectReceipt {
                 } => LexicalEffectRoot::BindingInitializer {
                     binding: binding.0.to_string(),
                     initializer_span: *initializer_span,
+                },
+                RootEffectSource::ObjectBindingInitializer {
+                    pattern,
+                    declarator_span,
+                    initializer_span,
+                } => LexicalEffectRoot::ObjectBindingInitializer {
+                    pattern_span: pattern.span,
+                    declarator_span: *declarator_span,
+                    initializer_span: *initializer_span,
+                    targets: pattern.to_report(),
                 },
                 RootEffectSource::ClassDeclaration {
                     binding,

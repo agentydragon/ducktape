@@ -155,11 +155,7 @@ impl CompletedInitialization {
         initialized: &BTreeSet<Id>,
         effects: &EffectCoverageFragment,
     ) -> Option<Self> {
-        if source.owner != owner
-            || source
-                .binding_initialization()
-                .is_some_and(|(binding, _)| !initialized.contains(binding))
-        {
+        if source.owner != owner || !source.targets_initialized(initialized) {
             return None;
         }
         Some(Self {

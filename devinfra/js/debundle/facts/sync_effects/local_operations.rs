@@ -8,6 +8,7 @@ use super::value_model::{
 use crate::analysis_inputs::ForeignInvocation;
 use crate::facts::abstract_domain::value::Kind;
 use analysis_model::PrimKinds;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::{Span, Spanned};
@@ -332,6 +333,10 @@ pub(super) enum LocalArrayElement {
 #[derive(Debug, Clone)]
 pub(super) enum LocalOperation {
     Initialize(Id, Option<LocalExpression>),
+    InitializeObject {
+        pattern: ObjectBindingPattern,
+        value: LocalExpression,
+    },
     Evaluate(LocalExpression),
     Return(Option<LocalExpression>, Span),
     Throw(LocalExpression, Span),
@@ -340,6 +345,88 @@ pub(super) enum LocalOperation {
         binding: Option<Id>,
         handler: LocalRegion,
     },
+}
+
+/// Ordered targets of one shallow object binding. Descriptor checks belong to
+/// execution against the evaluated RHS, independently of this syntax plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct ObjectBindingPattern {
+    pub(super) span: Span,
+    pub(super) properties: Vec<ObjectBindingProperty>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct ObjectBindingProperty {
+    pub(super) property: String,
+    pub(super) binding: Id,
+    pub(super) span: Span,
+}
+
+impl ObjectBindingPattern {
+    pub(super) fn to_report(&self) -> Vec<crate::reports::schema::ObjectBindingTarget> {
+        self.properties
+            .iter()
+            .map(|property| crate::reports::schema::ObjectBindingTarget {
+                property: property.property.clone(),
+                binding: property.binding.0.to_string(),
+                span: property.span,
+            })
+            .collect()
+    }
+
+    pub(super) fn collect(pattern: &Pat) -> Option<Self> {
+        let Pat::Object(pattern) = pattern else {
+            return None;
+        };
+        if pattern.optional || pattern.type_ann.is_some() || pattern.props.is_empty() {
+            return None;
+        }
+        let mut targets = BTreeSet::new();
+        let properties = pattern
+            .props
+            .iter()
+            .map(|property| {
+                let (name, binding, span) = match property {
+                    ObjectPatProp::KeyValue(property) => {
+                        let name = match &property.key {
+                            PropName::Ident(name) => name.sym.to_string(),
+                            PropName::Str(name) => name.value.to_string_lossy().into_owned(),
+                            _ => return None,
+                        };
+                        (
+                            name,
+                            simple_binding(&property.value)?,
+                            property.value.span(),
+                        )
+                    }
+                    ObjectPatProp::Assign(property)
+                        if property.value.is_none()
+                            && property.key.type_ann.is_none()
+                            && !property.key.id.optional =>
+                    {
+                        (
+                            property.key.id.sym.to_string(),
+                            property.key.id.to_id(),
+                            property.key.span(),
+                        )
+                    }
+                    _ => return None,
+                };
+                if !targets.insert(binding.clone()) {
+                    return None;
+                }
+                Some(ObjectBindingProperty {
+                    property: name,
+                    binding,
+                    span,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self {
+            span: pattern.span,
+            properties,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -440,7 +527,7 @@ fn simple_binding(pattern: &Pat) -> Option<Id> {
     }
 }
 
-fn lower_simple_var_declaration(
+fn lower_var_declaration(
     declaration: &VarDecl,
     class_template: bool,
     bindings: &mut BTreeMap<Id, LocalBinding>,
@@ -455,19 +542,39 @@ fn lower_simple_var_declaration(
         if declarator.definite {
             return None;
         }
-        let binding = simple_binding(&declarator.name)?;
-        match bindings.get(&binding) {
-            Some(LocalBinding::Var | LocalBinding::Parameter) if kind == LocalBinding::Var => {}
-            Some(_) => return None,
-            None => {
-                bindings.insert(binding.clone(), kind);
+        let pattern = ObjectBindingPattern::collect(&declarator.name);
+        let targets = match &pattern {
+            Some(pattern) => pattern
+                .properties
+                .iter()
+                .map(|property| property.binding.clone())
+                .collect(),
+            None => vec![simple_binding(&declarator.name)?],
+        };
+        for binding in targets {
+            match bindings.get(&binding) {
+                Some(LocalBinding::Var | LocalBinding::Parameter) if kind == LocalBinding::Var => {}
+                Some(_) => return None,
+                None => {
+                    bindings.insert(binding.clone(), kind);
+                }
             }
         }
         let value = LocalExpression::optional(declarator.init.as_deref(), class_template)?;
         if kind == LocalBinding::Const && value.is_none() {
             return None;
         }
-        operations.push(LocalOperation::Initialize(binding, value));
+        if let Some(pattern) = pattern {
+            operations.push(LocalOperation::InitializeObject {
+                pattern,
+                value: value?,
+            });
+        } else {
+            operations.push(LocalOperation::Initialize(
+                simple_binding(&declarator.name)?,
+                value,
+            ));
+        }
     }
     Some(())
 }
@@ -1100,6 +1207,25 @@ impl LocalExpression {
 }
 
 impl LocalBody {
+    pub(super) fn from_object_binding(
+        declaration: &VarDecl,
+    ) -> Option<(Self, ObjectBindingPattern)> {
+        let [declarator] = declaration.decls.as_slice() else {
+            return None;
+        };
+        if declaration.declare || declarator.definite {
+            return None;
+        }
+        let pattern = ObjectBindingPattern::collect(&declarator.name)?;
+        let expression = declarator.init.as_deref()?;
+        let mut bindings = BTreeMap::new();
+        let mut operations = Vec::new();
+        lower_var_declaration(declaration, false, &mut bindings, &mut operations)?;
+        let mut body = Self::from_operations(bindings, Vec::new(), operations);
+        body.source_span = Some(declarator.span);
+        body.root_expression_span = Some(expression.span());
+        Some((body, pattern))
+    }
     pub(super) fn from_initializer(expression: &Expr) -> Option<Self> {
         let mut body = Self::lower_expression(std::iter::empty(), expression)?;
         body.root_expression_span = Some(expression.span());
@@ -1206,7 +1332,7 @@ impl LocalBody {
                     if nested && declaration.kind != VarDeclKind::Var {
                         return None;
                     }
-                    lower_simple_var_declaration(declaration, false, bindings, &mut operations)?;
+                    lower_var_declaration(declaration, false, bindings, &mut operations)?;
                 }
                 Stmt::Expr(expression) => operations.push(LocalOperation::Evaluate(
                     LocalExpression::lower(&expression.expr, false)?,
@@ -1396,7 +1522,7 @@ impl LocalBody {
                 match statement {
                     Stmt::Empty(_) => {}
                     Stmt::Decl(Decl::Var(declaration)) if !declaration.declare => {
-                        lower_simple_var_declaration(
+                        lower_var_declaration(
                             declaration,
                             true,
                             &mut bindings,
@@ -1615,6 +1741,7 @@ impl LocalBody {
                 LocalOperation::Evaluate(value) | LocalOperation::Throw(value, _) => {
                     expressions.push(value)
                 }
+                LocalOperation::InitializeObject { value, .. } => expressions.push(value),
                 LocalOperation::TryCatch { body, handler, .. } => {
                     expressions.extend(Self::expressions(&body.operations));
                     expressions.extend(Self::expressions(&handler.operations));

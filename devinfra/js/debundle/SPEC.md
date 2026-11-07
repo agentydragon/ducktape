@@ -715,11 +715,28 @@ defaults, destructuring and rest, remain lazy together with the body. Async
 and generator function creation follow the same rule. This certifies no call:
 later parameter evaluation, iterator/getter access, bodies and scheduling
 retain their ordinary effects and coverage requirements.
-Assignments, templates, default export expressions, destructured variable bindings, class expressions,
+Assignments, templates, default export expressions, unsupported destructured variable bindings, class expressions,
 imported/global/uninitialized binding reads, decorated/type-annotated
 functions remain uncovered. For class declarations,
 all other shapes remain uncovered. Parentheses alone preserve admissibility for
 variable initializers.
+A single original direct variable declarator can also initialize a shallow
+object binding through the shared ordered kernel. Static identifier or string
+property names select identifier targets, including shorthand without defaults.
+The RHS executes once; each present ordinary own-data property is read at its
+current prefix and its target is initialized in source order. Callable values
+retain their actual captures and selection evidence. The same operation handles
+callable-local declarations. Missing fields, getters, proxies, computed keys,
+defaults, rest and nested patterns retain conservative execution and no complete
+root certificate. A refused later property retains prior target stores and
+property effects, plus possible normal/abrupt suffix values and capabilities;
+it never replays the RHS or seals an initialized prefix as the whole owner.
+The root receipt records the original owner, declarator, pattern and RHS spans
+and every ordered property/target. Saved analysis remaps every target binding.
+Only normal execution with all targets initialized and all operation domains
+covered can seal it. Split or directly exported declaration owners retain their
+existing source-provenance restrictions.
+
 The source-covered expression is retained from canonical lowering. Dedicated
 initializer execution uses that exact expression and shared child transfers;
 generic values or an empty ledger cannot mint coverage. Composed child judgments

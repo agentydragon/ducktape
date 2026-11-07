@@ -9100,6 +9100,30 @@ impl ExecutionIndex {
                     },
                 );
             }
+            if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))) =
+                item
+                && let [declarator] = declaration.decls.as_slice()
+                && let Some((body, pattern)) = LocalBody::from_object_binding(declaration)
+            {
+                index.ordered_roots.insert(
+                    owner,
+                    OrderedRoot {
+                        identity: RootEffectIdentity {
+                            owner,
+                            source: RootEffectSource::ObjectBindingInitializer {
+                                pattern,
+                                declarator_span: declarator.span,
+                                initializer_span: declarator
+                                    .init
+                                    .as_deref()
+                                    .expect("lowered object binding has an RHS")
+                                    .span(),
+                            },
+                        },
+                        body,
+                    },
+                );
+            }
             if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Expr(statement))) = item
                 && let Some(body) = LocalBody::from_expression_statement(&statement.expr)
             {
