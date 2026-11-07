@@ -105,17 +105,37 @@ await submit(event);
 assert.equal(ui.nodes.session.value, "");
 assert.equal(ui.calls.findLast(({ url }) => url === "/api/integrations/beta/session").options.method, "POST");
 for (const [error, status, message] of [
-  ["reauth_required", 409, /rejected/],
+  ["reauth_required", 409, /fresh sign-in/],
   ["security_challenge", 503, /security challenge/],
   ["outcome_unknown", 504, /outcome is unknown/],
+  ["verification_timeout", 504, /timed out.*may have completed/],
+  ["upstream_unavailable", 502, /Could not connect.*may have completed/],
+  ["invalid_response", 502, /unexpected response.*Check the session status/],
+  ["upstream_http_429", 502, /HTTP 429.*Check the session status/],
 ]) {
   ui.nodes.session.value = beta;
   ui.nodes.session.listeners.input();
   assert.equal(ui.nodes.instance.hidden, true);
-  ui.replies.set("/api/integrations/beta/session", response({ error }, status));
+  ui.replies.set(
+    "/api/integrations/beta/session",
+    response({ error, message: "provider-internal response with private data" }, status)
+  );
   await submit(event);
   assert.match(ui.nodes.result.textContent, message);
+  assert.doesNotMatch(ui.nodes.result.textContent, /provider-internal|private data/);
   assert.equal(ui.nodes.session.value, beta);
+}
+
+for (const error of ["unknown_sensitive_value", "upstream_http_999", "toString"]) {
+  ui.nodes.session.value = beta;
+  ui.nodes.session.listeners.input();
+  ui.replies.set(
+    "/api/integrations/beta/session",
+    response({ error, message: "do not display this server text" }, 400)
+  );
+  await submit(event);
+  assert.equal(ui.nodes.result.textContent, "Could not verify the session. Check the session status before retrying.");
+  assert.doesNotMatch(ui.nodes.result.textContent, /unknown_sensitive|do not display/);
 }
 
 // An uncertain response never triggers another import, including during a poll.

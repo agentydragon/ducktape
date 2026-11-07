@@ -111,6 +111,32 @@ const detailLabels = {
   outcome: "Last check result",
 };
 
+const importErrorMessages = {
+  invalid_session: "The session string is invalid. Extract a new one.",
+  reauth_required: "The provider requires a fresh sign-in. Sign in and copy a fresh export.",
+  security_challenge: "The provider blocked verification with a security challenge. The new session was not installed.",
+  outcome_unknown: "The import outcome is unknown. Check the session status before trying again.",
+  verification_timeout:
+    "Verification timed out. The import may have completed; check the session status before retrying.",
+  upstream_unavailable:
+    "Could not connect to the provider. The import may have completed; check the session status before retrying.",
+  invalid_response: "The provider returned an unexpected response. Check the session status before retrying.",
+};
+
+function importErrorMessage(data, status) {
+  const code = data && typeof data === "object" ? data.error : undefined;
+  if (typeof code === "string") {
+    if (Object.hasOwn(importErrorMessages, code)) return importErrorMessages[code];
+    const upstreamStatus = /^upstream_http_([1-5]\d{2})$/.exec(code)?.[1];
+    if (upstreamStatus) {
+      return `The provider returned HTTP ${upstreamStatus}. Check the session status before retrying.`;
+    }
+  }
+  return status >= 500
+    ? "Import outcome is unknown; check status before retrying."
+    : "Could not verify the session. Check the session status before retrying.";
+}
+
 function setupIntegration(info) {
   const card = element("section");
   card.className = "card";
@@ -234,17 +260,7 @@ document.getElementById("session-form").addEventListener("submit", async (event)
       updateSelection();
       importResult.textContent = `${selected.id} session imported.`;
     } else {
-      importResult.textContent =
-        {
-          invalid_session: "The session string is invalid. Extract a new one.",
-          reauth_required: "The provider rejected this session. Sign in again and extract a fresh session.",
-          security_challenge:
-            "The provider blocked verification with a security challenge. The new session was not installed.",
-          outcome_unknown: "The import outcome is unknown. Check the session status and logs before trying again.",
-        }[data.error] ||
-        (response.status >= 500
-          ? "Import outcome is unknown; check status before retrying."
-          : "Session could not be verified. Copy a fresh export and try again.");
+      importResult.textContent = importErrorMessage(data, response.status);
     }
   } catch {
     importResult.textContent = "The connection was interrupted. Check the session status before trying again.";
