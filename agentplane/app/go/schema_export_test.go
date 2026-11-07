@@ -73,23 +73,19 @@ func TestExportOpenAPISandboxFormSchema(t *testing.T) {
 	}
 }
 
-func TestPolicyGrantOpenAPIReturnsNoBody(t *testing.T) {
+func TestPolicyMutationsArePublishedByGeneratedPolicyFacade(t *testing.T) {
 	var output bytes.Buffer
 	if err := exportOpenAPI(&output); err != nil {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())
-	var operation struct {
-		Responses map[string]struct {
-			Content map[string]json.RawMessage `json:"content"`
-		} `json:"responses"`
+	for _, path := range []string{"/sandboxes/{name}/policy-bindings", "/policy-bindings/{name}"} {
+		if _, ok := document.Paths[path]; ok {
+			t.Errorf("OpenAPI document still publishes handwritten PolicyBinding mutation route %s", path)
+		}
 	}
-	if err := json.Unmarshal(document.Paths["/sandboxes/{name}/policy-bindings"]["post"], &operation); err != nil {
-		t.Fatal(err)
-	}
-	created, ok := operation.Responses["201"]
-	if !ok || len(created.Content) != 0 {
-		t.Fatalf("grant response = %#v, want 201 without a body", operation.Responses)
+	if _, ok := document.Paths["/sandboxes/form"]["get"]; !ok {
+		t.Fatal("OpenAPI document omits the remaining Sandbox form route")
 	}
 }
 

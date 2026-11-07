@@ -146,43 +146,25 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     assert invalid.status_code == 400
 
 
-async def test_policy_grant_returns_empty_created_and_creates_independent_bindings(
-    http: httpx.AsyncClient, sandbox: SandboxCluster
+async def test_policy_mutations_require_the_generated_operator_facade(
+    http: httpx.AsyncClient, sandbox: SandboxCluster, agent_auth: dict[str, str]
 ) -> None:
-    await sandbox.custom_objects.create_namespaced_custom_object(
-        GROUP,
-        VERSION,
-        sandbox.namespace,
-        "policysets",
-        {
-            "apiVersion": f"{GROUP}/{VERSION}",
-            "kind": "PolicySet",
-            "metadata": {"name": "example"},
-            "spec": {"rules": [{"type": "egress", "hosts": ["example.test"]}]},
-        },
-    )
-    route = f"/sandboxes/{sandbox.name}/policy-bindings"
-    request = {"uid": sandbox.uid, "policy_sets": ["example"]}
-    for _ in range(2):
-        response = await http.post(route, json=request)
-        assert response.status_code == 201, response.text
-        assert response.content == b""
+    legacy_paths = [
+        ("POST", f"/sandboxes/{sandbox.name}/policy-bindings"),
+        ("DELETE", "/policy-bindings/operator-grant"),
+    ]
+    for method, path in legacy_paths:
+        response = await http.request(method, path, headers=agent_auth)
+        assert response.status_code == 404, response.text
 
-    bindings = await sandbox.custom_objects.list_namespaced_custom_object(
-        GROUP, VERSION, sandbox.namespace, "policybindings"
-    )
-    items = bindings["items"]
-    assert len(items) == 2
-    assert len({binding["metadata"]["name"] for binding in items}) == 2
-    for binding in items:
-        assert binding["spec"]["subject"] == {"namespace": sandbox.namespace, "name": sandbox.name}
-        assert binding["spec"]["policySets"] == ["example"]
-        assert binding["metadata"]["ownerReferences"][0]["uid"] == sandbox.uid
+    target = f"/upstream/policy/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/policy-bindings"
+    grant = await http.post(target, headers=agent_auth, json={"sandboxUid": sandbox.uid, "policySets": ["example"]})
+    assert grant.status_code == 403, grant.text
 
-    missing = await http.post(route, json={"uid": sandbox.uid, "policy_sets": ["missing"]})
-    assert missing.status_code == 422, missing.text
-    stale = await http.post(route, json={"uid": "stale-uid", "policy_sets": ["example"]})
-    assert stale.status_code == 404, stale.text
+    revoke = await http.delete(
+        f"{target}/operator-grant", headers=agent_auth, params={"sandboxUid": sandbox.uid, "bindingUid": "binding-uid"}
+    )
+    assert revoke.status_code == 403, revoke.text
 
 
 async def test_go_openapi_tracks_selected_python_http_contract_fields(http: httpx.AsyncClient) -> None:
