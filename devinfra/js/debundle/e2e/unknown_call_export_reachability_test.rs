@@ -139,12 +139,30 @@ console.log(later);
 "#,
     ));
     assert_preserved_entry_output(&fixture, "1\n");
-    let prefix = binding_execution(&fixture, "prefix");
-    let initializer = binding_execution(&fixture, "dynamic");
-    let sequel = binding_execution(&fixture, "later");
-    assert!(!prefix.complete, "{prefix:#?}");
-    assert!(initializer.complete, "{initializer:#?}");
-    assert!(sequel.complete, "{sequel:#?}");
+    assert_eq!(
+        binding_execution_report(&fixture, "prefix")["complete"],
+        false
+    );
+    let dynamic = binding_execution_report(&fixture, "dynamic");
+    assert_eq!(dynamic["complete"], false, "{dynamic:#}");
+    assert!(
+        dynamic["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| {
+                loss["reason"]["code"] == "unsupported_operation"
+                    && loss["reason"]["operation"] == "property_write"
+            }),
+        "the computed write remains outside the completed-body proof: {dynamic:#}"
+    );
+    assert_eq!(
+        binding_execution_report(&fixture, "later")["complete"],
+        true
+    );
+    assert_eq!(
+        binding_execution_report(&fixture, "later")["binding_effect_authority"]["authority"],
+        "operation_receipt"
 }
 
 #[test]

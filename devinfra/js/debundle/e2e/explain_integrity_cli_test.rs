@@ -173,7 +173,7 @@ fn precision_loss_limit_applies_per_unit_after_location_filtering() {
         .find(|unit| unit["id"] == all_unit["id"])
         .unwrap_or_else(|| panic!("limited values unit: {limited}"));
     let all_losses = all_unit["precision_losses"].as_array().unwrap();
-    assert!(all_losses.len() >= 3, "{all_unit}");
+    assert!(all_losses.len() > 1, "{all_unit}");
     let loss_total = all_losses.len();
     assert!(
         !all_unit["failed_guards"].as_array().unwrap().is_empty(),

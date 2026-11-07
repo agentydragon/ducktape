@@ -878,6 +878,11 @@ for a fresh allocation site with the receipt's dependencies. Named function
 self scopes and `var`/function hoisting retain their existing admission;
 successful allocation alone does not close their effects.
 Existing leaf/value initializer proofs keep their independent admission.
+An exact native-constructor initializer can consume its existing constructor
+certificate from ordered execution. The applied native New dispatch must match
+the original owner, call span, constructor kind and argument form; its actual
+result and normal completion feed the source initializer proof without replay.
+That certificate retains its native dependencies and grants no lexical receipt.
 These three domains do not establish completeness of source binding reads or
 rebinds. Closing them does not discharge unresolved-call closure or authorize
 skipping its binding-effect fallback.

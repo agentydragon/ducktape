@@ -13421,6 +13421,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.return_postcondition =
                 result_postcondition.map(|proof| proof.after_mutation(self.state.prefix_revision));
         }
+        if call.kind == CallKind::New {
+            self.record_native_initializer_transfer(
+                &call.callee,
+                &call.args,
+                args,
+                operands_may_throw,
+                call.span.into(),
+                &resolution,
+            );
+        }
         CallTransfer::requested(needs_value, || {
             self.native_return_values(resolution, args, operands_may_throw, call.span.into())
         })
@@ -16331,7 +16341,21 @@ impl Executor<'_, '_> {
         // Call admission consumes the operands at their execution prefix.
         // A refused call stops this plan through the shared fallback; do not
         // preclassify targets or retry its already executed prefix below.
+        let mut ordered_native_constructor_transfer = None;
         let mut ordered_root_result = if let Some(root) = ordered_root {
+            self.native_initializer_candidate = ordered_initializer.and_then(|root| {
+                let [(binding, expression)] = assignments.as_slice() else {
+                    return None;
+                };
+                let source = initializer_source?;
+                let (_, source_binding, span) = effect_initializer_source?;
+                (source.matches_binding(owner, binding)
+                    && source_binding == binding
+                    && root.body.root_expression_span() == Some(span))
+                .then(|| source.native_constructor_candidate(expression))
+                .flatten()
+            });
+            self.native_initializer_transfer = None;
             outcome = self.execute_local_body(
                 &root.body,
                 Context::new(),
@@ -16340,6 +16364,8 @@ impl Executor<'_, '_> {
                 LocalExecutionScope::Root,
                 Some(root.identity.clone()),
             );
+            ordered_native_constructor_transfer = self.native_initializer_transfer.take();
+            self.native_initializer_candidate = None;
             Some(SelectedValue {
                 values: std::mem::take(&mut outcome.returns),
                 selection: outcome.return_selection.take(),
@@ -16525,6 +16551,16 @@ impl Executor<'_, '_> {
                 let mut values = result.values;
                 if values.len() > 1 {
                     values.remove(&AbstractValue::Value(Value::Unavailable));
+                }
+                if let Some(transfer) = ordered_native_constructor_transfer.take()
+                    && let Some(source) = initializer_source
+                {
+                    evaluated_initializer = source.evaluated(
+                        expression,
+                        &values,
+                        &super::super::allocation_transfer::AllocationJudgment::Opaque,
+                        Some(transfer),
+                    );
                 }
                 (values, selection)
             } else if let Some(source) = initializer_source {
