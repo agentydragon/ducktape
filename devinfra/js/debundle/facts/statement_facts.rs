@@ -457,6 +457,12 @@ impl StatementFacts {
 #[serde(transparent)]
 pub struct LexicalCellId(pub(crate) usize);
 
+impl std::fmt::Display for LexicalCellId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// One outer-observable storage location a statement can read or
 /// write. `EffectCell::Binding(name)` covers identifier reads
 /// (`Foo` or `Foo.bar` triggers a read of `Foo`) and rebind writes;

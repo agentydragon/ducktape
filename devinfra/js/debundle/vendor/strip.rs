@@ -1181,7 +1181,7 @@ fn format_effect_cell(cell: &EffectCell) -> String {
     match cell {
         EffectCell::Binding(id) => format!("binding `{}`", id_name(id)),
         EffectCell::LexicalCell { origin, instance } => {
-            format!("lexical cell #{origin} instance {}", instance.0)
+            format!("lexical cell #{origin} instance {instance}")
         }
         EffectCell::GlobalProp(key) => format!("global `{key}`"),
         EffectCell::GlobalSymbolRegistry => "global symbol registry".to_owned(),

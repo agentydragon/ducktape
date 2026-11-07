@@ -557,8 +557,16 @@ fn captured_cell_effects_preserve_observer_write_conflicts() {
             1,
         );
         let graph = fixture.dependency_graph();
-        let before_unit = source_unit_for_binding(&graph, "before").0;
-        let after_unit = source_unit_for_binding(&graph, "after").0;
+        let [before_unit, after_unit] = ["before", "after"].map(|binding| {
+            let id = source_unit_for_binding(&graph, binding);
+            graph
+                .nodes
+                .iter()
+                .find(|node| node.id == id)
+                .expect("selected captured-cell operation owner")
+                .statement_ordinal
+                .0
+        });
         let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
         let pair = rows
             .iter()
