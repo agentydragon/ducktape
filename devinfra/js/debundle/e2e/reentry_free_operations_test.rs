@@ -298,7 +298,8 @@ console.log(Boolean(value), later);
     assert!(
         host_contract_uses(&serde_json::to_value(fixture.dependency_graph()).unwrap()).is_empty()
     );
-    assert_preserved_entry_error(&fixture, "ReferenceError");
+    // The pinned Node 22 runtime does not read AsyncLocalStorage's name option.
+    assert_preserved_entry_output(&fixture, "true 42\n");
 
     let thenable = r#"globalThis.saved = () => later;
 const value = Promise.resolve({ get then() { globalThis.saved(); } });
