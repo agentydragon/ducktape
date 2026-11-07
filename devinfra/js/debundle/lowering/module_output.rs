@@ -563,15 +563,17 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
                 &reexport.imported_name,
                 chunk_top_level_mark,
             );
-            let target = match reexport.source_specifier {
-                Some(specifier) => PreparedImportTarget::OriginalSource { specifier },
+            let target = match &reexport.source_specifier {
+                Some(specifier) => PreparedImportTarget::OriginalSource {
+                    specifier: specifier.clone(),
+                },
                 None => PreparedImportTarget::Unsupported,
             };
             pairs.push((
                 src,
                 specifier,
                 PreparedImportBinding {
-                    source_binding: reexport.source_binding,
+                    source_binding: reexport.source_binding.clone(),
                     imported_name: reexport.imported_name.clone(),
                     target,
                 },
