@@ -952,7 +952,13 @@ fn execute_provider_body<'a>(
                 && body.captured_writes().is_empty()
         });
     let provider_local_birth_syntax_candidate = body_effect_candidate
-        && body.calls.is_empty()
+        // The source census records a member read as a possible getter call.
+        // Only the shared own-data transfer can discharge that possibility;
+        // actual calls and every other implicit protocol stay excluded.
+        && body
+            .calls
+            .iter()
+            .all(|call| call.kind == CallKind::LocalMemberRead)
         && local_body.is_some_and(|body| body.provider_local_birth_candidate());
     let closure_projection = if closure_mode {
         Some(closure_capture_projection(index, local_body?)?)
