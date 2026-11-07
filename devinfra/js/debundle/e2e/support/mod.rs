@@ -1217,6 +1217,24 @@ pub fn assert_node_error(path: &Path, expected_error: &str) {
     );
 }
 
+pub fn assert_node_error_with_stdout(path: &Path, expected_error: &str, expected_stdout: &str) {
+    let result = run_node_script(path);
+    assert!(
+        !result.status.success(),
+        "node {} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        path.display(),
+        result.stdout,
+        result.stderr,
+    );
+    assert!(
+        result.stderr.contains(expected_error),
+        "node {} stderr did not contain {expected_error:?}:\n{}",
+        path.display(),
+        result.stderr,
+    );
+    assert_eq!(result.stdout, expected_stdout, "stdout mismatch");
+}
+
 /// Real source files plus a serialized spec, ready for any CLI execution mode.
 struct PreparedFixture {
     root: TempDir,

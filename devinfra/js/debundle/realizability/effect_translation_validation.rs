@@ -593,6 +593,9 @@ fn assess_effect_relocation<E>(
     let mut relocation_dependencies = ProofDependencies::default();
     for unit in &swapped_units {
         let effect = &effects[unit];
+        if let Some(dependencies) = &effect.control_dependencies {
+            relocation_dependencies.extend(dependencies);
+        }
         if effect_domains_closed(effect)
             && let Some(dependencies) = &effect.coverage_dependencies
         {

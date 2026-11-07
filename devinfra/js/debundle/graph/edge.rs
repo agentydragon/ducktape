@@ -314,6 +314,7 @@ pub enum EffectCellReport {
     GlobalProp {
         key: String,
     },
+    ExecutionProgress,
     ArrayContents {
         origin: u32,
     },
@@ -349,6 +350,7 @@ impl From<&EffectCell> for EffectCellReport {
                 instance: *instance,
             },
             EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
+            EffectCell::ExecutionProgress => Self::ExecutionProgress,
             EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
             EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
             EffectCell::GlobalSymbolRegistry => Self::GlobalSymbolRegistry,
@@ -381,6 +383,7 @@ impl fmt::Display for EffectCellReport {
                 write!(f, "lexical cell #{origin} instance {instance}")
             }
             Self::GlobalProp { key } => write!(f, "global property `{key}`"),
+            Self::ExecutionProgress => f.write_str("synchronous initialization progress"),
             Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
             Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
             Self::GlobalSymbolRegistry => write!(f, "global symbol registry"),

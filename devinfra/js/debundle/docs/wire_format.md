@@ -203,6 +203,17 @@ executes both accesses. The assessment does not prove cross-module rebinding,
 vendor replacement, privacy or singleton behavior. `legacy_gate_accepts` and
 `legacy_tv_accepts` retain diagnostic comparison verdicts, without a second veto.
 
+The cell set includes one shared `execution_progress` key for synchronous
+initialization across the candidate's emitted logical modules. Evaluated
+non-inert owners read it. Owners lacking exact whole-root normal-completion
+evidence write it, preserving possible outward suppression and source-unreached
+suffixes. This control relation is separate from may-effect domain closure;
+the exact initializer receipt for lazy function creation can prove normality
+without certifying its deferred body effects. Internal caught throws and
+returns do not write the outer fence when the shared root transfer proves
+normal completion. The report's `relocation_dependencies` includes the typed
+conditions consumed by this completion projection.
+
 `candidate_relocation_assessment.json` pairs the same emitted statement order
 and single effect sweep with typed structural placement obligations from the
 same assignment validation. `placement.cross_destination_rebinds` carries

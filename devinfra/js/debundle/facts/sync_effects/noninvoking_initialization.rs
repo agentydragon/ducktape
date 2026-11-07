@@ -173,6 +173,43 @@ impl CompletedInitialization {
     }
 }
 
+/// Exact-owner evidence that synchronous module evaluation completes
+/// normally. Unlike effect-domain closure, this receipt says nothing about
+/// which global, heap or host effects the owner may have produced.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RootNormalCompletion {
+    owner: SourceUnitOrdinal,
+    dependencies: ProofDependencies,
+}
+
+impl RootNormalCompletion {
+    /// Seal normal completion only for the exact whole-owner root selected by
+    /// the shared executor. A completed-initializer theorem may supply the
+    /// normality proof even when unrelated may-effect domains remain unknown.
+    pub(super) fn from_root(
+        source: &RootEffectIdentity,
+        owner: SourceUnitOrdinal,
+        initialized: &BTreeSet<Id>,
+        dependencies: ProofDependencies,
+    ) -> Option<Self> {
+        if source.owner != owner || !source.targets_initialized(initialized) {
+            return None;
+        }
+        Some(Self {
+            owner,
+            dependencies,
+        })
+    }
+
+    pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
+        self.owner == owner
+    }
+
+    pub(crate) fn dependencies(&self) -> &ProofDependencies {
+        &self.dependencies
+    }
+}
+
 fn refusal_for_non_variable_owner(item: &ModuleItem) -> OwnerInitializationCoverageRefusalReason {
     if matches!(
         item,

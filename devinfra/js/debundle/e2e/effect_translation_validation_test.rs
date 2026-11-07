@@ -5135,6 +5135,83 @@ console.log(marker);\n";
 }
 
 #[test]
+fn caught_internal_throw_completes_the_outer_root_for_a_harmless_inversion() {
+    let source = "let state = 0;\n\
+function initialize() {\n\
+  state = 1;\n\
+  try { throw 'caught'; state = 99; } catch (error) { state = state + 1; }\n\
+  return state;\n\
+}\n\
+const result = initialize();\n\
+const independent = 2;\n\
+console.log(result, state, independent);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("independent", &[Member::new("independent")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "2 2 2\n");
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+}
+
+#[test]
+fn outward_throw_conflicts_with_a_moved_syntactic_suffix() {
+    let source = "console.log('prefix');\n\
+function fail() { throw 'sentinel'; }\n\
+const result = fail();\n\
+const suffix = (console.log('suffix'), 1);\n\
+export { result, suffix };\n";
+    let baseline = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_error(&baseline, "sentinel");
+    assert_node_error_with_stdout(&baseline.entry_path, "sentinel", "prefix\n");
+
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("suffix", &[Member::new("suffix")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--emit-on-rejection", "--effect-conflicts-jsonl"],
+        3,
+    );
+    assert_node_error_with_stdout(&rejected.entry_path(), "sentinel", "suffix\nprefix\n");
+    let report = rejected.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    let graph = rejected.dependency_graph();
+    let statement_ordinal = |binding| {
+        let id = source_unit_for_binding(&graph, binding);
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.id == id)
+            .expect("binding owner source unit")
+            .statement_ordinal
+            .0
+    };
+    let throw_unit = statement_ordinal("result");
+    let suffix_unit = statement_ordinal("suffix");
+    let rows = read_jsonl(&rejected.report_path("effect_conflicts.jsonl"));
+    assert!(
+        rows.iter().any(|row| {
+            row["runs_first"]["unit"] == suffix_unit
+                && row["runs_later"]["unit"] == throw_unit
+                && row["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| {
+                        cell["cell"]["kind"] == "execution_progress"
+                            && cell["observed_conflict"] == true
+                    })
+                })
+        }),
+        "the outward throw and moved suffix must share the observed progress fence: {rows:#?}"
+    );
+}
+
+#[test]
 fn no_swap_and_closed_empty_crossing_have_explicit_effect_decisions() {
     let no_swap = run_fixture(FixtureOpts::new(
         "const written = (globalThis.marker = 1);\n\
