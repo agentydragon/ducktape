@@ -15,5 +15,10 @@ for directory in /state/workspaces /state; do
 		echo "AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=$directory findmnt_status=$findmnt_status"
 	fi
 done
+# Avoid an unnecessary experimental task dump once the proof conditions hold.
+# Failure to mark the optional diagnostic must never prevent the shutdown proof.
+if [ -d /run/agentplane-shutdown-sysrq ]; then
+	: > /run/agentplane-shutdown-sysrq/proof || echo "AGENTPLANE_SYSRQ_PROOF_MARK_FAILED" >&2
+fi
 echo "AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
 echo "AGENTPLANE_SHUTDOWN_PROOF_EXIT status=0"
