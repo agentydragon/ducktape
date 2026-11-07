@@ -12,8 +12,7 @@ import grpc
 from pydantic import SecretStr
 
 from platform_sessions.provider.control_client import ProviderControlClient, dial_provider_control
-from platform_sessions.proxy import HeaderPolicy, ProxyInstance
-from platform_sessions.registry import IntegrationInstance
+from platform_sessions.proxy import HeaderPolicy, ProxyConfig, ProxyInstance
 from platform_sessions.remote_transport import RemoteSessionTransport
 
 
@@ -21,7 +20,7 @@ from platform_sessions.remote_transport import RemoteSessionTransport
 class RemoteProviderSpec:
     """Fixed provider endpoints and projected gateway-to-provider credentials."""
 
-    config: IntegrationInstance
+    config: ProxyConfig
     provider_origin: str
     control_target: str
     control_token_file: Path = field(repr=False)

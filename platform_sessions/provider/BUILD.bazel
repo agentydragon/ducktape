@@ -41,7 +41,6 @@ py_library(
     deps = [
         ":control_client",
         "//platform_sessions:proxy",
-        "//platform_sessions:registry",
         "//platform_sessions:remote_transport",
         "@pypi//grpcio",
         "@pypi//pydantic",
