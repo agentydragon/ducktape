@@ -1,0 +1,260 @@
+// The platform sessions gateway serves HTTP/JSON and optional gRPC management
+// while each remote provider owns its session and data plane.
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/agentydragon/ducktape/platform_sessions/frontend"
+	"github.com/agentydragon/ducktape/platform_sessions/management/gateway"
+	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"gopkg.in/yaml.v3"
+)
+
+type instance struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Enabled  *bool  `json:"enabled"`
+	Upstream string `json:"upstream_base_url"`
+}
+type instancesConfig struct {
+	Integrations []instance `json:"integrations"`
+}
+type connection struct {
+	Origin           string  `json:"origin"`
+	ControlTarget    string  `json:"control_target"`
+	ControlTokenFile string  `json:"control_token_file"`
+	OwnerTokenFile   string  `json:"owner_token_file"`
+	RouteTokenFile   string  `json:"route_token_file"`
+	ControlCAFile    string  `json:"control_ca_file"`
+	HTTPCAFile       string  `json:"http_ca_file"`
+	Timeout          float64 `json:"control_timeout_seconds"`
+}
+type bearerConfig struct {
+	Token     string          `json:"token"`
+	TokenFile string          `json:"token_file"`
+	Role      string          `json:"role"`
+	Allow     []gateway.Route `json:"allow"`
+}
+type headerConfig struct {
+	Request  []string `json:"request"`
+	Response []string `json:"response"`
+}
+
+func decodeEnv(name string, target any) error {
+	value := os.Getenv(name)
+	if value == "" {
+		value = "{}"
+	}
+	d := json.NewDecoder(strings.NewReader(value))
+	d.DisallowUnknownFields()
+	return d.Decode(target)
+}
+
+func secretFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", errors.New("credential file unavailable")
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func documents(dir string, types map[string]string) (map[string]json.RawMessage, error) {
+	docs := map[string]json.RawMessage{}
+	for _, provider := range types {
+		if _, ok := docs[provider]; ok {
+			continue
+		}
+		if strings.ContainsAny(provider, "/\\.") {
+			return nil, errors.New("invalid provider type")
+		}
+		data, err := os.ReadFile(filepath.Join(dir, provider, "openapi.yaml"))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, errors.New("provider document unavailable")
+		}
+		var value any
+		if yaml.Unmarshal(data, &value) != nil {
+			return nil, errors.New("invalid provider document")
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, errors.New("invalid provider document")
+		}
+		docs[provider] = encoded
+	}
+	return docs, nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "platform sessions gateway:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	var cfg instancesConfig
+	var connections map[string]connection
+	var bearerSettings map[string]bearerConfig
+	var headers map[string]headerConfig
+	var headerDefaults map[string]headerConfig
+	if decodeEnv("PLATFORM_SESSIONS_INTEGRATION_CONFIG", &cfg) != nil || decodeEnv("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", &connections) != nil || decodeEnv("PLATFORM_SESSIONS_BEARERS", &bearerSettings) != nil || decodeEnv("PLATFORM_SESSIONS_PROXY_HEADERS", &headers) != nil {
+		return errors.New("invalid gateway configuration")
+	}
+	defaultsFile := os.Getenv("PLATFORM_SESSIONS_PROVIDER_HEADER_DEFAULTS")
+	if defaultsFile == "" {
+		defaultsFile = "/usr/local/share/platform-sessions/provider_headers.json"
+	}
+	defaultsData, err := os.ReadFile(defaultsFile)
+	if err != nil || json.Unmarshal(defaultsData, &headerDefaults) != nil {
+		return errors.New("provider header defaults unavailable")
+	}
+	var controls []gateway.Provider
+	var channels []*gateway.ProviderConnection
+	defer func() {
+		for _, channel := range channels {
+			_ = channel.Close()
+		}
+	}()
+	providers := map[string]gateway.ProviderHTTPConfig{}
+	types := map[string]string{}
+	for _, item := range cfg.Integrations {
+		if item.Enabled != nil && !*item.Enabled {
+			continue
+		}
+		c, ok := connections[item.ID]
+		if !ok {
+			return errors.New("missing provider connection")
+		}
+		timeout := c.Timeout
+		if timeout == 0 {
+			timeout = 10
+		}
+		control, err := gateway.ConnectProvider(&providerpb.InstanceRef{ProviderId: item.Type, InstanceId: item.ID}, c.ControlTarget, c.ControlTokenFile, c.ControlCAFile, time.Duration(timeout*float64(time.Second)))
+		if err != nil {
+			return err
+		}
+		channels = append(channels, control)
+		controls = append(controls, control.Provider)
+		owner, err := secretFile(c.OwnerTokenFile)
+		if err != nil {
+			return err
+		}
+		route, err := secretFile(c.RouteTokenFile)
+		if err != nil {
+			return err
+		}
+		h := headers[item.ID]
+		defaults := headerDefaults[item.Type]
+		h.Request = append(defaults.Request, h.Request...)
+		h.Response = append(defaults.Response, h.Response...)
+		providers[item.ID] = gateway.ProviderHTTPConfig{ID: item.ID, Origin: c.Origin, Upstream: item.Upstream, OwnerToken: owner, RouteToken: route, CAFile: c.HTTPCAFile, RequestHeaders: h.Request, ResponseHeaders: h.Response}
+		types[item.ID] = item.Type
+	}
+	if len(connections) != len(providers) {
+		return errors.New("provider connections must match enabled instances")
+	}
+	for id := range headers {
+		if _, ok := providers[id]; !ok {
+			return errors.New("proxy headers reference an unknown instance")
+		}
+	}
+	var bearers []gateway.Bearer
+	for _, b := range bearerSettings {
+		if (b.Token == "") == (b.TokenFile == "") || (b.Role != "owner" && b.Role != "routes") {
+			return errors.New("invalid bearer configuration")
+		}
+		token := b.Token
+		if b.TokenFile != "" {
+			var err error
+			token, err = secretFile(b.TokenFile)
+			if err != nil {
+				return err
+			}
+		}
+		bearers = append(bearers, gateway.Bearer{Token: token, Owner: b.Role == "owner", Routes: b.Allow})
+	}
+	service, err := gateway.New(controls)
+	if err != nil {
+		return err
+	}
+	docsDir := os.Getenv("PLATFORM_SESSIONS_OPENAPI_DOCUMENTS_DIR")
+	if docsDir == "" {
+		docsDir = "/usr/local/share/platform-sessions/providers"
+	}
+	docs, err := documents(docsDir, types)
+	if err != nil {
+		return err
+	}
+	managementPath := os.Getenv("PLATFORM_SESSIONS_MANAGEMENT_OPENAPI")
+	if managementPath == "" {
+		managementPath = "/usr/local/share/platform-sessions/management.swagger.json"
+	}
+	managementDoc, err := os.ReadFile(managementPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.New("management document unavailable")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	handler, err := gateway.HTTPServer(ctx, service, gateway.HTTPConfig{Owner: gateway.OwnerConfig{Issuer: os.Getenv("PLATFORM_SESSIONS_ISSUER"), ClientID: os.Getenv("PLATFORM_SESSIONS_CLIENT_ID"), ClientSecret: os.Getenv("PLATFORM_SESSIONS_CLIENT_SECRET"), SessionSecret: os.Getenv("PLATFORM_SESSIONS_SESSION_SECRET"), PublicBaseURL: os.Getenv("PLATFORM_SESSIONS_PUBLIC_BASE_URL"), AllowedSubject: os.Getenv("PLATFORM_SESSIONS_ALLOWED_SUBJECT")}, Providers: providers, ProviderTypes: types, Bearers: bearers, Assets: map[string][]byte{"status.html": frontend.HTML, "status.css": frontend.CSS, "status.js": frontend.JavaScript}, Documents: docs, ManagementDocument: managementDoc})
+	if err != nil {
+		return err
+	}
+	grpcAddress := os.Getenv("PLATFORM_SESSIONS_GRPC_ADDRESS")
+	if grpcAddress != "" {
+		cert, err := tls.LoadX509KeyPair(os.Getenv("PLATFORM_SESSIONS_GRPC_TLS_CERT"), os.Getenv("PLATFORM_SESSIONS_GRPC_TLS_KEY"))
+		if err != nil {
+			return errors.New("invalid management gRPC TLS credentials")
+		}
+		token, err := secretFile(os.Getenv("PLATFORM_SESSIONS_GRPC_OWNER_TOKEN_FILE"))
+		if err != nil {
+			return err
+		}
+		listener, err := net.Listen("tcp", grpcAddress)
+		if err != nil {
+			return errors.New("could not bind management gRPC")
+		}
+		grpcServer := gateway.GRPCServer(service, token, grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})))
+		defer grpcServer.Stop()
+		go func() {
+			if err := grpcServer.Serve(listener); err != nil {
+				stop()
+			}
+		}()
+	}
+	port := os.Getenv("PLATFORM_SESSIONS_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	server := &http.Server{Addr: ":" + port, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe() }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdown)
+	}
+}

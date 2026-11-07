@@ -1,9 +1,0 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-
-package(default_visibility = ["//visibility:public"])
-
-go_binary(
-    name = "management_facade",
-    srcs = ["main.go"],
-    deps = ["//platform_sessions/management/facade"],
-)

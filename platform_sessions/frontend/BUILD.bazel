@@ -1,4 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,4 +16,15 @@ js_test(
     name = "status_test",
     data = [":assets"],
     entry_point = "status_test.mjs",
+)
+
+go_library(
+    name = "frontend",
+    srcs = ["assets.go"],
+    embedsrcs = [
+        "status.css",
+        "status.html",
+        "status.js",
+    ],
+    importpath = "github.com/agentydragon/ducktape/platform_sessions/frontend",
 )
