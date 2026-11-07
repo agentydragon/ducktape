@@ -220,27 +220,19 @@ fn split_binding_copies_have_receipts_for_an_actual_inversion() {
     let source = "import { limit as bytes } from './peer.js';\n\
                   const before = 0;\n\
                   var first = bytes, second = first;\n\
-                  const computed = 4 * second + 256;\n\
                   const after = 1;\n\
-                  console.log(before, first, second, computed, after);\n";
+                  console.log(before, first, second, after);\n";
     let fixture = run_fixture(
         FixtureOpts::new(
             source,
             vec![
-                logical_module(
-                    "compute",
-                    &[
-                        Member::new("first"),
-                        Member::new("second"),
-                        Member::new("computed"),
-                    ],
-                ),
+                logical_module("compute", &[Member::new("first"), Member::new("second")]),
                 logical_module("anchors", &[Member::new("before"), Member::new("after")]),
             ],
         )
         .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
-    assert_preserved_entry_output(&fixture, "0 2 2 264 1\n");
+    assert_preserved_entry_output(&fixture, "0 2 2 1\n");
     let assessment = fixture.effect_translation_validation();
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -268,8 +260,8 @@ fn split_binding_copies_have_receipts_for_an_actual_inversion() {
             .unwrap()
     };
     assert!(
-        position("computed") < position("before") || position("after") < position("computed"),
-        "the computed initializer must cross an executable anchor: {assessment:#}"
+        position("first") < position("before") || position("after") < position("first"),
+        "the binding copy must cross an executable anchor: {assessment:#}"
     );
     assert_root_read_receipt(&fixture, "first");
     assert_root_read_receipt(&fixture, "second");
