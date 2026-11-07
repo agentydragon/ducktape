@@ -11,7 +11,11 @@ import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from platform_sessions.provider.control_client import ProviderControlClient, ProviderProtocolError
+from platform_sessions.provider.control_client import (
+    ProviderControlClient,
+    ProviderProtocolError,
+    dial_provider_control,
+)
 from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as rpc
 
 INSTANCE = pb.InstanceRef(provider_id="example", instance_id="account")
@@ -98,7 +102,7 @@ async def served(tmp_path):
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
     token_file = tmp_path / "gateway-bearer"
-    token_file.write_text("first-token\n")
+    token_file.write_text("a" * 32 + "\n")
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}", options=(("grpc.enable_retries", 0),))
     client = ProviderControlClient(
         channel, provider_id="example", instance_id="account", token_file=token_file, timeout_s=2
@@ -114,7 +118,7 @@ async def served(tmp_path):
 async def test_round_trip_typed_results_and_rotated_projected_bearer(tmp_path):
     async with served(tmp_path) as (provider, client, token_file, channel):
         assert (await client.get_info()).provider.instances[0].instance_id == "account"
-        token_file.write_text("second-token\n")
+        token_file.write_text("b" * 32 + "\n")
         assert (await client.get_session()).snapshot.state == pb.SESSION_STATE_VERIFIED
         candidate = b'{"version":1,"session":{"token":"secret"}}'
         assert (await client.import_session(candidate, media_type="application/json", format_version="1")).WhichOneof(
@@ -122,7 +126,7 @@ async def test_round_trip_typed_results_and_rotated_projected_bearer(tmp_path):
         ) == "installed"
         assert (await client.probe(source=pb.PROBE_SOURCE_MANUAL)).result.WhichOneof("result") == "verified"
         assert provider.candidates == [candidate]
-        assert provider.tokens == ["Bearer first-token", *("Bearer second-token",) * 3]
+        assert provider.tokens == ["Bearer " + "a" * 32, *("Bearer " + "b" * 32,) * 3]
         assert provider.calls == Counter(GetInfo=1, GetSession=1, ImportSession=1, Probe=1)
         # The client leaves its injected channel available to its owner.
         assert (
@@ -154,6 +158,14 @@ async def test_typed_provider_failures_stay_distinct_from_rpc_failure(tmp_path):
 @pytest.mark.asyncio
 async def test_protocol_errors_reject_missing_and_mismatched_responses_without_candidate_data(tmp_path):
     async with served(tmp_path) as (provider, client, _, _):
+        provider.info.provider.instances.append(
+            pb.ProviderInstanceInfo(instance_id="second", routes=[provider.info.provider.instances[0].routes[0]])
+        )
+        assert (await client.get_info()).provider.instances[1].routes[0].operation_id == "read_account"
+        provider.info.provider.instances[0].routes.append(provider.info.provider.instances[0].routes[0])
+        with pytest.raises(ProviderProtocolError, match="route declaration"):
+            await client.get_info()
+        provider.info.provider.instances[0].routes.pop()
         provider.info.provider.provider_id = "other"
         with pytest.raises(ProviderProtocolError, match="provider identity"):
             await client.get_info()
@@ -188,6 +200,43 @@ async def test_missing_bearer_prevents_dispatch(tmp_path):
         with pytest.raises(FileNotFoundError, match="gateway-bearer"):
             await client.get_session()
         assert not provider.calls
+
+
+@pytest.mark.asyncio
+async def test_invalid_projected_bearer_and_timeout_fail_before_dispatch(tmp_path):
+    async with served(tmp_path) as (provider, client, token_file, channel):
+        for value in ("short", "x" * 31, "x" * 31 + "\u2603", "x" * 31 + " "):
+            token_file.write_text(value)
+            with pytest.raises(ValueError, match="bearer is invalid") as error:
+                await client.get_info()
+            assert value not in str(error.value)
+        for timeout in (float("nan"), float("inf"), float("-inf"), 0):
+            with pytest.raises(ValueError, match="RPC timeout must be positive"):
+                ProviderControlClient(
+                    channel, provider_id="example", instance_id="account", token_file=token_file, timeout_s=timeout
+                )
+        assert not provider.calls
+
+
+def test_dial_provider_control_uses_tls_and_disables_retries(monkeypatch):
+    captured: dict[str, object] = {}
+    credentials = object()
+    channel = object()
+
+    def secure_channel(target, supplied_credentials, *, options):
+        captured.update(target=target, credentials=supplied_credentials, options=options)
+        return channel
+
+    monkeypatch.setattr(grpc, "ssl_channel_credentials", lambda: credentials)
+    monkeypatch.setattr(grpc.aio, "secure_channel", secure_channel)
+    assert dial_provider_control("provider.internal:443", options=(("grpc.keepalive_time_ms", 30_000),)) is channel
+    assert captured == {
+        "target": "provider.internal:443",
+        "credentials": credentials,
+        "options": (("grpc.enable_retries", 0), ("grpc.keepalive_time_ms", 30_000)),
+    }
+    with pytest.raises(ValueError, match="retry option cannot be overridden"):
+        dial_provider_control("provider.internal:443", options=(("grpc.enable_retries", 1),))
 
 
 if __name__ == "__main__":
