@@ -812,6 +812,20 @@ catch parameters and unknown or mixed abrupt paths retain conservative
 execution. Thrown values keep the existing conservative publication policy
 even when caught; catching alone proves no fresh heap ownership.
 
+An ordered local binary expression can produce a typed abrupt completion when
+both nonempty operand sets contain only supported primitive kinds, neither
+contains an unavailable alternative, and the shared primitive transfer proves
+there is no normal result for any represented operand pair. Its already
+evaluated operands keep their effects and state exactly once. The local executor
+records a `KnownThrow` only when the prior frame has no return/unknown marker or
+existing throw and its effect-coverage completion is exactly normal; existing
+source-frontier, skipped-region and covered-domain checks still govern catch or
+outward handling. A mixed/value-sensitive operation, unknown operand, or
+unknown prior completion remains conservative, including inside a catch.
+Allocation/value adapters without an ordered completion carrier keep this
+typed abrupt result opaque. Updates and template conversions retain their
+existing conservative completion behavior.
+
 The owner certificate survives staged analysis. Binding/allocation cells, other opacity
 flags and purity retain their existing rules; the joint relocation assessment
 consumes the resulting effect coverage.

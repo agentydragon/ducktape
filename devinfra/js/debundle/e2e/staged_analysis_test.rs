@@ -1243,6 +1243,69 @@ fn run_direct_and_saved_with_rejection(staged: &Staged) -> (StagedInvocation, St
     (direct, saved)
 }
 
+fn run_direct_and_saved_with_effect_conflicts(
+    staged: &Staged,
+) -> (StagedInvocation, StagedInvocation) {
+    let args = ["--emit-on-rejection", "--effect-conflicts-jsonl"];
+    let direct = staged.run(&args);
+    let artifact = path(&staged.artifact).to_owned();
+    let saved_args = [
+        "--emit-on-rejection",
+        "--effect-conflicts-jsonl",
+        "--analysis",
+        artifact.as_str(),
+    ];
+    let saved = staged.run(&saved_args);
+    (direct, saved)
+}
+
+fn preserve_staged_effect_conflicts(invocation: &StagedInvocation, case: &str) -> PathBuf {
+    let report_root = invocation.output_root().join("reports/tree");
+    let artifacts = save_relocation_reports(&report_root, "static/app", case);
+    let source = report_root.join("static/app/effect_conflicts.jsonl");
+    let destination = artifacts.join("effect_conflicts.jsonl");
+    if source.is_file() {
+        fs::copy(source, destination).expect("preserve effect conflict stream");
+    } else {
+        fs::write(destination, []).expect("preserve empty effect conflict stream");
+    }
+    artifacts
+}
+
+fn assert_staged_progress_pair(
+    artifacts: &Path,
+    first_binding: &str,
+    later_binding: &str,
+    observed: bool,
+) {
+    let graph: Value = read_gzip_json(&artifacts.join("dependency_graph.json.gz"));
+    let statement_ordinal = |binding| {
+        graph_node_for_binding(&graph, binding)["statement_ordinal"]
+            .as_u64()
+            .expect("binding statement ordinal")
+    };
+    let first = statement_ordinal(first_binding);
+    let later = statement_ordinal(later_binding);
+    let rows = read_jsonl(&artifacts.join("effect_conflicts.jsonl"));
+    assert!(
+        rows.iter().any(|row| {
+            row["runs_first"]["unit"] == first
+                && row["runs_later"]["unit"] == later
+                && row["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| {
+                        cell["cell"]["kind"] == "execution_progress"
+                            && cell["observed_conflict"] == observed
+                            && (observed
+                                || ["first_write", "later_write"]
+                                    .iter()
+                                    .any(|field| cell[*field]["kind"] == "potential_suppression"))
+                    })
+                })
+        }),
+        "the source pair must retain its expected execution-progress provenance: {rows:#?}"
+    );
+}
+
 fn conditional_foreign_body_used(graph: &Value, binding: &str) -> bool {
     graph_node_for_binding(graph, binding)["synchronous_execution"]["inference_uses"]
         .as_array()
@@ -3481,6 +3544,144 @@ export { result, suffix };\n";
             "suffix\nprefix\n",
         );
     }
+}
+
+#[test]
+fn primitive_binary_throw_is_caught_with_direct_and_saved_root_completion() {
+    let source = "let state = 0;\n\
+function initialize() {\n\
+  state = 1;\n\
+  try { state = 1n + 2; state = 99; } catch (error) { state = state + 1; }\n\
+  return state;\n\
+}\n\
+const result = initialize();\n\
+const independent = 2;\n\
+console.log(result, state, independent);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("independent", &[Member::new("independent")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let (direct, saved) = run_direct_and_saved_with_effect_conflicts(&staged);
+    let direct_reports = preserve_staged_effect_conflicts(&direct, "scalar-caught-direct");
+    let saved_reports = preserve_staged_effect_conflicts(&saved, "scalar-caught-saved");
+
+    assert!(direct.result.status.success(), "{}", direct.result.stderr);
+    assert!(saved.result.status.success(), "{}", saved.result.stderr);
+    assert_same_invocation_trees(&direct, &saved);
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "2 2 2\n", "");
+    for (invocation, reports) in [(&direct, &direct_reports), (&saved, &saved_reports)] {
+        let report: Value = read_json(&reports.join("effect_translation_validation.json"));
+        assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "2 2 2\n",
+            "",
+        );
+    }
+}
+
+#[test]
+fn primitive_binary_outward_throw_keeps_payload_prefix_and_suffix_fence() {
+    let source = "console.log('prefix');\n\
+function fail() { return 1n + 2; }\n\
+const result = fail();\n\
+const suffix = (console.log('suffix'), 1);\n\
+export { result, suffix };\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("suffix", &[Member::new("suffix")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let (direct, saved) = run_direct_and_saved_with_effect_conflicts(&staged);
+    let direct_reports = preserve_staged_effect_conflicts(&direct, "scalar-outward-direct");
+    let saved_reports = preserve_staged_effect_conflicts(&saved, "scalar-outward-saved");
+
+    assert_node_error_with_stdout(
+        &staged.root().join("snapshot/static/app.js"),
+        "Cannot mix BigInt and other types",
+        "prefix\n",
+    );
+    for (invocation, reports) in [(&direct, &direct_reports), (&saved, &saved_reports)] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(3),
+            "{}",
+            invocation.result.stderr
+        );
+        let assessment: Value = read_json(&reports.join("candidate_relocation_assessment.json"));
+        let effects: Value = read_json(&reports.join("effect_translation_validation.json"));
+        assert_eq!(
+            assessment["decision"]["status"], "conflict",
+            "{assessment:#}"
+        );
+        assert_eq!(effects["decision"]["status"], "conflict", "{effects:#}");
+        assert_node_error_with_stdout(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "Cannot mix BigInt and other types",
+            "suffix\nprefix\n",
+        );
+        assert_staged_progress_pair(reports, "suffix", "result", true);
+    }
+    assert_same_invocation_trees(&direct, &saved);
+}
+
+#[test]
+fn mixed_prefix_does_not_turn_a_later_primitive_throw_into_a_known_catch() {
+    let source = "let state = 0;\n\
+function recover() {\n\
+  try {\n\
+    const value = (1n + 1n) + (1n + 2);\n\
+    state = 99;\n\
+    return value;\n\
+  } catch (error) {\n\
+    state = state + 1;\n\
+    return error.name;\n\
+  }\n\
+}\n\
+console.log('prefix');\n\
+const result = recover();\n\
+const suffix = (console.log('suffix'), 1);\n\
+console.log(result, state);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("suffix", &[Member::new("suffix")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let (direct, saved) = run_direct_and_saved_with_effect_conflicts(&staged);
+    let direct_reports = preserve_staged_effect_conflicts(&direct, "scalar-mixed-prefix-direct");
+    let saved_reports = preserve_staged_effect_conflicts(&saved, "scalar-mixed-prefix-saved");
+
+    assert_node_output(
+        &staged.root().join("snapshot/static/app.js"),
+        "prefix\nsuffix\nTypeError 1\n",
+        "",
+    );
+    for (invocation, reports) in [(&direct, &direct_reports), (&saved, &saved_reports)] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(3),
+            "{}",
+            invocation.result.stderr
+        );
+        let assessment: Value = read_json(&reports.join("candidate_relocation_assessment.json"));
+        let effects: Value = read_json(&reports.join("effect_translation_validation.json"));
+        assert_potential_suppression_rejection(&assessment, &effects, "blocked_by_effect");
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "suffix\nprefix\nTypeError 1\n",
+            "",
+        );
+        assert_staged_progress_pair(reports, "suffix", "result", false);
+    }
+    assert_same_invocation_trees(&direct, &saved);
 }
 
 #[test]

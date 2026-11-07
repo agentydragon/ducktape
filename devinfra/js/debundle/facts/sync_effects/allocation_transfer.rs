@@ -570,6 +570,12 @@ pub(super) fn transfer(
                         context.unmodeled_effect_operation();
                         AllocationValue::opaque(values)
                     }
+                    PrimitiveOperationResult::Abrupt => {
+                        context.unmodeled_effect_operation();
+                        AllocationValue::opaque(Values::from([AbstractValue::Value(
+                            Value::Unavailable,
+                        )]))
+                    }
                     PrimitiveOperationResult::CoercionRequired => {
                         context.unmodeled_effect_operation();
                         AllocationValue::opaque(Values::from([
@@ -706,6 +712,9 @@ pub(super) fn transfer(
 pub(super) enum PrimitiveOperationResult {
     Covered(Values),
     MayThrow(Values),
+    /// The shared primitive transfer proves every represented operand pair
+    /// throws before producing a normal value.
+    Abrupt,
     CoercionRequired,
 }
 
@@ -753,7 +762,7 @@ pub(super) fn binary_result(
         return PrimitiveOperationResult::CoercionRequired;
     };
     let mut values = Values::new();
-    if left_kinds.is_empty() || right_kinds.is_empty() {
+    if left.is_empty() || right.is_empty() || left_kinds.is_empty() || right_kinds.is_empty() {
         values.insert(AbstractValue::Value(Value::Unavailable));
         return PrimitiveOperationResult::MayThrow(values);
     }
@@ -763,14 +772,17 @@ pub(super) fn binary_result(
     if !result.is_empty() {
         values.insert(AbstractValue::Value(Value::Prim(result)));
     }
-    let may_throw = left.contains(&AbstractValue::Value(Value::Unavailable))
-        || right.contains(&AbstractValue::Value(Value::Unavailable))
+    let has_unavailable = left.contains(&AbstractValue::Value(Value::Unavailable))
+        || right.contains(&AbstractValue::Value(Value::Unavailable));
+    if result.is_empty() && !has_unavailable {
+        return PrimitiveOperationResult::Abrupt;
+    }
+    let may_throw = has_unavailable
         || crate::facts::abstract_domain::primitive::binary_throws(
             operator,
             left_kinds,
             right_kinds,
-        )
-        || result.is_empty();
+        );
     if may_throw {
         values.insert(AbstractValue::Value(Value::Unavailable));
         PrimitiveOperationResult::MayThrow(values)
@@ -783,11 +795,20 @@ pub(super) fn binary_result(
 /// and result kinds as concatenation with a String. Objects remain refused:
 /// templates use a string hint, whereas addition uses the default hint.
 pub(super) fn template_substitution_result(operand: &Values) -> PrimitiveOperationResult {
-    binary_result(
+    match binary_result(
         BinaryOp::Add,
         &Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]),
         operand,
-    )
+    ) {
+        // Template conversion still needs its ordered conversion/store path;
+        // keep it conservative until that completion obligation is proved.
+        PrimitiveOperationResult::Abrupt => {
+            PrimitiveOperationResult::MayThrow(Values::from([AbstractValue::Value(
+                Value::Unavailable,
+            )]))
+        }
+        result => result,
+    }
 }
 
 /// Source-ordered composition retains every child's effects and possible

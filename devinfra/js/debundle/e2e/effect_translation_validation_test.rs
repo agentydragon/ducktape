@@ -7002,6 +7002,27 @@ fn primitive_binary_throw_and_coercion_controls_keep_runtime_and_unknown_effects
         ),
         "{report:#}"
     );
+
+    let value_sensitive = run_inspection_fixture(FixtureOpts::new(
+        "const result = 1n + 1n;\nconst z = 'z';\nconsole.log(result);\nexport { result, z };\n",
+        vec![logical_module("x", &[Member::new("result")])],
+    ));
+    save_relocation_reports(
+        &value_sensitive.report_root,
+        &value_sensitive.chunk_id,
+        "bigint-value-sensitive-throw",
+    );
+    assert_preserved_entry_output(&value_sensitive, "2n\n");
+    assert_binary_remains_unsealed(&value_sensitive, "result");
+    let report = value_sensitive.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert!(
+        matches!(
+            report["decision"]["status"].as_str(),
+            Some("incomplete" | "conflict")
+        ),
+        "a value-sensitive BigInt throw must remain possible, not definite: {report:#}"
+    );
 }
 
 #[test]

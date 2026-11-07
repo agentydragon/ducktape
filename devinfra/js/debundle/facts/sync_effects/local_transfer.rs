@@ -919,7 +919,8 @@ fn binary_expression(
     if right.values.is_empty() {
         return Some(right);
     }
-    let values = match allocation_transfer::binary_result(*operator, &left.values, &right.values) {
+    let operation = allocation_transfer::binary_result(*operator, &left.values, &right.values);
+    let values = match operation {
         allocation_transfer::PrimitiveOperationResult::Covered(values) => {
             local
                 .frame
@@ -934,6 +935,40 @@ fn binary_expression(
                 .effect_coverage
                 .compose(&EffectCoverageFragment::default());
             values
+        }
+        allocation_transfer::PrimitiveOperationResult::Abrupt
+            if local.frame.returns.is_empty()
+                && local.frame.thrown.is_none()
+                && local.frame.effect_coverage.is_normal_completion()
+                && !left
+                    .values
+                    .contains(&AbstractValue::Value(Value::Unavailable))
+                && !right
+                    .values
+                    .contains(&AbstractValue::Value(Value::Unavailable)) =>
+        {
+            *judgment = AllocationJudgment::Opaque;
+            let thrown = SelectedValue::raw(Values::from([AbstractValue::Value(Value::Top)]));
+            local.context.publish_throw(&thrown.values);
+            local.frame.effect_coverage.abrupt();
+            local.frame.thrown = Some(Box::new(KnownThrow {
+                value: thrown,
+                frontier: *span,
+            }));
+            return Some(SelectedValue::raw(Values::new()));
+        }
+        allocation_transfer::PrimitiveOperationResult::Abrupt => {
+            // A definite operator throw on the surviving normal path cannot
+            // erase an earlier unknown or mixed completion.
+            *judgment = AllocationJudgment::Opaque;
+            local
+                .frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+            return Some(completing_selected(
+                SelectedValue::raw(Values::from([AbstractValue::Value(Value::Unavailable)])),
+                local.frame,
+            ));
         }
         allocation_transfer::PrimitiveOperationResult::CoercionRequired => {
             let mut operands = left.values;
@@ -979,6 +1014,13 @@ fn template_expression(
                     .effect_coverage
                     .compose(&EffectCoverageFragment::default());
                 values
+            }
+            allocation_transfer::PrimitiveOperationResult::Abrupt => {
+                *judgment = AllocationJudgment::Opaque;
+                frame
+                    .effect_coverage
+                    .compose(&EffectCoverageFragment::default());
+                Values::from([AbstractValue::Value(Value::Unavailable)])
             }
             allocation_transfer::PrimitiveOperationResult::CoercionRequired => {
                 frame
@@ -1214,6 +1256,13 @@ fn update_binding_expression(
                 .effect_coverage
                 .compose(&EffectCoverageFragment::default());
             values
+        }
+        allocation_transfer::PrimitiveOperationResult::Abrupt => {
+            *judgment = AllocationJudgment::Opaque;
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+            Values::from([AbstractValue::Value(Value::Unavailable)])
         }
         allocation_transfer::PrimitiveOperationResult::CoercionRequired => {
             frame

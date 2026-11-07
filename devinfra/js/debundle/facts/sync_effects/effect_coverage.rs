@@ -1555,6 +1555,10 @@ impl EffectCoverageFragment {
         self.completion = Completion::Abrupt;
     }
 
+    pub(super) fn is_normal_completion(&self) -> bool {
+        self.completion == Completion::Normal
+    }
+
     pub(super) fn uncertain_completion(&mut self) {
         self.completion = Completion::Unknown;
     }
