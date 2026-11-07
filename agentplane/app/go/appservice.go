@@ -3,6 +3,7 @@ package main
 import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/go/status"
 )
 
 // appService implements the app-owned browser API in process. The HTTP gateway
@@ -10,6 +11,7 @@ import (
 type appService struct {
 	apppb.UnimplementedAppServiceServer
 	config           Config
+	systemStatus     *status.Checker
 	environments     sessionEnvironmentReader
 	bridge           sessionOpener
 	runnerStatus     runnerStatusReader
