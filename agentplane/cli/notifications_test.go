@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"slices"
@@ -49,13 +50,16 @@ func TestSubscribeCreateAcceptsActionSourceAsProtoJSON(t *testing.T) {
 type notificationsServer struct {
 	notificationspb.UnimplementedNotificationsServer
 
-	create func(*notificationspb.CreateSubscriptionRequest) (*notificationspb.Subscription, error)
-	list   func(*notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error)
-	get    func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error)
-	renew  func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error)
-	cancel func(*notificationspb.CancelSubscriptionRequest) (*notificationspb.Subscription, error)
-	send   func(*notificationspb.SendMessageRequest) (*notificationspb.Message, error)
-	lookup func(*notificationspb.GetMessageRequest) (*notificationspb.Message, error)
+	create  func(*notificationspb.CreateSubscriptionRequest) (*notificationspb.Subscription, error)
+	list    func(*notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error)
+	get     func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error)
+	renew   func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error)
+	cancel  func(*notificationspb.CancelSubscriptionRequest) (*notificationspb.Subscription, error)
+	send    func(*notificationspb.SendMessageRequest) (*notificationspb.Message, error)
+	lookup  func(*notificationspb.GetMessageRequest) (*notificationspb.Message, error)
+	inboxes func() ([]*notificationspb.Inbox, error)
+	inbox   func(*notificationspb.GetInboxRequest) (*notificationspb.Inbox, error)
+	retire  func(*notificationspb.RetireInboxRequest) error
 
 	mu            sync.Mutex
 	calls         []proto.Message
@@ -132,6 +136,92 @@ func (s *notificationsServer) ReadInbox(ctx context.Context, request *notificati
 func (s *notificationsServer) AcknowledgeInbox(ctx context.Context, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
 	s.record(ctx, request)
 	return &notificationspb.AcknowledgeInboxResponse{Inbox: &notificationspb.Inbox{Id: "inbox", SessionId: request.GetSessionId(), Acknowledged: request.GetThroughCursor()}}, nil
+}
+
+func (s *notificationsServer) ListInboxes(ctx context.Context, request *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
+	s.record(ctx, request)
+	inboxes, err := s.inboxes()
+	return &notificationspb.ListInboxesResponse{Inboxes: inboxes}, err
+}
+
+func (s *notificationsServer) GetInbox(ctx context.Context, request *notificationspb.GetInboxRequest) (*notificationspb.GetInboxResponse, error) {
+	s.record(ctx, request)
+	inbox, err := s.inbox(request)
+	return &notificationspb.GetInboxResponse{Inbox: inbox}, err
+}
+
+func (s *notificationsServer) RetireInbox(ctx context.Context, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
+	s.record(ctx, request)
+	return &notificationspb.RetireInboxResponse{}, s.retire(request)
+}
+
+func TestInboxInventoryAndRetirementUseGRPC(t *testing.T) {
+	servicer := &notificationsServer{
+		inboxes: func() ([]*notificationspb.Inbox, error) {
+			return []*notificationspb.Inbox{
+				{Id: "inbox-1", SessionId: "session-1"},
+				{Id: "inbox-2", SessionId: "session-2", Retired: true},
+			}, nil
+		},
+		inbox: func(request *notificationspb.GetInboxRequest) (*notificationspb.Inbox, error) {
+			if request.GetSessionId() == "session-5" {
+				return nil, nil
+			}
+			return &notificationspb.Inbox{Id: "inbox-1", SessionId: request.GetSessionId()}, nil
+		},
+		retire: func(*notificationspb.RetireInboxRequest) error { return nil },
+	}
+	env := notificationsEnv(serveNotifications(t, servicer))
+
+	code, stdout, stderr := invoke(env, "notifications", "inboxes", "--json")
+	if code != 0 {
+		t.Fatalf("inboxes: exit %d: %s", code, stderr)
+	}
+	var listed []json.RawMessage
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		listed = append(listed, json.RawMessage(line))
+	}
+	if len(listed) != 2 {
+		t.Fatalf("inboxes JSON lines = %q, want two", stdout)
+	}
+	var first, second notificationspb.Inbox
+	if err := protojson.Unmarshal(listed[0], &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := protojson.Unmarshal(listed[1], &second); err != nil {
+		t.Fatal(err)
+	}
+	if first.GetId() != "inbox-1" || second.GetId() != "inbox-2" || !second.GetRetired() {
+		t.Fatalf("listed inboxes = %v, %v", &first, &second)
+	}
+
+	code, stdout, stderr = invoke(env, "notifications", "inbox", "get", "session-3", "--json")
+	if code != 0 {
+		t.Fatalf("inbox get: exit %d: %s", code, stderr)
+	}
+	var got notificationspb.Inbox
+	if err := protojson.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.GetSessionId() != "session-3" {
+		t.Fatalf("inbox get returned session %q, want session-3", got.GetSessionId())
+	}
+
+	code, stdout, stderr = invoke(env, "notifications", "inbox", "get", "session-5")
+	if code != 0 || stdout != "no inbox for session session-5\n" {
+		t.Fatalf("inbox get without an inbox: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = invoke(env, "notifications", "inbox", "retire", "session-4", "--json")
+	if code != 0 || stdout != "{}\n" {
+		t.Fatalf("inbox retire: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	listRequests := received[*notificationspb.ListInboxesRequest](servicer)
+	getRequests := received[*notificationspb.GetInboxRequest](servicer)
+	retireRequests := received[*notificationspb.RetireInboxRequest](servicer)
+	if len(listRequests) != 1 || len(getRequests) != 2 || getRequests[0].GetSessionId() != "session-3" || getRequests[1].GetSessionId() != "session-5" || len(retireRequests) != 1 || retireRequests[0].GetSessionId() != "session-4" {
+		t.Fatalf("inbox requests: list %v, get %v, retire %v", listRequests, getRequests, retireRequests)
+	}
 }
 
 func TestInboxCommandsAddressTheSession(t *testing.T) {

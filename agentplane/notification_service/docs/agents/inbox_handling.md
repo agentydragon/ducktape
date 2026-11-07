@@ -7,7 +7,7 @@ succeeded. A notice to a suspended Sandbox waits until the Sandbox runs again, a
 wake on message turned on.
 
 Use `agentplane notifications inbox read` and `agentplane notifications inbox ack`; the commands use
-the configured Notifications URL and credential. `--json` on `read` prints the full response, including
+the configured Notification gRPC URL and credential. `--json` on `read` prints the full response, including
 provider payloads. If the CLI is unavailable, use the equivalent HTTP routes below the command examples.
 
 ## Retrieve and account for entries
