@@ -188,9 +188,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         assert all(port["targetPort"] == gateway_listener_ports[port["name"]] for port in service["spec"]["ports"])
 
     assert int(gateway_env[env_name(Settings, "listen_address")].rsplit(":", 1)[1]) == gateway_listener_ports["grpc"]
-    assert (
-        int(gateway_env[env_name(Settings, "http_listen_address")].rsplit(":", 1)[1]) == gateway_listener_ports["http"]
-    )
+    assert env_name(Settings, "http_listen_address") not in gateway_env
 
     dispatcher = _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
     dispatcher_port = next(port["port"] for port in dispatcher["spec"]["ports"] if port["name"] == "grpc")

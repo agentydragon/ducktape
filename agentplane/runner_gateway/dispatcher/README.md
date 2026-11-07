@@ -21,12 +21,13 @@ The manual queue, replica and wake probes are documented in the
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
   commands, so a caller holding a few of them does not replay a whole Session.
-- **HTTP/JSON form**: every RPC also answers over HTTP on the Gateway's optional `http_listen_address` setting,
+- **HTTP/JSON form**: the Gateway can serve every RPC over its optional `http_listen_address` setting,
   [generated from the proto](../../docs/grpc_services.md#httpjson-facades): Session reads use
   `/v1/sessions` and `/v1/sessions/{session_id}`, command reads use `/v1/dispatches`, commands as
   `POST /v1/sessions/{session_id}:<verb>` and creation as `POST /v1/sessions`,
   `POST /v1/dispatches/{command_id}:cancel`. Both transports use the same ServiceAccount TokenReview and
-  per-Session owner checks; a browser reaches it through the app's authenticated command facade.
+  per-Session owner checks. Staging does not enable this listener; a browser reaches the app's
+  authenticated command facade, which calls the Gateway over gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
   `DELIVERY_STATE_HARNESS_CONFIRMED`, `DELIVERY_STATE_NO_OP`, `DELIVERY_STATE_FAILED`,
