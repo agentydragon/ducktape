@@ -395,12 +395,12 @@ func serve(ctx context.Context, c config, listener, workloadListener net.Listene
 		Sandboxes:     catalog,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	dispatcherMethods := dispatcher.Methods(dispatchAuth)
+	dispatcherMethods := dispatcher.Methods(auth.ReviewedServiceAccount(dispatchAuth))
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
 	maps.Copy(methods, environments.Methods(dispatchAuth))
 	workloadMethods := auth.HealthMethods()
-	maps.Copy(workloadMethods, dispatcher.Methods(workloadAuth))
+	maps.Copy(workloadMethods, dispatcher.Methods(auth.ReviewedServiceAccount(workloadAuth)))
 	maps.Copy(workloadMethods, environments.Methods(workloadAuth))
 	if c.Delegation != nil {
 		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}

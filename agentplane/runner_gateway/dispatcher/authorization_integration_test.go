@@ -118,7 +118,7 @@ func authorityClient(t *testing.T, store *Store, inventory *authorityInventory, 
 		Store: store, DispatcherCallers: configuredDispatcherCallers(),
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
-	connection := grpcmethods.Serve(t, Methods(resolver), func(server *grpc.Server) {
+	connection := grpcmethods.Serve(t, Methods(auth.ReviewedServiceAccount(resolver)), func(server *grpc.Server) {
 		dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	})
 	return dispatcherpb.NewSessionDispatcherClient(connection)
@@ -287,7 +287,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
-	methods := Methods(svids)
+	methods := Methods(auth.AnyAccount(svids))
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.Issue(t, environment_runtime_transport.SessionDispatcherURI)
 	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)

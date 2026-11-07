@@ -199,16 +199,8 @@ func sendWatchDispatch(
 	}
 }
 
-// Methods admits callers to every SessionDispatcher RPC. TokenReview resolvers retain their
-// reviewed-ServiceAccount policy, including delegation; other verified principal sources use
-// AnyAccount's shared caller policy.
-func Methods(principalResolver auth.PrincipalResolver) auth.Methods {
-	var rule auth.Rule
-	if resolver, ok := principalResolver.(*auth.Resolver); ok && resolver != nil {
-		rule = auth.ReviewedServiceAccount(resolver)
-	} else {
-		rule = auth.AnyAccount(principalResolver)
-	}
+// Methods applies the caller's explicit authorization rule to every SessionDispatcher RPC.
+func Methods(rule auth.Rule) auth.Methods {
 	return auth.Methods{
 		dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_ChangeModel_FullMethodName:           rule,
@@ -231,7 +223,7 @@ func MethodsWithDelegation(
 	serviceAccounts auth.ServiceAccountUIDReader,
 	delegatedMethods []string,
 ) (auth.Methods, error) {
-	methods, err := Methods(resolver).WithDelegation(
+	methods, err := Methods(auth.ReviewedServiceAccount(resolver)).WithDelegation(
 		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts,
 	)
 	if err != nil {

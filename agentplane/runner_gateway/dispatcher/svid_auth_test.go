@@ -86,7 +86,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(svids)
+	methods := Methods(auth.AnyAccount(svids))
 
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.IssueWithUsage(t, environment_runtime_transport.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
@@ -258,7 +258,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(workloadAuth)
+	methods := Methods(auth.ReviewedServiceAccount(workloadAuth))
 	probe := &mixedAdmissionProbe{
 		t: t,
 		expected: map[auth.Account]auth.Principal{
