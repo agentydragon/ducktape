@@ -16,11 +16,17 @@ trace_line_limit=2000
 scratch=$("$busybox" mktemp -d /run/agentplane-delegated-cgroup-stress.XXXXXX)
 record_file=$scratch/record
 service_cgroup=
+delegated_service=
 delegated_parent=
 driver=
 payload=
 resident_pid=
 writer_moved=no
+service_io_changed=no
+service_io_initial=
+service_subtree_initial_non_io=
+service_subtree_captured=no
+service_controller_restored=no
 trace_mounted=no
 trace_owned=no
 trace_on_initial=
@@ -40,6 +46,10 @@ emit() {
 
 has_io() {
 	"$busybox" grep -qw io "$1"
+}
+
+controllers_without_io() {
+	"$busybox" awk '{for (i = 1; i <= NF; i++) if ($i != "io") print $i}' "$1" | "$busybox" sort
 }
 
 unexercised() {
@@ -298,6 +308,7 @@ finish() {
 		kill "$resident_pid" 2>/dev/null
 		wait "$resident_pid" 2>/dev/null
 	fi
+	trace_cleanup || cleanup_ok=no
 	if [ -n "$delegated_parent" ] && [ -d "$delegated_parent" ]; then
 		if has_io "$delegated_parent/cgroup.subtree_control"; then
 			if manager_is_empty; then
@@ -307,7 +318,6 @@ finish() {
 			fi
 		fi
 	fi
-	trace_cleanup || cleanup_ok=no
 	if [ "$writer_moved" = yes ] && [ -w "$delegated_parent/cgroup.procs" ]; then
 		printf '%s\n' "$$" >"$delegated_parent/cgroup.procs" || cleanup_ok=no
 		writer_moved=no
@@ -318,6 +328,30 @@ finish() {
 	if [ -n "$driver" ] && [ -d "$driver" ]; then
 		"$busybox" rmdir "$driver" || cleanup_ok=no
 	fi
+	if [ "$service_subtree_captured" = yes ] && [ -d "$delegated_service" ]; then
+		if [ "$service_io_changed" = yes ] && has_io "$delegated_service/cgroup.subtree_control"; then
+			if [ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] &&
+				[ -n "$delegated_parent" ] &&
+				! has_io "$delegated_parent/cgroup.subtree_control"; then
+				printf '%s\n' '-io' >"$delegated_service/cgroup.subtree_control" || cleanup_ok=no
+			else
+				cleanup_ok=no
+			fi
+		fi
+		if { [ "$service_io_initial" = yes ] && has_io "$delegated_service/cgroup.subtree_control"; } ||
+			{ [ "$service_io_initial" = no ] && ! has_io "$delegated_service/cgroup.subtree_control"; }; then
+			if [ "$(controllers_without_io "$delegated_service/cgroup.subtree_control")" = "$service_subtree_initial_non_io" ]; then
+				service_controller_restored=yes
+			else
+				cleanup_ok=no
+			fi
+		else
+			cleanup_ok=no
+		fi
+	else
+		service_controller_restored=no
+		[ "$service_subtree_captured" = no ] || cleanup_ok=no
+	fi
 	if [ "$trace_mounted" = yes ]; then
 		"$busybox" umount "$tracefs" || cleanup_ok=no
 	fi
@@ -325,9 +359,11 @@ finish() {
 	if [ -n "$driver" ] && [ -e "$driver" ]; then cleanup_ok=no; fi
 	if [ -n "$resident_pid" ] && [ -d "/proc/$resident_pid" ]; then cleanup_ok=no; fi
 	if [ "$cleanup_ok" = yes ]; then
-		emit "CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes"
+		emit "CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes "\
+			"service_controller_restored=$service_controller_restored"
 	else
-		emit "CLEANUP owned_children_removed=no resident_alive=unknown trace_restored=unknown"
+		emit "CLEANUP owned_children_removed=no resident_alive=unknown trace_restored=unknown "\
+			"service_controller_restored=$service_controller_restored"
 	fi
 	if [ "$completed" = yes ] && [ "$rc" -eq 0 ] && [ "$cleanup_ok" = yes ]; then
 		emit "SUCCESS transitions=$((pairs * 2)) delegated_subtree_only=yes tracing_during_pairs=no"
@@ -356,17 +392,46 @@ delegate_subgroup=$("$busybox" timeout -s TERM 3 /usr/bin/systemctl show -P Dele
 [ "$delegate_subgroup" = manager ] || unexercised "delegate_subgroup_property_mismatch"
 [ -d "$delegated_service" ] && [ -d "$delegated_parent" ] || unexercised "delegated_cgroup_missing"
 [ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] || unexercised "delegated_service_parent_has_processes"
-if ! has_io "$delegated_service/cgroup.controllers" || ! has_io "$delegated_parent/cgroup.controllers"; then
-	unexercised "io_controller_not_available_in_delegated_subtree"
+[ -w "$delegated_service/cgroup.subtree_control" ] || unexercised "delegated_service_parent_not_writable"
+[ -r "$delegated_service/cgroup.subtree_control" ] || unexercised "delegated_service_parent_mask_unreadable"
+[ -r "$delegated_service/cgroup.controllers" ] || unexercised "delegated_service_controllers_unreadable"
+[ -r "$delegated_parent/cgroup.controllers" ] || unexercised "delegate_subgroup_controllers_unreadable"
+service_subtree_initial_non_io=$(controllers_without_io "$delegated_service/cgroup.subtree_control")
+service_subtree_captured=yes
+if has_io "$delegated_service/cgroup.subtree_control"; then
+	service_io_initial=yes
+	unexercised "service_boundary_io_already_enabled"
+fi
+service_io_initial=no
+has_io "$delegated_service/cgroup.controllers" || unexercised "io_unavailable_at_delegated_service_boundary"
+if has_io "$delegated_parent/cgroup.controllers"; then
+	unexercised "manager_io_available_before_service_boundary_transition"
 fi
 if has_io "$delegated_parent/cgroup.subtree_control"; then
-	unexercised "delegated_parent_io_already_enabled"
+	unexercised "manager_io_already_enabled"
 fi
 [ -w "$delegated_parent/cgroup.subtree_control" ] || unexercised "delegated_parent_not_writable"
 [ ! -e "$driver" ] && [ ! -e "$payload" ] || unexercised "owned_cgroup_name_already_exists"
 [ "$("$busybox" wc -l <"$delegated_parent/cgroup.procs")" -eq 1 ] ||
 	unexercised "delegate_subgroup_did_not_contain_only_writer"
 "$busybox" grep -qx "$$" "$delegated_parent/cgroup.procs" || unexercised "writer_not_in_delegate_subgroup"
+
+emit "BEGIN pairs=$pairs direct_root_writes=none delegated_parent=systemd_service_child max_active_seconds=$active_budget_seconds"
+[ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] || unexercised "service_parent_populated_before_propagation"
+service_io_changed=yes
+if ! printf '%s\n' '+io' >"$delegated_service/cgroup.subtree_control"; then
+	unexercised service_boundary_propagation_write_failed
+fi
+has_io "$delegated_service/cgroup.subtree_control" || unexercised "service_boundary_io_not_enabled"
+has_io "$delegated_parent/cgroup.controllers" || unexercised "manager_io_not_available_after_service_boundary_transition"
+if has_io "$delegated_parent/cgroup.subtree_control"; then
+	unexercised "manager_io_enabled_before_fixture_setup"
+fi
+[ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] || unexercised "service_parent_populated_after_propagation"
+[ "$(controllers_without_io "$delegated_service/cgroup.subtree_control")" = "$service_subtree_initial_non_io" ] ||
+	unexercised "service_boundary_other_controllers_changed"
+emit "PROPAGATION service_io_initial=no service_io_enabled=yes service_parent_empty=yes "\
+	"manager_io_available=yes manager_subtree_io=no writer_pid=$$"
 
 "$busybox" mkdir "$driver" "$payload"
 printf '%s\n' "$$" >"$driver/cgroup.procs" || unexercised writer_move_failed
@@ -379,9 +444,9 @@ printf '%s\n' "$resident_pid" >"$payload/cgroup.procs" || unexercised resident_m
 resident_is_in_payload || unexercised resident_not_in_owned_payload
 manager_is_empty || unexercised delegated_parent_not_empty_before_toggle
 
-emit "BEGIN pairs=$pairs direct_root_writes=none delegated_parent=systemd_service_child max_active_seconds=$active_budget_seconds"
 emit "READY service_parent_empty=yes manager_empty=yes io_available=yes writer_in_driver=yes resident_in_payload=yes "\
-	"service_cgroup=$service_cgroup manager_cgroup=$service_cgroup/manager resident_pid=$resident_pid"
+	"service_io_propagated=yes service_cgroup=$service_cgroup manager_cgroup=$service_cgroup/manager "\
+	"resident_pid=$resident_pid"
 
 if [ ! -r "$tracefs/available_filter_functions" ]; then
 	if "$busybox" mount -t tracefs tracefs "$tracefs" 2>/dev/null; then

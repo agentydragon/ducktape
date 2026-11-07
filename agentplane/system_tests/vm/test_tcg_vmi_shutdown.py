@@ -750,17 +750,22 @@ def _delegated_cgroup_stress_complete(console: str) -> bool:
         f"{prefix}_BEGIN pairs={_DELEGATED_CGROUP_STRESS_PAIRS} direct_root_writes=none "
         "delegated_parent=systemd_service_child max_active_seconds=75"
     )
+    propagation = unique(f"{prefix}_PROPAGATION ")
     ready = unique(f"{prefix}_READY ")
     proof = unique(f"{prefix}_TRACE_PROOF ")
     trace_disabled = unique(f"{prefix}_TRACE_DISABLED tracing_on=0 current_tracer=nop before_stress=yes")
-    cleanup = unique(f"{prefix}_CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes")
+    cleanup = unique(
+        f"{prefix}_CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes "
+        "service_controller_restored=yes"
+    )
     success = unique(
         f"{prefix}_SUCCESS transitions={_DELEGATED_CGROUP_STRESS_PAIRS * 2} "
         "delegated_subtree_only=yes tracing_during_pairs=no"
     )
-    if None in (begin, ready, proof, trace_disabled, cleanup, success):
+    if None in (begin, propagation, ready, proof, trace_disabled, cleanup, success):
         return False
     assert begin is not None
+    assert propagation is not None
     assert ready is not None
     assert proof is not None
     assert trace_disabled is not None
@@ -768,14 +773,40 @@ def _delegated_cgroup_stress_complete(console: str) -> bool:
     assert success is not None
 
     ready_fields = fields(ready[1])
+    propagation_fields = fields(propagation[1])
+    if any(
+        propagation_fields.get(name) != value
+        for name, value in (
+            ("service_io_initial", "no"),
+            ("service_io_enabled", "yes"),
+            ("service_parent_empty", "yes"),
+            ("manager_io_available", "yes"),
+            ("manager_subtree_io", "no"),
+        )
+    ):
+        return False
+    if not propagation_fields.get("writer_pid", "").isdecimal():
+        return False
     if any(
         ready_fields.get(name) != "yes"
-        for name in ("service_parent_empty", "manager_empty", "io_available", "writer_in_driver", "resident_in_payload")
+        for name in (
+            "service_parent_empty",
+            "manager_empty",
+            "io_available",
+            "service_io_propagated",
+            "writer_in_driver",
+            "resident_in_payload",
+        )
     ):
         return False
     proof_fields = fields(proof[1])
     writer_pid = proof_fields.get("writer_pid", "")
-    if not writer_pid.isdecimal() or proof_fields.get("pid_match") != "yes" or proof_fields.get("status") != "proven":
+    if (
+        not writer_pid.isdecimal()
+        or propagation_fields.get("writer_pid") != writer_pid
+        or proof_fields.get("pid_match") != "yes"
+        or proof_fields.get("status") != "proven"
+    ):
         return False
     path = proof_fields.get("path", "").split(">")
     required_path = ("cgroup_subtree_control_write", "cgroup_update_dfl_csses", "percpu_down_write", "rcu_sync_enter")
@@ -825,7 +856,8 @@ def _delegated_cgroup_stress_complete(console: str) -> bool:
             return False
 
     return (
-        begin[0] < ready[0] < proof[0] < trace_disabled[0] < results[0][0] and results[-1][0] < cleanup[0] < success[0]
+        begin[0] < propagation[0] < ready[0] < proof[0] < trace_disabled[0] < results[0][0]
+        and results[-1][0] < cleanup[0] < success[0]
     )
 
 
@@ -1439,7 +1471,9 @@ def _delegated_cgroup_stress_records() -> list[str]:
     records = [
         f"{prefix}_BEGIN pairs={_DELEGATED_CGROUP_STRESS_PAIRS} direct_root_writes=none "
         "delegated_parent=systemd_service_child max_active_seconds=75",
-        f"{prefix}_READY service_parent_empty=yes manager_empty=yes io_available=yes "
+        f"{prefix}_PROPAGATION service_io_initial=no service_io_enabled=yes service_parent_empty=yes "
+        f"manager_io_available=yes manager_subtree_io=no writer_pid={writer_pid}",
+        f"{prefix}_READY service_parent_empty=yes manager_empty=yes io_available=yes service_io_propagated=yes "
         f"writer_in_driver=yes resident_in_payload=yes resident_pid={resident_pid}",
         f"{prefix}_TRACE_PROOF step=proof_on io=yes verified=yes writer_pid={writer_pid} pid_match=yes "
         "trace_integrity=clean trace_bytes=1024 trace_lines=20 status=proven tree=1 "
@@ -1454,7 +1488,8 @@ def _delegated_cgroup_stress_records() -> list[str]:
         )
     records.extend(
         (
-            f"{prefix}_CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes",
+            f"{prefix}_CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes "
+            "service_controller_restored=yes",
             f"{prefix}_SUCCESS transitions={_DELEGATED_CGROUP_STRESS_PAIRS * 2} "
             "delegated_subtree_only=yes tracing_during_pairs=no",
         )
@@ -1470,17 +1505,29 @@ def test_delegated_cgroup_stress_requires_owned_descendant_witness_and_clean_pai
     bad_pid = complete.replace("pid_match=yes", "pid_match=no")
     assert not _delegated_cgroup_stress_complete(bad_pid)
 
+    missing_propagation = complete.replace(f"{records[1]}\n", "")
+    assert not _delegated_cgroup_stress_complete(missing_propagation)
+
+    wrong_propagation = complete.replace("manager_io_available=yes", "manager_io_available=no")
+    assert not _delegated_cgroup_stress_complete(wrong_propagation)
+
+    wrong_propagation_pid = complete.replace(records[1], records[1].replace("writer_pid=321", "writer_pid=999"))
+    assert not _delegated_cgroup_stress_complete(wrong_propagation_pid)
+
+    missing_restore = complete.replace(" service_controller_restored=yes", "")
+    assert not _delegated_cgroup_stress_complete(missing_restore)
+
     bad_path = complete.replace(
         "cgroup_subtree_control_write>cgroup_apply_control>cgroup_update_dfl_csses>percpu_down_write>rcu_sync_enter",
         "rcu_sync_enter>cgroup_update_dfl_csses>percpu_down_write>cgroup_subtree_control_write",
     )
     assert not _delegated_cgroup_stress_complete(bad_path)
 
-    missing_reset = complete.replace(f"{records[4]}\n", "")
+    missing_reset = complete.replace(f"{records[5]}\n", "")
     assert not _delegated_cgroup_stress_complete(missing_reset)
 
     out_of_order = records.copy()
-    out_of_order[5], out_of_order[6] = out_of_order[6], out_of_order[5]
+    out_of_order[6], out_of_order[7] = out_of_order[7], out_of_order[6]
     assert not _delegated_cgroup_stress_complete("\n".join(out_of_order) + "\n")
 
     missing_cleanup = complete.replace(f"{records[-2]}\n", "")
