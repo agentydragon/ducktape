@@ -5,6 +5,8 @@
 The guest shutdown proof markers and bounded proof-helper sampling are described in
 [`proof_progress.md`](proof_progress.md), including the uncached one-guest validation and
 its diagnostic limits.
+The opt-in blocked-task SysRq experiment and its control results are in
+[`sysrq_capture.md`](sysrq_capture.md).
 The separate [synthetic slice probe](synthetic_slice.md) tests whether activating a
 short service in `agentplane.slice` exercises the boot-time cgroup controller path
 without starting Runtime.
