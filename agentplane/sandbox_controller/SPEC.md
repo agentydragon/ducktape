@@ -74,7 +74,9 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   `spiffe://agentplane/environment-runtime/<namespace>/<Sandbox UID>/<credential-id>` and has server
   authentication usage. The namespace Issuer signs it; cert-manager owns key generation and
   renewal. Runner TLS files mount from that generation's unique Secret, and the shared trust-manager
-  CA bundle supplies the root. A renewed key can update only its own generation's Secret.
+  CA bundle supplies the root. A Pod template cannot declare or claim the reserved runner TLS volume
+  name or mount path in any regular or init container. A renewed key can update only its own
+  generation's Secret.
 - A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
   first VMI UID is persisted on its VM and in the Sandbox's status. If KubeVirt unexpectedly replaces a VMI while
   the VM still carries the old identity, the controller halts that replacement, rotates to a new

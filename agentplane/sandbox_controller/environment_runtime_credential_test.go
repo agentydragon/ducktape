@@ -143,6 +143,47 @@ func TestPodRunnerTLSVolumeUsesCredentialSpecificSecret(t *testing.T) {
 	}
 }
 
+func TestPodRunnerTLSRejectsOtherContainersClaimingReservedMount(t *testing.T) {
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
+	template := &sandboxapi.SandboxTemplate{ObjectMeta: metav1.ObjectMeta{Namespace: sandbox.Namespace, Name: "environment-runtime"}}
+	cases := []struct {
+		name          string
+		container     corev1.Container
+		initContainer bool
+	}{
+		{
+			name: "workload mounts injected credential volume at another path",
+			container: corev1.Container{Name: "workload", VolumeMounts: []corev1.VolumeMount{{
+				Name: EnvironmentRuntimeTLSVolumeName, MountPath: "/stolen",
+			}}},
+		},
+		{
+			name: "init container claims reserved mount path",
+			container: corev1.Container{Name: "setup", VolumeMounts: []corev1.VolumeMount{{
+				Name: "template-volume", MountPath: EnvironmentRuntimeTLSMountPath,
+			}}},
+			initContainer: true,
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			podSpec := corev1.PodSpec{Containers: []corev1.Container{{Name: EnvironmentRuntimeContainer}}}
+			if test.initContainer {
+				podSpec.InitContainers = []corev1.Container{test.container}
+			} else {
+				podSpec.Containers = append(podSpec.Containers, test.container)
+			}
+			blocked := withRunnerTLS(sandbox, template, &podSpec, runnerCredentialTestID)
+			if blocked == nil || blocked.reason != "TemplateInvalid" {
+				t.Fatalf("reserved runner TLS mount was accepted: %v", blocked)
+			}
+			if len(podSpec.Volumes) != 0 || len(podSpec.Containers[0].VolumeMounts) != 0 {
+				t.Fatalf("rejected template was mutated before validation: volumes=%v runtime mounts=%v", podSpec.Volumes, podSpec.Containers[0].VolumeMounts)
+			}
+		})
+	}
+}
+
 func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 	ctx := context.Background()
 	sandbox := &sandboxapi.Sandbox{
