@@ -66,6 +66,17 @@ def test_forwarding_preserves_bytes_and_uses_authenticated_provenance():
     assert len(seen) == 1
 
 
+def test_internal_bearer_cannot_be_sent_over_plaintext():
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        RemoteSessionTransport(
+            instance_id="shield",
+            upstream_base_url="https://upstream.example/member",
+            provider_base_url="http://provider.internal",
+            owner_token=SecretStr("internal-owner"),
+            route_token=SecretStr("internal-routes"),
+        )
+
+
 def test_owner_identity_is_not_a_caller_supplied_header():
     def provider(request):
         assert request.headers["authorization"] == "Bearer internal-owner"

@@ -46,6 +46,8 @@ class RemoteSessionTransport:
         self.instance_id = instance_id
         self.upstream_base_url = _upstream_url(upstream_base_url)
         self.provider_base_url = _upstream_url(provider_base_url)
+        if urlsplit(self.provider_base_url).scheme != "https":
+            raise ValueError("Provider base URL must use HTTPS")
         if urlsplit(self.provider_base_url).path not in {"", "/"}:
             raise ValueError("Provider base URL must be an origin")
         self._upstream_prefix = _segments(urlsplit(self.upstream_base_url).path or "/")
