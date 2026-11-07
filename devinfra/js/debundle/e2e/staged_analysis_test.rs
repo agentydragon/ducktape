@@ -1317,7 +1317,7 @@ fn captured_value_bindings_survive_saved_program_summary() {
     .with_extra_chunks(&[("static/setup", SETUP), ("static/peer", PROVIDER)])
     .with_value_inputs("static/peer", vec![input]);
     let (staged, _fixture) = staged(opts);
-    // The premise provider belongs to the static-import closure, but is not a
+    // The premise provider belongs to the static-request closure, but is not a
     // materialization root. Analyze must retain it from canonical source sites.
     let projection: Value = rmp_serde::from_slice(&fs::read(&staged.projection).unwrap()).unwrap();
     assert_eq!(projection["analysed_chunks"], json!(["static/app"]));
@@ -1336,6 +1336,97 @@ fn captured_value_bindings_survive_saved_program_summary() {
         "41\n",
         "",
     );
+}
+
+fn assert_reexported_value_input_provider_is_in_saved_summary(bridge: &str) {
+    const PROVIDER: &str = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function read() { return captured.value; }\n";
+    const SETUP: &str = "globalThis.runtimeSettings = { state: { value: 41 } };\n";
+    let input = ValueInputContract {
+        source_match: serde_yaml::from_str(
+            "match: var captured = globalThis.runtimeSettings.state;\nbindings: [captured]\n",
+        )
+        .expect("source selector"),
+        value: CapturedValueContract {
+            kind: CapturedValueKind::OrdinaryObject,
+        },
+        audited_source_sha256: Sha256::digest(PROVIDER.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+        expected_export: None,
+        note: None,
+    };
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            "import './setup.js';\nimport './bridge.js';\nconst result = globalThis.runtimeSettings.state.value;\nconsole.log(result);\nexport { result };\n",
+            vec![logical_module("all", &[Member::new("result")])],
+        )
+        .with_extra_chunks(&[
+            ("static/setup", SETUP),
+            ("static/bridge", bridge),
+            ("static/peer", PROVIDER),
+        ])
+        .with_value_inputs("static/peer", vec![input]),
+    );
+
+    // The source premise belongs to the request closure, while only the
+    // consumer remains a selected analysis root.
+    let projection: Value = rmp_serde::from_slice(&fs::read(&staged.projection).unwrap()).unwrap();
+    assert_eq!(projection["analysed_chunks"], json!(["static/app"]));
+    assert_eq!(
+        projection["source_sites"]["value_inputs"]["static/peer"][0],
+        json!({"binding": "captured", "body_index": 0}),
+    );
+
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct re-exported captured-value run");
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&saved.result, "saved re-exported captured-value run");
+    assert_same_invocation_trees(&direct, &saved);
+
+    let source_entry = staged.root().join("snapshot/static/app.js");
+    let direct_entry = direct.output_root().join("app/static/app/entry.js");
+    let saved_entry = saved.output_root().join("app/static/app/entry.js");
+    for entry in [&source_entry, &direct_entry, &saved_entry] {
+        assert_node_output(entry, "41\n", "");
+    }
+
+    for invocation in [&direct, &saved] {
+        let program: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/program_graph.json.gz"),
+        );
+        let witnesses = program["native_integrity_witnesses"]
+            .as_array()
+            .expect("native-integrity census");
+        let peer_witnesses: Vec<_> = witnesses
+            .iter()
+            .filter(|witness| witness["chunk_id"] == "static/peer")
+            .collect();
+        assert_eq!(peer_witnesses.len(), 1, "{program:#}");
+        let witness = peer_witnesses[0];
+        assert_eq!(witness["operation"], "mutation_call", "{witness}");
+        assert_eq!(witness["affected_roots"], json!([]), "{witness}");
+        assert!(
+            witness["value_input_refs"]
+                .as_array()
+                .is_some_and(|refs| refs.iter().any(|reference| {
+                    reference["defining_chunk"] == "static/peer" && reference["input_index"] == 0
+                })),
+            "the peer writer must consume the selected captured-value input: {witness}"
+        );
+    }
+}
+
+#[test]
+fn named_and_star_reexports_keep_provider_inputs_in_saved_analysis() {
+    for bridge in [
+        "export { read } from './peer.js';\n",
+        "export * from './peer.js';\n",
+    ] {
+        assert_reexported_value_input_provider_is_in_saved_summary(bridge);
+    }
 }
 
 #[test]

@@ -2345,8 +2345,9 @@ one declared placeholder binding. `audited_source_sha256` must match the exact
 bytes recorded as the provider's parser input, including when the graph was
 freshly recaptured. `expected_export`, when present, must name a direct export
 of that exact local binding. The provider must be loaded, non-excluded and in
-the existing analyzed static-import closure. It may remain unmaterialized; this
-option does not select it as an emission root or change output ownership.
+the existing analyzed static-request closure, which follows runtime imports
+and sourced named/star re-exports. It may remain unmaterialized; this option
+does not select it as an emission root or change output ownership.
 
 The author audits that the successful initializer's direct value is an ordinary
 non-Proxy object whose identity differs from the actual global object and every
