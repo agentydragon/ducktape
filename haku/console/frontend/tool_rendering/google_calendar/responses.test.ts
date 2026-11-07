@@ -14,13 +14,13 @@ const recurringEvent = {
 };
 
 describe("googleCalendarResultPreviews", () => {
-  it("renders the focused event shape for get", () => {
+  it("accepts the focused event shape for get", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(renderResultPreview(googleCalendarResultPreviews.get_event, recurringEvent, variant)).not.toBeNull();
     }
   });
 
-  it("renders event pages for list and instances", () => {
+  it("accepts event pages for list and instances", () => {
     const page = { events: [recurringEvent], next_page_token: "next-page" };
     expect(renderResultPreview(googleCalendarResultPreviews.list_events, page, "compact")).not.toBeNull();
     expect(renderResultPreview(googleCalendarResultPreviews.list_event_instances, page, "detailed")).not.toBeNull();

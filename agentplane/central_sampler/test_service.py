@@ -352,7 +352,10 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             entry.event.HasField("boundary_record") and entry.event.boundary_record.boundary == "provider"
             for entry in events
         )
-        assert all(intent.result is not None for intent in await store.intents())
+        intents = await store.intents()
+        assert any(intent.request.get("kind") == "sampling" for intent in intents)
+        assert sum(intent.request.get("kind") == "compaction" for intent in intents) == 1
+        assert all(intent.result is not None for intent in intents)
 
 
 async def test_interrupt_streaming_evidence_and_uid_authorization(

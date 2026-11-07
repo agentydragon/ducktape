@@ -27,7 +27,7 @@ describe("create_event action description", () => {
 const UPDATE_ARGS = { event_id: "evt1", summary: "Court hearing" };
 
 describe("googleCalendarCallPreviews.update_event", () => {
-  it("renders the pending (patch) view before the call has executed, in both variants", () => {
+  it("accepts the pending (patch) view before the call has executed, in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(renderCallPreview(googleCalendarCallPreviews.update_event, UPDATE_ARGS, null, variant)).not.toBeNull();
     }
