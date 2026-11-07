@@ -1,0 +1,190 @@
+#!/usr/bin/busybox sh
+# Opt-in, bounded systemd controller changes with a live descendant task.
+set -eu
+busybox=/usr/bin/busybox
+unit=agentplane-cgroup-pilot-resident.service
+slice=/sys/fs/cgroup/pilot.slice
+tracefs=/sys/kernel/tracing
+scratch=$("$busybox" mktemp -d /run/agentplane-cgroup-pilot.XXXXXX)
+"$busybox" chmod 0700 "$scratch"
+record_file=$scratch/record
+trace_owned=no
+trace_mounted=no
+trace_supported=no
+trace_reason=unavailable
+trace_hits_total=0
+
+emit() {
+	printf '\nAGENTPLANE_CGROUP_PILOT_%s\n' "$*" >"$record_file"
+	bytes=$("$busybox" wc -c <"$record_file")
+	[ "$bytes" -le 2048 ] || exit 1
+	"$busybox" dd if="$record_file" bs=2048 count=1 2>/dev/null
+}
+
+cleanup() {
+	if [ "$trace_owned" = yes ]; then
+		printf '0\n' >"$tracefs/tracing_on" || true
+		printf 'nop\n' >"$tracefs/current_tracer" || true
+		printf '\n' >"$tracefs/set_ftrace_pid" || true
+		printf '\n' >"$tracefs/set_graph_function" || true
+		printf '%s\n' "$trace_buffer_initial" >"$tracefs/buffer_size_kb" || true
+		printf '%s\n' "$trace_on_initial" >"$tracefs/tracing_on" || true
+	fi
+	if [ "$trace_mounted" = yes ]; then
+		"$busybox" umount "$tracefs" || true
+	fi
+	"$busybox" timeout -s TERM 12 /usr/bin/systemctl stop "$unit" >/dev/null 2>&1 || true
+	"$busybox" rm -rf "$scratch"
+}
+trap cleanup EXIT
+
+mask() {
+	if [ -r "$1" ]; then
+		"$busybox" head -c 128 "$1" | "$busybox" tr ' ' ',' | "$busybox" tr -d '\n'
+	else
+		printf 'unavailable'
+	fi
+}
+
+resident_alive() {
+	resident_pid=$(/usr/bin/systemctl show -P MainPID "$unit" 2>/dev/null || printf '0')
+	case "$resident_pid" in
+	'' | 0 | *[!0-9]*) return 1 ;;
+	esac
+	[ -d "/proc/$resident_pid" ] &&
+		"$busybox" grep -qx "$resident_pid" "$slice/$unit/cgroup.procs"
+}
+
+snapshot() {
+	root_mask=$(mask /sys/fs/cgroup/cgroup.subtree_control)
+	slice_mask=$(mask "$slice/cgroup.subtree_control")
+	if resident_alive; then resident=yes; else resident=no; fi
+	uptime=$("$busybox" awk '{print $1}' /proc/uptime)
+	emit "SNAPSHOT step=$1 uptime=$uptime root=$root_mask slice=$slice_mask resident=$resident pid=$resident_pid"
+}
+
+setup_trace() {
+	if [ ! -r "$tracefs/available_filter_functions" ]; then
+		if "$busybox" mount -t tracefs tracefs "$tracefs" 2>/dev/null; then
+			trace_mounted=yes
+		else
+			trace_reason=tracefs_unavailable
+			return
+		fi
+	fi
+	if [ ! -w "$tracefs/set_graph_function" ]; then
+		trace_reason=function_graph_unavailable
+		return
+	fi
+	if ! "$busybox" grep -Eq '^cgroup_subtree_control_write([[:space:]]|$)' "$tracefs/available_filter_functions"; then
+		trace_reason=subtree_function_unavailable
+		return
+	fi
+	if [ "$("$busybox" cat "$tracefs/current_tracer")" != nop ]; then
+		trace_reason=tracer_busy
+		return
+	fi
+	filter_state=$("$busybox" head -c 256 "$tracefs/set_ftrace_filter")
+	graph_state=$("$busybox" head -c 256 "$tracefs/set_graph_function")
+	pid_state=$("$busybox" head -c 256 "$tracefs/set_ftrace_pid")
+	case "$filter_state" in
+	'' | '#### all functions enabled ####') ;;
+	*)
+		trace_reason=preexisting_function_filter
+		return
+		;;
+	esac
+	case "$graph_state" in
+	'' | '#### all functions enabled ####') ;;
+	*)
+		trace_reason=preexisting_graph_filter
+		return
+		;;
+	esac
+	case "$pid_state" in
+	'' | 'no pid') ;;
+	*)
+		trace_reason=preexisting_pid_filter
+		return
+		;;
+	esac
+	trace_on_initial=$("$busybox" cat "$tracefs/tracing_on")
+	trace_buffer_initial=$("$busybox" cat "$tracefs/buffer_size_kb")
+	trace_owned=yes
+	if printf '0\n' >"$tracefs/tracing_on" &&
+		printf '64\n' >"$tracefs/buffer_size_kb" &&
+		printf 'cgroup_subtree_control_write\n' >"$tracefs/set_graph_function" &&
+		printf '1\n' >"$tracefs/set_ftrace_pid" &&
+		printf 'function_graph\n' >"$tracefs/current_tracer"; then
+		trace_supported=yes
+		trace_reason=enabled_pid1_graph_64kib
+	else
+		trace_reason=setup_failed
+	fi
+}
+
+change_property() {
+	step=$1
+	value=$2
+	snapshot "${step}_before"
+	if [ "$resident" != yes ]; then
+		emit "UNEXERCISED step=$step reason=no_descendant_task"
+		exit 1
+	fi
+	if [ "$trace_supported" = yes ]; then
+		printf '0\n' >"$tracefs/tracing_on"
+		printf '\n' >"$tracefs/trace"
+		printf '1\n' >"$tracefs/tracing_on"
+	fi
+	if "$busybox" timeout -s TERM 12 /usr/bin/systemctl set-property --runtime "$unit" "IOAccounting=$value" >"$scratch/property-output" 2>&1; then
+		property_status=0
+	else
+		property_status=$?
+	fi
+	"$busybox" sleep 1
+	trace_hits=unavailable
+	trace_lock=unavailable
+	trace_rcu=unavailable
+	if [ "$trace_supported" = yes ]; then
+		printf '0\n' >"$tracefs/tracing_on"
+		trace_hits=$("$busybox" grep -c 'cgroup_update_dfl_csses' "$tracefs/trace" || true)
+		trace_lock=$("$busybox" grep -c 'percpu_down_write' "$tracefs/trace" || true)
+		trace_rcu=$("$busybox" grep -c 'rcu_sync_enter' "$tracefs/trace" || true)
+		trace_hits_total=$((trace_hits_total + trace_hits))
+		for symbol in cgroup_subtree_control_write cgroup_update_dfl_csses percpu_down_write rcu_sync_enter; do
+			trace_line=$("$busybox" grep -m 1 "$symbol" "$tracefs/trace" | "$busybox" head -c 180 | "$busybox" tr '\n\r' '  ' || true)
+			[ -n "$trace_line" ] || trace_line=none
+			emit "TRACE step=$step symbol=$symbol first=$trace_line"
+		done
+	fi
+	snapshot "${step}_after"
+	emit "RESULT step=$step value=$value property_status=$property_status trace=$trace_reason update_hits=$trace_hits lock_hits=$trace_lock rcu_hits=$trace_rcu"
+	case ",$slice_mask," in
+	*,io,*) io_enabled=yes ;;
+	*) io_enabled=no ;;
+	esac
+	if [ "$property_status" -ne 0 ] || [ "$resident" != yes ] || [ "$io_enabled" != "$value" ]; then
+		emit "UNEXERCISED step=$step property_status=$property_status resident=$resident io_enabled=$io_enabled expected=$value"
+		exit 1
+	fi
+}
+
+emit 'BEGIN pairs=2 direct_root_writes=none'
+/usr/bin/systemctl start --no-block "$unit"
+attempt=0
+until resident_alive; do
+	[ "$attempt" -lt 15 ] || {
+		emit 'UNEXERCISED reason=resident_not_running'
+		exit 1
+	}
+	attempt=$((attempt + 1))
+	"$busybox" sleep 1
+done
+snapshot baseline
+setup_trace
+emit "TRACE_SETUP status=$trace_reason"
+change_property pair1_on yes
+change_property pair1_off no
+change_property pair2_on yes
+change_property pair2_off no
+emit "SUCCESS transitions=4 trace=$trace_reason trace_hits_total=$trace_hits_total"
