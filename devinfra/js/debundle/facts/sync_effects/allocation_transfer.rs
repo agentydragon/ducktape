@@ -369,7 +369,7 @@ pub(super) fn transfer(
             Values::from([AbstractValue::UNDEFINED])
         }
         ValueExpr::NonCallable(kinds) => {
-            context.unmodeled_effect_operation();
+            context.noninvoking_operation();
             Values::from([AbstractValue::Value(Value::Prim(*kinds))])
         }
         ValueExpr::StrictEquality(left, right) => {
