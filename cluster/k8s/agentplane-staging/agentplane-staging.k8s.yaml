@@ -12389,6 +12389,8 @@ spec:
         - ports:
             - port: "8888"
               protocol: TCP
+            - port: "8081"
+              protocol: TCP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

@@ -148,6 +148,7 @@ ducktapePkgs
   # Build: nix build .#openclaw-image
   # Load:  docker load < result
   openclaw-image = import ../../openclaw {
+    agentplaneCli = self.packages.${system}.agentplane-cli;
     inherit
       ducktapePkgs
       nix-openclaw

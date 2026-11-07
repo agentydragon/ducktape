@@ -2,6 +2,7 @@
   pkgs,
   nix-openclaw,
   ducktapePkgs,
+  agentplaneCli,
   ruffLatest,
 }:
 
@@ -89,6 +90,7 @@ let
     ++ [
       # Local pre-commit hooks call these entry points. The package wraps its own compatible
       # Python + pygit2 closure, rather than depending on a persisted pip venv from an older image.
+      agentplaneCli
       ducktapePkgs.ducktape-git-hooks
       # The Nix package carries the repository's pinned Prettier plugins and wraps NODE_PATH so
       # .prettierrc.cjs resolves reliably inside the minimal image.

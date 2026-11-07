@@ -1337,6 +1337,12 @@ py_test(
 py_library(
     name = "platform_routes",
     srcs = ["platform_routes.py"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane/testing:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
     deps = [
         ":egress",
         ":history_service",

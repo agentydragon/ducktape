@@ -28,7 +28,8 @@ To resume, move the app directory back under `cluster/k8s` and drop the parked
 annotation, per `cluster/AGENTS.md`; restore the OpenClaw replica count and
 unsuspend the backup. The OpenClaw image workflow and smoke script are parked in
 `cluster/parked/public-coder-agent/ci/`; move them back and publish a fresh image
-before resuming. The Haku Kubernetes API route and bearer were removed and will not
+before resuming. Ensure the rebuilt image contains the gRPC-capable `agentplane` CLI and verify
+`agentplane egress rules` through the sidecar route. The Haku Kubernetes API route and bearer were removed and will not
 return with the app. Verify model budgets and credentials first; do not reset retained
 PVCs or change the embedding identity.
 

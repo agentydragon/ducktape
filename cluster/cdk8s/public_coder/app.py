@@ -23,6 +23,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import agent_access_profiles as access, namespaces
+from cluster.cdk8s.agentplane.platform_routes import ROUTE_BEARER
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -186,6 +187,8 @@ def _openclaw_container() -> k8s.Container:
             # placeholder: Agentplane egress replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
             _env("MATRIX_PASSWORD", placeholder_of(public_coder_egress.MATRIX_CREDENTIAL)),
+            _env("AGENTPLANE_EGRESS_GRPC_URL", f"http://{public_coder_egress.RULES_ROUTE.local_target}"),
+            _env("AGENTPLANE_EGRESS_GRPC_CREDENTIAL", ROUTE_BEARER),
             # Node does not honour proxy environment variables by default.
             _env("NODE_USE_ENV_PROXY", "1"),
             _env("HTTP_PROXY", _EGRESS_PROXY),
@@ -497,7 +500,10 @@ def _network_policies(scope: Construct) -> None:
                 ),
                 k8s.NetworkPolicyEgressRule(
                     to=[_peer(public_coder_egress.GATEWAY.pods.namespace, public_coder_egress.GATEWAY.pods.selector)],
-                    ports=[_tcp(public_coder_egress.GATEWAY.pod_port)],
+                    ports=[
+                        _tcp(public_coder_egress.GATEWAY.pod_port),
+                        _tcp(public_coder_egress.RULES_ROUTE.service.pod_port),
+                    ],
                 ),
                 k8s.NetworkPolicyEgressRule(
                     to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]

@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
+import yaml
 from cdk8s import (
     App,
     Chart,
@@ -153,14 +154,30 @@ def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[
 
 def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, Any]]) -> None:
     rules = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
-    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8888, 4000}
-    gateway = one(r for r in rules if r["ports"] == [{"port": 8888, "protocol": "TCP"}])
+    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8081, 8888, 4000}
+    gateway = one(r for r in rules if {p["port"] for p in r["ports"]} == {8888, 8081})
     assert gateway["to"] == [
         {
             "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "agentplane-staging"}},
             "podSelector": {"matchLabels": public_coder_egress.GATEWAY.pods.selector},
         }
     ]
+
+
+def test_rules_route_wires_workload_identity_without_mounting_the_token_into_openclaw(
+    app_objects: list[dict[str, Any]],
+) -> None:
+    settings = yaml.safe_load(_one(app_objects, "ConfigMap", "openclaw-egress-sidecar")["data"]["settings.yaml"])
+    route = settings["platform_routes"]["egress-rules"]
+    assert route["listen_address"] == "127.0.0.1:3133"
+    assert route["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
+    assert route["token_file"] == settings["proxy"]["transport"]["auth"]["token_file"]
+    pod = _one(app_objects, "Deployment", "public-coder-agent")["spec"]["template"]["spec"]
+    app = one(c for c in pod["containers"] if c["name"] == "openclaw")
+    env = {item["name"]: item.get("value") for item in app["env"]}
+    assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3133"
+    assert env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
+    assert "agentplane-egress-token" not in {mount["name"] for mount in app["volumeMounts"]}
 
 
 if __name__ == "__main__":
