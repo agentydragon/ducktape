@@ -4083,7 +4083,7 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);
-        assert_inline_operation_receipt(&fixture, "result", 1, expression);
+        assert_operation_receipt(&fixture, "result", 1);
         let report = fixture.effect_translation_validation();
         assert_eq!(report["swapped_pairs"], 1, "{expression}: {report:#}");
         assert_eq!(
@@ -4148,7 +4148,7 @@ fn noncoercing_scalar_results_keep_local_call_receipts() {
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);
-        assert_inline_operation_receipt(&fixture, "result", 1, expression);
+        assert_operation_receipt(&fixture, "result", 1);
     }
 }
 
@@ -4166,7 +4166,7 @@ fn scalar_call_receipt_accepts_independent_statement_inversion() {
         )],
     ));
     assert_preserved_entry_output(&fixture, "7 false\n");
-    assert_inline_operation_receipt(&fixture, "result", 1, "scalar inversion");
+    assert_operation_receipt(&fixture, "result", 1);
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
     assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
@@ -4197,7 +4197,7 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
             )],
         ));
         assert_preserved_entry_output(&fixture, expected);
-        assert_inline_operation_receipt(&fixture, "result", 1, body);
+        assert_operation_receipt(&fixture, "result", 1);
         let report = fixture.effect_translation_validation();
         assert_eq!(report["swapped_pairs"], 1, "{body}: {report:#}");
         assert_eq!(
@@ -4225,7 +4225,7 @@ fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion(
         )],
     ));
     assert_preserved_entry_output(&fixture, "7 2\n");
-    assert_inline_operation_receipt(&fixture, "result", 2, "parameter update");
+    assert_operation_receipt(&fixture, "result", 2);
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
     assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
