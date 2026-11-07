@@ -9,7 +9,14 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import Receive, Scope, Send
 
 from platform_sessions.auth import BearerAuth
-from platform_sessions.proxy import _REQUEST_PRIVATE, _RESPONSE_PRIVATE, ProxyInstance, ProxyRequest, _filter_headers
+from platform_sessions.proxy import (
+    _REQUEST_PRIVATE,
+    _RESPONSE_PRIVATE,
+    ProxyInstance,
+    ProxyRequest,
+    _filter_headers,
+    _relative_location,
+)
 from platform_sessions.routes import authorize_route
 
 RESULT_HEADER = b"x-platform-session-proxy-result"
@@ -81,6 +88,17 @@ class ProviderProxy:
             headers = _filter_headers(
                 result.headers, _RESPONSE_PRIVATE | {b"content-length", RESULT_HEADER}, instance.headers.response
             )
+            if 300 <= result.status < 400:
+                locations = [value for name, value in headers if name == b"location"]
+                if len(locations) > 1:
+                    raise ValueError("Multiple redirect locations")
+                if locations:
+                    upstream_url = mapped.upstream_url
+                    query = request.scope.get("query_string", b"")
+                    if query:
+                        upstream_url += "?" + query.decode("ascii")
+                    location = _relative_location(locations[0], upstream_url, instance.config.upstream_base_url)
+                    headers = tuple((name, location if name == b"location" else value) for name, value in headers)
             response = Response(content=result.body, status_code=result.status)
             response.raw_headers.extend(headers)
             response.raw_headers.append((RESULT_HEADER, RESULT_VERSION))

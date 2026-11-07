@@ -116,15 +116,6 @@ func validateHTTPConfig(service *Service, config HTTPConfig) error {
 		if err != nil || origin.Scheme != "https" || origin.Host == "" || origin.User != nil || (origin.Path != "" && origin.Path != "/") || origin.RawQuery != "" || origin.Fragment != "" {
 			return errors.New("invalid provider origin")
 		}
-		base, err := url.Parse(provider.Upstream)
-		if err != nil || (base.Scheme != "https" && base.Scheme != "http") || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" {
-			return errors.New("invalid upstream base")
-		}
-		if base.EscapedPath() != "" {
-			if _, err := segments(base.EscapedPath(), false); err != nil {
-				return errors.New("invalid upstream base")
-			}
-		}
 		if !validCredential(provider.OwnerToken) || !validCredential(provider.RouteToken) || provider.OwnerToken == provider.RouteToken {
 			return errors.New("invalid provider credentials")
 		}

@@ -24,10 +24,9 @@ import (
 )
 
 type instance struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Enabled  *bool  `json:"enabled"`
-	Upstream string `json:"upstream_base_url"`
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Enabled *bool  `json:"enabled"`
 }
 type instancesConfig struct {
 	Integrations []instance `json:"integrations"`
@@ -47,10 +46,6 @@ type bearerConfig struct {
 	TokenFile string          `json:"token_file"`
 	Role      string          `json:"role"`
 	Allow     []gateway.Route `json:"allow"`
-}
-type headerConfig struct {
-	Request  []string `json:"request"`
-	Response []string `json:"response"`
 }
 
 func decodeEnv(name string, target any) error {
@@ -82,8 +77,7 @@ func run() error {
 	var cfg instancesConfig
 	var connections map[string]connection
 	var bearerSettings map[string]bearerConfig
-	var headers map[string]headerConfig
-	if decodeEnv("PLATFORM_SESSIONS_INTEGRATION_CONFIG", &cfg) != nil || decodeEnv("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", &connections) != nil || decodeEnv("PLATFORM_SESSIONS_BEARERS", &bearerSettings) != nil || decodeEnv("PLATFORM_SESSIONS_PROXY_HEADERS", &headers) != nil {
+	if decodeEnv("PLATFORM_SESSIONS_INTEGRATION_CONFIG", &cfg) != nil || decodeEnv("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", &connections) != nil || decodeEnv("PLATFORM_SESSIONS_BEARERS", &bearerSettings) != nil {
 		return errors.New("invalid gateway configuration")
 	}
 	var controls []gateway.Provider
@@ -120,16 +114,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		h := headers[item.ID]
-		providers[item.ID] = gateway.ProviderHTTPConfig{ID: item.ID, Origin: c.Origin, Upstream: item.Upstream, OwnerToken: owner, RouteToken: route, CAFile: c.HTTPCAFile, RequestHeaders: h.Request, ResponseHeaders: h.Response}
+		providers[item.ID] = gateway.ProviderHTTPConfig{ID: item.ID, Origin: c.Origin, OwnerToken: owner, RouteToken: route, CAFile: c.HTTPCAFile}
 	}
 	if len(connections) != len(providers) {
 		return errors.New("provider connections must match enabled instances")
-	}
-	for id := range headers {
-		if _, ok := providers[id]; !ok {
-			return errors.New("proxy headers reference an unknown instance")
-		}
 	}
 	var bearers []gateway.Bearer
 	for _, b := range bearerSettings {

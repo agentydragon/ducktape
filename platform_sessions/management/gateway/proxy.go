@@ -28,8 +28,7 @@ type Bearer struct {
 	Routes []Route
 }
 type ProviderHTTPConfig struct {
-	ID, Upstream, Origin, OwnerToken, RouteToken, CAFile string
-	RequestHeaders, ResponseHeaders                      []string
+	ID, Origin, OwnerToken, RouteToken, CAFile string
 }
 type proxy struct {
 	providers map[string]ProviderHTTPConfig
@@ -118,16 +117,13 @@ var (
 	hopHeaders      = map[string]bool{"connection": true, "keep-alive": true, "proxy-authenticate": true, "proxy-authorization": true, "te": true, "trailer": true, "transfer-encoding": true, "upgrade": true}
 )
 
-func filterHeaders(source http.Header, private map[string]bool, extra []string) http.Header {
+func filterHeaders(source http.Header, private map[string]bool) http.Header {
 	blocked := map[string]bool{}
 	for k := range hopHeaders {
 		blocked[k] = true
 	}
 	for k := range private {
 		blocked[k] = true
-	}
-	for _, k := range extra {
-		blocked[strings.ToLower(k)] = true
 	}
 	for _, value := range source.Values("Connection") {
 		for _, name := range strings.Split(value, ",") {
@@ -196,7 +192,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		proxyError(w, 502, "upstream_unavailable")
 		return
 	}
-	upstream.Header = filterHeaders(r.Header, requestPrivate, provider.RequestHeaders)
+	upstream.Header = filterHeaders(r.Header, requestPrivate)
 	token := provider.RouteToken
 	if principal.Owner {
 		token = provider.OwnerToken
@@ -231,14 +227,14 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		proxyError(w, 502, "upstream_unavailable")
 		return
 	}
-	headers := filterHeaders(response.Header, responsePrivate, provider.ResponseHeaders)
+	headers := filterHeaders(response.Header, responsePrivate)
 	if response.StatusCode >= 300 && response.StatusCode < 400 && len(headers.Values("Location")) > 0 {
 		locations := headers.Values("Location")
 		if len(locations) != 1 {
 			proxyError(w, 502, "upstream_unavailable")
 			return
 		}
-		location, err := rewriteLocation(locations[0], provider.Upstream, instance, path, r.URL.RawQuery)
+		location, err := rewriteLocation(locations[0], instance)
 		if err != nil {
 			proxyError(w, 502, "upstream_unavailable")
 			return
@@ -254,43 +250,15 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func rewriteLocation(location, baseURL, instance string, path []string, query string) (string, error) {
-	base, err := url.Parse(baseURL)
-	if err != nil || base.Scheme == "" || base.Host == "" || base.User != nil {
-		return "", errors.New("invalid upstream")
+func rewriteLocation(location, instance string) (string, error) {
+	target, err := url.Parse(location)
+	if err != nil || target.IsAbs() || target.Host != "" || target.User != nil || !strings.HasPrefix(target.Path, "/") {
+		return "", errors.New("invalid provider redirect")
 	}
-	prefix, err := segments(base.EscapedPath(), false)
-	if base.EscapedPath() == "" {
-		prefix = nil
-		err = nil
-	}
+	path, err := segments(target.EscapedPath(), false)
 	if err != nil {
-		return "", err
+		return "", errors.New("invalid provider redirect")
 	}
-	combined := append(append([]string(nil), prefix...), path...)
-	current, err := url.Parse(base.Scheme + "://" + base.Host + escaped(combined))
-	if err != nil {
-		return "", err
-	}
-	current.RawQuery = query
-	loc, err := url.Parse(location)
-	if err != nil || loc.User != nil {
-		return "", errors.New("invalid redirect")
-	}
-	target := current.ResolveReference(loc)
-	if !strings.EqualFold(target.Scheme, base.Scheme) || !strings.EqualFold(target.Host, base.Host) {
-		return "", errors.New("redirect outside origin")
-	}
-	output, err := segments(target.EscapedPath(), false)
-	if err != nil || len(output) < len(prefix) {
-		return "", errors.New("invalid redirect")
-	}
-	for i, v := range prefix {
-		if output[i] != v {
-			return "", errors.New("redirect outside prefix")
-		}
-	}
-	relative := output[len(prefix):]
-	result := &url.URL{Path: "/proxy/" + instance + "/" + strings.Join(relative, "/"), RawPath: "/proxy/" + instance + escaped(relative), RawQuery: target.RawQuery, Fragment: target.Fragment}
+	result := &url.URL{Path: "/proxy/" + instance + "/" + strings.Join(path, "/"), RawPath: "/proxy/" + instance + escaped(path), RawQuery: target.RawQuery, Fragment: target.Fragment}
 	return result.String(), nil
 }
