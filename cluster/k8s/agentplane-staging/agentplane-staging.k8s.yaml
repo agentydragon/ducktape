@@ -1315,6 +1315,9 @@ spec:
             - containerPort: 8080
               name: http
               protocol: TCP
+            - containerPort: 8081
+              name: grpc
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
             httpGet:
@@ -1387,6 +1390,10 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
+    - name: grpc
+      port: 8081
+      protocol: TCP
+      targetPort: 8081
   selector:
     cdk8s.io/metadata.addr: agentplane-llm-ingress-deployment-c81387cd
   type: ClusterIP
@@ -4756,6 +4763,10 @@ data:
         listen_address: 127.0.0.1:3133
         upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/token
+      model-config:
+        listen_address: 127.0.0.1:3134
+        upstream: llm-ingress.agentplane-staging.svc.cluster.local:8081
+        token_file: /var/run/agentplane-egress/token
     listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
@@ -5160,6 +5171,10 @@ data:
       egress-rules:
         listen_address: 0.0.0.0:3133
         upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
+        token_file: /var/run/agentplane-egress/token
+      model-config:
+        listen_address: 0.0.0.0:3134
+        upstream: llm-ingress.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/token
     listen_address: 0.0.0.0:3128
     readiness_listen_address: 0.0.0.0:3129
@@ -5763,6 +5778,14 @@ spec:
         - ports:
             - port: "8081"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: llm-ingress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-environment-runtime
@@ -5814,6 +5837,25 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-environment-runtime
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: platform-route-model-config
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: llm-ingress
   ingress:
     - fromEndpoints:
         - matchLabels:

@@ -938,6 +938,7 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
 		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",
 		"AGENTPLANE_LLM_INGRESS_PORT=" + strconv.Itoa(port),
+		"AGENTPLANE_LLM_INGRESS_GRPC_PORT=0",
 		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=test-environment-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
