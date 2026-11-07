@@ -31,11 +31,92 @@ fn assert_property_frontier(graph: &DependencyGraphReport, later: usize, earlier
     );
 }
 
-fn assert_binding_own_property_frontier(
+fn assert_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str) -> u32 {
+    let source = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("missing {binding} source unit: {graph:#?}"));
+    let execution = source
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} execution evidence: {source:#?}"));
+    let heap = execution
+        .heap_frontier
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} heap evidence: {execution:#?}"));
+    let reads = &heap.non_assumed_heap_accesses.reads;
+    assert_eq!(
+        reads.count,
+        reads.sample.len(),
+        "all non-assumed reads must fit the bounded sample: {reads:#?}"
+    );
+    reads
+        .sample
+        .iter()
+        .find_map(|cell| match cell {
+            analysis::reports::schema::EffectCellReport::OwnProperty { origin, property }
+                if property == "length" =>
+            {
+                Some(*origin)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            panic!("{binding} did not record an exact non-assumed length read: {reads:#?}")
+        })
+}
+
+fn assert_no_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str, case: &str) {
+    let source = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("{case}: missing {binding} source unit: {graph:#?}"));
+    let execution = source
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("{case}: missing execution evidence: {source:#?}"));
+    assert!(
+        !matches!(
+            execution.binding_effect_authority.as_ref(),
+            Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+        ),
+        "{case}: unsupported length read acquired ordered operation authority: {execution:#?}"
+    );
+    if let Some(heap) = &execution.heap_frontier {
+        let reads = &heap.non_assumed_heap_accesses.reads;
+        assert_eq!(
+            reads.count,
+            reads.sample.len(),
+            "{case}: all non-assumed reads must fit the bounded sample: {reads:#?}"
+        );
+        assert!(
+            !reads.sample.iter().any(|cell| matches!(
+                cell,
+                analysis::reports::schema::EffectCellReport::OwnProperty {
+                    property,
+                    ..
+                } if property == "length"
+            )),
+            "{case}: unsupported shape recorded an exact non-assumed length read: {reads:#?}"
+        );
+    }
+}
+
+fn assert_push_preserves_root_length_read(
     graph: &DependencyGraphReport,
     later_binding: &str,
     earlier_binding: &str,
-    property: &str,
+    read_origin: u32,
 ) {
     let source_unit = |binding: &str| {
         graph
@@ -61,15 +142,21 @@ fn assert_binding_own_property_frontier(
                 && serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
                     .as_array()
                     .is_some_and(|conflicts| {
-                        conflicts.iter().any(|conflict| {
+                        let has_array_content_read = conflicts.iter().any(|conflict| {
                             conflict["kind"] == "write_after_read"
+                                && conflict["cell"]["kind"] == "array_contents"
+                                && conflict["cell"]["origin"] == read_origin
+                        });
+                        let has_length_frontier = conflicts.iter().any(|conflict| {
+                            conflict["kind"] == "frontier_after_cell"
                                 && conflict["cell"]["kind"] == "own_property"
-                                && conflict["cell"]["property"] == property
-                                && conflict["cell"]["origin"].as_u64().is_some()
-                        })
+                                && conflict["cell"]["property"] == "length"
+                                && conflict["cell"]["origin"] == read_origin
+                        });
+                        has_array_content_read && has_length_frontier
                     })
         }),
-        "own-property {property} writer {later_binding} must follow reader {earlier_binding}: {:#?}",
+        "push {later_binding} must preserve root length read {earlier_binding}: {:#?}",
         graph.edges,
     );
 }
@@ -465,12 +552,14 @@ fn a_root_dense_array_length_read_orders_against_push_and_preserves_output() {
         .with_dataflow_aware_s_chain(),
     );
     assert_preserved_entry_output(&fixture, "0 1\n");
-    assert_binding_own_property_frontier(&fixture.dependency_graph(), "alpha", "gamma", "length");
+    let graph = fixture.dependency_graph();
+    let length_origin = assert_non_assumed_length_read(&graph, "gamma");
+    assert_push_preserves_root_length_read(&graph, "alpha", "gamma", length_origin);
 }
 
 #[test]
 fn push_cannot_be_forced_before_a_root_array_length_read() {
-    let source = "const store = [];\nfunction append() { return store.push(1); }\nconst gamma = store.length;\nconst keep = append;\nconst alpha = append();\nconsole.log(gamma, alpha);\n";
+    let source = "const store = [];\nconst append = () => store.push(1);\nconst gamma = store.length;\nconst keep = append;\nconst alpha = append();\nconsole.log(gamma, alpha);\n";
     let rejected = run_emit_on_rejection_fixture(
         FixtureOpts::new(
             source,
@@ -500,7 +589,8 @@ fn push_cannot_be_forced_before_a_root_array_length_read() {
     assert_node_output(&rejected.entry_path(), "1 1\n", "");
 
     let graph = rejected.dependency_graph();
-    assert_binding_own_property_frontier(&graph, "alpha", "gamma", "length");
+    let length_origin = assert_non_assumed_length_read(&graph, "gamma");
+    assert_push_preserves_root_length_read(&graph, "alpha", "gamma", length_origin);
     let cycles = rejected.cycles();
     assert!(
         cycles.iter().any(|cycle| {
@@ -532,7 +622,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         )],
     ));
     assert_preserved_entry_output(&getter, "7 get\n");
-    assert_no_fallback_suppressing_authority(&getter, "gamma", "length getter");
+    assert_no_non_assumed_length_read(&getter.dependency_graph(), "gamma", "length getter");
 
     let unknown = run_fixture(FixtureOpts::new(
         "const store = Math.random() ? [] : [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
@@ -546,7 +636,11 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         )],
     ));
     assert_preserved_entry_output(&unknown, "0 1\n");
-    assert_no_fallback_suppressing_authority(&unknown, "gamma", "unknown or multi-array receiver");
+    assert_no_non_assumed_length_read(
+        &unknown.dependency_graph(),
+        "gamma",
+        "unknown or multi-array receiver",
+    );
 
     let holey = run_fixture(FixtureOpts::new(
         "const store = [, 1];\nconst gamma = store.length;\nconst alpha = store.push(2);\nconsole.log(gamma, alpha);\n",
@@ -560,7 +654,7 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         )],
     ));
     assert_preserved_entry_output(&holey, "2 3\n");
-    assert_no_fallback_suppressing_authority(&holey, "gamma", "holey array");
+    assert_no_non_assumed_length_read(&holey.dependency_graph(), "gamma", "holey array");
 
     let pooled = run_fixture(FixtureOpts::new(
         "function make() { return []; }\nconst store = make();\nconst spare = make();\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
@@ -576,5 +670,9 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
         )],
     ));
     assert_preserved_entry_output(&pooled, "0 1\n");
-    assert_no_fallback_suppressing_authority(&pooled, "gamma", "pooled array literal site");
+    assert_no_non_assumed_length_read(
+        &pooled.dependency_graph(),
+        "gamma",
+        "pooled array literal site",
+    );
 }
