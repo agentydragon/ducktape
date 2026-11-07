@@ -1,7 +1,6 @@
 import {
   zBudgetSnapshotRequest,
   zBudgetSnapshotResponse,
-  zBudgetSummaryCsvRequest,
   zBudgetTransactionsRequest,
   zBudgetTransactionsResponse,
   zCalibrationInfo,
@@ -16,6 +15,7 @@ import {
   zRolloutResponse,
   zSettingsResponse,
 } from "./lib/schema_zod";
+import type { zBudgetSummaryCsvRequest } from "./lib/schema_zod";
 import type { z } from "zod";
 
 type FetchOptions = { signal?: AbortSignal };
