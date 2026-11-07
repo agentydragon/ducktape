@@ -380,6 +380,126 @@ def _write_shutdown_request_count(output: Path) -> int:
     return count
 
 
+def _require_shutdown_proof_progress(consoles: Path, output: Path) -> None:
+    """Require direct-TTY progress markers from a complete healthy guest shutdown."""
+    records: list[tuple[str, bytes]] = []
+    for path in sorted(consoles.glob("*/*.cri.log")):
+        for line in path.read_bytes().splitlines(keepends=True):
+            if not line.endswith(b"\n"):
+                continue
+            fields = line.rstrip(b"\r\n").split(b" ", 3)
+            if len(fields) == 4 and fields[1:3] == [b"stdout", b"F"]:
+                records.append((fields[0].decode("ascii", errors="replace"), fields[3]))
+    records.sort(key=lambda record: record[0])
+    payloads = [payload for _, payload in records]
+    expected_markers = [
+        (b"AGENTPLANE_SHUTDOWN_PROOF_ENTER", True),
+        (b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_BEGIN mountpoint=/state/workspaces", True),
+        (b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=/state/workspaces findmnt_status=", False),
+        (b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_BEGIN mountpoint=/state", True),
+        (b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=/state findmnt_status=", False),
+        (b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE", True),
+        (b"AGENTPLANE_SHUTDOWN_PROOF_EXIT status=0", True),
+    ]
+    marker_positions: list[int] = []
+    errors: list[str] = []
+    for marker, exact_match in expected_markers:
+        matches = [
+            index
+            for index, payload in enumerate(payloads)
+            if (payload == marker if exact_match else payload.startswith(marker))
+        ]
+        if len(matches) != 1:
+            errors.append(f"{marker.decode()}: expected one record, found {len(matches)}")
+            continue
+        marker_positions.append(matches[0])
+
+    results: dict[str, list[bytes]] = {}
+    for mountpoint_bytes in (b"/state/workspaces", b"/state"):
+        prefix = b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=" + mountpoint_bytes + b" findmnt_status="
+        results[mountpoint_bytes.decode()] = [payload for payload in payloads if payload.startswith(prefix)]
+    for mountpoint_name, markers in results.items():
+        if len(markers) == 1:
+            status = markers[0].rsplit(b"=", 1)[-1]
+            if not status.isdigit() or int(status) == 0:
+                errors.append(f"findmnt for {mountpoint_name} did not report an unmounted path: {markers[0]!r}")
+    if len(marker_positions) == len(expected_markers) and marker_positions != sorted(marker_positions):
+        errors.append(f"proof markers are out of order: {marker_positions!r}")
+
+    report = {
+        "records": [
+            payload.decode("utf-8", errors="replace")
+            for payload in payloads
+            if payload.startswith((b"AGENTPLANE_SHUTDOWN_PROOF_", b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"))
+        ],
+        "expected_marker_order": [marker.decode() for marker, _ in expected_markers],
+        "marker_positions": marker_positions,
+        "errors": errors,
+    }
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "shutdown-proof-progress.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    if errors:
+        raise AssertionError("guest shutdown proof progress was incomplete or invalid: " + "; ".join(errors))
+
+
+def _write_proof_console(consoles: Path, payloads: list[bytes]) -> None:
+    console = consoles / "launcher" / "console.cri.log"
+    console.parent.mkdir(parents=True, exist_ok=True)
+    console.write_bytes(
+        b"".join(
+            f"2026-11-06T12:00:00.{index:09d}Z stdout F ".encode() + payload + b"\n"
+            for index, payload in enumerate(payloads)
+        )
+    )
+
+
+def _healthy_proof_payloads() -> list[bytes]:
+    return [
+        b"AGENTPLANE_SHUTDOWN_PROOF_ENTER",
+        b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_BEGIN mountpoint=/state/workspaces",
+        b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=/state/workspaces findmnt_status=1",
+        b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_BEGIN mountpoint=/state",
+        b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=/state findmnt_status=1",
+        b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE",
+        b"AGENTPLANE_SHUTDOWN_PROOF_EXIT status=0",
+    ]
+
+
+def test_shutdown_proof_progress_matches_both_mountpoints_exactly(tmp_path: Path) -> None:
+    consoles = tmp_path / "consoles"
+    _write_proof_console(consoles, _healthy_proof_payloads())
+
+    _require_shutdown_proof_progress(consoles, tmp_path)
+
+    report = json.loads((tmp_path / "shutdown-proof-progress.json").read_text())
+    assert report["errors"] == []
+    assert report["marker_positions"] == list(range(7))
+
+
+def test_shutdown_proof_progress_rejects_duplicate_or_missing_mount_markers(tmp_path: Path) -> None:
+    consoles = tmp_path / "consoles"
+    payloads = _healthy_proof_payloads()
+    payloads.insert(4, b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_BEGIN mountpoint=/state")
+    payloads.remove(b"AGENTPLANE_SHUTDOWN_PROOF_CHECK_RESULT mountpoint=/state findmnt_status=1")
+    _write_proof_console(consoles, payloads)
+
+    with pytest.raises(AssertionError, match="expected one record, found 2"):
+        _require_shutdown_proof_progress(consoles, tmp_path)
+
+    report = json.loads((tmp_path / "shutdown-proof-progress.json").read_text())
+    assert any("expected one record, found 0" in error for error in report["errors"])
+
+
+def test_shutdown_proof_progress_rejects_out_of_order_markers(tmp_path: Path) -> None:
+    consoles = tmp_path / "consoles"
+    payloads = _healthy_proof_payloads()
+    payloads[1], payloads[2] = payloads[2], payloads[1]
+    _write_proof_console(consoles, payloads)
+
+    with pytest.raises(AssertionError, match="proof markers are out of order"):
+        _require_shutdown_proof_progress(consoles, tmp_path)
+
+
 def _wait_for_guest_boot(k3s: baseline.K3s, namespace: str, pod: str) -> str:
     deadline = time.monotonic() + _BOOT_WAIT_SECONDS
     output = ""
@@ -981,6 +1101,7 @@ def _run_cycle(
         request_count = _write_shutdown_request_count(output)
         if request_count < 1:
             raise RuntimeError("ordinary VMI deletion completed without any retained guest ACPI request marker")
+        _require_shutdown_proof_progress(output / "vm-artifacts" / "consoles", output)
 
     except BaseException as error:
         primary_error = error

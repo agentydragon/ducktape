@@ -1,0 +1,215 @@
+#!/usr/bin/busybox sh
+# Bounded PID 1 child and proof-helper descendant snapshots for the shutdown watchdog.
+set -u
+proc_root=${1:-/proc}
+busybox=${2:-/usr/bin/busybox}
+max_child_list_bytes=32768
+max_direct_children=512
+max_proof_tree_nodes=64
+max_selected_children=16
+
+snapshot_child() {
+	snapshot_pid=$1
+	snapshot_role=$2
+	snapshot_dir="$proc_root/$snapshot_pid"
+	snapshot_comm=""
+	IFS= read -r snapshot_comm < "$snapshot_dir/comm" 2>/dev/null || true
+	echo "AGENTPLANE_SHUTDOWN_PID1_CHILD pid=$snapshot_pid comm=$snapshot_comm role=$snapshot_role"
+	for field in wchan syscall stack; do
+		case "$field" in
+		wchan) max_bytes=128 ;;
+		syscall) max_bytes=256 ;;
+		stack) max_bytes=2048 ;;
+		esac
+		echo "AGENTPLANE_SHUTDOWN_PID1_CHILD_${snapshot_pid}_${field} max_bytes=$max_bytes"
+		"$busybox" head -c "$max_bytes" "$snapshot_dir/$field" 2>/dev/null || echo "Child $snapshot_pid $field unavailable"
+		echo
+	done
+}
+
+echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_BEGIN interval_seconds=10 max_direct_scan=$max_direct_children max_selected=$max_selected_children"
+children=$("$busybox" head -c "$max_child_list_bytes" "$proc_root/1/task/1/children" 2>/dev/null)
+children_status=$?
+child_list_truncated=0
+if [ "$children_status" -ne 0 ]; then
+	echo "AGENTPLANE_SHUTDOWN_PID1_CHILD_LIST_UNAVAILABLE status=$children_status"
+	children=""
+elif [ "${#children}" -ge "$max_child_list_bytes" ]; then
+	child_list_truncated=1
+fi
+
+direct_scanned=0
+direct_scan_truncated=$child_list_truncated
+proof_pids=""
+proof_discovery_incomplete=0
+# Find proof helpers before taking the bounded detail set, so unrelated shutdown
+# helpers cannot crowd out the operation that emits the shutdown receipt.
+for pid in $children; do
+	if [ "$direct_scanned" -ge "$max_direct_children" ]; then
+		direct_scan_truncated=1
+		break
+	fi
+	direct_scanned=$((direct_scanned + 1))
+	child_dir="$proc_root/$pid"
+	child_comm=""
+	if ! IFS= read -r child_comm < "$child_dir/comm" 2>/dev/null; then
+		echo "AGENTPLANE_SHUTDOWN_PROOF_DISCOVERY_INCOMPLETE pid=$pid reason=comm_unavailable"
+		proof_discovery_incomplete=1
+		continue
+	fi
+	case "$child_comm" in
+	sh | busybox | agentplane-shut*)
+		child_cmdline=$("$busybox" head -c 1024 "$child_dir/cmdline" 2>/dev/null)
+		cmdline_status=$?
+		if [ "$cmdline_status" -ne 0 ]; then
+			echo "AGENTPLANE_SHUTDOWN_PROOF_DISCOVERY_INCOMPLETE pid=$pid reason=cmdline_unavailable status=$cmdline_status"
+			proof_discovery_incomplete=1
+		else
+			child_cmdline=$(printf '%s' "$child_cmdline" | "$busybox" tr '\000' ' ')
+			case "$child_cmdline" in
+			*agentplane-shutdown-complete*) proof_pids="$proof_pids $pid" ;;
+			esac
+		fi
+		;;
+	esac
+done
+if [ -z "$proof_pids" ] && [ "$children_status" -eq 0 ]; then
+	echo "AGENTPLANE_SHUTDOWN_PROOF_HELPER_NOT_OBSERVED"
+fi
+
+selected_count=0
+truncated_count=0
+for proof_pid in $proof_pids; do
+	if [ "$selected_count" -ge "$max_selected_children" ]; then
+		truncated_count=$((truncated_count + 1))
+		proof_discovery_incomplete=1
+		continue
+	fi
+	snapshot_child "$proof_pid" shutdown-proof
+	selected_count=$((selected_count + 1))
+	proof_queue=$proof_pid
+	proof_seen=" $proof_pid "
+	proof_tree_nodes=0
+	proof_nodes_discovered=1
+	proof_findmnt_snapshots=0
+	proof_tree_incomplete=0
+	while [ -n "$proof_queue" ]; do
+		proof_node=${proof_queue%% *}
+		if [ "$proof_queue" = "$proof_node" ]; then
+			proof_queue=""
+		else
+			proof_queue=${proof_queue#* }
+		fi
+		if [ "$proof_tree_nodes" -ge "$max_proof_tree_nodes" ]; then
+			proof_tree_incomplete=1
+			break
+		fi
+		proof_tree_nodes=$((proof_tree_nodes + 1))
+		if [ "$proof_node" != "$proof_pid" ]; then
+			proof_node_comm=""
+			if ! IFS= read -r proof_node_comm < "$proc_root/$proof_node/comm" 2>/dev/null; then
+				echo "AGENTPLANE_SHUTDOWN_PROOF_DESCENDANT_UNAVAILABLE pid=$proof_node reason=comm_unavailable"
+				proof_tree_incomplete=1
+			elif [ "$proof_node_comm" = findmnt ]; then
+				proof_findmnt_snapshots=$((proof_findmnt_snapshots + 1))
+				if [ "$selected_count" -ge "$max_selected_children" ]; then
+					truncated_count=$((truncated_count + 1))
+					proof_tree_incomplete=1
+				else
+					snapshot_child "$proof_node" findmnt
+					selected_count=$((selected_count + 1))
+				fi
+			fi
+		fi
+		proof_children_file="$proc_root/$proof_node/task/$proof_node/children"
+		proof_children=$("$busybox" head -c 4096 "$proof_children_file" 2>/dev/null)
+		proof_children_status=$?
+		if [ "$proof_children_status" -ne 0 ]; then
+			echo "AGENTPLANE_SHUTDOWN_PROOF_CHILD_LIST_UNAVAILABLE pid=$proof_node status=$proof_children_status"
+			proof_tree_incomplete=1
+			continue
+		fi
+		if [ "${#proof_children}" -ge 4096 ]; then
+			echo "AGENTPLANE_SHUTDOWN_PROOF_CHILD_LIST_TRUNCATED pid=$proof_node max_bytes=4096"
+			proof_tree_incomplete=1
+		fi
+		for proof_child_pid in $proof_children; do
+			case "$proof_seen" in
+			*" $proof_child_pid "*) continue ;;
+			esac
+			if [ "$proof_nodes_discovered" -ge "$max_proof_tree_nodes" ]; then
+				proof_tree_incomplete=1
+				continue
+			fi
+			if [ -n "$proof_queue" ]; then
+				proof_queue="$proof_queue $proof_child_pid"
+			else
+				proof_queue=$proof_child_pid
+			fi
+			proof_seen="$proof_seen$proof_child_pid "
+			proof_nodes_discovered=$((proof_nodes_discovered + 1))
+		done
+	done
+	if [ "$proof_tree_incomplete" -gt 0 ]; then
+		echo "AGENTPLANE_SHUTDOWN_PROOF_DESCENDANT_SCAN_INCOMPLETE pid=$proof_pid max_nodes=$max_proof_tree_nodes"
+	fi
+	echo "AGENTPLANE_SHUTDOWN_PROOF_CHILD_SCAN_END pid=$proof_pid nodes=$proof_tree_nodes discovered=$proof_nodes_discovered findmnt_snapshots=$proof_findmnt_snapshots complete=$((1 - proof_tree_incomplete))"
+done
+
+# Snapshot only named shutdown helpers. Command lines are inspected only in memory
+# above to locate the proof script and are never written to the console.
+direct_scanned=0
+for pid in $children; do
+	if [ "$direct_scanned" -ge "$max_direct_children" ]; then
+		direct_scan_truncated=1
+		break
+	fi
+	direct_scanned=$((direct_scanned + 1))
+	is_proof_pid=0
+	for proof_pid in $proof_pids; do
+		if [ "$pid" = "$proof_pid" ]; then
+			is_proof_pid=1
+			break
+		fi
+	done
+	if [ "$is_proof_pid" -eq 1 ]; then
+		continue
+	fi
+	child_dir="$proc_root/$pid"
+	child_comm=""
+	IFS= read -r child_comm < "$child_dir/comm" 2>/dev/null || true
+	case "$child_comm" in
+	"(sd-sync)") child_role=sd-sync ;;
+	"(sd-umount)") child_role=sd-umount ;;
+	"(sd-remount)") child_role=sd-remount ;;
+	sync) child_role=sync ;;
+	umount | umount.*) child_role=umount ;;
+	mount | mount.*) child_role=mount ;;
+	findmnt) child_role=findmnt ;;
+	journalctl) child_role=journalctl ;;
+	systemd-journal*) child_role=systemd-journal ;;
+	systemd-shutdown* | systemd-shutdow*) child_role=systemd-shutdown ;;
+	poweroff | reboot | halt | shutdown) child_role=$child_comm ;;
+	*) continue ;;
+	esac
+	if [ "$selected_count" -ge "$max_selected_children" ]; then
+		truncated_count=$((truncated_count + 1))
+		continue
+	fi
+	snapshot_child "$pid" "$child_role"
+	selected_count=$((selected_count + 1))
+done
+
+if [ "$direct_scanned" -eq 0 ] && [ "$children_status" -eq 0 ]; then
+	echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_EMPTY"
+fi
+if [ "$direct_scan_truncated" -gt 0 ]; then
+	echo "AGENTPLANE_SHUTDOWN_PID1_CHILD_SCAN_TRUNCATED max=$max_direct_children input_bytes=$max_child_list_bytes"
+fi
+if [ "$truncated_count" -gt 0 ]; then
+	echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_TRUNCATED max=$max_selected_children omitted=$truncated_count"
+fi
+if [ "$proof_discovery_incomplete" -gt 0 ]; then
+	echo "AGENTPLANE_SHUTDOWN_PROOF_DISCOVERY_INCOMPLETE"
+fi
+echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_END scanned=$direct_scanned proof_helpers=$(printf '%s' "$proof_pids" | "$busybox" wc -w) selected=$selected_count"
