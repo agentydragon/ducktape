@@ -26,7 +26,7 @@ import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError } from "../client";
+import { displayableError } from "../client";
 import {
   getSandboxForm,
   listSandboxPresets,
