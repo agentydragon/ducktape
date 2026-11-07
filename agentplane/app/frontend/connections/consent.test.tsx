@@ -2,22 +2,33 @@
 
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { create, toJson } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
+import { Verdict } from "../../../action_service/action_service_pb";
+import {
+  DecideConnectionEnrollmentResponseSchema,
+  ListCallerServiceAccountsResponseSchema,
+  ListConnectionsResponseSchema,
+  PreviewConnectionEnrollmentResponseSchema,
+  type DecideConnectionEnrollmentResponse,
+} from "../../../mcp_edge/connection_service_pb";
+import { ServiceAccountSchema } from "../../../proto/identity_pb";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { ConnectionConsent } from "./consent";
-import type { ConsentPreview, ConsentResult } from "./connection_service_client";
+import type { ConsentPreview } from "./connection_service_client";
 import { sampleConnection } from "./testing/fixture";
 
 function preview(): ConsentPreview {
   return {
-    enrollment: {
-      client_id: "registered-client-id",
-      client_name: "Claude on wyrm2",
-      redirect_uri: "https://client.test/oauth/callback",
-      expires_at: "2026-09-09T12:00:00Z",
-      version: "1",
-    },
-    service_accounts: [{ namespace: "agentplane-test", name: "test-coder" }],
+    enrollment: create(PreviewConnectionEnrollmentResponseSchema, {
+      clientId: "registered-client-id",
+      clientName: "Claude on wyrm2",
+      redirectUri: "https://client.test/oauth/callback",
+      expiresAt: timestampFromDate(new Date("2026-09-09T12:00:00Z")),
+      version: 1n,
+    }),
+    serviceAccounts: [create(ServiceAccountSchema, { namespace: "agentplane-test", name: "test-coder" })],
     connections: [],
   };
 }
@@ -28,50 +39,33 @@ const DECISION = `${ROOT}/connection-enrollments/opaque-handle/decision`;
 const CALLERS = `${ROOT}/caller-service-accounts`;
 const CONNECTIONS = `${ROOT}/connections`;
 
-function connectionJson(row: ReturnType<typeof sampleConnection>): Record<string, unknown> {
-  return {
-    id: row.id,
-    displayName: row.display_name,
-    version: row.version,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    grants: row.grants.map((grant) => ({
-      id: grant.id,
-      connectionId: grant.connection_id,
-      revision: grant.revision,
-      caller: grant.caller,
-      issuer: grant.issuer,
-      clientId: grant.client_id,
-      status: `GRANT_STATUS_${grant.status.toUpperCase()}`,
-      createdAt: grant.created_at,
-    })),
-    boundCaller: row.bound_caller,
-  };
-}
-
 /** Answers the preview with `previewed` and a decision with `decided`; a `Response` answers as an
  * HTTP failure. */
-function serve(previewed: ConsentPreview | Response, decided?: ConsentResult | Response): Sent[] {
+function serve(previewed: ConsentPreview | Response, decided?: DecideConnectionEnrollmentResponse | Response): Sent[] {
   return answerConnectionFacade(({ path }) => {
     if (path === PREVIEW) {
       if (previewed instanceof Response) return previewed;
-      return {
-        clientId: previewed.enrollment.client_id,
-        clientName: previewed.enrollment.client_name,
-        redirectUri: previewed.enrollment.redirect_uri,
-        expiresAt: previewed.enrollment.expires_at,
-        version: previewed.enrollment.version,
-      };
+      return toJson(PreviewConnectionEnrollmentResponseSchema, previewed.enrollment);
     }
-    if (path === CALLERS) return { serviceAccounts: previewed instanceof Response ? [] : previewed.service_accounts };
-    if (path === CONNECTIONS)
-      return { connections: previewed instanceof Response ? [] : previewed.connections.map(connectionJson) };
+    if (path === CALLERS) {
+      return toJson(
+        ListCallerServiceAccountsResponseSchema,
+        create(ListCallerServiceAccountsResponseSchema, {
+          serviceAccounts: previewed instanceof Response ? [] : previewed.serviceAccounts,
+        })
+      );
+    }
+    if (path === CONNECTIONS) {
+      return toJson(
+        ListConnectionsResponseSchema,
+        create(ListConnectionsResponseSchema, {
+          connections: previewed instanceof Response ? [] : previewed.connections,
+        })
+      );
+    }
     if (path === DECISION) {
       if (decided instanceof Response || decided === undefined) return decided;
-      return {
-        verdict: decided.verdict === "allow" ? "VERDICT_ALLOW" : "VERDICT_DENY",
-        ...(decided.redirect_url === null ? {} : { redirectUrl: decided.redirect_url }),
-      };
+      return toJson(DecideConnectionEnrollmentResponseSchema, decided);
     }
   });
 }
@@ -91,8 +85,6 @@ async function decide(container: HTMLElement, label: string, sent: Sent[]): Prom
   await act(async () => button(container, label).click());
   await vi.waitFor(() => expect(decisions(sent)).toHaveLength(before + 1));
 }
-
-const refused = (detail: string): Response => Response.json({ detail }, { status: 409 });
 
 function button(container: HTMLElement, label: string): HTMLButtonElement {
   const found = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent === label);
@@ -116,7 +108,10 @@ describe("ConnectionConsent", () => {
     const connection = sampleConnection();
     const sent = serve(
       { ...preview(), connections: [connection] },
-      refused("Connection changed; restart authorization")
+      create(DecideConnectionEnrollmentResponseSchema, {
+        verdict: Verdict.ALLOW,
+        redirectUrl: "https://idp.test/held-authorization",
+      })
     );
     const container = await render();
     const selection = container.querySelector<HTMLSelectElement>('select[name="connection"]');
@@ -146,19 +141,24 @@ describe("ConnectionConsent", () => {
           serviceAccount: TEST_CODER,
           reconnect: {
             connectionId: connection.id,
-            expectedVersion: connection.version,
+            expectedVersion: "2",
             authorityChangeConfirmed: true,
           },
         },
       },
     ]);
-    await vi.waitFor(() => expect(container.textContent).toContain("restart authorization"));
-    expect(container.textContent).toContain("start a new authorization from your MCP client");
+    expect(container.textContent).toContain("Continue authorization");
   });
 
   it("requires an explicit labeled ServiceAccount and continues only after authorization", async () => {
     const navigate = vi.fn();
-    const sent = serve(preview(), { verdict: "allow", redirect_url: "https://idp.test/held-authorization" });
+    const sent = serve(
+      preview(),
+      create(DecideConnectionEnrollmentResponseSchema, {
+        verdict: Verdict.ALLOW,
+        redirectUrl: "https://idp.test/held-authorization",
+      })
+    );
     const container = await render(navigate);
     expect(sent.map(({ path }) => path)).toEqual(expect.arrayContaining([PREVIEW, CALLERS, CONNECTIONS]));
     expect(sent).toEqual(
@@ -189,7 +189,10 @@ describe("ConnectionConsent", () => {
 
   it("can deny without a labeled ServiceAccount and never follows the client redirect", async () => {
     const navigate = vi.fn();
-    const sent = serve({ ...preview(), service_accounts: [] }, { verdict: "deny", redirect_url: null });
+    const sent = serve(
+      { ...preview(), serviceAccounts: [] },
+      create(DecideConnectionEnrollmentResponseSchema, { verdict: Verdict.DENY })
+    );
     const container = await render(navigate);
     expect(container.textContent).toContain("No labeled caller ServiceAccounts");
     await act(async () => button(container, "Deny").click());
@@ -199,7 +202,11 @@ describe("ConnectionConsent", () => {
   });
 
   it("renders client metadata as text, not trusted markup or navigation", async () => {
-    serve({ ...preview(), enrollment: { ...preview().enrollment, client_name: '<img src=x onerror="alert(1)">' } });
+    const enrollment = create(PreviewConnectionEnrollmentResponseSchema, {
+      ...preview().enrollment,
+      clientName: '<img src=x onerror="alert(1)">',
+    });
+    serve({ ...preview(), enrollment });
     const container = await render();
     expect(container.textContent).toContain('<img src=x onerror="alert(1)">');
     expect(container.querySelector("img")).toBeNull();

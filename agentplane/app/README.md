@@ -477,9 +477,8 @@ exchange's version-checked reservation does, before replacement activation. Fail
 not restore old grants or rewrite Action provenance; deliberate operator Connection rebinding
 (below) is separate from consent and can change the account an existing credential acts as.
 
-The frontend parses generated protobuf JSON and adapts its field names and enum values to the
-existing page model. Preview combines the enrollment metadata with the service-account and
-Connection lists; the server-held continuation is not returned to the browser.
+The frontend keeps the generated enrollment response, caller ServiceAccounts and Connections
+together as a consent-page projection; the server-held continuation is not returned to the browser.
 
 Authorize follows only the server-held continuation returned by the authenticated Connection
 Service; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
@@ -545,8 +544,8 @@ The browser reads and updates Connections through the app's authenticated BFF un
 `/upstream/connections/v1/operator/`: list, watch, rename, rebind, unbind, caller accounts, and consent.
 The app calls the generated Connection Service gRPC API and serializes its responses as ProtoJSON;
 `WatchConnections` streams NDJSON, replacing the snapshot after reconnect and applying
-upserts by Connection ID. Protobuf int64 versions stay decimal strings in the UI adapter and are
-sent back as `expectedVersion`; an `ABORTED` response refreshes the inventory and asks for review,
+upserts by Connection ID. Generated protobuf messages stay in browser state, with int64 versions as
+`bigint` and ProtoJSON decimal strings on `expectedVersion`; an `ABORTED` response refreshes the inventory and asks for review,
 never automatically retrying a destructive operation. The app owns no Connection state. Reconnect
 requires fresh OAuth authorization from the external client; the management rebind is a separate
 operator-authorized retarget of an existing token. Policy editing and deployment are outside this

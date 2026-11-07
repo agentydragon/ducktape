@@ -1,26 +1,35 @@
-import type { Connection } from "../models";
+import { create } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+
+import {
+  ConnectionSchema,
+  GrantSchema,
+  GrantStatus,
+  type Connection,
+} from "../../../../mcp_edge/connection_service_pb";
+import { ServiceAccountSchema } from "../../../../proto/identity_pb";
 
 export function sampleConnection(): Connection {
-  return {
+  const personal = create(ServiceAccountSchema, { namespace: "agentplane-test", name: "personal" });
+  return create(ConnectionSchema, {
     id: "10000000-0000-4000-8000-000000000001",
-    display_name: "Claude desktop",
-    version: "2",
-    created_at: "2026-09-09T12:00:00Z",
-    updated_at: "2026-09-09T12:01:00Z",
+    displayName: "Claude desktop",
+    version: 2n,
+    createdAt: timestampFromDate(new Date("2026-09-09T12:00:00Z")),
+    updatedAt: timestampFromDate(new Date("2026-09-09T12:01:00Z")),
     grants: [
-      {
+      create(GrantSchema, {
         id: "20000000-0000-4000-8000-000000000001",
-        connection_id: "10000000-0000-4000-8000-000000000001",
+        connectionId: "10000000-0000-4000-8000-000000000001",
         revision: 1,
-        caller: { namespace: "agentplane-test", name: "personal" },
+        caller: personal,
         issuer: "https://actions.example.test",
-        client_id: "registered-client-123",
-        status: "active",
-        created_at: "2026-09-09T12:00:00Z",
-        activated_at: "2026-09-09T12:01:00Z",
-        revoked_at: null,
-      },
+        clientId: "registered-client-123",
+        status: GrantStatus.ACTIVE,
+        createdAt: timestampFromDate(new Date("2026-09-09T12:00:00Z")),
+        activatedAt: timestampFromDate(new Date("2026-09-09T12:01:00Z")),
+      }),
     ],
-    bound_caller: { namespace: "agentplane-test", name: "personal" },
-  };
+    boundCaller: personal,
+  });
 }

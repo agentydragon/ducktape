@@ -45,7 +45,14 @@ import {
 } from "../../../egress/egress_admin_pb";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
 import { DurationSchema, TimestampSchema, ValueSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
-import { ServiceAccountIdentitySchema } from "../../../proto/identity_pb";
+import { ServiceAccountIdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
+import {
+  ConnectionSchema,
+  GrantSchema,
+  GrantStatus,
+  ListCallerServiceAccountsResponseSchema,
+  type Connection,
+} from "../../../mcp_edge/connection_service_pb";
 import { OwnerReferenceSchema } from "../../../proto/kubernetes_pb";
 import {
   SandboxPhase,
@@ -84,7 +91,6 @@ import {
   mcpLinkageUpsertProtoJson,
 } from "../actions/testing/proto_fixtures";
 import { sampleConnection } from "../connections/testing/fixture";
-import type { Connection } from "../connections/models";
 
 import { type ThreadView, dispatchFromJson } from "../threads/client";
 import { ThreadMetadataSchema } from "../../app_service_pb";
@@ -2865,7 +2871,15 @@ routes.push(
   [
     "GET",
     /^\/upstream\/connections\/v1\/operator\/caller-service-accounts$/,
-    () => ({ serviceAccounts: [{ namespace: "agentplane-visual", name: "operator-assistant" }] }),
+    () =>
+      toJson(
+        ListCallerServiceAccountsResponseSchema,
+        create(ListCallerServiceAccountsResponseSchema, {
+          serviceAccounts: [
+            create(ServiceAccountSchema, { namespace: "agentplane-visual", name: "operator-assistant" }),
+          ],
+        })
+      ),
   ],
   // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
@@ -2920,7 +2934,13 @@ routes.push(
           { snapshot: { connections: [sampleConnection(), ...retiredConnectionRows()].map(connectionJson) } },
           { snapshotComplete: {} },
         ],
-        () => [{ upsert: connectionJson({ ...sampleConnection(), display_name: "Updated OAuth client" }) }],
+        () => [
+          {
+            upsert: connectionJson(
+              create(ConnectionSchema, { ...sampleConnection(), displayName: "Updated OAuth client" })
+            ),
+          },
+        ],
         signal
       ),
   ],
@@ -3167,45 +3187,28 @@ function historyObservationPage(query: URLSearchParams) {
 const CONNECTIONS_WATCH = "/upstream/connections/v1/operator/connections:watch";
 
 function connectionJson(row: Connection): Record<string, unknown> {
-  return {
-    id: row.id,
-    displayName: row.display_name,
-    version: row.version,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    grants: row.grants.map((grant) => ({
-      id: grant.id,
-      connectionId: grant.connection_id,
-      revision: grant.revision,
-      caller: grant.caller,
-      issuer: grant.issuer,
-      clientId: grant.client_id,
-      status: `GRANT_STATUS_${grant.status.toUpperCase()}`,
-      createdAt: grant.created_at,
-      ...(grant.activated_at === null ? {} : { activatedAt: grant.activated_at }),
-      ...(grant.revoked_at === null ? {} : { revokedAt: grant.revoked_at }),
-    })),
-    ...(row.bound_caller === null ? {} : { boundCaller: row.bound_caller }),
-  };
+  return toJson(ConnectionSchema, row) as Record<string, unknown>;
 }
 
 function retiredConnectionRows(): Connection[] {
   const sample = sampleConnection();
   return [
-    {
+    create(ConnectionSchema, {
       ...sample,
       id: "10000000-0000-4000-8000-000000000002",
-      display_name: "Retired research client",
-      bound_caller: null,
-      grants: sample.grants.map((grant) => ({
-        ...grant,
-        id: "20000000-0000-4000-8000-000000000002",
-        connection_id: "10000000-0000-4000-8000-000000000002",
-        caller: { namespace: "agentplane-visual", name: "retired" },
-        status: "revoked",
-        revoked_at: "2026-09-09T12:03:00Z",
-      })),
-    },
+      displayName: "Retired research client",
+      boundCaller: undefined,
+      grants: sample.grants.map((grant) =>
+        create(GrantSchema, {
+          ...grant,
+          id: "20000000-0000-4000-8000-000000000002",
+          connectionId: "10000000-0000-4000-8000-000000000002",
+          caller: create(ServiceAccountSchema, { namespace: "agentplane-visual", name: "retired" }),
+          status: GrantStatus.REVOKED,
+          revokedAt: timestampFromDate(new Date("2026-09-09T12:03:00Z")),
+        })
+      ),
+    }),
   ];
 }
 

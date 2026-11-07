@@ -11,7 +11,11 @@ ts_library(
     name = "fixture",
     srcs = ["fixture.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//agentplane/app/frontend/connections:models"],
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/proto:identity_pb",
+    ],
 )
 
 ts_library(
