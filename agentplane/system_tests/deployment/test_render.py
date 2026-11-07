@@ -283,6 +283,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         _resource(docs, "ConfigMap", f"{fixture_chart.POD_TEMPLATE}-config")["data"]["environment-runtime.json"]
     )
     assert _host_port(runner_config["model_config_service"]["target"]) == pod_listener
+    assert _host_port(runner_config["ingress"]["target"]) == pod_listener
     runtime = next(
         container
         for container in template["spec"]["pod"]["spec"]["containers"]
