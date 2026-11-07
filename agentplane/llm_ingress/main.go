@@ -77,7 +77,11 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		return fmt.Errorf("could not listen on configured gRPC address: %w", err)
 	}
 	defer grpcListener.Close()
-	grpcServer := newModelConfigServer(resolver, handler.models)
+	models := make(map[string]modelConfig, len(c.Models))
+	for _, model := range c.Models {
+		models[model.Model] = model
+	}
+	grpcServer := newModelConfigServer(resolver, models)
 	server := &http.Server{
 		Handler:           observability.HTTPHandler(handler),
 		ReadHeaderTimeout: 10 * time.Second,

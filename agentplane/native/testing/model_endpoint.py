@@ -248,8 +248,8 @@ class ModelEndpoint[RequestT: StreamableRequest]:
         self._origin = f"http://{address[0]}:{address[1]}"
 
     def _add_routes(self, app: web.Application) -> None:
-        """Platform routes beside the model API, which LLM ingress serves to the harness's runner."""
-        app.router.add_get("/agentplane/model-config", self._no_model_config)
+        """Add fixture-specific routes beside the model API."""
+        del app
 
     def _response_headers(self) -> Mapping[str, str]:
         """Added to every model reply."""
@@ -270,11 +270,6 @@ class ModelEndpoint[RequestT: StreamableRequest]:
                 raise error
             case ModelExchange() as exchange:
                 return exchange
-
-    @staticmethod
-    async def _no_model_config(request: web.Request) -> web.Response:
-        del request
-        return web.json_response(None)
 
     async def serve(self, request: web.Request) -> web.StreamResponse:
         """Answer one model request through this endpoint's queue. `start` routes every POST here; a

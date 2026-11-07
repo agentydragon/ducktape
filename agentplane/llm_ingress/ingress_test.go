@@ -27,9 +27,13 @@ import (
 
 	"go.opentelemetry.io/otel/baggage"
 
+	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 )
@@ -83,12 +87,11 @@ func workloadToken(t *testing.T, name string) string {
 	return token
 }
 
-func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string, models ...modelConfig) *httptest.Server {
+func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string) *httptest.Server {
 	t.Helper()
 	return newConfiguredIngressTestServer(t, reviews, config{
 		LiteLLMURL: backendURL,
 		LiteLLMKey: testBackendKey,
-		Models:     models,
 	})
 }
 
@@ -418,37 +421,6 @@ func TestAuthenticatedWorkloadWithoutSandboxOwnerIsServedAsItsServiceAccount(t *
 	if len(got) != 1 || json.Unmarshal([]byte(got[0].headers.Get("x-litellm-spend-logs-metadata")), &metadata) != nil ||
 		metadata["agentplane.pod_name"] != pod.Name || metadata["agentplane.service_account"] != "test-unowned" {
 		t.Fatalf("metadata did not follow verified service account: %v", metadata)
-	}
-}
-
-func TestModelConfigLookupIsAuthenticatedAndAnsweredFromConfiguration(t *testing.T) {
-	const model = "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
-	tokenA := workloadToken(t, "test-sandbox-a")
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL, modelConfig{
-		Model: model, TotalContextBudgetTokens: 256 * 1024,
-	})
-	client := testClient()
-	defer client.CloseIdleConnections()
-
-	found, foundBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config?model="+model, "", bearer(tokenA))
-	missing, missingBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config?model=unlisted", "", bearer(tokenA))
-	unauthenticated := doRequest(t, client, ingress.URL+"/agentplane/model-config?model="+model, http.Header{})
-	unauthenticatedBody, _ := io.ReadAll(unauthenticated.Body)
-	_ = unauthenticated.Body.Close()
-	missingParameter, missingParameterBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config", "", bearer(tokenA))
-	if found.StatusCode != http.StatusOK || string(foundBody) != `{"model":"`+model+`","total_context_budget_tokens":262144}`+"\n" ||
-		missing.StatusCode != http.StatusOK || string(missingBody) != "null" ||
-		unauthenticated.StatusCode != http.StatusUnauthorized ||
-		missingParameter.StatusCode != http.StatusUnprocessableEntity ||
-		!strings.Contains(string(missingParameterBody), `"Field required"`) {
-		t.Fatalf("found=%d %s missing=%d %s unauthorized=%d %s no-model=%d %s",
-			found.StatusCode, foundBody, missing.StatusCode, missingBody,
-			unauthenticated.StatusCode, unauthenticatedBody, missingParameter.StatusCode, missingParameterBody)
-	}
-	if got := backend.snapshotRequests(); len(got) != 0 {
-		t.Fatalf("model config lookup reached LiteLLM: %d requests", len(got))
 	}
 }
 
@@ -928,7 +900,14 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcAddress := grpcListener.Addr().String()
+	grpcPort := grpcListener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
+	_ = grpcListener.Close()
 
 	var logs bytes.Buffer
 	command := exec.Command(binary)
@@ -938,7 +917,7 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
 		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",
 		"AGENTPLANE_LLM_INGRESS_PORT=" + strconv.Itoa(port),
-		"AGENTPLANE_LLM_INGRESS_GRPC_PORT=0",
+		"AGENTPLANE_LLM_INGRESS_GRPC_PORT=" + strconv.Itoa(grpcPort),
 		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=test-environment-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
@@ -996,25 +975,34 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	modelResponse, modelBody := request(t, client, http.MethodGet,
-		baseURL+"/agentplane/model-config?model=configured%2Fmodel", "", bearer(tokenA))
-	if modelResponse.StatusCode != http.StatusOK || string(modelBody) != "{\"model\":\"configured/model\",\"total_context_budget_tokens\":8192}\n" {
-		t.Fatalf("configured model response: status=%d body=%s", modelResponse.StatusCode, modelBody)
+	conn, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
 	}
-	messageResponse, messageBody := request(t, client, http.MethodPost, baseURL+"/v1/messages",
-		`{"messages":[]}`, bearer(tokenA))
-	if messageResponse.StatusCode != 529 || !bytes.Equal(messageBody, anthropicError) {
-		t.Fatalf("binary proxy response: status=%d body=%s", messageResponse.StatusCode, messageBody)
+	defer conn.Close()
+	lookupCtx, cancelLookup := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelLookup()
+	lookupCtx = metadata.AppendToOutgoingContext(lookupCtx, "authorization", "Bearer "+tokenA)
+	modelResponse, err := modelconfigpb.NewModelConfigServiceClient(conn).GetModelConfig(lookupCtx, &modelconfigpb.GetModelConfigRequest{Model: "configured/model"})
+	if err != nil || modelResponse.TotalContextBudgetTokens == nil || modelResponse.GetTotalContextBudgetTokens() != 8192 {
+		t.Fatalf("binary gRPC model response: %v, %v", modelResponse, err)
 	}
-	// Both responses are in, so a second review would already have been counted.
+
+	for range 2 {
+		messageResponse, messageBody := request(t, client, http.MethodPost, baseURL+"/v1/messages",
+			`{"messages":[]}`, bearer(tokenA))
+		if messageResponse.StatusCode != 529 || !bytes.Equal(messageBody, anthropicError) {
+			t.Fatalf("binary proxy response: status=%d body=%s", messageResponse.StatusCode, messageBody)
+		}
+	}
 	if got := reviews.Load(); got != 1 {
-		t.Fatalf("TokenReview calls = %d, want one shared by both requests", got)
+		t.Fatalf("TokenReview calls = %d, want one shared by the gRPC and HTTP requests", got)
 	}
 	backendMu.Lock()
 	gotBackendRequests := backendRequests
 	backendMu.Unlock()
-	if gotBackendRequests != 1 {
-		t.Fatalf("backend requests=%d, want 1", gotBackendRequests)
+	if gotBackendRequests != 2 {
+		t.Fatalf("backend requests=%d, want 2", gotBackendRequests)
 	}
 	if err := stop(); err != nil {
 		t.Fatalf("ingress binary did not shut down cleanly: %v; logs: %s", err, logs.String())

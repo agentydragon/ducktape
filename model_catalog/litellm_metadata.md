@@ -259,7 +259,7 @@ from LiteLLM's publication behavior.
 - OpenClaw's audited discovery reads `/v1/models` or `/models`, not `/model/info`.
   Its configured budgets come from our OpenClaw projection.
 - Our Agentplane launch adapters do not obtain their context overrides from
-  `/model/info`. Runners read `/agentplane/model-config` from Agentplane ingress,
+  `/model/info`. Environment Runtime reads `ModelConfigService.GetModelConfig` from Agentplane ingress,
   populated from `RUNNER_CONTEXT_OVERRIDES`, not `Model.limits`. The result is
   explicit client policy, not a LiteLLM catalogue lookup.
 - Claude and Codex have their own model recognition/catalogues. Removing a LiteLLM
