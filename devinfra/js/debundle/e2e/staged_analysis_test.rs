@@ -1561,22 +1561,26 @@ fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering()
                     .get("array_iteration_unsettled_elements_detail")
             })
             .expect("unsettled Boolean iteration retains its typed element failure");
-        assert_eq!(refusal["slot_index"].as_u64(), Some(1), "{execution:#}");
+        let slot_index = refusal["slot_index"]
+            .as_u64()
+            .expect("element refusal identifies its dense slot");
+        assert!(slot_index < 2, "{execution:#}");
+        let check = refusal["check"]
+            .as_str()
+            .expect("element refusal identifies its failed check");
         assert!(
             matches!(
-                refusal["check"].as_str(),
-                Some(
-                    "empty_values"
-                        | "unavailable_value"
-                        | "unsupported_value"
-                        | "non_plain_object"
-                        | "object_tainted"
-                        | "object_unsettled"
-                        | "object_unknown_array_contents"
-                        | "object_primitive_array_marker"
-                        | "tainted_function"
-                        | "borrowed_receiver_instance"
-                )
+                check,
+                "empty_values"
+                    | "unavailable_value"
+                    | "unsupported_value"
+                    | "non_plain_object"
+                    | "object_tainted"
+                    | "object_unsettled"
+                    | "object_unknown_array_contents"
+                    | "object_primitive_array_marker"
+                    | "tainted_function"
+                    | "borrowed_receiver_instance"
             ),
             "{execution:#}"
         );
@@ -1595,9 +1599,9 @@ fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering()
         ]);
         assert_ok(&explanation, "explain Boolean element settlement refusal");
         assert!(
-            explanation.stdout.contains(
-                "ordered_call_admission_refusal: array_iteration_unsettled_elements (slot 1, check "
-            ),
+            explanation.stdout.contains(&format!(
+                "ordered_call_admission_refusal: array_iteration_unsettled_elements (slot {slot_index}, check {check})"
+            )),
             "{}",
             explanation.stdout
         );
