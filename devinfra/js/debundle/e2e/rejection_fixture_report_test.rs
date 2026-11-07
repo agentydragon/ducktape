@@ -3,6 +3,8 @@
 use debundle_e2e_support::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+const OPAQUE_RUNTIME_SOURCE: &str = "export function identity7(value) { return value; }\n";
+
 #[test]
 fn missing_conflict_report_includes_case_path_and_cli_stderr() {
     let fixture = run_rejection_fixture(mixed_selector_failure_fixture());
@@ -27,15 +29,15 @@ fn missing_conflict_report_includes_case_path_and_cli_stderr() {
 #[test]
 fn unexpected_exit_preserves_cross_chunk_outputs_for_node_inspection() {
     let mut opts = FixtureOpts::new(
-        r#"import { h as x } from "./provider.js";
-console.log(x());
-const guard = 0;
-export { x, guard };
+        r#"import { identity7 } from "./opaque.js";
+import { h as x } from "./provider.js";
+console.log(identity7(x()));
 "#,
-        vec![logical_module("guard", &[Member::new("guard")])],
+        vec![],
     )
     .with_chunk_id("static/importer");
     opts.unassigned_mode = unassigned_mode_inline();
+    opts.extra_files = &[("static/importer/opaque.js", OPAQUE_RUNTIME_SOURCE)];
     opts.extra_chunks = &[(
         "static/provider",
         "function p() { return 7; }\nexport { p as h };\n",
@@ -77,12 +79,14 @@ export { x, guard };
     let provider_entry = app.join("static/provider/entry.js");
     let package_json = app.join("package.json");
     let provider_module = app.join("static/provider/modules/provider.js");
+    let opaque_runtime = app.join("static/importer/opaque.js");
     for path in [
         &program_graph,
         &package_json,
         &importer_entry,
         &provider_entry,
         &provider_module,
+        &opaque_runtime,
     ] {
         assert!(
             path.is_file(),
@@ -90,6 +94,10 @@ export { x, guard };
             path.display()
         );
     }
+    assert_eq!(
+        std::fs::read(&opaque_runtime).expect("read preserved runtime-only file"),
+        OPAQUE_RUNTIME_SOURCE.as_bytes()
+    );
 
     assert_node_output(&importer_entry, "7\n", "");
 }
