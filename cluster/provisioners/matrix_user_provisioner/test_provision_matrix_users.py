@@ -2,7 +2,10 @@
 
 import hashlib
 import hmac
+import json
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import httpx
 import pytest
@@ -24,135 +27,129 @@ from cluster.provisioners.matrix_user_provisioner.provision_matrix_users import 
 NONCE = "test-nonce"
 
 
-def _response(status_code: int, payload: dict) -> httpx.Response:
-    return httpx.Response(status_code, json=payload, request=httpx.Request("GET", "http://x"))
+@contextmanager
+def _client(*responses: httpx.Response) -> Iterator[tuple[httpx.Client, list[httpx.Request]]]:
+    queued = iter(responses)
+    calls: list[httpx.Request] = []
 
+    def respond(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return next(queued)
 
-class _FakeClient:
-    """Returns canned responses in call order; records each call as (method, url, json body)."""
-
-    def __init__(self, responses: list[httpx.Response]):
-        self._responses = iter(responses)
-        self.calls: list[tuple[str, str, dict | None]] = []
-
-    def _record(self, method: str, url: str, json: dict | None) -> httpx.Response:
-        self.calls.append((method, url, json))
-        return next(self._responses)
-
-    def get(self, url: str, **kwargs) -> httpx.Response:
-        return self._record("GET", url, None)
-
-    def post(self, url: str, json: dict | None = None, **kwargs) -> httpx.Response:
-        return self._record("POST", url, json)
-
-    def put(self, url: str, json: dict | None = None, **kwargs) -> httpx.Response:
-        return self._record("PUT", url, json)
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        yield client, calls
 
 
 def test_register_admin_computes_hmac_and_posts_registration():
-    client = _FakeClient(
-        [_response(200, {"nonce": NONCE}), _response(200, {"user_id": f"@{ADMIN_USERNAME}:{SERVER_NAME}"})]
-    )
+    with _client(
+        httpx.Response(200, json={"nonce": NONCE}),
+        httpx.Response(200, json={"user_id": f"@{ADMIN_USERNAME}:{SERVER_NAME}"}),
+    ) as (client, calls):
+        register_admin(client, "shared-secret", "adminpw")
 
-    register_admin(client, "shared-secret", "adminpw")
-
-    _, url, register_body = client.calls[1]
-    assert url == f"{SYNAPSE_URL}/_synapse/admin/v1/register"
-    assert register_body is not None
-    expected_mac = hmac.new(
-        b"shared-secret", f"{NONCE}\0{ADMIN_USERNAME}\0adminpw\0admin".encode(), hashlib.sha1
-    ).hexdigest()
-    assert register_body == {
-        "nonce": NONCE,
-        "username": ADMIN_USERNAME,
-        "password": "adminpw",
-        "admin": True,
-        "mac": expected_mac,
-    }
+        registration = calls[1]
+        register_body = json.loads(registration.content)
+        assert registration.method == "POST"
+        assert str(registration.url) == f"{SYNAPSE_URL}/_synapse/admin/v1/register"
+        assert register_body is not None
+        expected_mac = hmac.new(
+            b"shared-secret", f"{NONCE}\0{ADMIN_USERNAME}\0adminpw\0admin".encode(), hashlib.sha1
+        ).hexdigest()
+        assert register_body == {
+            "nonce": NONCE,
+            "username": ADMIN_USERNAME,
+            "password": "adminpw",
+            "admin": True,
+            "mac": expected_mac,
+        }
 
 
 def test_register_admin_skips_when_already_registered(caplog: pytest.LogCaptureFixture):
-    client = _FakeClient(
-        [_response(200, {"nonce": NONCE}), _response(400, {"errcode": "M_USER_IN_USE", "error": "already taken"})]
-    )
+    with _client(
+        httpx.Response(200, json={"nonce": NONCE}),
+        httpx.Response(400, json={"errcode": "M_USER_IN_USE", "error": "already taken"}),
+    ) as (client, _):
+        with caplog.at_level(logging.INFO):
+            register_admin(client, "shared-secret", "adminpw")  # must not raise
 
-    with caplog.at_level(logging.INFO):
-        register_admin(client, "shared-secret", "adminpw")  # must not raise
-
-    assert "already exists" in caplog.text
+        assert "already exists" in caplog.text
 
 
 def test_register_admin_raises_on_unexpected_error():
-    client = _FakeClient([_response(200, {"nonce": NONCE}), _response(500, {"errcode": "M_UNKNOWN", "error": "boom"})])
-
-    with pytest.raises(httpx.HTTPStatusError):
+    with (
+        _client(
+            httpx.Response(200, json={"nonce": NONCE}),
+            httpx.Response(500, json={"errcode": "M_UNKNOWN", "error": "boom"}),
+        ) as (client, _),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
         register_admin(client, "shared-secret", "adminpw")
 
 
 def test_bot_exists_false_on_404():
-    client = _FakeClient([_response(404, {"errcode": "M_NOT_FOUND"})])
-    assert _bot_exists(client, "token", "encoded-mxid") is False
+    with _client(httpx.Response(404, json={"errcode": "M_NOT_FOUND"})) as (client, _):
+        assert _bot_exists(client, "token", "encoded-mxid") is False
 
 
 def test_bot_exists_reraises_non_404_errors():
-    client = _FakeClient([_response(500, {"errcode": "M_UNKNOWN"})])
-    with pytest.raises(httpx.HTTPStatusError):
+    with (
+        _client(httpx.Response(500, json={"errcode": "M_UNKNOWN"})) as (client, _),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
         _bot_exists(client, "token", "encoded-mxid")
 
 
 def test_upsert_bot_creates_with_password_when_absent():
-    client = _FakeClient(
-        [
-            _response(200, {}),  # bot does not exist yet
-            _response(200, {"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME}),  # PUT
-        ]
-    )
+    with _client(
+        httpx.Response(200, json={}), httpx.Response(200, json={"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME})
+    ) as (client, calls):
+        upsert_bot(
+            client,
+            "admin-token",
+            "botpw",
+            bot_username=PUBLIC_CODER_AGENT_BOT_USERNAME,
+            bot_displayname=PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
+        )
 
-    upsert_bot(
-        client,
-        "admin-token",
-        "botpw",
-        bot_username=PUBLIC_CODER_AGENT_BOT_USERNAME,
-        bot_displayname=PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
-    )
-
-    [(_, url, put_body)] = [c for c in client.calls if c[0] == "PUT"]
-    assert url.endswith(f"%40{PUBLIC_CODER_AGENT_BOT_USERNAME}%3A{SERVER_NAME}")
-    assert put_body == {"password": "botpw", "displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "admin": False}
+        [put] = [call for call in calls if call.method == "PUT"]
+        put_body = json.loads(put.content)
+        assert str(put.url).endswith(f"%40{PUBLIC_CODER_AGENT_BOT_USERNAME}%3A{SERVER_NAME}")
+        assert all(call.headers["Authorization"] == "Bearer admin-token" for call in calls)
+        assert put_body == {"password": "botpw", "displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "admin": False}
 
 
 def test_upsert_bot_updates_without_password_when_present():
     """Re-running must not resend the password: Synapse purges every device and
     access token on a password set, even to an identical value."""
-    client = _FakeClient(
-        [
-            _response(200, {"name": f"@{PUBLIC_CODER_AGENT_BOT_USERNAME}:{SERVER_NAME}"}),  # bot exists
-            _response(200, {"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME}),  # PUT
-        ]
-    )
+    with _client(
+        httpx.Response(200, json={"name": f"@{PUBLIC_CODER_AGENT_BOT_USERNAME}:{SERVER_NAME}"}),
+        httpx.Response(200, json={"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME}),
+    ) as (client, calls):
+        upsert_bot(
+            client,
+            "admin-token",
+            "botpw",
+            bot_username=PUBLIC_CODER_AGENT_BOT_USERNAME,
+            bot_displayname=PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
+        )
 
-    upsert_bot(
-        client,
-        "admin-token",
-        "botpw",
-        bot_username=PUBLIC_CODER_AGENT_BOT_USERNAME,
-        bot_displayname=PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
-    )
-
-    [(_, _, put_body)] = [c for c in client.calls if c[0] == "PUT"]
-    assert put_body == {"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "admin": False}
+        [put] = [call for call in calls if call.method == "PUT"]
+        put_body = json.loads(put.content)
+        assert all(call.headers["Authorization"] == "Bearer admin-token" for call in calls)
+        assert put_body == {"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "admin": False}
 
 
 def test_admin_login_pins_the_device_id():
     """Unpinned, every reconcile would leave another admin device behind — and
     clearing those with /logout/all is what revokes the bot's token."""
-    client = _FakeClient([_response(200, {"access_token": "admin-token"})])
+    with _client(httpx.Response(200, json={"access_token": "admin-token"})) as (client, calls):
+        assert admin_login(client, "adminpw") == "admin-token"
 
-    assert admin_login(client, "adminpw") == "admin-token"
-
-    [(_, _, body)] = client.calls
-    assert body is not None
-    assert body["device_id"] == ADMIN_DEVICE_ID
+        [login] = calls
+        body = json.loads(login.content)
+        assert login.method == "POST"
+        assert str(login.url) == f"{SYNAPSE_URL}/_matrix/client/v3/login"
+        assert body["device_id"] == ADMIN_DEVICE_ID
 
 
 if __name__ == "__main__":
