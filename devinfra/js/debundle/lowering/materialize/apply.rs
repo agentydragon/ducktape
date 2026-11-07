@@ -185,6 +185,7 @@ mod tests {
                     selected_bindings: 0,
                 },
                 final_module_contents: Vec::new(),
+                atomic_group_owner_completions: Vec::new(),
                 requested_logical_modules: Vec::new(),
                 imported_callables: BTreeMap::new(),
                 redundant_purity_hints: Vec::new(),

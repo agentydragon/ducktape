@@ -104,6 +104,10 @@ pub struct ChunkModulesReport {
     pub ownership_subset: Option<BTreeSet<SelectedModule>>,
     pub counts: ChunkModulesCounts,
     pub final_module_contents: Vec<FinalModuleContent>,
+    /// Explicitly opted-in authored owners and the atomic-group source units
+    /// they adopted. This is placement provenance, not an analysis input.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atomic_group_owner_completions: Vec<AtomicGroupOwnerCompletionReport>,
     pub requested_logical_modules: Vec<RequestedLogicalModule>,
     /// Bare imported callable capabilities used by this chunk, with their
     /// defining evidence. Empty when no such import was resolved.
@@ -135,6 +139,16 @@ pub struct FinalModuleContent {
     pub source_unit_ids: Vec<String>,
     /// True for a planned output with `ModuleRole::Unassigned`, never entry.
     pub residual: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AtomicGroupOwnerCompletionReport {
+    /// Canonical authored module path that opted into completing this atom.
+    pub owner_path: spec::ModulePath,
+    /// Complete source-unit membership of the atomic group.
+    pub atomic_group_source_unit_ids: Vec<String>,
+    /// Source units assigned to this owner by the opt-in.
+    pub adopted_source_unit_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

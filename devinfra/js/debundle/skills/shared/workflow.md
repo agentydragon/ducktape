@@ -211,9 +211,11 @@ For ownership-only probes with `inline_in_entry`, `catchall_file`,
 [`run --ownership-subset`](../../docs/cli.md#ownership-subsets-with-full-selector-context)
 with the complete canonical tree and its matching analysis. This retains joint
 selector anchors and assertions while returning omitted claims to the selected
-residual policy. Coarse grouping merges wholly unclaimed atomic units with
-equal strict constraining reachability to existing owners; it is a placement
-heuristic, and the normal gate still decides the selected assignment. An empty
+residual policy. Coarse mode may first complete atoms for listed retained
+owners that are their sole authored owner, then groups remaining wholly
+unclaimed atomic units by equal strict constraining reachability to existing
+owners. This is a placement heuristic, and the normal gate still decides the
+selected assignment. An empty
 `modules` list is the no-extraction assignment under
 that full contract;
 the separate empty spec above remains the baseline without optional assertions.

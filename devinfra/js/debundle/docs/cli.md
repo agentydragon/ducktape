@@ -638,11 +638,16 @@ debundle run <full tree args> --analysis analysis.dba \
 
 The full joint selector solve and all analysis assertions remain unchanged;
 only resolved output ownership is reduced, before normal residual routing.
+In `coarse_atomic_groups`, `complete_partial_atomic_groups_for` may list
+authored module paths that can adopt unclaimed members of atoms they solely
+own. The paths are validated against the full authored module roster; a listed
+owner removed by the subset is not recreated and cannot adopt source units.
 Selected module names and explicit entry renames stay intact. Omitted members
 keep their source names in entry with `inline_in_entry`, in the configured
 catchall with `catchall_file`, in one module per atomic group
 with `per_atomic_group`, or in generated residual groups with
-`coarse_atomic_groups`. Coarse groups merge wholly unclaimed atomic groups
+`coarse_atomic_groups`. Coarse mode first applies any listed sole-owner
+completions, then merges remaining wholly unclaimed atomic groups
 with equal reachable fixed-owner sets in the strict constraining projection
 within intervals between fixed owners in the fine layout's simulated
 evaluation order. Simulator-omitted groups remain separate. Their paths use
