@@ -61,8 +61,11 @@ group, so another service joins as one more group under them.
 | `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--session ID]`             | `Notifications.CreateSubscription`                                      |
 | `notifications subscribe create --request-file FILE\|-`                                                                                              | `Notifications.CreateSubscription` from protobuf JSON                   |
 | `notifications guide [subscriptions\|inbox\|github\|messages]`                                                                                       | bundled workflow guide                                                  |
+| `notifications inboxes`                                                                                                                              | `Notifications.ListInboxes`                                             |
+| `notifications inbox get SESSION_ID`                                                                                                                 | `Notifications.GetInbox`                                                |
 | `notifications inbox read SESSION_ID [--after CURSOR] [--limit N]`                                                                                   | `Notifications.ReadInbox`, one page                                     |
 | `notifications inbox ack SESSION_ID --through CURSOR`                                                                                                | `Notifications.AcknowledgeInbox`                                        |
+| `notifications inbox retire SESSION_ID`                                                                                                              | `Notifications.RetireInbox`                                             |
 | `notifications subscriptions`                                                                                                                        | `Notifications.ListSubscriptions`, paged                                |
 | `notifications subscription ID`                                                                                                                      | `Notifications.GetSubscription`                                         |
 | `notifications renew ID [--lifetime-days N]`                                                                                                         | `GetSubscription`, then `RenewSubscription` with its version            |
@@ -177,6 +180,9 @@ Left out on purpose:
   to inspect the complete provider payloads. Reads do not acknowledge. `--after` is exclusive, starts at 0,
   and can be set to the last cursor you handled. Acknowledgement advances the handled prefix across every
   subscription in the inbox, so pass `--through` only after processing every entry up to that cursor.
+- `notifications inbox retire` is an explicit, irreversible cleanup operation. It stops future matching,
+  messages and delivery to that Session inbox and cancels its subscriptions; it does not cancel Actions or
+  withdraw commands already submitted to the runner.
 - **`actions groups --json` is large:** the service returns every Action's full description and input
   schema inline. `actions list` prints the same Actions one per line.
 - **Without `--json`** prints concise text, one line per item. Text is not a stable interface; a script

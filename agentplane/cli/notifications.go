@@ -28,7 +28,8 @@ const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATI
 
 Subscriptions deliver notices to a Session inbox, so a long wait costs no turn; send puts a message in
 another Session's inbox. Inbox reads are non-destructive; acknowledgement advances the handled prefix.
-No command here has an outcome exit code; cancel removes a subscription and never cancels an Action.`
+No command here reports an Action outcome; cancel removes a subscription and never cancels an Action. Inbox retirement
+is irreversible and stops future messages and delivery.`
 
 const (
 	githubEventPrefix = "GITHUB_EVENT_NAME_"
@@ -84,7 +85,7 @@ func (a *app) notificationsCommand() *cobra.Command {
 		group("subscribe", "Subscribe to a source", "Creates a subscription for this Session's inbox.",
 			a.subscribeRequestCommand(),
 			group("github", "Subscribe to GitHub activity", "Only pull requests (`pr`) have a dedicated command.", a.subscribePullRequestCommand())),
-		a.inboxCommand(), a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand(),
+		a.inboxCommand(), a.inboxesCommand(), a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand(),
 		a.sendCommand(), a.messageCommand())
 }
 
@@ -130,8 +131,89 @@ func (a *app) subscribeRequestCommand() *cobra.Command {
 }
 
 func (a *app) inboxCommand() *cobra.Command {
-	return group("inbox", "Read and acknowledge inbox entries", "Reading is non-destructive; acknowledgement advances the handled prefix.",
-		a.readInboxCommand(), a.ackInboxCommand())
+	return group("inbox", "Inspect, read and manage a Session inbox", "Reading is non-destructive; acknowledgement advances the handled prefix.",
+		a.getInboxCommand(), a.readInboxCommand(), a.ackInboxCommand(), a.retireInboxCommand())
+}
+
+func (a *app) inboxesCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "inboxes",
+		Short: "List this account's Session inboxes",
+		Long:  "Notifications.ListInboxes. Lists inboxes opened for this account, including retired inboxes that have not been purged.",
+		Args:  cobra.NoArgs,
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, _ []string) error {
+			response, err := svc.ListInboxes(ctx, &notificationspb.ListInboxesRequest{})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			inboxes, err := responseField(body, "inboxes")
+			if err != nil {
+				return err
+			}
+			items, err := decode[[]json.RawMessage](inboxes)
+			if err != nil {
+				return err
+			}
+			return a.show(items, inboxLine)
+		}),
+	}
+}
+
+func (a *app) getInboxCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get SESSION_ID",
+		Short: "Show one Session inbox",
+		Long:  "Notifications.GetInbox. Reports the current state of the inbox addressed by Session ID.",
+		Args:  cobra.ExactArgs(1),
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			response, err := svc.GetInbox(ctx, &notificationspb.GetInboxRequest{SessionId: args[0]})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			if response.GetInbox() == nil {
+				return a.showOne([]byte("null"), func(json.RawMessage) (string, error) {
+					return "no inbox for session " + args[0], nil
+				})
+			}
+			body, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			inbox, err := responseField(body, "inbox")
+			if err != nil {
+				return err
+			}
+			return a.showOne(inbox, inboxLine)
+		}),
+	}
+}
+
+func (a *app) retireInboxCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "retire SESSION_ID",
+		Short: "Retire a Session inbox",
+		Long: `Notifications.RetireInbox. Irreversibly stops future matching, messages and delivery to the inbox and cancels its
+subscriptions. It does not cancel Actions or withdraw commands already submitted to the runner. Use only when the
+Session no longer needs this inbox.`,
+		Args: cobra.ExactArgs(1),
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			response, err := svc.RetireInbox(ctx, &notificationspb.RetireInboxRequest{SessionId: args[0]})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			return a.showOne(body, func(json.RawMessage) (string, error) {
+				return "retired inbox for session " + args[0], nil
+			})
+		}),
+	}
 }
 
 func (a *app) readInboxCommand() *cobra.Command {
