@@ -5,7 +5,12 @@ use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
-fn assert_property_frontier(graph: &DependencyGraphReport, later: usize, earlier: usize) {
+fn assert_property_frontier(
+    graph: &DependencyGraphReport,
+    later: usize,
+    earlier: usize,
+    property: &str,
+) {
     let unit = |ordinal| {
         &graph
             .nodes
@@ -24,7 +29,7 @@ fn assert_property_frontier(graph: &DependencyGraphReport, later: usize, earlier
                     .is_some_and(|conflicts| {
                         conflicts.iter().any(|conflict| {
                             conflict["cell"]["kind"] == "own_property"
-                                && conflict["cell"]["property"] == "value"
+                                && conflict["cell"]["property"] == property
                         })
                     })
         }),
@@ -120,7 +125,8 @@ fn assert_no_non_assumed_index_read(graph: &DependencyGraphReport, binding: &str
         assert!(
             !reads.sample.iter().any(|cell| matches!(
                 cell,
-                EffectCellReport::OwnProperty { property, .. } if property == "0"
+                EffectCellReport::OwnProperty { property, .. }
+                    if property.parse::<u32>().is_ok()
             )),
             "unsupported {binding} acquired an exact index read: {reads:#?}"
         );
@@ -281,7 +287,7 @@ fn root_reads_stay_on_both_sides_of_an_alias_write() {
         ).with_dataflow_aware_s_chain(),
     );
     let graph = fixture.dependency_graph();
-    assert_property_frontier(&graph, 3, 2);
+    assert_property_frontier(&graph, 3, 2, "value");
     assert_sequenced_order(&graph, 4, 3);
     assert_preserved_entry_output(&fixture, "7 42\n");
     let coverage = fixture.effect_translation_validation();
@@ -586,7 +592,7 @@ fn nested_local_reads_and_writes_compose_into_the_callers_heap_frontier() {
         ],
     ).with_dataflow_aware_s_chain());
     let graph = fixture.dependency_graph();
-    assert_property_frontier(&graph, 2, 1);
+    assert_property_frontier(&graph, 2, 1, "value");
     assert_sequenced_order(&graph, 3, 2);
 }
 
@@ -632,7 +638,7 @@ fn root_array_index_read_records_its_exact_slot_and_stays_before_a_write() {
     let graph = fixture.dependency_graph();
     assert_non_assumed_index_read(&graph, "before");
     assert_no_non_assumed_index_read(&graph, "after");
-    assert_sequenced_order(&graph, 2, 1);
+    assert_property_frontier(&graph, 2, 1, "0");
 }
 
 #[test]
@@ -641,6 +647,14 @@ fn root_array_index_read_refuses_absent_or_unsettled_slots() {
         (
             "const values = [7];\nconst key = 0;\nconst read = values[key];\nconsole.log(read);\n",
             "7\n",
+        ),
+        (
+            "let calls = 0;\nfunction index() { calls++; return 0; }\nconst values = [7];\nconst read = values[index()];\nconsole.log(read, calls);\n",
+            "7 1\n",
+        ),
+        (
+            "const values = [7];\nconst read = values['00'];\nconsole.log(read);\n",
+            "undefined\n",
         ),
         (
             "const values = [, 1];\nconst read = values[0];\nconsole.log(read);\n",
