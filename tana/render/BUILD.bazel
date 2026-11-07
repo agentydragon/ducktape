@@ -10,5 +10,8 @@ py_library(
     name = "html_utils",
     srcs = ["html_utils.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["//tana/domain:types"],
+    deps = [
+        "//tana/domain:types",
+        "@pypi//markdownify",
+    ],
 )

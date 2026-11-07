@@ -12,6 +12,7 @@ from tana.domain.nodes import BaseNode
 from tana.export.convert import RenderContext
 from tana.graph.graph import TanaGraph
 from tana.graph.loader import load_workspace
+from tana.render.html_utils import html_to_markdown
 
 # Testdata lives alongside this test under tana/testdata
 TESTDATA_PATH = Path(__file__).parent / "testdata"
@@ -69,6 +70,21 @@ def test_node_export_minimal_json(folder, node_id):
     actual = _render_node_as_tanapaste(store, store[node_id])
     expected = (base / f"{node_id}.tanapaste").read_text()
     check_content_match(actual, expected, f"{node_id} using minimal JSON")
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("[[some_name^node_id]]", "[[some_name^node_id]]"),
+        ("<b>bold</b>,<b><i>italic</i></b>", "**bold**, **_italic_**"),
+        (
+            "<u>underline</u> <mark>highlight</mark> <strike>gone</strike> <code>x</code>",
+            "__underline__ <mark>highlight</mark> <strike>gone</strike> <code>x</code>",
+        ),
+    ],
+)
+def test_tana_html_formatting(source: str, expected: str) -> None:
+    assert html_to_markdown(source) == expected
 
 
 if __name__ == "__main__":

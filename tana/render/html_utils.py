@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import html
 import re
-from html.parser import HTMLParser
-from io import StringIO
+from typing import Any
+
+from markdownify import MarkdownConverter
 
 from tana.domain.types import NodeId
 
@@ -11,65 +13,49 @@ NODE_SPAN_PATTERN = re.compile(r'<span data-inlineref-node="([^"]+)"></span>')
 DATE_SPAN_PATTERN = re.compile(r'<span data-inlineref-date="([^"]+)"></span>')
 
 
-class HTMLToMarkdownParser(HTMLParser):
-    """Convert HTML formatting to Markdown syntax."""
+class _TanaMarkdownConverter(MarkdownConverter):
+    """Use Markdownify for HTML conversion while preserving Tana's inline syntax."""
 
-    def __init__(self):
-        super().__init__()
-        self.output = StringIO()
-        self.tag_stack = []
+    def process_tag(self, node: Any, parent_tags: set[str] | None = None) -> str:
+        converted = str(super().process_tag(node, parent_tags))  # type: ignore[misc]  # Missing from typeshed stubs.
+        # Tana's inline formatting convention inserts a space after a comma.
+        previous = node.previous_sibling
+        if previous is not None and str(previous).endswith(",") and not converted.startswith(" "):
+            return " " + converted
+        return converted
 
-    def handle_starttag(self, tag, attrs):
-        self.tag_stack.append(tag)
-        prev = self.output.getvalue()
-        # If a formatting tag follows a comma without a space, insert one (",**" -> ", **")
-        if prev.endswith(",") and not prev.endswith(", "):
-            # Only add a space if not already present
-            self.output.write(" ")
-        if tag in ("b", "strong"):
-            self.output.write("**")
-        elif tag in ("i", "em"):
-            self.output.write("_")
-        elif tag == "u":
-            self.output.write("__")
-        elif tag == "mark":
-            self.output.write("<mark>")
-        elif tag == "strike":
-            self.output.write("<strike>")
-        elif tag == "code":
-            self.output.write("<code>")
+    def process_text(self, node: Any, parent_tags: set[str] | None = None) -> str:
+        # Whitespace and existing TanaPaste syntax are significant in inline names.
+        return str(node)
 
-    def handle_endtag(self, tag):
-        if self.tag_stack and self.tag_stack[-1] == tag:
-            self.tag_stack.pop()
-        if tag in ("b", "strong"):
-            self.output.write("**")
-        elif tag in ("i", "em"):
-            self.output.write("_")
-        elif tag == "u":
-            self.output.write("__")
-        elif tag == "mark":
-            self.output.write("</mark>")
-        elif tag == "strike":
-            self.output.write("</strike>")
-        elif tag == "code":
-            self.output.write("</code>")
+    def convert_i(self, el: Any, text: str, parent_tags: set[str]) -> str:
+        return f"_{text.removeprefix(' ')}_"
 
-    def handle_data(self, data):
-        # If a data chunk begins with a space immediately after opening a formatting marker,
-        # drop that single space to avoid sequences like "** _italic_**".
-        if data.startswith(" ") and self.output.getvalue().endswith(("**", "_", "__", "<mark>", "<strike>", "<code>")):
-            data = data[1:]
-        self.output.write(data)
+    convert_em = convert_i
 
-    def get_markdown(self) -> str:
-        return self.output.getvalue()
+    def convert_u(self, el: Any, text: str, parent_tags: set[str]) -> str:
+        return f"__{text.removeprefix(' ')}__"
+
+    def convert_mark(self, el: Any, text: str, parent_tags: set[str]) -> str:
+        return f"<mark>{text.removeprefix(' ')}</mark>"
+
+    def convert_strike(self, el: Any, text: str, parent_tags: set[str]) -> str:
+        return f"<strike>{text.removeprefix(' ')}</strike>"
+
+    def convert_code(self, el: Any, text: str, parent_tags: set[str]) -> str:
+        return f"<code>{text.removeprefix(' ')}</code>"
 
 
 def html_to_markdown(html_text: str) -> str:
-    parser = HTMLToMarkdownParser()
-    parser.feed(html_text)
-    return parser.get_markdown()
+    if "<" not in html_text:
+        return html.unescape(html_text)
+    return str(
+        _TanaMarkdownConverter(
+            convert=["b", "strong", "i", "em", "u", "mark", "strike", "code"],
+            escape_asterisks=False,
+            escape_underscores=False,
+        ).convert(html_text)
+    )
 
 
 def find_inline_node_refs(text: str) -> list[NodeId]:

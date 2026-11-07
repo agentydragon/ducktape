@@ -610,6 +610,7 @@ beautifulsoup4==4.15.0 \
     # via
     #   ducktape (pyproject.toml)
     #   inspect-ai
+    #   markdownify
 blinker==1.9.0 \
     --hash=sha256:b4ce2265a7abece45e7cc896e98dbebe6cead56bcf805a3d23136d145f5445bf \
     --hash=sha256:ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc
@@ -2886,6 +2887,10 @@ markdown-it-py[linkify]==4.2.0 \
     #   mdit-py-plugins
     #   rich
     #   textual
+markdownify==1.2.3 \
+    --hash=sha256:1a176f05522c8a2cb1dd3ab9d307dcdadbed5c26ae717855bfc42b3b6d38d937 \
+    --hash=sha256:a189a0bedfd14009030fde5f85bb6f77c56897cb839b5c25315dd7d4e3e290ba
+    # via ducktape (pyproject.toml)
 markupsafe==3.0.3 \
     --hash=sha256:0303439a41979d9e74d18ff5e2dd8c43ed6c6001fd40e5bf2e43f7bd9bbc523f \
     --hash=sha256:068f375c472b3e7acbe2d5318dea141359e6900156b5b2ba06a30b169086b91a \
@@ -5557,6 +5562,7 @@ six==1.17.0 \
     # via
     #   kubernetes
     #   kubernetes-asyncio
+    #   markdownify
     #   python-dateutil
 sniffio==1.3.1 \
     --hash=sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2 \

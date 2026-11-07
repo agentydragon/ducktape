@@ -24,6 +24,7 @@ py_test(
         "//tana/export:convert",
         "//tana/graph",
         "//tana/graph:loader",
+        "//tana/render:html_utils",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

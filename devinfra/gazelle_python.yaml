@@ -260,6 +260,7 @@ manifest:
     logfire_api: logfire_api
     mako: mako
     markdown_it: markdown_it_py
+    markdownify: markdownify
     markupsafe: markupsafe
     matplotlib: matplotlib
     matplotlib_inline: matplotlib_inline
@@ -479,4 +480,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: c673b8253a13a3d9d6f832e719df0ce71d5bc5f169a006f194b993a984a96c98
+integrity: 133be3c4c27b50b6cce26431dd5344d53503834890d57d3aaf2f30e6ce9e8772
