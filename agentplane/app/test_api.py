@@ -147,24 +147,26 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
 
 
 async def test_policy_mutations_require_the_generated_operator_facade(
-    http: httpx.AsyncClient, sandbox: SandboxCluster, agent_auth: dict[str, str]
+    app: AppProcess, sandbox: SandboxCluster, agent_auth: dict[str, str]
 ) -> None:
-    legacy_paths = [
-        ("POST", f"/sandboxes/{sandbox.name}/policy-bindings"),
-        ("DELETE", "/policy-bindings/operator-grant"),
-    ]
-    for method, path in legacy_paths:
-        response = await http.request(method, path, headers=agent_auth)
-        assert response.status_code == 404, response.text
+    async with httpx.AsyncClient(
+        base_url=app.url, headers={**agent_auth, "Origin": app.url}, timeout=60
+    ) as workload_client:
+        for method, path in [
+            ("POST", f"/sandboxes/{sandbox.name}/policy-bindings"),
+            ("DELETE", "/policy-bindings/operator-grant"),
+        ]:
+            response = await workload_client.request(method, path)
+            assert response.status_code == 404, response.text
 
-    target = f"/upstream/policy/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/policy-bindings"
-    grant = await http.post(target, headers=agent_auth, json={"sandboxUid": sandbox.uid, "policySets": ["example"]})
-    assert grant.status_code == 403, grant.text
+        target = f"/upstream/policy/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/policy-bindings"
+        grant = await workload_client.post(target, json={"sandboxUid": sandbox.uid, "policySets": ["example"]})
+        assert grant.status_code == 403, grant.text
 
-    revoke = await http.delete(
-        f"{target}/operator-grant", headers=agent_auth, params={"sandboxUid": sandbox.uid, "bindingUid": "binding-uid"}
-    )
-    assert revoke.status_code == 403, revoke.text
+        revoke = await workload_client.delete(
+            f"{target}/operator-grant", params={"sandboxUid": sandbox.uid, "bindingUid": "binding-uid"}
+        )
+        assert revoke.status_code == 403, revoke.text
 
 
 async def test_go_openapi_tracks_selected_python_http_contract_fields(http: httpx.AsyncClient) -> None:
