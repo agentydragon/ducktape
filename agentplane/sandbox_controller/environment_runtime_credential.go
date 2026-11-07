@@ -596,8 +596,15 @@ func withRunnerTLS(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemp
 	if i < 0 {
 		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no %s container", template.Name, EnvironmentRuntimeContainer)}
 	}
+	reservedMount := func(container corev1.Container) bool {
+		return slices.ContainsFunc(container.VolumeMounts, func(mount corev1.VolumeMount) bool {
+			return mount.Name == EnvironmentRuntimeTLSVolumeName || mount.MountPath == EnvironmentRuntimeTLSMountPath
+		})
+	}
+	// A template can claim the injected Secret by mounting its reserved volume name
+	// without declaring the volume itself, so check every container before injection.
 	if slices.ContainsFunc(spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == EnvironmentRuntimeTLSVolumeName }) ||
-		slices.ContainsFunc(spec.Containers[i].VolumeMounts, func(mount corev1.VolumeMount) bool { return mount.MountPath == EnvironmentRuntimeTLSMountPath }) {
+		slices.ContainsFunc(spec.Containers, reservedMount) || slices.ContainsFunc(spec.InitContainers, reservedMount) {
 		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the reserved runner TLS volume or mount", template.Name)}
 	}
 	mode := int32(0440)
