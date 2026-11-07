@@ -689,7 +689,6 @@ func peerLeaf(t *testing.T, info credentials.AuthInfo) *x509.Certificate {
 	return tlsInfo.State.PeerCertificates[0]
 }
 
-
 func replaceFile(t *testing.T, path string, contents []byte) {
 	t.Helper()
 	temporary := filepath.Join(filepath.Dir(path), "rotated-"+filepath.Base(path))

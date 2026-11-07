@@ -78,7 +78,6 @@ func (c *expiringConn) Close() error {
 	return c.closeErr
 }
 
-
 type certificateExpiry struct {
 	mu      sync.Mutex
 	leafEnd time.Time
@@ -181,7 +180,6 @@ func trackedConfigCallbacks(source *tls.Config, expiry *certificateExpiry) *tls.
 	}
 	return config
 }
-
 
 func earliestExpiry(expiries ...time.Time) time.Time {
 	var earliest time.Time
