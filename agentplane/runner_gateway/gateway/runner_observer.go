@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var errRunnerOwned = status.Error(codes.Unavailable, connectionHeldByAnotherReplica)
+var errRunnerOwned = status.Error(codes.Unavailable, runnerLeaseHeldByAnotherGateway)
 
 type fencedRunnerConn struct {
 	conn       *grpc.ClientConn

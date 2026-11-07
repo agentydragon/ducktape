@@ -2157,7 +2157,7 @@ flowchart TD
     RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN[Decision: reconsider per-runner Gateway ownership]
 ```
 
-### `RUNNER_OBSERVATION_READINESS_RACE` — investigate readiness before a usable runner connection
+### `RUNNER_OBSERVATION_READINESS_RACE` — resolve intermittent runner readiness diagnostics
 
 **Candidate; operator follow-up to the observed failure, 2026-11-07 UTC.** The
 [Session deletion system test](../system_tests/scenarios/session_deletion.py) recreated a Sandbox
@@ -2165,21 +2165,21 @@ with the same name and a new UID, then `ListSessions` returned `UNAVAILABLE: ano
 this Sandbox's runner connection` in a fixture with only one Gateway replica
 ([failed invocation](https://app.buildbuddy.io/invocation/737afbc2-7595-5be8-b789-93b6c0a49c74)).
 An [isolated rerun](https://app.buildbuddy.io/invocation/5075b621-94f6-4746-a991-131280be6ec8)
-passed; this establishes intermittent behavior, not its cause. The error also covers an absent
-local connection without establishing that another replica owns it. The test retries assertion
-failures but not `UNAVAILABLE` from the read-only `ListSessions` poll.
+passed; this establishes intermittent behavior, not its cause. PR #14818 deterministically reproduced
+the same `UNAVAILABLE` symptom by pausing after the first ready Lease update, then closed the
+publication-before-local-installation window by installing the fenced connection first. This proves
+that ordering could cause the symptom, but does not prove it caused the original same-name-replacement
+failure. Readiness remains a recent observation and cannot guarantee a later call after connection
+loss. The Gateway error now reports local connection availability unless Lease ownership is known.
 
-The Gateway can record the runner boot ID and renew the connection Lease before it installs its
-local proxy connection. The Sandbox Controller can derive `EnvironmentRuntimeConnected` from that
-Lease, so publication before local installation is a candidate readiness window, not a proven
-explanation of this failure. Map observation, route publication, readiness, shutdown and
-reconciliation ownership; capture the relevant Gateway/Lease/route evidence and build a
-deterministic race test before choosing the fix. Correct any confirmed readiness/connection ordering
-or recovery defect and make errors describe what is known. Treat readiness as a recent observation,
-not a guarantee that a subsequent RPC cannot fail after connection loss. A bounded retry of the
-test's read-only poll may be appropriate alongside that coverage; do not replay uncertain mutations.
-**Exit:** reproducible boundary and regression coverage for first observation, same-name Sandbox
-replacement, loss and supersession; preserve UID/incarnation and epoch fencing and stale-call denial.
+If the system-test failure recurs, capture the Sandbox UID, runner incarnation and boot ID, Gateway
+replica, Lease epoch and holder, EndpointSlice route, and local connection state at the failed poll.
+A bounded retry for the test's read-only `ListSessions` poll is tracked separately; its landing is
+not assumed here. Do not retry mutations with uncertain outcomes. Keep this investigation separate
+from the replica-ownership decision below.
+**Exit:** either capture evidence that distinguishes the remaining failure boundary, or close the
+incident follow-up after the separately tracked bounded read-only poll retry is complete. Preserve
+UID/incarnation and epoch fencing and stale-call denial.
 
 ### `RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` — reconsider per-runner Gateway ownership
 
@@ -2193,10 +2193,11 @@ required guarantees; review the alternatives and tradeoffs before selecting it.
 
 Specify how callers obtain and validate the current Sandbox UID, workload incarnation, runner boot
 ID and epoch; how facts, readiness, shutdown and reconciliation are owned; and what happens on
-observer loss, stale routes, replica failover, restart and same-name replacement. Preserve peer
-authorization, fencing, session safety and uncertain-outcome handling without automatic replay.
-The readiness-race investigation can proceed independently; if this decision selects a new
-architecture, its implementation depends on the reviewed decision and must account for that work.
+observer loss, stale routes, replica failover, restart and same-name replacement. The reproduced
+publication-order race is fixed, but its causal link to the original intermittent failure is
+unproven. Preserve peer authorization, fencing, session safety and uncertain-outcome handling
+without automatic replay. If this decision selects a new architecture, its implementation depends
+on the reviewed decision.
 **Exit:** reviewed choice, ownership and failure semantics, migration/rollback plan, and
 deterministic multi-replica and race coverage for any selected change.
 

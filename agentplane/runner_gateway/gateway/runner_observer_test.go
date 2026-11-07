@@ -361,6 +361,25 @@ func TestLocalConnectionsRejectStaleObserverEpochs(t *testing.T) {
 	}
 }
 
+func TestUnavailableLocalConnectionDoesNotClaimAnotherReplicaOwnsIt(t *testing.T) {
+	uid := "sandbox-uid"
+	identity := &sandboxreader.Identity{Uid: uid}
+	local := newConnections()
+
+	if _, err := local.holder(uid); status.Code(err) != codes.Unavailable || status.Convert(err).Message() != runnerConnectionUnavailable {
+		t.Fatalf("missing local connection error = %v, want Unavailable %q", err, runnerConnectionUnavailable)
+	}
+
+	connection := &runnerConnection{identity: identity, epoch: 1, ended: make(chan struct{})}
+	if err := local.accept(connection); err != nil {
+		t.Fatal(err)
+	}
+	local.replaceLease("", uid, 2)
+	if _, err := local.holder(uid); status.Code(err) != codes.Unavailable || status.Convert(err).Message() != runnerConnectionUnavailable {
+		t.Fatalf("connection behind watched Lease error = %v, want Unavailable %q", err, runnerConnectionUnavailable)
+	}
+}
+
 func testRunnerObserver(t *testing.T, mode environment_runtime_transport.SecurityMode) {
 	t.Helper()
 	f := newSandboxFixture(t)

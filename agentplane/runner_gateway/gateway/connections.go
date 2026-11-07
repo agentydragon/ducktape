@@ -9,7 +9,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const connectionHeldByAnotherReplica = "another replica holds this Sandbox's runner connection"
+const (
+	runnerLeaseHeldByAnotherGateway = "another Gateway replica holds this Sandbox's runner Lease"
+	runnerConnectionUnavailable     = "runner connection is not available on this Gateway replica"
+)
 
 var errSupersededConnection = status.Error(codes.Aborted, "superseded by a newer connection")
 
@@ -92,10 +95,10 @@ func (c *connections) holder(sandboxUID string) (*runnerConnection, error) {
 	defer c.mu.RUnlock()
 	connection := c.local[sandboxUID]
 	if connection == nil {
-		return nil, status.Error(codes.Unavailable, connectionHeldByAnotherReplica)
+		return nil, status.Error(codes.Unavailable, runnerConnectionUnavailable)
 	}
 	if c.leaseEpochs[sandboxUID] > connection.epoch {
-		return nil, status.Error(codes.Unavailable, connectionHeldByAnotherReplica)
+		return nil, status.Error(codes.Unavailable, runnerConnectionUnavailable)
 	}
 	select {
 	case <-connection.ended:
