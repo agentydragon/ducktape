@@ -33,6 +33,23 @@ type routeForwarder struct {
 	tokenFile string
 }
 
+// sharedPlatformRoutesPrototype is an opt-in experiment. sidecar.run continues to use
+// bindPlatformRoutes, so this does not change deployed listeners or the settings schema.
+type sharedPlatformRoutesPrototype struct {
+	server *grpc.Server
+	listen net.Listener
+	conns  []*grpc.ClientConn
+}
+
+type sharedPlatformRoutePrototypeConfig struct {
+	Upstream  string
+	TokenFile string
+}
+
+type platformRouteDispatcherPrototype struct {
+	byService map[string]*routeForwarder
+}
+
 func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute, error) {
 	return bindPlatformRoutesWithKeepalive(routes, keepalive.ClientParameters{
 		Time:                time.Minute,
@@ -86,6 +103,98 @@ func stopPlatformRoutes(routes []*platformRoute) {
 		routes[i].server.Stop()
 		_ = routes[i].conn.Close()
 		_ = routes[i].listen.Close()
+	}
+}
+
+// bindSharedPlatformRoutesPrototype binds one frontend listener and dispatches each full gRPC
+// service prefix to its own upstream ClientConn and token file. It deliberately has no caller in
+// sidecar.run: this prototype exercises the routing boundary without changing deployment config.
+func bindSharedPlatformRoutesPrototype(
+	listenAddress string,
+	routes map[string]sharedPlatformRoutePrototypeConfig,
+	keepaliveParameters keepalive.ClientParameters,
+) (*sharedPlatformRoutesPrototype, error) {
+	if len(routes) == 0 {
+		return nil, fmt.Errorf("shared platform route prototype requires at least one route")
+	}
+	prefixes := make([]string, 0, len(routes))
+	for prefix, config := range routes {
+		if !validPlatformServicePrefixPrototype(prefix) {
+			return nil, fmt.Errorf("invalid platform service prefix %q", prefix)
+		}
+		if config.Upstream == "" {
+			return nil, fmt.Errorf("platform service prefix %q requires an upstream", prefix)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	sort.Strings(prefixes)
+
+	listener, err := netlistener.Open(listenAddress)
+	if err != nil {
+		return nil, fmt.Errorf("listen for shared platform route prototype: %w", err)
+	}
+	started := &sharedPlatformRoutesPrototype{listen: listener}
+	dispatcher := &platformRouteDispatcherPrototype{byService: make(map[string]*routeForwarder, len(prefixes))}
+	for _, prefix := range prefixes {
+		config := routes[prefix]
+		conn, err := grpc.NewClient(
+			config.Upstream,
+			observability.GRPCClientOption(),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithKeepaliveParams(keepaliveParameters),
+		)
+		if err != nil {
+			closeSharedPlatformRoutesPrototype(started)
+			return nil, fmt.Errorf("create upstream for platform service prefix %q: %w", prefix, err)
+		}
+		started.conns = append(started.conns, conn)
+		dispatcher.byService[prefix] = &routeForwarder{conn: conn, tokenFile: config.TokenFile}
+	}
+	started.server = grpc.NewServer(
+		observability.GRPCServerOption(),
+		grpc.UnknownServiceHandler(dispatcher.forward),
+		grpc.ForceServerCodec(rawCodec{}),
+	)
+	return started, nil
+}
+
+func validPlatformServicePrefixPrototype(prefix string) bool {
+	if !strings.HasPrefix(prefix, "/") || !strings.HasSuffix(prefix, "/") {
+		return false
+	}
+	service := strings.TrimSuffix(strings.TrimPrefix(prefix, "/"), "/")
+	return service != "" && !strings.ContainsAny(service, "/ \t\r\n")
+}
+
+func (d *platformRouteDispatcherPrototype) forward(server any, workload grpc.ServerStream) error {
+	method, okay := grpc.MethodFromServerStream(workload)
+	if !okay {
+		return status.Error(codes.Internal, "gRPC method is unavailable")
+	}
+	separator := strings.LastIndexByte(method, '/')
+	if separator <= 0 || separator == len(method)-1 {
+		return status.Errorf(codes.Unimplemented, "no platform route for gRPC method %q", method)
+	}
+	prefix := method[:separator+1]
+	forwarder, exists := d.byService[prefix]
+	if !exists {
+		return status.Errorf(codes.Unimplemented, "no platform route for gRPC service %q", prefix)
+	}
+	return forwarder.forward(server, workload)
+}
+
+func closeSharedPlatformRoutesPrototype(routes *sharedPlatformRoutesPrototype) {
+	if routes == nil {
+		return
+	}
+	if routes.server != nil {
+		routes.server.Stop()
+	}
+	for i := len(routes.conns) - 1; i >= 0; i-- {
+		_ = routes.conns[i].Close()
+	}
+	if routes.listen != nil {
+		_ = routes.listen.Close()
 	}
 }
 
