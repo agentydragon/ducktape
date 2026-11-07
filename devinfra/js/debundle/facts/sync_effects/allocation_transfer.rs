@@ -64,6 +64,9 @@ pub(super) trait AllocationContext {
     /// No effect receipt exists for this executed value operation yet. The
     /// allocation channel remains independent, including successful transfers.
     fn unmodeled_effect_operation(&mut self) {}
+    /// This operation adds no effects or abrupt completion of its own. Its
+    /// children still supply their ordered effects and completion evidence.
+    fn noninvoking_operation(&mut self) {}
     /// Resolve an actual closed input, or return opaque access evidence.
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue>;
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue>;
@@ -370,7 +373,8 @@ pub(super) fn transfer(
             Values::from([AbstractValue::Value(Value::Prim(*kinds))])
         }
         ValueExpr::StrictEquality(left, right) => {
-            context.unmodeled_effect_operation();
+            // Strict comparison accepts opaque values without coercion.
+            context.noninvoking_operation();
             return primitive_operation(
                 context,
                 [left.as_ref(), right.as_ref()],
@@ -379,7 +383,8 @@ pub(super) fn transfer(
             );
         }
         ValueExpr::Void(child) => {
-            context.unmodeled_effect_operation();
+            // GetValue(child) is transferred below before its value is discarded.
+            context.noninvoking_operation();
             return primitive_operation(
                 context,
                 [child.as_ref()],
@@ -388,7 +393,8 @@ pub(super) fn transfer(
             );
         }
         ValueExpr::LogicalNot(child) => {
-            context.unmodeled_effect_operation();
+            // ToBoolean does not invoke object hooks.
+            context.noninvoking_operation();
             return primitive_operation(
                 context,
                 [child.as_ref()],

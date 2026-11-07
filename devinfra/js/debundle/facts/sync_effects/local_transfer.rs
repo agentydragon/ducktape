@@ -274,6 +274,11 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
             .effect_coverage
             .compose(&EffectCoverageFragment::default());
     }
+    fn noninvoking_operation(&mut self) {
+        self.frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::no_effects());
+    }
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue> {
         value(self.context, expression, self.frame)
     }
