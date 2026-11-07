@@ -7,7 +7,6 @@ import { type Live, type WatchHealth } from "../live";
 import { backoff, type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
 import { followWatch } from "../watch_stream";
-import { protoJson } from "./proto_json";
 import { WatchThreadMetadataResponseSchema } from "../../app_service_pb";
 import { WatchSessionSummariesResponseSchema } from "../../../history_service/history_service_pb";
 
@@ -157,7 +156,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
         metadataReady = false;
       },
       onFrame: (value) => {
-        const frame = fromJson(WatchThreadMetadataResponseSchema, protoJson(value));
+        const frame = fromJson(WatchThreadMetadataResponseSchema, value);
         if (frame.changed === undefined) throw new Error("App returned an empty Thread metadata watch frame.");
         updatesConnected = frame.updatesConnected;
         metadataReady = true;
@@ -173,7 +172,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
         historyReady = false;
       },
       onFrame: (value) => {
-        const frame = fromJson(WatchSessionSummariesResponseSchema, protoJson(value));
+        const frame = fromJson(WatchSessionSummariesResponseSchema, value);
         switch (frame.observation.case) {
           case "changed":
           case "reconnectRequired":

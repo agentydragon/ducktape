@@ -1,4 +1,4 @@
-import { fromJson, toJson } from "@bufbuild/protobuf";
+import { fromJsonString, toJson } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 
 import { GetSystemStatusResponseSchema, SystemComponentState } from "../app_service_pb";
@@ -11,7 +11,7 @@ export type SystemComponentStatus = {
   checked_at: string;
 };
 
-const appServiceClient = createAppServiceClient("/upstream/app/v1", "Invalid system status response.");
+const appServiceClient = createAppServiceClient("/upstream/app/v1");
 
 function stateName(state: SystemComponentState): SystemComponentStatus["state"] {
   switch (state) {
@@ -25,7 +25,7 @@ function stateName(state: SystemComponentState): SystemComponentStatus["state"] 
 }
 
 export async function getSystemStatus(): Promise<SystemComponentStatus[]> {
-  const response = fromJson(GetSystemStatusResponseSchema, await appServiceClient.get("/system/status"));
+  const response = fromJsonString(GetSystemStatusResponseSchema, await appServiceClient.getText("/system/status"));
   return response.components.map((component) => {
     if (component.checkedAt === undefined) throw new Error("System status omitted a component check time.");
     return {

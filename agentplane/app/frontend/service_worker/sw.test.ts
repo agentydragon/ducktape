@@ -120,7 +120,7 @@ function loadWorker(): TestWorker {
             ? {}
             : decideActionRequestProtoJson(actionRequest)
           : listActionRequestsProtoJson(pending ?? []);
-      return { ok: options?.method === "POST" || pending !== null, json: async () => body };
+      return Response.json(body, { status: options?.method === "POST" || pending !== null ? 200 : 403 });
     },
     crypto: { randomUUID: () => "test-intent" },
   });

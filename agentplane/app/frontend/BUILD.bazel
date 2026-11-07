@@ -250,10 +250,7 @@ ts_library(
     name = "app_service_client",
     srcs = ["app_service_client.ts"],
     tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        "//:node_modules/@bufbuild/protobuf",
-    ],
+    deps = [":client"],
 )
 
 ts_library(
@@ -503,7 +500,11 @@ ts_library(
     name = "watch_stream",
     srcs = ["watch_stream.ts"],
     tsconfig = TSCONFIG,
-    deps = [":stream_reader"],
+    deps = [
+        ":stream_reader",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/zod",
+    ],
 )
 
 agentplane_vitest_test(

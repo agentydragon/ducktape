@@ -1,4 +1,4 @@
-import { fromJson } from "@bufbuild/protobuf";
+import { fromJsonString } from "@bufbuild/protobuf";
 
 import { createAppServiceClient } from "./app_service_client";
 import {
@@ -75,7 +75,7 @@ export type SandboxFormView = {
 };
 
 const APP_CONFIG_PATH = "/upstream/app-config/v1";
-const appConfigClient = createAppServiceClient(APP_CONFIG_PATH, "Invalid app configuration response.");
+const appConfigClient = createAppServiceClient(APP_CONFIG_PATH);
 
 export function harnessName(harness: ProtoHarness): Harness {
   switch (harness) {
@@ -91,7 +91,10 @@ export function harnessName(harness: ProtoHarness): Harness {
 }
 
 export async function listModels(): Promise<ModelCatalog> {
-  const response: ListModelsResponse = fromJson(ListModelsResponseSchema, await appConfigClient.get("/models"));
+  const response: ListModelsResponse = fromJsonString(
+    ListModelsResponseSchema,
+    await appConfigClient.getText("/models")
+  );
   const harnesses: Partial<Record<Harness, string[]>> = {};
   for (const offer of response.harnesses) harnesses[harnessName(offer.harness)] = offer.models;
   return {
@@ -105,9 +108,9 @@ export async function listModels(): Promise<ModelCatalog> {
 }
 
 export async function listSandboxPresets(): Promise<SandboxPresetView[]> {
-  const response: ListSandboxPresetsResponse = fromJson(
+  const response: ListSandboxPresetsResponse = fromJsonString(
     ListSandboxPresetsResponseSchema,
-    await appConfigClient.get("/presets")
+    await appConfigClient.getText("/presets")
   );
   return response.presets.map((preset) => ({
     name: preset.name,
@@ -128,9 +131,9 @@ export async function listSandboxPresets(): Promise<SandboxPresetView[]> {
 }
 
 export async function getFrontendConfig(): Promise<FrontendConfig> {
-  const response: ProtoGetFrontendConfigResponse = fromJson(
+  const response: ProtoGetFrontendConfigResponse = fromJsonString(
     GetFrontendConfigResponseSchema,
-    await appConfigClient.get("/frontend-config")
+    await appConfigClient.getText("/frontend-config")
   );
   const config = response.frontendConfig;
   return {
@@ -154,9 +157,9 @@ export async function getFrontendConfig(): Promise<FrontendConfig> {
 }
 
 export async function getSandboxForm(): Promise<SandboxFormView> {
-  const response: GetSandboxFormResponse = fromJson(
+  const response: GetSandboxFormResponse = fromJsonString(
     GetSandboxFormResponseSchema,
-    await appConfigClient.get("/sandbox-form")
+    await appConfigClient.getText("/sandbox-form")
   );
   const defaults = response.newSandboxDefaults;
   if (defaults === undefined) throw new Error("App configuration omitted Sandbox defaults.");

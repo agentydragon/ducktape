@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
+import type { JsonValue } from "@bufbuild/protobuf";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -41,7 +42,7 @@ function handler(fragment: string): WatchHandlers {
 function start(): void {
   for (const item of watches.values()) item.onOpen();
 }
-function frame(fragment: string, result: unknown): void {
+function frame(fragment: string, result: JsonValue): void {
   handler(fragment).onFrame(result);
 }
 

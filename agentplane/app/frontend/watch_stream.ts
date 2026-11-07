@@ -5,13 +5,16 @@
  *
  * A watch replays what it holds on every connection; `onOpen` marks where a replay begins.
  */
+import type { JsonValue } from "@bufbuild/protobuf";
+import { z } from "zod";
+
 import { followResponse, type StreamConnection } from "./stream_reader";
 
 export interface WatchHandlers {
   /** A response was accepted: the frames that follow replay the watch's state from its start. */
   onOpen: () => void;
   /** The `result` of one message. Throwing ends the connection. */
-  onFrame: (result: unknown) => void;
+  onFrame: (result: JsonValue) => void;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
   /** Bounds a watch that opens but never sends its initial snapshot. */
@@ -20,13 +23,13 @@ export interface WatchHandlers {
   idleTimeoutMs?: number;
 }
 
-interface Message {
-  result?: unknown;
-  error?: { code: number; message: string };
-}
+const messageSchema = z.union([
+  z.object({ error: z.object({ code: z.number(), message: z.string() }) }),
+  z.object({ result: z.json() }),
+]);
 
 /** Splits text into lines and each into its message's `result`, erroring on an `error` message. */
-function results(): TransformStream<string, unknown> {
+function results(): TransformStream<string, JsonValue> {
   let partial = "";
   return new TransformStream({
     transform(chunk, controller) {
@@ -34,8 +37,8 @@ function results(): TransformStream<string, unknown> {
       partial = lines.pop() ?? "";
       for (const line of lines) {
         if (line === "") continue;
-        const message = JSON.parse(line) as Message;
-        if (message.error !== undefined) throw new Error(`${message.error.message} (code ${message.error.code})`);
+        const message = messageSchema.parse(JSON.parse(line));
+        if ("error" in message) throw new Error(`${message.error.message} (code ${message.error.code})`);
         controller.enqueue(message.result);
       }
     },
