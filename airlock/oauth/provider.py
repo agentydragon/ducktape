@@ -1,9 +1,9 @@
 import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-import httpx
+import httpx2
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from pydantic import BaseModel, Field
@@ -36,7 +36,7 @@ class GenericOAuth2Provider:
         self.redirect_uri = config.redirect_uri or default_redirect_uri
 
     def generate_state(self) -> str:
-        return generate_token(32)
+        return cast(str, generate_token(32))
 
     async def build_authorize_url(self, state: str) -> tuple[str, str | None]:
         code_verifier = generate_token(64) if self.config.use_pkce else None
@@ -86,7 +86,7 @@ class GenericOAuth2Provider:
         return datetime.now(UTC) >= token.expires_at - margin
 
 
-def _raise_for_status(response: httpx.Response) -> httpx.Response:
+def _raise_for_status(response: httpx2.Response) -> httpx2.Response:
     response.raise_for_status()
     return response
 
