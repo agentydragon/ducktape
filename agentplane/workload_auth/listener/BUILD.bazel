@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "listener",
+    srcs = ["config.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/listener",
+)
+
+go_test(
+    name = "listener_test",
+    srcs = ["config_test.go"],
+    embed = [":listener"],
+)

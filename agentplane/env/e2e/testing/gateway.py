@@ -211,7 +211,7 @@ class Gateway:
 
     @property
     def endpoint(self) -> EnvironmentRuntimeControl:
-        return EnvironmentRuntimeControl(listen_address=self.target, security=Insecure(mode="insecure"))
+        return EnvironmentRuntimeControl(listen_address=self.target, security=Insecure())
 
 
 @asynccontextmanager

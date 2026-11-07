@@ -32,6 +32,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
+from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -46,6 +47,7 @@ from agentplane.testing.tls import (
     server_tls_context,
     write_ca,
 )
+from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener as WorkloadListener
 from util.net import Listener
 
 # Three namespaces, all different, so that a proxy reading one from the wrong one fails.
@@ -111,7 +113,7 @@ def replica_settings(
         log_levels={},
         ca_cert=cert,
         ca_key=key,
-        token_audience=AUDIENCE,
+        forward=WorkloadListener(listen_address="0.0.0.0:8888", auth=[KubernetesBearerAuth(audience=AUDIENCE)]),
         upstream_ca_file=upstream_ca_file,
         database_url=database_url,
         exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
@@ -673,7 +675,10 @@ async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.M
     async with (
         recording_grpc_upstream(keypair, finished=finished) as (port, requests),
         SidecarProcess(
-            proxy_host=egress.proxy_listener.host, proxy_port=egress.proxy_listener.port, token_file=token_file
+            proxy=Proxy(
+                address=f"{egress.proxy_listener.host}:{egress.proxy_listener.port}",
+                transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=token_file)),
+            )
         ) as sidecar,
     ):
         monkeypatch.setenv(

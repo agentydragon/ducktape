@@ -54,6 +54,7 @@ from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, session_dispatcher
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
@@ -694,6 +695,10 @@ class Egress(Construct):
                 RUNNER_INGRESS_AUDIENCE,
                 session_dispatcher.TOKEN_AUDIENCE,
             ],
+            "forward": Listener(
+                listen_address=f"0.0.0.0:{self.proxy.pod_port}",
+                auth=[KubernetesBearerAuth(audience=WORKLOAD_TOKEN_AUDIENCE)],
+            ).model_dump(mode="json"),
         }
         settings = SettingsFile(
             self,
@@ -840,13 +845,11 @@ class Egress(Construct):
         values: dict[str, object] = {
             "rules_namespace": self.env.namespace,
             "credentials_namespace": self.env.egress.credentials_namespace,
-            "listen_address": f"0.0.0.0:{self.proxy.pod_port}",
             "admin_listen_address": f"0.0.0.0:{self.admin.pod_port}",
             "agent_api_listen_address": f"0.0.0.0:{self.agent_api.pod_port}",
             "ca_cert": "/etc/agentplane-egress/ca/tls.crt",
             "ca_key": "/etc/agentplane-egress/ca/tls.key",
             "upstream_ca_file": f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}",
-            "token_audience": WORKLOAD_TOKEN_AUDIENCE,
         }
         setting_env = {
             env_name(Settings, field): EnvValue.from_value(str(checked_value(Settings, field, value)))

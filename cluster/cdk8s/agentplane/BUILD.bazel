@@ -113,6 +113,7 @@ py_library(
         "//agentplane/history_service:settings",
         "//agentplane/runner_gateway:api",
         "//agentplane/workload_auth:audience",
+        "//agentplane/workload_auth:listener",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",

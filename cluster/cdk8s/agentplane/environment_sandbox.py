@@ -389,12 +389,11 @@ class EnvironmentSandboxTemplate(Construct):
             control=EnvironmentRuntimeControl(
                 listen_address=f"0.0.0.0:{ENVIRONMENT_RUNTIME_SERVICE_PORT}",
                 security=MTLS(
-                    mode="mtls",
                     tls=TLS(
                         cert_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.crt",
                         key_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.key",
                         ca_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/ca.crt",
-                    ),
+                    )
                 ),
             ),
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
