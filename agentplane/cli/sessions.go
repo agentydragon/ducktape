@@ -18,8 +18,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const sessionsHelp = `Calls the SessionDispatcher gRPC API (AGENTPLANE_SESSIONS_URL, AGENTPLANE_SESSIONS_CREDENTIAL).
-get and observe-input also read retained History (AGENTPLANE_HISTORY_URL, AGENTPLANE_HISTORY_CREDENTIAL).
+const sessionsHelp = `Calls the SessionDispatcher gRPC API (AGENTPLANE_SESSIONS_URL; optional AGENTPLANE_SESSIONS_CREDENTIAL bearer).
+get and observe-input also read retained History (AGENTPLANE_HISTORY_URL; optional AGENTPLANE_HISTORY_CREDENTIAL bearer).
 read-turns reads retained History only.
 
 This group creates and directs Sessions in an existing Sandbox and can observe an input's correlated

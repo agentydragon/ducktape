@@ -216,6 +216,7 @@ py_library(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:agent_messaging",
+        "//agentplane/system_tests/scenarios:dispatcher_workload",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",
         "//agentplane/system_tests/scenarios:runner_credentials",

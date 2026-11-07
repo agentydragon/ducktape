@@ -1,126 +1,74 @@
-# Agentplane workload authentication and credential propagation
+# Workload authentication and service routes
 
-Status: **accepted and implemented foundation.** This records the boundary landed by PRs
-[#5685](https://github.com/agentydragon/ducktape/pull/5685),
-[#5696](https://github.com/agentydragon/ducktape/pull/5696),
-[#5698](https://github.com/agentydragon/ducktape/pull/5698), and
-[#5700](https://github.com/agentydragon/ducktape/pull/5700). It is evidence, not an open prerequisite
-for the Action Service.
+Sandbox-to-service traffic uses the Runtime SVID issued for the current Sandbox incarnation. This
+document describes that route and the remaining TokenReview compatibility paths; it does not define
+authentication for external callers.
 
-## Implemented path
+## Sandbox SVID route
 
-A managed Sandbox reaches trusted first-party services without exposing a real workload bearer to
-the harness or runner:
+The Sandbox Controller issues a Runtime certificate with URI SAN
+`spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`. It has server
+and client authentication usages. The Environment Runtime and egress sidecar receive that
+incarnation's certificate and the trust-manager CA bundle. The sidecar matches a configured
+destination by exact origin, opens a CONNECT through the egress proxy, then presents the certificate
+on the destination TLS connection. It strips caller `Authorization`, `Proxy-Authorization`, and
+projected-token headers before sending the request.
 
-```text
-harness / runner
-  Authorization: Bearer agentplane-credential-agentplane-workload
-  (inert placeholder)
-        |
-        v
-Pod-local egress sidecar
-  Runner SVID over TLS, or a sidecar-only Pod-bound hop bearer
-  X-Agentplane-Workload-Token: <audience> <destination token>
-        |
-        v
-central egress proxy
-  verifies the SVID against live Sandbox state, or reviews the hop bearer
-  an `egress` rule selects exact host/method/path and credentialRef
-  projectedWorkloadToken substitutes the reviewed destination-audience bearer
-        |
-        +-----------------------------+
-        v                             v
-authenticated LLM ingress       standalone Action Service
-Go `auth.Principal`              Go `auth.ServiceAccountPrincipal`
-server-held LiteLLM key         service-owned authorization/lifecycle
-```
+The proxy verifies client TLS against the configured CA and checks the leaf's validity, client-auth
+usage, and exact URI identity. It resolves the URI's namespace, Sandbox UID, and credential ID
+against the live Sandbox and current runner binding before evaluating egress policy for the
+Sandbox's own ServiceAccount. Pod runners must match the Sandbox's current incarnation name and
+Pod UID; VM runners must match its accepted VMI UID. No caller header supplies or overrides the
+subject. The proxy does not read Pod or ServiceAccount objects.
 
-An `EgressCredential.spec.source` may be a central-held `secretRef` or a
-`projectedWorkloadToken` naming the destination audience. The proxy accepts the projected token
-only after TokenReview binds it to the hop caller’s account and Pod UID. For an SVID hop, the
-live Sandbox supplies that binding. The proxy never copies a raw
-`Proxy-Authorization` header, unconditionally appends `Authorization`, mints a new token, or
-introduces an LLM/Action service branch. Missing, stale, mismatched, or unbound context fails
-closed. Existing `secretRef` behavior remains unchanged.
+The destination service independently verifies the client certificate and resolves the same live
+Sandbox binding before it authorizes a request or stamps attribution metadata. Each service keeps
+its own resource authorization. The SVID route does not depend on bearer substitution or a
+per-service projected token audience. Finalization does not revoke a still-accepted credential:
+Runtime may finish its History seal until the credential is cleared or the Sandbox is removed. See the [egress contract](../egress/SPEC.md) and
+[LLM ingress](../llm_ingress/README.md) for their route-specific behavior.
 
-The Rules API shares the forward proxy’s configured authentication policy and serving TLS
-material. The SVID sidecar route tunnels TLS through central; the API verifies the peer itself.
-It accepts no forwarded caller assertion. The remaining destination services construct a Go
-`workload_auth/auth.Resolver` with their audience and
-namespace allowlist. Pod-bound `ResolveToken` requires a reviewed ServiceAccount subject, UID, and
-one Pod name/UID claim pair. The API server validates the bound object in TokenReview, so a deleted
-or replaced Pod fails a fresh review; accepted verdicts are reused for up to 30 s
-([verdict reuse](../workload_auth/README.md)). Action Service uses `ResolveServiceAccountToken`,
-which requires the ServiceAccount UID and permits either no Pod claims or one complete pair. The
-result contains only account and, where proven, Pod identity. It contains no Thread, Agent, operator
-role, permissions, token, or caller body/header identity.
+## TokenReview compatibility
 
-The compatibility audience remains `agentplane-egress`. A future coordinated rename to
-`agentplane-workload` does not change the contract and is not required for the landed P0 behavior.
+The central proxy requires the Sandbox SVID; it has no plaintext token listener. The generic
+sidecar still supports an explicitly selected token mode for separate deployments. Kubernetes
+retains its destination-audience `projectedWorkloadToken`, checked against the Sandbox's current
+Pod binding and substituted only for the matching credential rule. Sandbox templates project no
+first-party service or proxy audience.
 
-## Landed consumers
+The proxy's `forward` and Gateway's `workload` listener settings use the shared
+[authentication allowlist](../workload_auth/README.md). The deployed workload listeners select
+SPIFFE only. Gateway workload ingress can explicitly enable `kubernetes_bearer` on the same TLS
+listener; it then verifies that listener's configured audience and retains the same resource
+authorization. Gateway backend and cross-replica APIs retain their separate audiences and method
+policies. A presented certificate and an application credential together are rejected.
 
-### Authenticated LLM ingress
+The LLM ingress also retains its HTTP TokenReview listener for direct requests from the central
+sampler. Its Sandbox SVID listener is separate, accepts no bearer fallback, and uses its server-held
+LiteLLM virtual key only on the internal LiteLLM hop. Caller headers and request bodies are never
+identity evidence; verified workload metadata is stamped by the service.
 
-PR #5698 added an independently deployable ingress in front of LiteLLM. Staging runner traffic uses
-only the workload placeholder. The ingress resolves a Pod-bound `auth.Principal`, strips caller credentials and
-identity-like metadata headers, forwards provider-native bodies/status/errors/SSE without protocol
-translation, and authenticates to LiteLLM with one server-held virtual key. Verified Sandbox
-metadata is stamped through LiteLLM's documented metadata header. See
+## Service authorization and attribution
+
+Authentication yields only the verified Sandbox ServiceAccount and, when proven, Pod identity.
+Each destination service retains its own authorization checks, policy, and resource ownership.
+Neither a Sandbox certificate nor a successful authentication grants Action, Thread, operator, or
+cross-service permissions by itself. The egress proxy's allow decision and the destination's
+authorization answer separate questions.
+
+The LLM ingress strips caller identity-like headers and body claims, forwards provider-native
+requests and responses, and stamps verified Sandbox and Pod metadata into LiteLLM's supported
+metadata header. Its server-held LiteLLM key is never exposed to the runner. See
 [`../llm_ingress/README.md`](../llm_ingress/README.md).
 
-### Standalone Action Service
+## External callers
 
-PR #5700 uses the destination resolver's ServiceAccount identity for workload submission and caller-own reads.
-The caller is the ServiceAccount the Pod runs as, so two Pods sharing one are the same caller and
-one `PolicyBinding` covers both. The integration app/BFF operator surface uses separate authentication. See
-[`../action_service/README.md`](../action_service/README.md).
-
-## Observed acceptance evidence
-
-The landed tests prove:
-
-- two Pod-bound workload tokens substitute per request rather than becoming one static value;
-- same-ServiceAccount Pods are one caller, whatever else owns them;
-- harnesses see only the inert placeholder;
-- malformed, wrong-audience and stale/deleted/replaced workload identities fail before a
-  destination/backend call;
-- direct placeholder bypass and forged identity headers/body fields do not establish ownership;
-- exact target/host/method/path selection remains the substitution authority;
-- provider-native LLM streaming and error bodies pass through unchanged;
-- Action Service caller-own/operator-all boundaries use the shared principal; and
-- workload and destination credentials are absent from principals, projections, errors, and test
-  logs.
-
-The PR descriptions contain the exact remote test/build invocations and BuildBuddy evidence links.
-
-## Access beyond Actions
+The Sandbox SVID route does not authenticate command boxes, public-coder workloads, or other
+non-Sandbox callers. Their service access remains unavailable until a separate caller-authentication
+design defines the authority and authorization boundary. Do not treat an egress placeholder, source
+IP, or caller-supplied identity header as that design.
 
 For service-mediated caller authorization, use the approved
-[delegated authorization design](delegated_authorization.md). It defines the actor/caller boundary,
-explicit authentication mode and per-method trust; the shared protocol remains to implement.
-
-Hosted agents reach other Agentplane services with the same Sandbox-token authentication, and an
-external harness may be granted access beyond Actions without becoming a hosted Sandbox or Thread;
-conversation search and reading are examples, not the boundary. The constraints on that extension:
-
-- Each resource-owning service keeps its own authorization, independent of how the caller
-  authenticated. An Identity's Action scope grants nothing on another service, and shared
-  authentication infrastructure does not mean one bearer accepted everywhere.
-- The MCP frontend and the Connection-to-Identity binding authority live in the Action Service as
-  the first delivery slice, not as an ownership decision. Whether they move to a shared facade, or
-  services expose direct endpoints, is decided when a second service needs them; other services
-  need not become Action executors to be reachable.
-- Resource-specific permissions and selectors, credential audiences and service boundaries, trusted
-  identity propagation, revocation consistency, and immutable caller/client provenance are settled
-  before any cross-service extension. No speculative service interfaces or preset coupling before
-  then; SandboxPreset stays integration-app-owned and downstream services never interpret it.
-
-## Deferred
-
-- per-destination audiences if recipient isolation becomes a requirement;
-- Kubernetes API access under a distinct projected audience;
-- authoritative Thread/Agent attribution after live bindings exist;
-- ordinary-service `SubjectAccessReview` integration; and
-- external-agent authentication, standing grants, cross-agent permissions, credential broker, or
-  broad identity/capability framework.
+[delegated authorization design](delegated_authorization.md). Resource-specific permissions and
+selectors, service boundaries, trusted identity propagation, revocation consistency, and immutable
+caller/client provenance must be settled before a cross-service extension.

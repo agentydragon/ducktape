@@ -3,6 +3,7 @@ receipts are read from the History Service."""
 
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Final
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -29,7 +30,7 @@ from agentplane.notification_service.settings import (
 )
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database
+from cluster.cdk8s.agentplane import database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -43,7 +44,7 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name, validate_settings_fragment
 
 NAME = "notifications"
-WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
+WORKLOAD_URI: Final = "spiffe://agentplane/notifications"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 # The health service whose verdict is "the process answers"; the empty name is readiness. Keep equal to
@@ -65,6 +66,15 @@ def http_service(namespace: str) -> ServiceRef:
     """The HTTP listener: the facade sandboxes call, its documentation and the GitHub webhook."""
     return ServiceRef(
         name=NAME, port=Port(name="http", number=8081), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
+
+
+def workload_service(namespace: str) -> ServiceRef:
+    """The service-owned mutual TLS listener for Sandbox calls."""
+    return ServiceRef(
+        name=NAME,
+        port=Port(name="workload", number=8082),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
 
 
@@ -104,6 +114,7 @@ class Notifications(Construct):
         self.dispatcher = dispatcher
         endpoint = service(env.namespace)
         http = http_service(env.namespace)
+        workload_endpoint = workload_service(env.namespace)
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
@@ -136,13 +147,6 @@ class Notifications(Construct):
             "port": endpoint.pod_port,
             "http_port": http.pod_port,
         }
-        settings = SettingsFile(
-            self,
-            "settings",
-            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
-            path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(validate_settings_fragment(Settings, content)),
-        )
         readiness = grpc_probe(port=endpoint.pod_port, initial_delay_seconds=3, period_seconds=10)
         liveness = grpc_probe(
             port=endpoint.pod_port, service=_LIVENESS_HEALTH_SERVICE, initial_delay_seconds=20, period_seconds=30
@@ -157,7 +161,7 @@ class Notifications(Construct):
         workload = add_service_workload(
             self,
             env,
-            serves=[endpoint, http],
+            serves=[endpoint, http, workload_endpoint],
             container="notifications",
             image=f"{_IMAGE}:unset",
             env_variables=variables,
@@ -174,6 +178,17 @@ class Notifications(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
+        content["workload_port"] = workload_endpoint.pod_port
+        content["workload_tls"] = workload_tls.serving_certificate(
+            self, env, container=workload.container, name=NAME, uri=WORKLOAD_URI
+        )
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
+            path="/etc/agentplane-notifications/settings.yaml",
+            content=yaml_config(validate_settings_fragment(Settings, content)),
+        )
         role_name = NAME.removeprefix("agentplane-")
         Role(
             self,
@@ -181,7 +196,8 @@ class Notifications(Construct):
             metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
             rules=[
                 # Resolving a destination reads its Sandbox, not the Pod.
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
                 # Authorizing a peer send watches the caller's session_inbox_access rules and reports
                 # a set it cannot parse on each binding that names it, as egress and Actions do.
                 RolePolicyRule(
@@ -220,6 +236,7 @@ class Notifications(Construct):
         env = self.env
         endpoint = service(env.namespace)
         http = http_service(env.namespace)
+        workload_endpoint = workload_service(env.namespace)
         NetworkPolicy(
             self,
             "network-policy",
@@ -228,6 +245,7 @@ class Notifications(Construct):
             ingress=[
                 *(pods.admit(endpoint.pod_port) for pods in self.callers),
                 *(pods.admit(http.pod_port) for pods in self.http_callers),
+                *(pods.admit(workload_endpoint.pod_port) for pods in self.http_callers),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
@@ -240,3 +258,4 @@ class Notifications(Construct):
                 database.egress(env.namespace),
             ],
         )
+        workload_tls.admit_forwarders(self, name=NAME, endpoint=workload_endpoint, forwarders=self.http_callers)

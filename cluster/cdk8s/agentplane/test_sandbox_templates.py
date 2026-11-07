@@ -15,7 +15,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
-from cluster.cdk8s.agentplane import sandbox_pod, staging
+from cluster.cdk8s.agentplane import llm_ingress, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
 
@@ -358,44 +358,19 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     assert {"name": "egress-sidecar-settings", "configMap": {"name": "launcher-relay-egress-sidecar"}} in volumes
 
 
-def test_runner_egress_mtls_uses_tls_connect_only_for_rules(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "runner-mtls-template-test")
-    EnvironmentSandboxTemplate(
-        chart,
-        "runner-template",
-        replace(staging.ENV, runner_egress_mtls=True),
-        name="runner-mtls-template",
-        image="example.invalid/runner",
-    )
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
-    pod = template["spec"]["pod"]["spec"]
+def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
-    settings_map = _by_name(docs, "ConfigMap", settings_volume["configMap"]["name"])
-    settings = cast(dict[str, Any], yaml.safe_load(settings_map["data"]["settings.yaml"]))
-
-    proxy_transport = settings["proxy"]["transport"]
-    assert proxy_transport == {
-        "mode": "tls",
-        "ca_file": "/run/agentplane/environment-runtime-tls/ca.crt",
-        "auth": {
-            "mode": "spiffe",
-            "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
-            "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
-        },
-    }
-    routes = settings["platform_routes"]
-    assert routes["ingress"]["transport"]["mode"] == "plaintext"
-    assert routes["telemetry"]["transport"] == {"mode": "plaintext"}
-    assert routes["egress-rules"]["transport"] == {"mode": "tls_connect"}
-    assert routes["egress-rules"]["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
-    assert routes["egress-rules"]["listen_address"] == "127.0.0.1:3133"
-    runtime = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
-    runtime_env = {entry["name"]: entry.get("value") for entry in runtime["env"]}
-    assert runtime_env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3133"
-    assert runtime_env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
-    sidecar = one(container for container in pod["initContainers"] if container["name"] == "egress-sidecar")
-    assert all(mount["name"] != "buildbuddy-api-key" for mount in sidecar["volumeMounts"])
+    settings_doc = _by_name(staging_manifests, "ConfigMap", settings_volume["configMap"]["name"])
+    settings = cast(dict[str, Any], yaml.safe_load(settings_doc["data"]["settings.yaml"]))
+    origin = llm_ingress.service(staging.ENV.namespace)
+    destination = llm_ingress.workload_service(staging.ENV.namespace)
+    route = settings["workload_routes"][f"{origin.fqdn}:{origin.port.number}"]
+    assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+    assert route["server_uri"] == llm_ingress.WORKLOAD_URI
+    assert route["tls"]["cert_file"].endswith("/tls.crt")
+    assert route["tls"]["key_file"].endswith("/tls.key")
+    assert route["tls"]["ca_file"].endswith("/ca.crt")
 
 
 def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifests: list[dict[str, Any]]) -> None:

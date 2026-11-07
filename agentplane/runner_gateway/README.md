@@ -15,6 +15,15 @@ The Kubernetes API must answer that TokenReview and Pod read; failure prevents s
 See the [proxy contract](gateway/SPEC.md). The Sandbox
 Controller owns `Sandbox.status`.
 
+The required `workload` settings block configures the dedicated TLS listener used by Sandbox
+gRPC and HTTP/JSON traffic. Its `auth` list explicitly enables `spiffe`, `kubernetes_bearer`, or
+both; the deployed Gateway enables SPIFFE only. Mixed mode accepts a TLS bearer when no client
+certificate is presented. Calls must present exactly one enabled credential: an invalid presented
+SVID cannot fall back to bearer authentication, and certificate plus authorization or delegation
+credentials are rejected as ambiguous. The workload TokenReview audience belongs to this listener's
+own setting; the backend listeners retain their existing audiences, caller allowlists, API methods,
+and delegation policy. Gateway workload TLS remains required in every mode.
+
 Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
 trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client
 `cert_file`, `key_file` and `ca_file`. The Gateway identity

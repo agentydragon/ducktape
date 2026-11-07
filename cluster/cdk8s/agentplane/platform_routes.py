@@ -47,12 +47,12 @@ def ingress(namespace: str) -> Route:
     return Route("ingress", history_service.ingress_service(namespace), RUNNER_INGRESS_AUDIENCE, "plaintext", 3131)
 
 
-def egress_rules(namespace: str, *, runner_egress_mtls: bool = False) -> Route:
+def egress_rules(namespace: str) -> Route:
     return Route(
         "egress-rules",
         egress.admin(namespace),
-        None if runner_egress_mtls else WORKLOAD_TOKEN_AUDIENCE,
-        "tls_connect" if runner_egress_mtls else "plaintext",
+        None,
+        "tls_connect",
         3133,
     )
 
@@ -70,18 +70,12 @@ def telemetry_route() -> Route:
     return Route("telemetry", telemetry.ALLOY_OTLP_GRPC, None, "plaintext", 3132)
 
 
-def routes(namespace: str, *, runner_egress_mtls: bool = False) -> tuple[Route, ...]:
-    return (
-        ingress(namespace),
-        telemetry_route(),
-        egress_rules(namespace, runner_egress_mtls=runner_egress_mtls),
-        notifications_grpc(namespace),
-        model_config(namespace),
-    )
+def routes(namespace: str) -> tuple[Route, ...]:
+    return telemetry_route(), egress_rules(namespace), notifications_grpc(namespace), model_config(namespace)
 
 
 def sidecar_routes(
-    namespace: str, *, listen_host: str = "127.0.0.1", runner_egress_mtls: bool = False
+    namespace: str, *, listen_host: str = "127.0.0.1"
 ) -> dict[str, PlatformRoute]:
     """The sidecar's `platform_routes` setting."""
     return {
@@ -96,7 +90,7 @@ def sidecar_routes(
                 )
             ),
         )
-        for route in routes(namespace, runner_egress_mtls=runner_egress_mtls)
+        for route in routes(namespace)
     }
 
 

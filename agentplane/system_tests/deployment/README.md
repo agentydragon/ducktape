@@ -174,19 +174,15 @@ their Sandboxes use the runner disk and test guest images. Image volumes need co
 
 ## Egress authentication matrix
 
-The fixture renderer selects egress authentication explicitly, independently of its environment kind.
-`fixture_chart.environment` requires `runner_egress_mtls`; it never derives it from `vm_sandboxes`.
-The optional-SPIFFE layer exercises this subset of the supported matrix:
+SPIFFE over TLS is the only Sandbox egress authentication after the service cutover. The auth
+selector is removed; environment kind does not select an auth mode. This is the exercised matrix:
 
 | Fixture          | Environment   | Egress authentication |
 | ---------------- | ------------- | --------------------- |
 | `local-model`    | Pod           | SPIFFE over TLS       |
-| `local-model-vm` | QEMU/KubeVirt | Kubernetes bearer     |
+| `local-model-vm` | QEMU/KubeVirt | SPIFFE over TLS       |
 | `public-litellm` | Pod           | SPIFFE over TLS       |
 | MCP fixtures     | Pod           | SPIFFE over TLS       |
-
-The VM bearer choice retains end-to-end coverage of that supported hop during migration. The
-service cutover selects SPIFFE explicitly for every fixture; it removes bearer support.
 
 ## RBE executor constraints
 

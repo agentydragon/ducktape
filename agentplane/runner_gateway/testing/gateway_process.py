@@ -17,13 +17,14 @@ import yaml
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from python.runfiles import Runfiles
 
-from agentplane.environment_runtime_transport.config import MTLS, TLS
+from agentplane.environment_runtime_transport import config as runtime_transport
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
+from agentplane.workload_auth import listener as workload_listener
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
@@ -33,6 +34,8 @@ from util.settings_contract import env_name
 
 
 _GATEWAY_BINARY = "ducktape/agentplane/runner_gateway/runner-gateway_/runner-gateway"
+_SESSION_DISPATCHER_URI = "spiffe://agentplane/session-dispatcher"
+WORKLOAD_AUDIENCE = "test-runner-workload"
 
 
 def _wire_database_url(database_url: str) -> str:
@@ -63,15 +66,18 @@ class GatewayProcess:
 
     process: asyncio.subprocess.Process
     target: str
+    workload_url: str
     log_path: Path
     environment_runtime_ca: CertificateAuthority
     environment_runtime_ca_file: Path
 
-    def issue_environment_runtime_tls(self, uri: str, directory: Path) -> TLS:
+    def issue_environment_runtime_tls(self, uri: str, directory: Path) -> runtime_transport.TLS:
         """Issue an Environment Runtime peer certificate trusted by this Gateway process."""
         directory.mkdir(parents=True, exist_ok=True)
         cert_file, key_file = issue_workload_leaf(self.environment_runtime_ca, uri, directory)
-        return TLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.environment_runtime_ca_file))
+        return runtime_transport.TLS(
+            cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.environment_runtime_ca_file)
+        )
 
     def gateway_client(self, token_file: Path, *, request_timeout_s: float = 20) -> SandboxControlClient:
         return SandboxControlClient(
@@ -182,13 +188,15 @@ async def run_gateway(
     dispatcher_audience: str,
     gateway_audience: str,
     runner_proxy_token_file: Path,
+    workload_bearer_audience: str | None = None,
     startup_timeout_s: float = 30,
 ) -> AsyncIterator[GatewayProcess]:
     """Migrate the supplied database, then run the full Gateway on deployment-shaped settings.
 
     The Kubernetes API and PostgreSQL database are owned by the caller. The Goose migration
-    runner applies the schema before the server starts. Platform gRPC uses the public
-    listener; Runner connections use each active Sandbox's direct mTLS gRPC server.
+    runner applies the schema before the server starts. Platform gRPC uses the public listener;
+    Sandbox service calls use the dedicated workload TLS listener. Runner connections use each
+    active Sandbox's direct mTLS gRPC server.
     """
     binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
@@ -199,17 +207,35 @@ async def run_gateway(
     # runtime sources. The explicit empty wake list exercises the authoring schema and Go loader contract.
     with ExitStack() as listeners:
         grpc_listener = listeners.enter_context(listen_tcp())
+        workload_socket = listeners.enter_context(listen_tcp())
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
             settings_directory = Path(settings_dir)
             environment_runtime_ca = make_ca("Environment Runtime transport test CA")
             environment_runtime_ca_file, _ = write_ca(
                 environment_runtime_ca, settings_directory, "environment-runtime-ca"
             )
+            gateway_tls_directory = settings_directory / "gateway-tls"
+            gateway_tls_directory.mkdir()
             gateway_cert, gateway_key = issue_workload_leaf(
-                environment_runtime_ca, "spiffe://agentplane/runner-gateway", settings_directory
+                environment_runtime_ca, "spiffe://agentplane/runner-gateway", gateway_tls_directory
             )
-            runner_security = MTLS(
-                tls=TLS(
+            workload_tls_directory = settings_directory / "workload-tls"
+            workload_tls_directory.mkdir()
+            workload_cert, workload_key = issue_workload_leaf(
+                environment_runtime_ca, _SESSION_DISPATCHER_URI, workload_tls_directory, dns_name="localhost"
+            )
+            workload_auth: list[workload_listener.SPIFFEAuth | workload_listener.KubernetesBearerAuth] = [
+                workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)
+            ]
+            if workload_bearer_audience is not None:
+                workload_auth.append(workload_listener.KubernetesBearerAuth(audience=workload_bearer_audience))
+            workload_settings = workload_listener.Listener(
+                listen_address=f"fd:{workload_socket.socket.fileno()}",
+                tls=workload_listener.TLS(cert_file=workload_cert, key_file=workload_key),
+                auth=workload_auth,
+            )
+            runner_security = runtime_transport.MTLS(
+                tls=runtime_transport.TLS(
                     cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(environment_runtime_ca_file)
                 )
             )
@@ -221,6 +247,7 @@ async def run_gateway(
                 runner_token_file=runner_proxy_token_file,
                 kubeconfig=kubeconfig,
                 listen_address=f"fd:{grpc_listener.socket.fileno()}",
+                workload=workload_settings,
                 proxy_port=grpc_listener.port,
                 runner_control_target_template=f"{grpc_listener.host}:{grpc_listener.port}",
                 dispatcher_audience=dispatcher_audience,
@@ -260,7 +287,7 @@ async def run_gateway(
                 # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
                 env_name(Settings, "pod_ip"): "192.0.2.10",
             }
-            pass_fds = [grpc_listener.socket.fileno()]
+            pass_fds = [grpc_listener.socket.fileno(), workload_socket.socket.fileno()]
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(
                     binary, env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
@@ -273,6 +300,7 @@ async def run_gateway(
                 orphan = GatewayProcess(
                     process=process,
                     target=f"{grpc_listener.host}:{grpc_listener.port}",
+                    workload_url=f"https://localhost:{workload_socket.port}",
                     log_path=log_path,
                     environment_runtime_ca=environment_runtime_ca,
                     environment_runtime_ca_file=environment_runtime_ca_file,
@@ -285,9 +313,11 @@ async def run_gateway(
                     raise
                 raise
             grpc_listener.socket.close()
+            workload_socket.socket.close()
             service = GatewayProcess(
                 process=process,
                 target=f"{grpc_listener.host}:{grpc_listener.port}",
+                workload_url=f"https://localhost:{workload_socket.port}",
                 log_path=log_path,
                 environment_runtime_ca=environment_runtime_ca,
                 environment_runtime_ca_file=environment_runtime_ca_file,

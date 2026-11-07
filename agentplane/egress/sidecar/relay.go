@@ -29,9 +29,11 @@ const (
 )
 
 type sidecar struct {
-	config   config
-	proxyHop *proxyHop
-	ready    atomic.Bool
+	workloadContext context.Context
+	workloadRoutes  map[string]*workloadRoute
+	config          config
+	proxyHop        *proxyHop
+	ready           atomic.Bool
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
@@ -45,6 +47,10 @@ type sidecar struct {
 }
 
 func (s *sidecar) run(ctx context.Context) error {
+	if err := s.prepareWorkloadRoutes(); err != nil {
+		return err
+	}
+	defer s.closeWorkloadRoutes()
 	readinessListener, err := netlistener.Open(s.config.ReadinessListenAddress)
 	if err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
@@ -64,6 +70,7 @@ func (s *sidecar) run(ctx context.Context) error {
 }
 
 func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes []*platformRoute) error {
+	s.workloadContext = ctx
 	s.proxyListener = proxyListener
 	s.routes = routes
 	s.bindReadiness(readinessListener)
@@ -238,6 +245,7 @@ func (s *sidecar) proxyHandler() http.Handler {
 		}
 		if r.URL.Scheme == "" && r.URL.Host == "" && r.Host != "" {
 			// Local clients may send origin-form requests to the proxy listener.
+			// Only absolute-form requests select a privileged workload route.
 			r = r.Clone(r.Context())
 			r.URL.Scheme = "http"
 			r.URL.Host = r.Host
@@ -245,14 +253,23 @@ func (s *sidecar) proxyHandler() http.Handler {
 			refuse(w, http.StatusBadRequest, "bad-request")
 			return
 		}
+		authority := r.URL.Host
+		if r.URL.Port() == "" {
+			authority = net.JoinHostPort(r.URL.Hostname(), "80")
+		}
+		if absolute {
+			if route := s.workloadRoutes[authority]; route != nil {
+				s.exchangeWorkloadRoute(w, r, route)
+				return
+			}
+		}
 		token, err := s.proxyHop.auth.requestToken()
 		if err != nil {
 			slog.Warn("proxy hop credential unavailable", "error", err)
 			refuse(w, http.StatusServiceUnavailable, "token-unavailable")
 			return
 		}
-		r = r.WithContext(context.WithValue(r.Context(), proxyTokenKey{}, token))
-		proxy.ServeHTTP(w, r)
+		proxy.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), proxyTokenKey{}, token)))
 	})
 }
 
@@ -262,6 +279,10 @@ func (s *sidecar) handleConnect(w http.ResponseWriter, r *http.Request) {
 	authority := r.URL.Host
 	if authority == "" {
 		authority = r.Host
+	}
+	if route := s.workloadRoutes[authority]; route != nil {
+		s.exchangeWorkloadConnectRoute(w, r, route)
+		return
 	}
 	token, err := s.proxyHop.auth.requestToken()
 	if err != nil {

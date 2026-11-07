@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -31,7 +33,10 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadfacade "github.com/agentydragon/ducktape/agentplane/workload_auth/facade"
+	workloadlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-logr/logr"
+	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -160,6 +165,26 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 	failed <- fmt.Errorf("%s: %w", role, err)
 }
 
+func newWorkloadFacade(ctx context.Context, methods auth.Methods, service *dispatcher.Service, environmentService *environments.Service) (http.Handler, error) {
+	return workloadfacade.NewHandlerWithOptionalClientCertificate(
+		ctx,
+		workloadfacade.Interceptors{Unary: methods.UnaryInterceptor(0), Stream: methods.StreamInterceptor(0)},
+		facade.HandlerOptions{},
+		workloadfacade.Registration{
+			Server: func(registrar grpc.ServiceRegistrar) {
+				dispatcherpb.RegisterSessionDispatcherServer(registrar, service)
+				environmentpb.RegisterEnvironmentServiceServer(registrar, environmentService)
+			},
+			HTTP: func(ctx context.Context, mux *gatewayruntime.ServeMux, connection grpc.ClientConnInterface) error {
+				if err := dispatcherpb.RegisterSessionDispatcherHandlerClient(ctx, mux, dispatcherpb.NewSessionDispatcherClient(connection)); err != nil {
+					return err
+				}
+				return environmentpb.RegisterEnvironmentServiceHandlerClient(ctx, mux, environmentpb.NewEnvironmentServiceClient(connection))
+			},
+		},
+	)
+}
+
 func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DispatcherDatabaseURL, migrations.Up); err != nil {
 		return err
@@ -173,14 +198,27 @@ func listenAndServe(ctx context.Context, c config) error {
 		return fmt.Errorf("gRPC listener: %w", err)
 	}
 	defer listener.Close()
-	return serve(ctx, c, listener)
+	workloadListener, err := netlistener.Open(c.Workload.ListenAddress)
+	if err != nil {
+		return fmt.Errorf("workload listener: %w", err)
+	}
+	defer workloadListener.Close()
+	return serve(ctx, c, listener, workloadListener)
 }
 
-// serve uses the supplied gRPC listener.
-func serve(ctx context.Context, c config, listener net.Listener) error {
+// serve uses the supplied gRPC and workload listeners.
+func serve(ctx context.Context, c config, listener, workloadListener net.Listener) error {
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return err
 	}
+	workloadTLS, err := c.Workload.TLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	if err != nil {
+		return fmt.Errorf("workload listener TLS: %w", err)
+	}
+	if workloadTLS == nil {
+		return errors.New("workload.tls is required")
+	}
+	workloadTLS.NextProtos = []string{"h2", "http/1.1"}
 	if c.RunnerSecurity.Mode == environment_runtime_transport.MutualTLS {
 		identity, err := c.RunnerSecurity.TLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
 		if err != nil {
@@ -263,10 +301,28 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 		delegatedActors = append(delegatedActors, c.Delegation.Actor)
 	}
 	dispatchAccounts := append(append(append(append([]auth.Account{}, c.DispatcherCallers...), c.EnvironmentReaders...), c.EnvironmentManagers...), c.EnvironmentLaunchers...)
-	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience,
-		accountNamespaces(dispatchAccounts, &auth.Account{Namespace: c.Namespace}, delegatedActors...))
+	workloadNamespaces := accountNamespaces(dispatchAccounts, &auth.Account{Namespace: c.Namespace}, delegatedActors...)
+	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience, workloadNamespaces)
 	if err != nil {
 		return err
+	}
+	workloadTokenAuth := dispatchAuth
+	if c.Workload.Has(workloadlistener.KubernetesBearer) {
+		workloadTokenAuth, err = auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.Workload.BearerAudience(), workloadNamespaces)
+		if err != nil {
+			return err
+		}
+	}
+	var workloadSVIDs *auth.SVIDResolver
+	if c.Workload.Has(workloadlistener.SPIFFE) {
+		workloadSVIDs, err = auth.NewKubernetesSVIDResolver(config, []string{c.Namespace})
+		if err != nil {
+			return fmt.Errorf("configure Gateway workload SVID authentication: %w", err)
+		}
+	}
+	workloadAuth, err := workloadTokenAuth.WithListenerAuthentication(c.Workload, workloadSVIDs)
+	if err != nil {
+		return fmt.Errorf("configure Gateway workload authentication: %w", err)
 	}
 	gatewayAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GatewayAudience,
 		accountNamespaces(append(append([]auth.Account{}, c.GatewayCallers...), c.ExecutorCallers...), c.ControllerAccount))
@@ -343,6 +399,9 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
 	maps.Copy(methods, environments.Methods(dispatchAuth))
+	workloadMethods := auth.HealthMethods()
+	maps.Copy(workloadMethods, dispatcher.Methods(workloadAuth))
+	maps.Copy(workloadMethods, environments.Methods(workloadAuth))
 	if c.Delegation != nil {
 		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
 		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
@@ -360,8 +419,9 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
 		}
 	}
-	// Gateway proxy and Executor methods never accept delegated actor envelopes.
-	// Only Dispatcher and EnvironmentService expose delegated authorization.
+	// Delegation remains on the backend listener, where its bearer audience and API policy are scoped.
+	// Workload listener calls authenticate directly as an SVID or its separately configured bearer.
+	// Gateway proxy and Executor methods never accept delegated actor envelopes either.
 	maps.Copy(methods, g.Methods())
 	server := grpc.NewServer(append(
 		methods.ServerOptions(0),
@@ -378,10 +438,40 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 	if len(c.ExecutorCallers) > 0 {
 		g.RegisterExecutor(server)
 	}
+	workloadGRPCServer := grpc.NewServer(append(
+		workloadMethods.ServerOptions(0),
+		observability.GRPCServerOption(),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             30 * time.Second,
+			PermitWithoutStream: false,
+		}),
+	)...)
+	dispatcherpb.RegisterSessionDispatcherServer(workloadGRPCServer, service)
+	environmentpb.RegisterEnvironmentServiceServer(workloadGRPCServer, environmentService)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
+	healthpb.RegisterHealthServer(workloadGRPCServer, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
 	go func() { reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx)) }()
+	workloadHTTPHandler, err := newWorkloadFacade(ctx, workloadMethods, service, environmentService)
+	if err != nil {
+		return fmt.Errorf("create workload facade: %w", err)
+	}
+	workloadHandler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.ProtoMajor == 2 && strings.HasPrefix(request.Header.Get("Content-Type"), "application/grpc") {
+			workloadGRPCServer.ServeHTTP(writer, request)
+			return
+		}
+		workloadHTTPHandler.ServeHTTP(writer, request)
+	})
+	workloadHTTPServer := &http.Server{
+		Handler:   observability.HTTPHandler(workloadHandler),
+		TLSConfig: workloadTLS, ReadHeaderTimeout: 10 * time.Second,
+		ConnState: environment_runtime_transport.HTTPServerTLSExpiryConnState(nil),
+	}
+	go func() {
+		reportUnexpected(ctx, failed, "workload listener", workloadHTTPServer.ServeTLS(workloadListener, "", ""))
+	}()
 
 	// Serving once the gRPC listener accepts calls.
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -396,6 +486,11 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 	cancel()
 	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
 	defer release()
+	if err := workloadHTTPServer.Shutdown(closing); err != nil {
+		slog.Warn("workload listener did not drain", "error", err)
+		_ = workloadHTTPServer.Close()
+	}
+	workloadGRPCServer.Stop()
 	graceful.Stop(closing, server)
 	return result
 }

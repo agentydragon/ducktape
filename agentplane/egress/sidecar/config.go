@@ -278,6 +278,7 @@ func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
 type config struct {
 	Proxy                  proxyConfig                    `yaml:"proxy"`
 	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
+	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
 	PlatformRoutes         map[string]platformRouteConfig `yaml:"platform_routes"`
 	ListenAddress          string                         `yaml:"listen_address"`
 	ReadinessListenAddress string                         `yaml:"readiness_listen_address"`
@@ -291,6 +292,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	c := config{
 		AudienceTokenFiles:     make(map[string]string),
+		WorkloadRoutes:         make(map[string]workloadRouteConfig),
 		PlatformRoutes:         make(map[string]platformRouteConfig),
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "0.0.0.0:3129",
@@ -336,6 +338,14 @@ func (c config) validate() error {
 			if _, ok := transport.Auth.(spiffeProxyAuth); !ok {
 				return fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE proxy authentication", name)
 			}
+		}
+	}
+	if c.WorkloadRoutes == nil {
+		return errors.New("workload_routes must be an object")
+	}
+	for authority, route := range c.WorkloadRoutes {
+		if err := validateWorkloadRoute(authority, route); err != nil {
+			return fmt.Errorf("workload route %q: %w", authority, err)
 		}
 	}
 	return nil

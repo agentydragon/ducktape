@@ -22,7 +22,7 @@ import (
 // own budget because the deadline may be what lost the response.
 const recoveryTimeout = 10 * time.Second
 
-const actionsHelp = `Calls the generated ActionService client (AGENTPLANE_ACTIONS_URL, AGENTPLANE_ACTIONS_CREDENTIAL).
+const actionsHelp = `Calls the generated ActionService client (AGENTPLANE_ACTIONS_URL; optional AGENTPLANE_ACTIONS_CREDENTIAL bearer).
 
 Discover with groups, list, show and policy; submit an Action and follow it with submit --wait, wait,
 result, get and events; withdraw it with cancel. Approval is not success: wait and result exit 0 only
@@ -150,7 +150,7 @@ func (a *app) policyCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "policy",
 		Short: "Show this account's Action auto-approval policy",
-		Long:  "Calls ActionService.GetActionPolicy for the ServiceAccount the credential proves.",
+		Long:  "Calls ActionService.GetActionPolicy for the authenticated caller's ServiceAccount.",
 		Args:  cobra.NoArgs,
 		RunE: a.actionCommand(func(ctx context.Context, client action_servicepb.ActionServiceClient, _ []string) error {
 			response, err := client.GetActionPolicy(ctx, &action_servicepb.GetActionPolicyRequest{})

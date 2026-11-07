@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.environment_runtime_transport.config import TLS
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
@@ -28,9 +29,12 @@ class DelegationSettings(BaseModel):
 
 
 class IngressSettings(BaseModel):
+    workload_tls: TLS | None = None
+    workload_listen_address: str | None = Field(default=None, min_length=1)
+
     model_config = ConfigDict(extra="forbid")
     token_audience: str = Field(
-        min_length=1, description="The audience runners' projected tokens carry for the ingress."
+        min_length=1, description="The token audience for the separate central sampler ingress."
     )
     writer_namespaces: frozenset[str] = Field(
         min_length=1, description="Namespaces whose ServiceAccounts may push: the ones Sandboxes run in."
@@ -48,6 +52,12 @@ class IngressSettings(BaseModel):
         description="Remove an item's streamed delta entries from stored history once its retained "
         "completion provably holds their concatenation. Turn off to keep every entry for debugging.",
     )
+
+    @model_validator(mode="after")
+    def workload_listener_pair(self) -> Self:
+        if (self.workload_tls is None) != (self.workload_listen_address is None):
+            raise ValueError("workload_tls and workload_listen_address must be configured together")
+        return self
 
 
 class Settings(YamlFileSettings):

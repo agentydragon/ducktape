@@ -3,7 +3,10 @@
 The durable command queue is the Dispatcher role of the
 [Runner Gateway](../README.md). The Go integration app and the Notification Service use the
 Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
-to the shared listener on `8080`. The worker delivers through the Runner proxy once
+to the shared listener on `8080`. The credential-holding Sandbox relay presents a Runner SVID to
+the dedicated workload listener on `8082`, which serves gRPC and generated HTTP/JSON under its
+explicit authentication allowlist; the deployed Gateway allows SPIFFE only. The worker delivers
+through the Runner proxy once
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
 The manual queue, replica and wake probes are documented in the
@@ -153,14 +156,11 @@ the Sandboxes with pending work that it does not own.
 ## Deviations and gaps
 
 - `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
-- Runner Pods still reach external services through the existing egress proxy and do not have a
-  Dispatcher route or Dispatcher bearer projected into their sidecar. The next transport integration
-  should add the Dispatcher audience to the sidecar-only projection in
-  [`sandbox_pod.py`](../../../cluster/cdk8s/agentplane/sandbox_pod.py), add the exact Dispatcher
-  route and credential mapping in [`egress.py`](../../../cluster/cdk8s/agentplane/egress.py), and
-  connect a concrete MCP/client caller to the HTTPS proxy placeholder. Do not expose the real bearer
-  to the agent container or add direct Runner egress. The MCP/client caller and History provenance
-  propagation are not part of this Dispatcher authorization change.
+- Sandbox Pods keep their proxy-only egress and existing CLI URL. The relay maps the exact Dispatcher
+  authorities to the workload TLS listener through central CONNECT and authenticates with its Runner
+  SVID; the configured CLI credential string remains inert. Backend TokenReview listeners and their
+  caller allowlists are unchanged. A concrete MCP/client caller and History provenance propagation
+  remain outside this transport change.
 
 The detailed ownership, compatibility and transport contract is in [SPEC.md](SPEC.md).
 

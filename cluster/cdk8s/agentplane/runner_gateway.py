@@ -9,11 +9,22 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 GATEWAY_TLS_SECRET = "agentplane-runner-gateway-tls"
 GATEWAY_TLS_MOUNT_PATH = "/run/agentplane/runner-tls"
 RUNNER_CERTIFICATE_ISSUER = "agentplane-runner-ca"
+WORKLOAD_URI = "spiffe://agentplane/session-dispatcher"
+WORKLOAD_PORT = 8082
 
 
 def service(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
+
+
+def workload_service(namespace: str) -> ServiceRef:
+    """The explicitly authenticated Sandbox listener, separate from platform token listeners."""
+    return ServiceRef(
+        name=NAME,
+        port=Port(name="workload", number=WORKLOAD_PORT),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
 
 

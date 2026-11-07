@@ -12,6 +12,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
@@ -35,6 +36,7 @@ type config struct {
 	Kubeconfig                   string                                 `mapstructure:"kubeconfig"`
 	KubernetesClientQPS          float32                                `mapstructure:"kubernetes_client_qps"`
 	ListenAddress                string                                 `mapstructure:"listen_address"`
+	Workload                     listener.Config                        `mapstructure:"workload"`
 	ProxyPort                    int                                    `mapstructure:"proxy_port"`
 	RunnerControlTargetTemplate  string                                 `mapstructure:"runner_control_target_template"`
 	DispatcherAudience           string                                 `mapstructure:"dispatcher_audience"`
@@ -87,7 +89,11 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read Runner Gateway settings file")
 		}
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	decodeHook := mapstructure.ComposeDecodeHookFunc(
+		mapstructure.TextUnmarshallerHookFunc(),
+		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
+	)
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
 		return config{}, errors.New("invalid Runner Gateway settings")
 	}
 	c.RuntimeCatalog.Models.NormalizeHarnessNames()
@@ -120,6 +126,12 @@ func (c *config) validate() error {
 	}
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return fmt.Errorf("runner_security: %w", err)
+	}
+	if err := c.Workload.Validate(); err != nil {
+		return fmt.Errorf("workload: %w", err)
+	}
+	if c.Workload.TLS == nil {
+		return errors.New("workload.tls is required")
 	}
 	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
 		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
@@ -58,12 +57,10 @@ from agentplane.crd_group import GROUP
 from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.egress.resources import placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.workload_auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
+from agentplane.workload_auth.listener import TLS, Listener, SPIFFEAuth
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway, session_dispatcher
+from cluster.cdk8s.agentplane import actions, database, llm_ingress, runner_gateway
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
@@ -120,21 +117,6 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
-_SESSION_DISPATCHER_GRPC_PATHS = (
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessions",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
-)
-_ENVIRONMENT_SERVICE_GRPC_PATHS = (
-    "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-    "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
-    "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
-    "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
-)
 
 # The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
@@ -162,53 +144,13 @@ def _pods(namespace: str) -> Pods:
 
 
 def proxy(namespace: str) -> ServiceRef:
-    """The forward proxy every box sends its traffic through."""
+    """The mTLS forward proxy every Sandbox sidecar sends its traffic through."""
     return ServiceRef(name=NAME, port=Port(name="proxy", number=PROXY_PORT), pods=_pods(namespace))
 
 
 def admin(namespace: str) -> ServiceRef:
     """The admin API the app calls, on a Service of its own."""
     return ServiceRef(name=f"{NAME}-admin", port=Port(name="admin", number=8081), pods=_pods(namespace))
-
-
-def add_runner_egress(
-    scope: Construct, *, policy: str, credential: str, endpoint: ServiceRef, path: str, audience: str, purpose: str
-) -> None:
-    """The path a runner dials `endpoint` on: `policy` admits POSTs to `path` through the proxy, which
-    swaps the `credential` placeholder for the Pod's own token for `audience`, a token no other
-    recipient accepts. `purpose` finishes "minted only for its runner's ..." in the description.
-
-    The fleet chart adds its Cilium policy separately."""
-    namespace = endpoint.pods.namespace
-    EgressCredential(
-        scope,
-        f"{policy}-credential",
-        metadata=ApiObjectMetadata(name=credential, namespace=namespace),
-        description=(
-            f"The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's {purpose}. "
-            "It conveys no other authority."
-        ),
-        source=Source.projected_workload_token(audience=audience),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    add_egress_policy(
-        scope,
-        f"{policy}-policy",
-        metadata=ApiObjectMetadata(name=policy, namespace=namespace),
-        rules=[
-            Rule.egress(
-                hosts=[endpoint.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=[path],
-                credential_ref=PolicySetSpecRulesCredentialRef(name=credential),
-            )
-        ],
-    )
 
 
 def add_runner_egress_network_policy(scope: Construct, *, policy: str, endpoint: ServiceRef) -> None:
@@ -226,53 +168,6 @@ def add_runner_egress_network_policy(scope: Construct, *, policy: str, endpoint:
 
 
 def _egress_credentials(scope: Construct, *, namespace: str) -> None:
-    EgressCredential(
-        scope,
-        "egresscredential-agentplane-workload",
-        metadata=ApiObjectMetadata(name="agentplane-workload", namespace=namespace),
-        description=(
-            "The calling Sandbox Pod's short-lived, Pod-bound workload identity for first-party "
-            "Agentplane destinations, minted for the configured workload audience. It conveys "
-            "no LiteLLM credential or operator, Agent, or "
-            "Thread authority."
-        ),
-        source=Source.projected_workload_token(audience=WORKLOAD_TOKEN_AUDIENCE),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    EgressCredential(
-        scope,
-        "egresscredential-notifications-workload",
-        metadata=ApiObjectMetadata(name=notifications.WORKLOAD_CREDENTIAL, namespace=namespace),
-        description=(
-            "The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for the "
-            "Agentplane Notifications API audience."
-        ),
-        source=Source.projected_workload_token(audience=notifications.TOKEN_AUDIENCE),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    EgressCredential(
-        scope,
-        "egresscredential-session-dispatcher-workload",
-        metadata=ApiObjectMetadata(name=session_dispatcher.WORKLOAD_CREDENTIAL, namespace=namespace),
-        description=(
-            "The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for Session Dispatcher "
-            "and EnvironmentService gRPC calls."
-        ),
-        source=Source.projected_workload_token(audience=session_dispatcher.TOKEN_AUDIENCE),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
     EgressCredential(
         scope,
         "egresscredential-github-pat",
@@ -429,34 +324,6 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
             # The proxy matches a request's host on the exact string, so the in-cluster hosts are the
             # full names their clients spell.
             #
-            # Whole services, as for the API server below: each authenticates the workload token the
-            # proxy substitutes and authorizes the caller itself, so a method or path list here would
-            # only be a second copy of their routes to keep in step.
-            Rule.egress(
-                hosts=[llm_ingress.service(namespace).fqdn, actions.service(namespace).fqdn],
-                cluster_internal=True,
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
-            Rule.egress(
-                hosts=[notifications.service(namespace).fqdn],
-                cluster_internal=True,
-                credential_ref=PolicySetSpecRulesCredentialRef(name=notifications.WORKLOAD_CREDENTIAL),
-            ),
-            # Keep each service's RPC paths explicit even though both share this listener and identity.
-            Rule.egress(
-                hosts=[session_dispatcher.service(namespace).fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=list(_SESSION_DISPATCHER_GRPC_PATHS),
-                credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
-            ),
-            Rule.egress(
-                hosts=[session_dispatcher.service(namespace).fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=list(_ENVIRONMENT_SERVICE_GRPC_PATHS),
-                credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
-            ),
             # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
             # effective caller's own authority. The receivers check the caller UID and resource
             # ownership; this exact list grants no provisioning, broker or unrelated Actions.
@@ -644,8 +511,8 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
 
 class Egress(Construct):
     """The central egress proxy: ServiceAccount, RBAC, Deployment, Services,
-    optional PodDisruptionBudget, and the EgressCredential and PolicySet resources it
-    reads. Fleet CA issuance, trust bundles, and Cilium policy are added separately.
+    PodDisruptionBudget, and the EgressCredential and PolicySet resources it reads.
+    Fleet CA issuance, trust bundles, and Cilium policy are added separately.
     """
 
     def __init__(
@@ -663,7 +530,7 @@ class Egress(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        enable_svid_auth: bool = False,
+        tls_passthrough_services: Sequence[ServiceRef] = (),
     ) -> None:
         """`runners` are the runner Pods, which the proxy admits."""
         super().__init__(scope, id)
@@ -676,41 +543,42 @@ class Egress(Construct):
         self.registry_secret_name = registry_secret_name
         self.container_env = container_env or {}
         self.memory_limit = memory_limit
-        self.enable_svid_auth = enable_svid_auth
+
+        Certificate(
+            self,
+            "svid-listener-certificate",
+            metadata=ApiObjectMetadata(name="agentplane-egress-proxy", namespace=self.env.namespace),
+            secret_name=PROXY_MTLS_SECRET,
+            uris=["spiffe://agentplane/egress-proxy"],
+            duration="24h",
+            renew_before="8h",
+            private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+            usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
+            issuer_ref=CertificateSpecIssuerRef(name=runner_gateway.RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
+        )
 
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-        content: dict[str, Any] = {
-            "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
+        content = {
+            "allowed_service_account_namespaces": [env.namespace],
             "admin_grpc_audience": ADMIN_GRPC_AUDIENCE,
             "admin_grpc_callers": [
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
-            "projected_token_audiences": [
-                WORKLOAD_TOKEN_AUDIENCE,
-                KUBERNETES_AUDIENCE,
-                notifications.TOKEN_AUDIENCE,
-                RUNNER_INGRESS_AUDIENCE,
-                session_dispatcher.TOKEN_AUDIENCE,
+            "projected_token_audiences": [KUBERNETES_AUDIENCE],
+            "tls_passthrough_targets": [
+                f"{service.fqdn}:{service.port.number}"
+                for service in (self.admin, *tls_passthrough_services)
             ],
             "forward": Listener(
-                listen_address=f"0.0.0.0:{self.proxy.pod_port}",
-                auth=[KubernetesBearerAuth(audience=WORKLOAD_TOKEN_AUDIENCE)],
-            ).model_dump(mode="json", exclude_none=True),
-        }
-        if enable_svid_auth:
-            content["tls_passthrough_targets"] = [f"{self.admin.fqdn}:{self.admin.pod_port}"]
-            content["forward"] = Listener(
                 listen_address=f"0.0.0.0:{self.proxy.pod_port}",
                 tls=TLS(
                     cert_file=Path("/etc/agentplane-egress/svid/tls.crt"),
                     key_file=Path("/etc/agentplane-egress/svid/tls.key"),
                 ),
-                auth=[
-                    SPIFFEAuth(ca_file=Path(f"/etc/agentplane-egress/svid-ca/{CLUSTER_CA_BUNDLE_KEY}")),
-                    KubernetesBearerAuth(audience=WORKLOAD_TOKEN_AUDIENCE),
-                ],
-            ).model_dump(mode="json", exclude_none=True)
+                auth=[SPIFFEAuth(ca_file=Path(f"/etc/agentplane-egress/svid-ca/{CLUSTER_CA_BUNDLE_KEY}"))],
+            ).model_dump(mode="json", exclude_none=True),
+        }
         settings = SettingsFile(
             self,
             "settings",
@@ -737,20 +605,6 @@ class Egress(Construct):
             litellm_host=litellm_host or litellm_proxy.service(litellm_spec).fqdn,
             litellm_cluster_internal=litellm_cluster_internal,
         )
-
-        if self.enable_svid_auth:
-            Certificate(
-                self,
-                "svid-listener-certificate",
-                metadata=ApiObjectMetadata(name="agentplane-egress-proxy", namespace=self.env.namespace),
-                secret_name=PROXY_MTLS_SECRET,
-                uris=["spiffe://agentplane/egress-proxy"],
-                duration="24h",
-                renew_before="8h",
-                private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-                usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
-                issuer_ref=CertificateSpecIssuerRef(name=runner_gateway.RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
-            )
 
     def add_platform_resources(self) -> None:
         """Add fleet CA issuance, trust bundle, and Cilium network admission."""
@@ -783,12 +637,11 @@ class Egress(Construct):
             ),
             RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
         ]
-        if self.enable_svid_auth:
-            # Resolve only live Sandbox status. The proxy does not read runner Pods
-            # or ServiceAccounts, and external workload namespaces are not Sandboxes.
-            role_rules.append(
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"])
-            )
+        # Resolve only live Sandbox status and its own ServiceAccount name.
+        # The proxy does not read runner Pods; external workload namespaces are not Sandboxes.
+        role_rules.extend(
+            [RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"])]
+        )
         Role(
             self,
             "role",
@@ -873,17 +726,14 @@ class Egress(Construct):
             ConfigMap.from_config_map_name(self, "upstream-ca-ref", f"{self.env.namespace}-egress-upstream-ca"),
             name="upstream-ca",
         )
-        svid_volume = None
-        svid_ca_volume = None
-        if self.enable_svid_auth:
-            svid_secret = Secret.from_secret_name(self, "svid-secret-ref", PROXY_MTLS_SECRET)
-            svid_volume = Volume.from_secret(self, "svid-volume", svid_secret, name="svid")
-            svid_ca_volume = Volume.from_config_map(
-                self,
-                "svid-ca-volume",
-                ConfigMap.from_config_map_name(self, "svid-ca-ref", CLUSTER_CA_BUNDLE),
-                name="svid-ca",
-            )
+        svid_secret = Secret.from_secret_name(self, "svid-secret-ref", PROXY_MTLS_SECRET)
+        svid_volume = Volume.from_secret(self, "svid-volume", svid_secret, name="svid")
+        svid_ca_volume = Volume.from_config_map(
+            self,
+            "svid-ca-volume",
+            ConfigMap.from_config_map_name(self, "svid-ca-ref", CLUSTER_CA_BUNDLE),
+            name="svid-ca",
+        )
 
         values: dict[str, object] = {
             "rules_namespace": self.env.namespace,
@@ -948,9 +798,8 @@ class Egress(Construct):
             )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
-        if svid_volume is not None and svid_ca_volume is not None:
-            workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
-            workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
+        workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
+        workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
         return workload
 
@@ -971,19 +820,16 @@ class Egress(Construct):
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.admin.pod_port]),
                 *(
                     [IngressRule.from_endpoints(self.proxy.pods.cilium, ports=[self.admin.pod_port])]
-                    if self.enable_svid_auth
-                    else []
                 ),
             ],
             egress=[
                 database.egress(namespace),
-                *([self.admin.egress()] if self.enable_svid_auth else []),
+                self.admin.egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 llm_ingress.service(namespace).egress(),
+                llm_ingress.workload_service(namespace).egress(),
                 actions.service(namespace).egress(),
-                session_dispatcher.service(namespace).egress(),
-                # Sandboxes reach Notifications' HTTP facade and documentation, not its gRPC listener.
-                notifications.http_service(namespace).egress(),
+                runner_gateway.workload_service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
                 litellm_proxy.service(litellm_spec).egress(),

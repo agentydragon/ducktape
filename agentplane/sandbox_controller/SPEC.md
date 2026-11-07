@@ -83,9 +83,8 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   when the template includes it, the `egress-sidecar` container. Runtime-only custom templates remain
   valid. The workload and executor containers receive no mount. The
   sidecar uses those files when `proxy.transport` selects TLS with `auth.mode: spiffe`; a
-  handshake or certificate failure ends the request. It may also send a separately projected
-  workload-audience token as destination context for an egress credential; that token is
-  reviewed against the live Sandbox Pod and never authenticates an SVID hop.
+  handshake or certificate failure ends the request. It also sends the Kubernetes-audience token as destination context, reviewed against the
+  live Sandbox Pod; that token never authenticates an SVID hop.
 - A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
   first VMI UID is persisted on its VM and in the Sandbox's status. If KubeVirt unexpectedly replaces a VMI while
   the VM still carries the old identity, the controller halts that replacement, rotates to a new

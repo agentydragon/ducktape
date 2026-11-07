@@ -191,10 +191,10 @@ has been removed; the common file explicitly supplies proxy, trust, tool paths a
 
 ## Provider, Session and telemetry settings
 
-Deployed providers read `ANTHROPIC_AUTH_TOKEN` and `OPENAI_API_KEY`, set to the workload credential
-placeholder. The egress proxy substitutes credentials and the authenticated LLM ingress routes
-requests. Claude uses the ingress origin; Codex uses its `/v1` API base. Claude retains its resolved
-context budget for resume; Codex obtains metadata from the ingress catalog.
+Deployed providers read `ANTHROPIC_AUTH_TOKEN` and `OPENAI_API_KEY`, set to `unused` in Sandbox
+environments. The sidecar strips Authorization on the exact-origin SVID route, and the LLM ingress
+uses its server-held provider key. Claude uses the ingress origin; Codex uses its `/v1` API base.
+Claude retains its resolved context budget for resume; Codex obtains metadata from the ingress catalog.
 
 Environment Runtime composes platform instructions, the Session ID and caller task in
 that order. They are persisted and must match when reopened. Sandbox bootstrap and Session setup

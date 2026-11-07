@@ -1,9 +1,10 @@
-"""The sandbox Actions' own boxes, behind the egress path every agentplane box shares (sandbox_pod.py),
-with no harness and no state volume. The command box runs the plain sandbox image
-(agentplane/env/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
-the same box sized for a build, on the build image (agentplane/env/images/build.nix), which adds Bazel
-and its toolchain. Each is a core PodTemplate, not a SandboxTemplate: the Action Service creates
-every box as a plain Pod from one, and staging.py offers both by name (`TEMPLATES`).
+"""The sandbox Actions' caller-owned boxes, without an egress sidecar, harness, or state volume.
+The DNS-only network fence keeps them offline until they have a separate authentication design.
+The command box runs the plain sandbox image (agentplane/env/images/sandbox.nix) and costs the
+namespace quota what a command needs; the build box is the same box sized for a build, on the build
+image (agentplane/env/images/build.nix), which adds Bazel and its toolchain. Each is a core PodTemplate,
+not a SandboxTemplate: the Action Service creates every box as a plain Pod from one, and staging.py
+offers both by name (`TEMPLATES`).
 """
 
 from __future__ import annotations
@@ -15,9 +16,8 @@ from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
-from agentplane.egress import sidecar_config
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import egress, sandbox_pod
+from cluster.cdk8s.agentplane import sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
@@ -51,12 +51,12 @@ _BUILD_HOME = k8s.Volume(name="home", empty_dir=k8s.EmptyDirVolumeSource(size_li
 # What a box made from each template holds, for the agent choosing one.
 TEMPLATES = {
     NAME: (
-        "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl "
-        "(configured as the caller's ServiceAccount) and python3 (install packages into a "
-        "`python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
+        "An offline box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, "
+        "kubectl and python3. Network access is unavailable. 1 core and 2Gi, and no volume: files "
+        "last as long as the box's Pod."
     ),
     BUILD_NAME: (
-        "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the "
+        "The offline sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the "
         "version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory "
         "that survives the container being killed for running out of memory, though not the box's Pod."
     ),
@@ -71,22 +71,11 @@ class CommandSandbox(Construct):
         env: Environment,
         *,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
-        sidecar_resources: k8s.ResourceRequirements | None = None,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.image_pull_secret_name = image_pull_secret_name
-        self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
-        self.sidecar_settings = sandbox_pod.add_sidecar_settings(
-            self,
-            env,
-            name=f"{NAME}-egress-sidecar",
-            platform_routes={},
-            proxy_transport=sidecar_config.PlaintextProxyTransport(
-                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=sandbox_pod.EGRESS_TOKEN_FILE)
-            ),
-        )
         _pod_template(
             self,
             "podtemplate",
@@ -111,16 +100,18 @@ class CommandSandbox(Construct):
         self.env = env
 
     def add_platform_resources(self) -> None:
-        """Limit command boxes to DNS and the fleet egress proxy."""
+        """Limit command boxes to DNS while their separate authentication design is pending."""
         env = self.env
-        # DNS and the egress proxy out, nothing in: `exec` reaches a box through the API server.
+        # DNS only, nothing in: `exec` reaches a box through the API server.
         NetworkPolicy(
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[CiliumNetworkPolicySpecIngress()],
-            egress=[cilium.dns_egress(), egress.proxy(env.namespace).egress()],
+            # These caller-owned command boxes do not receive Sandbox SVIDs. Their separate
+            # authentication design is unresolved, so they cannot reach the mTLS-only proxy.
+            egress=[cilium.dns_egress()],
         )
 
 
@@ -141,8 +132,7 @@ def _pod_template(
             env,
             workload=workload,
             workload_volumes=volumes,
-            sidecar_settings=scope.sidecar_settings,
-            sidecar_resources=scope.sidecar_resources,
+            sidecar_settings=None,
             image_pull_secret_name=scope.image_pull_secret_name,
             # Keep command boxes in the environment's runner zone alongside LiteLLM.
             node_selector=(
@@ -172,7 +162,7 @@ def _workload(
         # dispose, and the quota the box holds, for the whole termination grace period.
         command=["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         security_context=sandbox_pod.workload_security_context(),
-        env=sandbox_pod.workload_environment(env, sandbox_pod.proxy_environment()),
+        env=sandbox_pod.workload_environment(env, sandbox_pod.trust_environment()),
         resources=resources,
         volume_mounts=[*trust_mounts, sandbox_pod.bazelrc_mount(), *mounts],
     )

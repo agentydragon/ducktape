@@ -41,12 +41,20 @@ from agentplane.env.config import (
     Endpoint,
     EnvironmentRuntimeControl,
     Harness,
+    SVIDEndpoint,
     VMEnvironment,
     VMExecutor,
 )
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
-from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
+from cluster.cdk8s.agentplane import (
+    history_service,
+    launcher_relay,
+    llm_ingress,
+    platform_routes,
+    sandbox_pod,
+    telemetry,
+)
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
@@ -122,8 +130,11 @@ class EnvironmentVmTemplate(Construct):
                 ),
             ),
             ingress=Endpoint(
-                target=_guest_address(platform_routes.ingress(namespace).listen_port),
-                bearer=platform_routes.ROUTE_BEARER,
+                target=f"{history_service.workload_service(namespace).fqdn}:{history_service.workload_service(namespace).pod_port}",
+                svid=SVIDEndpoint(
+                    server_uri=history_service.WORKLOAD_URI,
+                    proxy_address=_guest_address(sandbox_pod.SIDECAR_LISTEN_PORT),
+                ),
             ),
             model_config_service=Endpoint(
                 target=_guest_address(platform_routes.model_config(namespace).listen_port),

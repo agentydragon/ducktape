@@ -356,3 +356,17 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "dispatcher_workload",
+    srcs = ["dispatcher_workload.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests/driver:agent",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "@pypi//protobuf",
+    ],
+)

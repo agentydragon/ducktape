@@ -140,16 +140,26 @@ def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[st
     assert not {client.HTTP.fqdn, client.HTTP.host} & set(no_proxy)
 
 
-def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[str, Any]]) -> None:
-    pod = _one(app_objects, "Deployment")["spec"]["template"]["spec"]
+def test_openclaw_stays_paused_without_workload_credentials(app_objects: list[dict[str, Any]]) -> None:
+    deployment = _one(app_objects, "Deployment")
+    assert deployment["spec"]["replicas"] == 0
+    pod = deployment["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == "openclaw"
     assert pod["automountServiceAccountToken"] is False
     account = _one(app_objects, "ServiceAccount", "openclaw")
     assert account["automountServiceAccountToken"] is False
-    relay = one(c for c in pod["containers"] if c["name"] == "egress-sidecar")
-    assert "agentplane-egress-token" in {v["name"] for v in relay["volumeMounts"]}
-    for container in pod["initContainers"] + [c for c in pod["containers"] if c != relay]:
-        assert "agentplane-egress-token" not in {v["name"] for v in container["volumeMounts"]}
+    assert [container["name"] for container in pod["containers"]] == ["openclaw"]
+    assert not any(
+        "serviceAccountToken" in source
+        for volume in pod["volumes"]
+        for source in volume.get("projected", {}).get("sources", [])
+    )
+    assert not any(
+        "egress-sidecar" in mount["name"]
+        for container in pod["initContainers"] + pod["containers"]
+        for mount in container.get("volumeMounts", [])
+    )
+    assert not any(obj["kind"] == "ConfigMap" and "egress-sidecar" in obj["metadata"]["name"] for obj in app_objects)
 
 
 def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, Any]]) -> None:

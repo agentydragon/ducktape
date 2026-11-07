@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "facade",
+    srcs = ["facade.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/workload_auth/facade",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/grpc/facade",
+        "@com_github_fullstorydev_grpchan//inprocgrpc",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//peer",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "facade_test",
+    srcs = ["facade_test.go"],
+    embed = [":facade"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/grpc/facade",
+        "//agentplane/notification_service:notifications_go_proto",
+        "//agentplane/testing/kubeapiserver",
+        "//agentplane/workload_auth/auth",
+        "//agentplane/workload_auth/testing",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

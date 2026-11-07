@@ -81,7 +81,8 @@ type running struct {
 	operators operator_action_servicepb.OperatorActionServiceClient
 	linkages  linkage_servicepb.LinkageServiceClient
 	// url is the base URL of the service's HTTP routes.
-	url string
+	url             string
+	workloadAddress string
 	// store is the service's database, and updates is signalled on every Event committed to it.
 	store   *store.Store
 	updates <-chan struct{}
@@ -124,8 +125,15 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
+	var workloadListener net.Listener
+	if c.WorkloadTLS != nil {
+		workloadListener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, cluster, listener) }()
+	go func() { served <- serve(ctx, c, cluster, listener, workloadListener) }()
 	var result error
 	var stopped sync.Once
 	stop := func() error {
@@ -145,8 +153,13 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
+	workloadAddress := ""
+	if workloadListener != nil {
+		workloadAddress = workloadListener.Addr().String()
+	}
 	return running{
-		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
+		workloadAddress: workloadAddress,
+		health:          healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
 		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
 		linkages:  linkage_servicepb.NewLinkageServiceClient(connection),
 		url:       "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,

@@ -2,8 +2,8 @@
 
 > Discover and execute catalogued operations under your ServiceAccount's auto-approval policy or an operator's decision.
 
-Use this service's base URL and workload Bearer placeholder from your platform instructions,
-through the configured egress proxy. Your identity comes from authentication; a Session ID does
+Use this service's base URL from your platform instructions through the configured egress proxy.
+The egress sidecar authenticates your Sandbox to this service with its runner certificate. Your identity comes from authentication; a Session ID does
 not select an owner or grant access. The operator routes are not a workload API.
 
 Find operations with `agentplane actions list` and fetch the chosen Action's argument schema with

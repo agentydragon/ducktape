@@ -40,7 +40,10 @@ const (
 type GateOptions struct {
 	// Workloads reviews a workload's bearer; it admits only the namespaces whose ServiceAccounts may call.
 	Workloads *auth.Resolver
-	Callers   Callers
+	// SVID is set only on the service-owned workload TLS listener. That listener
+	// admits certificates exclusively; bearer metadata cannot replace its peer.
+	SVID    *auth.SVIDResolver
+	Callers Callers
 	// ReaderAccounts read every account's requests, labeled or not, and change none.
 	ReaderAccounts []auth.Account
 	// Operators verifies an operator's token; nil admits no operator.
@@ -52,6 +55,7 @@ type GateOptions struct {
 // names its failure.
 type Gate struct {
 	workloads *auth.Resolver
+	svid      *auth.SVIDResolver
 	callers   Callers
 	readers   map[auth.Account]struct{}
 	operators *OperatorVerifier
@@ -67,7 +71,7 @@ func NewGate(options GateOptions) *Gate {
 	}
 	draining, drain := context.WithCancel(context.Background())
 	return &Gate{
-		workloads: options.Workloads, callers: options.Callers, readers: readers, operators: options.Operators,
+		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: readers, operators: options.Operators,
 		draining: draining, drain: drain,
 	}
 }
@@ -99,6 +103,13 @@ func bearer(ctx context.Context) (string, error) {
 // operator's, and only its issuer may accept it; any other token is a workload's, which the API server reviews.
 // Each path verifies the token in full, so the claim only picks the verifier.
 func (g *Gate) authenticate(ctx context.Context) (admission, error) {
+	if g.svid != nil {
+		principal, err := g.svid.Resolve(ctx)
+		if err != nil {
+			return admission{}, err
+		}
+		return g.workloadAccount(principal.Account, principal.ServiceAccountUID)
+	}
 	token, err := bearer(ctx)
 	if err != nil {
 		return admission{}, err
@@ -117,7 +128,12 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	if identityAccount == nil || identityAccount.GetNamespace() == "" || identityAccount.GetName() == "" || workload.GetUid() == "" {
 		return admission{}, unauthenticated
 	}
-	accountRef := auth.Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}
+	return g.workloadAccount(auth.Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}, workload.GetUid())
+}
+
+// workloadAccount retains the existing caller-label and reader authorization for
+// both authentication boundaries, including canonical ServiceAccount ownership.
+func (g *Gate) workloadAccount(accountRef auth.Account, uid string) (admission, error) {
 	account := store.ServiceAccount{Namespace: accountRef.Namespace, Name: accountRef.Name}
 	if _, reader := g.readers[accountRef]; reader {
 		return admission{principal: store.ServiceReaderPrincipal{Account: account}}, nil
@@ -126,7 +142,7 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 		return admission{}, unauthenticated
 	}
 	return admission{principal: store.CallerPrincipal{
-		Account: account, ServiceAccountUID: workload.GetUid(),
+		Account: account, ServiceAccountUID: uid,
 	}}, nil
 }
 

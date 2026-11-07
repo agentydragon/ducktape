@@ -23,6 +23,7 @@ const (
 	ruleAnyAccount
 	ruleAccounts
 	ruleReviewedServiceAccount
+	ruleSVIDAccount
 )
 
 // Rule is who may call one gRPC method.
@@ -32,6 +33,7 @@ type Rule struct {
 	principalResolver PrincipalResolver
 	accounts          map[Account]struct{}
 	delegation        *delegationPolicy
+	svid *SVIDResolver
 }
 
 // Public admits a call without reading its bearer. Only the standard health service is public: Kubernetes
@@ -62,6 +64,12 @@ func Accounts(resolver *Resolver, accounts []Account) Rule {
 // existing Principal callers continue to require Pod-bound TokenReview claims.
 func ReviewedServiceAccount(resolver *Resolver) Rule {
 	return Rule{kind: ruleReviewedServiceAccount, resolver: resolver}
+}
+
+// SVIDAccount admits only a verified workload TLS peer resolved through the live Sandbox binding.
+// It has no token resolver, so bearer metadata can never provide a fallback identity.
+func SVIDAccount(resolver *SVIDResolver) Rule {
+	return Rule{kind: ruleSVIDAccount, svid: resolver}
 }
 
 // Methods maps the full name (`/package.Service/Method`) of each method a gRPC server serves to the Rule
@@ -179,34 +187,44 @@ func AdmittedReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
 // resolution; zero leaves it bounded by the call's own deadline.
 func (m Methods) ServerOptions(admissionTimeout time.Duration) []grpc.ServerOption {
 	return []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-			admitted, err := m.admit(ctx, info.FullMethod, admissionTimeout)
-			if err != nil {
-				return nil, err
-			}
-			return handler(admitted, request)
-		}),
-		grpc.ChainStreamInterceptor(func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-			admitted, err := m.admit(stream.Context(), info.FullMethod, admissionTimeout)
-			if err != nil {
-				return err
-			}
-			if original, err := Admitted(admitted); err == nil {
-				revalidate := func(ctx context.Context) error {
-					current, err := m.admit(ctx, info.FullMethod, admissionTimeout)
-					if err != nil {
-						return err
-					}
-					identity, err := Admitted(current)
-					if err != nil || !sameAdmission(original, identity) {
-						return status.Error(codes.Unauthenticated, "stream caller changed")
-					}
-					return nil
+		grpc.ChainUnaryInterceptor(m.UnaryInterceptor(admissionTimeout)),
+		grpc.ChainStreamInterceptor(m.StreamInterceptor(admissionTimeout)),
+	}
+}
+
+// UnaryInterceptor applies the same method admission to native and in-process RPCs.
+func (m Methods) UnaryInterceptor(admissionTimeout time.Duration) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		admitted, err := m.admit(ctx, info.FullMethod, admissionTimeout)
+		if err != nil {
+			return nil, err
+		}
+		return handler(admitted, request)
+	}
+}
+
+// StreamInterceptor admits streams and retains their caller revalidation boundary.
+func (m Methods) StreamInterceptor(admissionTimeout time.Duration) grpc.StreamServerInterceptor {
+	return func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		admitted, err := m.admit(stream.Context(), info.FullMethod, admissionTimeout)
+		if err != nil {
+			return err
+		}
+		if original, err := Admitted(admitted); err == nil {
+			revalidate := func(ctx context.Context) error {
+				current, err := m.admit(ctx, info.FullMethod, admissionTimeout)
+				if err != nil {
+					return err
 				}
-				admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
+				identity, err := Admitted(current)
+				if err != nil || !sameAdmission(original, identity) {
+					return status.Error(codes.Unauthenticated, "stream caller changed")
+				}
+				return nil
 			}
-			return handler(server, admittedStream{ServerStream: stream, ctx: admitted})
-		}),
+			admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
+		}
+		return handler(server, admittedStream{ServerStream: stream, ctx: admitted})
 	}
 }
 
@@ -220,7 +238,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return ctx, nil
-	case ruleAnyAccount, ruleAccounts, ruleReviewedServiceAccount:
+	case ruleAnyAccount, ruleAccounts, ruleReviewedServiceAccount, ruleSVIDAccount:
 	default:
 		return nil, errMethodNotAllowed
 	}
@@ -236,7 +254,24 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	md, _ := metadata.FromIncomingContext(ctx)
 	authorization := md.Get("authorization")
 	delegations := md.Get(DelegationMetadataKey)
+	if rule.kind == ruleSVIDAccount {
+		if len(delegations) > 0 || delegatedAttempt(authorization) {
+			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		}
+		if rule.svid == nil {
+			return nil, errMethodNotAllowed
+		}
+		principal, err := rule.svid.Resolve(reviewContext)
+		if err != nil {
+			return nil, err
+		}
+		caller := serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)
+		return WithCaller(withAdmission(ctx, DirectAdmission{Caller: caller, Pod: &principal}), principal), nil
+	}
 	if len(delegations) > 0 || delegatedAttempt(authorization) {
+		if rule.resolver.usesSVID(reviewContext) {
+			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		}
 		if rule.delegation == nil {
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}

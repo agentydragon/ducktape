@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
@@ -51,8 +52,10 @@ type config struct {
 	MessageBodyLimitBytes int    `mapstructure:"message_body_limit_bytes"`
 	Host                  string `mapstructure:"host"`
 	// Port is the gRPC listener's, and HTTPPort the HTTP listener's: the facade, its documentation and the webhook.
-	Port     int `mapstructure:"port"`
-	HTTPPort int `mapstructure:"http_port"`
+	Port         int                                   `mapstructure:"port"`
+	HTTPPort     int                                   `mapstructure:"http_port"`
+	WorkloadPort int                                   `mapstructure:"workload_port"`
+	WorkloadTLS  *environment_runtime_transport.Config `mapstructure:"workload_tls"`
 }
 
 // runnerGateway is how the service reaches a Sandbox's runner through the Runner Gateway's proxy.
@@ -205,6 +208,17 @@ func (c *config) validate() error {
 	for name, port := range map[string]int{"port": c.Port, "http_port": c.HTTPPort} {
 		if port < 1 || port > 65535 {
 			return errors.New(name + " must be between 1 and 65535")
+		}
+	}
+	if (c.WorkloadTLS == nil) != (c.WorkloadPort == 0) {
+		return errors.New("workload_tls and workload_port must be configured together")
+	}
+	if c.WorkloadTLS != nil {
+		if err := c.WorkloadTLS.Validate(); err != nil {
+			return err
+		}
+		if c.WorkloadPort < 1 || c.WorkloadPort > 65535 || c.WorkloadPort == c.Port || c.WorkloadPort == c.HTTPPort {
+			return errors.New("workload_port must be a separate valid port")
 		}
 	}
 	if c.Port == c.HTTPPort {

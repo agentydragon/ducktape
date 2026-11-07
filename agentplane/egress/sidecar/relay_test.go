@@ -196,6 +196,7 @@ func startTestSidecar(t *testing.T, proxyPort int, tokenFile string, audiences m
 		Proxy:                  proxy,
 		AudienceTokenFiles:     audiences,
 		PlatformRoutes:         map[string]platformRouteConfig{},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
 		ReadinessListenAddress: "127.0.0.1:0",
 	})
@@ -444,6 +445,7 @@ func TestMTLSFailureDoesNotRetryAsToken(t *testing.T) {
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "127.0.0.1:3129",
 		PlatformRoutes:         map[string]platformRouteConfig{},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 	})
 	if err != nil {
 		t.Fatalf("configure valid client mTLS identity: %v", err)
@@ -502,6 +504,7 @@ func TestNewSidecarFailsClosedWhenMTLSFilesAreUnavailable(t *testing.T) {
 			},
 		},
 		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err == nil {
@@ -541,6 +544,7 @@ func TestMTLSDoesNotRequireDestinationBearer(t *testing.T) {
 			},
 		},
 		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err != nil {
@@ -588,6 +592,7 @@ func TestNewSidecarRejectsMissingBearerAtStartup(t *testing.T) {
 			},
 		},
 		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err == nil {
@@ -602,6 +607,7 @@ func TestNewSidecarRejectsMissingBearerAtStartup(t *testing.T) {
 			},
 		},
 		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err == nil {

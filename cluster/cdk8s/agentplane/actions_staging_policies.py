@@ -731,11 +731,8 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
 
-    # haku-ui, Haku's operator UI, as its own principal in haku-sandbox (haku/ui_egress.py): the Home
-    # Assistant and Grocy SF read sets (their egress rules ride in them) plus the one Action Service
-    # route it submits requests on. A subset of claude-ai's grants by construction, and not
-    # claude-ai itself, which auto-approves sandbox create and exec.
-    haku_ui_egress.add_gateway_resources(scope, namespace=_NAMESPACE)
+    # haku-ui, Haku's operator UI, shares the Home Assistant and Grocy SF read sets with haku-anki.
+    # Its legacy direct Action route is removed; non-Sandbox authentication blocks the SVID flip.
     # haku-anki runs as this account too, for AnkiWeb sync: the one external host it needs (`sync.ankiweb.net`
     # and the `syncNN` shard hosts it redirects accounts to; `*.` never matches the apex, and these are
     # subdomains). It reaches it through an egress sidecar rather than the namespace-wide haku-egress-proxy, so
@@ -761,7 +758,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             annotations={"description": "What haku-ui (haku-sandbox) may reach and have auto-approved."},
         ),
         subject=PolicyBindingSpecSubject(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
-        policy_sets=[haku_ui_egress.POLICY, HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY],
+        policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.

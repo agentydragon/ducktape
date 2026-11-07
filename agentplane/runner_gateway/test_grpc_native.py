@@ -2,12 +2,14 @@
 
 import asyncio
 import shlex
+import ssl
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import grpc
+import httpx
 import pytest
 import pytest_bazel
 from more_itertools import one
@@ -24,7 +26,7 @@ from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
+from agentplane.runner_gateway.testing.gateway_process import WORKLOAD_AUDIENCE, GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text
 
@@ -50,6 +52,47 @@ def remote(sandbox_control: SandboxControlClient, runner: RunningRunner) -> Sand
 
 async def inspect(runner: SandboxRunner, session_id: str) -> session_pb2.SessionSummary:
     return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
+
+
+async def test_mixed_workload_listener_accepts_one_svid_or_bearer(
+    gateway_service: GatewayProcess, sandbox: SandboxCluster, tmp_path: Path
+) -> None:
+    credential_id = sandbox.environment_runtime_identity_uri.rsplit("/", maxsplit=1)[1]
+    await sandbox.patch_sandbox_status(
+        {
+            "status": {
+                "runnerCredential": {
+                    "id": credential_id,
+                    "acceptedId": credential_id,
+                    "kind": "Pod",
+                    "podUid": sandbox.pod_uid,
+                }
+            }
+        }
+    )
+    ca_file = str(gateway_service.environment_runtime_ca_file)
+    async with httpx.AsyncClient(verify=ca_file, timeout=10) as client:
+        bearer = await sandbox.pod_token(WORKLOAD_AUDIENCE)
+        response = await client.get(
+            f"{gateway_service.workload_url}/v1/sessions", headers={"Authorization": f"Bearer {bearer}"}
+        )
+        assert response.status_code == 200, response.text
+
+        workload_tls = gateway_service.issue_environment_runtime_tls(
+            sandbox.environment_runtime_identity_uri, tmp_path / "mixed-workload-client"
+        )
+        assert workload_tls.cert_file is not None
+        assert workload_tls.key_file is not None
+        svid_context = ssl.create_default_context(cafile=ca_file)
+        svid_context.load_cert_chain(workload_tls.cert_file, workload_tls.key_file)
+        svid_client = httpx.AsyncClient(verify=svid_context, timeout=10)
+        async with svid_client:
+            response = await svid_client.get(f"{gateway_service.workload_url}/v1/sessions")
+            assert response.status_code == 200, response.text
+            response = await svid_client.get(
+                f"{gateway_service.workload_url}/v1/sessions", headers={"Authorization": f"Bearer {bearer}"}
+            )
+            assert response.status_code == 401, response.text
 
 
 def _spec_at_target(spec: session_pb2.SessionSpec, target: SandboxDestination) -> session_pb2.SessionSpec:

@@ -7,8 +7,8 @@ an environment with the orchestration_v1 group. Staging's policy sets are added 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, Final
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -44,7 +44,7 @@ from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, notifications
+from cluster.cdk8s.agentplane import database, notifications, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -61,6 +61,7 @@ from util.settings_contract import env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "actions"
+WORKLOAD_URI: Final = "spiffe://agentplane/actions"
 _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
@@ -95,6 +96,11 @@ def service(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
     )
+
+
+def workload_service(namespace: str) -> ServiceRef:
+    """The service-owned SVID boundary for Sandbox ActionService calls."""
+    return ServiceRef(name=NAME, port=Port(name="workload", number=8082), pods=service(namespace).pods)
 
 
 def orchestration_callers(env: Environment) -> dict[ServiceAccountRef, Pods]:
@@ -291,6 +297,7 @@ class Actions(Construct):
         env: Environment,
         *,
         database_url: EnvValue,
+        workload_callers: Sequence[Pods],
         history: ServiceRef,
         history_audience: str,
         dispatcher: ServiceRef,
@@ -306,6 +313,7 @@ class Actions(Construct):
         super().__init__(scope, id)
         self.env = env
         self.database_url = database_url
+        self.workload_callers = workload_callers
         self.history = history
         self.history_audience = history_audience
         self.dispatcher = dispatcher
@@ -363,14 +371,20 @@ class Actions(Construct):
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
             )
         content["action_groups"] = groups
+        settings_name = "actions-settings"
+        workload = self._add_workload(settings_name)
+        content["workload_port"] = workload_service(env.namespace).pod_port
+        content["workload_tls"] = workload_tls.serving_certificate(
+            self, env, container=workload.container, name=NAME, uri=WORKLOAD_URI
+        )
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name="actions-settings", namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
             content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-actions/settings.yaml",
         )
-        workload = self._add_workload(settings)
+        settings.mount_into(workload.container, env=Settings.config_file_env)
         self._add_rbac(workload.account)
         if props.orchestration_v1 is not None:
             add_launcher_admission(self, env.namespace)
@@ -419,7 +433,10 @@ class Actions(Construct):
         }
         for caller_namespace in self.env.actions.caller_service_account_namespaces:
             rules_by_namespace.setdefault(caller_namespace, []).append(
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["list", "watch"])
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
+            )
+            rules_by_namespace[caller_namespace].append(
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"])
             )
 
         # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
@@ -505,7 +522,7 @@ class Actions(Construct):
             names.add(self.mcp_oauth.name)
         return sorted(names)
 
-    def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
+    def _add_workload(self, settings_name: str) -> ServiceWorkload:
         reload_secrets = self._reload_secrets()
         readiness = grpc_probe(port=self.service.pod_port, initial_delay_seconds=3)
         liveness = grpc_probe(port=self.service.pod_port, service="livez", initial_delay_seconds=20, period_seconds=30)
@@ -515,7 +532,7 @@ class Actions(Construct):
         workload = add_service_workload(
             self,
             self.env,
-            serves=[self.service],
+            serves=[self.service, workload_service(self.env.namespace)],
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
@@ -537,7 +554,7 @@ class Actions(Construct):
                 **({"secret.reloader.stakater.com/reload": ",".join(reload_secrets)} if reload_secrets else {}),
                 # No configMapGenerator hash rolls the Deployment on settings changes
                 # (cluster/docs/cdk8s.md); reloader does.
-                "configmap.reloader.stakater.com/reload": settings.config_map.name,
+                "configmap.reloader.stakater.com/reload": settings_name,
             },
         )
         container = workload.container
@@ -552,7 +569,6 @@ class Actions(Construct):
                 items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
             )
             container.mount(MCP_OAUTH_DIR, oauth_volume, read_only=True)
-        settings.mount_into(container, env=Settings.config_file_env)
         if self.env.actions.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(
                 self, "github-mcp-client-secret", self.env.actions.github_mcp_client_secret_name
@@ -619,6 +635,7 @@ class Actions(Construct):
             ingress=[
                 *([IngressRule.from_gateway(self.service.pod_port)] if public else []),
                 cilium.SCRAPERS.admit(self.service.pod_port),
+                *(pods.admit(workload_service(namespace).pod_port) for pods in self.workload_callers),
                 notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),
@@ -639,4 +656,8 @@ class Actions(Construct):
                 ),
                 *self.env.actions.extra_egress,
             ],
+        )
+
+        workload_tls.admit_forwarders(
+            self, name=NAME, endpoint=workload_service(namespace), forwarders=self.workload_callers
         )

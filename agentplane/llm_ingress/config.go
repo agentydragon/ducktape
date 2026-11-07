@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel/baggage"
 )
@@ -58,20 +59,22 @@ type modelConfig struct {
 }
 
 type config struct {
-	CentralSamplerAccounts          []string          `mapstructure:"central_sampler_accounts"`
-	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	TokenAudience                   string            `mapstructure:"token_audience"`
-	LogLLMRequests                  bool              `mapstructure:"log_llm_requests"`
-	Models                          []modelConfig     `mapstructure:"models"`
-	Attribution                     attributionConfig `mapstructure:"attribution"`
-	CodexModelCatalogFile           string            `mapstructure:"codex_model_catalog_file"`
-	LiteLLMURL                      string            `mapstructure:"litellm_url"`
-	LiteLLMKey                      string            `mapstructure:"litellm_key"`
-	LogLevels                       map[string]string `mapstructure:"log_levels"`
-	Host                            string            `mapstructure:"host"`
-	Port                            int               `mapstructure:"port"`
-	GRPCPort                        int               `mapstructure:"grpc_port"`
-	Kubeconfig                      string            `mapstructure:"kubeconfig"`
+	CentralSamplerAccounts          []string                              `mapstructure:"central_sampler_accounts"`
+	AllowedServiceAccountNamespaces []string                              `mapstructure:"allowed_service_account_namespaces"`
+	TokenAudience                   string                                `mapstructure:"token_audience"`
+	LogLLMRequests                  bool                                  `mapstructure:"log_llm_requests"`
+	Models                          []modelConfig                         `mapstructure:"models"`
+	Attribution                     attributionConfig                     `mapstructure:"attribution"`
+	CodexModelCatalogFile           string                                `mapstructure:"codex_model_catalog_file"`
+	LiteLLMURL                      string                                `mapstructure:"litellm_url"`
+	LiteLLMKey                      string                                `mapstructure:"litellm_key"`
+	LogLevels                       map[string]string                     `mapstructure:"log_levels"`
+	Host                            string                                `mapstructure:"host"`
+	Port                            int                                   `mapstructure:"port"`
+	GRPCPort                        int                                   `mapstructure:"grpc_port"`
+	WorkloadTLS                     *environment_runtime_transport.Config `mapstructure:"workload_tls"`
+	WorkloadListenAddress           string                                `mapstructure:"workload_listen_address"`
+	Kubeconfig                      string                                `mapstructure:"kubeconfig"`
 }
 
 func defaultConfig() config {
@@ -89,7 +92,7 @@ func loadConfig() (config, error) {
 	settings.SetEnvPrefix("AGENTPLANE_LLM_INGRESS")
 	for _, key := range []string{
 		"token_audience", "log_llm_requests", "codex_model_catalog_file", "litellm_url", "litellm_key", "host", "port",
-		"grpc_port", "kubeconfig",
+		"grpc_port", "kubeconfig", "workload_listen_address",
 	} {
 		settings.MustBindEnv(key)
 	}
@@ -137,6 +140,14 @@ func validateConfig(c *config) error {
 	}
 	if c.Host == "" || c.Port < 0 || c.Port > 65535 || c.GRPCPort < 0 || c.GRPCPort > 65535 {
 		return errors.New("host must be non-empty and ports must be between 0 and 65535")
+	}
+	if (c.WorkloadTLS == nil) != (c.WorkloadListenAddress == "") {
+		return errors.New("workload_tls and workload_listen_address must be configured together")
+	}
+	if c.WorkloadTLS != nil {
+		if err := c.WorkloadTLS.Validate(); err != nil {
+			return err
+		}
 	}
 	for _, model := range c.Models {
 		if model.Model == "" || model.TotalContextBudgetTokens <= 0 {

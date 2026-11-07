@@ -72,8 +72,8 @@ group, so another service joins as one more group under them.
 
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
 
-`environments` uses `AGENTPLANE_SESSIONS_URL` and `AGENTPLANE_SESSIONS_CREDENTIAL`. `get` is an
-immediate current-state read: it reports readiness and resume eligibility as observed, and never
+`environments` uses `AGENTPLANE_SESSIONS_URL` and an optional `AGENTPLANE_SESSIONS_CREDENTIAL` bearer.
+`get` is an immediate current-state read: it reports readiness and resume eligibility as observed, and never
 waits or resumes. Watch-based wait adapters are future work. Use the fresh descriptor's
 `resume_eligibility`, `wake_generation`, and opaque `resume_token` before calling
 `resume` with the exact namespace/name/UID. The token is a precondition, not authority; the backend
@@ -100,7 +100,7 @@ ranges. A resume token is tied to its Session and command and confers no permiss
 the observation from the retained admission cursor so it can restore command-to-turn correlation.
 
 `agentplane sessions list` discovers current Dispatcher Session records, including waiting and failed
-materialization with no History yet. It requires only the Sessions credential and never contacts an
+materialization with no History yet. It requires only the Sessions URL and never contacts an
 environment. Results use retained owner authorization; the configured Pod-bound backend read scope
 also applies. `--limit` is 1-100 (default 50), and `--after` accepts the returned continuation token.
 Text output prints Sessions and a continuation hint; `--json` returns one page object with `sessions`
@@ -121,8 +121,9 @@ from another turn.
 Dispatcher authorizes ordinary callers against the target's actual ServiceAccount UID and scopes
 retained Session/command reads to their recorded principal. Configured privileged backend callers
 remain a separate authority path. The CLI supplies no additional grant or identity.
-`sessions observe-input` also requires independent History URL/credential configuration and backend
-authorization; the CLI does not add reader authority or fall back to another caller.
+`sessions observe-input` also requires an independent History URL and accepts an optional History bearer
+credential; the backend still authorizes the call. The CLI does not add reader authority or fall back to another
+caller.
 
 Left out on purpose:
 
@@ -206,10 +207,11 @@ generated gRPC over HTTP/2, as do Egress and Notifications.
 | `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL`, `AGENTPLANE_EGRESS_GRPC_CREDENTIAL` | the inert placeholder substituted by the egress proxy or direct sidecar route                                    |
 | `AGENTPLANE_SESSION_ID`                                                                                                                                                             | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
 
-Managed Pod and VM environments supply the Session Dispatcher URL and inert credential placeholder
-through their shared CLI environment. The egress path holds and substitutes the audience-specific
-token. Custom environments need equivalent configuration; the CLI itself never projects a token
-or adds a route. Retained History reads need their own History configuration and backend authority;
+Managed Pod and VM environments supply service URLs through their shared CLI environment and omit
+service bearer credentials on workload SVID routes. When a credential is configured, the CLI sends it
+as bearer Authorization metadata for the service or forwarder to authenticate. Custom environments may
+configure one when required; the CLI itself never projects a token or adds a route. Retained History
+reads need their own History URL and backend authority;
 the Action-backed delegation tools use the Actions service's configured peers instead.
 
 New native and central Sessions receive their public ID as `AGENTPLANE_SESSION_ID`. Older central

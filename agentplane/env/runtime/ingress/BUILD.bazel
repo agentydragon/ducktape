@@ -19,6 +19,7 @@ go_library(
         "//agentplane/proto:session_go_proto",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//status",
     ],
 )

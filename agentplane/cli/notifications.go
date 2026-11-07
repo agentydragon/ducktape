@@ -24,7 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 )
 
-const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATIONS_GRPC_URL, AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL).
+const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATIONS_GRPC_URL; optional AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL bearer).
 
 Subscriptions deliver notices to a Session inbox, so a long wait costs no turn; send puts a message in
 another Session's inbox. Inbox reads are non-destructive; acknowledgement advances the handled prefix.

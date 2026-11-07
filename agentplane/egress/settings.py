@@ -10,11 +10,11 @@ from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
-from agentplane.workload_auth.listener import Listener
+from agentplane.workload_auth.listener import Listener, SPIFFEAuth
 
 
 class Settings(BaseModel):
@@ -80,3 +80,9 @@ class Settings(BaseModel):
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",
     )
+
+    @model_validator(mode="after")
+    def spiffe_only(self) -> Settings:
+        if any(not isinstance(method, SPIFFEAuth) for method in self.forward.auth):
+            raise ValueError("forward authentication must enable only spiffe")
+        return self
