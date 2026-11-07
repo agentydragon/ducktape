@@ -130,7 +130,6 @@ py_test(
     srcs = ["test_api.py"],
     env = {"OTEL_SDK_DISABLED": "true"},
     deps = [
-        ":sandbox_models",
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",

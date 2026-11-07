@@ -124,7 +124,7 @@ type appConfigPolicySetNames struct {
 	err   error
 }
 
-func (r *appConfigPolicySetNames) ListPolicySetNames(context.Context, *emptypb.Empty, ...grpc.CallOption) (*policypb.ListPolicySetNamesResponse, error) {
+func (r *appConfigPolicySetNames) ListPolicySetNames(context.Context, *policypb.ListPolicySetNamesRequest, ...grpc.CallOption) (*policypb.ListPolicySetNamesResponse, error) {
 	r.calls++
 	if r.err != nil {
 		return nil, r.err

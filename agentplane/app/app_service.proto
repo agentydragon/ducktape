@@ -157,6 +157,7 @@ message LangfuseSearchSettings {
   string sandbox_namespace_metadata_key = 4;
   string sandbox_service_account_metadata_key = 5;
 }
+message GetSandboxFormRequest {}
 
 message GetSandboxFormRequest {}
 

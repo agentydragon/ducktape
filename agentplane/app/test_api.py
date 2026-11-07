@@ -12,7 +12,6 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane import sandbox_resource
-from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2
@@ -169,7 +168,7 @@ async def test_policy_mutations_require_the_generated_operator_facade(
         assert revoke.status_code == 403, revoke.text
 
 
-async def test_go_openapi_tracks_selected_python_http_contract_fields(http: httpx.AsyncClient) -> None:
+async def test_go_openapi_tracks_frontend_config_route(http: httpx.AsyncClient) -> None:
     response = await http.get("/openapi.json")
     assert response.status_code == 200, response.text
     document = response.json()
@@ -178,11 +177,8 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
 
     assert "/frontend-config" not in paths
     assert "FrontendConfig" not in schemas
-
-    form_properties = schemas["SandboxFormOutputBody"]["properties"]
-    assert {"policy_sets", "new_sandbox_defaults"} <= form_properties.keys()
-    defaults = schemas["NewSandboxDefaults"]["properties"]
-    assert NewSandboxDefaults.model_fields.keys() <= defaults.keys()
+    assert "/sandboxes/form" not in paths
+    assert "SandboxFormOutputBody" not in schemas
 
 
 async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.AsyncClient) -> None:
@@ -212,13 +208,6 @@ async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.Asy
     presets = await http.get("/upstream/app-config/v1/presets")
     assert presets.status_code == 200, presets.text
     assert presets.json() == {"presets": []}
-
-    form = await http.get("/sandboxes/form")
-    assert form.status_code == 200, form.text
-    assert form.json() == {
-        "policy_sets": [],
-        "new_sandbox_defaults": {"wake_on_send": False, "idle_suspend_after_seconds": None},
-    }
 
 
 async def test_protected_go_routes_reject_requests_without_a_workload_token(app: AppProcess) -> None:
