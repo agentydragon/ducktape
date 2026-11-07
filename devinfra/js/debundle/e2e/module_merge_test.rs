@@ -180,6 +180,29 @@ fn merge_batch_allows_case_only_relocation() {
 }
 
 #[test]
+fn single_merge_rejects_untouched_symlink_aliases_without_writes() {
+    for (alias, target, destination) in [
+        ("alias.yaml", "target.yaml", "target"),
+        ("alias-dir", "nested", "nested/target"),
+    ] {
+        let fixture = GraphFixture::acyclic_pair();
+        write_text_file(&fixture.modules.join("target.yaml"), "members: []");
+        write_text_file(&fixture.modules.join("nested/target.yaml"), "members: []");
+        std::os::unix::fs::symlink(target, fixture.modules.join(alias)).unwrap();
+        fixture.refresh_graph();
+        fixture.assert_rejected_unchanged(
+            &["modules", "merge", "--target", destination, "a"],
+            &["does not support symlink entries"],
+        );
+        assert_eq!(
+            fs::read_link(fixture.modules.join(alias)).unwrap(),
+            std::path::PathBuf::from(target)
+        );
+        fixture.assert_runs("2\n");
+    }
+}
+
+#[test]
 fn merge_batch_rejects_untouched_symlink_aliases_without_writes() {
     for (alias, target) in [("alias.yaml", "target.yaml"), ("alias-dir", "nested")] {
         let fixture = GraphFixture::acyclic_pair();

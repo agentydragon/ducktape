@@ -102,6 +102,10 @@ unchanged. Successful batches retain exact physical filenames and all claim and
 metadata fields, write every target before deleting sources, and use atomic
 per-file replacement rather than a crash-atomic multi-file transaction.
 
+Verified ownership-changing edits require module trees without symlink entries.
+Writing one module must not silently change claims read through an untouched
+alias. Rejected edits leave the authored files unchanged.
+
 ## Ownership subsets
 
 `run --ownership-subset <json>` changes the output ownership assignment while
