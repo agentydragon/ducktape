@@ -162,11 +162,10 @@ console.log(Q);
         "Q",
         &[None],
     );
-    assert_module_exports(&coarse.out_root, "static/app/entry.js", &["Q"], &[]);
     assert_generated_module_after_entry_script(
         &coarse,
-        "const mod = await import('./static/app/entry.js');\nconsole.log(mod.Q);\n",
-        "1\n",
+        "const mod = await import('./static/app/entry.js');\nconsole.log(JSON.stringify([Object.keys(mod).sort(), mod.Q]));\n",
+        "[[\"Q\"],1]\n",
     );
 
     let coarse_files = js_files_under(&coarse.out_root, directory);
