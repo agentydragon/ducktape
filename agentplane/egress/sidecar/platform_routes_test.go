@@ -17,9 +17,13 @@ func TestPlatformRouteRecoversAfterSilentUpstreamBlackhole(t *testing.T) {
 	original := startRouteTestBackend(t, "original")
 	replacement := startRouteTestBackend(t, "replacement")
 	proxy := startRouteTestProxy(t, original)
-	routes, err := bindPlatformRoutesWithKeepalive(
+	routes, err := (&sidecar{}).bindPlatformRoutesWithKeepalive(
 		map[string]platformRouteConfig{
-			"control": {ListenAddress: "127.0.0.1:0", Upstream: proxy.listener.Addr().String()},
+			"control": {
+				ListenAddress: "127.0.0.1:0",
+				Upstream:      proxy.listener.Addr().String(),
+				Transport:     plaintextRouteTransportConfig{},
+			},
 		},
 		keepalive.ClientParameters{Time: 10 * time.Second, Timeout: time.Second},
 	)

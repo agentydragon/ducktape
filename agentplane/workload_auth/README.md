@@ -2,7 +2,8 @@
 
 [`listener`](listener/config.go) and [`listener.py`](listener.py) define the shared authoring
 and Go decoding contract for workload listeners: a listen address and an explicit list of
-supported authentication methods. `kubernetes_bearer` requires an audience. Unsupported modes,
+supported authentication methods. `kubernetes_bearer` requires an audience; `spiffe` requires
+serving TLS and trust roots. Unsupported modes,
 empty lists, duplicates and unknown fields fail configuration loading; configuring a method does
 not grant its caller authorization. The egress proxy consumes this contract.
 
@@ -25,10 +26,15 @@ Service uses this path. Other callers use Pod-bound `Principal` values.
 each full method name to the `Rule` admitting its callers and refuses any method it does not list
 ([gRPC services](../docs/grpc_services.md#authentication)).
 
+`AnyAccount` accepts a `PrincipalResolver` and puts its resolved `Principal` in `Caller`. A
+TokenReview `Resolver` proves its established Pod-bound identity; another verified source supplies
+only the identity fields it proves. `Accounts` and `ReviewedServiceAccount` remain TokenReview-only.
+
 Delegated calls are a separate, opt-in mode on an authenticated direct `Rule`. `AllowDelegationFrom`
 pins exact actor ServiceAccounts and per-actor caller namespace scopes to the Rule; attaching that
 Rule to a full method name is the method trust grant. It preserves the Rule's ordinary direct path.
-The actor token must be Pod-bound and is reviewed for this service's audience. The asserted caller
+Delegation requires a concrete TokenReview `Resolver`; the actor token must be Pod-bound and is
+reviewed for this service's audience. The asserted caller
 must match the live ServiceAccount UID. A method with no delegation policy rejects the delegated
 scheme and any delegation envelope; `Bearer` plus an envelope is rejected rather than treated as a
 direct call.
@@ -37,8 +43,9 @@ Handlers can read the typed result with `Admitted` or use `EffectiveCaller` for 
 checks. `DirectAdmission` keeps the direct caller and optional Pod proof together;
 `DelegatedAdmission` keeps the actor's Pod-bound `Principal`, effective ServiceAccount identity and
 provenance separate. A delegated actor is never installed in the legacy `Caller` context, which
-continues to mean a directly authenticated Pod-bound principal. The effective caller is account
-identity only and cannot prove a Pod binding.
+continues to mean the direct principal. For TokenReview callers that principal is Pod-bound; other
+`AnyAccount` sources supply only the fields they prove. The effective caller is account identity
+only and cannot prove a Pod binding.
 
 [`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. The dialer reads the
 destination-audience token file for each call, emits the distinct `Agentplane-Delegated` scheme and
@@ -54,3 +61,14 @@ Operator and browser-session authentication use separate mechanisms and do not p
 principal. The approved [delegated authorization design](../docs/delegated_authorization.md) records
 the shared protocol. Its Action Service sender and SessionDispatcher receiver integrations remain
 separate work and are prerequisites for an operational delegated call.
+
+[`listener`](listener/config.go) and its [authoring model](listener.py) describe one address,
+optional serving `tls` (`cert_file`, `key_file`), and a nonempty `auth` allowlist. `spiffe` requires
+TLS and an absolute `ca_file`; `kubernetes_bearer` requires its TokenReview `audience`. Each mode
+accepts only its own fields. Unknown, duplicate or incomplete modes fail startup. SPIFFE-only TLS
+requires a client certificate;
+a mixed listener permits no certificate but verifies any certificate presented with the same
+chain, Runtime URI and explicit clientAuth checks. Supplying both a certificate and an
+application authentication credential is ambiguous and fails. Selection never depends on list
+order or retries another method after a failed credential. Each service retains its own
+namespace admission and authorization after authentication.

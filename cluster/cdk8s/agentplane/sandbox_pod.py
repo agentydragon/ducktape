@@ -37,11 +37,13 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 # Mounted by the egress sidecar and no other container; every token under it is the Pod's own.
 _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
+EGRESS_TOKEN_FILE = Path(_EGRESS_TOKEN_DIR) / "token"
 # Audiences the central proxy may substitute this Pod's identity for, and the file each is projected
 # to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
-# neither can name a file the other does not project. The hop token is deliberately absent: it
-# carries the proxy's own audience, so it is not substitutable anywhere.
+# neither can name a file the other does not project. Destination projections are independent
+# of hop authentication; the workload audience also supplies the legacy bearer hop.
 _SUBSTITUTABLE_AUDIENCE_FILES = {
+    WORKLOAD_TOKEN_AUDIENCE: "token",
     KUBERNETES_AUDIENCE: "kubernetes-token",
     notifications.TOKEN_AUDIENCE: "notifications-token",
     session_dispatcher.TOKEN_AUDIENCE: "session-dispatcher-token",
@@ -184,26 +186,23 @@ def add_sidecar_settings(
     *,
     name: str,
     platform_routes: Mapping[str, PlatformRoute],
+    proxy_transport: sidecar_config.ProxyTransport,
     listen_address: str | None = None,
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
     settings = sidecar_config.Settings(
         proxy=sidecar_config.Proxy(
-            address=f"{egress.proxy(env.namespace).fqdn}:{egress.PROXY_PORT}",
-            transport=sidecar_config.PlaintextProxyTransport(
-                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=Path(_EGRESS_TOKEN_DIR) / "token")
-            ),
+            address=f"{egress.proxy(env.namespace).fqdn}:{egress.PROXY_PORT}", transport=proxy_transport
         ),
         readiness_listen_address=sidecar_config.READINESS_LISTEN_ADDRESS,
         audience_token_files={
             audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
         },
+        platform_routes=dict(platform_routes),
     )
     if listen_address is not None:
         settings.listen_address = listen_address
-    if platform_routes:
-        settings.platform_routes = dict(platform_routes)
     return SettingsFile(
         scope,
         f"{name}-settings",
@@ -262,19 +261,14 @@ def _egress_volumes(env: Environment) -> list[k8s.Volume]:
         k8s.Volume(name=_TOOL_CONFIG_VOLUME_NAME, config_map=k8s.ConfigMapVolumeSource(name=TOOL_CONFIG_MAP_NAME)),
         # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar
         # alone, so no token here is readable from the container an agent runs commands in.
-        # `token` proves the Pod to the central proxy; each of the rest is the same account minted
-        # for a destination's own audience, which the proxy substitutes where a rule names that
-        # audience and which is useless at the proxy itself. All are bound to this Pod and rotated
-        # by kubelet.
+        # The first token remains temporarily for the old proxy's destination identity context and
+        # is mapped as an audience token in mTLS mode. It is never hop authentication there; each
+        # other token is for a destination's audience and may be substituted where policy names it.
+        # All are bound to this Pod and rotated by kubelet.
         k8s.Volume(
             name=EGRESS_TOKEN_VOLUME_NAME,
             projected=k8s.ProjectedVolumeSource(
                 sources=[
-                    k8s.VolumeProjection(
-                        service_account_token=k8s.ServiceAccountTokenProjection(
-                            audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
-                        )
-                    ),
                     *(
                         k8s.VolumeProjection(
                             service_account_token=k8s.ServiceAccountTokenProjection(
@@ -282,7 +276,7 @@ def _egress_volumes(env: Environment) -> list[k8s.Volume]:
                             )
                         )
                         for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
-                    ),
+                    )
                 ]
             ),
         ),

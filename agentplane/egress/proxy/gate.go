@@ -133,35 +133,32 @@ func (p *Proxy) authenticate(
 ) (*authenticated, error) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	var previous *authenticated
-	token := ""
-	if supplied {
-		client.auth = nil
-		var ok bool
-		if token, ok = identity.BearerToken(hop); !ok {
-			return nil, &identity.Rejection{Reason: decision.TokenMissing, Detail: "no bearer token in Proxy-Authorization"}
-		}
-	} else if previous = client.auth; previous != nil {
-		token = previous.bearer
-	} else {
-		return nil, &identity.Rejection{Reason: decision.TokenMissing, Detail: "no bearer token in Proxy-Authorization"}
+	previous := client.auth
+	hasCertificate := client.peerState != nil && len(client.peerState.PeerCertificates) > 0
+	if supplied && !hasCertificate {
+		previous = nil
 	}
-	principal, err := p.options.Identity.Identify(ctx, token)
+	if !supplied && !hasCertificate && previous != nil && previous.bearer != "" {
+		hop, supplied = []string{"Bearer " + previous.bearer}, true
+	}
+	caller, err := p.options.Authentication.Authenticate(ctx, client.peerState, hop, supplied)
 	if err != nil {
 		client.auth = nil
 		return nil, err
 	}
-	if previous != nil && previous.principal != principal {
+	// An explicit bearer starts a new proof; an inherited tunnel credential must
+	// still identify the same Pod incarnation on every request.
+	if previous != nil && caller.Principal != previous.principal {
 		client.auth = nil
 		return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "authenticated tunnel identity changed"}
 	}
 	var projected map[string]string
 	if presented != nil {
-		projected = p.options.Identity.VerifyProjected(ctx, presented, principal)
+		projected = p.options.Authentication.VerifyProjected(ctx, caller, presented)
 	} else if previous != nil {
 		projected = maps.Clone(previous.projected)
 	}
-	client.auth = &authenticated{bearer: token, principal: principal, projected: projected}
+	client.auth = &authenticated{bearer: caller.Bearer, principal: caller.Principal, projected: projected}
 	return client.auth, nil
 }
 

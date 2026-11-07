@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,13 +38,14 @@ import (
 
 // Options is everything the proxy needs to run; none of it has a default.
 type Options struct {
+	TLSPassthroughTargets []string
 	// CA signs the leaf certificates the sandboxes' clients are shown inside a tunnel.
 	CA tls.Certificate
 	// UpstreamRoots verifies the destinations, independently of CA.
-	UpstreamRoots *x509.CertPool
-	Identity      *identity.Verifier
-	Policy        *policy.Index
-	Upstream      *upstream.Resolver
+	UpstreamRoots  *x509.CertPool
+	Authentication *identity.Authenticator
+	Policy         *policy.Index
+	Upstream       *upstream.Resolver
 	// Record receives every decision. It must not block.
 	Record func(decision.Record)
 }
@@ -61,8 +63,11 @@ type Proxy struct {
 // New returns a Proxy. The interception CA must be able to sign.
 func New(options Options) (*Proxy, error) {
 	if len(options.CA.Certificate) == 0 || options.CA.PrivateKey == nil || options.UpstreamRoots == nil ||
-		options.Identity == nil || options.Policy == nil || options.Upstream == nil || options.Record == nil {
+		options.Authentication == nil || options.Policy == nil || options.Upstream == nil || options.Record == nil {
 		return nil, errors.New("interception CA, upstream roots, identity, policy, upstream resolver and record are required")
+	}
+	if err := validatePassthroughTargets(options.TLSPassthroughTargets); err != nil {
+		return nil, err
 	}
 	leaves, err := newLeafIssuer(options.CA)
 	if err != nil {
@@ -99,7 +104,8 @@ type connectionIDKey struct{}
 // connection is the authenticated state of one client connection, which a tunnel's requests share:
 // their headers are behind the tunnel's TLS, so what the CONNECT presented is what applies.
 type connection struct {
-	id string
+	id        string
+	peerState *tls.ConnectionState
 
 	mu   sync.Mutex
 	auth *authenticated
@@ -108,7 +114,12 @@ type connection struct {
 // newConnection starts the state of a request that arrived on the accepted connection, whose
 // identifier the decisions it leads to share.
 func newConnection(r *http.Request) *connection {
-	return &connection{id: r.Context().Value(connectionIDKey{}).(string)}
+	client := &connection{id: r.Context().Value(connectionIDKey{}).(string)}
+	if r.TLS != nil {
+		state := *r.TLS
+		client.peerState = &state
+	}
+	return client
 }
 
 func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +143,10 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := newConnection(r)
+	if slices.Contains(p.options.TLSPassthroughTargets, r.Host) {
+		p.connectPassthrough(w, r, client, host, int(portNumber))
+		return
+	}
 	verdict, _ := p.gate(r, client, nil, host, int(portNumber))
 	if denied, ok := verdict.(policy.Denied); ok {
 		deny(w, denied.Reason)

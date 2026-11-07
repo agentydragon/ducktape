@@ -16,12 +16,33 @@ import (
 // expiringCredentials delegates TLS to gRPC while retaining the local leaf
 // selected by this handshake. Each side independently enforces both expiries.
 type expiringCredentials struct {
-	config *tls.Config
-	server bool
+	config                      *tls.Config
+	server                      bool
+	allowMissingPeerCertificate bool
 }
 
 func newExpiringCredentials(config *tls.Config, server bool) credentials.TransportCredentials {
 	return &expiringCredentials{config: config.Clone(), server: server}
+}
+
+// ServerCredentials adapts a TLS configuration from the shared listener
+// builder to native gRPC credentials and closes each connection when either
+// presented certificate expires. The builder selects the local certificate
+// through GetCertificate so the wrapper can track its expiry. Server
+// configurations that intentionally admit a bearer-only TLS call may omit a
+// peer certificate; their local certificate is still bounded by its expiry.
+func ServerCredentials(config *tls.Config) (credentials.TransportCredentials, error) {
+	if config == nil {
+		return nil, errors.New("server TLS configuration is required")
+	}
+	if config.GetCertificate == nil {
+		return nil, errors.New("server TLS configuration must select its local certificate with GetCertificate")
+	}
+	allowMissingPeerCertificate := config.ClientAuth == tls.NoClientCert ||
+		config.ClientAuth == tls.RequestClientCert || config.ClientAuth == tls.VerifyClientCertIfGiven
+	return &expiringCredentials{
+		config: config.Clone(), server: true, allowMissingPeerCertificate: allowMissingPeerCertificate,
+	}, nil
 }
 
 func (c *expiringCredentials) Info() credentials.ProtocolInfo {
@@ -29,7 +50,9 @@ func (c *expiringCredentials) Info() credentials.ProtocolInfo {
 }
 
 func (c *expiringCredentials) Clone() credentials.TransportCredentials {
-	return newExpiringCredentials(c.config, c.server)
+	return &expiringCredentials{
+		config: c.config.Clone(), server: c.server, allowMissingPeerCertificate: c.allowMissingPeerCertificate,
+	}
 }
 
 func (c *expiringCredentials) OverrideServerName(name string) error {
@@ -40,13 +63,13 @@ func (c *expiringCredentials) OverrideServerName(name string) error {
 func (c *expiringCredentials) ClientHandshake(ctx context.Context, authority string, raw net.Conn) (net.Conn, credentials.AuthInfo, error) {
 	config, selected := c.handshakeConfig()
 	conn, info, err := credentials.NewTLS(config).ClientHandshake(ctx, authority, raw)
-	return expireConnection(conn, info, selected, err)
+	return expireConnection(conn, info, selected, false, err)
 }
 
 func (c *expiringCredentials) ServerHandshake(raw net.Conn) (net.Conn, credentials.AuthInfo, error) {
 	config, selected := c.handshakeConfig()
 	conn, info, err := credentials.NewTLS(config).ServerHandshake(raw)
-	return expireConnection(conn, info, selected, err)
+	return expireConnection(conn, info, selected, c.allowMissingPeerCertificate, err)
 }
 
 // The go-spiffe mTLS configurations always select the local certificate via
@@ -73,7 +96,7 @@ func (c *expiringCredentials) handshakeConfig() (*tls.Config, **tls.Certificate)
 	return config, &selected
 }
 
-func expireConnection(conn net.Conn, auth credentials.AuthInfo, selected **tls.Certificate, err error) (net.Conn, credentials.AuthInfo, error) {
+func expireConnection(conn net.Conn, auth credentials.AuthInfo, selected **tls.Certificate, allowMissingPeerCertificate bool, err error) (net.Conn, credentials.AuthInfo, error) {
 	if err != nil {
 		return nil, nil, err
 	}
@@ -92,12 +115,14 @@ func expireConnection(conn net.Conn, auth credentials.AuthInfo, selected **tls.C
 		}
 	}
 	info, ok := auth.(credentials.TLSInfo)
-	if !ok || len(info.State.PeerCertificates) == 0 {
+	if !ok || !allowMissingPeerCertificate && len(info.State.PeerCertificates) == 0 {
 		return fail(errors.New("TLS handshake did not authenticate a peer certificate"))
 	}
 	expiry := leaf.NotAfter
-	if peerExpiry := info.State.PeerCertificates[0].NotAfter; peerExpiry.Before(expiry) {
-		expiry = peerExpiry
+	if len(info.State.PeerCertificates) > 0 {
+		if peerExpiry := info.State.PeerCertificates[0].NotAfter; peerExpiry.Before(expiry) {
+			expiry = peerExpiry
+		}
 	}
 	if !expiry.After(time.Now()) {
 		return fail(fmt.Errorf("TLS certificate expired at %s", expiry.UTC().Format(time.RFC3339Nano)))

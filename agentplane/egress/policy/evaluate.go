@@ -219,7 +219,7 @@ func (i *Index) credentialValue(
 		if !bound {
 			return "", false
 		}
-		return workload.Bearer, true
+		return workload.Bearer, workload.Bearer != ""
 	}
 	return "", false
 }

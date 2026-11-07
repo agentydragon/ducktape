@@ -43,7 +43,9 @@ _MCP_EDGE_LOGIN = dex.StaticClient(
 def objects(
     *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs
 ) -> list[dict[str, Any]]:
-    env = fixture_chart.environment(vm_sandboxes=False, models=models, app_origin=mcp.app_origin, central_sampler=True)
+    env = fixture_chart.environment(
+        vm_sandboxes=False, runner_egress_mtls=True, models=models, app_origin=mcp.app_origin, central_sampler=True
+    )
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
     actions_config = replace(
         env.actions,

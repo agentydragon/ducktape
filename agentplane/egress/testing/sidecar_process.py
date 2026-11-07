@@ -49,7 +49,7 @@ class SidecarProcess:
                 listener = self._listener_stack.enter_context(listen_tcp())
                 self._route_listeners[name] = listener
                 routes[name] = PlatformRoute(
-                    listen_address=self._fd_address(listener), upstream=config.upstream, token_file=config.token_file
+                    listen_address=self._fd_address(listener), upstream=config.upstream, transport=config.transport
                 )
 
             settings = Settings(

@@ -27,19 +27,26 @@ const (
 
 // Rule is who may call one gRPC method.
 type Rule struct {
-	kind       ruleKind
-	resolver   *Resolver
-	accounts   map[Account]struct{}
-	delegation *delegationPolicy
+	kind              ruleKind
+	resolver          *Resolver
+	principalResolver PrincipalResolver
+	accounts          map[Account]struct{}
+	delegation        *delegationPolicy
 }
 
 // Public admits a call without reading its bearer. Only the standard health service is public: Kubernetes
 // probes carry no bearer.
 func Public() Rule { return Rule{kind: rulePublic} }
 
-// AnyAccount admits a caller proving, by a bearer resolver reviews, any account resolver serves. The handler
-// reads which with Caller.
-func AnyAccount(resolver *Resolver) Rule { return Rule{kind: ruleAnyAccount, resolver: resolver} }
+// AnyAccount admits the principal its resolver proves. The handler reads it with Caller. Only a TokenReview
+// Resolver also supports delegated calls.
+func AnyAccount(principalResolver PrincipalResolver) Rule {
+	resolver, isTokenReview := principalResolver.(*Resolver)
+	if isTokenReview && resolver == nil {
+		principalResolver = nil
+	}
+	return Rule{kind: ruleAnyAccount, resolver: resolver, principalResolver: principalResolver}
+}
 
 // Accounts admits a caller proving, by a bearer resolver reviews, one of accounts. No accounts admits nobody.
 func Accounts(resolver *Resolver, accounts []Account) Rule {
@@ -168,8 +175,8 @@ func AdmittedReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
 	return caller, nil
 }
 
-// ServerOptions admits each call by its method's Rule before any handler runs. admissionTimeout bounds the bearer
-// review; zero leaves it bounded by the call's own deadline.
+// ServerOptions admits each call by its method's Rule before any handler runs. admissionTimeout bounds caller
+// resolution; zero leaves it bounded by the call's own deadline.
 func (m Methods) ServerOptions(admissionTimeout time.Duration) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
@@ -217,10 +224,13 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	default:
 		return nil, errMethodNotAllowed
 	}
-	reviewContext := ctx
+	if rule.kind == ruleAnyAccount && rule.principalResolver == nil {
+		return nil, errMethodNotAllowed
+	}
+	resolveContext := ctx
 	if admissionTimeout > 0 {
 		var cancel context.CancelFunc
-		reviewContext, cancel = context.WithTimeout(ctx, admissionTimeout)
+		resolveContext, cancel = context.WithTimeout(ctx, admissionTimeout)
 		defer cancel()
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
@@ -230,15 +240,15 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 		if rule.delegation == nil {
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
-		return rule.delegation.admit(ctx, reviewContext, authorization, delegations)
+		return rule.delegation.admit(ctx, resolveContext, authorization, delegations)
 	}
 	var principal Principal
 	var err error
 	if rule.kind == ruleAccounts {
-		principal, err = rule.resolver.RequireAccount(reviewContext, rule.accounts)
+		principal, err = rule.resolver.RequireAccount(resolveContext, rule.accounts)
 	} else if rule.kind == ruleReviewedServiceAccount {
 		var caller ReviewedCaller
-		caller, err = rule.resolver.ResolveReviewedCaller(reviewContext)
+		caller, err = rule.resolver.ResolveReviewedCaller(resolveContext)
 		if err != nil {
 			return nil, err
 		}
@@ -249,7 +259,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 		})
 		return WithReviewedCaller(admitted, caller), nil
 	} else {
-		principal, err = rule.resolver.Resolve(reviewContext)
+		principal, err = rule.principalResolver.Resolve(resolveContext)
 	}
 	if err != nil {
 		return nil, err

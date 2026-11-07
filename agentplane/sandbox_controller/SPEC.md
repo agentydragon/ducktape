@@ -71,10 +71,21 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   fresh credential ID used to bind each incarnation to its certificate.
 - Before starting a new workload, the controller creates a cert-manager `Certificate` named
   `runner-<credential-id>` and waits for its generated TLS Secret. The leaf URI SAN is exactly
-  `spiffe://agentplane/environment-runtime/<namespace>/<Sandbox UID>/<credential-id>` and has server
-  authentication usage. The namespace Issuer signs it; cert-manager owns key generation and
-  renewal. Runner TLS files mount from that generation's unique Secret, and the shared trust-manager
-  CA bundle supplies the root. A renewed key can update only its own generation's Secret.
+  `spiffe://agentplane/environment-runtime/<namespace>/<Sandbox UID>/<credential-id>` and has
+  digital-signature, server-authentication and client-authentication usages. Server auth serves
+  Runner control; client auth lets the egress sidecar authenticate to the separate mTLS proxy
+  listener. The namespace Issuer signs it; cert-manager owns key generation and renewal. Runner TLS
+  files mount from that generation's unique Secret, and the shared trust-manager CA bundle supplies
+  the root. A renewed key can update only its own generation's Secret. Reconciliation upgrades the
+  usages of a previously issued controller-owned Certificate only when every other identity and
+  key-policy field still matches; SAN, issuer or other drift remains a conflict.
+- A Pod projects the same per-incarnation Secret and trust bundle to the Environment Runtime and,
+  when the template includes it, the `egress-sidecar` container. Runtime-only custom templates remain
+  valid. The workload and executor containers receive no mount. The
+  sidecar uses those files when `proxy.transport` selects TLS with `auth.mode: spiffe`; a
+  handshake or certificate failure ends the request. It may also send a separately projected
+  workload-audience token as destination context for an egress credential; that token is
+  reviewed against the live Sandbox Pod and never authenticates an SVID hop.
 - A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
   first VMI UID is persisted on its VM and in the Sandbox's status. If KubeVirt unexpectedly replaces a VMI while
   the VM still carries the old identity, the controller halts that replacement, rotates to a new
@@ -102,8 +113,15 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 - The guest gets the state PVC as a virtiofs filesystem named after the template's state volume.
 - The runner TLS Secret is a separate virtiofs config volume under a root-only guest directory.
   The runner reads its certificate and private key there; the guest's unprivileged native-agent
-  account cannot traverse that directory. The trust-manager CA bundle is mounted separately as
-  public trust data.
+  account cannot traverse that directory. The KubeVirt launcher relay receives a projection of this
+  same Secret only after its admission policy checks the live Sandbox's `status.runnerCredential`
+  against the VM annotation, current VMI UID and credential label, plus the existing Sandbox owner
+  chain. The egress-sidecar alone mounts that projection; the guest Runtime uses the existing
+  virtiofs mount. Kyverno's admission controller gets only namespace-scoped Sandbox `get` for
+  the status lookup; the kubelet projects the Secret without Kyverno reading its value. Missing
+  accepted credential data fails admission; KubeVirt retries after status is bound, without an
+  admitted Pod waiting forever on a placeholder Secret.
+  The trust-manager CA bundle is mounted separately as public trust data.
 - The guest's executable erofs disk keeps serial `agentplane-runner` and mounts at
   `/run/agentplane/environment`. Runtime configuration and the launch file arrive as separate
   disks at `/run/agentplane/config` and `/run/agentplane/sandbox`. Their filenames, device serials

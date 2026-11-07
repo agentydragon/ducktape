@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +29,12 @@ type callerHealth struct {
 	callers    chan auth.Principal
 	effective  chan *auth.ServiceAccountPrincipal
 	admissions chan auth.Admission
+}
+
+type principalResolverFunc func(context.Context) (auth.Principal, error)
+
+func (resolve principalResolverFunc) Resolve(ctx context.Context) (auth.Principal, error) {
+	return resolve(ctx)
 }
 
 func (h callerHealth) record(ctx context.Context) {
@@ -202,6 +209,99 @@ func TestAnAnyAccountRuleAdmitsEveryAccountItsResolverServes(t *testing.T) {
 		if caller := <-callers; caller.Account != stranger {
 			t.Errorf("handler saw caller %+v, want %v", caller, stranger)
 		}
+	}
+}
+
+func TestAnAnyAccountRuleUsesItsPrincipalResolverResult(t *testing.T) {
+	// A Sandbox-name-only source has no ServiceAccount or Pod UID to infer.
+	want := auth.Principal{
+		Account: auth.Account{Namespace: "test-namespace", Name: "test-sandbox"},
+		PodName: "test-sandbox",
+	}
+	rule := auth.AnyAccount(principalResolverFunc(func(context.Context) (auth.Principal, error) {
+		return want, nil
+	}))
+	client, callers := serveHealth(t, auth.Methods{healthpb.Health_Check_FullMethodName: rule}, 0)
+	if _, err := client.Check(bearing(t, "test-source-token"), &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatalf("resolved principal call: %v", err)
+	}
+	if got := <-callers; got != want {
+		t.Fatalf("handler saw principal %+v, want %+v", got, want)
+	}
+}
+
+func TestAnAnyAccountSourceErrorDoesNotRunTheHandler(t *testing.T) {
+	var calls atomic.Int32
+	rule := auth.AnyAccount(principalResolverFunc(func(context.Context) (auth.Principal, error) {
+		calls.Add(1)
+		return auth.Principal{}, status.Error(codes.Unavailable, "test principal source unavailable")
+	}))
+	client, callers := serveHealth(t, auth.Methods{healthpb.Health_Check_FullMethodName: rule}, 0)
+	if _, err := client.Check(bearing(t, "test-source-token"), &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("source failure returned %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("principal source called %d times, want once", got)
+	}
+	select {
+	case caller := <-callers:
+		t.Fatalf("handler ran after source failure with caller %+v", caller)
+	default:
+	}
+}
+
+func TestMissingAnyAccountSourceFailsClosedBeforeTheHandler(t *testing.T) {
+	client, callers := serveHealth(t, auth.Methods{
+		healthpb.Health_Check_FullMethodName: auth.AnyAccount(nil),
+	}, 0)
+	if _, err := client.Check(bearing(t, "test-source-token"), &healthpb.HealthCheckRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("missing principal source returned %v", err)
+	}
+	select {
+	case caller := <-callers:
+		t.Fatalf("handler ran without a principal source with caller %+v", caller)
+	default:
+	}
+}
+
+func TestNonTokenPrincipalResolverCannotDelegateOrResolveDelegationMetadata(t *testing.T) {
+	var calls atomic.Int32
+	rule := auth.AnyAccount(principalResolverFunc(func(context.Context) (auth.Principal, error) {
+		calls.Add(1)
+		return auth.Principal{}, nil
+	}))
+	reader := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
+		return "test-uid", true, nil
+	})
+	if _, err := rule.AllowDelegationFrom([]auth.Delegator{{
+		Account: auth.Account{Namespace: testNamespace, Name: "test-actions"}, CallerNamespaces: []string{testNamespace},
+	}}, reader); err == nil {
+		t.Fatal("a non-TokenReview source enabled delegation")
+	}
+	client, callers := serveHealth(t, auth.Methods{healthpb.Health_Check_FullMethodName: rule}, 0)
+	delegated := delegationContext(t, "test-actor-token", auth.Account{Namespace: testNamespace, Name: "test-caller"}, "test-caller-uid")
+	if _, err := client.Check(delegated, &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("delegation metadata returned %v", err)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("principal source called %d times for delegation metadata", got)
+	}
+	select {
+	case caller := <-callers:
+		t.Fatalf("handler ran for delegation metadata with caller %+v", caller)
+	default:
+	}
+}
+
+func TestTokenReviewAnyAccountRuleCanStillEnableDelegation(t *testing.T) {
+	reader := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
+		return "test-uid", true, nil
+	})
+	_, err := auth.AnyAccount(newResolver(t, api.TokenReviews())).AllowDelegationFrom([]auth.Delegator{{
+		Account: auth.Account{Namespace: testNamespace, Name: "test-actions"}, CallerNamespaces: []string{testNamespace},
+	}}, reader)
+	if err != nil {
+		t.Fatalf("TokenReview AnyAccount rule could not enable delegation: %v", err)
 	}
 }
 

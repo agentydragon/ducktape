@@ -15,6 +15,7 @@ from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
+from agentplane.egress import sidecar_config
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
@@ -78,7 +79,13 @@ class CommandSandbox(Construct):
         self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
-            self, env, name=f"{NAME}-egress-sidecar", platform_routes={}
+            self,
+            env,
+            name=f"{NAME}-egress-sidecar",
+            platform_routes={},
+            proxy_transport=sidecar_config.PlaintextProxyTransport(
+                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=sandbox_pod.EGRESS_TOKEN_FILE)
+            ),
         )
         _pod_template(
             self,

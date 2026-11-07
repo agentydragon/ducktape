@@ -33,6 +33,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"golang.org/x/net/http2"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -210,9 +211,15 @@ func newLab(t *testing.T) *lab {
 	if err != nil {
 		t.Fatal(err)
 	}
+	authentication, err := identity.NewAuthenticator(listener.Config{
+		ListenAddress: "127.0.0.1:0", Auth: []listener.Authentication{&listener.KubernetesBearerAuth{Audience: hopAudience}},
+	}, identity.NewVerifier(hop, map[string]*auth.Resolver{projectedAudience: projected}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	l.options = Options{
 		CA: intercept, UpstreamRoots: upstreamRoot, Policy: l.index, Record: l.records.record,
-		Identity: identity.NewVerifier(hop, map[string]*auth.Resolver{projectedAudience: projected}),
+		Authentication: authentication,
 		Upstream: upstream.NewResolver([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, upstream.WithLookup(
 			func(_ context.Context, host string) ([]netip.Addr, error) {
 				l.resolutions.Add(1)

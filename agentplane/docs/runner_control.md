@@ -331,6 +331,51 @@ command admission or native execution. Losing it does not establish that admitte
 
 ## Path through the egress proxy
 
-History ingress and other platform routes retain their bearer-substituting egress paths. Runner
-control uses the Gateway's direct mTLS connection and never sends its private key or control
-credentials through an HTTP interception proxy.
+```mermaid
+flowchart LR
+    SECRET[(runner credential Secret)]
+    subgraph POD[Sandbox Pod]
+        RUNTIME[Environment Runtime]
+        SIDECAR[egress-sidecar]
+        WORKLOAD[workload and executor<br/>no Secret mount]
+    end
+    PROXY[egress proxy forward listener :8888]
+    DEST[policy-approved destination]
+    SECRET -->|same projected files| RUNTIME
+    SECRET -->|same projected files| SIDECAR
+    SIDECAR -->|TLS ClientAuth SVID<br/>projected bearer as destination context| PROXY
+    PROXY -->|policy and substitution| DEST
+```
+
+Runner control stays on the Gateway's direct mTLS connection; its private key and control calls do
+not pass through HTTP interception. Separately, the egress sidecar relays runner HTTP(S) traffic to
+the central proxy. With TLS transport and SPIFFE authentication selected, the sidecar presents the
+same per-incarnation Runner certificate to the proxy's TLS-enabled forward listener under
+`spiffe://agentplane/environment-runtime/...`; it sends the projected workload bearer separately
+as destination context for legacy authenticated-workload credential substitution. The Certificate
+carries server auth for the Runtime's control listener and client auth for this hop.
+
+For the standard runner Pod, the controller mounts one projected Secret and the cluster trust bundle
+into the Environment Runtime and egress sidecar; workload and executor containers do not mount it.
+Custom runtime-only templates remain supported and receive the projection only in Runtime. For KubeVirt, the guest Runtime reads the same
+Secret from its existing root-only virtiofs mount, while the launcher relay gets a projection of that
+Secret into its own sidecar mount.
+Kyverno checks the live Sandbox status binding against the VM annotation, current VMI UID and
+credential label before injection. Its admission controller has a namespace-scoped Role granting
+only `get` on Sandboxes for that lookup; it does not read the Secret. A missing accepted credential
+fails mutation, so KubeVirt retries after the binding is recorded instead of admitting a Pod with
+a placeholder Secret name. The sidecar verifies the proxy's fixed SPIFFE identity; the proxy
+checks the Runner client identity against current Sandbox/incarnation state.
+
+The sidecar's `proxy` contains an address and a tagged `transport`. Plaintext permits only
+Kubernetes bearer authentication; verified TLS permits either a bearer or a SPIFFE client
+certificate. TLS owns its CA bundle, and its `auth` variant owns either the token path or the
+certificate/key pair. A TLS failure ends the request. Files reload for credential rotation.
+
+The Rules API shares the proxy's configured authentication policy and serving TLS material on its
+shared native gRPC port. The workload dials the local `EgressRules.GetRules` route on port 3133.
+For SPIFFE, the sidecar opens destination TLS through an opaque central tunnel; the server verifies
+the actual peer and live Sandbox itself. Until the remaining service cutover,
+their explicit projected audience tokens remain destination credentials, verified against the
+Sandbox's bound Pod. Staging defaults to the legacy plaintext bearer hop until cutover. Callers
+without Sandbox certificates require their separate authentication design before that flip.

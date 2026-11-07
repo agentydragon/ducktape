@@ -9,6 +9,8 @@ assertion is on what the client and the upstream actually saw.
 from __future__ import annotations
 
 import asyncio
+import datetime
+import ssl
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -24,15 +26,24 @@ import pytest
 import pytest_bazel
 import yaml
 from aiohttp import web
+from cryptography import x509
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 from sqlalchemy import create_engine, text
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.egress import egress_rules_pb2, egress_rules_pb2_grpc
+from agentplane.egress.platform_routes import PlatformRoute, TLSConnectRouteTransport
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
+from agentplane.egress.sidecar_config import (
+    KubernetesBearerProxyAuth,
+    PlaintextProxyTransport,
+    Proxy,
+    SpiffeProxyAuth,
+    TLSProxyTransport,
+)
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -42,12 +53,14 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kuberne
 from agentplane.testing.tls import (
     CertificateAuthority,
     client_tls_context,
+    environment_runtime_identity_uri,
     issue_leaf,
+    issue_workload_leaf,
     make_ca,
     server_tls_context,
     write_ca,
 )
-from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener as WorkloadListener
+from agentplane.workload_auth.listener import TLS, KubernetesBearerAuth, Listener as ForwardListener, SPIFFEAuth
 from util.net import Listener
 
 # Three namespaces, all different, so that a proxy reading one from the wrong one fails.
@@ -57,6 +70,13 @@ CREDENTIALS_NAMESPACE = "agentplane-egress-test-credentials"
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
 SANDBOX_A = "sb-a"
+SANDBOX_B = "sb-b"
+RUNNER_CREDENTIAL_ID = "a" * 32
+ROTATED_RUNNER_CREDENTIAL_ID = "b" * 32
+PROJECTED_AUDIENCE = "agentplane-egress-test-projected"
+DESTINATION_AUDIENCE = "agentplane-egress-test-destination"
+BINDING_B = f"{SANDBOX_B}-private-policy"
+EGRESS_PROXY_URI = "spiffe://agentplane/egress-proxy"
 # Every sandbox runs as a ServiceAccount of its own, named after it: that account is the subject.
 SUBJECT_A = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_A)
 
@@ -101,8 +121,24 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
         await runner.cleanup()
 
 
+@dataclass(frozen=True)
+class SeededSandbox:
+    hop_token: str
+    destination_token: str
+    projected_token: str
+    sandbox_uid: str
+    pod_uid: str
+    mismatched_pod_token: str
+
+
 def replica_settings(
-    *, api_config: Path, ca: tuple[Path, Path], database_url: str, upstream_ca_file: Path | None = None
+    *,
+    api_config: Path,
+    ca: tuple[Path, Path],
+    database_url: str,
+    upstream_ca_file: Path | None = None,
+    svid_cert: tuple[Path, Path] | None = None,
+    svid_ca_file: Path | None = None,
 ) -> Settings:
     cert, key = ca
     return Settings(
@@ -113,7 +149,16 @@ def replica_settings(
         log_levels={},
         ca_cert=cert,
         ca_key=key,
-        forward=WorkloadListener(listen_address="0.0.0.0:8888", auth=[KubernetesBearerAuth(audience=AUDIENCE)]),
+        projected_token_audiences=frozenset({PROJECTED_AUDIENCE, DESTINATION_AUDIENCE}),
+        forward=ForwardListener(
+            listen_address="0.0.0.0:8888",
+            tls=(TLS(cert_file=svid_cert[0], key_file=svid_cert[1]) if svid_cert is not None else None),
+            auth=(
+                [SPIFFEAuth(ca_file=svid_ca_file), KubernetesBearerAuth(audience=AUDIENCE)]
+                if svid_cert is not None and svid_ca_file is not None
+                else [KubernetesBearerAuth(audience=AUDIENCE)]
+            ),
+        ),
         upstream_ca_file=upstream_ca_file,
         database_url=database_url,
         exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
@@ -126,7 +171,7 @@ BINDING = f"{SANDBOX_A}-{_CONTRACT_CREDENTIAL}"
 _API_VERSION = f"{GROUP}/{VERSION}"
 
 
-async def seed(server: KubernetesApiServer) -> str:
+async def seed(server: KubernetesApiServer) -> SeededSandbox:
     """Workload A's Pod and a token of it for the proxy's audience. A is bound to a policy that
     substitutes the contract credential on the contract paths and admits `/public/**` as is."""
     core = k8s_client.CoreV1Api(server.api)
@@ -135,10 +180,23 @@ async def seed(server: KubernetesApiServer) -> str:
     await core.create_namespaced_service_account(
         SANDBOX_NAMESPACE, k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=SANDBOX_A))
     )
-    await core.create_namespaced_pod(
+    await core.create_namespaced_service_account(
+        SANDBOX_NAMESPACE, k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=SANDBOX_B))
+    )
+    pod = await core.create_namespaced_pod(
         SANDBOX_NAMESPACE,
         k8s_client.V1Pod(
             metadata=k8s_client.V1ObjectMeta(name=SANDBOX_A),
+            spec=k8s_client.V1PodSpec(
+                service_account_name=SANDBOX_A,
+                containers=[k8s_client.V1Container(name="workload", image="registry.test/unused")],
+            ),
+        ),
+    )
+    await core.create_namespaced_pod(
+        SANDBOX_NAMESPACE,
+        k8s_client.V1Pod(
+            metadata=k8s_client.V1ObjectMeta(name=f"{SANDBOX_A}-other-pod"),
             spec=k8s_client.V1PodSpec(
                 service_account_name=SANDBOX_A,
                 containers=[k8s_client.V1Container(name="workload", image="registry.test/unused")],
@@ -175,6 +233,18 @@ async def seed(server: KubernetesApiServer) -> str:
                         "paths": ["/contract", "/contract-sse", "/contract-ws", _CONTRACT_PATH],
                         "credentialRef": {"name": _CONTRACT_CREDENTIAL},
                     },
+                    {
+                        "type": "egress",
+                        "hosts": [UPSTREAM_HOST],
+                        "paths": ["/projected"],
+                        "credentialRef": {"name": "svid-projected-credential"},
+                    },
+                    {
+                        "type": "egress",
+                        "hosts": [UPSTREAM_HOST],
+                        "paths": ["/compatibility"],
+                        "credentialRef": {"name": "destination-projected-credential"},
+                    },
                     {"type": "egress", "hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
                 ]
             },
@@ -188,7 +258,96 @@ async def seed(server: KubernetesApiServer) -> str:
     }
     for plural, body in bodies.items():
         await custom.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
-    return await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [AUDIENCE])
+    for plural, body in (
+        (
+            CREDENTIALS_PLURAL,
+            {
+                "apiVersion": _API_VERSION,
+                "kind": "EgressCredential",
+                "metadata": {"name": "destination-projected-credential"},
+                "spec": {
+                    "source": {"projectedWorkloadToken": {"audience": DESTINATION_AUDIENCE}},
+                    "description": "a test projected destination token",
+                    "targets": [{"header": "authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
+                },
+            },
+        ),
+        (
+            CREDENTIALS_PLURAL,
+            {
+                "apiVersion": _API_VERSION,
+                "kind": "EgressCredential",
+                "metadata": {"name": "svid-projected-credential"},
+                "spec": {
+                    "source": {"projectedWorkloadToken": {"audience": PROJECTED_AUDIENCE}},
+                    "description": "a test projected token",
+                    "targets": [{"header": "authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
+                },
+            },
+        ),
+        (
+            POLICY_SETS_PLURAL,
+            {
+                "apiVersion": _API_VERSION,
+                "kind": "PolicySet",
+                "metadata": {"name": "sandbox-b-private-policy"},
+                "spec": {"rules": [{"type": "egress", "hosts": [UPSTREAM_HOST], "paths": ["/private-b-only"]}]},
+            },
+        ),
+        (
+            POLICY_BINDINGS_PLURAL,
+            {
+                "apiVersion": _API_VERSION,
+                "kind": "PolicyBinding",
+                "metadata": {"name": BINDING_B},
+                "spec": {
+                    "subject": ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B).model_dump(),
+                    "policySets": ["sandbox-b-private-policy"],
+                },
+            },
+        ),
+    ):
+        await custom.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
+    await custom.create_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        "sandboxes",
+        {
+            "apiVersion": _API_VERSION,
+            "kind": "Sandbox",
+            "metadata": {"name": SANDBOX_A, "finalizers": ["agentplane-egress-test/hold"]},
+            "spec": {"template": "test", "running": True},
+        },
+    )
+    sandbox = await custom.get_namespaced_custom_object(GROUP, VERSION, SANDBOX_NAMESPACE, "sandboxes", SANDBOX_A)
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        "sandboxes",
+        SANDBOX_A,
+        {
+            "status": {
+                "incarnation": {"name": SANDBOX_A, "uid": pod.metadata.uid},
+                "runnerCredential": {
+                    "id": RUNNER_CREDENTIAL_ID,
+                    "acceptedId": RUNNER_CREDENTIAL_ID,
+                    "kind": "Pod",
+                    "podUid": pod.metadata.uid,
+                },
+            }
+        },
+        _content_type="application/merge-patch+json",
+    )
+    return SeededSandbox(
+        hop_token=await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [AUDIENCE]),
+        destination_token=await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [DESTINATION_AUDIENCE]),
+        projected_token=await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [PROJECTED_AUDIENCE]),
+        sandbox_uid=sandbox["metadata"]["uid"],
+        pod_uid=pod.metadata.uid,
+        mismatched_pod_token=await server.pod_token(SANDBOX_NAMESPACE, f"{SANDBOX_A}-other-pod", [PROJECTED_AUDIENCE]),
+    )
 
 
 async def revoke_binding(server: KubernetesApiServer) -> None:
@@ -203,45 +362,395 @@ class Egress:
 
     replica: GoReplica
     token: str
+    destination_token: str
+    projected_token: str
     api: KubernetesApiServer
     interception_ca: CertificateAuthority
     upstream_ca: CertificateAuthority
+    runtime_ca: CertificateAuthority
     upstream: RecordingUpstream
+    sandbox_uid: str
+    pod_uid: str
+    mismatched_pod_token: str
     tmp_path: Path
+    tls_forward: bool
 
     @property
     def proxy_listener(self) -> Listener:
         return self.replica.proxy_listener
 
+    @property
+    def proxy_url(self) -> str:
+        scheme = "https" if self.tls_forward else "http"
+        return f"{scheme}://localhost:{self.replica.proxy_listener.port}"
+
     def url(self, path: str) -> str:
         return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
 
 
-@pytest.fixture
-async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
+@asynccontextmanager
+async def _running_egress(tmp_path: Path, history_db_url: str, *, mixed_listener: bool) -> AsyncIterator[Egress]:
     interception_ca = make_ca("agentplane-egress-test-interception")
     upstream_ca = make_ca("agentplane-egress-test-upstream")
+    runtime_ca = make_ca("agentplane-egress-test-runtime")
     async with (
         kubernetes_apiserver() as api,
         recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
-        token = await seed(api)
+        seeded = await seed(api)
+        svid_server = None
+        svid_ca_file = None
+        if mixed_listener:
+            svid_server_directory = tmp_path / "svid-server"
+            svid_server_directory.mkdir()
+            svid_server = issue_workload_leaf(runtime_ca, EGRESS_PROXY_URI, svid_server_directory, dns_name="localhost")
+            svid_ca_file = write_ca(runtime_ca, tmp_path, "runtime")[0]
         settings = replica_settings(
             api_config=api.kubeconfig,
             ca=write_ca(interception_ca, tmp_path, "interception"),
             database_url=history_db_url,
             upstream_ca_file=write_ca(upstream_ca, tmp_path, "upstream")[0],
+            svid_cert=svid_server,
+            svid_ca_file=svid_ca_file,
         )
-        async with go_replica(settings, directory=tmp_path) as running:
+        async with go_replica(settings, directory=tmp_path, tunnel_rules=mixed_listener) as running:
             yield Egress(
                 replica=running,
-                token=token,
+                token=seeded.hop_token,
+                destination_token=seeded.destination_token,
+                projected_token=seeded.projected_token,
                 api=api,
                 interception_ca=interception_ca,
                 upstream_ca=upstream_ca,
+                runtime_ca=runtime_ca,
                 upstream=upstream,
+                sandbox_uid=seeded.sandbox_uid,
+                pod_uid=seeded.pod_uid,
+                mismatched_pod_token=seeded.mismatched_pod_token,
                 tmp_path=tmp_path,
+                tls_forward=mixed_listener,
             )
+
+
+@pytest.fixture
+async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
+    async with _running_egress(tmp_path, history_db_url, mixed_listener=False) as running:
+        yield running
+
+
+@pytest.fixture
+async def mixed_egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
+    """One TLS forward listener accepts either bearer-only clients or SVID-only clients."""
+    async with _running_egress(tmp_path, history_db_url, mixed_listener=True) as running:
+        yield running
+
+
+def issue_runner_svid(
+    egress: Egress,
+    directory: Path,
+    *,
+    credential_id: str = RUNNER_CREDENTIAL_ID,
+    valid_for: datetime.timedelta | None = None,
+) -> tuple[Path, Path]:
+    directory.mkdir()
+    return issue_workload_leaf(
+        egress.runtime_ca,
+        environment_runtime_identity_uri(SANDBOX_NAMESPACE, egress.sandbox_uid, credential_id),
+        directory,
+        dns_name="localhost",
+        valid_for=valid_for,
+    )
+
+
+def proxy_svid_client_context(egress: Egress, certificate: tuple[Path, Path]) -> ssl.SSLContext:
+    context = ssl.create_default_context(cadata=(egress.runtime_ca.cert_pem + egress.interception_ca.cert_pem).decode())
+    context.load_cert_chain(*(str(path) for path in certificate))
+    return context
+
+
+def proxy_bearer_client_context(egress: Egress) -> ssl.SSLContext:
+    return ssl.create_default_context(cadata=(egress.runtime_ca.cert_pem + egress.interception_ca.cert_pem).decode())
+
+
+async def svid_request(
+    client: aiohttp.ClientSession,
+    egress: Egress,
+    proxy_tls: ssl.SSLContext,
+    path: str,
+    *,
+    headers: dict[str, str] | None = None,
+    target_url: str | None = None,
+) -> tuple[int, dict[str, str]]:
+    request_options: dict[str, Any] = {"proxy": egress.proxy_url, "ssl": proxy_tls, "headers": headers or {}}
+    url = target_url or f"http://{UPSTREAM_HOST}:{egress.upstream.http_port}{path}"
+    async with client.get(url, **request_options) as response:
+        await response.read()
+        return response.status, {name.lower(): value for name, value in response.headers.items()}
+
+
+async def test_mixed_forward_listener_accepts_exactly_one_credential_mode(mixed_egress: Egress) -> None:
+    certificate = issue_runner_svid(mixed_egress, mixed_egress.tmp_path / "svid-client")
+    svid_tls = proxy_svid_client_context(mixed_egress, certificate)
+    bearer_tls = proxy_bearer_client_context(mixed_egress)
+    async with aiohttp.ClientSession() as client:
+        status, _ = await svid_request(
+            client,
+            mixed_egress,
+            bearer_tls,
+            "/public/bearer-over-tls",
+            headers={"Proxy-Authorization": f"Bearer {mixed_egress.token}"},
+        )
+        assert status == 200
+        status, _ = await svid_request(client, mixed_egress, svid_tls, "/public/svid-over-tls")
+    assert status == 200
+    assert [path for _, path, _ in mixed_egress.upstream.requests] == [
+        "/public/bearer-over-tls",
+        "/public/svid-over-tls",
+    ]
+
+
+async def test_mixed_forward_listener_rejects_dual_or_invalid_auth_before_policy(mixed_egress: Egress) -> None:
+    certificate = issue_runner_svid(mixed_egress, mixed_egress.tmp_path / "svid-client")
+    svid_tls = proxy_svid_client_context(mixed_egress, certificate)
+    bearer_tls = proxy_bearer_client_context(mixed_egress)
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(
+            client, mixed_egress, svid_tls, "/no-rule", headers={"Proxy-Authorization": f"Bearer {mixed_egress.token}"}
+        )
+        assert status == 403, headers
+        assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+
+        status, headers = await svid_request(
+            client, mixed_egress, bearer_tls, "/no-rule", headers={"Proxy-Authorization": "Bearer invalid-token"}
+        )
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+    assert not mixed_egress.upstream.requests
+
+
+async def test_svid_listener_maps_live_sandbox_and_ignores_forged_subject_header(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    certificate = issue_runner_svid(egress, egress.tmp_path / "svid-client")
+    proxy_tls = proxy_svid_client_context(egress, certificate)
+    async with aiohttp.ClientSession() as client:
+        status, _ = await svid_request(client, egress, proxy_tls, "/public/svid")
+        assert status == 200
+        status, headers = await svid_request(
+            client,
+            egress,
+            proxy_tls,
+            "/private-b-only",
+            headers={"X-Agentplane-Subject": f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"},
+        )
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=no-rule"
+    assert [path for _, path, _ in egress.upstream.requests] == ["/public/svid"]
+
+
+async def test_svid_listener_rejects_a_stale_runner_credential_id(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        "sandboxes",
+        SANDBOX_A,
+        {
+            "status": {
+                "runnerCredential": {"id": ROTATED_RUNNER_CREDENTIAL_ID, "acceptedId": ROTATED_RUNNER_CREDENTIAL_ID}
+            }
+        },
+        _content_type="application/merge-patch+json",
+    )
+    proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "svid-client"))
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/stale")
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+    assert not egress.upstream.requests
+
+
+async def test_svid_listener_keeps_deleting_quiescing_sandbox_until_removed(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
+    certificate = issue_runner_svid(egress, egress.tmp_path / "svid-client")
+    proxy_tls = proxy_svid_client_context(egress, certificate)
+    await custom.delete_namespaced_custom_object(
+        GROUP, VERSION, SANDBOX_NAMESPACE, "sandboxes", SANDBOX_A, body=k8s_client.V1DeleteOptions()
+    )
+    deleting = await custom.get_namespaced_custom_object(GROUP, VERSION, SANDBOX_NAMESPACE, "sandboxes", SANDBOX_A)
+    assert deleting["metadata"].get("deletionTimestamp")
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/deleting")
+    assert status == 200, headers
+
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        "sandboxes",
+        SANDBOX_A,
+        {"status": {"stopStage": "Quiescing"}},
+        _content_type="application/merge-patch+json",
+    )
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/quiescing")
+    assert status == 200, headers
+
+    await custom.patch_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        "sandboxes",
+        SANDBOX_A,
+        {"metadata": {"finalizers": []}},
+        _content_type="application/merge-patch+json",
+    )
+
+    async def replacement_ready() -> None:
+        async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+            with attempt:
+                with pytest.raises(k8s_client.ApiException) as error:
+                    await custom.get_namespaced_custom_object(GROUP, VERSION, SANDBOX_NAMESPACE, "sandboxes", SANDBOX_A)
+                assert error.value.status == 404
+
+    await replacement_ready()
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/removed")
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+
+    await custom.create_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        "sandboxes",
+        {
+            "apiVersion": _API_VERSION,
+            "kind": "Sandbox",
+            "metadata": {"name": SANDBOX_A, "finalizers": ["agentplane-egress-test/hold"]},
+            "spec": {"template": "test", "running": True},
+        },
+    )
+    replacement = await custom.get_namespaced_custom_object(GROUP, VERSION, SANDBOX_NAMESPACE, "sandboxes", SANDBOX_A)
+    assert replacement["metadata"]["uid"] != egress.sandbox_uid
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        "sandboxes",
+        SANDBOX_A,
+        {
+            "status": {
+                "incarnation": {"name": SANDBOX_A, "uid": egress.pod_uid},
+                "runnerCredential": {
+                    "id": RUNNER_CREDENTIAL_ID,
+                    "acceptedId": RUNNER_CREDENTIAL_ID,
+                    "kind": "Pod",
+                    "podUid": egress.pod_uid,
+                },
+            }
+        },
+        _content_type="application/merge-patch+json",
+    )
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/replaced")
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+    assert [path for _, path, _ in egress.upstream.requests] == ["/public/deleting", "/public/quiescing"]
+
+
+async def test_svid_listener_rejects_a_cleared_runner_credential(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        "sandboxes",
+        SANDBOX_A,
+        {"status": {"runnerCredential": None}},
+        _content_type="application/merge-patch+json",
+    )
+    proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "svid-client"))
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/cleared")
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+    assert not egress.upstream.requests
+
+
+async def test_svid_projected_token_must_match_sandbox_pod_uid(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "svid-client"))
+    placeholder = placeholder_of("svid-projected-credential")
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(
+            client,
+            egress,
+            proxy_tls,
+            "/projected",
+            headers={
+                "Authorization": f"Bearer {placeholder}",
+                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.mismatched_pod_token}",
+            },
+        )
+        assert status == 403, headers
+        assert headers["x-agentplane-egress"] == "denied; reason=credential-unavailable"
+        assert not egress.upstream.requests
+
+        status, headers = await svid_request(
+            client,
+            egress,
+            proxy_tls,
+            "/projected",
+            headers={
+                "Authorization": f"Bearer {placeholder}",
+                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.projected_token}",
+            },
+        )
+    assert status == 200, headers
+    assert len(egress.upstream.requests) == 1
+    method, path, forwarded_headers = egress.upstream.requests[0]
+    assert (method, path) == ("GET", "/projected")
+    assert forwarded_headers["authorization"] == f"Bearer {egress.projected_token}"
+
+
+async def test_svid_substitutes_sandbox_bound_projected_destination_token(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "svid-client"))
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(
+            client,
+            egress,
+            proxy_tls,
+            "/compatibility",
+            headers={
+                "Authorization": f"Bearer {placeholder_of('destination-projected-credential')}",
+                "X-Agentplane-Workload-Token": f"{DESTINATION_AUDIENCE} {egress.destination_token}",
+            },
+        )
+    assert status == 200, headers
+    assert egress.upstream.requests[0][2]["authorization"] == f"Bearer {egress.destination_token}"
+
+
+async def test_svid_certificate_expiry_denies_requests_inside_an_open_connect_tunnel(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    certificate = issue_runner_svid(egress, egress.tmp_path / "svid-client", valid_for=datetime.timedelta(seconds=10))
+    proxy_tls = proxy_svid_client_context(egress, certificate)
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=1)) as client:
+        status, _ = await svid_request(
+            client, egress, proxy_tls, "/public/before-expiry", target_url=egress.url("/public/before-expiry")
+        )
+        assert status == 200
+        await asyncio.sleep(10.1)
+        status, headers = await svid_request(
+            client, egress, proxy_tls, "/public/after-expiry", target_url=egress.url("/public/after-expiry")
+        )
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+    assert [path for _, path, _ in egress.upstream.requests] == ["/public/before-expiry"]
 
 
 @asynccontextmanager
@@ -431,8 +940,8 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
         # Each replica reviews tokens with its own API server, so each is sent one that server issued.
-        first_token = await seed(first_api)
-        second_token = await seed(second_api)
+        first_token = (await seed(first_api)).hop_token
+        second_token = (await seed(second_api)).hop_token
         settings = [
             replica_settings(api_config=api_config, ca=(cert, key), database_url=history_db_url)
             for api_config in (
@@ -730,6 +1239,122 @@ async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.M
     headers = dict(await requests.get())
     assert headers["x-buildbuddy-api-key"] == "contract-secret"
     assert "proxy-authorization" not in headers
+
+
+def rules_credentials(egress: Egress, certificate: tuple[Path, Path] | None = None) -> grpc.ChannelCredentials:
+    return grpc.ssl_channel_credentials(
+        root_certificates=egress.runtime_ca.cert_pem,
+        private_key=certificate[1].read_bytes() if certificate is not None else None,
+        certificate_chain=certificate[0].read_bytes() if certificate is not None else None,
+    )
+
+
+async def test_rules_grpc_uses_forward_listener_authentication(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    target = f"localhost:{egress.replica.admin_listener.port}"
+    certificate = issue_runner_svid(egress, egress.tmp_path / "rules-client")
+    request = egress_rules_pb2.GetRulesRequest()
+    async with (
+        grpc.aio.secure_channel(target, rules_credentials(egress, certificate)) as svid_channel,
+        grpc.aio.secure_channel(target, rules_credentials(egress)) as bearer_channel,
+        grpc.aio.insecure_channel(target) as plaintext_channel,
+    ):
+        svid = egress_rules_pb2_grpc.EgressRulesStub(svid_channel)
+        bearer = egress_rules_pb2_grpc.EgressRulesStub(bearer_channel)
+        plaintext = egress_rules_pb2_grpc.EgressRulesStub(plaintext_channel)
+        for client, metadata in (
+            (svid, (("x-agentplane-subject", f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"),)),
+            (bearer, (("authorization", f"Bearer {egress.token}"),)),
+        ):
+            response = await client.GetRules(request, metadata=metadata, timeout=5)
+            assert response.subject.namespace == SANDBOX_NAMESPACE
+            assert response.subject.name == SANDBOX_A
+        for rejected_client, rejected_metadata in (
+            (svid, (("authorization", f"Bearer {egress.token}"),)),
+            (bearer, ()),
+            (bearer, (("authorization", f"Bearer {egress.projected_token}"),)),
+            (plaintext, (("authorization", f"Bearer {egress.token}"),)),
+        ):
+            with pytest.raises(grpc.aio.AioRpcError) as failure:
+                await rejected_client.GetRules(request, metadata=rejected_metadata, timeout=5)
+            assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        # Reusing the same authenticated HTTP/2 connection must recheck acceptance on every RPC.
+        await cast(
+            CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api)
+        ).patch_namespaced_custom_object_status(
+            GROUP,
+            VERSION,
+            SANDBOX_NAMESPACE,
+            "sandboxes",
+            SANDBOX_A,
+            {"status": {"runnerCredential": {"acceptedId": ROTATED_RUNNER_CREDENTIAL_ID}}},
+            _content_type="application/merge-patch+json",
+        )
+        with pytest.raises(grpc.aio.AioRpcError) as failure:
+            await svid.GetRules(request, timeout=5)
+        assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+async def test_rules_grpc_sidecar_presents_its_svid_and_discards_caller_credentials(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    certificate, key = issue_runner_svid(egress, egress.tmp_path / "rules-sidecar-client")
+    root = write_ca(egress.runtime_ca, egress.tmp_path, "rules-sidecar-root")[0]
+    caller_token = await egress.api.workload_token(
+        ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B), [AUDIENCE]
+    )
+    async with SidecarProcess(
+        proxy=Proxy(
+            address=f"{egress.proxy_listener.host}:{egress.proxy_listener.port}",
+            transport=TLSProxyTransport(ca_file=root, auth=SpiffeProxyAuth(cert_file=certificate, key_file=key)),
+        ),
+        platform_routes={
+            "rules": PlatformRoute(
+                listen_address="127.0.0.1:0",
+                upstream=f"localhost:{egress.replica.admin_listener.port}",
+                transport=TLSConnectRouteTransport(),
+            )
+        },
+    ) as sidecar:
+        listener = sidecar.platform_route_listeners["rules"]
+        async with grpc.aio.insecure_channel(f"{listener.host}:{listener.port}") as channel:
+            response = await egress_rules_pb2_grpc.EgressRulesStub(channel).GetRules(
+                egress_rules_pb2.GetRulesRequest(),
+                metadata=(
+                    ("authorization", f"Bearer {caller_token}"),
+                    ("proxy-authorization", f"Bearer {caller_token}"),
+                    ("x-agentplane-subject", f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"),
+                ),
+                timeout=5,
+            )
+            assert response.subject.namespace == SANDBOX_NAMESPACE
+            assert response.subject.name == SANDBOX_A
+    assert not egress.upstream.requests
+
+
+@pytest.mark.parametrize("leaf", ["forged", "expired"])
+async def test_rules_grpc_rejects_invalid_client_leaf(mixed_egress: Egress, leaf: str) -> None:
+    egress = mixed_egress
+    directory = egress.tmp_path / f"rules-{leaf}"
+    directory.mkdir()
+    authority = make_ca("forged-rules-client") if leaf == "forged" else egress.runtime_ca
+    certificate = issue_workload_leaf(
+        authority,
+        environment_runtime_identity_uri(SANDBOX_NAMESPACE, egress.sandbox_uid, RUNNER_CREDENTIAL_ID),
+        directory,
+        dns_name="localhost",
+        valid_for=datetime.timedelta(milliseconds=100) if leaf == "expired" else None,
+    )
+    if leaf == "expired":
+        expires = x509.load_pem_x509_certificate(certificate[0].read_bytes()).not_valid_after_utc
+        remaining = expires - datetime.datetime.now(datetime.UTC)
+        if remaining >= datetime.timedelta(0):
+            await asyncio.sleep(remaining.total_seconds() + 0.01)
+    async with grpc.aio.secure_channel(
+        f"localhost:{egress.replica.admin_listener.port}", rules_credentials(egress, certificate)
+    ) as channel:
+        with pytest.raises(grpc.aio.AioRpcError) as failure:
+            await egress_rules_pb2_grpc.EgressRulesStub(channel).GetRules(egress_rules_pb2.GetRulesRequest(), timeout=5)
+        assert failure.value.code() == grpc.StatusCode.UNAVAILABLE
 
 
 if __name__ == "__main__":
