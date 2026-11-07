@@ -846,7 +846,6 @@ class Egress(Construct):
             "rules_namespace": self.env.namespace,
             "credentials_namespace": self.env.egress.credentials_namespace,
             "admin_listen_address": f"0.0.0.0:{self.admin.pod_port}",
-            "agent_api_listen_address": f"0.0.0.0:{self.agent_api.pod_port}",
             "ca_cert": "/etc/agentplane-egress/ca/tls.crt",
             "ca_key": "/etc/agentplane-egress/ca/tls.key",
             "upstream_ca_file": f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}",
