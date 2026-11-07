@@ -62,6 +62,10 @@ def provider_info(provider: pb.ProviderInfo) -> None:
 
 def _unknown(value: pb.OperationOutcomeUnknown) -> None:
     _enum(value.reason, pb.UnknownOutcomeReason.Name, allow_unspecified=True)
+    if value.HasField("upstream_http_status") and (
+        value.reason != pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR or not 100 <= value.upstream_http_status <= 599
+    ):
+        raise ProviderProtocolError("Provider returned invalid unknown-outcome diagnostics")
 
 
 def probe_result(result: pb.ProbeResult, *, require_metadata: bool = True) -> None:
