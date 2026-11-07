@@ -4801,6 +4801,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
                 IterationResult::FlatMapped => {
+                    let result = result?;
                     match (slots.take(), self.flattened_iteration_slots(&returned)) {
                         (Some(mut retained), Some(flattened)) => {
                             retained.extend(flattened);
