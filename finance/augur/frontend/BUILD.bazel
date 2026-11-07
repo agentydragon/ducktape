@@ -672,6 +672,7 @@ augur_vitest_test(
     srcs = ["format.test.ts"],
     deps = [
         "//:node_modules/vitest",
+        "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:format",
     ],
 )
