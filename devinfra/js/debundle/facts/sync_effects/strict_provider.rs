@@ -254,6 +254,10 @@ impl OwnDataContext for ProviderContext<'_> {
         // This isolated query refuses external mutation and publication.
         true
     }
+    fn instance_properties_are_settled(&self, _class: u32) -> bool {
+        // Provider queries have no checked runtime instance-prefix witness.
+        false
+    }
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
         self.properties
             .get(&allocation)?
