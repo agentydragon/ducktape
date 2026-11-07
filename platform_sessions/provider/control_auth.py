@@ -23,12 +23,13 @@ class ControlBearerInterceptor(grpc.aio.ServerInterceptor):
     health, need their own access policy. All control methods are unary.
     """
 
-    def __init__(self, token_file: Path):
+    def __init__(self, token_file: Path, *, service_prefix: str = _CONTROL_PREFIX):
         self._token_file = token_file
+        self._service_prefix = service_prefix
 
     async def intercept_service(self, continuation, handler_call_details):
         handler = await continuation(handler_call_details)
-        if handler is None or not handler_call_details.method.startswith(_CONTROL_PREFIX):
+        if handler is None or not handler_call_details.method.startswith(self._service_prefix):
             return handler
         # Fail closed if a future control service adds streaming without updating
         # this interceptor's denial handler.
