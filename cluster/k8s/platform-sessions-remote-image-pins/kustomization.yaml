@@ -5,3 +5,13 @@ images:
     newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-blueshield
     newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-blueshield:tag"}
+  - name: git.allegedly.works/ducktape-ci/platform-sessions-openai
+    newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-openai:tag"}
+  - name: git.allegedly.works/ducktape-ci/platform-sessions-anthropic
+    newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-anthropic:tag"}
+  - name: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt
+    newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-chatgpt:tag"}
+  - name: git.allegedly.works/ducktape-ci/platform-sessions-quest
+    newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-quest:tag"}
+  - name: git.allegedly.works/ducktape-ci/platform-sessions-thrive
+    newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-thrive:tag"}

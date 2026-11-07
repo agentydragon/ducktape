@@ -1,5 +1,14 @@
 """Non-secret platform-sessions integration and route policy."""
 
+from typing import NotRequired, TypedDict
+
+
+class BearerConfig(TypedDict):
+    role: str
+    token_file: str
+    allow: NotRequired[list[dict[str, str]]]
+
+
 THRIVE_READ_PATHS = (
     "/products",
     "/account/orders",
@@ -45,7 +54,7 @@ INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
     ]
 }
 
-BEARERS = {
+BEARERS: dict[str, BearerConfig] = {
     "owner": {"role": "owner", "token_file": "/var/run/platform-sessions/owner"},
     "blueshield-read": {
         "role": "routes",

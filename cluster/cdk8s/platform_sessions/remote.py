@@ -1,4 +1,4 @@
-"""Staged remote gateway and Blue Shield provider; neither owns the live session yet."""
+"""Staged remote gateway and providers; the legacy service owns live sessions."""
 
 from __future__ import annotations
 
@@ -46,36 +46,59 @@ NAME = "platform-sessions-remote"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 GATEWAY = "platform-sessions-gateway"
-BLUESHIELD = "platform-sessions-blueshield"
 REGISTRY = "git.allegedly.works/ducktape-ci"
+PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
+BEARER_FILES = ("owner", "aiquota", "quest", "thrive-scraper", "thrive-read", "chatgpt-read", "blueshield-read")
 _GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
-_PROVIDER_IMAGE = f"{REGISTRY}/{BLUESHIELD}:unset"
-_PROVIDER_DNS = f"{BLUESHIELD}.{NAMESPACE}.svc"
 _GATEWAY_DNS = f"{GATEWAY}.{NAMESPACE}.svc"
 _TRUST = "/var/run/provider-trust/ca.crt"
 _TOKEN_DIR = "/var/run/provider-credentials"
+
+
+def _provider_name(instance: str) -> str:
+    return f"platform-sessions-{instance}"
+
+
+def _provider_dns(instance: str) -> str:
+    return f"{_provider_name(instance)}.{NAMESPACE}.svc"
+
 
 # A separate ConfigMap prevents preparing the new deployment from rolling the live service.
 CONFIG = ConfigMapArgs(
     name="platform-sessions-remote-config",
     namespace=NAMESPACE,
     data={
-        "gateway-integrations.json": json.dumps({"integrations": [{"id": "blueshield", "type": "blueshield"}]}),
-        "provider-integrations.json": json.dumps(
-            {"integrations": [item for item in config.INTEGRATIONS["integrations"] if item["id"] == "blueshield"]}
+        "gateway-integrations.json": json.dumps(
+            {"integrations": [{"id": item["id"], "type": item["type"]} for item in config.INTEGRATIONS["integrations"]]}
         ),
-        "bearers.json": json.dumps({key: config.BEARERS[key] for key in ("owner", "blueshield-read")}),
+        "bearers.json": json.dumps(config.BEARERS),
+        **{
+            f"{item['id']}-integration.json": json.dumps({"integrations": [item]})
+            for item in config.INTEGRATIONS["integrations"]
+        },
+        **{
+            f"{instance}-routes.json": json.dumps(
+                [
+                    {"method": route["method"], "path": route["path"]}
+                    for bearer in config.BEARERS.values()
+                    for route in bearer.get("allow", [])
+                    if route["instance"] == instance
+                ]
+            )
+            for instance in PROVIDERS
+        },
         "connections.json": json.dumps(
             {
-                "blueshield": {
-                    "origin": f"https://{_PROVIDER_DNS}:8443",
-                    "control_target": f"{_PROVIDER_DNS}:8444",
-                    "control_token_file": f"{_TOKEN_DIR}/control",
-                    "owner_token_file": f"{_TOKEN_DIR}/owner",
-                    "route_token_file": f"{_TOKEN_DIR}/route",
+                instance: {
+                    "origin": f"https://{_provider_dns(instance)}:8443",
+                    "control_target": f"{_provider_dns(instance)}:8444",
+                    "control_token_file": f"{_TOKEN_DIR}/{instance}/control",
+                    "owner_token_file": f"{_TOKEN_DIR}/{instance}/owner",
+                    "route_token_file": f"{_TOKEN_DIR}/{instance}/route",
                     "control_ca_file": _TRUST,
                     "http_ca_file": _TRUST,
                 }
+                for instance in PROVIDERS
             }
         ),
     },
@@ -158,12 +181,13 @@ def _service(chart: Chart, name: str, ports: list[k8s.ServicePort]) -> None:
     )
 
 
-def add_resources(chart: Chart) -> None:
+def _add_provider(chart: Chart, instance: str) -> None:
+    name = _provider_name(instance)
     for role in ("control", "owner", "route"):
         mint_bearer_secret(
             chart,
-            f"{BLUESHIELD}-{role}",
-            name=f"{BLUESHIELD}-{role}",
+            f"{name}-{role}",
+            name=f"{name}-{role}",
             namespace=NAMESPACE,
             key="token",
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
@@ -171,29 +195,28 @@ def add_resources(chart: Chart) -> None:
             immutable=True,
         )
 
-    for name, hostname in ((BLUESHIELD, _PROVIDER_DNS), (GATEWAY, _GATEWAY_DNS)):
-        Certificate(
-            chart,
-            f"{name}-certificate",
-            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            secret_name=f"{name}-tls",
-            issuer_ref=cluster_ca.INTERNAL_ISSUER,
-            dns_names=[hostname],
-        )
+    Certificate(
+        chart,
+        f"{name}-certificate",
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        secret_name=f"{name}-tls",
+        issuer_ref=cluster_ca.INTERNAL_ISSUER,
+        dns_names=[_provider_dns(instance)],
+    )
 
     # Provider images are built by gaffer-private and use main-* tags.
     repository = ImageRepository(
         chart,
-        f"{BLUESHIELD}-image-repository",
-        metadata=ApiObjectMetadata(name=BLUESHIELD, namespace="flux-system"),
-        image=f"{REGISTRY}/{BLUESHIELD}",
+        f"{name}-image-repository",
+        metadata=ApiObjectMetadata(name=name, namespace="flux-system"),
+        image=f"{REGISTRY}/{name}",
         interval="5m",
         secret_ref=ImageRepositorySpecSecretRef(name="forgejo-images-creds"),
     )
     ImagePolicy(
         chart,
-        f"{BLUESHIELD}-image-policy",
-        metadata=ApiObjectMetadata(name=BLUESHIELD, namespace="flux-system"),
+        f"{name}-image-policy",
+        metadata=ApiObjectMetadata(name=name, namespace="flux-system"),
         image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
         filter_tags=ImagePolicySpecFilterTags(pattern=r"^main-\d{14}-[0-9a-f]{7}$"),
         policy=ImagePolicySpecPolicy(
@@ -203,9 +226,9 @@ def add_resources(chart: Chart) -> None:
 
     k8s.KubePersistentVolumeClaim(
         chart,
-        f"{BLUESHIELD}-claim",
+        f"{name}-claim",
         metadata=k8s.ObjectMeta(
-            name=BLUESHIELD, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+            name=name, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
         ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
@@ -217,7 +240,7 @@ def add_resources(chart: Chart) -> None:
         name="provider-credentials",
         projected=k8s.ProjectedVolumeSource(
             default_mode=0o440,
-            sources=[_secret_projection(f"{BLUESHIELD}-{role}", role) for role in ("control", "owner", "route")],
+            sources=[_secret_projection(f"{name}-{role}", role) for role in ("control", "owner", "route")],
         ),
     )
     config_volume = k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG.name))
@@ -227,15 +250,15 @@ def add_resources(chart: Chart) -> None:
     )
     _deployment(
         chart,
-        BLUESHIELD,
+        name,
         k8s.Container(
             name="provider",
-            image=_PROVIDER_IMAGE,
+            image=f"{REGISTRY}/{name}:unset",
             args=[
                 "--integration-config",
-                "/etc/platform-sessions/provider-integrations.json",
+                f"/etc/platform-sessions/{instance}-integration.json",
                 "--instance-id",
-                "blueshield",
+                instance,
                 "--control-address",
                 "0.0.0.0:8444",
                 "--control-token-file",
@@ -252,7 +275,10 @@ def add_resources(chart: Chart) -> None:
                 "/var/run/provider-tls/tls.crt",
                 "--tls-key",
                 "/var/run/provider-tls/tls.key",
-            ],
+            ]
+            + (
+                [] if instance == "blueshield" else ["--route-grants", f"/etc/platform-sessions/{instance}-routes.json"]
+            ),
             env=[k8s.EnvVar(name="HOME", value="/tmp")],
             ports=[
                 k8s.ContainerPort(name="https", container_port=8443),
@@ -274,17 +300,15 @@ def add_resources(chart: Chart) -> None:
         [
             config_volume,
             provider_credentials,
-            k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=f"{BLUESHIELD}-tls")),
-            k8s.Volume(
-                name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=BLUESHIELD)
-            ),
+            k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=f"{name}-tls")),
+            k8s.Volume(name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=name)),
             tmp,
         ],
         node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
     )
     _service(
         chart,
-        BLUESHIELD,
+        name,
         [
             k8s.ServicePort(name="https", port=8443, target_port=k8s.IntOrString.from_string("https")),
             k8s.ServicePort(name="grpc", port=8444, target_port=k8s.IntOrString.from_string("grpc")),
@@ -293,12 +317,35 @@ def add_resources(chart: Chart) -> None:
 
     PodMonitor(
         chart,
-        f"{BLUESHIELD}-monitor",
-        metadata=ApiObjectMetadata(name=BLUESHIELD, namespace=NAMESPACE),
-        selector=PodMonitorSpecSelector(match_labels={"app": BLUESHIELD}),
+        f"{name}-monitor",
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        selector=PodMonitorSpecSelector(match_labels={"app": name}),
         pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")],
     )
 
+
+def add_resources(chart: Chart) -> None:
+    for instance in PROVIDERS:
+        _add_provider(chart, instance)
+    Certificate(
+        chart,
+        f"{GATEWAY}-certificate",
+        metadata=ApiObjectMetadata(name=GATEWAY, namespace=NAMESPACE),
+        secret_name=f"{GATEWAY}-tls",
+        issuer_ref=cluster_ca.INTERNAL_ISSUER,
+        dns_names=[_GATEWAY_DNS],
+    )
+    provider_credentials = k8s.Volume(
+        name="provider-credentials",
+        projected=k8s.ProjectedVolumeSource(
+            default_mode=0o440,
+            sources=[
+                _secret_projection(f"{_provider_name(instance)}-{role}", f"{instance}/{role}")
+                for instance in PROVIDERS
+                for role in ("control", "owner", "route")
+            ],
+        ),
+    )
     gateway_health = k8s.Probe(http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("http")))
     _deployment(
         chart,
@@ -338,10 +385,7 @@ def add_resources(chart: Chart) -> None:
                 name="bearers",
                 projected=k8s.ProjectedVolumeSource(
                     default_mode=0o440,
-                    sources=[
-                        _secret_projection(f"platform-sessions-{role}-bearer", role)
-                        for role in ("owner", "blueshield-read")
-                    ],
+                    sources=[_secret_projection(f"platform-sessions-{role}-bearer", role) for role in BEARER_FILES],
                 ),
             ),
             k8s.Volume(
@@ -380,7 +424,7 @@ def platform_sessions_remote(
         chart,
         NAME,
         directory,
-        description="Staged remote session gateway and provider; scale only after a verified ownership handoff.",
+        description="Staged remote session gateway and providers; scale only after a verified ownership handoff.",
         suspend=False,
         wait=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

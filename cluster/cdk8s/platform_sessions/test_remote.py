@@ -1,4 +1,4 @@
-"""The staged remote workloads must agree without taking over the live session."""
+"""The staged remote workloads must agree without taking over live sessions."""
 
 import json
 from urllib.parse import urlsplit
@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting
 
-from cluster.cdk8s.platform_sessions import remote
+from cluster.cdk8s.platform_sessions import config, remote
 
 
 def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: App) -> None:
@@ -16,33 +16,40 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         return next(item for item in objects if item["kind"] == kind and item["metadata"]["name"] == name)
 
     gateway = resource("Deployment", remote.GATEWAY)["spec"]
-    provider = resource("Deployment", remote.BLUESHIELD)["spec"]
-    for workload in (gateway, provider):
-        assert workload["replicas"] == 0
-        assert workload["strategy"]["type"] == "Recreate"
-
-    provider_pod = provider["template"]["spec"]
+    assert gateway["replicas"] == 0
+    assert gateway["strategy"]["type"] == "Recreate"
     gateway_pod = gateway["template"]["spec"]
-    assert provider_pod["nodeSelector"]["topology.kubernetes.io/zone"] == "hil-ovh"
-    claims = [v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v]
-    assert claims == [remote.BLUESHIELD]
     assert all("persistentVolumeClaim" not in volume for volume in gateway_pod["volumes"])
 
     assert remote.CONFIG.data is not None
-    connection = json.loads(remote.CONFIG.data["connections.json"])["blueshield"]
-    host = urlsplit(connection["origin"]).hostname
-    service = resource("Service", remote.BLUESHIELD)["spec"]
-    assert service["selector"] == provider["template"]["metadata"]["labels"]
-    assert {p["name"]: p["port"] for p in service["ports"]} == {"https": 8443, "grpc": 8444}
-    assert connection["control_target"] == f"{host}:8444"
-    certificate = resource("Certificate", remote.BLUESHIELD)["spec"]
-    assert host in certificate["dnsNames"]
+    connections = json.loads(remote.CONFIG.data["connections.json"])
+    gateway_integrations = json.loads(remote.CONFIG.data["gateway-integrations.json"])["integrations"]
+    assert set(connections) == {item["id"] for item in config.INTEGRATIONS["integrations"]}
+    assert set(connections) == {item["id"] for item in gateway_integrations}
+    assert json.loads(remote.CONFIG.data["bearers.json"]) == config.BEARERS
+    for instance, connection in connections.items():
+        name = f"platform-sessions-{instance}"
+        provider = resource("Deployment", name)["spec"]
+        assert provider["replicas"] == 0
+        assert provider["strategy"]["type"] == "Recreate"
+        provider_pod = provider["template"]["spec"]
+        assert provider_pod["nodeSelector"]["topology.kubernetes.io/zone"] == "hil-ovh"
+        claims = [
+            v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v
+        ]
+        assert claims == [name]
+        assert json.loads(remote.CONFIG.data[f"{instance}-integration.json"])["integrations"][0]["id"] == instance
 
-    monitor = resource("PodMonitor", remote.BLUESHIELD)["spec"]
-    assert monitor["selector"]["matchLabels"] == service["selector"]
-    assert monitor["podMetricsEndpoints"][0]["port"] == "metrics"
-    ports = {p["name"] for p in provider_pod["containers"][0]["ports"]}
-    assert "metrics" in ports
+        host = urlsplit(connection["origin"]).hostname
+        service = resource("Service", name)["spec"]
+        assert service["selector"] == provider["template"]["metadata"]["labels"]
+        assert {p["name"]: p["port"] for p in service["ports"]} == {"https": 8443, "grpc": 8444}
+        assert connection["control_target"] == f"{host}:8444"
+        assert host in resource("Certificate", name)["spec"]["dnsNames"]
+        monitor = resource("PodMonitor", name)["spec"]
+        assert monitor["selector"]["matchLabels"] == service["selector"]
+        assert monitor["podMetricsEndpoints"][0]["port"] == "metrics"
+        assert "metrics" in {p["name"] for p in provider_pod["containers"][0]["ports"]}
 
 
 if __name__ == "__main__":
