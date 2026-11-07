@@ -2940,14 +2940,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) {
         self.record_proof_dependencies(guard, dependencies);
         for reference in &dependencies.native_operation_inputs {
-            if let Some(input) = self
+            for input in self
                 .inputs
                 .index
                 .resolved_native_operation_inputs
                 .iter()
-                .find(|input| &input.evidence.reference == reference)
+                .filter(|input| &input.evidence.reference == reference)
             {
-                let span = input.initializer_span;
+                let span = input.call_span;
                 self.state.native_operation_input_uses.borrow_mut().insert(
                     (span.lo.0, span.hi.0),
                     crate::reports::schema::NativeOperationInputUse {

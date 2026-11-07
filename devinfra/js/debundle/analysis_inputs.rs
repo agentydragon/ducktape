@@ -708,7 +708,7 @@ pub struct SelectedBindingValueInput {
 
 /// A native-operation input after the canonical selector engine has selected
 /// one exact top-level source unit. The execution index validates the
-/// initializer call and resolves it to its precise call span.
+/// initializer and resolves each certified operation to its precise call span.
 #[derive(Debug, Clone)]
 pub struct SelectedNativeOperationInput {
     pub evidence: NativeOperationInputEvidence,
@@ -726,7 +726,11 @@ pub struct ResolvedNativeOperationInput {
     /// analysis view splits a multi-declarator declaration into source units.
     pub selected_statement_span: Span,
     pub declaration_span: Span,
+    /// The complete binding initializer, including the object for a map_empty
+    /// input that selects several field constructions.
     pub initializer_span: Span,
+    /// One exact operation site; several map_empty records can share the same
+    /// author reference and object initializer without certifying its result.
     pub call_span: Span,
     pub initializer_ordinal: SourceUnitOrdinal,
     /// Exact operand of an admitted Set spread, if this is a spread operation.

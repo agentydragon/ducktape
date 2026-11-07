@@ -64,6 +64,14 @@ iteration, retention and mutation retain their ordinary checks. Arguments,
 spreads, aliases, shadowing, qualified callees, wrapper expressions and known
 global-slot contradictions are rejected.
 
+For `map_empty`, one input may instead select a nonempty object initializer
+containing only noncomputed ordinary data fields directly initialized by bare
+zero-argument `new Map()`. Audit the original global Map data binding at every
+construction in every admitted initialization schedule. Each site receives
+separate evidence; the object keeps ordinary value and heap inference. Other
+field forms, `__proto__`, nested or wrapped expressions and ambiguous binding
+declarations are rejected. The exact parser-input digest is still required.
+
 Choose `native_operation_inputs` with `operation: text_encoder_empty` only after
 auditing the original global `TextEncoder` data binding at one selected direct
 zero-argument top-level initializer through every emitted initialization
