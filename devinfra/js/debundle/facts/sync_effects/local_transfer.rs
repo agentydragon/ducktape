@@ -795,9 +795,7 @@ fn assign_expression(
         .effect_coverage
         .compose(&EffectCoverageFragment::default());
     let selected = expression(context, node, body, frame, judgment)?;
-    store_binding(
-        context, body, frame, judgment, binding, selected, *span, false,
-    )
+    store_binding(context, body, frame, judgment, binding, selected, *span)
 }
 
 fn store_binding(
@@ -808,18 +806,15 @@ fn store_binding(
     binding: &Id,
     selected: SelectedValue,
     span: Span,
-    update: bool,
 ) -> Option<SelectedValue> {
     let values = selected.values;
     if values.is_empty() {
         return Some(SelectedValue::raw(values));
     }
     let Some(kind) = body.bindings.get(binding) else {
-        if update {
-            frame
-                .effect_coverage
-                .compose(&EffectCoverageFragment::default());
-        }
+        frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
         frame.binding_selections.remove(binding);
         let result = context.assign_capture(frame, binding, &values, span)?;
         judgment.compose(&result.judgment);
@@ -839,26 +834,23 @@ fn store_binding(
                 .expect("instantiated local binding")
                 .contains(&AbstractValue::Value(Value::Unavailable)))
     {
-        if update {
-            frame
-                .effect_coverage
-                .compose(&EffectCoverageFragment::default());
-        }
+        frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
         frame
             .returns
             .insert(AbstractValue::Value(Value::Unavailable));
         return Some(SelectedValue::raw(Values::new()));
     }
-    if update
-        && matches!(kind, LocalBinding::Parameter | LocalBinding::Let)
+    if matches!(kind, LocalBinding::Parameter | LocalBinding::Let)
         && frame.initialized_bindings.contains(binding)
     {
         // The adapter's declarative-cell proof already rejects live captured
-        // cells. Assignment remains on its existing unknown-coverage path.
+        // cells. Assignment's earlier unknown fragment remains unknown.
         frame
             .effect_coverage
             .compose(&context.declarative_binding_operation(binding, frame));
-    } else if update {
+    } else {
         frame
             .effect_coverage
             .compose(&EffectCoverageFragment::default());
@@ -910,9 +902,7 @@ fn update_binding_expression(
     };
     frame.effect_coverage.compose(&effects);
     let selected = completing_selected(SelectedValue::raw(result.values), frame);
-    store_binding(
-        context, body, frame, judgment, binding, selected, span, true,
-    )
+    store_binding(context, body, frame, judgment, binding, selected, span)
 }
 
 fn call_expression(

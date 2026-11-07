@@ -1802,6 +1802,26 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
 }
 
 #[test]
+fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function bump(value) { value++; return value; }\nconst independent = 7;\nvar result = bump(1);\nconsole.log(independent, result);\n",
+        vec![logical_module(
+            "update",
+            &[Member::new("bump"), Member::new("result")],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 2\n");
+    assert_inline_operation_receipt(&fixture, "result", 1, "parameter update");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 1, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["decision"]["scope"], "statement_order_commutation",
+        "{report:#}"
+    );
+}
+
+#[test]
 fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
     for (body, error) in [
         ("const value = 1; return value++;", "TypeError"),
