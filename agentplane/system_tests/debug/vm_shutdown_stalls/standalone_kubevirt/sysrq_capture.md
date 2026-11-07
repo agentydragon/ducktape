@@ -110,3 +110,24 @@ SysRq begin marker. Request-to-proof console receipt intervals were 4.539,
 `1068d0ce-f5e3-4402-a578-aeeca7c1945c`. These observations show that the
 experimental flag reached and armed all three guests in this action; one clean
 action neither validates a default trigger delay nor reproduces the flake.
+
+A separate [four-run full-suite batch
+`021e7522-13f6-40a0-ab14-393daf41950d`](https://app.buildbuddy.io/invocation/021e7522-13f6-40a0-ab14-393daf41950d)
+used `--runs_per_test=4 --flaky_test_attempts=1 --nocache_test_results --jobs=4`
+with the same opt-in. All four runs passed. All 12 guest CRI consoles had the
+kernel argument and exactly one arm marker, followed by proof and powerdown;
+request-to-proof receipt intervals ranged from 4.093 to 13.939 seconds.
+
+One successful guest did emit a dump: run 2 `vm-2`, VMI UID
+`a717432a-6045-4f1c-b5a3-e6aa8edc883a`, launcher Pod UID
+`14415e18-cfe1-4c7a-86a9-8b9735aab0e6`. The CRI console timestamps place
+arming at 20:18:54.390 UTC, SysRq begin at 20:19:06.422, successful return
+at 20:19:06.583, proof at 20:19:08.083, and powerdown at 20:19:09.679. The
+dump included `kworker/0:2` in `inode_switch_wbs_work_fn` waiting through
+`synchronize_rcu_normal` and `__wait_rcu_gp`. That single snapshot was followed
+by successful shutdown; it does not establish a stalled grace period or a link
+to the distinct pre-Ready PID 1 cgroup/RCU wait. It demonstrates that a
+12-second trigger can fire during an ultimately successful shutdown, and that
+an RCU wait in one snapshot is not itself proof of the original flake's cause.
+The run is still a perturbing experiment, not evidence that SysRq had no timing
+effect. No shutdown stall reproduced in this four-run batch.
