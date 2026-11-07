@@ -27,10 +27,10 @@ Sandbox has wake on message turned on.
 
 ## Workflows
 
-- `agentplane notifications guide subscriptions`: Read before following an Action or creating, renewing, cancelling, or recovering monitoring.
-- `agentplane notifications guide inbox`: Read when a notice arrives; retrieve entries, handle the contiguous prefix, and acknowledge it explicitly.
-- `agentplane notifications guide github`: Read before following a PR, issue, branch, commit, or CI activity.
-- `agentplane notifications guide messages`: Read before sending another agent's Session a message or checking whether it was acknowledged.
+- `agentplane notifications guide subscriptions` ([HTTP guide](/docs/agents/subscriptions.md)): Read before following an Action or creating, renewing, cancelling, or recovering monitoring.
+- `agentplane notifications guide inbox` ([HTTP guide](/docs/agents/inbox_handling.md)): Read when a notice arrives; retrieve entries, handle the contiguous prefix, and acknowledge it explicitly.
+- `agentplane notifications guide github` ([HTTP guide](/docs/agents/github.md)): Read before following a PR, issue, branch, commit, or CI activity.
+- `agentplane notifications guide messages` ([HTTP guide](/docs/agents/messages.md)): Read before sending another agent's Session a message or checking whether it was acknowledged.
 
 ## Reference
 

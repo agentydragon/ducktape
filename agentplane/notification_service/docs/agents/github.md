@@ -24,6 +24,10 @@ and this `source`:
 }
 ```
 
+On an older image without `subscribe create`, send the full request body with `POST /v1/subscriptions`
+through the Notifications HTTP service and its workload Bearer placeholder. The HTTP subscription
+guide describes the surrounding request fields.
+
 The `subject` is `{"pullRequest":{"number":123}}`, `{"issue":{"number":123}}`,
 `{"branch":{"name":"devel"}}` or `{"commit":{"sha":"FULL_40_CHARACTER_COMMIT_SHA"}}`. Omit `events`
 for the subject's defaults. To narrow a pull request to comments, add

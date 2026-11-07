@@ -20,6 +20,9 @@ The file contains a protobuf JSON `CreateSubscriptionRequest` with an `actions` 
 }
 ```
 
+On an older image without `subscribe create`, send the same JSON body with `POST /v1/subscriptions`
+through the Notifications HTTP service and its workload Bearer placeholder.
+
 Use the supplied Session ID (`AGENTPLANE_SESSION_ID`) and the real returned Action ID. Start
 `afterSequence` at zero or the last Action event sequence you actually recorded; it is not an inbox
 cursor. Action history replay covers approval/completion between submission and subscription creation.
