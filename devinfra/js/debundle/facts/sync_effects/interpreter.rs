@@ -559,6 +559,7 @@ enum StoredReferenceEdge<'a> {
     AppliedGetter(&'a str),
     AppliedSetter(&'a str),
     ClosureHomeObject,
+    ClosureReceiver,
     ClosureSnapshot(&'a str),
     ClosureCell(&'a str),
     InstanceRetainedValue,
@@ -659,6 +660,7 @@ fn path_edge_report(edge: StoredReferenceEdge<'_>) -> BoundedInvocationFallbackP
         StoredReferenceEdge::ClosureHomeObject => {
             BoundedInvocationFallbackPathEdge::ClosureHomeObject
         }
+        StoredReferenceEdge::ClosureReceiver => BoundedInvocationFallbackPathEdge::ClosureReceiver,
         StoredReferenceEdge::ClosureSnapshot(binding) => {
             BoundedInvocationFallbackPathEdge::ClosureSnapshot {
                 binding: binding.to_owned(),
@@ -1234,6 +1236,9 @@ impl<'a> CellTrace<'a> {
                 match value {
                     AbstractValue::Closure(_, captures) => {
                         if self.contexts.insert(captures.cache_identity()) {
+                            if let Some(receiver) = &captures.values.receiver {
+                                self.values(receiver);
+                            }
                             for values in captures.values.snapshots.values() {
                                 self.values(values);
                             }
@@ -1467,6 +1472,12 @@ impl LocalExecutionScope {
             Self::Root | Self::Construction(_) => None,
         }
     }
+}
+
+#[derive(Default)]
+struct LocalBodyInputs {
+    parameters: Option<Vec<SelectedValue>>,
+    receiver: Option<Values>,
 }
 
 enum LocalExecutionMode<'a> {
@@ -2590,25 +2601,37 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             self.refuse_activation_value(frame);
             return None;
         }
-        if matches!(self.scope, LocalExecutionScope::Construction(_))
-            && matches!(creation, DeferredCallableCreation::Arrow(_))
-            && body.implicit_capture
-        {
-            // Application captures do not yet carry the lexical receiver.
-            // Retain it in conservative reach rather than silently dropping it.
-            self.fallback(
-                frame,
-                frame.this_values.clone().unwrap_or_default(),
-                ExecutionPrecisionLossReason::UnsupportedOperation {
-                    operation: ExecutionOperation::OpaqueExecution,
-                    ordered_field_read_refusal: None,
-                    ordered_call_admission_refusal: None,
-                },
-                self.executor.inputs.index.callable_spans[&callable],
-            );
-            return None;
-        }
-        let captures = self.executor.closure_captures(callable, &frame.environment);
+        let receiver = if matches!(creation, DeferredCallableCreation::Arrow(_)) {
+            if body.meta_property && matches!(self.scope, LocalExecutionScope::Construction(_)) {
+                self.refuse_activation_value(frame);
+                return None;
+            }
+            body.lexical_this
+                .then(|| frame.this_values.clone())
+                .flatten()
+                .map(|values| {
+                    if let LocalExecutionScope::Construction(class) = self.scope {
+                        // The constructor's actual receiver is a class instance.
+                        // Retain weak heap references and input capabilities, but
+                        // never export its activation-local descriptor/brand proof.
+                        let mut retained = frame.inputs.clone();
+                        retained.extend(values);
+                        let retained = self.executor.intern_callback_set(retained);
+                        Values::from([AbstractValue::Instance(
+                            class,
+                            retained,
+                            InstanceOrigin::Constructed,
+                        )])
+                    } else {
+                        values
+                    }
+                })
+        } else {
+            None
+        };
+        let captures = self
+            .executor
+            .closure_captures(callable, &frame.environment, receiver);
         let values = Values::from([AbstractValue::Closure(callable, captures)]);
         frame.inputs.extend(values.iter().cloned());
         // Creating the callable defers its body and parameter prologue, even
@@ -7713,6 +7736,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         StoredReferenceEdge::ClosureHomeObject,
                     );
                 }
+                if let Some(receiver) = &captured.values.receiver {
+                    for value in receiver {
+                        visit(value, StoredReferenceEdge::ClosureReceiver);
+                    }
+                }
                 for (binding, values) in &captured.values.snapshots {
                     for value in values {
                         visit(
@@ -9414,10 +9442,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .class_provider_bodies
             .get(&key)
             .filter(|body| {
-                // Application closures do not transport lexical this yet. Select
-                // the established source-checked lane before any field executes;
-                // creating a deferred arrow itself does not publish its receiver.
-                // A partial kernel must never be retried through that lane.
+                // Meta properties still lack an execution transfer. Select the
+                // compatibility lane before any field executes; a partial kernel
+                // must never be retried. Lexical this has its own retained carrier.
                 body.initializers
                     .closure_sites()
                     .iter()
@@ -9426,7 +9453,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         !matches!(
                             self.inputs.index.callable_creation(*site),
                             Some(DeferredCallableCreation::Arrow(_))
-                        ) || !self.inputs.index.callables[site].implicit_capture
+                        ) || !self.inputs.index.callables[site].meta_property
                     })
             });
         let mut outcome = if let Some(body) = canonical_body {
@@ -9514,6 +9541,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 reach: self.construction_reach(class, &args),
                 arguments: args,
                 captured: Context::new(),
+                receiver: None,
                 reason,
                 span: body.span,
                 diagnostics: BoundedInvocationFallbackDiagnostics::default(),
@@ -9672,6 +9700,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         owner: SourceUnitOrdinal,
         args: &[Values],
         captured: &Context,
+        receiver: Option<&Values>,
     ) -> HavocReach {
         if self.state.tainted_functions.contains(&key) {
             return self.dynamic_scope_reach().unwrap_or(HavocReach::Global {
@@ -9680,7 +9709,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         self.known_code_reach(
             Some(owner),
-            args.iter().flatten().chain(captured.values().flatten()),
+            args.iter()
+                .flatten()
+                .chain(captured.values().flatten())
+                .chain(receiver.into_iter().flatten()),
         )
     }
 
@@ -10260,7 +10292,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
+    fn closure_captures(
+        &mut self,
+        key: u32,
+        captures: &Context,
+        receiver: Option<Values>,
+    ) -> CapturedContext {
         let Some(callable) = self.inputs.index.callables.get(&key) else {
             return self.intern_captures(LexicalCaptures::default());
         };
@@ -10275,6 +10312,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let free_bindings = reads.iter().chain(callable.rebinds.iter());
         let mut captured = LexicalCaptures {
             home_object: self.inputs.index.callable_home_object(key),
+            receiver,
             ..Default::default()
         };
         for id in free_bindings {
@@ -10601,6 +10639,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             .expect("callback call has a top owner"),
                         arguments: std::slice::from_ref(callbacks).to_vec(),
                         captured: Context::new(),
+                        receiver: None,
                         reason,
                         reach: HavocReach::Global {
                             cause: GlobalReachCause::EscapedCallbackPool,
@@ -10726,6 +10765,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             owner,
             arguments,
             captured,
+            receiver,
             reason,
             reach,
             span,
@@ -10758,6 +10798,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // recursion into a whole-chunk reachability root.
         let mut possible_values: Values = args.iter().flatten().cloned().collect();
         possible_values.extend(captured.values().flatten().cloned());
+        possible_values.extend(receiver.iter().flatten().cloned());
         possible_values.extend(self.state.global_escaped_callbacks.iter().cloned());
         let export_callbacks = self.available_export_callbacks();
         possible_values.extend(export_callbacks.iter().cloned());
@@ -10803,6 +10844,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                     });
                 }
+            }
+            for value in receiver.iter().flatten() {
+                path_roots.insert(value.clone());
+                fallback_seeds
+                    .entry(value.clone())
+                    .or_insert(BoundedInvocationFallbackSeed::CapturedReceiver);
             }
             for value in &self.state.global_escaped_callbacks {
                 path_roots.insert(value.clone());
@@ -11779,7 +11826,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Binding(_) => unreachable!("the shared transfer resolves bindings"),
             ValueExpr::Alloc(Kind::Function, key) => Values::from([AbstractValue::Closure(
                 *key,
-                self.closure_captures(*key, captures),
+                self.closure_captures(*key, captures, None),
             )]),
             ValueExpr::Alloc(kind, site) => {
                 Values::from([AbstractValue::Value(Value::Alloc(*kind, *site))])
@@ -12337,6 +12384,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             owner,
             arguments: vec![reached],
             captured: frame.environment.clone(),
+            receiver: frame.this_values.clone(),
             reason,
             reach: HavocReach::Global {
                 cause: GlobalReachCause::UnmodelledOperation,
@@ -12358,7 +12406,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         body: &LocalBody,
         environment: Context,
-        parameters: Option<Vec<SelectedValue>>,
+        inputs: LocalBodyInputs,
         owner: SourceUnitOrdinal,
         scope: LocalExecutionScope,
         root_effect_identity: Option<RootEffectIdentity>,
@@ -12366,7 +12414,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.execute_local_body_mode(
             body,
             environment,
-            parameters,
+            inputs,
             owner,
             scope,
             LocalExecutionMode::Execute(root_effect_identity),
@@ -12377,7 +12425,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         body: &LocalBody,
         environment: Context,
-        parameters: Option<Vec<SelectedValue>>,
+        inputs: LocalBodyInputs,
         owner: SourceUnitOrdinal,
         scope: LocalExecutionScope,
         mode: LocalExecutionMode<'_>,
@@ -12388,6 +12436,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let retaining = retained_query.is_some();
         let mut frame = LocalFrame::new(environment);
+        let LocalBodyInputs {
+            parameters,
+            receiver,
+        } = inputs;
+        frame.inputs.extend(receiver.iter().flatten().cloned());
+        frame.this_values = receiver;
         if let Some(parameters) = &parameters {
             frame.inputs.extend(
                 parameters
@@ -12641,8 +12695,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Ordinary activation operations have their own receipts. Captured
         // reads and stores independently prove their actual cell effects.
         let callable = &self.inputs.index.callables[&key];
+        let receiver = captured
+            .as_ref()
+            .and_then(|context| context.values.receiver.clone());
         let covered_prologue = !uses_arguments
-            && !callable.implicit_capture
+            && (!callable.implicit_capture || (receiver.is_some() && !callable.meta_property))
             && !callable.generator
             && !callable.opaque
             && !self.inputs.index.async_callables.contains(&key)
@@ -12702,7 +12759,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     limit: MAX_SYNCHRONOUS_INVOCATIONS,
                 }
             };
-            let reach = self.invocation_reach(key, callable_owner, &args, &captured_context);
+            let reach = self.invocation_reach(
+                key,
+                callable_owner,
+                &args,
+                &captured_context,
+                receiver.as_ref(),
+            );
             if matches!(
                 reason,
                 ExecutionPrecisionLossReason::InvocationDepthLimit { .. }
@@ -12726,6 +12789,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 owner: callable_owner,
                 arguments: args,
                 captured: captured_context,
+                receiver,
                 reason,
                 reach,
                 span: DUMMY_SP,
@@ -12872,17 +12936,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let mut outcome = self.execute_local_body(
                     body,
                     env,
-                    ordered_prologue.then(|| {
-                        args.iter()
-                            .cloned()
-                            .zip(argument_selections.iter().cloned())
-                            .map(|(values, selection)| SelectedValue {
-                                values,
-                                selection,
-                                postcondition: None,
-                            })
-                            .collect()
-                    }),
+                    LocalBodyInputs {
+                        parameters: ordered_prologue.then(|| {
+                            args.iter()
+                                .cloned()
+                                .zip(argument_selections.iter().cloned())
+                                .map(|(values, selection)| SelectedValue {
+                                    values,
+                                    selection,
+                                    postcondition: None,
+                                })
+                                .collect()
+                        }),
+                        receiver: receiver.clone(),
+                    },
                     callable.owner,
                     LocalExecutionScope::Callable(key),
                     None,
@@ -12896,6 +12963,36 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.remember_invocation(signature, &outcome);
                 return outcome;
             }
+        }
+        if receiver.is_some() {
+            // The source-summary evaluator has no receiver operand. A captured
+            // receiver must remain an explicit input to conservative fallback,
+            // never silently disappear through flattened compatibility calls.
+            let reach = self.invocation_reach(
+                key,
+                callable_owner,
+                &args,
+                &captured_context,
+                receiver.as_ref(),
+            );
+            let outcome = self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
+                owner: callable_owner,
+                arguments: args,
+                captured: captured_context,
+                receiver,
+                reason: ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::OpaqueExecution,
+                    ordered_field_read_refusal: None,
+                    ordered_call_admission_refusal: None,
+                },
+                reach,
+                span: self.inputs.index.callable_spans[&key],
+                diagnostics: BoundedInvocationFallbackDiagnostics::default(),
+            });
+            self.state.active.remove(&active_invocation);
+            self.state.invocation_depth -= 1;
+            self.remember_invocation(signature, &outcome);
+            return outcome;
         }
         // Source-summary lanes pre-evaluate assignments and flatten control flow.
         // They cannot preserve a live mutable capture's ordered value proof.
@@ -16233,7 +16330,7 @@ impl Executor<'_, '_> {
             outcome = self.execute_local_body(
                 &root.body,
                 Context::new(),
-                None,
+                LocalBodyInputs::default(),
                 owner,
                 LocalExecutionScope::Root,
                 Some(root.identity.clone()),

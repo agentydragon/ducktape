@@ -7323,6 +7323,109 @@ fn private_new_and_class_definition_receipts_cover_reordering() {
 }
 
 #[test]
+fn lexical_receiver_capture_closes_construction_without_invoking_the_arrow() {
+    for (callback, invocation) in [
+        ("() => this", "this.#read()"),
+        ("() => () => this", "this.#read()()"),
+    ] {
+        let source = format!(
+            "class Box {{ #read = {callback}; readLater() {{ return later; }} run() {{ return {invocation}; }} }} const result = new Box(); const later = 7; console.log(result.run() === result, later);\n"
+        );
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "callbacks/box",
+                        &[Member::new("Box"), Member::new("result")],
+                    ),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            ),
+            "lexical-receiver-construction",
+        );
+        assert_preserved_entry_output(&fixture, "true 7\n");
+        let assessment = fixture.effect_translation_validation();
+        assert_eq!(
+            assessment["decision"]["status"], "accepted",
+            "{assessment:#}"
+        );
+        assert_eq!(
+            assessment["emitted_order"],
+            serde_json::json!([2, 0, 1, 3]),
+            "{assessment:#}"
+        );
+        assert_eq!(assessment["swapped_pairs"], 2, "{assessment:#}");
+        assert_class_declaration_receipt(&fixture, "Box");
+        let receipt = assert_operation_receipt(&fixture, "result", 1);
+        assert_eq!(
+            receipt["calls"][0]["target"]["kind"], "construction",
+            "{receipt:#}"
+        );
+        // Only New executes here. Neither the arrow nor readLater has run.
+        assert!(
+            receipt["read_dependencies"].get("later").is_none(),
+            "{receipt:#}"
+        );
+    }
+}
+
+#[test]
+fn captured_receiver_construction_receipt_does_not_cover_a_later_tdz_call() {
+    let source = "class Box { #read = () => this; readLater() { return later; } run() { return this.#read().readLater(); } } const result = new Box(); function probe() { try { return result.run(); } catch (error) { return error.name; } } const before = probe(); const later = 7; console.log(before);\n";
+    let source_witness = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "source",
+            &[
+                Member::new("Box"),
+                Member::new("result"),
+                Member::new("probe"),
+                Member::new("before"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&source_witness, "ReferenceError\n");
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/box",
+                    &[
+                        Member::new("Box"),
+                        Member::new("result"),
+                        Member::new("probe"),
+                        Member::new("before"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let assessment = rejected.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([4, 0, 1, 2, 3, 5]),
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 4, "{assessment:#}");
+    assert_operation_receipt(&rejected, "result", 1);
+    let before = binding_execution_report(&rejected, "before");
+    assert_ne!(
+        before["binding_effect_authority"]["authority"], "operation_receipt",
+        "{before:#}"
+    );
+}
+
+#[test]
 fn eager_class_definition_effect_does_not_receive_a_complete_root_receipt() {
     let source = "class Box { static ready = later; #read = () => later; run() { return this.#read(); } } const result = new Box(); const later = 7; console.log(result.run());\n";
     let source_witness = run_fixture(FixtureOpts::new(

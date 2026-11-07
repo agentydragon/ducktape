@@ -945,6 +945,7 @@ pub enum BoundedInvocationFallbackSeed {
     CapturedBinding {
         binding: String,
     },
+    CapturedReceiver,
     EscapedCallbackPool,
     AvailableExportBinding {
         binding: String,
@@ -967,6 +968,7 @@ pub enum BoundedInvocationFallbackPathEdge {
     AppliedGetter { property: Option<String> },
     AppliedSetter { property: Option<String> },
     ClosureHomeObject,
+    ClosureReceiver,
     ClosureSnapshot { binding: String },
     ClosureCell { binding: String },
     InstanceRetainedValue,

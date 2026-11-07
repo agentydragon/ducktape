@@ -261,6 +261,9 @@ pub(super) struct LexicalCaptures {
     pub(super) cells: OrdMap<Id, LexicalCellId>,
     /// Source containment only, never a trusted receiver or instance identity.
     pub(super) home_object: Option<u32>,
+    /// Actual lexical `this`, distinct from source containment. This retains
+    /// receiver capabilities but never a constructor frame's descriptor proof.
+    pub(super) receiver: Option<Values>,
 }
 
 impl Hash for LexicalCaptures {
@@ -271,6 +274,7 @@ impl Hash for LexicalCaptures {
             values.hash(state);
         }
         self.home_object.hash(state);
+        self.receiver.hash(state);
         self.cells.len().hash(state);
         for (binding, cell) in &self.cells {
             binding.hash(state);
@@ -281,7 +285,10 @@ impl Hash for LexicalCaptures {
 
 impl LexicalCaptures {
     pub(super) fn is_empty(&self) -> bool {
-        self.snapshots.is_empty() && self.cells.is_empty() && self.home_object.is_none()
+        self.snapshots.is_empty()
+            && self.cells.is_empty()
+            && self.home_object.is_none()
+            && self.receiver.is_none()
     }
 }
 
