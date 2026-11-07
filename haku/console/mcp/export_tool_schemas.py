@@ -20,7 +20,7 @@ grocy-sf runs elsewhere, but its batch tools are ordinary Python (``grocy_mcp.ba
 building a batch-tools-only FastMCP registers them without an OpenAPI spec or a Grocy connection,
 so their schemas come from ``grocy_mcp``'s Pydantic models rather than being hand-authored in the
 frontend. Only the tools the console previews are emitted (``_SERVER_TOOL_ALLOWLIST``), with
-nested-model ``$ref``s inlined first (``_dereference``). ``grocy-sf``'s OpenAPI tools remain
+nested-model ``$ref``s retained under catalog-level definitions. ``grocy-sf``'s OpenAPI tools remain
 outside the reflected catalog, so their result widgets stay hand-authored.
 """
 
@@ -71,10 +71,13 @@ _SERVER_TOOL_ALLOWLIST: dict[str, set[str]] = {
 _DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
 # Keep this deliberately narrower than JSON Schema itself.  These are the schema
-# constructs the frontend's z.fromJSONSchema adapter is reviewed and tested against.
+# constructs the frontend's Ajv adapter is reviewed and tested against.
 # A newly-published FastMCP construct should fail generation until the adapter gains a
 # test for it, rather than silently weakening a trusted approval preview.
 _FRONTEND_SCHEMA_KEYWORDS = {
+    "$defs",
+    "$ref",
+    "definitions",
     "additionalProperties",
     "allOf",
     "anyOf",
@@ -85,7 +88,7 @@ _FRONTEND_SCHEMA_KEYWORDS = {
     "exclusiveMaximum",
     "exclusiveMinimum",
     # `format` (e.g. "date") and `uniqueItems` (from Python `set` fields) appear in the grocy
-    # batch tools' schemas; z.fromJSONSchema honors both. See test_export_mcp_tool_schemas.
+    # batch tools' schemas; Ajv honors both. See test_export_mcp_tool_schemas.
     "format",
     "items",
     "maxItems",
@@ -99,17 +102,16 @@ _FRONTEND_SCHEMA_KEYWORDS = {
     "pattern",
     "properties",
     # Annotation-only (no validation semantics): Pydantic stamps computed fields readOnly in
-    # serialization schemas; z.fromJSONSchema ignores it.
+    # serialization schemas; it is annotation-only.
     "readOnly",
     "required",
     "title",
     "type",
     "uniqueItems",
 }
-_SCHEMA_MAP_KEYWORDS = {"properties"}
+_SCHEMA_MAP_KEYWORDS = {"properties", "$defs", "definitions"}
 _SCHEMA_ARRAY_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf"})
 _SCHEMA_VALUE_KEYWORDS = frozenset({"additionalProperties", "items"})
-_FORBIDDEN_REFERENCE_KEYWORDS = {"$defs", "$ref", "definitions"}
 
 
 @dataclass(frozen=True)
@@ -146,65 +148,38 @@ def build_schema_servers() -> dict[str, FastMCP]:
     return dict(sorted(servers.items()))
 
 
-def _dereference(schema: Any, defs: Mapping[str, Any], seen: frozenset[str] = frozenset()) -> Any:
-    """Inline ``$ref`` targets and drop the ``$defs``/``definitions`` blocks that held them.
-
-    FastMCP publishes nested Pydantic models (e.g. ``list[AddItem]``) as ``$ref``s into a
-    ``$defs`` table; the frontend adapter needs them fully inlined. Sibling keywords alongside a
-    ``$ref`` (a local ``description``, say) are merged over the resolved target.
-
-    Cyclic models (a ``$ref`` whose target eventually re-references itself — e.g. gmail's
-    ``MessagePart.parts: list[MessagePart]``) terminate by substituting the target's declared
-    top-level ``type`` for the back-edge: the recursive branch becomes permissive (any object of
-    that type) rather than inlined forever, so a real payload still validates while the schema
-    stays free of ``$ref``/``$defs``. ``seen`` is the set of ref names on the current resolution
-    path, threaded immutably so parallel branches can reuse a shared type without falsely cycling.
-    """
+def _drop_discriminator(schema: Any) -> Any:
+    """Drop Pydantic's OpenAPI hint; the ``const`` branches retain its semantics."""
     if isinstance(schema, Mapping):
-        if "$ref" in schema:
-            name = str(schema["$ref"]).rsplit("/", 1)[-1]
-            if name not in defs:
-                raise ValueError(f"unresolvable $ref {schema['$ref']!r}")
-            if name in seen:
-                target = defs[name]
-                target_type = target.get("type") if isinstance(target, Mapping) else None
-                return {"type": target_type} if isinstance(target_type, str) else {}
-            target = _dereference(defs[name], defs, seen | {name})
-            siblings = {k: _dereference(v, defs, seen) for k, v in schema.items() if k != "$ref"}
-            return {**target, **siblings} if siblings else target
-        # Pydantic adds OpenAPI's `discriminator` optimization alongside an `anyOf` whose branches
-        # already carry the discriminating `const`. z.fromJSONSchema does not consume the OpenAPI
-        # keyword; dropping it preserves the exact accepted values while keeping the validator's
-        # input pure JSON Schema.
+        # Only a schema composition can carry Pydantic's OpenAPI discriminator hint. A property
+        # literally named "discriminator" must remain part of the validated contract.
+        composed = "anyOf" in schema or "oneOf" in schema
         return {
-            k: _dereference(v, defs, seen)
-            for k, v in schema.items()
-            if k not in ("$defs", "definitions", "discriminator")
+            key: _drop_discriminator(value) for key, value in schema.items() if key != "discriminator" or not composed
         }
     if isinstance(schema, list):
-        return [_dereference(item, defs, seen) for item in schema]
+        return [_drop_discriminator(item) for item in schema]
     return schema
 
 
-def _inline_schema_refs(schema: Mapping[str, Any]) -> dict[str, Any]:
-    """Fully inline a tool input schema's internal references (no-op when it has none)."""
-    defs = {**schema.get("definitions", {}), **schema.get("$defs", {})}
-    inlined = _dereference(dict(schema), defs)
-    assert isinstance(inlined, dict)  # a tool input schema is always an object
-    return inlined
-
-
-def _validate_frontend_schema(schema: object, path: str) -> None:
+def _validate_frontend_schema(schema: object, path: str, root: Mapping[str, Any] | None = None) -> None:
     if isinstance(schema, bool):
         return
     if not isinstance(schema, Mapping):
         raise ValueError(f"{path} must be a JSON Schema object or boolean")
 
+    if root is None:
+        root = schema
+    ref = schema.get("$ref")
+    if ref is not None:
+        if not isinstance(ref, str) or not ref.startswith(("#/$defs/", "#/definitions/")):
+            raise ValueError(f"{path} contains unsupported or external schema reference {ref!r}")
+        section, _, name = ref[2:].partition("/")
+        if not name or "/" in name or name not in root.get(section, {}):
+            raise ValueError(f"{path} contains unresolved schema reference {ref!r}")
+        if len(schema) > 1:
+            raise ValueError(f"{path} contains $ref with sibling keywords")
     keys = set(schema)
-    forbidden = keys & _FORBIDDEN_REFERENCE_KEYWORDS
-    if forbidden:
-        joined = ", ".join(sorted(forbidden))
-        raise ValueError(f"{path} contains unresolved schema reference keyword(s): {joined}")
     unsupported = keys - _FRONTEND_SCHEMA_KEYWORDS
     if unsupported:
         joined = ", ".join(sorted(str(key) for key in unsupported))
@@ -217,7 +192,7 @@ def _validate_frontend_schema(schema: object, path: str) -> None:
         if not isinstance(children, Mapping):
             raise ValueError(f"{path}.{keyword} must be an object")
         for name, child in children.items():
-            _validate_frontend_schema(child, f"{path}.{keyword}.{name}")
+            _validate_frontend_schema(child, f"{path}.{keyword}.{name}", root)
 
     for keyword in _SCHEMA_ARRAY_KEYWORDS:
         children = schema.get(keyword)
@@ -226,12 +201,12 @@ def _validate_frontend_schema(schema: object, path: str) -> None:
         if not isinstance(children, list):
             raise ValueError(f"{path}.{keyword} must be an array")
         for index, child in enumerate(children):
-            _validate_frontend_schema(child, f"{path}.{keyword}[{index}]")
+            _validate_frontend_schema(child, f"{path}.{keyword}[{index}]", root)
 
     for keyword in _SCHEMA_VALUE_KEYWORDS:
         child = schema.get(keyword)
         if child is not None and isinstance(child, (Mapping, bool)):
-            _validate_frontend_schema(child, f"{path}.{keyword}")
+            _validate_frontend_schema(child, f"{path}.{keyword}", root)
 
 
 def _unwrap_fastmcp_result_envelope(schema: Mapping[str, Any]) -> dict[str, Any]:
@@ -243,28 +218,62 @@ def _unwrap_fastmcp_result_envelope(schema: Mapping[str, Any]) -> dict[str, Any]
     before dispatching to a widget. The schema a result widget validates against is therefore the
     inner value, not the envelope — unwrap it here so the emitted catalog describes what the widget
     sees. A no-op for object outputs (Pydantic models) and for input schemas, which are never
-    wrapped. Run after ``_inline_schema_refs`` so ``$ref``s inside the inner value are resolved
-    against the envelope's ``$defs`` first.
+    wrapped. Carry the envelope's definitions into the inner schema so its references resolve.
     """
     if schema.get("x-fastmcp-wrap-result") is True:
         props = schema.get("properties")
         if isinstance(props, Mapping) and set(props) == {"result"}:
             inner = props["result"]
             if isinstance(inner, Mapping):
-                return dict(inner)
+                result = dict(inner)
+                for key in ("$defs", "definitions"):
+                    if key in schema:
+                        result[key] = schema[key]
+                return result
     return dict(schema)
 
 
 def _frontend_schema(schema: Mapping[str, Any], path: str) -> dict[str, Any]:
-    """Inline a tool schema's ``$ref``s, drop FastMCP's result-wrap envelope, and validate it.
+    """Preserve local references, drop FastMCP's result-wrap envelope, and validate it.
 
     The same processing for an input schema and an output schema: both are JSON-Schema objects the
-    frontend's ``z.fromJSONSchema`` adapter must be able to represent.
+    frontend's Ajv adapter must be able to represent.
     """
-    inlined = _inline_schema_refs(schema)
-    unwrapped = _unwrap_fastmcp_result_envelope(inlined)
+    unwrapped = _unwrap_fastmcp_result_envelope(_drop_discriminator(schema))
     _validate_frontend_schema(unwrapped, path)
     return unwrapped
+
+
+def _hoist_catalog_definitions(catalog: dict[str, Any]) -> None:
+    """Move tool-local definitions to the catalog root for codegen's pointer resolution.
+
+    Each reflected tool is independently scoped by FastMCP, so names must include server and
+    tool when all definitions share the generated catalog's root.
+    """
+    definitions: dict[str, Any] = {}
+    for server_id, server in catalog["properties"].items():
+        for tool_name, tool_schema in server["properties"].items():
+            local = {**tool_schema.pop("definitions", {}), **tool_schema.pop("$defs", {})}
+            if not local:
+                continue
+            prefix = f"{server_id}__{tool_name}__"
+            names = {name: prefix + name for name in local}
+
+            def rewrite(value: Any, names: Mapping[str, str] = names) -> Any:
+                if isinstance(value, Mapping):
+                    ref = value.get("$ref")
+                    if isinstance(ref, str) and ref.startswith(("#/$defs/", "#/definitions/")):
+                        name = ref.rsplit("/", 1)[-1]
+                        return {"$ref": f"#/$defs/{names[name]}"}
+                    return {key: rewrite(child) for key, child in value.items()}
+                if isinstance(value, list):
+                    return [rewrite(child) for child in value]
+                return value
+
+            definitions.update({names[name]: rewrite(definition) for name, definition in local.items()})
+            server["properties"][tool_name] = rewrite(tool_schema)
+    if definitions:
+        catalog["$defs"] = definitions
 
 
 def _server_tool_schema(properties: dict[str, Any]) -> dict[str, Any]:
@@ -338,7 +347,7 @@ async def build_mcp_tool_schemas() -> McpToolSchemas:
     )
     result_servers["haku_routine"] = _server_tool_schema({"launch_routine": routine_result_schema})
 
-    return McpToolSchemas(
+    catalogs = McpToolSchemas(
         arguments={
             "$schema": _DRAFT_2020_12,
             "title": "McpToolArguments",
@@ -356,6 +365,9 @@ async def build_mcp_tool_schemas() -> McpToolSchemas:
             "required": list(result_servers),
         },
     )
+    _hoist_catalog_definitions(catalogs.arguments)
+    _hoist_catalog_definitions(catalogs.results)
+    return catalogs
 
 
 def _write_schema(path: Path, schema: dict[str, Any]) -> None:

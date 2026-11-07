@@ -100,6 +100,8 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/ajv",
+        "//:node_modules/ajv-formats",
         "//:node_modules/zod",
         "//haku/console/mcp:tool_arguments",
     ],
