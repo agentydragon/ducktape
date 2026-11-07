@@ -146,8 +146,7 @@ Unknown settings are refused, including the former flat settings.
   API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
   Operator admin endpoints are not available through this route. The separate admin gRPC listener
   also serves `EgressRules.GetRules`, authorizing a workload bearer independently of the admin
-  allowlist. The Sandbox calls it through the sidecar's local gRPC route, which replaces the inert
-  bearer with its own projected workload token; a VM guest uses its launcher relay for the same route.
+  allowlist; staging sandbox network policy does not yet admit this listener.
   `GET /v1/rules` is the generated HTTP/JSON form of the gRPC `EgressRules.GetRules`
   (<egress_rules.proto>), served to the facade on a loopback listener: proto-JSON answers, and a
   bearer that proves no workload fails `401` as a `google.rpc.Status` body (`503` when it could not

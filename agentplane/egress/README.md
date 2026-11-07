@@ -210,9 +210,7 @@ sends no bearer; `GetHealth` does not. `Watch` is not served.
 
 The admin listener also hosts `EgressRules.GetRules`, authenticating the caller with the forward
 listener workload audience independently of the admin allowlist. Staging network policy currently
-admits the app and the Sandbox sidecar to that listener. The sidecar offers a local gRPC route
-whose token identifies the Sandbox; the CLI dials that route for rules. The HTTP facade remains available
-for clients on the previous configuration until the rollout is complete.
+only admits the app to that listener; the sandbox still uses the HTTP rules facade.
 
 The admin listener serves gRPC alone. On shutdown it ends the open watches, then stops gracefully: the
 other calls in flight finish within the drain deadline.

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -262,10 +261,9 @@ func TestRedirectIsNotFollowedForTheHTTPClients(t *testing.T) {
 	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
 		http.Redirect(w, r, elsewhere.URL, http.StatusFound)
 	})
-	_, err := (&service{baseURL: f.URL, credential: testCredential}).do(context.Background(), request{method: http.MethodGet, path: "/"})
-	var failed *failure
-	if !errors.As(err, &failed) || failed.exit != exitRefused || elsewhere.count() != 0 {
-		t.Errorf("error %v, %d requests followed the redirect; want refusal and none", err, elsewhere.count())
+	code, _, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
+	if code != exitRefused || elsewhere.count() != 0 {
+		t.Errorf("exit %d, %d requests followed the redirect; want exit 1 and none", code, elsewhere.count())
 	}
 }
 

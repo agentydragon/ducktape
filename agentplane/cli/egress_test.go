@@ -1,18 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"net"
+	"net/http"
 	"strings"
 	"testing"
-
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // rulesWith is the proto-JSON of GET /v1/rules for one rule that carries a credential with these targets.
@@ -62,68 +54,15 @@ func TestRulesTextShowsHowToPresentTheCredential(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			stdout, err := rulesText([]byte(rulesWith(tc.targets)))
+			f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
+				reply(w, 200, rulesWith(tc.targets))
+			})
+			code, stdout, _ := invoke(egressEnv(f.URL), "egress", "rules")
 			want := "subject test-ns/test-sandbox\n" + rule + tc.want + "  d\n" + openRule
-			if err != nil || strings.TrimSpace(stdout) != want {
-				t.Errorf("stdout %q, error %v; want %q", stdout, err, want)
+			if code != 0 || strings.TrimSpace(stdout) != want {
+				t.Errorf("exit %d, stdout %q; want exit 0 and %q", code, stdout, want)
 			}
 		})
-	}
-}
-
-// egressFake records the actual gRPC metadata received from the CLI.
-type egressFake struct {
-	egressrulespb.UnimplementedEgressRulesServer
-	response      *egressrulespb.GetRulesResponse
-	authorization []string
-	err           error
-}
-
-func (f *egressFake) GetRules(ctx context.Context, _ *egressrulespb.GetRulesRequest) (*egressrulespb.GetRulesResponse, error) {
-	md, _ := metadata.FromIncomingContext(ctx)
-	f.authorization = md.Get("authorization")
-	return f.response, f.err
-}
-
-func newEgressFake(t *testing.T) (*egressFake, string) {
-	t.Helper()
-	for _, variable := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
-		t.Setenv(variable, "")
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	fake := &egressFake{response: &egressrulespb.GetRulesResponse{}}
-	egressrulespb.RegisterEgressRulesServer(server, fake)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	return fake, "http://" + listener.Addr().String()
-}
-
-func TestEgressRulesUsesGRPCAndDisplaysTheResponse(t *testing.T) {
-	fake, endpoint := newEgressFake(t)
-	if err := protojson.Unmarshal([]byte(rulesWith(`[]`)), fake.response); err != nil {
-		t.Fatal(err)
-	}
-	code, output, stderr := invoke(egressEnv(endpoint), "egress", "rules", "--json")
-	if code != 0 || decodeObject(t, output)["subject"] == nil || strings.Join(fake.authorization, ",") != "Bearer "+testCredential {
-		t.Fatalf("exit %d, output %q, stderr %q, authorization %v", code, output, stderr, fake.authorization)
-	}
-	code, output, _ = invoke(egressEnv(endpoint), "egress", "rules")
-	if code != 0 || !strings.Contains(output, "api.example.test") {
-		t.Errorf("exit %d, output %q", code, output)
-	}
-	fake.response.Policies = nil
-	code, output, _ = invoke(egressEnv(endpoint), "egress", "rules", "--json")
-	if code != 0 || !strings.Contains(output, `"policies":[]`) {
-		t.Errorf("empty rules: exit %d, output %q", code, output)
-	}
-	fake.err = status.Error(codes.PermissionDenied, "refused")
-	code, _, _ = invoke(egressEnv(endpoint), "egress", "rules")
-	if code != exitRefused {
-		t.Errorf("refusal exit %d", code)
 	}
 }
 

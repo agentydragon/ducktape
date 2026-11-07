@@ -116,8 +116,6 @@ flowchart LR
     vmexec --> relay
     runner --> sidecar --> egress
     guest --> relay --> egress
-    sidecar -.->|rules gRPC| egress
-    relay -.->|rules gRPC| egress
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
@@ -529,8 +527,6 @@ flowchart LR
     workload --> box_sidecar --> egress
     runner --> sidecar --> egress
     guest --> relay --> egress
-    sidecar -.->|rules gRPC, workload bearer| egress
-    relay -.->|rules gRPC, workload bearer| egress
     app -->|egress admin API| egress
     egress -->|policy and credential watches| k8s
     egress -->|workload Actions gRPC and MCP| actions

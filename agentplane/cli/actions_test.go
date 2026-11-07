@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -230,6 +231,16 @@ func TestJSONOutputIsGeneratedProtoJSON(t *testing.T) {
 	}
 }
 
+func TestUnaryJSONOutputIsOneValue(t *testing.T) {
+	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
+		reply(w, 200, `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}`)
+	})
+	code, stdout, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
+	if code != 0 || strings.TrimSpace(stdout) != `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}` {
+		t.Errorf("exit %d, stdout %q", code, stdout)
+	}
+}
+
 func TestListFlattensTheCatalogIntoActions(t *testing.T) {
 	fake, endpoint := newActionFake(t)
 	fake.listGroups = func(context.Context, *action_servicepb.ListActionGroupsRequest) (*action_servicepb.ListActionGroupsResponse, error) {
@@ -383,6 +394,19 @@ func TestActionBaseURLRejectsAPathBeforeCallingTheService(t *testing.T) {
 	code, stdout, stderr := invoke(env, "actions", "groups")
 	if code != exitUsage || stdout != "" || fake.count("ListActionGroups") != 0 || !strings.Contains(stderr, "must not include a path") {
 		t.Errorf("exit %d, stdout %q, stderr %q, calls %+v", code, stdout, stderr, fake.callLog())
+	}
+}
+
+func TestLegacyHTTPConfigurationStillWorksForEgress(t *testing.T) {
+	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, request seen) {
+		if request.path != "/v1/rules" {
+			t.Errorf("path = %q", request.path)
+		}
+		reply(w, 200, `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}`)
+	})
+	code, _, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
+	if code != 0 || len(f.requests(http.MethodGet)) != 1 {
+		t.Errorf("exit %d after %d requests", code, f.count())
 	}
 }
 
