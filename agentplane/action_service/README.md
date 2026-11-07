@@ -4,9 +4,10 @@ This package is the standalone canonical coordinator for ActionRequests. It owns
 schema and `/v1/action-requests` lifecycle; the Agentplane integration app, Haku Console, BFFs, and
 external harnesses remain clients rather than state owners.
 
-Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked lifecycle, recovery and
-Kubernetes/grant workflows. The generated HTTP/JSON API reference is `/openapi.json`; update the guides
-when those contracts change.
+Agent guidance is bundled in `agentplane actions guide [NAME]` and MCP `get_guide`. Runner images
+without the CLI subcommand can temporarily fetch the index and workflow guides from the existing
+HTTP documentation paths through the configured proxy. Remove this fallback after the old image
+rollout is complete. Update the shared guides when Action workflows change.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service

@@ -22,7 +22,10 @@ import (
 // own budget because the deadline may be what lost the response.
 const recoveryTimeout = 10 * time.Second
 
-const actionsHelp = `Calls the generated ActionService client (AGENTPLANE_ACTIONS_URL, AGENTPLANE_ACTIONS_CREDENTIAL).
+const actionsHelp = `Live commands call the generated ActionService client (AGENTPLANE_ACTIONS_URL, AGENTPLANE_ACTIONS_CREDENTIAL).
+
+Read bundled Action workflow guidance with guide [NAME]; it makes no service call. Omit NAME for the
+index, or choose session_delegation, action_lifecycle, recovery, or kubernetes.
 
 Discover with groups, list, show and policy; submit an Action and follow it with submit --wait, wait,
 result, get and events; withdraw it with cancel. Approval is not success: wait and result exit 0 only
@@ -31,8 +34,9 @@ ran out first. Whatever a succeeded Action's result says, the exit status is 0.`
 
 func (a *app) actionsCommand() *cobra.Command {
 	return group("actions", "Discover, submit, follow and cancel Actions", actionsHelp,
-		a.groupsCommand(), a.listCommand(), a.showCommand(), a.policyCommand(), a.submitCommand(),
-		a.getCommand(), a.resultCommand(), a.waitCommand(), a.requestsCommand(), a.eventsCommand(), a.cancelCommand())
+		a.groupsCommand(), a.listCommand(), a.showCommand(), a.policyCommand(),
+		a.actionsGuideCommand(), a.submitCommand(), a.getCommand(), a.resultCommand(),
+		a.waitCommand(), a.requestsCommand(), a.eventsCommand(), a.cancelCommand())
 }
 
 func protoJSON(message proto.Message) ([]byte, error) {

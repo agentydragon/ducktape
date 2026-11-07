@@ -19,9 +19,8 @@ func TestAgentDocumentationIsServedWithoutTheBackend(t *testing.T) {
 	agentdocs.AssertServed(t, routes)
 }
 
-// The OpenAPI document is the only description of the routes that a harness without the command has; the HTTP
-// reference sends agents to it for the reads this service answers.
-func TestTheOpenAPIDocumentDescribesTheReadsTheGuidesUse(t *testing.T) {
+// The temporary HTTP compatibility schema continues to describe the facade routes while older runner images remain.
+func TestHTTPCompatibilityOpenAPIDescribesRequestReads(t *testing.T) {
 	routes, err := newRoutes(http.NotFoundHandler())
 	if err != nil {
 		t.Fatal(err)

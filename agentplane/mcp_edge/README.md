@@ -21,8 +21,8 @@ HTTP client or execution environment and remains available when the Action catal
 It creates no Action request and grants no authority. The guide is returned as `{name, markdown}`
 in structured content with the same JSON text fallback.
 
-The edge embeds the same [guide assets](../action_service/docs/agents/llms.txt) that Actions serves
-over HTTP. Each binary carries its documentation snapshot; use `list_actions`, `get_action` and
+The edge embeds the shared [guide assets](../action_service/docs/agents/llms.txt) also bundled in the
+CLI. Each binary carries its documentation snapshot; use `list_actions`, `get_action` and
 `get_action_policy` for current operations, schemas and permissions. The MCP initialization
 instructions point to the guide reader, while detailed workflows stay out of standing context.
 
