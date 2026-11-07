@@ -233,7 +233,9 @@ class EnvironmentSandbox(Construct):
                 platform_instructions=platform_instructions(
                     env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_api_service=egress_api_service
                 ),
-                harness_env=template.agent_cli_env,
+                harness_env=agent_cli_environment(
+                    service_urls(env, egress_api_service=egress_api_service, egress_host=launcher_relay.GUEST_GATEWAY)
+                ),
                 session_reconcile_concurrency=session_reconcile_concurrency,
                 codex_readiness=vm_codex_readiness,
             )
