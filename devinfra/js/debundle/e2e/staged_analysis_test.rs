@@ -1292,6 +1292,77 @@ fn assert_conditional_provider_summary(invocation: &StagedInvocation, imported_l
     );
 }
 
+fn run_conditional_result_direct_and_saved(
+    staged: &Staged,
+    report_case: &str,
+) -> (StagedInvocation, StagedInvocation) {
+    let direct = staged.run(&["--emit-on-rejection"]);
+    let artifact = path(&staged.artifact).to_owned();
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", artifact.as_str()]);
+    for (mode, invocation) in [("direct", &direct), ("saved", &saved)] {
+        let report_root = invocation.output_root().join("reports/tree");
+        let preserved =
+            save_relocation_reports(&report_root, "static/app", &format!("{report_case}_{mode}"));
+        fs::copy(
+            report_root.join("static/app/modules.json"),
+            preserved.join("modules.json"),
+        )
+        .expect("preserve imported callable result projections");
+    }
+    assert_eq!(
+        direct.result.status.code(),
+        saved.result.status.code(),
+        "direct and saved-analysis CLI verdicts differ: direct={} saved={}",
+        direct.result.stderr,
+        saved.result.stderr
+    );
+    assert_same_invocation_trees(&direct, &saved);
+    (direct, saved)
+}
+
+fn conditional_result_alternatives(
+    invocation: &StagedInvocation,
+    imported_local: &str,
+) -> Vec<Value> {
+    let modules: Value = read_json(
+        &invocation
+            .output_root()
+            .join("reports/tree/static/app/modules.json"),
+    );
+    modules["imported_callables"][imported_local]["conditional_bodies"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|body| body["result_projection"]["alternatives"].as_array())
+        .flatten()
+        .cloned()
+        .collect()
+}
+
+fn assert_conditional_result_kind(
+    invocation: &StagedInvocation,
+    imported_local: &str,
+    kind: &str,
+    field: Option<&str>,
+) {
+    let alternatives = conditional_result_alternatives(invocation, imported_local);
+    assert!(
+        alternatives
+            .iter()
+            .any(|alternative| alternative["kind"] == kind
+                && field.is_none_or(|field| !alternative[field].is_null())),
+        "expected {kind} conditional result for {imported_local}: {alternatives:#?}"
+    );
+}
+
+fn assert_no_conditional_result_projection(invocation: &StagedInvocation, imported_local: &str) {
+    let alternatives = conditional_result_alternatives(invocation, imported_local);
+    assert!(
+        alternatives.is_empty(),
+        "unrepresentable provider results must not project partially for {imported_local}: {alternatives:#?}"
+    );
+}
+
 fn assert_same_module_cell_address(report_address: &Value, graph_address: &Value) {
     assert_module_cell_address(graph_address);
     assert_eq!(report_address["chunk"], graph_address["chunk"]);
@@ -1608,6 +1679,284 @@ fn conditional_descriptor_body_effects_survive_saved_analysis() {
             &run.output_root().join("app/static/app/entry.js"),
             "42 42\n",
             "",
+        );
+    }
+}
+
+#[test]
+fn conditional_borrowed_results_survive_direct_and_saved_analysis() {
+    const PROVIDER: &str = "export function echo(record) { record.value; return record; }\nexport function select(record) { return record.callback; }\nexport function read(record) { return record.value; }\nexport function primitiveAfterRead(record) { record.marker; return 7; }\n";
+    const APP: &str = "import { echo, select, read, primitiveAfterRead } from './peer.js';\nlet calls = 0;\nconst callback = () => { calls++; return 6; };\nconst nested = { value: 1 };\necho({ nested, value: 0 });\nconst input = { nested, value: 1 };\nconst same = echo(input);\nconst selected = select({ callback });\nconst observed = read({ value: 9 });\nconst primitive = primitiveAfterRead({ marker: true });\nconsole.log(same === input, same.nested === nested, selected === callback, calls, observed, primitive);\nselected();\nconsole.log(calls, nested.value);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            APP,
+            vec![logical_module(
+                "results",
+                &[
+                    Member::new("calls"),
+                    Member::new("callback"),
+                    Member::new("nested"),
+                    Member::new("input"),
+                    Member::new("same"),
+                    Member::new("selected"),
+                    Member::new("observed"),
+                    Member::new("primitive"),
+                ],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", PROVIDER)])
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let expected = "true true true 0 9 7\n1 1\n";
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+    let (direct, saved) = run_conditional_result_direct_and_saved(&staged, "borrowed_results");
+
+    for invocation in [&direct, &saved] {
+        assert_ok(&invocation.result, "conditional borrowed-result CLI");
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            expected,
+            "",
+        );
+        assert!(
+            conditional_result_alternatives(invocation, "echo")
+                .iter()
+                .any(|alternative| alternative["kind"] == "argument" && alternative["index"] == 0),
+            "argument result must identify formal argument zero"
+        );
+        assert!(
+            conditional_result_alternatives(invocation, "select")
+                .iter()
+                .any(|alternative| alternative["kind"] == "property"
+                    && alternative["property"] == "callback"),
+            "property result must remain visible in the callable report"
+        );
+        assert!(
+            conditional_result_alternatives(invocation, "read")
+                .iter()
+                .any(|alternative| alternative["kind"] == "property"
+                    && alternative["property"] == "value"),
+            "record property result must remain visible in the callable report"
+        );
+        assert_conditional_result_kind(
+            invocation,
+            "primitiveAfterRead",
+            "primitive",
+            Some("kinds"),
+        );
+
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        for binding in ["same", "selected", "observed", "primitive"] {
+            assert!(
+                conditional_foreign_body_used(&graph, binding),
+                "result binding {binding} must have a guarded body receipt: {graph:#}"
+            );
+        }
+        let report = candidate_relocation_report(invocation, "static/app");
+        assert_eq!(
+            report["status"], "accepted_within_checked_scope",
+            "{report:#}"
+        );
+        let required = provider_targets(&report, "required_targets");
+        assert!(!required.is_empty(), "{report:#}");
+        assert_eq!(
+            provider_targets(&report, "preserved_targets"),
+            required,
+            "{report:#}"
+        );
+        assert!(
+            provider_targets(&report, "unproved_targets").is_empty(),
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn conditional_borrowed_results_refuse_accessor_mixed_and_captured_values() {
+    let cases = [
+        (
+            "mixed_fresh",
+            "export function choose(record) { return record.flag ? record.callback : {}; }\n",
+            "import { choose } from './peer.js';\nconst selected = choose({ flag: true, callback: () => 41 });\nconst freshFirst = choose({ flag: false, callback: () => 1 });\nconst freshSecond = choose({ flag: false, callback: () => 2 });\nconsole.log(selected(), selected !== null, freshFirst !== freshSecond);\n",
+            "choose",
+            "41 true true\n",
+        ),
+        (
+            "accessor",
+            "export function read(record) { return record.value; }\n",
+            "import { read } from './peer.js';\nlet reads = 0;\nconst observed = read({ get value() { reads++; return 12; } });\nconsole.log(observed, reads);\n",
+            "read",
+            "12 1\n",
+        ),
+        (
+            "captured_object",
+            "const cached = { value: 5 };\nexport function read(record) { record.value; return cached; }\n",
+            "import { read } from './peer.js';\nconst first = read({ value: 1 });\nconst second = read({ value: 2 });\nconsole.log(first === second, first.value);\n",
+            "read",
+            "true 5\n",
+        ),
+    ];
+    for (label, provider, source, imported_local, expected) in cases {
+        let (staged, _fixture) = staged(
+            FixtureOpts::new(source, Vec::new())
+                .with_extra_chunks(&[("static/peer", provider)])
+                .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+        let (direct, saved) =
+            run_conditional_result_direct_and_saved(&staged, &format!("borrowed_result_{label}"));
+        for invocation in [&direct, &saved] {
+            assert_node_output(
+                &invocation.output_root().join("app/static/app/entry.js"),
+                expected,
+                "",
+            );
+            assert_no_conditional_result_projection(invocation, imported_local);
+            if label == "mixed_fresh" {
+                let modules: Value = read_json(
+                    &invocation
+                        .output_root()
+                        .join("reports/tree/static/app/modules.json"),
+                );
+                let bodies = modules["imported_callables"][imported_local]["conditional_bodies"]
+                    .as_array()
+                    .expect("mixed return should retain its independently guarded body");
+                assert!(!bodies.is_empty(), "{modules:#}");
+                assert!(
+                    bodies
+                        .iter()
+                        .all(|body| body["result_projection"].is_null()),
+                    "a fresh alternative must make the whole result projection unknown: {bodies:#?}"
+                );
+            }
+            if label == "captured_object" {
+                let report = candidate_relocation_report(invocation, "static/app");
+                assert!(
+                    provider_targets(&report, "required_targets").is_empty(),
+                    "{report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn conditional_result_projection_checks_the_post_operand_descriptor() {
+    const PROVIDER: &str = "export function read(record) { return record.value; }\n";
+    const APP: &str = "import { read } from './peer.js';\nlet getterReads = 0;\nconst record = { value: 10 };\nconst mutated = read((Object.defineProperty(record, 'value', { get() { getterReads++; return 12; } }), record));\nconst seed = read({ value: 0 });\nconsole.log(mutated, getterReads, seed);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(APP, Vec::new())
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let expected = "12 1 0\n";
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+    let (direct, saved) =
+        run_conditional_result_direct_and_saved(&staged, "borrowed_result_post_operand_getter");
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            expected,
+            "",
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        assert!(
+            !conditional_foreign_body_used(&graph, "mutated"),
+            "the accessor installed by argument evaluation cannot use the data-property projection: {graph:#}"
+        );
+        assert!(
+            conditional_foreign_body_used(&graph, "seed"),
+            "the later literal-data control makes the fixture non-vacuous: {graph:#}"
+        );
+        let report = candidate_relocation_report(invocation, "static/app");
+        assert_eq!(
+            provider_targets(&report, "required_targets").len(),
+            1,
+            "{report:#}"
+        );
+        assert_eq!(
+            provider_targets(&report, "preserved_targets"),
+            provider_targets(&report, "required_targets"),
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn conditional_result_projection_does_not_run_after_an_operand_throw() {
+    const PROVIDER: &str = "export function read(record) { return record.value; }\n";
+    const APP: &str = "import { read } from './peer.js';\nconst seed = read({ value: 0 });\nfunction fail() { throw 'argument'; }\nlet observed;\ntry { observed = read(fail()); } catch (error) { observed = String(error); }\nconsole.log(observed, seed);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(APP, Vec::new())
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let expected = "argument 0\n";
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+    let (direct, saved) =
+        run_conditional_result_direct_and_saved(&staged, "borrowed_result_operand_throw");
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            expected,
+            "",
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        assert!(
+            conditional_foreign_body_used(&graph, "seed"),
+            "the successful literal-data control is required: {graph:#}"
+        );
+        let report = candidate_relocation_report(invocation, "static/app");
+        assert_eq!(
+            provider_targets(&report, "required_targets").len(),
+            1,
+            "{report:#}"
+        );
+        assert_eq!(
+            provider_targets(&report, "preserved_targets"),
+            provider_targets(&report, "required_targets"),
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn conditional_borrowed_projection_keeps_two_argument_alias_result_opaque() {
+    const PROVIDER: &str =
+        "export function touch(first, second) { first.value = 1; return second.value; }\n";
+    const APP: &str = "import { touch } from './peer.js';\nconst record = { value: 0 };\nconst result = touch(record, record);\nconsole.log(result, record.value);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(APP, Vec::new())
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let expected = "1 1\n";
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+    let (direct, saved) =
+        run_conditional_result_direct_and_saved(&staged, "borrowed_result_touch_alias");
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            expected,
+            "",
+        );
+        assert_no_conditional_result_projection(invocation, "touch");
+        let report = candidate_relocation_report(invocation, "static/app");
+        assert!(
+            provider_targets(&report, "required_targets").is_empty(),
+            "{report:#}"
         );
     }
 }

@@ -9,8 +9,8 @@ use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    CallableSummary, ConditionalForeignBody, ForeignBodyEffects, HostBehaviorKey,
-    ModuleCellAccesses, NativeIntegrity, NativeIntrinsic, PrimitiveCellInvariant,
+    CallableSummary, ConditionalForeignBody, ConditionalResultProjection, ForeignBodyEffects,
+    HostBehaviorKey, ModuleCellAccesses, NativeIntegrity, NativeIntrinsic, PrimitiveCellInvariant,
     ProofDependencies, ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::sync_effects::SavedEffectCoverageFragment;
@@ -73,6 +73,9 @@ struct SavedConditionalForeignBody<'a> {
     export: String,
     local: String,
     callable_key: u32,
+    /// Required nullable sidecar; a missing field cannot erase result proof.
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    result_projection: Option<ConditionalResultProjection>,
     effects: SavedEffectCoverageFragment<'a>,
     module_cells: SavedModuleCellAccesses,
 }
@@ -155,6 +158,7 @@ impl<'a> SavedConditionalForeignBody<'a> {
             export: body.export.clone(),
             local: body.local.clone(),
             callable_key: body.callable_key,
+            result_projection: body.result_projection.clone(),
             effects: SavedEffectCoverageFragment::snapshot(&body.effects),
             module_cells: SavedModuleCellAccesses::snapshot(&body.module_cells, ordinals)?,
         })
@@ -167,6 +171,10 @@ impl<'a> SavedConditionalForeignBody<'a> {
                 && body.local == self.local
                 && body.callable_key == self.callable_key,
             "saved conditional-body evidence does not match its callable summary"
+        );
+        ensure!(
+            body.result_projection == self.result_projection,
+            "saved conditional result projection does not match its callable summary"
         );
         body.effects = self.effects.restore();
         body.module_cells = self.module_cells.restore(ordinals)?;
@@ -347,9 +355,9 @@ mod tests {
     use super::*;
     use crate::analysis_inputs::{
         ArgumentInputRef, BindingCellDeclarationIdentity, BindingCellStoreEvidence,
-        BindingStoreKind, CallableSummary, ConditionalForeignBody, ForeignCallSummary,
-        ForeignInvocation, ForeignReturn, ModuleCellAccesses, NamespaceWrapperSummary,
-        RecordInputShape, ValueInputRef,
+        BindingStoreKind, CallableSummary, ConditionalForeignBody, ConditionalResultAlternative,
+        ConditionalResultProjection, ForeignCallSummary, ForeignInvocation, ForeignReturn,
+        ModuleCellAccesses, NamespaceWrapperSummary, RecordInputShape, ValueInputRef,
     };
     use crate::analysis_provenance::{InferenceRule, InferenceUse};
     use analysis_codec::{ContextOrdinals, SavedChunk};
@@ -515,6 +523,11 @@ mod tests {
                 creation_order: Vec::new(),
             },
             reads: BTreeSet::new(),
+            result_projection: Some(ConditionalResultProjection {
+                alternatives: BTreeSet::from([ConditionalResultAlternative::Primitive {
+                    kinds: analysis_model::PrimKinds::NUMBER,
+                }]),
+            }),
             native_operations: BTreeSet::new(),
             effects: Default::default(),
             module_cells: ModuleCellAccesses {
@@ -538,12 +551,34 @@ mod tests {
             saved_json["conditional_bodies"][0]["module_cells"]["reads"][0]["chunk"],
             "provider"
         );
+        assert_eq!(
+            saved_json["conditional_bodies"][0]["result_projection"]["alternatives"][0]["kind"],
+            "primitive"
+        );
         let mut missing = saved_json.clone();
         missing
             .as_object_mut()
             .expect("saved callable is a map")
             .remove("conditional_bodies");
         assert!(serde_json::from_value::<SavedCallableSummary<'static>>(missing).is_err());
+
+        let mut missing_result_projection = saved_json.clone();
+        missing_result_projection["conditional_bodies"][0]
+            .as_object_mut()
+            .expect("saved conditional body is a map")
+            .remove("result_projection");
+        assert!(
+            serde_json::from_value::<SavedCallableSummary<'static>>(missing_result_projection)
+                .is_err()
+        );
+
+        let mut mismatched_result_projection = saved_json.clone();
+        mismatched_result_projection["conditional_bodies"][0]["result_projection"] =
+            serde_json::Value::Null;
+        let mismatched: SavedCallableSummary<'static> =
+            serde_json::from_value(mismatched_result_projection)
+                .expect("explicit nullable sidecar decodes");
+        assert!(mismatched.restore(&writer_ordinals).is_err());
 
         let bytes = rmp_serde::to_vec_named(&saved).expect("saved callable encodes");
         let decoded: SavedCallableSummary<'static> =

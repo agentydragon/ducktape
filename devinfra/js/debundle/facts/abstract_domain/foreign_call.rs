@@ -2,7 +2,8 @@
 
 use super::builtins::{self, Invocation, Row};
 use crate::analysis_inputs::{
-    ForeignInvocation, ForeignNativeOperation, ForeignReturn, ProofDependencies,
+    ConditionalResultProjection, ForeignInvocation, ForeignNativeOperation, ForeignReturn,
+    ProofDependencies,
 };
 use crate::analysis_provenance::InferenceRule;
 use crate::facts::sync_effects::EffectCoverageFragment;
@@ -12,6 +13,7 @@ use std::ops::Range;
 pub(crate) struct DerivedConditionalBody {
     pub(crate) input: crate::analysis_inputs::RecordInputShape,
     pub(crate) reads: BTreeSet<crate::analysis_inputs::ParameterHeapRead>,
+    pub(crate) result_projection: Option<ConditionalResultProjection>,
     pub(crate) module_cells: crate::analysis_inputs::ModuleCellAccesses,
     pub(crate) native_operations: BTreeSet<ForeignNativeOperation>,
     pub(crate) effects: EffectCoverageFragment,

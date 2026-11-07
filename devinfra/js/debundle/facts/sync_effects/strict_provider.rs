@@ -27,8 +27,9 @@ use super::super::value_model::{
 };
 use super::{Call, CallKind, ExecutionIndex, native_call_identity_key};
 use crate::analysis_inputs::{
-    ForeignInvocation, ForeignNativeOperation, ForeignReturn, ParameterHeapRead,
-    PrimitiveCellInvariant, ProofDependencies, RecordInputProperty, RecordInputShape,
+    ConditionalResultAlternative, ConditionalResultProjection, ForeignInvocation,
+    ForeignNativeOperation, ForeignReturn, ParameterHeapRead, PrimitiveCellInvariant,
+    ProofDependencies, RecordInputProperty, RecordInputShape,
 };
 use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::OrderedFieldReadRefusal;
@@ -1377,6 +1378,58 @@ struct ProviderExecution<'a> {
     capture_dependencies: ProofDependencies,
 }
 
+fn conditional_result_projection(
+    values: &Values,
+    scope: ProviderScopeId,
+    input: &RecordInputShape,
+    reads: &BTreeSet<ParameterHeapRead>,
+) -> Option<ConditionalResultProjection> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut alternatives = BTreeSet::new();
+    for value in values {
+        let alternative = match value {
+            AbstractValue::SymbolicInput(symbolic) if symbolic.scope == scope => {
+                match symbolic.input {
+                    ProviderInput::Argument(0) => {
+                        ConditionalResultAlternative::Argument { index: 0 }
+                    }
+                    ProviderInput::Property {
+                        argument: 0,
+                        property,
+                    } => {
+                        let (name, kind) = input.properties.iter().nth(property)?;
+                        if !matches!(kind, RecordInputProperty::Data)
+                            || !reads.contains(&ParameterHeapRead::ObjectShape { argument: 0 })
+                            || !reads.contains(&ParameterHeapRead::OwnProperty {
+                                argument: 0,
+                                property: name.clone(),
+                            })
+                        {
+                            return None;
+                        }
+                        ConditionalResultAlternative::Property {
+                            argument: 0,
+                            property: name.clone(),
+                        }
+                    }
+                    _ => return None,
+                }
+            }
+            AbstractValue::Value(Value::Prim(kinds))
+                if !kinds.is_empty() && kinds.without(PrimKinds::ANY).is_empty() =>
+            {
+                ConditionalResultAlternative::Primitive { kinds: *kinds }
+            }
+            _ => return None,
+        };
+        alternatives.insert(alternative);
+    }
+    let projection = ConditionalResultProjection { alternatives };
+    projection.is_well_formed().then_some(projection)
+}
+
 pub(super) fn derive_conditional_body(
     index: &ExecutionIndex,
     callable: u32,
@@ -1406,10 +1459,17 @@ pub(super) fn derive_conditional_body(
         return None;
     }
     let dependencies = effects.closed_effect_dependencies()?;
+    let result_projection = conditional_result_projection(
+        &execution.result.values,
+        execution.scope,
+        &input,
+        &execution.context.parameter_reads,
+    );
     Some(
         crate::facts::abstract_domain::foreign_call::DerivedConditionalBody {
             input,
             reads: execution.context.parameter_reads,
+            result_projection,
             module_cells: execution.context.module_cell_accesses,
             native_operations: execution.context.native_operations,
             dependencies,

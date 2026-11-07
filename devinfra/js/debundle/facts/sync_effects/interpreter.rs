@@ -8662,34 +8662,97 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || self.conditional_foreign_bodies(kind, callee).is_some()
     }
 
-    fn apply_conditional_foreign_body(
+    fn instantiate_conditional_result(
+        &self,
+        body: &crate::analysis_inputs::ConditionalForeignBody,
+        args: &[Values],
+        input_origin: u32,
+        result_reads: &mut BTreeSet<EffectCell>,
+    ) -> Option<Values> {
+        use crate::analysis_inputs::ConditionalResultAlternative;
+        let projection = body.result_projection.as_ref()?;
+        if !projection.is_well_formed() || body.replacement_package.is_some() {
+            return None;
+        }
+        let mut result = Values::new();
+        for alternative in &projection.alternatives {
+            match alternative {
+                ConditionalResultAlternative::Argument { index } => {
+                    if *index != 0 {
+                        return None;
+                    }
+                    result.extend(args.get(*index)?.iter().cloned());
+                }
+                ConditionalResultAlternative::Property { argument, property } => {
+                    if *argument != 0
+                        || !matches!(
+                            body.input.properties.get(property),
+                            Some(crate::analysis_inputs::RecordInputProperty::Data)
+                        )
+                        || !body.reads.contains(
+                            &crate::analysis_inputs::ParameterHeapRead::ObjectShape { argument: 0 },
+                        )
+                        || !body.reads.contains(
+                            &crate::analysis_inputs::ParameterHeapRead::OwnProperty {
+                                argument: 0,
+                                property: property.clone(),
+                            },
+                        )
+                    {
+                        return None;
+                    }
+                    let receivers = args.first()?;
+                    let read = self.present_own_data_read(receivers, property)?;
+                    let expected_cell = EffectCell::OwnProperty {
+                        origin: input_origin,
+                        property: property.clone(),
+                    };
+                    if read.cell != expected_cell {
+                        return None;
+                    }
+                    result_reads.insert(read.cell.clone());
+                    result.extend(read.values.iter().cloned());
+                }
+                ConditionalResultAlternative::Primitive { kinds } => {
+                    result.insert(AbstractValue::Value(Value::Prim(*kinds)));
+                }
+            }
+        }
+        if result.is_empty() || result.contains(&AbstractValue::Value(Value::Unavailable)) {
+            None
+        } else {
+            Some(result)
+        }
+    }
+
+    fn instantiate_conditional_foreign_body(
         &mut self,
         call: &Call,
         args: &[Values],
         operands_may_throw: bool,
         outcome: &mut Outcome,
-    ) {
+    ) -> Option<Values> {
         use crate::analysis_inputs::ParameterHeapRead;
         let Some(bodies) = self.conditional_foreign_bodies(call.kind, &call.callee) else {
-            return;
+            return None;
         };
         let Some(values) = args.first() else {
-            return;
+            return None;
         };
         let Some(input) =
             self.own_property_projection(values, OwnPropertyRequest::DescriptorLayout)
         else {
-            return;
+            return None;
         };
         let super::super::property_inference::OwnPropertyProjection::Descriptors(projection) =
             &input.projection
         else {
-            return;
+            return None;
         };
         let super::super::property_inference::DescriptorSource::Object(origin) =
             projection.source_object
         else {
-            return;
+            return None;
         };
         let Some(body) = bodies
             .iter()
@@ -8699,8 +8762,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
             .cloned()
         else {
-            return;
+            return None;
         };
+        let mut result_reads = BTreeSet::new();
+        let mut result =
+            self.instantiate_conditional_result(&body, args, origin, &mut result_reads);
         let mut heap = crate::facts::HeapContentCells::default();
         for read in &body.reads {
             let cell = match read {
@@ -8712,9 +8778,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     origin,
                     property: property.clone(),
                 },
-                _ => return,
+                _ => return None,
             };
             heap.reads.insert(cell);
+        }
+        if result.is_some() {
+            heap.reads.extend(result_reads);
         }
         heap.reads.extend(
             body.module_cells
@@ -8735,6 +8804,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut body_effects = body.effects.clone();
         if !body_effects.instantiate_operation_support(&[origin]) {
             body_effects.compose(&EffectCoverageFragment::default());
+            result = None;
         }
         for receipt in body_effects.operation_support_receipts() {
             if let Some(cell) = receipt.projected_cell() {
@@ -8808,6 +8878,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             },
             &dependencies,
         );
+        result
     }
 
     /// Admit the ordered plan, not a read receipt. A member's receiver read
@@ -14600,6 +14671,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             self.retain_foreign_arguments(&summary, &args);
             self.record_foreign_call_use(call, &summary);
+            let mut conditional_result = None;
             if ordered_operands {
                 if let Some(covered) = self.covered_foreign_call_summary(call.kind, &call.callee) {
                     // This independently closed body needs no conditional
@@ -14608,20 +14680,32 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     outcome.effect_coverage =
                         self.foreign_body_effects(call, &covered, operands_may_throw);
                 } else {
-                    self.apply_conditional_foreign_body(call, &args, operands_may_throw, outcome);
+                    conditional_result = self.instantiate_conditional_foreign_body(
+                        call,
+                        &args,
+                        operands_may_throw,
+                        outcome,
+                    );
                 }
             }
             return CallTransfer::requested(needs_value, || {
-                let mut values = self.foreign_call_result(&summary, &args);
+                // An uncovered coarse summary cannot overwrite the borrowed
+                // value selected by the same checked conditional body that
+                // supplied the call's effects. An independently closed
+                // foreign body above retains its existing result priority.
+                let mut values =
+                    conditional_result.unwrap_or_else(|| self.foreign_call_result(&summary, &args));
                 if operands_may_throw {
                     values.insert(AbstractValue::Value(Value::Unavailable));
                 }
                 values
             });
         }
-        if ordered_operands && !call.has_spread {
-            self.apply_conditional_foreign_body(call, &args, operands_may_throw, outcome);
-        }
+        let conditional_result = if ordered_operands && !call.has_spread {
+            self.instantiate_conditional_foreign_body(call, &args, operands_may_throw, outcome)
+        } else {
+            None
+        };
         if call.kind == CallKind::Call
             && !call.has_spread
             && self.source_record_factory(&call.callee, &call.args)
@@ -14713,6 +14797,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 },
                 outcome,
             );
+        }
+        if needs_value && let Some(mut values) = conditional_result {
+            // The conditional result is selected from the same checked body
+            // application as its effects, after ordered operands have run.
+            // It retains the caller's actual argument/property values and
+            // never constructs a provider-world heap identity.
+            if operands_may_throw {
+                values.insert(AbstractValue::Value(Value::Unavailable));
+            }
+            return CallTransfer::Values(values);
         }
         if self.host_call_does_not_reenter(call) {
             return CallTransfer::EffectsOnly;

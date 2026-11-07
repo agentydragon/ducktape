@@ -3653,6 +3653,18 @@ descriptor-wrapper result capability; it does not replace that capability or
 infer a call result from effects. Saved summaries retain the input conditions,
 parameterized reads, source identity and dependencies, without query-scope IDs.
 
+The same guarded execution may carry an optional complete result projection for
+exact formal argument zero, a checked data property of argument zero, or proved
+primitive kinds. All alternatives must be representable; a fresh allocation,
+capture, accessor payload, unavailable value, or other unsupported alternative
+removes the whole projection. After operands run, one checked body application
+instantiates both its effects and result: argument results retain the caller's
+existing value identities, and property results use the current shared
+own-data read. This projection creates no provider or caller heap identity and
+does not encode ordered stores. Independently closed ordinary foreign-call
+results retain priority; candidate provider-target and initialization
+obligations remain required before relocation is accepted.
+
 Covered straight-line bodies use the same ordered local-operation executor as
 application execution. This includes local declarations and assignments,
 sequences, returns, and checked writes to existing own data fields of fresh

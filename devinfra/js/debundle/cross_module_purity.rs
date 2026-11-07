@@ -1627,6 +1627,7 @@ pub fn resolve_imported_callable_summaries(
                 callable_key,
                 input: body.input,
                 reads: body.reads,
+                result_projection: body.result_projection,
                 native_operations: body.native_operations,
                 effects: body.effects,
                 module_cells: body.module_cells,

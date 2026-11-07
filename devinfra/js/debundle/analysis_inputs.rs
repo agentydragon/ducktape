@@ -228,6 +228,41 @@ pub(crate) enum ParameterHeapRead {
     OwnProperty { argument: usize, property: String },
 }
 
+/// One complete alternative of a conditional provider body's borrowed result.
+/// These projections retain caller values and never name provider allocations.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum ConditionalResultAlternative {
+    Argument { index: usize },
+    Property { argument: usize, property: String },
+    Primitive { kinds: PrimKinds },
+}
+
+/// A nonempty, all-or-nothing set of result alternatives from one provider
+/// execution. An unrepresentable provider result has no projection.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ConditionalResultProjection {
+    pub(crate) alternatives: BTreeSet<ConditionalResultAlternative>,
+}
+
+impl ConditionalResultProjection {
+    pub(crate) fn is_well_formed(&self) -> bool {
+        !self.alternatives.is_empty()
+            && self
+                .alternatives
+                .iter()
+                .all(|alternative| match alternative {
+                    ConditionalResultAlternative::Argument { index } => *index == 0,
+                    ConditionalResultAlternative::Property { argument, property } => {
+                        *argument == 0 && !property.is_empty()
+                    }
+                    ConditionalResultAlternative::Primitive { kinds } => {
+                        !kinds.is_empty() && kinds.without(PrimKinds::ANY).is_empty()
+                    }
+                })
+    }
+}
+
 /// Conditional body evidence is independent of every returned-value capability.
 /// Its argument layout and parameterized footprint must be instantiated together.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -238,6 +273,10 @@ pub(crate) struct ConditionalForeignBody {
     pub(crate) callable_key: u32,
     pub(crate) input: RecordInputShape,
     pub(crate) reads: BTreeSet<ParameterHeapRead>,
+    /// Complete borrowed/primitive result alternatives from the same guarded
+    /// provider execution; fresh or otherwise unsupported results are absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) result_projection: Option<ConditionalResultProjection>,
     pub(crate) native_operations: BTreeSet<ForeignNativeOperation>,
     pub(crate) effects: crate::facts::sync_effects::EffectCoverageFragment,
     /// Runtime-only lexical module-cell footprint. The saved artifact codec
