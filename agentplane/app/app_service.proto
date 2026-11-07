@@ -21,6 +21,11 @@ service AppService {
     option (google.api.http) = {get: "/v1/presets"};
   }
 
+  // Browser-safe deployment settings for optional search links.
+  rpc GetFrontendConfig(google.protobuf.Empty) returns (FrontendConfig) {
+    option (google.api.http) = {get: "/v1/frontend-config"};
+  }
+
   // App-owned Thread metadata; Session fields belong to History.
   // Get metadata for an app-owned Thread.
   rpc GetThreadMetadata(ThreadMetadataTarget) returns (ThreadMetadata) {
@@ -97,6 +102,25 @@ message HarnessModelOffers {
 
 message ListSandboxPresetsResponse {
   repeated SandboxPreset presets = 1;
+}
+
+message FrontendConfig {
+  TraceSearchSettings trace_search = 1;
+  LangfuseSearchSettings langfuse_search = 2;
+}
+
+message TraceSearchSettings {
+  string grafana_base_url = 1;
+  string tempo_datasource_uid = 2;
+  string deployment_environment = 3;
+}
+
+message LangfuseSearchSettings {
+  string base_url = 1;
+  string project_id = 2;
+  string session_metadata_key = 3;
+  string sandbox_namespace_metadata_key = 4;
+  string sandbox_service_account_metadata_key = 5;
 }
 
 message SandboxPreset {

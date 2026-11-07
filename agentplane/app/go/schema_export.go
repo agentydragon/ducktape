@@ -15,9 +15,6 @@ func exportOpenAPI(writer io.Writer) error {
 	server := NewHTTPServer(nil)
 	defer server.Close()
 	config := Config{}
-	if err := RegisterCoreRoutes(server, config); err != nil {
-		return fmt.Errorf("register core routes: %w", err)
-	}
 	RegisterPolicyRoutes(server, config, nil, (*policyaccess.Access)(nil))
 	RegisterOperatorRoutes(server, nil, nil, "")
 	RegisterStatusRoutes(server, nil)

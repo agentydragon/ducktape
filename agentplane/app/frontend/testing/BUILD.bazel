@@ -46,9 +46,9 @@ ts_library(
     srcs = ["langfuse_search.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
-        "//agentplane/app/frontend:schema",
     ],
 )
 

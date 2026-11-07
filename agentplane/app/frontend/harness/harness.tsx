@@ -2643,19 +2643,19 @@ function pendingActions(): ActionRequestView[] {
 routes.push(
   [
     "GET",
-    /^\/frontend-config$/,
+    /^\/upstream\/app-config\/v1\/frontend-config$/,
     () => ({
-      trace_search: {
-        grafana_base_url: "https://grafana.test.invalid",
-        tempo_datasource_uid: "tempo-test",
-        deployment_environment: "agentplane-visual-test",
+      traceSearch: {
+        grafanaBaseUrl: "https://grafana.test.invalid",
+        tempoDatasourceUid: "tempo-test",
+        deploymentEnvironment: "agentplane-visual-test",
       },
-      langfuse_search: {
-        base_url: "https://langfuse.test.invalid",
-        project_id: "langfuse-visual-test",
-        session_metadata_key: "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
-        sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
-        sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
+      langfuseSearch: {
+        baseUrl: "https://langfuse.test.invalid",
+        projectId: "langfuse-visual-test",
+        sessionMetadataKey: "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
+        sandboxNamespaceMetadataKey: "attributes.agentplane.namespace",
+        sandboxServiceAccountMetadataKey: "attributes.agentplane.service_account",
       },
     }),
   ],

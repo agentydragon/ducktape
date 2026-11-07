@@ -3,39 +3,26 @@ package main
 import (
 	"fmt"
 	"net/url"
-
-	"github.com/danielgtaylor/huma/v2"
 )
 
 // FrontendConfig is the browser-safe subset of deployment settings.
 type FrontendConfig struct {
-	TraceSearch    *TraceSearchSettings    `mapstructure:"trace_search" json:"trace_search"`
-	LangfuseSearch *LangfuseSearchSettings `mapstructure:"langfuse_search" json:"langfuse_search"`
-}
-
-// Huma's nullable tag only supports inline types. These object references need an explicit
-// union with null to document the omitted deployment settings returned by the endpoint.
-func (FrontendConfig) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	for _, name := range []string{"trace_search", "langfuse_search"} {
-		schema.Properties[name] = &huma.Schema{AnyOf: []*huma.Schema{
-			schema.Properties[name], {Type: "null"},
-		}}
-	}
-	return schema
+	TraceSearch    *TraceSearchSettings    `mapstructure:"trace_search"`
+	LangfuseSearch *LangfuseSearchSettings `mapstructure:"langfuse_search"`
 }
 
 type TraceSearchSettings struct {
-	GrafanaBaseURL        string `mapstructure:"grafana_base_url" json:"grafana_base_url" format:"uri"`
-	TempoDatasourceUID    string `mapstructure:"tempo_datasource_uid" json:"tempo_datasource_uid" minLength:"1"`
-	DeploymentEnvironment string `mapstructure:"deployment_environment" json:"deployment_environment" minLength:"1"`
+	GrafanaBaseURL        string `mapstructure:"grafana_base_url"`
+	TempoDatasourceUID    string `mapstructure:"tempo_datasource_uid"`
+	DeploymentEnvironment string `mapstructure:"deployment_environment"`
 }
 
 type LangfuseSearchSettings struct {
-	BaseURL                          string `mapstructure:"base_url" json:"base_url" format:"uri"`
-	ProjectID                        string `mapstructure:"project_id" json:"project_id" minLength:"1"`
-	SessionMetadataKey               string `mapstructure:"session_metadata_key" json:"session_metadata_key" minLength:"1"`
-	SandboxNamespaceMetadataKey      string `mapstructure:"sandbox_namespace_metadata_key" json:"sandbox_namespace_metadata_key" minLength:"1"`
-	SandboxServiceAccountMetadataKey string `mapstructure:"sandbox_service_account_metadata_key" json:"sandbox_service_account_metadata_key" minLength:"1"`
+	BaseURL                          string `mapstructure:"base_url"`
+	ProjectID                        string `mapstructure:"project_id"`
+	SessionMetadataKey               string `mapstructure:"session_metadata_key"`
+	SandboxNamespaceMetadataKey      string `mapstructure:"sandbox_namespace_metadata_key"`
+	SandboxServiceAccountMetadataKey string `mapstructure:"sandbox_service_account_metadata_key"`
 }
 
 func (c FrontendConfig) validate() error {

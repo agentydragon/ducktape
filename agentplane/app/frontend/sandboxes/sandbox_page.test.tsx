@@ -6,7 +6,7 @@ import { FeedStatus, SessionSummarySchema } from "../../../history_service/histo
 
 import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
-import type { LangfuseSearchSettings, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, TraceSearchSettings } from "../app_config_client";
 import type { ThreadView } from "../threads/client";
 import {
   TEST_REASONING_EFFORTS,
@@ -236,9 +236,26 @@ async function render(
     if (path === "/sandboxes/form") {
       return Promise.resolve(Response.json({ policy_sets: [] }));
     }
-    if (path === "/frontend-config") {
+    if (path === "/upstream/app-config/v1/frontend-config") {
       return Promise.resolve(
-        Response.json({ trace_search: traceSearchSettings, langfuse_search: langfuseSearchSettings })
+        Response.json({
+          traceSearch: traceSearchSettings
+            ? {
+                grafanaBaseUrl: traceSearchSettings.grafana_base_url,
+                tempoDatasourceUid: traceSearchSettings.tempo_datasource_uid,
+                deploymentEnvironment: traceSearchSettings.deployment_environment,
+              }
+            : null,
+          langfuseSearch: langfuseSearchSettings
+            ? {
+                baseUrl: langfuseSearchSettings.base_url,
+                projectId: langfuseSearchSettings.project_id,
+                sessionMetadataKey: langfuseSearchSettings.session_metadata_key,
+                sandboxNamespaceMetadataKey: langfuseSearchSettings.sandbox_namespace_metadata_key,
+                sandboxServiceAccountMetadataKey: langfuseSearchSettings.sandbox_service_account_metadata_key,
+              }
+            : null,
+        })
       );
     }
     if (path === "/upstream/app-config/v1/presets") {

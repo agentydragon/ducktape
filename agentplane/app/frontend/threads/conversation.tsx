@@ -1,6 +1,6 @@
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
-import type { LangfuseSearchSettings, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, TraceSearchSettings } from "../app_config_client";
 import type { ThreadView } from "./client";
 import { Harness, SetupState } from "../../../proto/session_pb";
 import { IconDotsVertical, IconHistory } from "../icons";

@@ -3,13 +3,34 @@ import { fromJson, type JsonValue as ProtoJsonValue } from "@bufbuild/protobuf";
 import { fetchWithLogin, HttpError } from "./client";
 import {
   ListModelsResponseSchema,
+  FrontendConfigSchema,
   ListSandboxPresetsResponseSchema,
+  type FrontendConfig as ProtoFrontendConfig,
   type ListModelsResponse,
   type ListSandboxPresetsResponse,
 } from "../app_service_pb";
 import { Harness as ProtoHarness } from "../../proto/session_pb";
 
 export type Harness = "HARNESS_CLAUDE" | "HARNESS_CODEX" | "HARNESS_CENTRAL_SAMPLER";
+
+export type TraceSearchSettings = {
+  grafana_base_url: string;
+  tempo_datasource_uid: string;
+  deployment_environment: string;
+};
+
+export type LangfuseSearchSettings = {
+  base_url: string;
+  project_id: string;
+  session_metadata_key: string;
+  sandbox_namespace_metadata_key: string;
+  sandbox_service_account_metadata_key: string;
+};
+
+export type FrontendConfig = {
+  trace_search: TraceSearchSettings | null;
+  langfuse_search: LangfuseSearchSettings | null;
+};
 
 export type ModelOption = {
   model: string;
@@ -110,4 +131,26 @@ export async function listSandboxPresets(): Promise<SandboxPresetView[]> {
     },
     bootstrap: preset.bootstrap,
   }));
+}
+
+export async function getFrontendConfig(): Promise<FrontendConfig> {
+  const response: ProtoFrontendConfig = fromJson(FrontendConfigSchema, await call("/frontend-config"));
+  return {
+    trace_search: response.traceSearch
+      ? {
+          grafana_base_url: response.traceSearch.grafanaBaseUrl,
+          tempo_datasource_uid: response.traceSearch.tempoDatasourceUid,
+          deployment_environment: response.traceSearch.deploymentEnvironment,
+        }
+      : null,
+    langfuse_search: response.langfuseSearch
+      ? {
+          base_url: response.langfuseSearch.baseUrl,
+          project_id: response.langfuseSearch.projectId,
+          session_metadata_key: response.langfuseSearch.sessionMetadataKey,
+          sandbox_namespace_metadata_key: response.langfuseSearch.sandboxNamespaceMetadataKey,
+          sandbox_service_account_metadata_key: response.langfuseSearch.sandboxServiceAccountMetadataKey,
+        }
+      : null,
+  };
 }
