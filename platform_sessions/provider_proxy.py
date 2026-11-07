@@ -10,8 +10,11 @@ from starlette.types import Receive, Scope, Send
 
 from platform_sessions.auth import BearerAuth
 from platform_sessions.proxy import _REQUEST_PRIVATE, _RESPONSE_PRIVATE, ProxyInstance, ProxyRequest, _filter_headers
-from platform_sessions.remote_transport import RESULT_HEADER, RESULT_VERSION
 from platform_sessions.routes import authorize_route
+
+
+RESULT_HEADER = b"x-platform-session-proxy-result"
+RESULT_VERSION = b"1"
 
 
 class ProviderProxy:

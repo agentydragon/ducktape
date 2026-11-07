@@ -1,9 +1,7 @@
 """Exercise the authenticated private proxy and the gateway-to-provider hop."""
 
-import asyncio
 from pathlib import PurePosixPath
 
-import httpx2
 import pytest_bazel
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, SecretStr
@@ -12,7 +10,6 @@ from platform_sessions.auth import Bearer, BearerAuth
 from platform_sessions.provider_proxy import ProviderProxy
 from platform_sessions.proxy import HeaderPolicy, ProxyInstance, ProxyRequest, ProxyResponse
 from platform_sessions.registry import IntegrationInstance
-from platform_sessions.remote_transport import RemoteSessionTransport
 from platform_sessions.routes import Route
 
 
@@ -97,67 +94,6 @@ def test_private_endpoint_authenticates_and_enforces_routes():
     assert "secret" not in response.text
     assert len(local.requests) == 3
 
-
-def test_gateway_and_provider_hop_preserve_bytes_and_identity():
-    app, local = provider()
-    local.response = ProxyResponse(
-        403, ((b"location", b"/api/orders/2"), (b"x-duplicate", b"one"), (b"x-duplicate", b"two")), b"\x00\xff"
-    )
-
-    # Connect the synchronous HTTP client to the ASGI server in memory, preserving raw ASGI headers and body.
-    def bridge(request: httpx2.Request) -> httpx2.Response:
-        async def invoke():
-            sent = []
-            scope = {
-                "type": "http",
-                "asgi": {"version": "3.0"},
-                "http_version": "1.1",
-                "method": request.method,
-                "scheme": "https",
-                "path": request.url.path,
-                "raw_path": request.url.raw_path.split(b"?", 1)[0],
-                "query_string": request.url.query,
-                "headers": request.headers.raw,
-                "client": ("test", 1),
-                "server": ("provider.internal", 443),
-                "root_path": "",
-            }
-
-            async def receive():
-                return {"type": "http.request", "body": request.content, "more_body": False}
-
-            async def send(message):
-                sent.append(message)
-
-            await app(scope, receive, send)
-            return sent
-
-        messages = asyncio.run(invoke())
-        start, body = messages
-        return httpx2.Response(start["status"], headers=start["headers"], stream=httpx2.ByteStream(body["body"]))
-
-    remote = RemoteSessionTransport(
-        instance_id="example",
-        upstream_base_url="https://upstream.test/api",
-        provider_base_url="https://provider.internal",
-        owner_token=SecretStr("owner-secret"),
-        route_token=SecretStr("route-secret"),
-        transport=httpx2.MockTransport(bridge),
-    )
-    result = asyncio.run(remote.request(ProxyRequest("GET", "https://upstream.test/api/orders/1", b"x=%2f", (), b"")))
-    assert result.status == 403
-    assert result.body == b"\x00\xff"
-    assert (b"location", b"/api/orders/2") in result.headers
-    assert [v for k, v in result.headers if k == b"x-duplicate"] == [b"one", b"two"]
-    assert local.requests[-1].query == b"x=%2f"
-    assert not local.requests[-1].owner
-
-    result = asyncio.run(
-        remote.request(ProxyRequest("DELETE", "https://upstream.test/api/other", b"", (), b"", owner=True))
-    )
-    assert result.status == 403
-    assert local.requests[-1].owner
-    assert len(local.requests) == 2
 
 
 if __name__ == "__main__":
