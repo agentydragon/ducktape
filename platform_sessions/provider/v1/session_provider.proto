@@ -65,6 +65,17 @@ message ProviderInstanceInfo {
   repeated SessionImportFormat accepted_session_import_formats = 4;
   // Whether this instance can verify an export candidate without installing it.
   bool supports_candidate_verification = 5;
+  // Provider-authored owner guidance for exporting and importing a session. Text is presentation
+  // only and must not contain credentials, upstream response bodies, or member data.
+  repeated ExportInstruction instructions = 6;
+}
+
+message ExportInstruction {
+  // Nonempty UTF-8 owner guidance, at most 2,048 bytes.
+  string text = 1;
+  // Optional nonempty owner-UI action hint, at most 128 bytes, such as "copy". This is display
+  // metadata, not a command to run.
+  optional string command = 2;
 }
 
 message RouteDescription {
@@ -113,13 +124,26 @@ message GetSessionResponse {
 message SessionSnapshot {
   // Providers must return a known state; UNSPECIFIED is a protocol error.
   SessionState state = 1;
-  // Time at which the provider last changed this locally known state.
+  // Time at which the provider last changed this locally known state. May be absent for
+  // STORAGE_ERROR when the provider cannot read the state or its transition time.
   google.protobuf.Timestamp state_changed_at = 2;
   // Absent until this process has completed a probe. A failed RPC transport is not a completed
   // probe and therefore does not create a ProbeResult.
   ProbeResult last_probe = 3;
   // Most recent successful authentication verification, even if a later probe failed.
   google.protobuf.Timestamp last_verified_at = 4;
+  // Time at which the current session candidate was durably imported, when known.
+  google.protobuf.Timestamp imported_at = 5;
+  // Optional provider-authored owner guidance. It is presentation only; typed state and probe
+  // results remain authoritative. Never put credentials, upstream bodies, or member data here.
+  OwnerPresentation owner_presentation = 6;
+}
+
+message OwnerPresentation {
+  // Nonempty sanitized text, at most 512 bytes.
+  string message = 1;
+  // Optional nonempty sanitized help text, at most 4,096 bytes.
+  optional string help = 2;
 }
 
 enum SessionState {
@@ -132,6 +156,8 @@ enum SessionState {
   // Use when an ambiguous upstream interaction may have changed credentials and local state
   // cannot establish which session is current. Do not infer that retrying is safe.
   SESSION_STATE_OUTCOME_UNKNOWN = 6;
+  // The provider could not read its local session state. This does not mean no session exists.
+  SESSION_STATE_STORAGE_ERROR = 7;
 }
 
 message ImportSessionRequest {

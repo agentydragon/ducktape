@@ -56,6 +56,10 @@ class SyntheticProvider(ProviderBackend):
                         pb.SessionImportFormat(media_type=_CANDIDATE_MEDIA_TYPE, version=_CANDIDATE_VERSION)
                     ],
                     supports_candidate_verification=True,
+                    instructions=[
+                        pb.ExportInstruction(text="Export a session from the provider account."),
+                        pb.ExportInstruction(text="Import the exported session here.", command="copy"),
+                    ],
                 ),
                 pb.ProviderInstanceInfo(
                     instance_id="without-verification",
@@ -137,6 +141,9 @@ async def test_info_candidate_verification_is_separate_from_installed_session_pr
         assert info.provider.instances[0].routes[0] == info.provider.instances[1].routes[0]
         assert info.provider.instances[0].routes[0].access_class == pb.ROUTE_ACCESS_CLASS_READ_ONLY
         assert info.provider.instances[0].supports_candidate_verification
+        assert info.provider.instances[0].instructions[0].text == "Export a session from the provider account."
+        assert not info.provider.instances[0].instructions[0].HasField("command")
+        assert info.provider.instances[0].instructions[1].command == "copy"
 
         verified = await client.VerifyCandidate(
             pb.VerifyCandidateRequest(
@@ -324,6 +331,61 @@ async def test_invalid_provider_snapshot_is_not_sent_as_success() -> None:
 async def test_invalid_state_timestamp_is_not_sent_as_success() -> None:
     provider = SyntheticProvider()
     provider.snapshot.state_changed_at.seconds = 253402300800
+    async with served_provider(provider) as (client, _service):
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+
+
+async def test_snapshot_supports_owner_presentation_imported_at_and_storage_error() -> None:
+    provider = SyntheticProvider()
+    provider.snapshot = pb.SessionSnapshot(
+        state=pb.SESSION_STATE_VERIFIED,
+        owner_presentation=pb.OwnerPresentation(
+            message="Session is verified.", help="If this changes, export a fresh session from the provider."
+        ),
+    )
+    provider.snapshot.state_changed_at.GetCurrentTime()
+    provider.snapshot.imported_at.GetCurrentTime()
+    async with served_provider(provider) as (client, _service):
+        response = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
+        assert response.snapshot.state == pb.SESSION_STATE_VERIFIED
+        assert response.snapshot.owner_presentation.message == "Session is verified."
+        assert response.snapshot.owner_presentation.help.startswith("If this changes")
+        assert response.snapshot.HasField("imported_at")
+
+        provider.snapshot = pb.SessionSnapshot(state=pb.SESSION_STATE_STORAGE_ERROR)
+        storage_error = await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
+        assert storage_error.snapshot.state == pb.SESSION_STATE_STORAGE_ERROR
+        assert not storage_error.snapshot.HasField("state_changed_at")
+
+        provider.snapshot = pb.SessionSnapshot(
+            state=pb.SESSION_STATE_VERIFIED, owner_presentation=pb.OwnerPresentation(message="Verified.")
+        )
+        provider.snapshot.state_changed_at.GetCurrentTime()
+        provider.snapshot.imported_at.seconds = 253402300800
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+
+
+def test_provider_info_rejects_invalid_export_instruction_text() -> None:
+    provider = SyntheticProvider()
+    info = provider.info
+    info.instances[0].instructions[0].text = "\x01hidden control character"
+
+    class InvalidInfoProvider(SyntheticProvider):
+        @property
+        def info(self) -> pb.ProviderInfo:
+            return info
+
+    with pytest.raises(ValueError, match="export instruction text"):
+        SessionProviderControlService(InvalidInfoProvider())
+
+
+async def test_snapshot_rejects_invalid_owner_presentation() -> None:
+    provider = SyntheticProvider()
+    provider.snapshot.owner_presentation.message = ""
     async with served_provider(provider) as (client, _service):
         with pytest.raises(grpc.aio.AioRpcError) as error:
             await client.GetSession(pb.GetSessionRequest(instance=instance_ref()))
