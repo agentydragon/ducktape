@@ -1,6 +1,8 @@
 //! Stable imported primitives cannot execute ToPrimitive callbacks, and a
 //! coercion of operands whose types cannot throw is pure.
-use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
+use analysis::reports::schema::{
+    BindingEffectAuthorityReport, LexicalBindingEffectBody, LexicalEffectRoot,
+};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
@@ -174,15 +176,18 @@ fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &st
     else {
         panic!("{binding} lacks an operation receipt: {execution:#?}");
     };
-    assert_eq!(receipt.binding, binding, "{receipt:#?}");
+    let LexicalEffectRoot::BindingInitializer {
+        binding: receipt_binding,
+        initializer_span,
+    } = &receipt.root
+    else {
+        panic!("{binding} lacks an initializer root: {receipt:#?}");
+    };
+    assert_eq!(receipt_binding, binding, "{receipt:#?}");
     assert_eq!(receipt.owner, owner.statement_ordinal, "{receipt:#?}");
     assert_eq!(receipt.calls.len(), 1, "{receipt:#?}");
     let call = &receipt.calls[0];
-    assert_eq!(
-        receipt.initializer_span,
-        Some(call.call_span),
-        "{receipt:#?}"
-    );
+    assert_eq!(*initializer_span, call.call_span, "{receipt:#?}");
     let target = graph
         .nodes
         .iter()
