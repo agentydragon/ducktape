@@ -233,8 +233,8 @@ async function render(
       }
       return Promise.resolve(Response.json(testModelCatalogProtoJSON(catalog)));
     }
-    if (path === "/sandboxes/form") {
-      return Promise.resolve(Response.json({ policy_sets: [] }));
+    if (path === "/upstream/app-config/v1/sandbox-form") {
+      return Promise.resolve(Response.json({ policySets: [], newSandboxDefaults: { wakeOnSend: false } }));
     }
     if (path === "/upstream/app-config/v1/frontend-config") {
       return Promise.resolve(

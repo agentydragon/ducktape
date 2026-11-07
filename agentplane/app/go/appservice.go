@@ -12,6 +12,7 @@ type appService struct {
 	apppb.UnimplementedAppServiceServer
 	config           Config
 	systemStatus     *status.Checker
+	policySetNames   policySetNameReader
 	environments     sessionEnvironmentReader
 	bridge           sessionOpener
 	runnerStatus     runnerStatusReader

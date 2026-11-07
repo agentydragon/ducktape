@@ -4,7 +4,8 @@ import { type JSX, useEffect, useState } from "react";
 import type { PolicyBinding } from "../../../policy/v1/policy_service_pb";
 import type { PolicyResources } from "../policy/watch";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
-import { api, displayableError, fetchWithLogin } from "../client";
+import { displayableError, fetchWithLogin } from "../client";
+import { getSandboxForm } from "../app_config_client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
@@ -90,11 +91,13 @@ export function PolicyBindingsSection({
   const [granting, setGranting] = useState(false);
 
   useEffect(() => {
-    void (async () => {
-      const { data, error: failure } = await api.GET("/sandboxes/form");
-      setError(failure ? displayableError(failure) : null);
-      if (!failure) setPolicySets(data.policy_sets);
-    })();
+    void getSandboxForm().then(
+      (form) => {
+        setError(null);
+        setPolicySets(form.policy_sets);
+      },
+      (failure: unknown) => setError(displayableError(failure))
+    );
   }, []);
 
   // What the API server now holds, granted or revoked, arrives on the page's stream; nothing to
