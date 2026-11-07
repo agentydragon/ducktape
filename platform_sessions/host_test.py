@@ -1,6 +1,8 @@
 """The host manages synthetic integrations without owning provider credentials."""
 
+import asyncio
 import json
+from dataclasses import replace
 from pathlib import PurePosixPath
 
 import pytest
@@ -28,7 +30,7 @@ class FakeIntegration:
         self.session = None
         self.checks = 0
 
-    def metadata(self):
+    async def metadata(self):
         return {"id": self.config.id, "type": self.config.type, "instructions": []}
 
     def parse(self, body):
@@ -89,6 +91,32 @@ def test_owner_api_and_candidate_verification():
         assert client.get("/").status_code == 200
         assert client.get("/status.js").status_code == 200
         assert client.get("/status.css").status_code == 200
+
+
+def test_list_awaits_metadata_concurrently_and_preserves_configured_order():
+    second_started = asyncio.Event()
+
+    class WaitingIntegration(FakeIntegration):
+        async def metadata(self):
+            await asyncio.wait_for(second_started.wait(), timeout=1)
+            return await super().metadata()
+
+    class SignalingIntegration(FakeIntegration):
+        async def metadata(self):
+            second_started.set()
+            return await super().metadata()
+
+    first = WaitingIntegration()
+    second = SignalingIntegration()
+    second.config = replace(second.config, id="second")
+    app = create_app([first, second], "https://service.test", require_owner=owner, auth=BearerAuth([]))
+    with TestClient(app) as client:
+        response = client.get("/api/integrations", headers={"cookie": "owner=yes"})
+    assert response.status_code == 200
+    assert response.json() == [
+        {"id": "example", "type": "example", "instructions": []},
+        {"id": "second", "type": "example", "instructions": []},
+    ]
 
 
 def test_candidate_limits_and_unsupported_verification():
