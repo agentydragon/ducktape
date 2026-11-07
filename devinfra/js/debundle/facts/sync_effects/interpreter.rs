@@ -5660,6 +5660,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 },
                 self.state.assumption.is_none(),
             );
+            let mut element_dependencies = dependencies.clone();
+            element_dependencies.extend(&self.settled_prefix_dependencies());
+            let element_selection =
+                CallableSelection::observed(values, Box::new(element_dependencies));
             let mut nested = self.invoke_selected(
                 key,
                 vec![
@@ -5667,7 +5671,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     Values::from([AbstractValue::Value(Value::Prim(PrimKinds::NUMBER))]),
                     source.clone(),
                 ],
-                vec![None; 3],
+                vec![element_selection, None, None],
                 captured.clone(),
                 false,
             );
@@ -9493,7 +9497,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.invalidate_writable_object(*object);
                 }
                 AbstractValue::Instance(class, _, _) => {
-                    changed |= self.state.tainted_classes.insert(*class);
+                    changed |= self.state.unsettled_objects.insert(*class);
+                    self.invalidate_writable_object(*class);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
@@ -9556,7 +9561,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.invalidate_own_descriptor_map(*site);
                 }
                 AbstractValue::Instance(class, _, _) => {
-                    changed |= self.state.tainted_classes.insert(*class);
+                    changed |= self.state.tainted_objects.insert(*class);
+                    self.invalidate_writable_object(*class);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                     self.state.tainted_functions.insert(*key);
