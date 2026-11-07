@@ -1852,12 +1852,16 @@ fn numeric_local_updates_keep_const_tdz_and_symbol_failures_abrupt() {
 }
 
 #[test]
-fn numeric_local_updates_refuse_possible_bigint_throw_and_object_coercion() {
+fn numeric_local_updates_refuse_bigint_coercion_and_captured_cells() {
     for (body, expected) in [
         ("let value = 1n; return value++;", "1n 0\n"),
         (
             "let value = { valueOf() { return ++calls; } }; return value++;",
             "1 1\n",
+        ),
+        (
+            "let value = 1; const read = () => value; value++; return read();",
+            "2 0\n",
         ),
     ] {
         let source = format!(

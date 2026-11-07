@@ -1799,7 +1799,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             // receipt families, independently of a stored value.
             EffectCoverageFragment::default()
         } else {
-            EffectCoverageFragment::lexical_operation()
+            // This activation-local binding has no live cell to expose a
+            // heap, global, or host effect. Its value's evaluation is covered
+            // separately by the ordered operation that produced it.
+            EffectCoverageFragment::no_effects()
         }
     }
     fn instantiate_bindings(&mut self, frame: &mut LocalFrame) {
