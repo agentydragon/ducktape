@@ -8,17 +8,14 @@ import (
 	"log/slog"
 	"maps"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -163,21 +160,6 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 	failed <- fmt.Errorf("%s: %w", role, err)
 }
 
-// serveFacade answers the Dispatcher's HTTP/JSON form on listener, forwarding each request over
-// loopback to the gRPC server so the servicer authenticates it.
-func serveFacade(ctx context.Context, listener net.Listener, grpcListener net.Listener, failed chan<- error) (*http.Server, error) {
-	handler, err := facade.NewHandler(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcListener.Addr().(*net.TCPAddr).Port)), 0,
-		dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
-		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
-	if err != nil {
-		return nil, err
-	}
-	// No write timeout: WatchDispatches streams for its lease.
-	server := &http.Server{Handler: observability.HTTPHandler(handler), ReadHeaderTimeout: 10 * time.Second}
-	go func() { reportUnexpected(ctx, failed, "HTTP listener", server.Serve(listener)) }()
-	return server, nil
-}
-
 func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DispatcherDatabaseURL, migrations.Up); err != nil {
 		return err
@@ -191,19 +173,11 @@ func listenAndServe(ctx context.Context, c config) error {
 		return fmt.Errorf("gRPC listener: %w", err)
 	}
 	defer listener.Close()
-	var httpListener net.Listener
-	if c.HTTPListenAddress != "" {
-		httpListener, err = netlistener.Open(c.HTTPListenAddress)
-		if err != nil {
-			return fmt.Errorf("HTTP listener: %w", err)
-		}
-		defer httpListener.Close()
-	}
-	return serve(ctx, c, listener, httpListener)
+	return serve(ctx, c, listener)
 }
 
-// serve uses supplied listeners; a nil HTTP listener disables the facade.
-func serve(ctx context.Context, c config, listener, httpListener net.Listener) error {
+// serve uses the supplied gRPC listener.
+func serve(ctx context.Context, c config, listener net.Listener) error {
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return err
 	}
@@ -409,13 +383,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
 	go func() { reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx)) }()
 
-	var facadeServer *http.Server
-	if httpListener != nil {
-		if facadeServer, err = serveFacade(ctx, httpListener, listener, failed); err != nil {
-			return err
-		}
-	}
-	// Serving once both listeners accept, so a ready replica answers the facade too.
+	// Serving once the gRPC listener accepts calls.
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	var result error
 	select {
@@ -428,11 +396,6 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	cancel()
 	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
 	defer release()
-	if facadeServer != nil {
-		if err := facadeServer.Shutdown(closing); err != nil {
-			slog.Warn("HTTP listener did not drain", "error", err)
-		}
-	}
 	graceful.Stop(closing, server)
 	return result
 }

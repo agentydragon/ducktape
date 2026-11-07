@@ -23,7 +23,6 @@ py_library(
         "//util:settings_contract",
         "@pypi//grpcio",
         "@pypi//grpcio_health_checking",
-        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pyyaml",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
