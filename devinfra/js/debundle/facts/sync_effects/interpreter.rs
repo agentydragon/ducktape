@@ -2580,26 +2580,29 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             && self.executor.inputs.top_bindings.contains(binding)
         {
             let values = frame.environment[binding].clone();
-            let retained = self
-                .executor
-                .state
-                .prefix_values
-                .entry(binding.clone())
-                .or_default();
-            retained.extend(values);
+            let selection = {
+                let retained = self
+                    .executor
+                    .state
+                    .prefix_values
+                    .entry(binding.clone())
+                    .or_default();
+                retained.extend(values);
+                frame
+                    .binding_selections
+                    .get(binding)
+                    .filter(|selection| selection.matches(retained))
+                    .cloned()
+            };
             self.executor
                 .state
                 .prefix_callable_selections
                 .remove(binding);
-            if let Some(selection) = frame
-                .binding_selections
-                .get(binding)
-                .filter(|selection| selection.matches(retained))
-            {
+            if let Some(selection) = selection {
                 self.executor
                     .state
                     .prefix_callable_selections
-                    .insert(binding.clone(), selection.clone());
+                    .insert(binding.clone(), selection);
             }
             self.executor
                 .state
