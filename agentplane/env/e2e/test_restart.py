@@ -493,6 +493,7 @@ async def test_crash_after_dispatch_planned_does_not_retry_uncertain_command(
     model: ScriptedModel,
     spec: session_pb2.SessionSpec,
     driver: RunnerDriver,
+    tmp_path: Path,
 ) -> None:
     """This is intentionally a real runner/harness process test, not a mocked Session method.
 
@@ -511,6 +512,9 @@ async def test_crash_after_dispatch_planned_does_not_retry_uncertain_command(
     seed_request = await model.request()
     await model.reply(seed_request, Text("UNCERTAIN_SEED_OK"))
     await first.until(events.turn_completed)
+    await _wait_for_claude_transcript(
+        spec, first.attached.session_id, first.seen, tmp_path / "state", "UNCERTAIN_SEED_OK"
+    )
     await first.submit_input(command_id, uncertain_text)
     await first.until(events.is_kind("command_admitted"))
     debug = await first.until(events.is_kind("debug_checkpoint"))
