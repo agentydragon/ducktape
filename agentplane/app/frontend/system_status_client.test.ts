@@ -50,6 +50,9 @@ it("decodes the generated AppService ProtoJSON response into the system status v
 });
 
 it("treats an omitted components field as an empty list", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({})));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({}))
+  );
   await expect(getSystemStatus()).resolves.toEqual([]);
 });
