@@ -141,21 +141,27 @@ Omitted claims follow the selected residual policy: they return to entry under
 move into generated atomic-group modules under
 `per_atomic_group`. Under `coarse_atomic_groups`, wholly unclaimed atomic
 groups with equal reachable fixed-owner sets in the strict constraining
-projection share generated modules within intervals between fixed owners in
-the fine layout's simulated evaluation order. Its optional
+projection may share generated modules within intervals between fixed owners
+in the fine layout's simulated evaluation order, subject to compatible public
+export origins in each merged module. Its optional
 `complete_partial_atomic_groups_for` array names authored module paths that
 may adopt unclaimed members of an atomic group only when that module is the
 group's sole authored owner. Paths are checked against the complete authored
 module roster, including during ownership-subset runs. An owner omitted from a
 subset cannot adopt members; those claims follow ordinary coarse residual
-routing. Groups omitted by the simulator remain separate initially. The normal
-complete-assignment gate may then
+routing. Groups omitted by the simulator remain separate initially. Within an
+otherwise matching signature, coarse routing may combine atoms only when each
+public export name still identifies one source binding or source export site
+in the combined module. Incompatible atoms stay in separate generated
+modules; their source export names are preserved, and the ordinary export
+validator remains authoritative. The normal complete-assignment gate may then
 co-locate a whole actual mutual-constraining SCC only when every member is a
-generated coarse residual module; this refinement repeats until no eligible
-SCC remains. It does not merge authored modules or mixed SCCs. Conditional
-diagnostic summaries do not authorize merging. Any remaining blocking cycle
-or actual eager TDZ rejection is still rejected by the unchanged gate. Generated paths use
-`__auto/residual_groups/NNNN`.
+generated coarse residual module and the combined public export names remain
+compatible. This refinement repeats until no eligible SCC remains. It does not
+merge authored modules or mixed SCCs. Conditional diagnostic summaries do not
+authorize merging. Any remaining blocking cycle, duplicate export, or actual
+eager TDZ rejection is still rejected by the unchanged validators. Generated
+paths use `__auto/residual_groups/NNNN`.
 Selected module names and explicit `chunk_renames` remain intact; omitted
 members retain original source names. The authored spec is unchanged.
 
@@ -1034,12 +1040,12 @@ matching section before truncation.
 
 Every configured chunk selects one `unassigned_mode` destination policy:
 
-| `kind`                 | Destination of unclaimed source                                                                                                                                                                                                                             |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inline_in_entry`      | Keep it in the chunk entry.                                                                                                                                                                                                                                 |
-| `catchall_file`        | Collect it in `target`, defaulting to `residual/unhandled`.                                                                                                                                                                                                 |
-| `per_atomic_group`     | Emit one module at `__auto/atomic_groups/NNNN` per wholly unclaimed atomic group.                                                                                                                                                                           |
-| `coarse_atomic_groups` | Optionally complete atoms for listed sole authored owners, then group remaining wholly unclaimed atoms by strict fixed-owner reachability and fine evaluation interval; then co-locate complete actual mutual SCCs made only of generated residual modules. |
+| `kind`                 | Destination of unclaimed source                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inline_in_entry`      | Keep it in the chunk entry.                                                                                                                                                                                                                                                                                                                                                  |
+| `catchall_file`        | Collect it in `target`, defaulting to `residual/unhandled`.                                                                                                                                                                                                                                                                                                                  |
+| `per_atomic_group`     | Emit one module at `__auto/atomic_groups/NNNN` per wholly unclaimed atomic group.                                                                                                                                                                                                                                                                                            |
+| `coarse_atomic_groups` | Optionally complete atoms for listed sole authored owners, then group remaining wholly unclaimed atoms by strict fixed-owner reachability and fine evaluation interval when their public export names have compatible origins; then co-locate complete actual mutual SCCs made only of generated residual modules when their combined public export names remain compatible. |
 
 The optional owner list is an array of chunk-local authored module paths:
 

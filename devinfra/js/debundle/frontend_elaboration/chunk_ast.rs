@@ -26,6 +26,24 @@ pub struct TopLevelDecl {
     pub exported: bool,
 }
 
+/// Identity of one literal public export in the source module. Alias exports
+/// name the local binding they export; re-exports and default/namespace exports
+/// are identified by their source statement and specifier ordinal.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ExportedNameOrigin {
+    Binding(Id),
+    Statement {
+        statement: StatementId,
+        specifier: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SourceExportIdentity {
+    pub public_name: String,
+    pub origin: ExportedNameOrigin,
+}
+
 pub struct ChunkAstAnalysis {
     pub runtime_import_facts: RuntimeImportFacts,
     pub declarations: Vec<TopLevelDecl>,
@@ -60,6 +78,12 @@ pub struct ChunkAstAnalysis {
     /// `av`, growing the export under the same public name would
     /// produce a duplicate-export `SyntaxError` at load time.
     pub pre_existing_public_export_names: HashSet<String>,
+    /// Literal public export names in the already-resolved AST, keyed by their
+    /// owning source statement. Collected in this pass rather than by reparsing
+    /// source text; coarse residual planning uses the identities to decide
+    /// whether independent source units can share one emitted ESM module.
+    pub source_public_export_identities_by_statement:
+        HashMap<StatementId, Vec<SourceExportIdentity>>,
 }
 
 pub fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
@@ -67,11 +91,18 @@ pub fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     let mut declarations = Vec::new();
     let mut pre_existing_entry_exports = HashSet::<Id>::new();
     let mut pre_existing_public_export_names = HashSet::<String>::new();
+    let mut source_public_export_identities_by_statement =
+        HashMap::<StatementId, Vec<SourceExportIdentity>>::new();
     let mut source_unit_syntax_locations = Vec::new();
     let mut destructuring_groups = Vec::new();
     let mut nested_var_statements = Vec::new();
     let mut next_source_unit_ordinal = 0usize;
     for (ordinal, item) in module.body.iter().enumerate() {
+        let statement = StatementId(ordinal);
+        let source_exports = source_public_export_identities(item, statement);
+        if !source_exports.is_empty() {
+            source_public_export_identities_by_statement.insert(statement, source_exports);
+        }
         let (names, exported) = top_level_declaration_names(item);
         let ids = top_level_declaration_ids(item);
         if !names.is_empty() {
@@ -144,7 +175,77 @@ pub fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         nested_var_statements,
         pre_existing_entry_exports,
         pre_existing_public_export_names,
+        source_public_export_identities_by_statement,
     }
+}
+
+fn source_public_export_identities(
+    item: &ModuleItem,
+    statement: StatementId,
+) -> Vec<SourceExportIdentity> {
+    let mut identities = Vec::new();
+    let mut record = |public_name, origin| {
+        identities.push(SourceExportIdentity {
+            public_name,
+            origin,
+        });
+    };
+    match item {
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
+            for (specifier_index, specifier) in named.specifiers.iter().enumerate() {
+                match specifier {
+                    ExportSpecifier::Named(named_specifier) => {
+                        let public_name = named_specifier
+                            .exported
+                            .as_ref()
+                            .map(binding_targets::module_export_name)
+                            .unwrap_or_else(|| {
+                                binding_targets::module_export_name(&named_specifier.orig)
+                            });
+                        let origin = if named.src.is_none()
+                            && let ModuleExportName::Ident(local) = &named_specifier.orig
+                        {
+                            ExportedNameOrigin::Binding(local.to_id())
+                        } else {
+                            ExportedNameOrigin::Statement {
+                                statement,
+                                specifier: specifier_index,
+                            }
+                        };
+                        record(public_name, origin);
+                    }
+                    ExportSpecifier::Namespace(namespace) => record(
+                        binding_targets::module_export_name(&namespace.name),
+                        ExportedNameOrigin::Statement {
+                            statement,
+                            specifier: specifier_index,
+                        },
+                    ),
+                    ExportSpecifier::Default(default) => record(
+                        default.exported.sym.to_string(),
+                        ExportedNameOrigin::Statement {
+                            statement,
+                            specifier: specifier_index,
+                        },
+                    ),
+                }
+            }
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_))
+        | ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => record(
+            "default".to_string(),
+            ExportedNameOrigin::Statement {
+                statement,
+                specifier: 0,
+            },
+        ),
+        // Export declarations are represented by their declared binding
+        // identities in the dependency graph; their generated binding exports
+        // are added by coarse residual planning. `export *` has no literal
+        // public name to collide with a named export.
+        _ => {}
+    }
+    identities
 }
 
 fn record_exact_destructuring_groups(

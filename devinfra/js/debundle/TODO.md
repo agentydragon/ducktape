@@ -383,6 +383,17 @@ paths and source-unit IDs belong in the consuming repo.
   conservative unknown receiver. An older audit or an intact unrelated
   intrinsic family must not silently certify the queried slot.
 
+- **W8 — Keep coarse residual routing useful after initializer-layer splits.**
+  A real authoring round removed named-owner cycles by separating early helper
+  caches from late layout caches, but coarse routing still produced a
+  residual-only ESM TDZ cycle; the same claims passed with per-atomic routing.
+  The passing fallback emitted thousands of tiny residual modules. Minimize the
+  coarse-versus-fine difference into a neutral CLI fixture, then improve bucket
+  placement or source-order-preserving contraction. Keep export namespace checks,
+  the complete assignment gate and emitted ESM validation authoritative. Do not
+  treat a failed coarse heuristic as evidence that the authored owner boundary
+  is intrinsically impossible or hide it with purity assertions.
+
 ### Planner CLI follow-ups
 
 - **Diagnostics toggle for `modules propose`.** `--limit` now bounds

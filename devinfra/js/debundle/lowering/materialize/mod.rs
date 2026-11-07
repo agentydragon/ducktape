@@ -10,7 +10,7 @@ mod plan_builder;
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use frontend_elaboration::ResolvedMemberSite;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
-use source_identity::ChunkId;
+use source_identity::{ChunkId, StatementId};
 use staged_analysis::chunk_facts::{ChunkFacts, ChunkFactsContext, compute_logical_chunk_facts};
 use staged_analysis::progress::emit_debundle_progress;
 
@@ -18,6 +18,7 @@ use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
 use crate::chunk_renames::collect_chunk_renames;
+use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
 use crate::lower::{
     LowerChunkAst, LowerChunkContext, LowerChunkInputs, LowerChunkPlan, LowerChunkSpecFacts,
@@ -46,7 +47,7 @@ use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
 use artifact::{ArtifactIndexes, ChunkBundle, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
-use frontend_elaboration::chunk_ast::ChunkAstAnalysis;
+use frontend_elaboration::chunk_ast::{ChunkAstAnalysis, SourceExportIdentity};
 use frontend_elaboration::{FrontendChunk, MemberClaimProjection};
 use gate::{
     AssignmentAnalysis, RejectedAssignment, SccRejection, ValidatedAssignment,
@@ -64,6 +65,7 @@ use reconstruction::{ChunkGateRejection, GateVerdict};
 use spec::{ChunkRenames, UnassignedMode};
 use spec_resolution::LogicalRequest;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use swc_common::Mark;
 use swc_ecma_ast::*;
 
 /// Per-chunk inputs that identify the chunk and where its outputs
@@ -402,6 +404,7 @@ pub(super) fn finish_logical_chunk(
         declaration_by_name,
         pre_existing_entry_exports,
         pre_existing_public_export_names,
+        source_public_export_identities_by_statement,
         ..
     } = ast_analysis;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
@@ -513,7 +516,12 @@ pub(super) fn finish_logical_chunk(
             chunk_unassigned_mode.partial_atomic_group_completion_owners(),
             &single_authored_owner_groups,
         )?;
-        builder.synthesize_coarse_atomic_groups(&precomputed, &source_unit_layout, target_dir)?;
+        builder.synthesize_coarse_atomic_groups(
+            &precomputed,
+            &source_unit_layout,
+            &source_public_export_identities_by_statement,
+            target_dir,
+        )?;
     }
     builder.route_nested_var_statements(&ast_analysis.nested_var_statements);
     if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
@@ -605,6 +613,9 @@ pub(super) fn finish_logical_chunk(
             &verdict.unrealizable_sccs,
             &generated_residual_plans,
             module_plans.len(),
+            &module_plans,
+            &source_public_export_identities_by_statement,
+            chunk_top_level_mark,
         );
         if residual_sccs.is_empty() {
             drop(graph_for_assignment.take());
@@ -935,6 +946,9 @@ fn generated_residual_mutual_sccs(
     diagnoses: &[gate::SccDiagnosis],
     generated_residual_plans: &BTreeSet<usize>,
     module_count: usize,
+    module_plans: &[ModulePlan],
+    source_exports_by_statement: &HashMap<StatementId, Vec<SourceExportIdentity>>,
+    chunk_top_level_mark: Mark,
 ) -> Vec<Vec<usize>> {
     diagnoses
         .iter()
@@ -947,6 +961,30 @@ fn generated_residual_mutual_sccs(
                 })
             {
                 return None;
+            }
+            let mut merged_surface = PublicExportSurface::default();
+            for module in modules {
+                let plan = &module_plans[module.0];
+                let mut plan_surface = PublicExportSurface::default();
+                for (local, public) in &plan.bindings {
+                    // `top_level_id` reconstructs the chunk-level Id used by
+                    // the resolved AST and dependency graph. Source export
+                    // aliases therefore compare against the same identity as
+                    // generated residual exports.
+                    plan_surface
+                        .add_binding(public.clone(), top_level_id(local, chunk_top_level_mark));
+                }
+                for statement in &plan.anonymous_statements {
+                    if let Some(exports) = source_exports_by_statement.get(statement) {
+                        plan_surface.add_source_identities(exports);
+                    }
+                }
+                if !merged_surface.is_compatible_with(&plan_surface) {
+                    // Keep this SCC separate; the original gate diagnosis
+                    // remains blocking and is handled by the ordinary path.
+                    return None;
+                }
+                merged_surface.merge(&plan_surface);
             }
             Some(modules.iter().map(|module| module.0).collect())
         })

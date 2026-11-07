@@ -6,6 +6,7 @@
 
 use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
+use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
 use crate::ownership_subset::SelectedModule;
 use crate::plans::ModulePlan;
@@ -21,7 +22,7 @@ use analysis::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use frontend_elaboration::MemberClaimProjection;
-use frontend_elaboration::chunk_ast::{TopLevelDecl, binding_declaration};
+use frontend_elaboration::chunk_ast::{SourceExportIdentity, TopLevelDecl, binding_declaration};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::simulated_evaluation_post_order;
 use selector_outcome::{
@@ -79,6 +80,11 @@ pub(super) struct AtomicGroupOwnerCompletion {
     pub(super) owner_path: String,
     pub(super) atomic_group_source_unit_ids: Vec<SourceUnitId>,
     pub(super) adopted_source_unit_ids: Vec<SourceUnitId>,
+}
+
+struct CoarseResidualBucket {
+    source_units: BTreeSet<SourceUnitId>,
+    export_surface: PublicExportSurface,
 }
 
 /// Per-explicit-request inputs the builder reads but does not own.
@@ -1462,13 +1468,19 @@ impl ChunkPlanBuilder {
         &mut self,
         precomputed: &DependencyGraphAndAtomicGroups,
         layout: &SourceUnitLayout,
+        source_exports_by_statement: &HashMap<StatementId, Vec<SourceExportIdentity>>,
         target_dir: &str,
     ) -> Result<()> {
         let atomic_groups = self.wholly_unclaimed_atomic_groups(precomputed, layout)?;
         if atomic_groups.is_empty() {
             return Ok(());
         }
-        let groups = self.coarse_residual_groups(precomputed, layout, &atomic_groups)?;
+        let groups = self.coarse_residual_groups(
+            precomputed,
+            layout,
+            &atomic_groups,
+            source_exports_by_statement,
+        )?;
         self.synthesize_source_unit_groups(
             groups.iter(),
             precomputed,
@@ -1554,6 +1566,7 @@ impl ChunkPlanBuilder {
         precomputed: &DependencyGraphAndAtomicGroups,
         layout: &SourceUnitLayout,
         atomic_groups: &[&BTreeSet<SourceUnitId>],
+        source_exports_by_statement: &HashMap<StatementId, Vec<SourceExportIdentity>>,
     ) -> Result<Vec<BTreeSet<SourceUnitId>>> {
         let dependency_graph = &precomputed.dependency_graph;
         // Match fine lowering's ID domain, including its tie breaks: generated
@@ -1572,8 +1585,24 @@ impl ChunkPlanBuilder {
             }
         }
 
+        let mut source_unit_export_surfaces = HashMap::<SourceUnitId, PublicExportSurface>::new();
+        for node in dependency_graph.iter_nodes() {
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            let mut surface = PublicExportSurface::default();
+            for name in &node.declared {
+                surface.add_binding(name.0.to_string(), name.clone());
+            }
+            if let Some(exports) = source_exports_by_statement.get(&location.statement) {
+                surface.add_source_identities(exports);
+            }
+            source_unit_export_surfaces.insert(node.id, surface);
+        }
+
         let mut virtual_modules = BTreeSet::new();
-        let mut candidate_modules = Vec::<(ModuleId, &BTreeSet<SourceUnitId>)>::new();
+        let mut candidate_modules =
+            Vec::<(ModuleId, &BTreeSet<SourceUnitId>, PublicExportSurface)>::new();
         for (idx, members) in atomic_groups.iter().enumerate() {
             let module_id = ModuleId(
                 first_virtual_module
@@ -1581,7 +1610,17 @@ impl ChunkPlanBuilder {
                     .context("temporary residual module IDs overflowed")?,
             );
             virtual_modules.insert(module_id);
-            candidate_modules.push((module_id, *members));
+            let mut export_surface = PublicExportSurface::default();
+            for source_unit in members.iter() {
+                let unit_surface =
+                    source_unit_export_surfaces
+                        .get(source_unit)
+                        .with_context(|| {
+                            format!("source unit {} has no export surface", source_unit.0)
+                        })?;
+                export_surface.merge(unit_surface);
+            }
+            candidate_modules.push((module_id, *members, export_surface));
             for source_unit in members.iter() {
                 source_unit_claims.push((*source_unit, module_id));
             }
@@ -1619,9 +1658,9 @@ impl ChunkPlanBuilder {
             .collect();
         fixed_positions.sort_unstable();
         let mut groups_by_signature =
-            BTreeMap::<(usize, BTreeSet<ModuleId>), BTreeSet<SourceUnitId>>::new();
+            BTreeMap::<(usize, BTreeSet<ModuleId>), Vec<CoarseResidualBucket>>::new();
         let mut groups = Vec::new();
-        for (virtual_module, members) in candidate_modules {
+        for (virtual_module, members, export_surface) in candidate_modules {
             // Entry imports every assigned destination, so source-aware
             // simulation includes isolated candidate modules in the same
             // evaluation order as the emitted tree. Every virtual module has
@@ -1643,13 +1682,29 @@ impl ChunkPlanBuilder {
                     }
                 }
             }
-            groups_by_signature
+            let buckets = groups_by_signature
                 .entry((interval, reachable))
-                .or_default()
-                .extend(members.iter().copied());
+                .or_default();
+            let existing_bucket = buckets
+                .iter_mut()
+                .find(|bucket| bucket.export_surface.is_compatible_with(&export_surface));
+            if let Some(bucket) = existing_bucket {
+                bucket.source_units.extend(members.iter().copied());
+                bucket.export_surface.merge(&export_surface);
+            } else {
+                buckets.push(CoarseResidualBucket {
+                    source_units: members.iter().copied().collect(),
+                    export_surface,
+                });
+            }
         }
 
-        groups.extend(groups_by_signature.into_values());
+        groups.extend(
+            groups_by_signature
+                .into_values()
+                .flatten()
+                .map(|bucket| bucket.source_units),
+        );
         groups.sort_by_key(|members| members.iter().next().copied());
         Ok(groups)
     }

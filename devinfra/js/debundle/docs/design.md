@@ -3119,19 +3119,24 @@ in the canonical strict constraining module projection and the same interval
 between fixed-owner evaluations in the fine layout. The shared ESM simulator
 supplies that evaluation order from the borrowed canonical quotient. Its
 temporary module and entry IDs match fine lowering's domain and tie breaks.
-Isolated modules omitted by the simulator remain separate atomic groups.
+Atoms in the same candidate bucket combine only when each literal public
+export name still identifies one source binding or export site in the combined
+module. Incompatible atoms remain separate; their export names are preserved
+and the normal export validator remains authoritative. Isolated modules
+omitted by the simulator remain separate atomic groups.
 Entry and retained residual plans count as fixed owners only when they own
 source units. Groups sort by their smallest `SourceUnitId` and use
 `__auto/residual_groups/NNNN`.
 
 After the initial placement, the normal complete assignment analysis diagnoses
 actual mutual-constraining SCCs. Coarse lowering may repeatedly co-locate a
-complete SCC only when every member is a generated residual plan, preserving
-the original source order and rebuilding positional ownership and import
-ordering after each contraction. This uses typed SCC membership, not cut edges
-or generated path spelling. Authored modules and mixed authored/residual SCCs
-remain intact. The normal gate and translation validation run on the final
-assignment, so any remaining blocking cycle or actual eager TDZ rejection is
+complete SCC only when every member is a generated residual plan and their
+combined public export names remain compatible, preserving the original source
+order and rebuilding positional ownership and import ordering after each
+contraction. This uses typed SCC membership, not cut edges or generated path
+spelling. Authored modules and mixed authored/residual SCCs remain intact. The
+normal gate and translation validation run on the final assignment, so any
+remaining blocking cycle, duplicate export, or actual eager TDZ rejection is
 still rejected. Conditional diagnostic summaries do not authorize merging.
 The initial projection remains a placement
 heuristic; it does not weaken the complete I-graph checks.
