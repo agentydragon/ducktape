@@ -4730,8 +4730,14 @@ field can instead name the first failed post-argument body-admission check:
 `array_iteration_length_unrepresentable`, `array_iteration_length_mismatch`,
 `array_iteration_exceeds_invocation_limit`, or
 `array_iteration_unsettled_elements`. These categories retain check order after
-callee and argument evaluation. The text explanation labels pre-argument
-selection versus post-argument body admission or iteration transfer. Callback
+callee and argument evaluation. The new detailed unsettled-elements refusal
+is serialized as an object keyed by
+`array_iteration_unsettled_elements_detail`, with `slot_index` and a typed
+`check` category identifying the first failed dense slot condition. The legacy
+`array_iteration_unsettled_elements` string remains readable in saved reports;
+other refusal categories remain strings. The text explanation
+labels pre-argument selection versus post-argument body admission or iteration
+transfer and shows the unsettled slot and category. Callback
 completion or predicate uncertainty keeps `unsupported_operation` without an
 admission reason; defensive result-row mismatches use
 `array_iteration_result_shape_mismatch`. The reason names the first ordered

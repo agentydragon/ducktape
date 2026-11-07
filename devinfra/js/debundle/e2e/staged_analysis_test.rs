@@ -1543,6 +1543,65 @@ fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering()
         "static/app",
         "array-boolean-rows-direct",
     );
+    if !direct.result.status.success() {
+        // Inspect the direct report before the existing positive assertion.
+        // A refusal remains a test failure; this only checks its diagnostic.
+        let graph: Value = read_gzip_json(
+            &direct
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        let execution = &graph_node_for_binding(&graph, "someResult")["synchronous_execution"];
+        let refusal = execution["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|loss| {
+                loss["reason"]["ordered_call_admission_refusal"]
+                    .get("array_iteration_unsettled_elements_detail")
+            })
+            .expect("unsettled Boolean iteration retains its typed element failure");
+        assert_eq!(refusal["slot_index"].as_u64(), Some(1), "{execution:#}");
+        assert!(
+            matches!(
+                refusal["check"].as_str(),
+                Some(
+                    "empty_values"
+                        | "unavailable_value"
+                        | "unsupported_value"
+                        | "non_plain_object"
+                        | "object_tainted"
+                        | "object_unsettled"
+                        | "object_unknown_array_contents"
+                        | "object_primitive_array_marker"
+                        | "tainted_function"
+                        | "borrowed_receiver_instance"
+                )
+            ),
+            "{execution:#}"
+        );
+
+        let graph_path = direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz");
+        let explanation = command(&[
+            "explain-integrity",
+            "--graph",
+            path(&graph_path),
+            "--id",
+            "someResult",
+            "--format",
+            "text",
+        ]);
+        assert_ok(&explanation, "explain Boolean element settlement refusal");
+        assert!(
+            explanation.stdout.contains(
+                "ordered_call_admission_refusal: array_iteration_unsettled_elements (slot 1, check "
+            ),
+            "{}",
+            explanation.stdout
+        );
+    }
     assert_ok(&direct.result, "direct Boolean array iteration run");
     let direct_validation: Value = read_json(
         &direct

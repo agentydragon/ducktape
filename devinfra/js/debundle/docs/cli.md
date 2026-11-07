@@ -1826,8 +1826,10 @@ post-argument body admission (for example,
 `array_iteration_async_callback`). A pre-argument reason is included only when
 the unchanged ordinary call transfer independently returns
 `unsupported_native_operation`; it never forces a call refusal. Text output
-shows the phase with the typed reason alongside `unsupported_operation`. This
-evidence is separate from purity reasons and does not certify author contracts. See
+shows the phase with the typed reason alongside `unsupported_operation`.
+`array_iteration_unsettled_elements` also shows its first dense slot index and
+failed check category. This evidence is separate from purity reasons and does
+not certify author contracts. See
 [the report contract](../SPEC.md#synchronous-execution-diagnostics).
 
 For a directly called imported bare callback factory, read the node's

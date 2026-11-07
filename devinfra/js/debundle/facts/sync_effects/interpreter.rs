@@ -55,9 +55,10 @@ use crate::analysis_inputs::{
 };
 use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::{
-    AssumedEffectReason, ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
-    ExecutionPrecisionLossReason, GlobalReachCause, HavocReach, OrderedCallAdmissionRefusal,
-    OrderedFieldReadRefusal, PossibleGetterLookupSite, PossibleGetterPromotion, SkippedCallReason,
+    ArrayIterationElementSettlementCheck, AssumedEffectReason, ConstructionRejection,
+    ExecutionOperation, ExecutionPrecisionLoss, ExecutionPrecisionLossReason, GlobalReachCause,
+    HavocReach, OrderedCallAdmissionRefusal, OrderedFieldReadRefusal, PossibleGetterLookupSite,
+    PossibleGetterPromotion, SkippedCallReason,
 };
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
@@ -1292,6 +1293,20 @@ impl<'a> CellTrace<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum ObjectPropertySettlementFailure {
+    Tainted,
+    Unsettled,
+    UnknownArrayContents,
+    PrimitiveArrayMarker,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum ObjectSettlementScope {
+    Accessors,
+    AllProperties,
+}
+
 impl ExecutionState {
     /// Only RuntimeRules calls this, after the owner executor and every
     /// single-consumer transfer payload have unwound. Keep all value-bearing
@@ -1366,13 +1381,35 @@ impl ExecutionState {
     /// Skipped local code can change descriptors or prototypes even when no
     /// escape to foreign code was observed. Neither set permits prefix reads.
     fn object_properties_are_settled(&self, object: &u32) -> bool {
-        self.object_accessors_are_settled(object)
-            && !self.unknown_array_contents.contains(object)
-            && !self.primitive_arrays.contains_key(object)
+        self.object_settlement_failure(object, ObjectSettlementScope::AllProperties)
+            .is_none()
     }
 
     fn object_accessors_are_settled(&self, object: &u32) -> bool {
-        !self.tainted_objects.contains(object) && !self.unsettled_objects.contains(object)
+        self.object_settlement_failure(object, ObjectSettlementScope::Accessors)
+            .is_none()
+    }
+
+    fn object_settlement_failure(
+        &self,
+        object: &u32,
+        scope: ObjectSettlementScope,
+    ) -> Option<ObjectPropertySettlementFailure> {
+        if self.tainted_objects.contains(object) {
+            Some(ObjectPropertySettlementFailure::Tainted)
+        } else if self.unsettled_objects.contains(object) {
+            Some(ObjectPropertySettlementFailure::Unsettled)
+        } else if scope == ObjectSettlementScope::AllProperties
+            && self.unknown_array_contents.contains(object)
+        {
+            Some(ObjectPropertySettlementFailure::UnknownArrayContents)
+        } else if scope == ObjectSettlementScope::AllProperties
+            && self.primitive_arrays.contains_key(object)
+        {
+            Some(ObjectPropertySettlementFailure::PrimitiveArrayMarker)
+        } else {
+            None
+        }
     }
 }
 
@@ -5788,7 +5825,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if dense.slots.len() > MAX_SYNCHRONOUS_INVOCATIONS {
             return None;
         }
-        if !self.array_iteration_values_are_settled(&dense.slots) {
+        if self
+            .array_iteration_values_are_settled(&dense.slots)
+            .is_err()
+        {
             return None;
         }
         let callback = self.evaluate(&proof.callback, env, captures);
@@ -5807,23 +5847,67 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some((proof, source, dense, key, captured))
     }
 
-    fn array_iteration_values_are_settled(&self, slots: &[Values]) -> bool {
-        slots.iter().all(|values| {
-            !values.is_empty()
-                && values.iter().all(|value| match value {
+    fn array_iteration_values_are_settled(
+        &self,
+        slots: &[Values],
+    ) -> Result<(), (usize, ArrayIterationElementSettlementCheck)> {
+        for (slot_index, values) in slots.iter().enumerate() {
+            if values.is_empty() {
+                return Err((
+                    slot_index,
+                    ArrayIterationElementSettlementCheck::EmptyValues,
+                ));
+            }
+            for value in values {
+                let check = match value {
                     AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                        (self.inputs.index.plain_data_objects.contains(object)
+                        if !(self.inputs.index.plain_data_objects.contains(object)
                             || self.state.ordinary_spread_copies.contains(object))
-                            && self.state.object_properties_are_settled(object)
+                        {
+                            Some(ArrayIterationElementSettlementCheck::NonPlainObject)
+                        } else {
+                            self.state
+                                .object_settlement_failure(
+                                    object,
+                                    ObjectSettlementScope::AllProperties,
+                                )
+                                .map(|failure| match failure {
+                                    ObjectPropertySettlementFailure::Tainted => {
+                                        ArrayIterationElementSettlementCheck::ObjectTainted
+                                    }
+                                    ObjectPropertySettlementFailure::Unsettled => {
+                                        ArrayIterationElementSettlementCheck::ObjectUnsettled
+                                    }
+                                    ObjectPropertySettlementFailure::UnknownArrayContents => {
+                                        ArrayIterationElementSettlementCheck::ObjectUnknownArrayContents
+                                    }
+                                    ObjectPropertySettlementFailure::PrimitiveArrayMarker => {
+                                        ArrayIterationElementSettlementCheck::ObjectPrimitiveArrayMarker
+                                    }
+                                })
+                        }
                     }
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => !self.state.tainted_functions.contains(key),
-                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed { .. }) => {
-                        !self.class_may_run_on_borrowed_receiver(*key)
+                    | AbstractValue::Closure(key, _) => self
+                        .state
+                        .tainted_functions
+                        .contains(key)
+                        .then_some(ArrayIterationElementSettlementCheck::TaintedFunction),
+                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed { .. }) => self
+                        .class_may_run_on_borrowed_receiver(*key)
+                        .then_some(ArrayIterationElementSettlementCheck::BorrowedReceiverInstance),
+                    AbstractValue::Value(Value::Unavailable) => {
+                        Some(ArrayIterationElementSettlementCheck::UnavailableValue)
                     }
-                    value => value.is_primitive(),
-                })
-        })
+                    value if value.is_primitive() => None,
+                    _ => Some(ArrayIterationElementSettlementCheck::UnsupportedValue),
+                };
+                if let Some(check) = check {
+                    return Err((slot_index, check));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn incomplete_array_iteration_result(
@@ -5943,8 +6027,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if dense.len() > MAX_SYNCHRONOUS_INVOCATIONS {
             return refused(OrderedCallAdmissionRefusal::ArrayIterationExceedsInvocationLimit);
         }
-        if !self.array_iteration_values_are_settled(&dense) {
-            return refused(OrderedCallAdmissionRefusal::ArrayIterationUnsettledElements);
+        if let Err((slot_index, check)) = self.array_iteration_values_are_settled(&dense) {
+            return refused(
+                OrderedCallAdmissionRefusal::ArrayIterationUnsettledElementsDetail {
+                    slot_index,
+                    check,
+                },
+            );
         }
         let source = Values::from([AbstractValue::Value(Value::Alloc(
             Kind::Object,
@@ -6092,7 +6181,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
             if self.settled_dense_array_slots(selection.object).as_ref() != Some(&dense)
-                || !self.array_iteration_values_are_settled(&dense)
+                || self.array_iteration_values_are_settled(&dense).is_err()
                 || (selection.row.result == IterationResult::Mapped
                     && !returned
                         .iter()

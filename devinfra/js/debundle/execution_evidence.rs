@@ -66,6 +66,22 @@ pub enum OrderedFieldReadRefusal {
     MissingHeapValue,
 }
 
+/// The failed element check for one dense-array slot in an iteration.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArrayIterationElementSettlementCheck {
+    EmptyValues,
+    UnavailableValue,
+    UnsupportedValue,
+    NonPlainObject,
+    ObjectTainted,
+    ObjectUnsettled,
+    ObjectUnknownArrayContents,
+    ObjectPrimitiveArrayMarker,
+    TaintedFunction,
+    BorrowedReceiverInstance,
+}
+
 /// The first diagnosed condition on an ordered call. Array-iteration variants
 /// distinguish pre-argument GetValue selection from post-argument body
 /// admission. This describes evidence only; it does not change target
@@ -99,7 +115,14 @@ pub enum OrderedCallAdmissionRefusal {
     ArrayIterationLengthUnrepresentable,
     ArrayIterationLengthMismatch,
     ArrayIterationExceedsInvocationLimit,
+    /// Legacy refusal shape retained for previously saved execution reports.
     ArrayIterationUnsettledElements,
+    /// The first dense slot whose already-captured abstract values fail the
+    /// existing post-argument element-settlement predicate.
+    ArrayIterationUnsettledElementsDetail {
+        slot_index: usize,
+        check: ArrayIterationElementSettlementCheck,
+    },
     /// First failed check while a recognized array-iteration method's
     /// GetValue is being selected, before argument evaluation. These are
     /// evidence only and do not replace ordinary member-read or call
@@ -140,9 +163,34 @@ impl OrderedCallAdmissionRefusal {
             | Self::ArrayIterationLengthUnrepresentable
             | Self::ArrayIterationLengthMismatch
             | Self::ArrayIterationExceedsInvocationLimit
-            | Self::ArrayIterationUnsettledElements => Some("post-argument body admission"),
+            | Self::ArrayIterationUnsettledElements
+            | Self::ArrayIterationUnsettledElementsDetail { .. } => {
+                Some("post-argument body admission")
+            }
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for ArrayIterationElementSettlementCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let check = serde_json::to_value(self)
+            .expect("array iteration settlement checks serialize as strings");
+        f.write_str(check.as_str().expect("unit variant"))
+    }
+}
+
+impl std::fmt::Display for OrderedCallAdmissionRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Self::ArrayIterationUnsettledElementsDetail { slot_index, check } = self {
+            return write!(
+                f,
+                "array_iteration_unsettled_elements (slot {slot_index}, check {check})"
+            );
+        }
+        let refusal = serde_json::to_value(self)
+            .expect("ordered call admission refusals serialize as strings");
+        f.write_str(refusal.as_str().expect("unit variant"))
     }
 }
 
@@ -304,13 +352,7 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
                     )?;
                 }
                 if let Some(refusal) = ordered_call_admission_refusal {
-                    let refusal = serde_json::to_value(refusal)
-                        .expect("ordered call admission refusals serialize as strings");
-                    write!(
-                        f,
-                        "; ordered_call_admission_refusal: {}",
-                        refusal.as_str().expect("unit variant")
-                    )?;
+                    write!(f, "; ordered_call_admission_refusal: {refusal}")?;
                     if let Some(phase) = ordered_call_admission_refusal
                         .as_ref()
                         .and_then(OrderedCallAdmissionRefusal::array_iteration_phase)

@@ -639,9 +639,17 @@ at the stated phase, retain the existing call source site and fallback reach,
 and do not retain target identities or alter call admission, effect promotion,
 reachability, emitted code, or gate acceptance. Callback completion or predicate
 uncertainty keeps `unsupported_operation` without an admission reason; defensive
-result-row mismatches use `array_iteration_result_shape_mismatch`. A complete
-effects-only call uses `missing_call_result`; an incomplete invocation does
-not use this field.
+result-row mismatches use `array_iteration_result_shape_mismatch`. The new
+detailed unsettled-elements refusal is a structured object keyed by
+`array_iteration_unsettled_elements_detail`, with `slot_index` and `check`.
+The legacy `array_iteration_unsettled_elements` string remains readable in
+saved reports. The check identifies the first failed slot condition: `empty_values`,
+`unavailable_value`, `unsupported_value`, `non_plain_object`,
+`object_tainted`, `object_unsettled`, `object_unknown_array_contents`,
+`object_primitive_array_marker`, `tainted_function`, or
+`borrowed_receiver_instance`. Other refusal categories remain strings. A
+complete effects-only call uses `missing_call_result`; an incomplete
+invocation does not use this field.
 
 ## Ordered local member-read refusal
 
