@@ -7541,6 +7541,118 @@ fn imported_source_body_effects_compose_through_direct_and_wrapped_calls() {
 }
 
 #[test]
+fn provider_local_birth_support_requires_a_private_complete_body() {
+    const PRIVATE_SOURCE: &str = "import { privateReadStore } from './peer.js';\nconst privateResult = privateReadStore();\nconsole.log(privateResult.value);\n";
+    const PRIVATE_PROVIDER: &str = "export function privateReadStore() { const record = { value: 1 }; const observed = record.value; record.value = 2; return record; }\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(PRIVATE_SOURCE, vec![])
+            .with_extra_chunks(&[("static/peer", PRIVATE_PROVIDER)]),
+        "provider-local-birth-support",
+    );
+    assert_preserved_entry_output(&fixture, "2\n");
+
+    let private = binding_execution_report(&fixture, "privateResult");
+    let _ = assert_operation_receipt(&fixture, "privateResult", 1);
+    let supports = private["operation_support_receipts"]
+        .as_array()
+        .expect("provider-local support stays in the diagnostic carrier");
+    assert!(
+        supports.iter().any(|receipt| {
+            receipt["support"]["kind"] == "provider_local_birth"
+                && receipt["support"].get("origin").is_none()
+        }),
+        "sealed evidence must not retain an address that could alias another provider: {private:#}"
+    );
+    for operation in ["own_data_read", "writable_own_data_store"] {
+        assert!(
+            supports.iter().any(|receipt| {
+                receipt["operation"] == operation
+                    && receipt["support"]["kind"] == "provider_local_birth"
+            }),
+            "the private body must seal its {operation} support: {private:#}"
+        );
+    }
+
+    // This shape reads and stores a private fresh local, but its primitive
+    // return is outside the current allocation-candidate admission. Keep that
+    // boundary explicit instead of widening unrelated return authority.
+    for (case, source, provider, binding, output) in [
+        (
+            "provider-local-birth-primitive-return",
+            "import { privateReadStore } from './peer.js';\nconst privateResult = privateReadStore();\nconsole.log(privateResult);\n",
+            "export function privateReadStore() { const record = { value: 1 }; const observed = record.value; record.value = 2; return observed; }\n",
+            "privateResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-borrowed",
+            "import { borrowed } from './peer.js';\nconst box = { value: 0 };\nconst borrowedResult = borrowed(box, box);\nconsole.log(borrowedResult.value);\n",
+            "export function borrowed(left, right) { const alias = left; alias.value = 1; return right; }\n",
+            "borrowedResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-cached",
+            "import { cached } from './peer.js';\nconst cachedResult = cached();\nconsole.log(cachedResult.value);\n",
+            "let cache = { value: 0 };\nexport function cached() { cache.value = 1; return cache; }\n",
+            "cachedResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-published",
+            "import { published } from './peer.js';\nconst publishedResult = published();\nconsole.log(publishedResult.value);\n",
+            "let escaped;\nexport function published() { const record = { value: 0 }; escaped = record; record.value = 1; return record; }\n",
+            "publishedResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-unknown-call",
+            "import { unknownCall } from './peer.js';\nconst unknownResult = unknownCall(value => value);\nconsole.log(unknownResult.value);\n",
+            "export function unknownCall(publish) { const record = { value: 0 }; publish(record); record.value = 1; return record; }\n",
+            "unknownResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-native",
+            "import { native } from './peer.js';\nconst nativeResult = native();\nconsole.log(nativeResult.value);\n",
+            "export function native() { const record = { native: new Map(), value: 0 }; record.value = 1; return record; }\n",
+            "nativeResult",
+            "1\n",
+        ),
+        (
+            "provider-local-birth-nested-closure",
+            "import { nested } from './peer.js';\nconst nestedResult = nested();\nconsole.log(nestedResult.record.value);\n",
+            "export function nested() { const record = { value: 0 }; const read = () => record.value; record.value = 1; return { record, read }; }\n",
+            "nestedResult",
+            "1\n",
+        ),
+    ] {
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, output);
+        let execution = binding_execution_report(&fixture, binding);
+        assert!(
+            execution["operation_support_receipts"]
+                .as_array()
+                .is_none_or(|receipts| receipts
+                    .iter()
+                    .all(|receipt| { receipt["support"]["kind"] != "provider_local_birth" })),
+            "{case} cannot carry a sealed provider-local birth: {execution:#}"
+        );
+        if case != "provider-local-birth-borrowed"
+            && case != "provider-local-birth-primitive-return"
+        {
+            assert_ne!(
+                execution["binding_effect_authority"]["authority"], "operation_receipt",
+                "{case} must not turn cached/published/unknown/native/closure operations into private-birth authority: {execution:#}"
+            );
+        }
+    }
+}
+
+#[test]
 fn allocation_summary_and_foreign_timing_cannot_supply_body_effect_coverage() {
     for (case, provider, call, expected_output) in [
         (

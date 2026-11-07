@@ -3453,6 +3453,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     }
     fn operation_support_receipt(
         &self,
+        _frame: &LocalFrame,
         operation: super::super::effect_coverage::OperationSupportOperation,
         origin: u32,
         dependencies: &crate::analysis_inputs::ProofDependencies,

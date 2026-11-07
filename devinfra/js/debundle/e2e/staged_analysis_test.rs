@@ -1915,6 +1915,63 @@ fn cyclic_and_unresolved_reexported_primitive_reads_refuse_with_saved_analysis()
 }
 
 #[test]
+fn provider_local_birth_certificate_survives_saved_program_summary() {
+    const PROVIDER: &str = "export function make() { const record = { value: 1 }; const observed = record.value; record.value = 2; return record; }\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            "import { make } from './peer.js';\nconst result = make();\nconsole.log(result.value);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[("static/peer", PROVIDER)]),
+    );
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct provider-local-birth run");
+
+    let assert_sealed_certificate = |invocation: &StagedInvocation| {
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        let execution = &graph_node_for_binding(&graph, "result")["synchronous_execution"];
+        let receipts = execution["operation_support_receipts"]
+            .as_array()
+            .expect("execution retains provider operation-support diagnostics");
+        for operation in ["own_data_read", "writable_own_data_store"] {
+            assert!(
+                receipts.iter().any(|receipt| {
+                    receipt["operation"] == operation
+                        && receipt["support"]["kind"] == "provider_local_birth"
+                        && receipt["support"].get("origin").is_none()
+                }),
+                "{operation} must retain the address-free sealed certificate: {execution:#}"
+            );
+        }
+    };
+    assert_sealed_certificate(&direct);
+
+    // `staged()` has already projected the fixture and written its
+    // SavedProgramSummary analysis artifact through the dedicated analyzer.
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(
+        &saved.result,
+        "provider-local-birth run from saved analysis",
+    );
+    assert_same_invocation_trees(&direct, &saved);
+    assert_node_output(
+        &direct.output_root().join("app/static/app/entry.js"),
+        "2\n",
+        "",
+    );
+    assert_node_output(
+        &saved.output_root().join("app/static/app/entry.js"),
+        "2\n",
+        "",
+    );
+    assert_sealed_certificate(&saved);
+}
+
+#[test]
 fn accepted_split_matches_a_direct_run() {
     assert_staged_run_matches(split_with_pure_import(), &[]);
     assert_staged_run_matches(

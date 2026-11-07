@@ -355,6 +355,7 @@ pub(super) trait LocalContext: OwnDataContext {
     /// allocation ordinals cannot escape into importer analysis.
     fn operation_support_receipt(
         &self,
+        _frame: &LocalFrame,
         _operation: OperationSupportOperation,
         origin: u32,
         dependencies: &ProofDependencies,
@@ -669,6 +670,7 @@ fn read_field(
                 CallableSelection::observed(&read.values, selection_dependencies.clone());
             let effects = if let Some(origin) = slot_origin_from_cell(&read.cell)
                 && let Some(receipt) = context.operation_support_receipt(
+                    frame,
                     OperationSupportOperation::OwnDataRead,
                     origin,
                     &selection_dependencies,
@@ -1451,6 +1453,7 @@ fn assign_field_expression(
     let write_dependencies = writable.then(|| local.context.selection_prerequisites());
     let support_receipt = writable.then(|| {
         local.context.operation_support_receipt(
+            local.frame,
             OperationSupportOperation::WritableOwnDataStore,
             slot.object,
             write_dependencies

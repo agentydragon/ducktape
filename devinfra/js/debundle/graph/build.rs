@@ -419,6 +419,7 @@ pub fn build_dependency_graph_with(
                     precision_losses: calls.precision_losses.clone(),
                     callback_factory_uses: Vec::new(),
                     returned_record_uses: Vec::new(),
+                    operation_support_receipts: calls.operation_support_receipts().to_vec(),
                     author_host_contract_uses: calls.author_host_contract_uses.clone(),
                     heap_frontier: report_heap_frontier(
                         &stmt.heap_contents,

@@ -69,6 +69,9 @@ struct ProviderContext<'a> {
     /// Simple parameters and source-proved initialized var captures enter the
     /// shared body kernel; other projections retain allocation-only effects.
     body_effect_mode: bool,
+    /// Static admission for the narrower private-birth support proof. Actual
+    /// operation support still checks the current frame at every access.
+    provider_local_birth_candidate: bool,
     body_effect_bindings: BTreeSet<Id>,
     input_shape: Option<RecordInputShape>,
     parameter_reads: BTreeSet<ParameterHeapRead>,
@@ -397,18 +400,31 @@ impl LocalContext for ProviderContext<'_> {
     fn record_property_write(&mut self, _cell: crate::facts::EffectCell) {}
     fn operation_support_receipt(
         &self,
+        frame: &LocalFrame,
         operation: OperationSupportOperation,
         origin: u32,
         dependencies: &ProofDependencies,
     ) -> Option<OperationSupportReceipt> {
-        // This ID is only meaningful in the isolated provider heap. Preserve
-        // that unresolved meaning; only the symbolic input path publishes a
-        // parameter cell for caller-side instantiation.
-        Some(OperationSupportReceipt::provider_world_object_shape(
-            operation,
-            origin,
-            dependencies,
-        ))
+        // A candidate receipt is issued only for this access, after checking
+        // the active frame's birth set and excluding every borrowed origin.
+        // Otherwise preserve the unresolved provider-world receipt; neither
+        // path projects a provider ordinal into caller heap identity.
+        if self.provider_local_birth_candidate
+            && frame.fresh_records.contains(&origin)
+            && !frame.borrowed_records.contains(&origin)
+        {
+            Some(OperationSupportReceipt::provider_local_birth_candidate(
+                operation,
+                origin,
+                dependencies,
+            ))
+        } else {
+            Some(OperationSupportReceipt::provider_world_object_shape(
+                operation,
+                origin,
+                dependencies,
+            ))
+        }
     }
     fn declarative_binding_operation(
         &mut self,
@@ -935,6 +951,9 @@ fn execute_provider_body<'a>(
                 || body.closure_candidate_syntax())
                 && body.captured_writes().is_empty()
         });
+    let provider_local_birth_syntax_candidate = body_effect_candidate
+        && body.calls.is_empty()
+        && local_body.is_some_and(LocalBody::provider_local_birth_candidate);
     let closure_projection = if closure_mode {
         Some(closure_capture_projection(index, local_body?)?)
     } else {
@@ -991,6 +1010,7 @@ fn execute_provider_body<'a>(
                 .iter()
                 .all(|binding| index.initialized_provider_var_capture(binding, callable))
         });
+    let provider_local_birth_candidate = body_effect_mode && provider_local_birth_syntax_candidate;
     if conditional_body && !body_effect_mode {
         return None;
     }
@@ -1066,6 +1086,7 @@ fn execute_provider_body<'a>(
         applied_accessors: OrdMap::new(),
         revision: 0,
         body_effect_mode,
+        provider_local_birth_candidate,
         body_effect_bindings: if body_effect_mode {
             local_body?
                 .bindings
@@ -1096,7 +1117,28 @@ fn execute_provider_body<'a>(
         }
         let transfer = local_transfer::execute(&mut context, local_body?, &mut frame)?;
         if body_effect_mode {
-            body_effects = Some(transfer.effects.clone());
+            let mut effects = transfer.effects.clone();
+            if provider_local_birth_candidate
+                && matches!(
+                    &transfer.allocation,
+                    AllocationJudgment::CoveredAllocationOnly(_)
+                )
+                && frame.thrown.is_none()
+                && !frame.returns.is_empty()
+                && !frame
+                    .returns
+                    .contains(&AbstractValue::Value(Value::Unavailable))
+                && !frame.returns.contains(&AbstractValue::Value(Value::Top))
+            {
+                // Sealing relies on the same complete closed effect transfer
+                // consumed by callers; local birth membership alone is not a
+                // body-level no-publication proof.
+                let _ = effects.seal_provider_local_birth_support(
+                    &frame.fresh_records,
+                    &frame.borrowed_records,
+                );
+            }
+            body_effects = Some(effects);
         }
         context.final_environment = Some(frame.environment.clone());
         AllocationValue {
@@ -1341,6 +1383,7 @@ pub(super) fn derive_class(
         input_shape: None,
         parameter_reads: BTreeSet::new(),
         body_effect_mode: true,
+        provider_local_birth_candidate: false,
         body_effect_bindings: body
             .constructor
             .bindings
