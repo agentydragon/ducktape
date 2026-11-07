@@ -342,8 +342,12 @@ fn source_path(source_root: Option<&Path>, path: PathBuf) -> PathBuf {
 }
 
 fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    serde_yaml::from_str(&graph_provenance::read_to_string(path)?)
-        .with_context(|| format!("parsing {}", path.display()))
+    let yaml = graph_provenance::read_to_string(path)?;
+    // Typed map fields can overwrite duplicate YAML keys. serde_yaml's Value
+    // mapping visitor rejects duplicates recursively and keeps a source location.
+    let _: serde_yaml::Value =
+        serde_yaml::from_str(&yaml).with_context(|| format!("parsing {}", path.display()))?;
+    serde_yaml::from_str(&yaml).with_context(|| format!("parsing {}", path.display()))
 }
 
 fn load_module_sources(

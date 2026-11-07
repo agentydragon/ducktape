@@ -2,10 +2,12 @@
 //! and every chunk's selectors resolve as one program.
 
 use debundle_e2e_support::{
-    TreeFixture, TreeRun, assert_module_exports, assert_module_source,
+    TreeFixture, TreeRun, assert_module_exports, assert_module_source, debundler_path,
     read_chunk_selector_outcomes, run_tree_fixture,
 };
 use serde_json::{Value, json};
+use std::fs;
+use std::process::Command;
 
 const MAIN: &str = "console.log('main');\n";
 const ROUTING: &str = r#"function pickProvider(name) {
@@ -34,6 +36,65 @@ fn assert_failed(run: &TreeRun) {
         run.result.stdout,
         run.result.stderr,
     );
+}
+
+fn rerun_tree(run: &TreeRun, output_dir: &str) -> std::process::Output {
+    let root = run.root();
+    Command::new(debundler_path())
+        .args(["run", "--tree-config"])
+        .arg(root.join("spec_config.yaml"))
+        .arg("--tree-modules")
+        .arg(root.join("modules"))
+        .arg("--tree-vendor-marks")
+        .arg(root.join("vendor_marks.yaml"))
+        .arg("--tree-source-root")
+        .arg(root)
+        .arg("--out-root")
+        .arg(root.join(output_dir))
+        .output()
+        .unwrap()
+}
+
+fn assert_duplicate_config_rejected(run: &TreeRun, yaml: &str, output_dir: &str) {
+    let config = run.root().join("spec_config.yaml");
+    fs::write(&config, yaml).unwrap();
+    let output = rerun_tree(run, output_dir);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "duplicate mapping key was accepted"
+    );
+    assert!(stderr.contains("spec_config.yaml"), "{stderr}");
+    assert!(stderr.contains("duplicate entry"), "{stderr}");
+    assert!(stderr.contains("line"), "{stderr}");
+}
+
+#[test]
+fn duplicate_tree_config_mapping_keys_are_rejected() {
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[("main", MAIN)],
+            module_roots: &[("main", "main")],
+            modules: &[("main/empty.yaml", "members: []\n")],
+        },
+        &[],
+    );
+    assert_succeeded(&run);
+
+    let config = fs::read_to_string(run.root().join("spec_config.yaml")).unwrap();
+    let duplicate_unassigned_mode = config.replace(
+        "unassigned_mode:\n  main: { kind: inline_in_entry }\n",
+        "unassigned_mode:\n  main: { kind: per_atomic_group }\n  main: { kind: inline_in_entry }\n",
+    );
+    assert_ne!(duplicate_unassigned_mode, config);
+    assert_duplicate_config_rejected(&run, &duplicate_unassigned_mode, "duplicate-unassigned");
+
+    let duplicate_module_root = config.replace(
+        "module_roots:\n  main: main\n",
+        "module_roots:\n  main: main\n  main: main\n",
+    );
+    assert_ne!(duplicate_module_root, config);
+    assert_duplicate_config_rejected(&run, &duplicate_module_root, "duplicate-module-root");
 }
 
 /// Two trees whose roots name the same chunk file, each claiming its own
