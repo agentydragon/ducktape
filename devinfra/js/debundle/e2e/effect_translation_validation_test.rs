@@ -2668,29 +2668,37 @@ fn retained_depth_suffix_closes_effects_without_claiming_execution_completion() 
 
 #[test]
 fn retained_depth_suffix_with_no_reordering_keeps_effect_closure_accepted() {
-    let fixture =
-        depth_limited_fixture_with_claim_order("return seed;", false, false, true, |next| {
-            format!("step{next}()")
+    for (tail, output, sequences) in [
+        ("return seed;", "7 1\n", false),
+        ("return seed + 1;", "8 1\n", true),
+    ] {
+        let fixture = depth_limited_fixture_with_claim_order(tail, false, false, true, |next| {
+            if sequences {
+                format!("(step{next}(), seed + 1)")
+            } else {
+                format!("step{next}()")
+            }
         });
-    assert_preserved_entry_output(&fixture, "7 1\n");
-    let execution = binding_execution_report(&fixture, "result");
-    assert_eq!(execution["complete"], false, "{execution:#}");
-    assert_eq!(
-        execution["binding_effect_authority"]["authority"], "retained_effect_closure",
-        "{execution:#}"
-    );
-    assert_eq!(
-        execution["binding_effect_authority"]["receipt"]["calls"]
-            .as_array()
-            .unwrap()
-            .len(),
-        67,
-        "{execution:#}"
-    );
-    let report = fixture.effect_translation_validation();
-    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
-    assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
-    assert_eq!(report["swapped_pairs"], 0, "{report:#}");
+        assert_preserved_entry_output(&fixture, output);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(execution["complete"], false, "{execution:#}");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"], "retained_effect_closure",
+            "{execution:#}"
+        );
+        assert_eq!(
+            execution["binding_effect_authority"]["receipt"]["calls"]
+                .as_array()
+                .unwrap()
+                .len(),
+            67,
+            "{execution:#}"
+        );
+        let report = fixture.effect_translation_validation();
+        assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+        assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
+        assert_eq!(report["swapped_pairs"], 0, "{report:#}");
+    }
 }
 
 #[test]
@@ -2716,7 +2724,7 @@ fn retained_depth_query_refuses_opaque_operations_and_returned_capabilities() {
 
 #[test]
 fn retained_depth_suffix_composes_primitive_operators_and_sequences() {
-    let fixture = depth_limited_fixture("return seed + 1;", false, false, |next| {
+    let fixture = depth_limited_fixture("return seed + 1;", false, true, |next| {
         format!("(step{next}(), seed + 1)")
     });
     assert_preserved_entry_output(&fixture, "8 1\n");
@@ -2727,7 +2735,11 @@ fn retained_depth_suffix_composes_primitive_operators_and_sequences() {
         "{execution:#}"
     );
     let report = fixture.effect_translation_validation();
-    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_potential_suppression_rejection(
+        &fixture.candidate_relocation_assessment(),
+        &report,
+        "blocked_by_effect",
+    );
     assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
 }
 
