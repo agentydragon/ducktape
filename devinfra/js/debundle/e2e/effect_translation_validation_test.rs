@@ -7544,46 +7544,50 @@ fn imported_source_body_effects_compose_through_direct_and_wrapped_calls() {
 fn provider_local_birth_support_requires_a_private_complete_body() {
     const PRIVATE_SOURCE: &str = "import { privateReadStore } from './peer.js';\nconst privateResult = privateReadStore();\nconsole.log(privateResult.value);\n";
     const PRIVATE_PROVIDER: &str = "export function privateReadStore() { const record = { value: 1 }; const observed = record.value; record.value = 2; return record; }\n";
-    let (fixture, _) = accepted_primitive_fixture_with_reports(
-        FixtureOpts::new(PRIVATE_SOURCE, vec![])
-            .with_extra_chunks(&[("static/peer", PRIVATE_PROVIDER)]),
-        "provider-local-birth-support",
-    );
-    assert_preserved_entry_output(&fixture, "2\n");
-
-    let private = binding_execution_report(&fixture, "privateResult");
-    let _ = assert_operation_receipt(&fixture, "privateResult", 1);
-    let supports = private["operation_support_receipts"]
-        .as_array()
-        .expect("provider-local support stays in the diagnostic carrier");
-    assert!(
-        supports.iter().any(|receipt| {
-            receipt["support"]["kind"] == "provider_local_birth"
-                && receipt["support"].get("origin").is_none()
-        }),
-        "sealed evidence must not retain an address that could alias another provider: {private:#}"
-    );
-    for operation in ["own_data_read", "writable_own_data_store"] {
-        assert!(
-            supports.iter().any(|receipt| {
-                receipt["operation"] == operation
-                    && receipt["support"]["kind"] == "provider_local_birth"
-            }),
-            "the private body must seal its {operation} support: {private:#}"
-        );
-    }
-
-    // This shape reads and stores a private fresh local, but its primitive
-    // return is outside the current allocation-candidate admission. Keep that
-    // boundary explicit instead of widening unrelated return authority.
-    for (case, source, provider, binding, output) in [
+    for (case, source, provider, output) in [
+        (
+            "provider-local-birth-support",
+            PRIVATE_SOURCE,
+            PRIVATE_PROVIDER,
+            "2\n",
+        ),
         (
             "provider-local-birth-primitive-return",
             "import { privateReadStore } from './peer.js';\nconst privateResult = privateReadStore();\nconsole.log(privateResult);\n",
             "export function privateReadStore() { const record = { value: 1 }; const observed = record.value; record.value = 2; return observed; }\n",
-            "privateResult",
             "1\n",
         ),
+    ] {
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
+            FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+            case,
+        );
+        assert_preserved_entry_output(&fixture, output);
+
+        let private = binding_execution_report(&fixture, "privateResult");
+        let _ = assert_operation_receipt(&fixture, "privateResult", 1);
+        let supports = private["operation_support_receipts"]
+            .as_array()
+            .expect("provider-local support stays in the diagnostic carrier");
+        assert!(
+            supports.iter().any(|receipt| {
+                receipt["support"]["kind"] == "provider_local_birth"
+                    && receipt["support"].get("origin").is_none()
+            }),
+            "sealed evidence must not retain an address that could alias another provider: {private:#}"
+        );
+        for operation in ["own_data_read", "writable_own_data_store"] {
+            assert!(
+                supports.iter().any(|receipt| {
+                    receipt["operation"] == operation
+                        && receipt["support"]["kind"] == "provider_local_birth"
+                }),
+                "the private body must seal its {operation} support: {private:#}"
+            );
+        }
+    }
+
+    for (case, source, provider, binding, output) in [
         (
             "provider-local-birth-borrowed",
             "import { borrowed } from './peer.js';\nconst box = { value: 0 };\nconst borrowedResult = borrowed(box, box);\nconsole.log(borrowedResult.value);\n",
@@ -7655,9 +7659,7 @@ fn provider_local_birth_support_requires_a_private_complete_body() {
                     .all(|receipt| { receipt["support"]["kind"] != "provider_local_birth" })),
             "{case} cannot carry a sealed provider-local birth: {execution:#}"
         );
-        if case != "provider-local-birth-borrowed"
-            && case != "provider-local-birth-primitive-return"
-        {
+        if case != "provider-local-birth-borrowed" {
             assert_ne!(
                 execution["binding_effect_authority"]["authority"], "operation_receipt",
                 "{case} lacks the complete private-body proof required for operation authority: {execution:#}"

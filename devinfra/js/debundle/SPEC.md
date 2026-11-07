@@ -852,8 +852,8 @@ without a caller heap address. The shared transfer checks a fresh, nonborrowed
 frame birth at each own-data operation. This bounded proof admits only a complete
 straight-line body within the existing allocation-query grammar, with simple
 parameters, local let/const operations, ordinary data records and one terminal
-return. It does not widen that grammar to scalar-only returns. Calls, native
-operations, closures, captured writes, unproved operations and omitted
+return, whether primitive or an allocated record. Calls, native operations,
+closures, captured writes, unproved operations and omitted
 post-terminal statements exclude it.
 Only normal complete transfer with closed effects seals the candidate evidence;
 an unsealed candidate remains unresolved. Final return may expose the completed
