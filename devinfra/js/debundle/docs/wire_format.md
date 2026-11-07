@@ -49,6 +49,15 @@ support is substituted with the caller's actual pooled object origin before it
 enters caller effects. An unresolved provider-world origin is never compared
 with a caller ordinal and retains conservative effects.
 
+The `provider_local_birth_candidate` support kind is unresolved per-access
+evidence and carries only its provider-local `origin`. A complete normal shared
+transfer may seal it to `provider_local_birth` after checking the bounded private
+body and frame births. That sealed kind has no address fields and projects no
+caller heap cell. Parameter support retains its separate caller substitution.
+The graph's `synchronous_execution.operation_support_receipts` list exposes
+composed support evidence when present, including the address-free certificate.
+Its presence alone supplies no effect coverage or returned-value identity.
+
 ## Native input identity in saved analysis
 
 The staged analysis projection stores native operation premises separately from

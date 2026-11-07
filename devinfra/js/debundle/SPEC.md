@@ -835,6 +835,19 @@ effects; opaque descriptor/prototype mutations remain overlapping unknown
 invalidators. Support receipts are evidence and read footprints only: they do
 not close coverage or extend reasoning to absent/inherited slots or
 extensibility.
+A provider-local support read may instead carry a private-birth certificate
+without a caller heap address. The shared transfer checks a fresh, nonborrowed
+frame birth at each own-data operation. This bounded proof admits only a complete
+straight-line body within the existing allocation-query grammar, with simple
+parameters, local let/const operations, ordinary data records and one terminal
+return. It does not widen that grammar to scalar-only returns. Calls, native
+operations, closures, captured writes, unproved operations and omitted
+post-terminal statements exclude it.
+Only normal complete transfer with closed effects seals the candidate evidence;
+an unsealed candidate remains unresolved. Final return may expose the completed
+local graph, whose imported value remains opaque. Sealed evidence carries no
+provider ordinal and establishes no caller identity, distinctness or descriptor
+state. Source and saved reports retain the operation and its proof dependencies.
 A canonical in-range array-index read uses the same own-data transfer when the
 current prefix retains a settled, first-generation dense array-literal witness
 and the actual stored element value. Source operands are not reevaluated to

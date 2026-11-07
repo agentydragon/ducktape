@@ -672,6 +672,11 @@ pub struct SynchronousExecutionReport {
     pub callback_factory_uses: Vec<CallbackFactoryUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
+    /// Own-data operation prerequisites retained by composed synchronous
+    /// bodies. Provider-local birth entries are diagnostic only and carry no
+    /// caller heap address.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operation_support_receipts: Vec<crate::facts::OperationSupportReceipt>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub author_host_contract_uses: Vec<ReentryFreeOperationUse>,
     /// Bounded attribution of the existing own and composed heap summaries.

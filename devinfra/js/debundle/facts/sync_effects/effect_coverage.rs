@@ -796,6 +796,15 @@ pub(crate) enum OperationSupportLocation {
     ProviderWorldObjectShape {
         origin: u32,
     },
+    /// This exact access observed a frame-born, nonborrowed object. It remains
+    /// unresolved until the complete normal provider transfer seals the body.
+    ProviderLocalBirthCandidate {
+        origin: u32,
+    },
+    /// A completed provider-local birth proof. No provider allocation address
+    /// survives sealing, so this cannot be compared with another provider or
+    /// projected into a caller heap cell.
+    ProviderLocalBirth,
     ParameterHeapRead {
         read: ParameterHeapRead,
     },
@@ -856,13 +865,27 @@ impl OperationSupportReceipt {
         }
     }
 
+    pub(crate) fn provider_local_birth_candidate(
+        operation: OperationSupportOperation,
+        origin: u32,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        Self {
+            operation,
+            support: OperationSupportLocation::ProviderLocalBirthCandidate { origin },
+            dependencies: Box::new(dependencies.clone()),
+        }
+    }
+
     pub(crate) fn projected_cell(&self) -> Option<EffectCell> {
         match &self.support {
             OperationSupportLocation::PooledObjectShape { origin } => {
                 Some(EffectCell::ObjectShape(*origin))
             }
             OperationSupportLocation::ProviderWorldObjectShape { .. }
+            | OperationSupportLocation::ProviderLocalBirthCandidate { .. }
             | OperationSupportLocation::ParameterHeapRead { .. } => None,
+            OperationSupportLocation::ProviderLocalBirth => None,
         }
     }
 
@@ -870,6 +893,7 @@ impl OperationSupportReceipt {
         if matches!(
             &self.support,
             OperationSupportLocation::ProviderWorldObjectShape { .. }
+                | OperationSupportLocation::ProviderLocalBirthCandidate { .. }
         ) {
             return false;
         }
@@ -1124,6 +1148,7 @@ impl EffectCoverageFragment {
             matches!(
                 &receipt.support,
                 OperationSupportLocation::ProviderWorldObjectShape { .. }
+                    | OperationSupportLocation::ProviderLocalBirthCandidate { .. }
                     | OperationSupportLocation::ParameterHeapRead { .. }
             )
         })
@@ -1134,8 +1159,38 @@ impl EffectCoverageFragment {
             matches!(
                 &receipt.support,
                 OperationSupportLocation::ProviderWorldObjectShape { .. }
+                    | OperationSupportLocation::ProviderLocalBirthCandidate { .. }
             )
         })
+    }
+
+    /// Seal only per-access candidates from a complete normal transfer. The
+    /// caller additionally checks that this was the admitted straight-line
+    /// LocalBody and that allocation transfer itself completed.
+    pub(super) fn seal_provider_local_birth_support(
+        &mut self,
+        fresh_records: &std::collections::BTreeSet<u32>,
+        borrowed_records: &std::collections::BTreeSet<u32>,
+    ) -> bool {
+        if self.closed_effect_dependencies().is_none() {
+            return false;
+        }
+        let mut receipts = self.operation_support_receipts().to_vec();
+        for receipt in &mut receipts {
+            match &receipt.support {
+                OperationSupportLocation::ProviderLocalBirthCandidate { origin } => {
+                    let origin = *origin;
+                    if !fresh_records.contains(&origin) || borrowed_records.contains(&origin) {
+                        return false;
+                    }
+                    receipt.support = OperationSupportLocation::ProviderLocalBirth;
+                }
+                OperationSupportLocation::ParameterHeapRead { .. } => {}
+                _ => return false,
+            }
+        }
+        self.operation_support = (!receipts.is_empty()).then(|| receipts.into_boxed_slice());
+        true
     }
 
     /// Bind provider-parameter support to the caller's actual pooled object
@@ -2034,6 +2089,92 @@ mod tests {
             None,
             "provider-world pooled origins never become caller heap cells"
         );
+    }
+
+    #[test]
+    fn provider_local_birth_seals_without_cross_world_address_or_projection() {
+        let mut candidate = EffectCoverageFragment::no_effects();
+        candidate.operation_support(OperationSupportReceipt::provider_local_birth_candidate(
+            OperationSupportOperation::WritableOwnDataStore,
+            7,
+            &ProofDependencies::default(),
+        ));
+        assert!(candidate.has_uninstantiated_operation_support());
+        assert!(candidate.has_unresolved_provider_operation_support());
+        assert!(!candidate.instantiate_operation_support(&[91]));
+        assert_eq!(
+            candidate.operation_support_receipts()[0].projected_cell(),
+            None
+        );
+
+        let fresh = std::collections::BTreeSet::from([7]);
+        let borrowed = std::collections::BTreeSet::new();
+        assert!(candidate.seal_provider_local_birth_support(&fresh, &borrowed));
+        assert!(!candidate.has_uninstantiated_operation_support());
+        assert!(!candidate.has_unresolved_provider_operation_support());
+        assert!(candidate.instantiate_operation_support(&[91]));
+        let receipt = &candidate.operation_support_receipts()[0];
+        assert_eq!(
+            receipt.support,
+            OperationSupportLocation::ProviderLocalBirth
+        );
+        assert_eq!(receipt.projected_cell(), None);
+
+        let saved = SavedEffectCoverageFragment::snapshot(&candidate);
+        let bytes = serde_json::to_vec(&saved).unwrap();
+        let saved: SavedEffectCoverageFragment<'_> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(saved.restore(), candidate);
+        let mut incomplete: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        incomplete
+            .as_object_mut()
+            .unwrap()
+            .remove("operation_support");
+        assert!(serde_json::from_value::<SavedEffectCoverageFragment<'_>>(incomplete).is_err());
+    }
+
+    #[test]
+    fn provider_local_birth_refuses_missing_or_borrowed_frame_birth() {
+        let candidate = || {
+            let mut fragment = EffectCoverageFragment::no_effects();
+            fragment.operation_support(OperationSupportReceipt::provider_local_birth_candidate(
+                OperationSupportOperation::OwnDataRead,
+                7,
+                &ProofDependencies::default(),
+            ));
+            fragment
+        };
+        let fresh = std::collections::BTreeSet::from([7]);
+        let borrowed = std::collections::BTreeSet::from([7]);
+        assert!(!candidate().seal_provider_local_birth_support(
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        ));
+        assert!(!candidate().seal_provider_local_birth_support(&fresh, &borrowed));
+    }
+
+    #[test]
+    fn provider_local_birth_refuses_uncertain_or_abrupt_completion() {
+        let candidate = || {
+            let mut fragment = EffectCoverageFragment::no_effects();
+            fragment.operation_support(OperationSupportReceipt::provider_local_birth_candidate(
+                OperationSupportOperation::OwnDataRead,
+                7,
+                &ProofDependencies::default(),
+            ));
+            fragment
+        };
+        let fresh = std::collections::BTreeSet::from([7]);
+        let borrowed = std::collections::BTreeSet::new();
+
+        let mut uncertain = candidate();
+        uncertain.compose(&EffectCoverageFragment::default());
+        assert!(!uncertain.seal_provider_local_birth_support(&fresh, &borrowed));
+        assert!(uncertain.has_unresolved_provider_operation_support());
+
+        let mut abrupt = candidate();
+        abrupt.abrupt();
+        assert!(!abrupt.seal_provider_local_birth_support(&fresh, &borrowed));
+        assert!(abrupt.has_unresolved_provider_operation_support());
     }
 
     #[test]

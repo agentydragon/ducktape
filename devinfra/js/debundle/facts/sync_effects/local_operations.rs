@@ -463,6 +463,9 @@ pub(super) struct LocalBody {
     allocation_candidate_syntax: bool,
     closure_candidate_syntax: bool,
     closure_sites: Arc<[u32]>,
+    /// Live ordered lowering intentionally drops source after a terminal
+    /// completion. The narrow provider proof excludes such candidates.
+    has_post_terminal_operations: bool,
     /// Source contains a bare empty keyed-collection construction. Provider
     /// read projection treats that native callee separately from captures;
     /// every consumer still proves its actual constructor identity.
@@ -1289,9 +1292,11 @@ impl LocalBody {
         let has_defaults = parameters
             .iter()
             .any(|parameter| parameter.default.is_some());
-        let operations = Self::lower_region(&body.stmts, &mut bindings, has_defaults, false)?;
+        let (operations, has_post_terminal_operations) =
+            Self::lower_region(&body.stmts, &mut bindings, has_defaults, false)?;
         let mut lowered = Self::from_operations(bindings, parameters, operations);
         lowered.source_span = Some(body.span);
+        lowered.has_post_terminal_operations = has_post_terminal_operations;
         Some(lowered)
     }
 
@@ -1300,9 +1305,10 @@ impl LocalBody {
         bindings: &mut BTreeMap<Id, LocalBinding>,
         has_defaults: bool,
         nested: bool,
-    ) -> Option<Vec<LocalOperation>> {
+    ) -> Option<(Vec<LocalOperation>, bool)> {
         let mut operations = Vec::new();
         let mut terminal = false;
+        let mut has_post_terminal_operations = false;
         for statement in statements {
             if nested
                 && matches!(statement, Stmt::Decl(declaration)
@@ -1322,6 +1328,7 @@ impl LocalBody {
                 // The canonical collector supplies all declaration identities
                 // and kinds after visiting the complete body, including dead
                 // pattern and loop declarations. Their initializers do not run.
+                has_post_terminal_operations |= !matches!(statement, Stmt::Empty(_));
                 continue;
             }
             match statement {
@@ -1373,6 +1380,7 @@ impl LocalBody {
                                 has_defaults,
                                 true,
                             )?
+                            .0
                             .into(),
                         },
                         binding,
@@ -1384,6 +1392,7 @@ impl LocalBody {
                                 has_defaults,
                                 true,
                             )?
+                            .0
                             .into(),
                         },
                     });
@@ -1391,7 +1400,7 @@ impl LocalBody {
                 _ => return None,
             }
         }
-        Some(operations)
+        Some((operations, has_post_terminal_operations))
     }
 
     /// A concise arrow has the same ordered return semantics as a block body.
@@ -1653,6 +1662,7 @@ impl LocalBody {
             allocation_candidate_syntax,
             closure_candidate_syntax,
             closure_sites,
+            has_post_terminal_operations: false,
             requires_keyed_collection_new,
         }
     }
@@ -1708,6 +1718,86 @@ impl LocalBody {
 
     pub(super) fn captured_writes(&self) -> &[Id] {
         self.captured_writes.as_deref().unwrap_or_default()
+    }
+
+    /// Static admission only for provider-local operation support. The shared
+    /// local transfer remains the sole value/effect evaluator; this predicate
+    /// admits only a straight-line body whose only possible publication is its
+    /// one final return.
+    pub(super) fn provider_local_birth_candidate(&self) -> bool {
+        if !self.allocation_candidate_syntax
+            || self
+                .parameters
+                .iter()
+                .any(|parameter| parameter.default.is_some())
+            || !self.captured_writes().is_empty()
+            || !self.closure_sites.is_empty()
+            || self.has_post_terminal_operations
+            || self.bindings.values().any(|kind| {
+                !matches!(
+                    kind,
+                    LocalBinding::Parameter | LocalBinding::Let | LocalBinding::Const
+                )
+            })
+        {
+            return false;
+        }
+
+        let Some((terminal, prefix)) = self.operations.split_last() else {
+            return false;
+        };
+        if !matches!(terminal, LocalOperation::Return(Some(value), _) if self.provider_birth_expression(value))
+        {
+            return false;
+        }
+        prefix.iter().all(|operation| match operation {
+            LocalOperation::Initialize(binding, Some(value)) => {
+                matches!(
+                    self.bindings.get(binding),
+                    Some(LocalBinding::Let | LocalBinding::Const)
+                ) && self.provider_birth_expression(value)
+            }
+            LocalOperation::Evaluate(value) => self.provider_birth_expression(value),
+            LocalOperation::Initialize(..)
+            | LocalOperation::InitializeObject { .. }
+            | LocalOperation::Return(..)
+            | LocalOperation::Throw(..)
+            | LocalOperation::TryCatch { .. } => false,
+        })
+    }
+
+    fn provider_birth_expression(&self, expression: &LocalExpression) -> bool {
+        match expression {
+            LocalExpression::Value(ValueExpr::Binding(_) | ValueExpr::Undefined)
+            | LocalExpression::PrimitiveLiteral(_) => true,
+            LocalExpression::Record { properties, .. } => properties.iter().all(|property| {
+                matches!(property, PropertyDefinition::Data { name: Some(name), value }
+                    if name != "__proto__" && self.provider_birth_expression(value))
+            }),
+            LocalExpression::Sequence(expressions) => expressions
+                .iter()
+                .all(|expression| self.provider_birth_expression(expression)),
+            LocalExpression::Assign { binding, value, .. } => {
+                self.bindings.contains_key(binding) && self.provider_birth_expression(value)
+            }
+            LocalExpression::ReadField { receiver, .. } => self.bindings.contains_key(receiver),
+            LocalExpression::AssignField {
+                receiver, value, ..
+            } => self.bindings.contains_key(receiver) && self.provider_birth_expression(value),
+            LocalExpression::Binary { .. }
+            | LocalExpression::Template { .. }
+            | LocalExpression::This
+            | LocalExpression::Array { .. }
+            | LocalExpression::SetConstruction { .. }
+            | LocalExpression::UpdateBinding { .. }
+            | LocalExpression::Closure(_)
+            | LocalExpression::ClassDefinition(_)
+            | LocalExpression::Call(_)
+            | LocalExpression::DefineThisField { .. }
+            | LocalExpression::AssignPrivateThisField { .. }
+            | LocalExpression::AssignPublicThisField { .. }
+            | LocalExpression::Value(_) => false,
+        }
     }
 
     /// Grammar candidate for the shared allocation consumer. Calls still need
