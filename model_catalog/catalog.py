@@ -1,71 +1,43 @@
 """Account-specific model facts and canonical routes shared by configuration consumers.
 
-Select Route objects and serialize their attributes at the consumer boundary.
-Deployment endpoints and credentials belong to the consuming deployment, not this catalogue.
+Select Route objects and serialize their attributes at the consumer boundary. Deployment
+endpoints and credentials belong to each deployment, not this catalogue.
 
-Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
-upstream account/provider, the wire LiteLLM speaks to that provider, then the upstream
-model:
+Naming (#4823): `model_name` is `{provider}/{shape}/{model}`.
+Provider identifies whose credentials serve the model (not its manufacturer); shape is
+the outbound wire. Keep both distinct:
 
-- `chatgpt-sub/ant-messages/*` / `chatgpt-sub/oai-responses/*` — ChatGPT/Codex subscription via
-  CLIProxyAPI, which serves it on both the Anthropic Messages and the OpenAI Responses
-  wire; the two entries pick between them
-- `anthropic-max20/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude
-  OAuth session, on the Anthropic Messages wire (a different upstream session on the same
-  pod as `chatgpt-sub/*`, distinct from the direct-API `anthropic-api/ant-messages/*` entries)
-- `anthropic-api/ant-messages/*` — direct Anthropic API on the Anthropic Messages wire
-- `tana/oai-chat/*` — Tana account via the in-process Chat Completions custom
-  provider, which maps requests to Tana core messages
-- `google/goog-generate/*` / `google/goog-embed/*` — Google AI key (Gemini), on Google's
-  own `:generateContent` / `:embedContent` wire
-- `mistral/oai-chat/*` — Mistral API key
-- `groq/oai-chat/*` — Groq API key, OpenAI-compatible at api.groq.com/openai/v1
-- `ollama/oai-chat/*` / `ollama/olm-chat/*` / `ollama/olm-embed/*` — self-hosted Ollama,
-  which serves the same models on an OpenAI-compatible `/v1` and on its own native
-  endpoints; the chat model segment carries the `num_ctx` variant (`gpt-oss-20b-512k`)
-  that distinguishes chat entries
+- `chatgpt-sub/{ant-messages,oai-responses}/*` selects CLIProxyAPI's Anthropic Messages
+  or OpenAI Responses wire. `anthropic-max20/ant-messages/*` is a separate Claude OAuth
+  session from `chatgpt-sub/*` on the same pod; `anthropic-api/ant-messages/*` is the
+  direct API account.
+- `google/{goog-generate,goog-embed}/*` uses the Gemini API key;
+  `antigravity/ant-messages/*` uses the separate Antigravity OAuth account through
+  CLIProxyAPI's Anthropic translator.
+- `tana/oai-chat/*` uses Chat Completions; its in-process adapter calls Tana's private
+  core-message HTTP endpoint.
+- `ollama/oai-chat/*` and `ollama/olm-chat/*` expose OpenAI-compatible and native chat;
+  chat IDs encode the `num_ctx` variant (for example, `gpt-oss-20b-512k`).
 
-The shape is the OUTBOUND provider interface, never the request a client makes
-to LiteLLM. For the in-process Tana provider this is the Chat Completions model
-interface; the adapter itself calls Tana's private core-message HTTP endpoint.
-Nothing about the inbound side is pinned: LiteLLM routes
-on `model_name` alone, takes the incoming shape from whichever endpoint the client called,
-and translates rather than rejecting a mismatch, so every entry is reachable from
-`/v1/messages`, `/v1/chat/completions` and `/v1/responses` alike — the laptop
-`gemini-claude` wrapper runs Claude Code's `/v1/messages` traffic against
-`google/goog-generate/*`. What the shape does decide is which translator does the work,
-load-bearing wherever one account is served over two wires:
-`chatgpt-sub/{ant-messages,oai-responses}/*` exists so CLIProxyAPI translates Claude Code's
-tool calls instead of LiteLLM's own Messages bridge (<nix/home/claude_code/codex-claude.nix>).
+Outbound shape does not constrain the inbound client endpoint. LiteLLM routes on
+`model_name`, accepts the shape from the called endpoint, and translates mismatches:
+chat entries can be reached through `/v1/messages`, `/v1/chat/completions`, and
+`/v1/responses`. For example, `gemini-claude` sends Claude Code Messages traffic to
+`google/goog-generate/*`. The ChatGPT pair lets CLIProxyAPI translate Claude Code tool
+calls instead of LiteLLM's Messages bridge (<nix/home/claude_code/codex-claude.nix>).
 
-A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
-goog-generate, goog-embed, olm-chat): the shape segment names a wire protocol, and wire protocols are
-identified by their definer — the bare nouns are unique only in today's snapshot
-("chat" and "embeddings" are already generic: Cohere chat and Google embedContent are
-distinct wire shapes answering to the same nouns). The definer prefix is NOT the
-provider segment: provider says whose ACCOUNT serves the entry, the definer says whose
-PROTOCOL that wire is, and they vary independently — `chatgpt-sub/ant-messages/*` is the
-ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fixed
-(ant, oai, goog, olm; future coh, ...) so a provider slug can never stutter against a
-definer name (openai/openai-chat, ollama/ollama-chat).
+Shape slugs are `<definer>-<protocol>`: the definer names the wire protocol, independently
+of the provider/account (`chatgpt-sub/ant-messages/*` is the ChatGPT account on Anthropic's
+wire). The prefix disambiguates generic protocol names such as Cohere chat and Google
+embedContent, and avoids redundant names such as `openai/openai-chat`. `/` separates fields
+at boundaries because upstream model slugs contain dashes. It matches LiteLLM's model-group
+form (`openai/gpt-4o`, wildcard `openai/*`). Model names
+travel in request bodies, not URL paths or Kubernetes resource names. Provider-first names
+make Crossplane key lanes share a prefix that LiteLLM can match as a wildcard.
 
-Segments are separated by `/`, not `-`: provider model slugs are dash-heavy
-(gpt-6-sol, claude-sonnet-4-6, gemini-embedding-001), so a dash cannot mark segment
-boundaries unambiguously. `/` is LiteLLM's own model-group idiom (its docs' recommended
-`model_name: openai/gpt-4o`, wildcard `openai/*`) and is already served in-cluster by
-tana-litellm (`claude-sonnet-4-6/medium`, `gpt-5.1/medium`); clients carry the model in
-the request body (Claude Code, Codex, OpenClaw), and on this stack a model name never
-rides in a URL path or a Kubernetes resource name.
-
-The provider segment rides in front, not behind, because a key allowlist is a provider
-lane: each Crossplane `Key`'s `forProvider.models` list in
-cluster/cdk8s/litellm/crossplane_keys.py enumerates one provider's names explicitly, so
-the lane is the common prefix (and a LiteLLM prefix wildcard would carve the same lane). Deliberately not
-renamed: the raw upstream model slugs inside the exposed names, and the two groq whisper
-entries, whose historical bare IDs are retained even though their outbound shape is known. The bare
-`gemini-embedding-2` alias (GEMINI_EMBEDDING_COMPAT_ALIAS) is exempt too: it predates the
-scheme and public-coder-agent's durable memory index stores that model identity, so it
-stays until the index is deliberately rebuilt.
+Preserve raw upstream model slugs and the two historical bare Groq Whisper IDs, despite
+their known outbound shape. The bare `gemini-embedding-2` compatibility alias stays until
+public-coder-agent's durable memory index is deliberately rebuilt under the prefixed name.
 """
 
 from dataclasses import dataclass, replace
