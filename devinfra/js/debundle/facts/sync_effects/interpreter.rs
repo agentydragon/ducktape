@@ -9720,10 +9720,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// prefix only when this owner has no intervening operation. Compound
     /// initializers still need ordered result transport through the runtime.
     fn root_own_data_read(&self, expression: &ValueExpr) -> Option<OwnDataRead> {
-        let ValueExpr::Member(receiver, Some(property), MemberKey::Static, site) = expression
-        else {
+        let ValueExpr::Member(receiver, Some(property), key, site) = expression else {
             return None;
         };
+        if !key.supports_own_data_read(property) {
+            return None;
+        }
         let ValueExpr::Binding(receiver) = receiver.as_ref() else {
             return None;
         };
@@ -9744,15 +9746,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return None;
         }
-        let [(binding, ValueExpr::Member(_, _, MemberKey::Static, initializer_site))] =
-            self.inputs.index.top_assignments[owner.0].as_slice()
+        let [
+            (
+                binding,
+                ValueExpr::Member(_, Some(initializer_property), initializer_key, initializer_site),
+            ),
+        ] = self.inputs.index.top_assignments[owner.0].as_slice()
         else {
             return None;
         };
         let [call] = self.inputs.index.top_calls[owner.0].as_slice() else {
             return None;
         };
-        if *initializer_site != *site
+        if !initializer_key.supports_own_data_read(initializer_property)
+            || initializer_property != property
+            || *initializer_site != *site
             || !fact.declared.contains(binding)
             || !self.inputs.index.top_definite_initializers[owner.0].contains(binding)
             || call.kind != CallKind::LocalMemberRead

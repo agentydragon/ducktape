@@ -10,6 +10,7 @@ use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::execution_evidence::SourceLocation;
+use crate::facts::heap_contents::is_array_index;
 use crate::facts::{EffectCell, HeapContentCells, SourceUnitReadClosure};
 use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
@@ -1520,16 +1521,15 @@ fn emit_cell_order_events(
                 }
             }
             // Unknown effects are barriers for subsequent summarized events.
-            // Every array owns length from birth. Its separate property cell
-            // shares only the uniquely eager array's exemption, never a
-            // repeated site's or an ordinary record property's.
+            // Checked own array slots share the uniquely eager array's birth,
+            // never a repeated site's or an ordinary record property's.
             if let Some(barrier) = opaque_barrier
                 && (barrier_mode != CellOrderBarrier::None
                     || effects.reads.iter().chain(&effects.writes).any(|cell| {
                         !born_after_barrier.contains(cell)
                             && !matches!(cell,
                                     EffectCell::OwnProperty { origin, property }
-                                        if property == "length"
+                                        if (property == "length" || is_array_index(property))
                                             && born_after_barrier.contains(
                                                 &EffectCell::ArrayContents(*origin)))
                     }))

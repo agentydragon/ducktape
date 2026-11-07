@@ -1,6 +1,8 @@
 //! Present ordinary own-data slots at one settled execution prefix.
 
-use super::value_model::{AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values};
+use super::value_model::{
+    AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values, canonical_array_index,
+};
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::EffectCell;
 use crate::facts::abstract_domain::value::Value;
@@ -45,23 +47,26 @@ pub(super) struct OwnDataRead {
 /// so only it can bypass consumers' ordinary-record restriction.
 pub(super) enum PresentOwnDataSlot {
     OrdinaryRecord(OwnDataSlot),
+    ArrayIndex(OwnDataSlot),
     ArrayLength(OwnDataSlot),
 }
 
 impl PresentOwnDataSlot {
     pub(super) fn object(&self) -> u32 {
         match self {
-            Self::OrdinaryRecord(slot) | Self::ArrayLength(slot) => slot.object,
+            Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => {
+                slot.object
+            }
         }
     }
 
     pub(super) fn is_array_specific(&self) -> bool {
-        matches!(self, Self::ArrayLength(_))
+        matches!(self, Self::ArrayIndex(_) | Self::ArrayLength(_))
     }
 
     pub(super) fn read(self, context: &impl OwnDataContext) -> OwnDataRead {
         match self {
-            Self::OrdinaryRecord(slot) => slot.read(context),
+            Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) => slot.read(context),
             Self::ArrayLength(slot) => OwnDataRead {
                 values: Values::from([AbstractValue::Value(Value::Prim(PrimKinds::NUMBER))]),
                 cell: slot.cell(),
@@ -90,9 +95,9 @@ impl OwnDataSlot {
     }
 }
 
-/// Resolve a present read at the current settled prefix. Arrays receive only
-/// the read-only native `length` case; ordinary properties keep the record
-/// descriptor and ownership checks in `resolve_slot`.
+/// Resolve a present read at the current settled prefix. An array index needs
+/// the same first-generation dense literal witness as native `length`, plus
+/// an in-range own data value. Neither proof grants a write.
 pub(super) fn resolve_present_read(
     context: &impl OwnDataContext,
     receivers: &Values,
@@ -116,11 +121,14 @@ pub(super) fn resolve_present_read(
     if !context.object_properties_are_settled(*object) {
         return Err(OrderedFieldReadRefusal::UnsettledReceiver);
     }
-    if property == "length"
-        && context
-            .first_generation_dense_array_length(*object)
-            .is_some()
+    if let Some(length) = context.first_generation_dense_array_length(*object)
+        && (property == "length" || canonical_array_index(property).is_some())
     {
+        if property != "length"
+            && !canonical_array_index(property).is_some_and(|index| index < length)
+        {
+            return Err(OrderedFieldReadRefusal::MissingField);
+        }
         if let OwnDataOwnership::FreshLocal { fresh, .. } = &ownership
             && !fresh.contains(object)
         {
@@ -132,10 +140,15 @@ pub(super) fn resolve_present_read(
         if context.property_values(*object, property).is_none() {
             return Err(OrderedFieldReadRefusal::MissingHeapValue);
         }
-        return Ok(PresentOwnDataSlot::ArrayLength(OwnDataSlot {
+        let slot = OwnDataSlot {
             object: *object,
             property: property.to_owned(),
-        }));
+        };
+        return Ok(if property == "length" {
+            PresentOwnDataSlot::ArrayLength(slot)
+        } else {
+            PresentOwnDataSlot::ArrayIndex(slot)
+        });
     }
     resolve_slot(context, receivers, property, ownership).map(PresentOwnDataSlot::OrdinaryRecord)
 }
