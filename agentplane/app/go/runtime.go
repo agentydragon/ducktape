@@ -313,7 +313,7 @@ func run(ctx context.Context, config Config) error {
 
 	server := NewHTTPServer(appAuth)
 	app := &appService{
-		config: config, environments: environments, bridge: appBridge, runnerStatus: appBridge,
+		config: config, systemStatus: serviceStatus, environments: environments, bridge: appBridge, runnerStatus: appBridge,
 		threadWriter: threadStore, threadReader: threadStore, threadHistory: history, threadRuntime: runner,
 		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
 	}
@@ -331,7 +331,9 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
 	RegisterOperatorRoutes(server, actionCallbackHTTP, config.ActionFederation.ServiceURL)
-	RegisterStatusRoutes(server, serviceStatus)
+	if err := RegisterStatusRoutes(server, app); err != nil {
+		return fmt.Errorf("register System status facade: %w", err)
+	}
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,

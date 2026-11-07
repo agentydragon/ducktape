@@ -209,6 +209,18 @@ go_test(
 )
 
 go_test(
+    name = "statusapi_test",
+    srcs = ["statusapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/status",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)
+
+go_test(
     name = "policyapi_test",
     srcs = ["policyapi_test.go"],
     embed = [":main_lib"],
