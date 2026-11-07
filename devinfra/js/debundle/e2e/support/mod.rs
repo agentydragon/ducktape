@@ -196,6 +196,8 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     }
     args.extend_from_slice(extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
+    let app_root = setup.out_root.join(APP_DIR);
+    mirror_runtime_extra_files(&app_root, opts.extra_files, result.status.success());
     if !result.status.success() {
         preserve_failed_fixture_reports(&setup, opts.chunk_id);
     }
@@ -206,15 +208,6 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
         result.stdout,
         result.stderr,
     );
-
-    let app_root = setup.out_root.join("app");
-
-    // Mirror `extra_files` into app_root after the transform runs, so
-    // re-imports emitted by the materializer can resolve through
-    // their relative paths under the runtime app tree.
-    for (rel_path, content) in opts.extra_files {
-        write_text_file(&app_root.join(rel_path), content);
-    }
 
     let entry_path = app_root
         .join(opts.chunk_id.split('/').collect::<PathBuf>())
@@ -281,6 +274,22 @@ fn preserve_failed_fixture_reports(setup: &PreparedFixture, chunk_id: &str) {
                 app_root.display()
             )
         });
+    }
+}
+
+/// Mirror runtime-only siblings after transformation so materialized imports can
+/// resolve, and before a failed fixture's emitted tree is retained. A failed
+/// pipeline may stop before producing `app/`; keep that output absent.
+fn mirror_runtime_extra_files(
+    app_root: &Path,
+    extra_files: &[(&str, &str)],
+    create_app_if_missing: bool,
+) {
+    if !create_app_if_missing && !app_root.is_dir() {
+        return;
+    }
+    for (rel_path, content) in extra_files {
+        write_text_file(&app_root.join(rel_path), content);
     }
 }
 
@@ -524,6 +533,11 @@ fn run_rejection_fixture_with_options(
     }
     args.extend_from_slice(extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
+    mirror_runtime_extra_files(
+        &setup.out_root.join(APP_DIR),
+        opts.extra_files,
+        result.status.success(),
+    );
     if result.status.code() != Some(exit_code) {
         preserve_failed_fixture_reports(&setup, opts.chunk_id);
     }
