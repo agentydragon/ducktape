@@ -26,10 +26,15 @@ Service uses this path. Other callers use Pod-bound `Principal` values.
 each full method name to the `Rule` admitting its callers and refuses any method it does not list
 ([gRPC services](../docs/grpc_services.md#authentication)).
 
+`AnyAccount` accepts a `PrincipalResolver` and puts its resolved `Principal` in `Caller`. A
+TokenReview `Resolver` proves its established Pod-bound identity; another verified source supplies
+only the identity fields it proves. `Accounts` and `ReviewedServiceAccount` remain TokenReview-only.
+
 Delegated calls are a separate, opt-in mode on an authenticated direct `Rule`. `AllowDelegationFrom`
 pins exact actor ServiceAccounts and per-actor caller namespace scopes to the Rule; attaching that
 Rule to a full method name is the method trust grant. It preserves the Rule's ordinary direct path.
-The actor token must be Pod-bound and is reviewed for this service's audience. The asserted caller
+Delegation requires a concrete TokenReview `Resolver`; the actor token must be Pod-bound and is
+reviewed for this service's audience. The asserted caller
 must match the live ServiceAccount UID. A method with no delegation policy rejects the delegated
 scheme and any delegation envelope; `Bearer` plus an envelope is rejected rather than treated as a
 direct call.
@@ -38,8 +43,9 @@ Handlers can read the typed result with `Admitted` or use `EffectiveCaller` for 
 checks. `DirectAdmission` keeps the direct caller and optional Pod proof together;
 `DelegatedAdmission` keeps the actor's Pod-bound `Principal`, effective ServiceAccount identity and
 provenance separate. A delegated actor is never installed in the legacy `Caller` context, which
-continues to mean a directly authenticated Pod-bound principal. The effective caller is account
-identity only and cannot prove a Pod binding.
+continues to mean the direct principal. For TokenReview callers that principal is Pod-bound; other
+`AnyAccount` sources supply only the fields they prove. The effective caller is account identity
+only and cannot prove a Pod binding.
 
 [`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. The dialer reads the
 destination-audience token file for each call, emits the distinct `Agentplane-Delegated` scheme and
