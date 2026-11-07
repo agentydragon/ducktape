@@ -288,7 +288,23 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
 			err = g.validateRunnerDestination(validateCtx, destination)
 			if err == nil && connection == nil {
-				err = g.records.recordBootID(validateCtx, destination.identity, epoch, response.EnvironmentRuntimeBootId)
+				connection = &runnerConnection{
+					identity: destination.identity, podUID: destination.podUID, epoch: epoch,
+					bootID: response.EnvironmentRuntimeBootId, ended: make(chan struct{}), closeDirect: cancel,
+				}
+				connection.direct = &fencedRunnerConn{conn: conn, connection: connection, identity: metadata.Pairs(
+					"agentplane-sandbox-uid", destination.identity.Uid,
+					"agentplane-incarnation-uid", destination.podUID,
+					"agentplane-environment-runtime-boot-id", response.EnvironmentRuntimeBootId,
+					"agentplane-connection-epoch", strconv.FormatUint(epoch, 10),
+				)}
+				connection.runner = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
+				// The claim already has a renewal. Publishing the boot ID can make the
+				// Controller mark this Sandbox Ready, so install the callable connection first.
+				err = g.connections.accept(connection)
+				if err == nil {
+					err = g.records.recordBootID(validateCtx, destination.identity, epoch, response.EnvironmentRuntimeBootId)
+				}
 			}
 			if err == nil {
 				err = g.records.renew(validateCtx, destination.identity, epoch, time.Now(), &facts)
@@ -307,20 +323,6 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 						trace.WithAttributes(attribute.String("agentplane.environment_runtime.quiesce.stage", stageName)),
 					)
 				}
-			}
-			if connection == nil {
-				connection = &runnerConnection{
-					identity: destination.identity, podUID: destination.podUID, epoch: epoch,
-					bootID: response.EnvironmentRuntimeBootId, ended: make(chan struct{}), closeDirect: cancel,
-				}
-				connection.direct = &fencedRunnerConn{conn: conn, connection: connection, identity: metadata.Pairs(
-					"agentplane-sandbox-uid", destination.identity.Uid,
-					"agentplane-incarnation-uid", destination.podUID,
-					"agentplane-environment-runtime-boot-id", response.EnvironmentRuntimeBootId,
-					"agentplane-connection-epoch", strconv.FormatUint(epoch, 10),
-				)}
-				connection.runner = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
-				g.connections.accept(connection)
 			}
 			if !liveness.Stop() {
 				select {

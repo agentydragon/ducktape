@@ -28,10 +28,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -79,6 +81,225 @@ func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
 		t.Run(string(mode), func(t *testing.T) {
 			testRunnerObserver(t, mode)
 		})
+	}
+}
+
+// pauseAfterBootIDUpdate holds the first externally ready Lease update's response
+// after the API server has made it visible to other clients.
+type pauseAfterBootIDUpdate struct {
+	coordinationclient.CoordinationV1Interface
+	updated chan struct{}
+	release <-chan struct{}
+	paused  atomic.Bool
+}
+
+func (p *pauseAfterBootIDUpdate) Leases(namespace string) coordinationclient.LeaseInterface {
+	return &pausedBootIDLeases{LeaseInterface: p.CoordinationV1Interface.Leases(namespace), parent: p}
+}
+
+type pausedBootIDLeases struct {
+	coordinationclient.LeaseInterface
+	parent *pauseAfterBootIDUpdate
+}
+
+func (p *pausedBootIDLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
+	updated, err := p.LeaseInterface.Update(ctx, lease, options)
+	if err == nil && updated.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" && p.parent.paused.CompareAndSwap(false, true) {
+		close(p.parent.updated)
+		select {
+		case <-p.parent.release:
+		case <-ctx.Done():
+		}
+	}
+	return updated, err
+}
+
+func startObservedRunner(t *testing.T, f *sandboxFixture, g *Gateway, runner *observedRunner) runnerDestination {
+	t.Helper()
+	destination, err := g.runnerDestination(t.Context(), f.sandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	creds, err := (environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &f.runnerTLS}).ServerCredentials(environment_runtime_transport.GatewayURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.Creds(creds))
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	destination.target = listener.Addr().String()
+	return destination
+}
+
+func TestFirstRunnerBootIDIsPublishedAfterLocalConnection(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30")
+	runner := &observedRunner{bootID: "first-boot"}
+	destination := startObservedRunner(t, f, g, runner)
+
+	updated := make(chan struct{})
+	release := make(chan struct{})
+	g.records.coordination = &pauseAfterBootIDUpdate{CoordinationV1Interface: g.records.coordination, updated: updated, release: release}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() { finished <- g.observeRunner(ctx, destination) }()
+	select {
+	case <-updated:
+	case err := <-finished:
+		t.Fatalf("Runner observer stopped before publishing boot ID: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Runner boot ID was not published")
+	}
+
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Annotations[sandboxlease.PodUIDAnnotation] != string(f.pod.UID) ||
+		lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != runner.bootID ||
+		lease.Annotations[sandboxlease.BootstrapAnnotation] != "" ||
+		lease.Spec.RenewTime == nil || lease.Spec.LeaseTransitions == nil {
+		t.Fatalf("first ready Lease update has unexpected facts: %#v", lease)
+	}
+	route, err := api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(t.Context(), testSandbox+sandboxapi.ControlServiceSuffix, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if route.Annotations[sandboxlease.ConnectionEpochAnnotation] != strconv.Itoa(int(*lease.Spec.LeaseTransitions)) ||
+		route.Annotations[sandboxlease.ConnectionLeaseUIDAnnotation] != string(lease.UID) ||
+		len(route.Endpoints) != 1 || len(route.Endpoints[0].Addresses) != 1 || route.Endpoints[0].Addresses[0] != g.config.HolderIP ||
+		route.Endpoints[0].Conditions.Ready == nil || !*route.Endpoints[0].Conditions.Ready {
+		t.Fatalf("control route is not ready at boot-ID publication: %#v", route)
+	}
+	connection, err := g.connections.holder(string(f.sandbox.UID))
+	if err != nil || connection.epoch != uint64(*lease.Spec.LeaseTransitions) || connection.podUID != string(f.pod.UID) || connection.bootID != runner.bootID {
+		t.Fatalf("first ready Lease update preceded a correctly fenced local connection: %v, %+v", err, connection)
+	}
+	requestMetadata, _ := metadata.FromOutgoingContext(f.callerContext(f.appToken))
+	_, err = (&environmentRuntimeProxy{gateway: g}).GetStatus(metadata.NewIncomingContext(t.Context(), requestMetadata), &sessionpb.GetStatusRequest{})
+	if err != nil || runner.calls.Load() != 1 {
+		t.Fatalf("GetStatus at first ready Lease update = %v, runner calls = %d", err, runner.calls.Load())
+	}
+	close(release)
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for {
+		select {
+		case err := <-finished:
+			t.Fatalf("Runner observer stopped before publishing facts: %v", err)
+		case <-deadline.C:
+			t.Fatal("Runner facts were not published after releasing boot-ID update")
+		case <-poll.C:
+			lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), lease.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if lease.Annotations[sandboxlease.BootstrapAnnotation] == "succeeded" {
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+type failBootIDUpdate struct {
+	coordinationclient.CoordinationV1Interface
+	local      *connections
+	sandboxUID string
+	checked    chan error
+}
+
+func (f *failBootIDUpdate) Leases(namespace string) coordinationclient.LeaseInterface {
+	return &failingBootIDLeases{LeaseInterface: f.CoordinationV1Interface.Leases(namespace), parent: f}
+}
+
+type failingBootIDLeases struct {
+	coordinationclient.LeaseInterface
+	parent *failBootIDUpdate
+}
+
+func (f *failingBootIDLeases) Update(ctx context.Context, lease *coordinationv1.Lease, options metav1.UpdateOptions) (*coordinationv1.Lease, error) {
+	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" {
+		_, err := f.parent.local.holder(f.parent.sandboxUID)
+		f.parent.checked <- err
+		return nil, status.Error(codes.Internal, "injected boot-ID update rejection")
+	}
+	return f.LeaseInterface.Update(ctx, lease, options)
+}
+
+func TestRejectedBootIDPublicationRemovesLocalConnection(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30")
+	destination := startObservedRunner(t, f, g, &observedRunner{bootID: "first-boot"})
+	checked := make(chan error, 1)
+	g.records.coordination = &failBootIDUpdate{
+		CoordinationV1Interface: g.records.coordination, local: g.connections,
+		sandboxUID: string(f.sandbox.UID), checked: checked,
+	}
+	finished := make(chan error, 1)
+	go func() { finished <- g.observeRunner(t.Context(), destination) }()
+	select {
+	case err := <-checked:
+		if err != nil {
+			t.Fatalf("local connection was unavailable before boot-ID publication: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("boot-ID update was never attempted")
+	}
+	select {
+	case err := <-finished:
+		if status.Code(err) != codes.Internal {
+			t.Fatalf("boot-ID update rejection = %v, want Internal", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("observer did not stop after boot-ID update rejection")
+	}
+	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
+		t.Fatalf("rejected observation left a local connection callable: %v", err)
+	}
+	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.EnvironmentRuntimeLeaseSuffix, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] != "" {
+		t.Fatalf("rejected observation published readiness: %#v", lease.Annotations)
+	}
+}
+
+func TestLocalConnectionsRejectStaleObserverEpochs(t *testing.T) {
+	uid := "sandbox-uid"
+	identity := &sandboxreader.Identity{Uid: uid}
+	local := newConnections()
+	first := &runnerConnection{identity: identity, epoch: 1, ended: make(chan struct{})}
+	newer := &runnerConnection{identity: identity, epoch: 2, ended: make(chan struct{})}
+	if err := local.accept(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := local.accept(newer); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []*runnerConnection{
+		{identity: identity, epoch: 1, ended: make(chan struct{})},
+		{identity: identity, epoch: 2, ended: make(chan struct{})},
+	} {
+		if err := local.accept(candidate); status.Code(err) != codes.Aborted {
+			t.Fatalf("accepted an observer at stale or duplicate epoch %d: %v", candidate.epoch, err)
+		}
+	}
+	if current, err := local.holder(uid); err != nil || current != newer {
+		t.Fatalf("stale observer displaced the newer connection: %v, %+v", err, current)
+	}
+	local.replaceLease("", uid, 4)
+	if err := local.accept(&runnerConnection{identity: identity, epoch: 3, ended: make(chan struct{})}); status.Code(err) != codes.Aborted {
+		t.Fatalf("accepted an observer superseded by watched Lease epoch: %v", err)
 	}
 }
 
@@ -221,11 +442,15 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 		},
 		ExpectedIncarnationUid: "previous-incarnation", SessionId: "sampler-session",
 	}
+	var epoch uint64
 	setConnection := func(podUID string) {
-		g.connections.accept(&runnerConnection{
+		epoch++
+		if err := g.connections.accept(&runnerConnection{
 			identity: &sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)},
-			podUID:   podUID, ended: make(chan struct{}),
-		})
+			podUID:   podUID, epoch: epoch, ended: make(chan struct{}),
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	setConnection("previous-incarnation")
 

@@ -215,10 +215,11 @@ with the reason and message of `Running`.
 incarnation's Pod and was renewed within its duration plus a grace, so a connection from an earlier
 incarnation never counts and a gateway rollout's brief drop does not. It is False with `NeverConnected`,
 `AwaitingEnvironmentRuntime`, `ConnectionLost`, `ConnectionPending` or `WorkloadNotReady`. `ConnectionPending`
-means the Gateway has claimed observation of this incarnation but has not received its first valid
-`WatchState` message containing the runner boot ID. The Gateway initiates the mTLS connection to the
-runner listener; the claim precedes dialing and does not prove connectivity or authentication. Losing the connection restarts and replaces nothing. A controller not configured to
-read Leases omits it.
+means the Gateway has claimed observation of this incarnation but has not published a validated
+runner boot ID. The Gateway installs its locally callable, incarnation-fenced connection before it
+publishes that boot ID; the claim precedes dialing and does not prove connectivity or authentication.
+The Gateway initiates the mTLS connection to the runner listener. Losing the connection restarts and
+replaces nothing. A controller not configured to read Leases omits it.
 
 Suspension and deletion require quiescence only for a verified runner incarnation. A Gateway
 observation claim alone does not prove contact. The Lease retains `last-connected-pod-uid` after
