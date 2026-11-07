@@ -176,6 +176,21 @@ func TestTheServiceAnswersHealthAndStopsWhenTold(t *testing.T) {
 	if _, err := checkHealth(t, service.health, "test-unknown-service"); status.Code(err) != codes.NotFound {
 		t.Errorf("health of an unknown service: %v", err)
 	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, path := range []string{"/llms.txt", "/openapi.json", "/metrics", "/v1/action-groups", "/oauth/client-metadata.json"} {
+		response, err := client.Get("http://" + service.address + path)
+		if err != nil {
+			var timeout net.Error
+			if errors.As(err, &timeout) && timeout.Timeout() {
+				t.Errorf("HTTP request to %s timed out: %v", path, err)
+			}
+			continue // A gRPC listener may reject the HTTP/1 preface outright.
+		}
+		response.Body.Close()
+		if response.StatusCode == http.StatusOK {
+			t.Errorf("HTTP request to %s unexpectedly succeeded", path)
+		}
+	}
 
 	if err := service.stop(); !errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the cancellation that stopped it", err)
