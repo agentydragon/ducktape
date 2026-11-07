@@ -24,7 +24,7 @@ _NESTED = (
 )
 
 
-def _parse(tmp_path: Path, trace: str, *, integrity: str = "clean") -> list[str]:
+def _parse(tmp_path: Path, trace: str, *, integrity: str = "clean", writer_pid: str | None = None) -> list[str]:
     runfiles = Runfiles.CreateOrRaise()
     busybox_tar = runfiles.Rlocation(os.environ["CGROUP_PILOT_BUSYBOX_RLOCATION"])
     script = runfiles.Rlocation(os.environ["CGROUP_PILOT_TRACE_AWK_RLOCATION"])
@@ -39,12 +39,11 @@ def _parse(tmp_path: Path, trace: str, *, integrity: str = "clean") -> list[str]
     busybox.chmod(0o755)
     source = tmp_path / "trace"
     source.write_text(trace)
-    result = subprocess.run(
-        [str(busybox), "awk", "-v", f"integrity={integrity}", "-f", str(script), str(source)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    command = [str(busybox), "awk", "-v", f"integrity={integrity}"]
+    if writer_pid is not None:
+        command.extend(("-v", f"writer_pid={writer_pid}"))
+    command.extend(("-f", str(script), str(source)))
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
     return result.stdout.splitlines()
 
 
@@ -85,6 +84,15 @@ def test_unclosed_root_and_overrun_cannot_prove_path(tmp_path: Path) -> None:
     assert "incomplete_root=yes" in _parse(tmp_path, complete.removesuffix(_CLOSE))[0]
     assert _parse(tmp_path, complete, integrity="cpu0:overflow_or_drop") == [
         "status=unproven reason=trace_integrity_cpu0:overflow_or_drop"
+    ]
+
+
+def test_writer_pid_filter_rejects_a_complete_path_from_another_process(tmp_path: Path) -> None:
+    matching = "busybox-321 [000] .... 1.000: " + _ROOT + _NESTED + _CLOSE
+    mismatched = "busybox-987 [000] .... 1.000: " + _ROOT + _NESTED + _CLOSE
+    assert "status=proven" in _parse(tmp_path, matching, writer_pid="321")[0]
+    assert _parse(tmp_path, mismatched, writer_pid="321") == [
+        "status=unproven roots=0 incomplete_root=no too_deep=no path_too_long=no reason=no_closed_nested_path"
     ]
 
 

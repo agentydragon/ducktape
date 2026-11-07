@@ -1,0 +1,14 @@
+[Unit]
+Description=Opt-in delegated cgroup kernel-path stress probe
+ConditionKernelCommandLine=agentplane.delegated-cgroup-stress=1
+After=multi-user.target
+
+[Service]
+Type=oneshot
+Delegate=io
+DelegateSubgroup=manager
+ExecStart=/usr/sbin/agentplane-delegated-cgroup-stress
+TimeoutStartSec=90s
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0

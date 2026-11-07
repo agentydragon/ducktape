@@ -51,6 +51,12 @@ _CGROUP_PILOT_STEPS = ("pair1_on", "pair1_off", "pair2_on", "pair2_off")
 _CGROUP_STRESS_ENV = "AGENTPLANE_TCG_VMI_CGROUP_STRESS"
 _CGROUP_STRESS_PAIRS = 5
 _CGROUP_STRESS_STEPS = tuple(f"pair{pair}_{direction}" for pair in range(1, 6) for direction in ("on", "off"))
+_DELEGATED_CGROUP_STRESS_ENV = "AGENTPLANE_TCG_VMI_DELEGATED_CGROUP_STRESS"
+_DELEGATED_CGROUP_STRESS_PAIRS = 20
+_DELEGATED_CGROUP_STRESS_STEPS = tuple(
+    f"pair{pair}_{direction}" for pair in range(1, _DELEGATED_CGROUP_STRESS_PAIRS + 1) for direction in ("on", "off")
+)
+_DELEGATED_CGROUP_STRESS_WAIT_SECONDS = 150
 
 
 def _cycle_count() -> int:
@@ -112,6 +118,16 @@ def _cgroup_stress() -> bool:
             return True
         case value:
             raise ValueError(f"{_CGROUP_STRESS_ENV} must be '0' or '1', got {value!r}")
+
+
+def _delegated_cgroup_stress() -> bool:
+    match os.environ.get(_DELEGATED_CGROUP_STRESS_ENV, "0"):
+        case "0":
+            return False
+        case "1":
+            return True
+        case value:
+            raise ValueError(f"{_DELEGATED_CGROUP_STRESS_ENV} must be '0' or '1', got {value!r}")
 
 
 def _skip_virtiofs_shutdown_policy() -> bool:
@@ -257,6 +273,7 @@ def _vmi(
     synthetic_slice_probe: bool = False,
     cgroup_pilot: bool = False,
     cgroup_stress: bool = False,
+    delegated_cgroup_stress: bool = False,
 ) -> dict[str, Any]:
     boot_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-boot:unset"))
     root_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-root:unset"))
@@ -284,6 +301,7 @@ def _vmi(
                             + (" agentplane.synthetic-slice-probe=1" if synthetic_slice_probe else "")
                             + (" agentplane.cgroup-pilot=1" if cgroup_pilot else "")
                             + (" agentplane.cgroup-stress=1" if cgroup_stress else "")
+                            + (" agentplane.delegated-cgroup-stress=1" if delegated_cgroup_stress else "")
                         ),
                         "container": {
                             "image": boot_image,
@@ -712,6 +730,153 @@ def _wait_for_cgroup_stress(k3s: baseline.K3s, namespace: str, pod: str, output:
         time.sleep(1)
     raise TimeoutError(
         f"cgroup stress did not complete ten verified controller changes within {_CGROUP_PILOT_WAIT_SECONDS}s; see {output}"
+    )
+
+
+def _delegated_cgroup_stress_complete(console: str) -> bool:
+    prefix = "AGENTPLANE_DELEGATED_CGROUP_STRESS"
+    records = [line.rstrip("\r") for line in console.splitlines()]
+    if any(record.startswith(f"{prefix}_UNEXERCISED ") for record in records):
+        return False
+
+    def unique(start: str) -> tuple[int, str] | None:
+        matches = [(index, record) for index, record in enumerate(records) if record.startswith(start)]
+        return matches[0] if len(matches) == 1 else None
+
+    def fields(record: str) -> dict[str, str]:
+        return dict(field.split("=", 1) for field in record.split()[1:] if "=" in field)
+
+    begin = unique(
+        f"{prefix}_BEGIN pairs={_DELEGATED_CGROUP_STRESS_PAIRS} direct_root_writes=none "
+        "delegated_parent=systemd_service_child max_active_seconds=75"
+    )
+    propagation = unique(f"{prefix}_PROPAGATION ")
+    ready = unique(f"{prefix}_READY ")
+    proof = unique(f"{prefix}_TRACE_PROOF ")
+    trace_disabled = unique(f"{prefix}_TRACE_DISABLED tracing_on=0 current_tracer=nop before_stress=yes")
+    cleanup = unique(
+        f"{prefix}_CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes "
+        "service_controller_restored=yes"
+    )
+    success = unique(
+        f"{prefix}_SUCCESS transitions={_DELEGATED_CGROUP_STRESS_PAIRS * 2} "
+        "delegated_subtree_only=yes tracing_during_pairs=no"
+    )
+    if None in (begin, propagation, ready, proof, trace_disabled, cleanup, success):
+        return False
+    assert begin is not None
+    assert propagation is not None
+    assert ready is not None
+    assert proof is not None
+    assert trace_disabled is not None
+    assert cleanup is not None
+    assert success is not None
+
+    ready_fields = fields(ready[1])
+    propagation_fields = fields(propagation[1])
+    if any(
+        propagation_fields.get(name) != value
+        for name, value in (
+            ("service_io_initial", "no"),
+            ("service_io_enabled", "yes"),
+            ("service_parent_empty", "yes"),
+            ("manager_io_available", "yes"),
+            ("manager_subtree_io", "no"),
+        )
+    ):
+        return False
+    if not propagation_fields.get("writer_pid", "").isdecimal():
+        return False
+    if any(
+        ready_fields.get(name) != "yes"
+        for name in (
+            "service_parent_empty",
+            "manager_empty",
+            "io_available",
+            "service_io_propagated",
+            "writer_in_driver",
+            "resident_in_payload",
+        )
+    ):
+        return False
+    proof_fields = fields(proof[1])
+    writer_pid = proof_fields.get("writer_pid", "")
+    if (
+        not writer_pid.isdecimal()
+        or propagation_fields.get("writer_pid") != writer_pid
+        or proof_fields.get("pid_match") != "yes"
+        or proof_fields.get("status") != "proven"
+    ):
+        return False
+    path = proof_fields.get("path", "").split(">")
+    required_path = ("cgroup_subtree_control_write", "cgroup_update_dfl_csses", "percpu_down_write", "rcu_sync_enter")
+    cursor = -1
+    for name in required_path:
+        position = next(
+            (
+                index
+                for index in range(cursor + 1, len(path))
+                if path[index] == name or path[index].startswith(f"{name}.")
+            ),
+            -1,
+        )
+        if position < 0:
+            return False
+        cursor = position
+    if (
+        proof_fields.get("step") != "proof_on"
+        or proof_fields.get("io") != "yes"
+        or proof_fields.get("verified") != "yes"
+    ):
+        return False
+    if proof_fields.get("trace_integrity") != "clean" or proof_fields.get("tree") != "1":
+        return False
+    resident_pid = ready_fields.get("resident_pid", "")
+    if not resident_pid.isdecimal():
+        return False
+
+    expected_steps = ("proof_reset_off", *_DELEGATED_CGROUP_STRESS_STEPS)
+    results = [(index, record) for index, record in enumerate(records) if record.startswith(f"{prefix}_RESULT ")]
+    if len(results) != len(expected_steps):
+        return False
+    for (index, record), step in zip(results, expected_steps, strict=True):
+        expected_io = "yes" if step.endswith("_on") else "no"
+        if step == "proof_reset_off":
+            expected_io = "no"
+        result_fields = fields(record)
+        if (
+            result_fields.get("step") != step
+            or result_fields.get("io") != expected_io
+            or result_fields.get("verified") != "yes"
+            or result_fields.get("writer_pid") != writer_pid
+            or result_fields.get("resident_pid") != resident_pid
+        ):
+            return False
+        if index <= trace_disabled[0]:
+            return False
+
+    return (
+        begin[0] < propagation[0] < ready[0] < proof[0] < trace_disabled[0] < results[0][0]
+        and results[-1][0] < cleanup[0] < success[0]
+    )
+
+
+def _wait_for_delegated_cgroup_stress(k3s: baseline.K3s, namespace: str, pod: str, output: Path) -> None:
+    prefix = "AGENTPLANE_DELEGATED_CGROUP_STRESS"
+    deadline = time.monotonic() + _DELEGATED_CGROUP_STRESS_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        console = k3s.kubectl(
+            "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
+        )
+        output.write_text(console)
+        if any(line.rstrip("\r").startswith(f"{prefix}_UNEXERCISED ") for line in console.splitlines()):
+            raise RuntimeError(f"delegated cgroup stress did not prove the requested path; see {output}")
+        if _delegated_cgroup_stress_complete(console):
+            return
+        time.sleep(1)
+    raise TimeoutError(
+        f"delegated cgroup stress did not complete {_DELEGATED_CGROUP_STRESS_PAIRS} verified pairs "
+        f"within {_DELEGATED_CGROUP_STRESS_WAIT_SECONDS}s; see {output}"
     )
 
 
@@ -1308,6 +1473,103 @@ def test_cgroup_stress_requires_first_witness_ten_alternating_masks_and_trace_of
     assert not _cgroup_stress_complete(complete + f"{prefix}_UNEXERCISED step=pair5_off reason=active_budget\n")
 
 
+def _delegated_cgroup_stress_records() -> list[str]:
+    prefix = "AGENTPLANE_DELEGATED_CGROUP_STRESS"
+    writer_pid = "321"
+    resident_pid = "654"
+    records = [
+        f"{prefix}_BEGIN pairs={_DELEGATED_CGROUP_STRESS_PAIRS} direct_root_writes=none "
+        "delegated_parent=systemd_service_child max_active_seconds=75",
+        f"{prefix}_PROPAGATION service_io_initial=no service_io_enabled=yes service_parent_empty=yes "
+        f"manager_io_available=yes manager_subtree_io=no writer_pid={writer_pid}",
+        f"{prefix}_READY service_parent_empty=yes manager_empty=yes io_available=yes service_io_propagated=yes "
+        f"writer_in_driver=yes resident_in_payload=yes resident_pid={resident_pid}",
+        f"{prefix}_TRACE_PROOF step=proof_on io=yes verified=yes writer_pid={writer_pid} pid_match=yes "
+        "trace_integrity=clean trace_bytes=1024 trace_lines=20 status=proven tree=1 "
+        "path=cgroup_subtree_control_write>cgroup_apply_control>cgroup_update_dfl_csses>"
+        "percpu_down_write>rcu_sync_enter",
+        f"{prefix}_TRACE_DISABLED tracing_on=0 current_tracer=nop before_stress=yes",
+    ]
+    for step in ("proof_reset_off", *_DELEGATED_CGROUP_STRESS_STEPS):
+        io = "yes" if step.endswith("_on") else "no"
+        records.append(
+            f"{prefix}_RESULT step={step} io={io} verified=yes writer_pid={writer_pid} resident_pid={resident_pid}"
+        )
+    records.extend(
+        (
+            f"{prefix}_CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes "
+            "service_controller_restored=yes",
+            f"{prefix}_SUCCESS transitions={_DELEGATED_CGROUP_STRESS_PAIRS * 2} "
+            "delegated_subtree_only=yes tracing_during_pairs=no",
+        )
+    )
+    return records
+
+
+def test_delegated_cgroup_stress_requires_owned_descendant_witness_and_clean_pairs() -> None:
+    records = _delegated_cgroup_stress_records()
+    complete = "\n".join(records) + "\n"
+    assert _delegated_cgroup_stress_complete(complete)
+
+    bad_pid = complete.replace("pid_match=yes", "pid_match=no")
+    assert not _delegated_cgroup_stress_complete(bad_pid)
+
+    missing_propagation = complete.replace(f"{records[1]}\n", "")
+    assert not _delegated_cgroup_stress_complete(missing_propagation)
+
+    wrong_propagation = complete.replace("manager_io_available=yes", "manager_io_available=no")
+    assert not _delegated_cgroup_stress_complete(wrong_propagation)
+
+    wrong_propagation_pid = complete.replace(records[1], records[1].replace("writer_pid=321", "writer_pid=999"))
+    assert not _delegated_cgroup_stress_complete(wrong_propagation_pid)
+
+    missing_restore = complete.replace(" service_controller_restored=yes", "")
+    assert not _delegated_cgroup_stress_complete(missing_restore)
+
+    bad_path = complete.replace(
+        "cgroup_subtree_control_write>cgroup_apply_control>cgroup_update_dfl_csses>percpu_down_write>rcu_sync_enter",
+        "rcu_sync_enter>cgroup_update_dfl_csses>percpu_down_write>cgroup_subtree_control_write",
+    )
+    assert not _delegated_cgroup_stress_complete(bad_path)
+
+    missing_reset = complete.replace(f"{records[5]}\n", "")
+    assert not _delegated_cgroup_stress_complete(missing_reset)
+
+    out_of_order = records.copy()
+    out_of_order[6], out_of_order[7] = out_of_order[7], out_of_order[6]
+    assert not _delegated_cgroup_stress_complete("\n".join(out_of_order) + "\n")
+
+    missing_cleanup = complete.replace(f"{records[-2]}\n", "")
+    assert not _delegated_cgroup_stress_complete(missing_cleanup)
+    assert not _delegated_cgroup_stress_complete(
+        complete + "AGENTPLANE_DELEGATED_CGROUP_STRESS_UNEXERCISED reason=no_io\n"
+    )
+
+
+def test_delegated_cgroup_stress_is_opt_in_and_adds_only_its_guest_boot_arg(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_DELEGATED_CGROUP_STRESS_ENV, raising=False)
+    assert _delegated_cgroup_stress() is False
+    monkeypatch.setenv(_DELEGATED_CGROUP_STRESS_ENV, "1")
+    assert _delegated_cgroup_stress() is True
+    monkeypatch.setenv(_DELEGATED_CGROUP_STRESS_ENV, "true")
+    with pytest.raises(ValueError, match="must be '0' or '1'"):
+        _delegated_cgroup_stress()
+
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    namespace = _NAMESPACE_PREFIX + "unit-test"
+    plain = _vmi(namespace, images, boot_rcu_observe=True)
+    observed = _vmi(namespace, images, boot_rcu_observe=True, delegated_cgroup_stress=True)
+    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert observed_args == f"{plain_args} agentplane.delegated-cgroup-stress=1"
+    observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
+    assert observed == plain
+
+
 def test_shutdown_policy_lifecycle_sample_distinguishes_absent_from_api_error_and_replaced_pod() -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
 
@@ -1369,6 +1631,7 @@ def _run_cycle(
     synthetic_slice_probe: bool,
     cgroup_pilot: bool,
     cgroup_stress: bool,
+    delegated_cgroup_stress: bool,
 ) -> None:
     """Run one isolated VMI lifecycle and keep its evidence before cleanup."""
     output.mkdir(parents=True, exist_ok=True)
@@ -1417,6 +1680,7 @@ def _run_cycle(
             synthetic_slice_probe=synthetic_slice_probe,
             cgroup_pilot=cgroup_pilot,
             cgroup_stress=cgroup_stress,
+            delegated_cgroup_stress=delegated_cgroup_stress,
         )
         (output / "vmi.json").write_text(json.dumps(vmi, indent=2, sort_keys=True))
 
@@ -1471,6 +1735,7 @@ def _run_cycle(
                         "synthetic_slice_probe": synthetic_slice_probe,
                         "cgroup_pilot": cgroup_pilot,
                         "cgroup_stress": cgroup_stress,
+                        "delegated_cgroup_stress": delegated_cgroup_stress,
                     },
                     indent=2,
                     sort_keys=True,
@@ -1522,6 +1787,10 @@ def _run_cycle(
                 _wait_for_cgroup_pilot(k3s, namespace_name, pod_name, output / "cgroup-pilot-console.txt")
             if cgroup_stress:
                 _wait_for_cgroup_stress(k3s, namespace_name, pod_name, output / "cgroup-stress-console.txt")
+            if delegated_cgroup_stress:
+                _wait_for_delegated_cgroup_stress(
+                    k3s, namespace_name, pod_name, output / "delegated-cgroup-stress-console.txt"
+                )
             _, qemu_cmdline = _qemu_evidence(k3s, namespace_name, pod_name, output)
             (output / "qemu-pre-shutdown.txt").write_text(
                 f"namespace_uid={namespace_uid}\nvmi_uid={vmi_uid}\npvc_uid={pvc['metadata']['uid']}\n"
@@ -1622,6 +1891,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     synthetic_slice_probe = _synthetic_slice_probe()
     cgroup_pilot = _cgroup_pilot()
     cgroup_stress = _cgroup_stress()
+    delegated_cgroup_stress = _delegated_cgroup_stress()
     if synthetic_slice_probe and not boot_rcu_observe:
         raise ValueError(f"{_SYNTHETIC_SLICE_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
     if cgroup_pilot and not boot_rcu_observe:
@@ -1632,6 +1902,15 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
         raise ValueError(f"{_CGROUP_STRESS_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
     if cgroup_stress and (cgroup_pilot or synthetic_slice_probe):
         raise ValueError(f"{_CGROUP_STRESS_ENV}=1 cannot run with {_CGROUP_PILOT_ENV}=1 or {_SYNTHETIC_SLICE_ENV}=1")
+    if delegated_cgroup_stress and not boot_rcu_observe:
+        raise ValueError(
+            f"{_DELEGATED_CGROUP_STRESS_ENV}=1 requires {_BOOT_RCU_ENV}=1 for guest PID 1 and timer evidence"
+        )
+    if delegated_cgroup_stress and (cgroup_pilot or cgroup_stress or synthetic_slice_probe):
+        raise ValueError(
+            f"{_DELEGATED_CGROUP_STRESS_ENV}=1 cannot run with {_CGROUP_PILOT_ENV}=1, "
+            f"{_CGROUP_STRESS_ENV}=1, or {_SYNTHETIC_SLICE_ENV}=1"
+        )
     (output / "run-config.json").write_text(
         json.dumps(
             {
@@ -1642,6 +1921,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 "synthetic_slice_probe": synthetic_slice_probe,
                 "cgroup_pilot": cgroup_pilot,
                 "cgroup_stress": cgroup_stress,
+                "delegated_cgroup_stress": delegated_cgroup_stress,
                 "debug_kernel_args_value": _DEBUG_KERNEL_ARGS if debug_kernel_args else "",
             },
             indent=2,
@@ -1672,6 +1952,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 synthetic_slice_probe=synthetic_slice_probe,
                 cgroup_pilot=cgroup_pilot,
                 cgroup_stress=cgroup_stress,
+                delegated_cgroup_stress=delegated_cgroup_stress,
             )
     except BaseException as error:
         primary_error = error

@@ -1,0 +1,535 @@
+#!/usr/bin/busybox sh
+# Opt-in, bounded cgroup-v2 controller stress inside a systemd-delegated service subtree.
+set -eu
+umask 077
+
+busybox=/usr/bin/busybox
+unit=agentplane-delegated-cgroup-stress.service
+marker=AGENTPLANE_DELEGATED_CGROUP_STRESS
+cg_root=/sys/fs/cgroup
+tracefs=/sys/kernel/tracing
+pairs=20
+active_budget_seconds=75
+trace_buffer_kib=64
+trace_byte_limit=131072
+trace_line_limit=2000
+scratch=$("$busybox" mktemp -d /run/agentplane-delegated-cgroup-stress.XXXXXX)
+record_file=$scratch/record
+service_cgroup=
+delegated_service=
+delegated_parent=
+driver=
+payload=
+resident_pid=
+writer_moved=no
+service_io_changed=no
+service_io_initial=
+service_subtree_initial_non_io=
+service_subtree_captured=no
+service_controller_restored=no
+trace_mounted=no
+trace_owned=no
+trace_on_initial=
+trace_buffer_initial=
+trace_configured=no
+trace_recording_stopped=no
+cleanup_ok=yes
+completed=no
+probe_start=$("$busybox" awk '{print int($1)}' /proc/uptime)
+
+emit() {
+	printf '%s_%s\n' "$marker" "$*" >"$record_file"
+	bytes=$("$busybox" wc -c <"$record_file")
+	[ "$bytes" -le 2048 ] || exit 1
+	"$busybox" dd if="$record_file" bs=2048 count=1 2>/dev/null
+}
+
+has_io() {
+	"$busybox" grep -qw io "$1"
+}
+
+controllers_without_io() {
+	"$busybox" awk '{for (i = 1; i <= NF; i++) if ($i != "io") print $i}' "$1" | "$busybox" sort
+}
+
+unexercised() {
+	emit "UNEXERCISED reason=$*"
+	exit 1
+}
+
+trace_cleanup() {
+	[ "$trace_owned" = yes ] || return 0
+	if [ "$trace_configured" = yes ]; then
+		printf '0\n' >"$tracefs/tracing_on" || return 1
+		printf 'nop\n' >"$tracefs/current_tracer" || return 1
+		printf '\n' >"$tracefs/set_ftrace_pid" || return 1
+		printf '\n' >"$tracefs/set_ftrace_notrace_pid" || return 1
+		printf '\n' >"$tracefs/set_ftrace_filter" || return 1
+		printf '\n' >"$tracefs/set_ftrace_notrace" || return 1
+		printf '\n' >"$tracefs/set_graph_function" || return 1
+		printf '\n' >"$tracefs/set_graph_notrace" || return 1
+		printf '%s\n' "$trace_buffer_initial" >"$tracefs/buffer_size_kb" || return 1
+	elif [ "$trace_recording_stopped" = yes ]; then
+		# We stopped an otherwise idle tracefs but detected retained records before
+		# changing any tracer configuration, so preserve those records and restore
+		# only the original recording switch.
+		:
+	fi
+	if [ "$trace_recording_stopped" = yes ]; then
+		printf '%s\n' "$trace_on_initial" >"$tracefs/tracing_on" || return 1
+		[ "$("$busybox" cat "$tracefs/tracing_on")" = "$trace_on_initial" ] || return 1
+	fi
+	if [ "$trace_configured" = yes ]; then
+		[ "$("$busybox" cat "$tracefs/current_tracer")" = nop ] || return 1
+		[ "$("$busybox" cat "$tracefs/buffer_size_kb")" = "$trace_buffer_initial" ] || return 1
+		for filter_file in \
+			"$tracefs/set_ftrace_filter" \
+			"$tracefs/set_ftrace_notrace" \
+			"$tracefs/set_ftrace_pid" \
+			"$tracefs/set_ftrace_notrace_pid" \
+			"$tracefs/set_graph_function" \
+			"$tracefs/set_graph_notrace"; do
+			filter_is_empty "$filter_file" || return 1
+		done
+	fi
+	trace_owned=no
+}
+
+capture_trace_stats() {
+	phase=$1
+	found=no
+	for stats_file in "$tracefs"/per_cpu/cpu*/stats; do
+		[ -r "$stats_file" ] || continue
+		cpu=${stats_file%/stats}
+		cpu=${cpu##*/}
+		stats=$("$busybox" awk '
+			$1 == "overrun:" {overrun = $2}
+			$1 == "commit" && $2 == "overrun:" {commit_overrun = $3}
+			$1 == "dropped" && $2 == "events:" {dropped = $3}
+			END {
+				if (overrun !~ /^[0-9]+$/ || commit_overrun !~ /^[0-9]+$/ || dropped !~ /^[0-9]+$/)
+					print "unavailable"
+				else
+					printf "%s %s %s\n", overrun, commit_overrun, dropped
+			}
+		' "$stats_file")
+		[ "$stats" != unavailable ] || return 1
+		printf '%s\n' "$stats" >"$scratch/trace-stats-$phase-$cpu"
+		found=yes
+	done
+	[ "$found" = yes ]
+}
+
+trace_integrity() {
+	found=no
+	for before_file in "$scratch"/trace-stats-before-cpu*; do
+		[ -f "$before_file" ] || continue
+		cpu=${before_file##*trace-stats-before-}
+		after_file=$scratch/trace-stats-after-$cpu
+		[ -r "$after_file" ] || return 1
+		before=$("$busybox" cat "$before_file")
+		after=$("$busybox" cat "$after_file")
+		set -- $before
+		[ "$#" -eq 3 ] || return 1
+		before_overrun=$1
+		before_commit=$2
+		before_dropped=$3
+		set -- $after
+		[ "$#" -eq 3 ] || return 1
+		after_overrun=$1
+		after_commit=$2
+		after_dropped=$3
+		for value in "$before_overrun" "$before_commit" "$before_dropped" \
+			"$after_overrun" "$after_commit" "$after_dropped"; do
+			case $value in '' | *[!0-9]*) return 1 ;; esac
+		done
+		[ "$after_overrun" -le "$before_overrun" ] || return 1
+		[ "$after_commit" -le "$before_commit" ] || return 1
+		[ "$after_dropped" -le "$before_dropped" ] || return 1
+		[ "$after_overrun" -ge "$before_overrun" ] || return 1
+		[ "$after_commit" -ge "$before_commit" ] || return 1
+		[ "$after_dropped" -ge "$before_dropped" ] || return 1
+		found=yes
+	done
+	[ "$found" = yes ]
+}
+
+trace_buffers_empty() {
+	found=no
+	for stats_file in "$tracefs"/per_cpu/cpu*/stats; do
+		[ -r "$stats_file" ] || continue
+		entries=$(
+			"$busybox" awk '$1 == "entries:" {print $2; found = 1} END {if (!found) exit 1}' "$stats_file"
+		) || return 1
+		case $entries in '' | *[!0-9]*) return 1 ;; esac
+		[ "$entries" -eq 0 ] || return 1
+		found=yes
+	done
+	[ "$found" = yes ]
+}
+
+trace_snapshot_empty() {
+	[ -e "$tracefs/snapshot" ] || return 0
+	[ -r "$tracefs/snapshot" ] || return 1
+	snapshot_header=$(
+		"$busybox" head -n 6 "$tracefs/snapshot" | "$busybox" grep 'entries-in-buffer/entries-written:'
+	) || snapshot_header=
+	if [ -n "$snapshot_header" ]; then
+		printf '%s\n' "$snapshot_header" | "$busybox" awk '
+			{
+				split($0, fields, ":")
+				split(fields[2], counts, "/")
+				sub(/[[:space:]].*/, "", counts[2])
+				if (counts[1] != "0" || counts[2] != "0")
+					bad = 1
+				else
+					found = 1
+			}
+			END {exit !(found && !bad)}
+		'
+		return $?
+	fi
+	case $("$busybox" head -n 1 "$tracefs/snapshot") in
+		'' | 'Snapshot is empty'*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+trace_events_disabled() {
+	for event_enable_file in "$tracefs"/events/enable "$tracefs"/events/*/enable "$tracefs"/events/*/*/enable; do
+		[ -r "$event_enable_file" ] || continue
+		[ "$("$busybox" cat "$event_enable_file")" = 0 ] || return 1
+	done
+	return 0
+}
+
+filter_is_empty() {
+	filter_file=$1
+	[ -r "$filter_file" ] || return 1
+	filter_bytes=$("$busybox" wc -c <"$filter_file")
+	[ "$filter_bytes" -le 256 ] || return 1
+	filter_value=$("$busybox" cat "$filter_file")
+	case $filter_value in '' | '#### all functions enabled ####' | 'no pid') return 0 ;; esac
+	return 1
+}
+
+disable_trace_for_stress() {
+	printf '0\n' >"$tracefs/tracing_on"
+	printf 'nop\n' >"$tracefs/current_tracer"
+	printf '\n' >"$tracefs/set_ftrace_pid"
+	printf '\n' >"$tracefs/set_ftrace_notrace_pid"
+	printf '\n' >"$tracefs/set_ftrace_filter"
+	printf '\n' >"$tracefs/set_ftrace_notrace"
+	printf '\n' >"$tracefs/set_graph_function"
+	printf '\n' >"$tracefs/set_graph_notrace"
+	printf '%s\n' "$trace_buffer_initial" >"$tracefs/buffer_size_kb"
+	[ "$("$busybox" cat "$tracefs/tracing_on")" = 0 ]
+	[ "$("$busybox" cat "$tracefs/current_tracer")" = nop ]
+	[ "$("$busybox" cat "$tracefs/buffer_size_kb")" = "$trace_buffer_initial" ]
+	for filter_file in \
+		"$tracefs/set_ftrace_filter" \
+		"$tracefs/set_ftrace_notrace" \
+		"$tracefs/set_ftrace_pid" \
+		"$tracefs/set_ftrace_notrace_pid" \
+		"$tracefs/set_graph_function" \
+		"$tracefs/set_graph_notrace"; do
+		filter_is_empty "$filter_file"
+	done
+	trace_configured=no
+}
+
+resident_is_in_payload() {
+	case $resident_pid in '' | *[!0-9]*) return 1 ;; esac
+	[ -d "/proc/$resident_pid" ] || return 1
+	"$busybox" grep -qx "$resident_pid" "$payload/cgroup.procs" || return 1
+	"$busybox" awk -F: -v expected="$service_cgroup/manager/payload" \
+		'$1 == "0" && $2 == "" && $3 == expected {found = 1} END {exit !found}' \
+		"/proc/$resident_pid/cgroup"
+}
+
+writer_is_in_driver() {
+	"$busybox" grep -qx "$$" "$driver/cgroup.procs" || return 1
+	"$busybox" awk -F: -v expected="$service_cgroup/manager/driver" \
+		'$1 == "0" && $2 == "" && $3 == expected {found = 1} END {exit !found}' \
+		/proc/self/cgroup
+}
+
+manager_is_empty() {
+	[ -z "$("$busybox" cat "$delegated_parent/cgroup.procs")" ]
+}
+
+verify_live_fixture() {
+	manager_is_empty || return 1
+	resident_is_in_payload || return 1
+	writer_is_in_driver || return 1
+}
+
+change_io() {
+	step=$1
+	value=$2
+	if [ "$value" = yes ]; then
+		operation=+io
+	else
+		operation=-io
+	fi
+	verify_live_fixture || unexercised "fixture_lost_before_$step"
+	if [ "$value" = yes ]; then
+		if has_io "$delegated_parent/cgroup.subtree_control"; then
+			unexercised "io_already_enabled_before_$step"
+		fi
+	else
+		if ! has_io "$delegated_parent/cgroup.subtree_control"; then
+			unexercised "io_not_enabled_before_$step"
+		fi
+	fi
+	if ! printf '%s\n' "$operation" >"$delegated_parent/cgroup.subtree_control"; then
+		unexercised "subtree_control_write_failed_at_$step"
+	fi
+	if [ "$value" = yes ]; then
+		has_io "$delegated_parent/cgroup.subtree_control" || unexercised "io_not_enabled_after_$step"
+		has_io "$payload/cgroup.controllers" || unexercised "io_not_visible_to_payload_after_$step"
+	else
+		if has_io "$delegated_parent/cgroup.subtree_control"; then
+			unexercised "io_still_enabled_after_$step"
+		fi
+		if has_io "$payload/cgroup.controllers"; then
+			unexercised "io_still_visible_to_payload_after_$step"
+		fi
+	fi
+	verify_live_fixture || unexercised "fixture_lost_after_$step"
+	emit "RESULT step=$step io=$value verified=yes writer_pid=$$ resident_pid=$resident_pid"
+}
+
+finish() {
+	rc=$?
+	trap - EXIT
+	set +e
+	if [ -n "$resident_pid" ] && [ -d "/proc/$resident_pid" ]; then
+		kill "$resident_pid" 2>/dev/null
+		wait "$resident_pid" 2>/dev/null
+	fi
+	trace_cleanup || cleanup_ok=no
+	if [ -n "$delegated_parent" ] && [ -d "$delegated_parent" ]; then
+		if has_io "$delegated_parent/cgroup.subtree_control"; then
+			if manager_is_empty; then
+				printf '%s\n' '-io' >"$delegated_parent/cgroup.subtree_control" || cleanup_ok=no
+			else
+				cleanup_ok=no
+			fi
+		fi
+	fi
+	if [ "$writer_moved" = yes ] && [ -w "$delegated_parent/cgroup.procs" ]; then
+		printf '%s\n' "$$" >"$delegated_parent/cgroup.procs" || cleanup_ok=no
+		writer_moved=no
+	fi
+	if [ -n "$payload" ] && [ -d "$payload" ]; then
+		"$busybox" rmdir "$payload" || cleanup_ok=no
+	fi
+	if [ -n "$driver" ] && [ -d "$driver" ]; then
+		"$busybox" rmdir "$driver" || cleanup_ok=no
+	fi
+	if [ "$service_subtree_captured" = yes ] && [ -d "$delegated_service" ]; then
+		if [ "$service_io_changed" = yes ] && has_io "$delegated_service/cgroup.subtree_control"; then
+			if [ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] &&
+				[ -n "$delegated_parent" ] &&
+				! has_io "$delegated_parent/cgroup.subtree_control"; then
+				printf '%s\n' '-io' >"$delegated_service/cgroup.subtree_control" || cleanup_ok=no
+			else
+				cleanup_ok=no
+			fi
+		fi
+		if { [ "$service_io_initial" = yes ] && has_io "$delegated_service/cgroup.subtree_control"; } ||
+			{ [ "$service_io_initial" = no ] && ! has_io "$delegated_service/cgroup.subtree_control"; }; then
+			if [ "$(controllers_without_io "$delegated_service/cgroup.subtree_control")" = "$service_subtree_initial_non_io" ]; then
+				service_controller_restored=yes
+			else
+				cleanup_ok=no
+			fi
+		else
+			cleanup_ok=no
+		fi
+	else
+		service_controller_restored=no
+		[ "$service_subtree_captured" = no ] || cleanup_ok=no
+	fi
+	if [ "$trace_mounted" = yes ]; then
+		"$busybox" umount "$tracefs" || cleanup_ok=no
+	fi
+	if [ -n "$payload" ] && [ -e "$payload" ]; then cleanup_ok=no; fi
+	if [ -n "$driver" ] && [ -e "$driver" ]; then cleanup_ok=no; fi
+	if [ -n "$resident_pid" ] && [ -d "/proc/$resident_pid" ]; then cleanup_ok=no; fi
+	if [ "$cleanup_ok" = yes ]; then
+		emit "CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes "\
+			"service_controller_restored=$service_controller_restored"
+	else
+		emit "CLEANUP owned_children_removed=no resident_alive=unknown trace_restored=unknown "\
+			"service_controller_restored=$service_controller_restored"
+	fi
+	if [ "$completed" = yes ] && [ "$rc" -eq 0 ] && [ "$cleanup_ok" = yes ]; then
+		emit "SUCCESS transitions=$((pairs * 2)) delegated_subtree_only=yes tracing_during_pairs=no"
+	else
+		[ "$rc" -ne 0 ] || rc=1
+	fi
+	"$busybox" rm -rf "$scratch"
+	exit "$rc"
+}
+trap finish EXIT
+
+unit_cgroup=$("$busybox" timeout -s TERM 3 /usr/bin/systemctl show -P ControlGroup "$unit" 2>/dev/null) ||
+	unexercised systemctl_control_group_unavailable
+[ "${unit_cgroup##*/}" = "$unit" ] || unexercised "unexpected_unit_cgroup_path"
+case $unit_cgroup in /*) ;; *) unexercised "relative_unit_cgroup_path" ;; esac
+case $unit_cgroup in *"/../"* | *"/./"* | *//* ) unexercised "unsafe_unit_cgroup_path" ;; esac
+service_cgroup=${unit_cgroup%/}
+delegated_service=$cg_root$service_cgroup
+delegated_parent=$delegated_service/manager
+driver=$delegated_parent/driver
+payload=$delegated_parent/payload
+self_cgroup=$("$busybox" awk -F: '$1 == "0" && $2 == "" {print $3}' /proc/self/cgroup)
+[ "$self_cgroup" = "$service_cgroup/manager" ] || unexercised "delegate_subgroup_not_applied"
+delegate_subgroup=$("$busybox" timeout -s TERM 3 /usr/bin/systemctl show -P DelegateSubgroup "$unit" 2>/dev/null) ||
+	unexercised "delegate_subgroup_property_unavailable"
+[ "$delegate_subgroup" = manager ] || unexercised "delegate_subgroup_property_mismatch"
+[ -d "$delegated_service" ] && [ -d "$delegated_parent" ] || unexercised "delegated_cgroup_missing"
+[ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] || unexercised "delegated_service_parent_has_processes"
+[ -w "$delegated_service/cgroup.subtree_control" ] || unexercised "delegated_service_parent_not_writable"
+[ -r "$delegated_service/cgroup.subtree_control" ] || unexercised "delegated_service_parent_mask_unreadable"
+[ -r "$delegated_service/cgroup.controllers" ] || unexercised "delegated_service_controllers_unreadable"
+[ -r "$delegated_parent/cgroup.controllers" ] || unexercised "delegate_subgroup_controllers_unreadable"
+service_subtree_initial_non_io=$(controllers_without_io "$delegated_service/cgroup.subtree_control")
+service_subtree_captured=yes
+if has_io "$delegated_service/cgroup.subtree_control"; then
+	service_io_initial=yes
+	unexercised "service_boundary_io_already_enabled"
+fi
+service_io_initial=no
+has_io "$delegated_service/cgroup.controllers" || unexercised "io_unavailable_at_delegated_service_boundary"
+if has_io "$delegated_parent/cgroup.controllers"; then
+	unexercised "manager_io_available_before_service_boundary_transition"
+fi
+if has_io "$delegated_parent/cgroup.subtree_control"; then
+	unexercised "manager_io_already_enabled"
+fi
+[ -w "$delegated_parent/cgroup.subtree_control" ] || unexercised "delegated_parent_not_writable"
+[ ! -e "$driver" ] && [ ! -e "$payload" ] || unexercised "owned_cgroup_name_already_exists"
+[ "$("$busybox" wc -l <"$delegated_parent/cgroup.procs")" -eq 1 ] ||
+	unexercised "delegate_subgroup_did_not_contain_only_writer"
+"$busybox" grep -qx "$$" "$delegated_parent/cgroup.procs" || unexercised "writer_not_in_delegate_subgroup"
+
+emit "BEGIN pairs=$pairs direct_root_writes=none delegated_parent=systemd_service_child max_active_seconds=$active_budget_seconds"
+[ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] || unexercised "service_parent_populated_before_propagation"
+service_io_changed=yes
+if ! printf '%s\n' '+io' >"$delegated_service/cgroup.subtree_control"; then
+	unexercised service_boundary_propagation_write_failed
+fi
+has_io "$delegated_service/cgroup.subtree_control" || unexercised "service_boundary_io_not_enabled"
+has_io "$delegated_parent/cgroup.controllers" || unexercised "manager_io_not_available_after_service_boundary_transition"
+if has_io "$delegated_parent/cgroup.subtree_control"; then
+	unexercised "manager_io_enabled_before_fixture_setup"
+fi
+[ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] || unexercised "service_parent_populated_after_propagation"
+[ "$(controllers_without_io "$delegated_service/cgroup.subtree_control")" = "$service_subtree_initial_non_io" ] ||
+	unexercised "service_boundary_other_controllers_changed"
+emit "PROPAGATION service_io_initial=no service_io_enabled=yes service_parent_empty=yes "\
+	"manager_io_available=yes manager_subtree_io=no writer_pid=$$"
+
+"$busybox" mkdir "$driver" "$payload"
+printf '%s\n' "$$" >"$driver/cgroup.procs" || unexercised writer_move_failed
+writer_moved=yes
+writer_is_in_driver || unexercised writer_not_in_owned_driver
+
+/usr/bin/busybox sleep 180 &
+resident_pid=$!
+printf '%s\n' "$resident_pid" >"$payload/cgroup.procs" || unexercised resident_move_failed
+resident_is_in_payload || unexercised resident_not_in_owned_payload
+manager_is_empty || unexercised delegated_parent_not_empty_before_toggle
+
+emit "READY service_parent_empty=yes manager_empty=yes io_available=yes writer_in_driver=yes resident_in_payload=yes "\
+	"service_io_propagated=yes service_cgroup=$service_cgroup manager_cgroup=$service_cgroup/manager "\
+	"resident_pid=$resident_pid"
+
+if [ ! -r "$tracefs/available_filter_functions" ]; then
+	if "$busybox" mount -t tracefs tracefs "$tracefs" 2>/dev/null; then
+		trace_mounted=yes
+	else
+		unexercised tracefs_unavailable
+	fi
+fi
+[ -r "$tracefs/set_graph_function" ] || unexercised function_graph_unavailable
+"$busybox" grep -qw function_graph "$tracefs/available_tracers" || unexercised function_graph_tracer_unavailable
+for trace_function in \
+	cgroup_subtree_control_write \
+	cgroup_update_dfl_csses \
+	percpu_down_write \
+	rcu_sync_enter; do
+	"$busybox" grep -Eq "^$trace_function([[:space:]]|$)" "$tracefs/available_filter_functions" ||
+		unexercised "trace_function_unavailable_$trace_function"
+done
+[ "$("$busybox" cat "$tracefs/current_tracer")" = nop ] || unexercised tracer_busy
+trace_on_initial=$("$busybox" cat "$tracefs/tracing_on")
+case $trace_on_initial in 0 | 1) ;; *) unexercised tracing_on_state_unavailable ;; esac
+trace_buffer_initial=$("$busybox" cat "$tracefs/buffer_size_kb")
+case $trace_buffer_initial in '' | *[!0-9]*) unexercised trace_buffer_size_unavailable ;; esac
+for filter_file in \
+	"$tracefs/set_ftrace_filter" \
+	"$tracefs/set_ftrace_notrace" \
+	"$tracefs/set_ftrace_pid" \
+	"$tracefs/set_ftrace_notrace_pid" \
+	"$tracefs/set_graph_function" \
+	"$tracefs/set_graph_notrace"; do
+	filter_is_empty "$filter_file" || unexercised "preexisting_or_unsupported_filter_${filter_file##*/}"
+done
+trace_events_disabled || unexercised preexisting_event_tracing
+trace_snapshot_empty || unexercised preexisting_snapshot_records
+trace_owned=yes
+trace_recording_stopped=yes
+printf '0\n' >"$tracefs/tracing_on"
+trace_buffers_empty || unexercised preexisting_trace_records
+trace_configured=yes
+printf '%s\n' "$trace_buffer_kib" >"$tracefs/buffer_size_kb"
+printf 'cgroup_subtree_control_write\n' >"$tracefs/set_graph_function"
+printf '%s\n' "$$" >"$tracefs/set_ftrace_pid"
+printf 'function_graph\n' >"$tracefs/current_tracer"
+capture_trace_stats before || unexercised trace_stats_unavailable
+printf '\n' >"$tracefs/trace"
+printf '1\n' >"$tracefs/tracing_on"
+if ! printf '%s\n' '+io' >"$delegated_parent/cgroup.subtree_control"; then
+	unexercised proof_transition_write_failed
+fi
+printf '0\n' >"$tracefs/tracing_on"
+has_io "$delegated_parent/cgroup.subtree_control" || unexercised proof_transition_mask_not_enabled
+has_io "$payload/cgroup.controllers" || unexercised proof_transition_not_visible_to_payload
+verify_live_fixture || unexercised proof_fixture_lost_after_transition
+capture_trace_stats after || unexercised trace_stats_unavailable_after_witness
+trace_integrity || unexercised trace_overrun_or_incomplete_stats
+trace_bytes=$("$busybox" wc -c <"$tracefs/trace")
+trace_lines=$("$busybox" wc -l <"$tracefs/trace")
+[ "$trace_bytes" -lt "$trace_byte_limit" ] || unexercised trace_byte_limit
+[ "$trace_lines" -le "$trace_line_limit" ] || unexercised trace_line_limit
+"$busybox" head -c "$trace_byte_limit" "$tracefs/trace" >"$scratch/trace"
+if ! "$busybox" awk -v integrity=clean -v "writer_pid=$$" \
+	-f /usr/sbin/agentplane-cgroup-pilot-trace.awk "$scratch/trace" >"$scratch/trace-chain"; then
+	unexercised trace_parser_failed
+fi
+trace_chain=$("$busybox" head -n 1 "$scratch/trace-chain")
+case $trace_chain in
+	"status=proven "*) ;;
+	*) unexercised "complete_writer_pid_trace_path_not_proven" ;;
+esac
+disable_trace_for_stress || unexercised trace_disable_failed
+emit "TRACE_PROOF step=proof_on io=yes verified=yes writer_pid=$$ pid_match=yes trace_integrity=clean "\
+	"trace_bytes=$trace_bytes trace_lines=$trace_lines $trace_chain"
+emit "TRACE_DISABLED tracing_on=0 current_tracer=nop before_stress=yes restore_on_exit=$trace_on_initial"
+
+change_io proof_reset_off no
+pair=1
+while [ "$pair" -le "$pairs" ]; do
+	now=$("$busybox" awk '{print int($1)}' /proc/uptime)
+	elapsed=$((now - probe_start))
+	[ "$elapsed" -lt "$active_budget_seconds" ] || unexercised "active_budget_exceeded elapsed=$elapsed"
+	change_io "pair${pair}_on" yes
+	change_io "pair${pair}_off" no
+	pair=$((pair + 1))
+done
+completed=yes
+exit 0
