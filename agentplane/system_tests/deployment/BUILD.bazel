@@ -123,6 +123,7 @@ py_test(
     size = "medium",
     srcs = ["test_render.py"],
     data = [
+        ":rendered/local-model-firecracker.json",
         ":rendered/local-model-mcp-fixtures.json",
         ":rendered/local-model-vm.json",
         "@nodejs_linux_amd64//:bin/node",
@@ -130,6 +131,7 @@ py_test(
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
+        "K3S_FIRECRACKER_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-firecracker.json)",
         "K3S_VM_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-vm.json)",
     },
     deps = [
@@ -152,6 +154,8 @@ py_test(
         "//agentplane/system_tests/vm:sandboxes",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s/agentplane:central_sampler",
+        "//cluster/cdk8s/agentplane:environment_firecracker",
+        "//cluster/cdk8s/agentplane:environment_vm",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:runner_gateway",
@@ -570,4 +574,16 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+genrule(
+    name = "render_local_model_firecracker",
+    testonly = True,
+    outs = ["rendered/local-model-firecracker.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-firecracker K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
 )

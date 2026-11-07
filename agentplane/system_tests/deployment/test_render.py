@@ -29,7 +29,15 @@ from agentplane.system_tests.vm import infrastructure as vm_infrastructure, sand
 from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway, session_dispatcher
+from cluster.cdk8s.agentplane import (
+    central_sampler,
+    environment_firecracker,
+    environment_vm,
+    history_service,
+    llm_ingress,
+    runner_gateway,
+    session_dispatcher,
+)
 from util.settings_contract import env_name
 
 _MCP = McpInputs(
@@ -666,6 +674,51 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
     )
     history_config = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     assert {"namespace": NAMESPACE, "name": central_sampler.NAME} in history_config["ingress"]["sampler_accounts"]
+
+
+def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
+    fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
+    assert fixture.firecracker_sandboxes
+    assert not fixture.vm_sandboxes
+    assert not any(doc["kind"] == "CiliumNetworkPolicy" for doc in fixture.objects)
+
+    template = _resource(fixture.objects, "SandboxTemplate", environment_firecracker.NAME)["spec"]
+    assert "vm" not in template
+    firecracker = template["firecracker"]
+    assert firecracker["bootImage"] == environment_firecracker.BOOT_IMAGE
+    assert firecracker["runnerImage"] == environment_vm.RUNNER_DISK_IMAGE
+    assert firecracker["vcpuCount"] > 0
+    config = json.loads(
+        _resource(fixture.objects, "ConfigMap", "environment-firecracker-config")["data"]["environment-runtime.json"]
+    )
+    relay = yaml.safe_load(
+        _resource(fixture.objects, "ConfigMap", "environment-firecracker-relay")["data"]["settings.yaml"]
+    )
+    listener = _host_port(relay["platform_routes"]["listen_address"])
+    guest_listener = (environment_firecracker.GATEWAY, listener[1])
+    assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"]) == guest_listener
+    assert _host_port(config["model_config_target"]) == guest_listener
+    assert config["control"]["security"] == {
+        "mode": "mtls",
+        "tls": {"workload_api_socket": "unix:///run/agentplane/environment-runtime-tls/workload.sock"},
+    }
+
+    for volume in (template["stateVolume"], template["workspaceVolume"]):
+        assert volume["layout"] == {"type": "RawDiskImage", "filesystem": "ext4"}
+        assert volume["claim"]["storageClassName"] == "local-path"
+        assert volume["claim"]["volumeMode"] == "Filesystem"
+    assert template["stateVolume"]["claim"]["resources"]["requests"]["storage"] == "100Gi"
+
+    pod = firecracker["pod"]["spec"]
+    launcher = next(container for container in pod["containers"] if container["name"] == "environment-runtime")
+    assert launcher["image"] == environment_firecracker.LAUNCHER_IMAGE
+    assert launcher["resources"]["requests"]["devices.kubevirt.io/kvm"] == 1
+    assert launcher["resources"]["limits"]["devices.kubevirt.io/kvm"] == 1
+    assert any(mount["name"] == "tun" and mount["mountPath"] == "/dev/net/tun" for mount in launcher["volumeMounts"])
+    assert next(volume for volume in pod["volumes"] if volume["name"] == "tun")["hostPath"] == {
+        "path": "/dev/net/tun",
+        "type": "CharDevice",
+    }
 
 
 if __name__ == "__main__":

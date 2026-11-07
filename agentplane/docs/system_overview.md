@@ -175,6 +175,13 @@ no mount. The KubeVirt launcher relay gets that same Secret through the existing
 after a live Sandbox status check binds the launcher VM and VMI to the accepted credential. Staging
 and testing use the SVID hop; TLS mode never falls back to token mode.
 
+Firecracker Sandboxes use a controller-owned launcher Pod, a separate SVID-authenticated relay and a
+NixOS guest. Their supervisor checkpoints RAM and all disks, then restores the same Runtime and
+processes in the same Pod. Its launcher serves SPIFFE Workload API credentials over vsock to the
+root guest agent, which serves a restricted Unix endpoint consumed by Runtime. Guest management
+uses a separate gRPC connection for boot/thaw readiness. See [Firecracker Sandboxes](firecracker_sandboxes.md) for the control,
+credential and network boundaries.
+
 A VM guest runs Environment Runtime with Session components and Execution; its relay is in the separate KubeVirt launcher Pod. The Git index is
 standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
 embeds files through an embedding endpoint and owns its own PostgreSQL database

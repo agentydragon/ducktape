@@ -52,10 +52,14 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 		admitted map[string]string
 	}{
 		{"with a Sandbox controller", withController, map[string]string{
-			environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName: "controller",
+			environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:         "controller",
+			environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName:  "controller",
+			environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName: "controller",
 		}},
 		{"without a Sandbox controller", withoutController, map[string]string{
-			environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName: "",
+			environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:         "",
+			environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName:  "",
+			environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName: "",
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -148,5 +152,15 @@ func TestUnauthorizedExecutorCallerCannotReadEnvironmentFailureState(t *testing.
 		if _, ok := detail.(*executorpb.ExecutionEnvironmentFailure); ok {
 			t.Fatalf("unauthorized executor call disclosed the environment state: %v", detail)
 		}
+	}
+}
+
+func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
+	sandbox := &sandboxapi.Sandbox{}
+	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	sandbox.Status.StopStage = sandboxapi.StopStageStopped
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "launcher", UID: "pod-uid"}
+	if phase := sandboxPhase(sandbox); phase != modeSuspended {
+		t.Fatalf("checkpointed launcher phase = %s, want Suspended", phase)
 	}
 }

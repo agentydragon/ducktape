@@ -126,8 +126,10 @@ class SandboxController(Construct):
                 RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/finalizers")], verbs=["update"]),
                 RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
-                    resources=[custom_resource("", "pods")], verbs=["get", "list", "watch", "create", "delete"]
+                    resources=[custom_resource("", "pods")],
+                    verbs=["get", "list", "watch", "create", "update", "delete"],
                 ),
+                RolePolicyRule(resources=[custom_resource("", "pods/proxy")], verbs=["get"]),
                 # Per-incarnation cert-manager requests. cert-manager owns every generated key and
                 # certificate; the controller only creates/deletes Certificate declarations and
                 # reads the resulting leaf Secret before attaching it to a workload.

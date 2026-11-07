@@ -1,18 +1,29 @@
 # Environment images
 
-## VM guest mount contract
+## VM guest mount contracts
 
-[`vm_guest_contract.json`](vm_guest_contract.json) records the KubeVirt disk serials, guest mount
-paths and Runtime config filenames shared by the NixOS guest and the rendered VM template. The Nix
-module uses it to build the evaluated `fileSystems` table, and a NixOS assertion checks those
-mounts against the contract as part of the guest image build. The Cdk8s test compares the rendered
-VM disks and Runtime configuration with the same values and the shared systemd unit.
+[`vm_guest_contract.json`](vm_guest_contract.json) records the KubeVirt disk serials and guest
+mount paths shared by the NixOS guest and the rendered VM template. The Nix module uses it to build
+the evaluated `fileSystems` table, and a NixOS assertion checks those mounts against the contract.
+[`firecracker_guest_contract.json`](firecracker_guest_contract.json) records Firecracker's fixed
+virtio-blk device order and the same runner mount paths. The Nix guest module and rendered
+Firecracker template consume this contract; the NixOS assertion checks every mount against it.
 
 The executable erofs disk keeps the KubeVirt serial `agentplane-runner` and mounts at
 `/run/agentplane/environment`. The config disk contains `environment-runtime.json` and
 `environment-runtime.env`; the launch disk mounts at `/run/agentplane/sandbox`. The Runtime TLS
 Secret stays behind a root-only private virtiofs directory, with the public Runtime path exposed as
 a symlink. The trust-manager bundle mounts separately as public trust data.
+
+The Firecracker contract assigns `vda` to the raw ext4 NixOS root and `vdb` through `vdg` to the
+runner erofs, persistent state, workspace, config, launch and egress trust disks.
+The launcher creates the state and workspace ext4 filesystems; the guest does not auto-format them.
+The root guest agent repairs time through guest-management gRPC on privileged vsock port 52 and
+subscribes to the host's SPIFFE Workload API over a separate connection on privileged port 53.
+It serves credentials on a root-only local Unix socket, which Runtime consumes with go-spiffe's
+in-memory `X509Source`. Cold boot and thaw require a fresh subscription before network admission;
+normal rotations flow over the stream without restarting Runtime. `systemd-networkd` waits for
+the first synchronization acknowledgement before configuring the fixed guest addresses.
 
 ## Release and image inputs
 
@@ -26,7 +37,14 @@ companion or CLI change therefore republishes the runner disk image but not the 
 image. The `agentplane-cli` artifact pin still feeds the Action sandbox images, which rebuild on
 any pin bump.
 
-## VM workspace disk
+`nix build .#agentplane-environment-firecracker-image` builds the native NixOS Firecracker guest as
+an OCI archive whose root contains `vmlinux`, a partitionless raw ext4 `rootfs.ext4`, and a text
+`init` file holding the NixOS init store path. The launcher mounts the image at `/images/boot`; the
+full NixOS closure is copied into the guest root, while the replaceable runner remains on its own
+read-only erofs disk. Firecracker resume/snapshot lifecycle belongs to the host launcher; the guest
+thaw service updates time and TLS material without restarting Runtime or its harnesses.
+
+## KubeVirt VM workspace disk
 
 The guest declares `/state/workspaces` in NixOS `fileSystems` as ext4 with `autoFormat`:
 `systemd-makefs` creates the filesystem when `blkid` finds no signature and skips any disk that

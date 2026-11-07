@@ -11,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -87,9 +88,15 @@ func run(c config) error {
 		return err
 	}
 	quiescer := sandboxcontroller.GatewayQuiescer{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS}
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return err
+	}
 	reconciler := &sandboxcontroller.Reconciler{
 		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt,
 		Quiescer: quiescer, Leases: mgr.GetClient(), RunnerCertificateIssuer: c.RunnerCertificateIssuer, Now: time.Now,
+		FirecrackerStatus: sandboxcontroller.PodProxyFirecrackerStatusReader{Client: clientset},
+		Suspender:         sandboxcontroller.GatewaySuspender{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile},
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err

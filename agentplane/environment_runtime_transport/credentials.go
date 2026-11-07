@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,15 +58,27 @@ func isWorkloadServiceURI(uri string) bool {
 
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
-// Config names the projected certificate, private key, and trust roots.
+// Config names either the projected certificate, private key, and trust roots,
+// or the local SPIFFE Workload API Unix socket.
 type Config struct {
-	CertFile string `json:"cert_file,omitempty" yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty"`
-	KeyFile  string `json:"key_file,omitempty" yaml:"key_file,omitempty" mapstructure:"key_file,omitempty"`
-	CAFile   string `json:"ca_file,omitempty" yaml:"ca_file,omitempty" mapstructure:"ca_file,omitempty"`
+	CertFile          string `json:"cert_file,omitempty" yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty"`
+	KeyFile           string `json:"key_file,omitempty" yaml:"key_file,omitempty" mapstructure:"key_file,omitempty"`
+	CAFile            string `json:"ca_file,omitempty" yaml:"ca_file,omitempty" mapstructure:"ca_file,omitempty"`
+	WorkloadAPISocket string `json:"workload_api_socket,omitempty" yaml:"workload_api_socket,omitempty" mapstructure:"workload_api_socket,omitempty"`
 }
 
-// Validate requires a complete file-backed source.
+// Validate requires either a complete file-backed source or one Workload API
+// Unix socket URI. The two source forms cannot be mixed.
 func (c Config) Validate() error {
+	if c.WorkloadAPISocket != "" {
+		if _, err := parseWorkloadAPISocket(c.WorkloadAPISocket); err != nil {
+			return err
+		}
+		if c.CertFile != "" || c.KeyFile != "" || c.CAFile != "" {
+			return errors.New("TLS workload_api_socket cannot be combined with cert_file, key_file, or ca_file")
+		}
+		return nil
+	}
 	for _, file := range []struct{ name, path string }{
 		{name: "cert_file", path: c.CertFile},
 		{name: "key_file", path: c.KeyFile},
@@ -79,6 +92,14 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func parseWorkloadAPISocket(raw string) (string, error) {
+	endpoint, err := url.Parse(raw)
+	if err != nil || !strings.HasPrefix(raw, "unix:///") || endpoint.Scheme != "unix" || endpoint.Host != "" || endpoint.Opaque != "" || endpoint.User != nil || endpoint.ForceQuery || endpoint.RawQuery != "" || endpoint.Fragment != "" || !filepath.IsAbs(endpoint.Path) || endpoint.String() != raw {
+		return "", errors.New("TLS workload_api_socket must be a canonical unix:///absolute/path URI")
+	}
+	return raw, nil
 }
 
 // EnvironmentRuntimeURI returns the identity assigned to one Runner credential. credentialID
@@ -130,6 +151,9 @@ func ParseEnvironmentRuntimeURI(raw string) (namespace, sandboxUID, credentialID
 // ClientCredentials creates mTLS client credentials pinned to the exact
 // GatewayURI or EnvironmentRuntimeURI supplied as expectedPeerURI.
 func (c Config) ClientCredentials(expectedPeerURI string) (credentials.TransportCredentials, error) {
+	if c.WorkloadAPISocket != "" {
+		return nil, errors.New("Workload API TLS configuration requires Security.Open(ctx)")
+	}
 	expected, err := parseIdentity(expectedPeerURI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
@@ -143,6 +167,9 @@ func (c Config) ClientCredentials(expectedPeerURI string) (credentials.Transport
 
 // ServerCredentials creates mTLS server credentials pinned to the expected client URI.
 func (c Config) ServerCredentials(expectedPeerURI string) (credentials.TransportCredentials, error) {
+	if c.WorkloadAPISocket != "" {
+		return nil, errors.New("Workload API TLS configuration requires Security.Open(ctx)")
+	}
 	expected, err := parseIdentity(expectedPeerURI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
@@ -169,6 +196,9 @@ func (c Config) WorkloadServerCredentials(localURI string) (credentials.Transpor
 // fixed SPIFFE identity. The file source reloads projected certificate, key,
 // and CA bundle replacements while keeping the client identity pinned.
 func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
+	if c.WorkloadAPISocket != "" {
+		return nil, errors.New("Workload API TLS configuration requires Security.Open(ctx)")
+	}
 	if !isWorkloadServiceURI(expectedPeerURI) {
 		return nil, errors.New("expected peer URI must name a supported first-party service")
 	}
@@ -191,7 +221,7 @@ func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 // reloadable file source used by file-backed SVID credentials, and the peer
 // must present the fixed egress-proxy SVID with serverAuth usage.
 func (c Config) ProxyServerTLSConfig() (*tls.Config, error) {
-	if c.CertFile != "" || c.KeyFile != "" {
+	if c.CertFile != "" || c.KeyFile != "" || c.WorkloadAPISocket != "" {
 		return nil, errors.New("proxy server TLS without a client certificate accepts only ca_file")
 	}
 	source, err := newFileBundleSource(c.CAFile)
@@ -220,6 +250,9 @@ func (c Config) WorkloadServerTLSConfigWithBearer(localURI string) (*tls.Config,
 }
 
 func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls.Config, error) {
+	if c.WorkloadAPISocket != "" {
+		return nil, errors.New("Workload API server TLS is only supported through Security.Open(ctx)")
+	}
 	if !isWorkloadServiceURI(localURI) {
 		return nil, errors.New("local URI must name a supported first-party service")
 	}
@@ -263,7 +296,7 @@ func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls
 // Its certificate reloads with the same identity and server EKU checks as mTLS.
 // A client presenting a certificate is refused because that method is disabled.
 func (c Config) BearerServerTLSConfig(localURI string) (*tls.Config, error) {
-	if c.CAFile != "" || !filepath.IsAbs(c.CertFile) || !filepath.IsAbs(c.KeyFile) {
+	if c.CAFile != "" || c.WorkloadAPISocket != "" || !filepath.IsAbs(c.CertFile) || !filepath.IsAbs(c.KeyFile) {
 		return nil, errors.New("bearer TLS requires absolute cert_file and key_file paths only")
 	}
 	svid, err := loadSVID(c, x509.ExtKeyUsageServerAuth)
@@ -288,6 +321,9 @@ func (c Config) BearerServerTLSConfig(localURI string) (*tls.Config, error) {
 // LocalIdentity returns the certificate URI after validating its chain and the
 // caller's required authentication usage.
 func (c Config) LocalIdentity(usage x509.ExtKeyUsage) (string, error) {
+	if c.WorkloadAPISocket != "" {
+		return "", errors.New("Workload API TLS configuration requires Security.Open(ctx)")
+	}
 	source, err := newFileSource(c, usage)
 	if err != nil {
 		return "", err

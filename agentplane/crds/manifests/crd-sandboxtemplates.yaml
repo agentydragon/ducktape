@@ -47,17 +47,46 @@ spec:
             type: object
           spec:
             description: 'SandboxTemplateSpec sets the Sandbox''s kind: exactly one
-              of Pod and VM.'
+              of Pod, VM and Firecracker.'
             properties:
+              firecracker:
+                description: FirecrackerTemplate describes a launcher Pod and the
+                  two immutable images it mounts.
+                properties:
+                  bootImage:
+                    minLength: 1
+                    type: string
+                  memoryMiB:
+                    format: int64
+                    minimum: 128
+                    type: integer
+                  pod:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  runnerImage:
+                    minLength: 1
+                    type: string
+                  vcpuCount:
+                    format: int32
+                    maximum: 32
+                    minimum: 1
+                    type: integer
+                required:
+                - bootImage
+                - memoryMiB
+                - pod
+                - runnerImage
+                - vcpuCount
+                type: object
               pod:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               stateVolume:
-                description: 'StateVolume is the volume the controller fills with
-                  the Sandbox''s state PVC: a Pod''s containers
+                description: 'StateVolume is the controller-owned PVC for retained
+                  environment state. Pod and VM backends keep
 
-                  mount it by name, and a VM guest mounts the virtiofs filesystem
-                  of that name.'
+                  a directory tree; Firecracker stores the guest state disk and its
+                  checkpoints.'
                 properties:
                   claim:
                     type: object
@@ -80,8 +109,8 @@ spec:
                     - type
                     type: object
                     x-kubernetes-validations:
-                    - message: state volume requires DirectoryTree without a filesystem
-                      rule: self.type == 'DirectoryTree' && !has(self.filesystem)
+                    - message: state volume requires DirectoryTree or RawDiskImage
+                      rule: self.type == 'DirectoryTree' || self.type == 'RawDiskImage'
                     - message: DirectoryTree omits filesystem; disk layouts require
                         it
                       rule: 'self.type == ''DirectoryTree'' ? !has(self.filesystem)
@@ -157,8 +186,21 @@ spec:
             - message: Pod workspaces require DirectoryTree layout
               rule: '!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type
                 == ''DirectoryTree'''
-            - message: exactly one of the fields in [pod vm] must be set
-              rule: '[has(self.pod),has(self.vm)].filter(x,x==true).size() == 1'
+            - message: Firecracker state requires an ext4 RawDiskImage
+              rule: '!has(self.firecracker) || (self.stateVolume.layout.type == ''RawDiskImage''
+                && self.stateVolume.layout.filesystem == ''ext4'')'
+            - message: Pod and VM state require DirectoryTree without a filesystem
+              rule: has(self.firecracker) || (self.stateVolume.layout.type == 'DirectoryTree'
+                && !has(self.stateVolume.layout.filesystem))
+            - message: Firecracker workspace requires an ext4 disk layout
+              rule: '!has(self.firecracker) || !has(self.workspaceVolume) || (self.workspaceVolume.layout.type
+                != ''DirectoryTree'' && self.workspaceVolume.layout.filesystem ==
+                ''ext4'')'
+            - message: Firecracker requires a workspace volume
+              rule: '!has(self.firecracker) || has(self.workspaceVolume)'
+            - message: exactly one of the fields in [pod vm firecracker] must be set
+              rule: '[has(self.pod),has(self.vm),has(self.firecracker)].filter(x,x==true).size()
+                == 1'
         required:
         - spec
         type: object

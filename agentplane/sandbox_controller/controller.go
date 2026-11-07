@@ -72,6 +72,10 @@ type Reconciler struct {
 	RunnerCertificateIssuer string
 	// The current time, for the liveness of a connection Lease and the idle timers.
 	Now func() time.Time
+	// FirecrackerStatus reads the launcher supervisor through the Kubernetes Pod proxy.
+	FirecrackerStatus FirecrackerStatusReader
+	// Suspender closes Runtime admission without sealing RAM-preserved Sessions.
+	Suspender RuntimeSuspender
 
 	idle idleTimers
 }
@@ -155,6 +159,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
+	priorFirecrackerPod := sandbox.Status.Incarnation != nil ||
+		(sandbox.Status.RunnerCredential != nil && sandbox.Status.RunnerCredential.PodUID != "")
+	if w.pod == nil && priorFirecrackerPod && sandbox.Status.Volumes != nil &&
+		sandbox.Status.Volumes.State != nil && sandbox.Status.Volumes.State.Layout.Type == sandboxapi.RawDiskImage {
+		return r.updateStatus(ctx, &sandbox, w, &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod is missing; preserving the checkpoint for operator recovery", retryAfter: 5 * time.Second}, nil)
+	}
 	w, credentialGate, err := r.ensureRunnerCredential(ctx, &sandbox, w, sandboxRunning(&sandbox))
 	if err != nil {
 		return ctrl.Result{}, err
@@ -185,12 +195,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	if blocked == nil && (idle.lameduck || !sandboxRunning(&sandbox) || sandboxQuiescing(&sandbox)) {
+	if blocked == nil && (idle.lameduck || !sandboxRunning(&sandbox) || sandboxQuiescing(&sandbox)) && !isFirecrackerPod(w.pod) {
 		if blocked, err = r.quiesceBeforeStop(ctx, &sandbox, w); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-	if blocked == nil {
+	if blocked == nil && isFirecrackerPod(w.pod) {
+		blocked, err = r.convergeFirecracker(ctx, &sandbox, w.pod, sandboxRunning(&sandbox))
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	if blocked == nil && !isFirecrackerPod(w.pod) {
 		if w, blocked, err = r.converge(ctx, &sandbox, w, sandboxRunning(&sandbox), gate); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -241,6 +257,11 @@ func (r *Reconciler) pod(ctx context.Context, sandbox *sandboxapi.Sandbox) (*cor
 // be writing to it, then lets the Sandbox go. Each step's watch event runs the next. It returns why
 // the Sandbox is still there, or nil once the finalizer is removed.
 func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (workload, *unready, error) {
+	if w.pod == nil && !sandboxSessionsQuiesced(sandbox) && sandbox.Status.Volumes != nil && sandbox.Status.Volumes.State != nil &&
+		sandbox.Status.Volumes.State.Layout.Type == sandboxapi.RawDiskImage &&
+		(sandbox.Status.Incarnation != nil || (sandbox.Status.RunnerCredential != nil && sandbox.Status.RunnerCredential.PodUID != "")) {
+		return w, &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod is missing; preserving checkpoint during deletion", retryAfter: 5 * time.Second}, nil
+	}
 	pvc, err := r.stateVolume(ctx, sandbox)
 	if err != nil {
 		return w, nil, err
@@ -263,6 +284,18 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		w, credentialGate, err := r.ensureRunnerCredential(ctx, sandbox, w, true)
 		if err != nil {
 			return w, nil, err
+		}
+		if isFirecrackerPod(w.pod) {
+			if credentialGate != nil {
+				return w, credentialGate, nil
+			}
+			ready, err := r.convergeFirecracker(ctx, sandbox, w.pod, true)
+			if err != nil || ready != nil {
+				return w, ready, err
+			}
+			if ready, err := r.firecrackerQuiesceReady(ctx, sandbox, w.pod); err != nil || ready != nil {
+				return w, ready, err
+			}
 		}
 		w, blocked, err := r.converge(ctx, sandbox, w, true, credentialGate)
 		if err != nil || blocked != nil {
@@ -462,8 +495,14 @@ func (r *Reconciler) template(ctx context.Context, sandbox *sandboxapi.Sandbox) 
 		}
 		return nil, nil, err
 	}
-	if (template.Spec.Pod == nil) == (template.Spec.VM == nil) {
-		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
+	count := 0
+	for _, set := range []bool{template.Spec.Pod != nil, template.Spec.VM != nil, template.Spec.Firecracker != nil} {
+		if set {
+			count++
+		}
+	}
+	if count != 1 {
+		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod, vm and firecracker", template.Name)}, nil
 	}
 	if blocked := validateStateVolume(&template); blocked != nil {
 		return nil, blocked, nil
@@ -491,6 +530,18 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	sealed := w.incarnation() != nil && sandboxQuiescedIncarnation(sandbox, string(w.incarnation().UID))
 	if gate != nil && (sealed || ended) {
 		return w, gate, nil
+	}
+	if w.pod == nil && (sandbox.Status.Incarnation != nil ||
+		(sandbox.Status.RunnerCredential != nil && sandbox.Status.RunnerCredential.PodUID != "")) {
+		// A lost launcher may have a checkpoint on its PVC. Cold booting another Pod would
+		// discard that execution and risk duplicate external effects.
+		current, blocked, err := r.template(ctx, sandbox)
+		if err != nil || blocked != nil {
+			return w, blocked, err
+		}
+		if current.Spec.Firecracker != nil {
+			return w, &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod is missing; preserving the checkpoint for operator recovery"}, nil
+		}
 	}
 	var template *sandboxapi.SandboxTemplate
 	if gate == nil && (sealed || ended || (w.pod == nil && !vmRunning(w.vm) && w.vmi == nil)) {
@@ -588,7 +639,13 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 	if blocked := validateWorkspace(template); blocked != nil {
 		return nil, blocked
 	}
-	spec := template.Spec.Pod.Spec.DeepCopy()
+	var podTemplate *corev1.PodTemplateSpec
+	if template.Spec.Firecracker != nil {
+		podTemplate = &template.Spec.Firecracker.Pod
+	} else {
+		podTemplate = template.Spec.Pod
+	}
+	spec := podTemplate.Spec.DeepCopy()
 	volume := template.Spec.StateVolume.Name
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == volume }) {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
@@ -599,6 +656,11 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 	}
 	if blocked := withRunnerTLS(sandbox, template, spec, credentialID); blocked != nil {
 		return nil, blocked
+	}
+	if template.Spec.Firecracker != nil {
+		if blocked := withFirecracker(sandbox, template, spec); blocked != nil {
+			return nil, blocked
+		}
 	}
 	spec.Volumes = append(spec.Volumes, corev1.Volume{
 		Name: volume,
@@ -614,12 +676,16 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 			}},
 		})
 	}
-	annotations := maps.Clone(template.Spec.Pod.Annotations)
+	annotations := maps.Clone(podTemplate.Annotations)
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
 	annotations[RenderedSpecAnnotation] = renderedSpec(spec)
-	labels := withSandboxLabel(template.Spec.Pod.Labels, sandbox)
+	labels := withSandboxLabel(podTemplate.Labels, sandbox)
+	if template.Spec.Firecracker != nil {
+		annotations[FirecrackerRunningAnnotation] = "true"
+		labels[EnvironmentBackendLabel] = "firecracker"
+	}
 	labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credentialID
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -657,6 +723,8 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 	}
 	if incarnation != nil {
 		status.Incarnation = &sandboxapi.Incarnation{Name: incarnation.Name, UID: string(incarnation.UID)}
+	} else if blocked != nil && blocked.reason == "FirecrackerLauncherLost" {
+		status.Incarnation = sandbox.Status.Incarnation
 	}
 	condition := metav1.Condition{Type: sandboxapi.ConditionRunning, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	status.StopStage = ""

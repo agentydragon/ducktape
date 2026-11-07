@@ -149,6 +149,15 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if got := runner.quiesceCalls.Load(); got != 1 {
 		t.Fatalf("Runner received %d Quiesce calls, want 1", got)
 	}
+	if _, err := client.PrepareSuspend(f.callerContext(f.controllerToken), &environmentruntimepb.PrepareSuspendRequest{Generation: 1}); status.Code(err) != codes.Unimplemented {
+		t.Fatalf("controller PrepareSuspend in held suspend = %v, want forwarded", err)
+	}
+	if _, err := client.ResumeAdmission(f.callerContext(f.controllerToken), &environmentruntimepb.ResumeAdmissionRequest{Generation: 1}); status.Code(err) != codes.Unimplemented {
+		t.Fatalf("controller ResumeAdmission in held suspend = %v, want forwarded", err)
+	}
+	if _, err := client.PrepareSuspend(f.callerContext(f.appToken), &environmentruntimepb.PrepareSuspendRequest{Generation: 1}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("app PrepareSuspend = %v, want PermissionDenied", err)
+	}
 	if _, err := client.Quiesce(f.callerContext(f.appToken), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("app Quiesce in held suspend = %v, want PermissionDenied", err)
 	}

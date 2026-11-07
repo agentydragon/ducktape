@@ -43,7 +43,7 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 	}
 	go func() { _ = server.Serve(listener) }()
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
-	credentials, err := r.config.Control.Security.ClientCredentials("")
+	credentials, err := r.security.ClientCredentials("")
 	if err != nil {
 		cancel()
 		server.Stop()

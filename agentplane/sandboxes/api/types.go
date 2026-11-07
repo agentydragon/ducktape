@@ -9,8 +9,8 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-// StateVolume is the volume the controller fills with the Sandbox's state PVC: a Pod's containers
-// mount it by name, and a VM guest mounts the virtiofs filesystem of that name.
+// StateVolume is the controller-owned PVC for retained environment state. Pod and VM backends keep
+// a directory tree; Firecracker stores the guest state disk and its checkpoints.
 type StateVolume struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
@@ -18,7 +18,7 @@ type StateVolume struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
 	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
-	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
+	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' || self.type == 'RawDiskImage'",message="state volume requires DirectoryTree or RawDiskImage"
 	Layout VolumeLayout `json:"layout"`
 }
 
@@ -49,9 +49,30 @@ type WorkspaceVolume struct {
 	Layout VolumeLayout                     `json:"layout"`
 }
 
-// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM.
-// +kubebuilder:validation:ExactlyOneOf=pod;vm
+// FirecrackerTemplate describes a launcher Pod and the two immutable images it mounts.
+type FirecrackerTemplate struct {
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	Pod corev1.PodTemplateSpec `json:"pod"`
+	// +kubebuilder:validation:MinLength=1
+	BootImage string `json:"bootImage"`
+	// +kubebuilder:validation:MinLength=1
+	RunnerImage string `json:"runnerImage"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=32
+	VCPUCount int32 `json:"vcpuCount"`
+	// +kubebuilder:validation:Minimum=128
+	MemoryMiB int64 `json:"memoryMiB"`
+}
+
+// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod, VM and Firecracker.
+// +kubebuilder:validation:ExactlyOneOf=pod;vm;firecracker
 // +kubebuilder:validation:XValidation:rule="!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'",message="Pod workspaces require DirectoryTree layout"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || (self.stateVolume.layout.type == 'RawDiskImage' && self.stateVolume.layout.filesystem == 'ext4')",message="Firecracker state requires an ext4 RawDiskImage"
+// +kubebuilder:validation:XValidation:rule="has(self.firecracker) || (self.stateVolume.layout.type == 'DirectoryTree' && !has(self.stateVolume.layout.filesystem))",message="Pod and VM state require DirectoryTree without a filesystem"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || !has(self.workspaceVolume) || (self.workspaceVolume.layout.type != 'DirectoryTree' && self.workspaceVolume.layout.filesystem == 'ext4')",message="Firecracker workspace requires an ext4 disk layout"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || has(self.workspaceVolume)",message="Firecracker requires a workspace volume"
 type SandboxTemplateSpec struct {
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
@@ -62,6 +83,7 @@ type SandboxTemplateSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
 	VM              *kubevirtv1.VirtualMachineSpec `json:"vm,omitempty"`
+	Firecracker     *FirecrackerTemplate           `json:"firecracker,omitempty"`
 	StateVolume     StateVolume                    `json:"stateVolume"`
 	WorkspaceVolume *WorkspaceVolume               `json:"workspaceVolume,omitempty"`
 }
@@ -224,6 +246,9 @@ func ValidateAutosuspendBlockers(blockers []AutosuspendBlocker) error {
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
+	// FirecrackerSuspension retains the admission barrier across controller retries,
+	// checkpoint and thaw. Released keeps the generation for the next attempt.
+	FirecrackerSuspension *FirecrackerSuspension `json:"firecrackerSuspension,omitempty"`
 	// IdleSuspendAt is the controller's next attempt to suspend an idle Sandbox, when one is scheduled.
 	IdleSuspendAt *metav1.Time `json:"idleSuspendAt,omitempty"`
 	// IdleSuspendBlockers are the live runner facts keeping autosuspend from suspending this Sandbox.
@@ -252,6 +277,23 @@ type SandboxStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+type FirecrackerSuspension struct {
+	// +kubebuilder:validation:Minimum=1
+	Generation int64                      `json:"generation"`
+	IdleSince  metav1.MicroTime           `json:"idleSince"`
+	Phase      FirecrackerSuspensionPhase `json:"phase"`
+}
+
+// +kubebuilder:validation:Enum=Preparing;Checkpointing;Resuming;Released
+type FirecrackerSuspensionPhase string
+
+const (
+	FirecrackerSuspendPreparing     FirecrackerSuspensionPhase = "Preparing"
+	FirecrackerSuspendCheckpointing FirecrackerSuspensionPhase = "Checkpointing"
+	FirecrackerSuspendResuming      FirecrackerSuspensionPhase = "Resuming"
+	FirecrackerSuspendReleased      FirecrackerSuspensionPhase = "Released"
+)
+
 // WorkspaceBinding projects the creation record and pins the claim's identity.
 type WorkspaceBinding struct {
 	// +kubebuilder:validation:MinLength=1
@@ -272,7 +314,7 @@ type StateBinding struct {
 	Name string `json:"name"`
 	// +kubebuilder:validation:MinLength=1
 	UID string `json:"uid"`
-	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
+	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' || self.type == 'RawDiskImage'",message="state volume requires DirectoryTree or RawDiskImage"
 	Layout VolumeLayout `json:"layout"`
 }
 

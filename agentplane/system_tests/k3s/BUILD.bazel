@@ -144,6 +144,7 @@ py_library(
     srcs = ["baseline.py"],
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
+        "//agentplane/system_tests/firecracker:__pkg__",
         "//agentplane/system_tests/vm:__pkg__",
     ],
     deps = [

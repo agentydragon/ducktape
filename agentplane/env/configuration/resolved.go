@@ -76,6 +76,11 @@ func ValidateControlIdentity(control EnvironmentRuntimeControlConfiguration, san
 	if control.Security.Mode == environmentruntimetransport.Insecure {
 		return nil
 	}
+	if control.Security.TLS.WorkloadAPISocket != "" {
+		// Runtime owns the bounded Workload API source and validates the local
+		// identity after opening that shared source during composition.
+		return nil
+	}
 	identity, err := control.Security.TLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)

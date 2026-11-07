@@ -909,7 +909,11 @@ http_file(
     name = "vm_guest_kernel_deb",
     downloaded_file_path = "linux-image-cloud-amd64.deb",
     sha256 = "c26573a3b5dca6bd3bf2b06a13b81cbb845c04eb6e35d7ad57f4b885746153e4",
-    urls = ["https://snapshot.debian.org/archive/debian-security/20261102T161514Z/pool/updates/main/l/linux-signed-amd64/linux-image-6.12.115+deb13.1-cloud-amd64_6.12.115-2_amd64.deb"],
+    # The security CDN carries these exact bytes; keep the snapshot when the pool ages out.
+    urls = [
+        "https://deb.debian.org/debian-security/pool/updates/main/l/linux-signed-amd64/linux-image-6.12.115+deb13.1-cloud-amd64_6.12.115-2_amd64.deb",
+        "https://snapshot.debian.org/archive/debian-security/20261102T161514Z/pool/updates/main/l/linux-signed-amd64/linux-image-6.12.115+deb13.1-cloud-amd64_6.12.115-2_amd64.deb",
+    ],
 )
 
 # Firecracker v1.12 CI's x86_64 ELF guest kernel, pinned for the local runner-layering VM probe.
@@ -957,4 +961,11 @@ http_archive(
     sha256 = "b12ba5b8f553f3c90860e926af8527a531e49590395da23ec42a9e8fc01aa900",
     strip_prefix = "ducktape-4ad33013af27e159863bed92ffcfdb55b388e46c",
     urls = ["https://github.com/agentydragon/ducktape/archive/4ad33013af27e159863bed92ffcfdb55b388e46c.tar.gz"],
+)
+
+http_archive(
+    name = "firecracker_agentplane_release",
+    build_file_content = 'exports_files(["release-v1.17.0-x86_64/firecracker-v1.17.0-x86_64", "release-v1.17.0-x86_64/jailer-v1.17.0-x86_64"])',
+    sha256 = "06094a1108ae9e82aa4c23a775aa92758f53f1175d422270d9d6162cb9ade558",
+    urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz"],
 )
