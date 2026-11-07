@@ -99,6 +99,7 @@ pub(crate) use set_iterables::{
     primitive_literal_property_keys,
 };
 pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
+pub use statement_facts::ConditionalProviderTargetRequirement;
 pub use statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
     CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,

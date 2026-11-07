@@ -305,6 +305,9 @@ impl Outcome {
         self.effects
             .required_initialized_module_cells
             .append(&mut nested.required_initialized_module_cells);
+        self.effects
+            .conditional_provider_targets
+            .append(&mut nested.conditional_provider_targets);
         if let Some(receipts) = std::mem::take(&mut nested.operation_support_receipts) {
             for receipt in receipts.into_vec() {
                 self.effects.record_operation_support(receipt);
@@ -8738,6 +8741,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 heap.reads.insert(cell);
             }
         }
+        let ValueExpr::Binding(source_binding) = &call.callee else {
+            unreachable!("conditional imported-body lookup requires a binding callee")
+        };
+        outcome.effects.conditional_provider_targets.push(
+            crate::facts::statement_facts::ConditionalProviderTargetRequirement {
+                owner: call.owner,
+                call_span: call.span,
+                source_binding: source_binding.clone(),
+                defining_module: body.defining_module.clone(),
+                export: body.export.clone(),
+                local: body.local.clone(),
+                callable_key: body.callable_key,
+            },
+        );
         outcome.effect_coverage = self.imported_body_effects(
             call,
             ImportedBodyProof {
@@ -10802,20 +10819,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // shared accumulator reentrantly. Preserve those contributions before
         // restoring the outer summary, including roots marked cached there.
         let mut reentrant = std::mem::take(&mut self.state.fallback_outcome);
-        outcome.effects.reads.append(&mut reentrant.effects.reads);
-        outcome
-            .effects
-            .rebinds
-            .append(&mut reentrant.effects.rebinds);
-        outcome
-            .effects
-            .uninitialized_reads
-            .append(&mut reentrant.effects.uninitialized_reads);
+        outcome.absorb_call_effects(&mut reentrant.effects, self.state.assumption.as_ref());
         outcome
             .executed_owners
             .append(&mut reentrant.executed_owners);
         outcome.unknown_call |= reentrant.unknown_call;
-        outcome.inherit_precision_losses(reentrant.effects.precision_losses);
+        outcome.inherit_completeness(reentrant.complete, reentrant.effects.precision_losses);
         if outcome.effects.rebinds.len() != rebinds_before {
             self.apply_rebind_effects(&outcome);
         }
@@ -15055,6 +15064,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             None
         };
         let single_target = targets.len() == 1;
+        let exact_conditional_effect_only = !needs_value
+            && call.kind == CallKind::Call
+            && !call.has_spread
+            && !operands_may_throw
+            && single_target
+            && outcome.complete
+            && !outcome.unknown_call
+            && outcome.thrown.is_none()
+            && outcome.effects.precision_losses.is_empty()
+            && outcome.effects.uninitialized_reads.is_empty()
+            && outcome.effect_coverage.has_closed_effects()
+            && matches!(
+                &call.callee,
+                ValueExpr::Binding(binding)
+                    if outcome.effects.conditional_provider_targets.iter().any(|target| {
+                        target.owner == call.owner
+                            && target.call_span == call.span
+                            && target.source_binding == *binding
+                    })
+            );
         let mut result_selection = None;
         for target in targets {
             match target {
@@ -15135,6 +15164,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     );
                 }
                 AbstractValue::Value(Value::Unavailable) | AbstractValue::Value(Value::Prim(_)) => {
+                }
+                AbstractValue::Value(Value::Top) if exact_conditional_effect_only => {
+                    // This exact imported body already supplied a complete,
+                    // normal effect transfer for the same source binding and
+                    // callsite. The expression statement discards its result,
+                    // so do not add the unrelated opaque-call fallback. The
+                    // candidate target obligation is retained on `outcome`.
                 }
                 AbstractValue::ObjectAssign
                     if call.kind == CallKind::Call

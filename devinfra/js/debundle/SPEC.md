@@ -568,6 +568,24 @@ each addressed by scoped chunk ID and declaration origin. It reports any typed
 prepared-output refusal; source imports alone do not establish preservation.
 Only required cells missing from the preserved set make an otherwise unblocked
 candidate incomplete; a refusal with no required cells remains diagnostic.
+Its `provider_targets` component independently lists every successfully
+applied conditional imported-body use, the subset whose exact source binding
+and provider route remain present in the prepared candidate, and the unproved
+difference. Addresses retain the source owner/callsite, hygiene-aware binding
+identity internally, and analyzed provider module/export identity; report
+addresses project those values for diagnostics. A capture-free body still
+requires this target proof. The first checked scope is one materialized
+consumer with unchanged vendor planning and a retained ordinary-ESM provider
+closure: the exact owner body must contain the canonical named-import binding
+for the applied call, and precomputed named export/import records trace its
+export to the analyzed provider. Candidate requests resolve output-first, so a
+new logical file cannot silently replace that route. The selected import is
+live in that body and survives dead-import pruning; an unrelated bare request
+does not discharge it. Retained provider aliases are unchanged under this
+scope, while export-star routes and consumer-generated forwarding identities
+without a tracked binding remain unproved. This target check proves identity
+only; it does not establish provider initialization order or shared-cell
+chronology, which remain the separate `module_initialization` obligation.
 Candidate assessment and normal lowering share one checked projection over the
 retained source-unit layout, whole-statement requests, binding catalogue,
 destructuring and nested-`var` groups, and stable Set intervals. Its maps are

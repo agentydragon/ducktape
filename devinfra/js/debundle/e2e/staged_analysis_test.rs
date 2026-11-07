@@ -1272,6 +1272,12 @@ fn module_initialization_cells<'a>(report: &'a Value, field: &str) -> &'a [Value
         .unwrap_or_else(|| panic!("module initialization {field} is not an array: {report:#}"))
 }
 
+fn provider_targets<'a>(report: &'a Value, field: &str) -> &'a [Value] {
+    report["provider_targets"][field]
+        .as_array()
+        .unwrap_or_else(|| panic!("provider targets {field} is not an array: {report:#}"))
+}
+
 fn assert_same_module_cell_address(report_address: &Value, graph_address: &Value) {
     assert_module_cell_address(graph_address);
     assert_eq!(report_address["chunk"], graph_address["chunk"]);
@@ -1642,6 +1648,86 @@ fn mutable_provider_cell_effects_survive_direct_saved_and_candidate_analysis() {
             report["module_initialization"]["refusal"].is_null(),
             "{report:#}"
         );
+        let required_targets = provider_targets(&report, "required_targets");
+        let preserved_targets = provider_targets(&report, "preserved_targets");
+        assert_eq!(required_targets.len(), 2, "{report:#}");
+        assert_eq!(preserved_targets, required_targets, "{report:#}");
+        assert!(
+            provider_targets(&report, "unproved_targets").is_empty(),
+            "{report:#}"
+        );
+        assert!(
+            report["provider_targets"]["refusal"].is_null(),
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn capture_free_conditional_provider_target_survives_moved_wrapper_and_saved_analysis() {
+    const PROVIDER: &str = "export function read(record) { return record.value; }\n";
+    const APP: &str = "import { read } from './peer.js';\nfunction wrapper(record) { read(record); }\nwrapper({ value: 1 });\nconsole.log('ok');\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(APP, vec![logical_module("work", &[Member::new("wrapper")])])
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "ok\n", "");
+    let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+    assert!(
+        direct.result.status.success(),
+        "direct candidate CLI rejected the capture-free provider target: {}",
+        direct.result.stderr
+    );
+    assert!(
+        saved.result.status.success(),
+        "saved-analysis candidate CLI rejected the capture-free provider target: {}",
+        saved.result.stderr
+    );
+    for (mode, invocation) in [("direct", &direct), ("saved", &saved)] {
+        let consumer_root = invocation.output_root().join("app/static/app");
+        let diagnostics = save_relocation_reports(
+            &invocation.output_root().join("reports/tree"),
+            "static/app",
+            &format!("capture_free_provider_target_{mode}"),
+        );
+        for (file, bytes) in module_snapshot(&consumer_root) {
+            let destination = diagnostics
+                .join("emitted")
+                .join(file.strip_prefix(&consumer_root).unwrap());
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::write(destination, bytes).unwrap();
+        }
+        let report = candidate_relocation_report(invocation, "static/app");
+        assert_eq!(
+            report["status"], "accepted_within_checked_scope",
+            "{report:#}"
+        );
+        assert!(
+            module_initialization_cells(&report, "required_cells").is_empty(),
+            "{report:#}"
+        );
+        let required = provider_targets(&report, "required_targets");
+        let preserved = provider_targets(&report, "preserved_targets");
+        assert_eq!(required.len(), 1, "{report:#}");
+        assert_eq!(preserved, required, "{report:#}");
+        assert!(
+            provider_targets(&report, "unproved_targets").is_empty(),
+            "{report:#}"
+        );
+        assert!(
+            report["provider_targets"]["refusal"].is_null(),
+            "{report:#}"
+        );
+        assert_eq!(required[0]["export"], "read", "{report:#}");
+        assert_eq!(required[0]["local"], "read", "{report:#}");
+        assert!(
+            required[0]["defining_module"]
+                .as_str()
+                .unwrap()
+                .contains("peer")
+        );
+        assert_node_output(&consumer_root.join("entry.js"), "ok\n", "");
     }
 }
 
@@ -1888,6 +1974,79 @@ fn candidate_module_initialization_checks_output_path_shadowing() {
                     "{report:#}"
                 );
                 assert_node_output(&consumer_root.join("entry.js"), "1 object\n", "");
+            }
+        }
+    }
+}
+
+#[test]
+fn conditional_provider_target_checks_forwarding_routes_and_shadowing() {
+    const PEER: &str = "export function read(record) { return record.value; }\n";
+    const BRIDGE: &str = "export { read } from './peer.js';\n";
+    const APP: &str = "import { read as foreignRead } from './bridge.js';\nfunction read(record) { return 99; }\nforeignRead({ value: 1 });\nforeignRead({ value: 2 });\nconsole.log('ok');\n";
+    for (layout, target_dir, shadows_provider) in [("nested", "modules", false), ("flat", "", true)]
+    {
+        let (staged, _fixture) = staged(
+            FixtureOpts::new(
+                APP,
+                vec![
+                    logical_module("bridge", &[Member::new("read")]),
+                    logical_module_with_anon("work", &[], &["foreignRead({ value: 1 });"]),
+                ],
+            )
+            .with_target_dir(target_dir)
+            .with_extra_chunks(&[("static/bridge", BRIDGE), ("static/peer", PEER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_node_output(&staged.root().join("snapshot/static/app.js"), "ok\n", "");
+        let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
+        for (mode, invocation) in [("direct", &direct), ("saved", &saved)] {
+            let consumer_root = invocation.output_root().join("app/static/app");
+            let diagnostics = save_relocation_reports(
+                &invocation.output_root().join("reports/tree"),
+                "static/app",
+                &format!("forwarding_target_{layout}_{mode}"),
+            );
+            for (file, bytes) in module_snapshot(&consumer_root) {
+                let destination = diagnostics
+                    .join("emitted")
+                    .join(file.strip_prefix(&consumer_root).unwrap());
+                fs::create_dir_all(destination.parent().unwrap()).unwrap();
+                fs::write(destination, bytes).unwrap();
+            }
+            let report = candidate_relocation_report(invocation, "static/app");
+            assert!(
+                module_initialization_cells(&report, "required_cells").is_empty(),
+                "{layout}: {report:#}"
+            );
+            let required = provider_targets(&report, "required_targets");
+            let preserved = provider_targets(&report, "preserved_targets");
+            let unproved = provider_targets(&report, "unproved_targets");
+            assert_eq!(required.len(), 2, "{layout}: {report:#}");
+            assert!(required.iter().all(|target| target["export"] == "read"));
+            if shadows_provider {
+                assert!(preserved.is_empty(), "{report:#}");
+                assert_eq!(unproved.len(), 2, "{report:#}");
+                assert!(
+                    report["provider_targets"]["refusal"].is_string(),
+                    "{report:#}"
+                );
+                assert_ne!(
+                    report["status"], "accepted_within_checked_scope",
+                    "{report:#}"
+                );
+            } else {
+                assert_eq!(preserved, required, "{report:#}");
+                assert!(unproved.is_empty(), "{report:#}");
+                assert!(
+                    report["provider_targets"]["refusal"].is_null(),
+                    "{report:#}"
+                );
+                assert_eq!(
+                    report["status"], "accepted_within_checked_scope",
+                    "{report:#}"
+                );
+                assert_node_output(&consumer_root.join("entry.js"), "ok\n", "");
             }
         }
     }

@@ -267,6 +267,10 @@ pub(crate) struct SynchronousCalls {
     /// are included in this execution require their source initialization to
     /// precede every candidate invocation.
     pub(crate) required_initialized_module_cells: BTreeSet<ModuleCellId>,
+    /// Conditional imported-body transfers require the emitted candidate to
+    /// preserve the exact imported binding route to the analyzed provider,
+    /// even when the body has no module-cell footprint.
+    pub(crate) conditional_provider_targets: Vec<ConditionalProviderTargetRequirement>,
     /// Heap reads and writes reached without an assumed callback or fallback
     /// path. This is a subset of `heap_contents` and is used only to check
     /// explicit commuting premises; the conservative heap order uses all cells.
@@ -285,6 +289,28 @@ pub(crate) struct SynchronousCalls {
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
+}
+
+/// Source identity for one successfully applied conditional imported-body
+/// transfer. This is an obligation to prove the same binding route in the
+/// prepared candidate; it does not itself prove target preservation.
+/// Source binding and provider identity for an applied conditional imported-body transfer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConditionalProviderTargetRequirement {
+    /// Source-unit ordinal containing the callsite.
+    pub owner: SourceUnitOrdinal,
+    /// Exact source callsite span used to join candidate requests.
+    pub call_span: Span,
+    /// Hygiene-aware source Id of the imported callee.
+    pub source_binding: Id,
+    /// Source chunk namespace that owns the analyzed function.
+    pub defining_module: String,
+    /// Export name through which the function was resolved.
+    pub export: String,
+    /// Provider-local binding name for the resolved function.
+    pub local: String,
+    /// Analysis identity for the resolved callable body.
+    pub callable_key: u32,
 }
 
 /// Binding effects a statement's synchronous summary assumed rather than
@@ -428,6 +454,16 @@ impl StatementFacts {
         self.synchronous_calls
             .iter()
             .flat_map(|calls| calls.required_initialized_module_cells.iter().copied())
+    }
+
+    /// Binding and provider identities consumed by applied conditional body
+    /// transfers. These remain required even when no module cells were read.
+    pub fn required_conditional_provider_targets(
+        &self,
+    ) -> impl Iterator<Item = &ConditionalProviderTargetRequirement> + '_ {
+        self.synchronous_calls
+            .iter()
+            .flat_map(|calls| calls.conditional_provider_targets.iter())
     }
 
     /// What one synchronous call of the function or class this statement

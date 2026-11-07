@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 use swc_common::{BytePos, DUMMY_SP, Spanned};
 
+use super::body_facts::{PreparedImportBinding, PreparedImportTarget, PreparedStaticRequest};
 use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
 use super::imports::static_request_for_item;
@@ -15,7 +16,7 @@ use super::scope_names::collect_local_binding_names;
 use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
 use crate::imports::{
     ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
-    PlannedVendorReimports, VendorReimportOracle, cross_module_imports_for_plan,
+    PlannedVendorReimports, RuntimeReimport, VendorReimportOracle, cross_module_imports_for_plan,
     final_module_exports, group_specifiers_into_import_decls, imported_binding_named_specifier,
     phantom_side_effect_imports, plan_module_reference_needs, plan_vendor_reimports,
     residual_entry_imports_for_moved_body, source_chunk_imports_for_moved_body,
@@ -28,7 +29,7 @@ use crate::visitors::IdentifierRenamer;
 use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::paths::join_module_path;
-use artifact::reports::{SelectedModuleLowering, StaticModuleRequest};
+use artifact::reports::SelectedModuleLowering;
 use artifact::{FileMetadata, FileRole, JsFile, JsFileBody};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::AssignmentAnalysis;
@@ -93,19 +94,29 @@ pub(super) struct LoweredModuleOutput {
 pub(super) struct PreparedModuleEmission<'a> {
     plan: &'a ModulePlan,
     body: Vec<ModuleItem>,
-    static_requests: Vec<StaticModuleRequest>,
+    static_requests: Vec<PreparedStaticRequest>,
     explicit_renames: BTreeMap<String, String>,
     output_context: ModuleOutputContext<'a>,
     vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
 impl PreparedModuleEmission<'_> {
+    pub(super) fn destination_id(&self) -> ModuleId {
+        self.plan.id
+    }
+
     pub(super) fn output_file_layout(&self) -> (&str, &str) {
         (&self.plan.target_file, self.output_context.source_path)
     }
 
-    pub(super) fn static_request_inventory(&self) -> (&str, &[StaticModuleRequest]) {
-        (&self.plan.target_file, &self.static_requests)
+    pub(super) fn prepared_static_request_inventory(
+        &self,
+    ) -> (&str, &str, &[PreparedStaticRequest]) {
+        (
+            &self.plan.target_file,
+            self.output_context.source_path,
+            &self.static_requests,
+        )
     }
 
     pub(super) fn emit(self) -> LoweredModuleOutput {
@@ -221,6 +232,7 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         &plan.id,
         entry_file,
         &plan.target_file,
+        chunk_id_interned,
         residual_entry_imports,
         missing_residual_exports,
         &mut import_rename_sink,
@@ -249,6 +261,13 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
+        for request in &mut static_requests {
+            for binding in &mut request.bindings {
+                if cross_module_chunk_renames.contains_key(binding.source_binding.0.as_ref()) {
+                    binding.target = PreparedImportTarget::Unsupported;
+                }
+            }
+        }
         // Import-local renames are minted from the ledger's taken set,
         // which seal validated against every name bound anywhere in the
         // body — a capture here would mean seal's guarantee broke.
@@ -264,6 +283,14 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
     // are constructed as package / facade imports straight from the
     // plan oracle; everything else stays a chunk re-import (with the
     // boundary-rename mapping applied at construction).
+    let runtime_reimport_sources: BTreeMap<Id, Id> = runtime_reimports
+        .iter()
+        .map(|(emitted, reimport)| (emitted.clone(), reimport.source_binding.clone()))
+        .collect();
+    let needed_for_vendor = runtime_reimports
+        .into_iter()
+        .map(|(emitted, reimport)| (emitted, reimport.info))
+        .collect();
     let PlannedVendorReimports {
         retained: runtime_reimports,
         imported_overrides,
@@ -271,12 +298,28 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         body_rewrites: vendor_body_rewrites,
         references_rewritten: mut vendor_reference_rewrites,
     } = plan_vendor_reimports(
-        runtime_reimports,
+        needed_for_vendor,
         vendor_import_oracle,
         chunk_id_interned,
         entry_file,
         &plan.target_file,
     );
+    let runtime_reimports: BTreeMap<Id, RuntimeReimport<'_>> = runtime_reimports
+        .into_iter()
+        .map(|(emitted, info)| {
+            let source_binding = runtime_reimport_sources
+                .get(&emitted)
+                .expect("vendor planner retains the source binding for every retained import")
+                .clone();
+            (
+                emitted,
+                RuntimeReimport {
+                    source_binding,
+                    info,
+                },
+            )
+        })
+        .collect();
     // Re-import any source-chunk import-specifier-bound locals that
     // moved code in `body` references but no top-level decl
     // satisfies (e.g. `const { decode } = gge;` where `gge` was an
@@ -346,29 +389,39 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         .sort_module_imports(&mut intra_chunk_imports);
     let mut combined =
         Vec::with_capacity(intra_chunk_imports.len() + runtime_reimports.len() + body.len());
-    let mut static_requests = Vec::with_capacity(
+    let mut static_requests: Vec<PreparedStaticRequest> = Vec::with_capacity(
         intra_chunk_imports.len() + runtime_reimports.len() + static_requests_by_item.len(),
     );
-    for (_, item) in intra_chunk_imports {
-        if let Some(request) = static_request_for_item(&item) {
-            static_requests.push(request);
+    for (_, prepared_import) in intra_chunk_imports {
+        if let Some(request) = static_request_for_item(&prepared_import.item) {
+            static_requests.push(PreparedStaticRequest {
+                request,
+                targets: prepared_import.targets,
+                bindings: prepared_import.bindings,
+            });
         }
-        combined.push(item);
+        combined.push(prepared_import.item);
     }
-    for item in runtime_reimports {
-        if let Some(request) = static_request_for_item(&item) {
-            static_requests.push(request);
+    for prepared_import in runtime_reimports {
+        if let Some(request) = static_request_for_item(&prepared_import.item) {
+            static_requests.push(PreparedStaticRequest {
+                request,
+                targets: prepared_import.targets,
+                bindings: prepared_import.bindings,
+            });
         }
-        combined.push(item);
+        combined.push(prepared_import.item);
     }
     let mut leading_static_import_requests =
         static_requests.len() + body_leading_static_import_requests;
     combined.append(&mut body);
-    static_requests.extend(
-        static_requests_by_item
-            .into_iter()
-            .map(|indexed_request| indexed_request.request),
-    );
+    static_requests.extend(static_requests_by_item.into_iter().map(|indexed_request| {
+        PreparedStaticRequest {
+            request: indexed_request.request,
+            targets: indexed_request.targets,
+            bindings: indexed_request.bindings,
+        }
+    }));
     body = combined;
     // Apply chunk_renames to the assembled module body so that
     // import-specifier aliases and references in the moved code
@@ -417,6 +470,11 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         let vendor_static_requests = vendor_external_imports
             .iter()
             .filter_map(static_request_for_item)
+            .map(|request| PreparedStaticRequest {
+                request,
+                targets: vec![PreparedImportTarget::Unsupported],
+                bindings: Vec::new(),
+            })
             .collect::<Vec<_>>();
         let tail = body.split_off(import_count);
         body.extend(vendor_external_imports);
@@ -492,7 +550,8 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         // namespace-split rule in the shared grouper is a no-op for
         // this path, but routing through it keeps the grouping logic
         // single-sourced with `source_chunk_imports_for_moved_body`.
-        let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(reexports.len());
+        let mut pairs: Vec<(String, ImportSpecifier, PreparedImportBinding)> =
+            Vec::with_capacity(reexports.len());
         for reexport in reexports {
             let src = relative_source(&dest_abs, &reexport.imported_from);
             let specifier = imported_binding_named_specifier(
@@ -500,16 +559,34 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
                 &reexport.imported_name,
                 chunk_top_level_mark,
             );
-            pairs.push((src, specifier));
+            let target = match reexport.source_specifier {
+                Some(specifier) => PreparedImportTarget::OriginalSource { specifier },
+                None => PreparedImportTarget::Unsupported,
+            };
+            pairs.push((
+                src,
+                specifier,
+                PreparedImportBinding {
+                    source_binding: reexport.source_binding,
+                    imported_name: reexport.imported_name.clone(),
+                    target,
+                },
+            ));
             import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
         }
         let reexport_imports = group_specifiers_into_import_decls(pairs);
-        let reexport_static_requests: Vec<StaticModuleRequest> = reexport_imports
+        let reexport_static_requests: Vec<PreparedStaticRequest> = reexport_imports
             .iter()
-            .filter_map(static_request_for_item)
+            .filter_map(|prepared| {
+                static_request_for_item(&prepared.item).map(|request| PreparedStaticRequest {
+                    request,
+                    targets: prepared.targets.clone(),
+                    bindings: prepared.bindings.clone(),
+                })
+            })
             .collect();
         let tail = body.split_off(import_count);
-        body.extend(reexport_imports);
+        body.extend(reexport_imports.into_iter().map(|prepared| prepared.item));
         body.extend(tail);
         let inserted_request_count = reexport_static_requests.len();
         static_requests.splice(

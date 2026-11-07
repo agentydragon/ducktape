@@ -1,5 +1,5 @@
 use analysis_model::DepKind;
-use source_identity::{ChunkId, ModuleCellId};
+use source_identity::{ChunkId, ModuleCellId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 
@@ -172,6 +172,7 @@ impl<'a> CandidatePreflight<'a> {
         self,
         facts: &[analysis::facts::StatementFacts],
         module_initialization_evidence: CandidateModuleInitializationEvidence,
+        provider_target_evidence: CandidateProviderTargetEvidence,
         translation_validation_visitor: Option<
             &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
         >,
@@ -188,6 +189,7 @@ impl<'a> CandidatePreflight<'a> {
             &self.emitted_order,
             self.placement,
             module_initialization_evidence,
+            provider_target_evidence,
             effect_visitor,
         )?;
         Ok(CandidateEvaluation {
@@ -323,6 +325,155 @@ pub struct CandidateModuleInitializationEvidence {
     pub refusal: Option<ModuleInitializationRefusal>,
 }
 
+/// Candidate proof that each conditional imported-body application still
+/// names its analyzed provider and import binding. This is independent of the
+/// provider's module-cell initialization obligations.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct CandidateProviderTargetEvidence {
+    preserved_targets: Vec<ConditionalProviderTargetKey>,
+    refusal: Option<ProviderTargetRefusal>,
+}
+
+impl CandidateProviderTargetEvidence {
+    /// Record that the candidate guard preserved the full target obligations.
+    pub fn preserved<'a>(
+        requirements: impl IntoIterator<
+            Item = &'a analysis::facts::ConditionalProviderTargetRequirement,
+        >,
+    ) -> Self {
+        Self {
+            preserved_targets: requirements.into_iter().map(provider_target_key).collect(),
+            refusal: None,
+        }
+    }
+
+    /// Record that a required target could not be proven for this candidate.
+    pub fn refused(reason: ProviderTargetRefusal) -> Self {
+        Self {
+            preserved_targets: Vec::new(),
+            refusal: Some(reason),
+        }
+    }
+}
+
+/// Why a candidate's conditional imported-body target could not be proven.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderTargetRefusal {
+    PreparedEmissionUnavailable,
+    UnsupportedCandidateScope,
+    UnknownProvider,
+    BindingRouteChanged,
+    ProviderRouteChanged,
+    UnsupportedRequest,
+    ExportIdentityChanged,
+}
+
+/// Stable report address for one successful conditional imported-body use.
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ConditionalProviderTargetAddress {
+    pub owner: SourceUnitOrdinal,
+    pub callsite_start: u32,
+    pub callsite_end: u32,
+    pub source_binding: String,
+    pub defining_module: String,
+    pub export: String,
+    pub local: String,
+    pub callable_key: u32,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ConditionalProviderTargetKey {
+    owner: SourceUnitOrdinal,
+    callsite_start: u32,
+    callsite_end: u32,
+    source_binding: swc_ecma_ast::Id,
+    defining_module: String,
+    export: String,
+    local: String,
+    callable_key: u32,
+}
+
+fn provider_target_key(
+    requirement: &analysis::facts::ConditionalProviderTargetRequirement,
+) -> ConditionalProviderTargetKey {
+    ConditionalProviderTargetKey {
+        owner: requirement.owner,
+        callsite_start: requirement.call_span.lo.0,
+        callsite_end: requirement.call_span.hi.0,
+        source_binding: requirement.source_binding.clone(),
+        defining_module: requirement.defining_module.clone(),
+        export: requirement.export.clone(),
+        local: requirement.local.clone(),
+        callable_key: requirement.callable_key,
+    }
+}
+
+impl ConditionalProviderTargetKey {
+    fn report_address(&self) -> ConditionalProviderTargetAddress {
+        ConditionalProviderTargetAddress {
+            owner: self.owner,
+            callsite_start: self.callsite_start,
+            callsite_end: self.callsite_end,
+            source_binding: self.source_binding.0.to_string(),
+            defining_module: self.defining_module.clone(),
+            export: self.export.clone(),
+            local: self.local.clone(),
+            callable_key: self.callable_key,
+        }
+    }
+}
+
+/// Required-versus-preserved target proof for conditional imported bodies.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConditionalProviderTargetAssessment {
+    pub required_targets: BTreeSet<ConditionalProviderTargetAddress>,
+    pub preserved_targets: BTreeSet<ConditionalProviderTargetAddress>,
+    pub unproved_targets: BTreeSet<ConditionalProviderTargetAddress>,
+    pub refusal: Option<ProviderTargetRefusal>,
+    /// Completeness is computed from full binding identities before the
+    /// report-only string projection. Distinct hygienic Ids can share a name.
+    #[serde(skip)]
+    complete: bool,
+}
+
+impl ConditionalProviderTargetAssessment {
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
+}
+
+fn assess_provider_targets(
+    required_targets: Vec<ConditionalProviderTargetKey>,
+    evidence: CandidateProviderTargetEvidence,
+) -> ConditionalProviderTargetAssessment {
+    let preserved_keys = required_targets
+        .iter()
+        .filter(|required| evidence.preserved_targets.contains(required))
+        .collect::<Vec<_>>();
+    let unproved_keys = required_targets
+        .iter()
+        .filter(|required| !evidence.preserved_targets.contains(required))
+        .collect::<Vec<_>>();
+    let complete = unproved_keys.is_empty();
+    ConditionalProviderTargetAssessment {
+        required_targets: required_targets
+            .iter()
+            .map(ConditionalProviderTargetKey::report_address)
+            .collect(),
+        preserved_targets: preserved_keys
+            .into_iter()
+            .map(ConditionalProviderTargetKey::report_address)
+            .collect(),
+        unproved_targets: unproved_keys
+            .into_iter()
+            .map(ConditionalProviderTargetKey::report_address)
+            .collect(),
+        refusal: evidence.refusal,
+        complete,
+    }
+}
+
 /// A typed reason the prepared-output guard could not establish preservation
 /// for some required module cells.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -409,6 +560,7 @@ pub struct CandidateRelocationAssessment {
     pub placement: StructuralPlacementAssessment,
     pub effect: EffectTranslationValidationResult,
     pub module_initialization: ModuleInitializationAssessment,
+    pub provider_targets: ConditionalProviderTargetAssessment,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -422,6 +574,7 @@ pub struct CandidateRelocationAssessmentReport {
     pub legacy_gate_ordering_veto: bool,
     pub placement: StructuralPlacementAssessment,
     pub module_initialization: ModuleInitializationAssessment,
+    pub provider_targets: ConditionalProviderTargetAssessment,
 }
 
 /// One application verdict with every required materialized chunk's actual
@@ -518,6 +671,7 @@ impl CandidateRelocationAssessment {
             effect_accepted,
             &self.placement,
             self.module_initialization.is_complete(),
+            self.provider_targets.is_complete(),
         )
     }
 
@@ -529,6 +683,7 @@ impl CandidateRelocationAssessment {
             effect: self.effect.assessment.clone(),
             placement: self.placement.clone(),
             module_initialization: self.module_initialization.clone(),
+            provider_targets: self.provider_targets.clone(),
         }
     }
 }
@@ -538,6 +693,7 @@ fn candidate_relocation_status(
     effect_accepted: bool,
     placement: &StructuralPlacementAssessment,
     module_initialization_complete: bool,
+    provider_targets_complete: bool,
 ) -> CandidateRelocationStatus {
     match (
         effect_blocked,
@@ -554,6 +710,7 @@ fn candidate_relocation_status(
             CandidateRelocationStatus::Incomplete
         }
         (false, false) if !module_initialization_complete => CandidateRelocationStatus::Incomplete,
+        (false, false) if !provider_targets_complete => CandidateRelocationStatus::Incomplete,
         (false, false) => CandidateRelocationStatus::AcceptedWithinCheckedScope,
     }
 }
@@ -884,6 +1041,7 @@ impl AssignmentAnalysis {
         emitted_order: &CandidateEmittedOrder,
         placement: StructuralPlacementAssessment,
         module_initialization_evidence: CandidateModuleInitializationEvidence,
+        provider_target_evidence: CandidateProviderTargetEvidence,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
         let required_module_cells = facts
@@ -892,6 +1050,12 @@ impl AssignmentAnalysis {
             .collect();
         let module_initialization =
             assess_module_initialization(required_module_cells, module_initialization_evidence);
+        let required_provider_targets = facts
+            .iter()
+            .flat_map(analysis::facts::StatementFacts::required_conditional_provider_targets)
+            .collect();
+        let provider_targets =
+            assess_provider_targets(required_provider_targets, provider_target_evidence);
         let effect = effect_translation_assess(
             EffectTranslationValidationInputs {
                 graph: self.inputs.dependency_graph(),
@@ -907,6 +1071,7 @@ impl AssignmentAnalysis {
             placement,
             effect,
             module_initialization,
+            provider_targets,
         })
     }
 
@@ -1011,7 +1176,7 @@ mod placement_classification_tests {
 
         assert!(has_legacy_gate_ordering_veto(&placement));
         assert_eq!(
-            candidate_relocation_status(false, false, &placement, true),
+            candidate_relocation_status(false, false, &placement, true, true),
             CandidateRelocationStatus::Incomplete,
             "a semantic-order-only legacy veto is not an effect or structural block",
         );
@@ -1052,7 +1217,7 @@ mod placement_classification_tests {
 
         assert!(has_legacy_gate_ordering_veto(&placement));
         assert_eq!(
-            candidate_relocation_status(false, true, &placement, true),
+            candidate_relocation_status(false, true, &placement, true, true),
             CandidateRelocationStatus::AcceptedWithinCheckedScope,
         );
     }
@@ -1122,18 +1287,24 @@ mod placement_classification_tests {
             semantic_order_sccs: Vec::new(),
         };
         assert_eq!(
-            candidate_relocation_status(false, true, &placement, assessment.is_complete()),
+            candidate_relocation_status(false, true, &placement, assessment.is_complete(), true),
             CandidateRelocationStatus::Incomplete,
         );
         assert_eq!(
-            candidate_relocation_status(true, false, &placement, assessment.is_complete()),
+            candidate_relocation_status(true, false, &placement, assessment.is_complete(), true),
             CandidateRelocationStatus::BlockedByEffect,
             "effect blockers retain precedence over missing module-cell proof",
         );
         let mut placement_blocked = placement;
         placement_blocked.status = StructuralPlacementStatus::Blocked;
         assert_eq!(
-            candidate_relocation_status(false, true, &placement_blocked, assessment.is_complete()),
+            candidate_relocation_status(
+                false,
+                true,
+                &placement_blocked,
+                assessment.is_complete(),
+                true,
+            ),
             CandidateRelocationStatus::BlockedByPlacement,
             "placement blockers retain precedence over missing module-cell proof",
         );

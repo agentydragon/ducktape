@@ -5,6 +5,7 @@
 //! `resolve_imported_binding` traces the binding to its original source;
 //! `source_chunk_imports_for_moved_body` emits the re-import declarations.
 
+use crate::body_facts::{PreparedImportBinding, PreparedImportTarget};
 use crate::imports::{
     ArtifactSourceImportResolutionCache, runtime_reimport_named_specifier,
     runtime_reimport_specifier,
@@ -75,11 +76,13 @@ pub(crate) fn source_chunk_imports_for_moved_body(
     source_chunk_id: &str,
     source_runtime_file: &str,
     dest_target_file: &str,
-    needed: BTreeMap<Id, &RuntimeImportInfo>,
+    needed: BTreeMap<Id, super::plan_references::RuntimeReimport<'_>>,
     imported_overrides: &BTreeMap<Id, String>,
-) -> Result<Vec<ModuleItem>> {
-    let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(needed.len());
-    for (local_id, info) in needed {
+) -> Result<Vec<PreparedImportDecl>> {
+    let mut pairs: Vec<(String, ImportSpecifier, PreparedImportBinding)> =
+        Vec::with_capacity(needed.len());
+    for (local_id, reimport) in needed {
+        let info = reimport.info;
         let rewritten_source = source_chunk_import_for_target(
             source_import_cache,
             source_chunk_id,
@@ -94,9 +97,42 @@ pub(crate) fn source_chunk_imports_for_moved_body(
             Some(public) => runtime_reimport_named_specifier(&local_id, public),
             None => runtime_reimport_specifier(&local_id, info),
         };
-        pairs.push((rewritten_source, specifier));
+        let imported_name = match imported_overrides.get(&local_id) {
+            Some(public) => public.clone(),
+            None => match &info.kind {
+                RuntimeImportKind::Named { imported } => imported.clone(),
+                RuntimeImportKind::Default => "default".to_owned(),
+                RuntimeImportKind::Namespace => "*".to_owned(),
+            },
+        };
+        // Vendor/boundary overrides change the source export identity. The
+        // module-cell gate separately excludes vendor rewrites; target-only
+        // consumers must also refuse this name unless that mapping is carried
+        // as a checked provider-export proof.
+        let target = if imported_overrides.contains_key(&local_id) {
+            PreparedImportTarget::Unsupported
+        } else {
+            PreparedImportTarget::OriginalSource {
+                specifier: info.src.clone(),
+            }
+        };
+        pairs.push((
+            rewritten_source,
+            specifier,
+            PreparedImportBinding {
+                source_binding: reimport.source_binding,
+                imported_name,
+                target,
+            },
+        ));
     }
     Ok(group_specifiers_into_import_decls(pairs))
+}
+
+pub(crate) struct PreparedImportDecl {
+    pub(crate) item: ModuleItem,
+    pub(crate) targets: Vec<PreparedImportTarget>,
+    pub(crate) bindings: Vec<PreparedImportBinding>,
 }
 
 pub(crate) fn source_chunk_import_for_target(
@@ -154,32 +190,49 @@ pub(crate) fn source_chunk_import_for_target(
 /// default specifiers are sorted before named to satisfy ESM grammar
 /// (`import D, { x } from "src"`, not the reverse).
 pub(crate) fn group_specifiers_into_import_decls(
-    pairs: Vec<(String, ImportSpecifier)>,
-) -> Vec<ModuleItem> {
-    let mut groups: Vec<(String, Vec<ImportSpecifier>, Vec<ImportSpecifier>)> = Vec::new();
+    pairs: Vec<(String, ImportSpecifier, PreparedImportBinding)>,
+) -> Vec<PreparedImportDecl> {
+    let mut groups: Vec<(
+        String,
+        Vec<(ImportSpecifier, PreparedImportBinding)>,
+        Vec<(ImportSpecifier, PreparedImportBinding)>,
+    )> = Vec::new();
     let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
-    for (src, specifier) in pairs {
+    for (src, specifier, binding) in pairs {
         let group_index = *index_by_source.entry(src.clone()).or_insert_with(|| {
             groups.push((src.clone(), Vec::new(), Vec::new()));
             groups.len() - 1
         });
         let (_, named_or_default, namespace) = &mut groups[group_index];
         match specifier {
-            ImportSpecifier::Namespace(_) => namespace.push(specifier),
-            _ => named_or_default.push(specifier),
+            ImportSpecifier::Namespace(_) => namespace.push((specifier, binding)),
+            _ => named_or_default.push((specifier, binding)),
         }
     }
     let mut result = Vec::with_capacity(groups.len());
     for (src, mut named_or_default, mut namespace) in groups {
-        for ns_specifier in namespace.drain(..) {
-            result.push(import_decl_module_item(vec![ns_specifier], &src));
+        for (ns_specifier, binding) in namespace.drain(..) {
+            result.push(PreparedImportDecl {
+                item: import_decl_module_item(vec![ns_specifier], &src),
+                targets: vec![binding.target.clone()],
+                bindings: vec![binding],
+            });
         }
         if !named_or_default.is_empty() {
-            named_or_default.sort_by_key(|specifier| match specifier {
+            named_or_default.sort_by_key(|(specifier, _)| match specifier {
                 ImportSpecifier::Default(_) => 0,
                 _ => 1,
             });
-            result.push(import_decl_module_item(named_or_default, &src));
+            let (specifiers, bindings): (Vec<_>, Vec<_>) = named_or_default.into_iter().unzip();
+            let targets = bindings
+                .iter()
+                .map(|binding| binding.target.clone())
+                .collect();
+            result.push(PreparedImportDecl {
+                item: import_decl_module_item(specifiers, &src),
+                targets,
+                bindings,
+            });
         }
     }
     result

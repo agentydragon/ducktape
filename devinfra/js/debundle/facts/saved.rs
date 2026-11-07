@@ -541,6 +541,18 @@ struct SavedSynchronousCalls<'a> {
     author_host_contract_uses: Vec<SavedReentryFreeOperationUse<'a>>,
     purity_disagreement: Option<SavedPurityDisagreement>,
     required_initialized_module_cells: Vec<SavedModuleCell>,
+    conditional_provider_targets: Vec<SavedConditionalProviderTargetRequirement>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedConditionalProviderTargetRequirement {
+    owner: SourceUnitOrdinal,
+    call_span: swc_common::Span,
+    source_binding: SavedBinding,
+    defining_module: String,
+    export: String,
+    local: String,
+    callable_key: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -634,6 +646,21 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .iter()
                 .map(|cell| ordinals.snapshot_module_cell(*cell))
                 .collect::<Result<_>>()?,
+            conditional_provider_targets: calls
+                .conditional_provider_targets
+                .iter()
+                .map(|requirement| {
+                    Ok(SavedConditionalProviderTargetRequirement {
+                        owner: requirement.owner,
+                        call_span: requirement.call_span,
+                        source_binding: ordinals.snapshot_binding(&requirement.source_binding)?,
+                        defining_module: requirement.defining_module.clone(),
+                        export: requirement.export.clone(),
+                        local: requirement.local.clone(),
+                        callable_key: requirement.callable_key,
+                    })
+                })
+                .collect::<Result<_>>()?,
             purity_disagreement: calls.purity_disagreement.as_ref().map(|disagreement| {
                 SavedPurityDisagreement {
                     prepared: purities.snapshot_value(&disagreement.prepared),
@@ -656,6 +683,23 @@ impl<'a> SavedSynchronousCalls<'a> {
                 "duplicate saved required initialized module cell {cell:?}"
             );
         }
+        let conditional_provider_targets = self
+            .conditional_provider_targets
+            .into_iter()
+            .map(|requirement| {
+                Ok(
+                    super::statement_facts::ConditionalProviderTargetRequirement {
+                        owner: requirement.owner,
+                        call_span: requirement.call_span,
+                        source_binding: ordinals.restore_binding(requirement.source_binding)?,
+                        defining_module: requirement.defining_module,
+                        export: requirement.export,
+                        local: requirement.local,
+                        callable_key: requirement.callable_key,
+                    },
+                )
+            })
+            .collect::<Result<_>>()?;
         Ok(SynchronousCalls {
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
@@ -733,6 +777,7 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .map(SavedReentryFreeOperationUse::restore)
                 .collect(),
             required_initialized_module_cells,
+            conditional_provider_targets,
         })
     }
 }
@@ -746,7 +791,7 @@ mod tests {
     use analysis_codec::{SavedChunk, SavedModuleCell};
     use source_identity::{ChunkId, ChunkTable, ModuleCellId};
     use std::sync::Arc;
-    use swc_common::{BytePos, Span};
+    use swc_common::{BytePos, GLOBALS, Globals, Mark, Span, SyntaxContext};
 
     #[test]
     fn saved_synchronous_calls_require_binding_effect_authority() {
@@ -785,6 +830,7 @@ mod tests {
             "root_normal_completion",
             "root_outward_throw",
             "required_initialized_module_cells",
+            "conditional_provider_targets",
         ] {
             let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
                 .expect("control receipt snapshot");
@@ -980,5 +1026,86 @@ mod tests {
                 .is_err(),
             "unknown saved chunk names must be rejected"
         );
+    }
+
+    #[test]
+    fn saved_conditional_provider_target_preserves_source_binding_and_provider() {
+        let mut writer_chunks = ChunkTable::default();
+        writer_chunks.intern("static/other".to_owned());
+        writer_chunks.intern("static/provider".to_owned());
+        let (encoded, source_binding) = GLOBALS.set(&Globals::new(), || {
+            let context = SyntaxContext::empty().apply_mark(Mark::new());
+            let writer_ordinals =
+                ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &writer_chunks);
+            let mut writer_ordinals = writer_ordinals;
+            writer_ordinals.visit_syntax_context(&context);
+            let source_binding = ("importedCall".into(), context);
+            let requirement = super::super::statement_facts::ConditionalProviderTargetRequirement {
+                owner: SourceUnitOrdinal(11),
+                call_span: Span::new(BytePos(21), BytePos(29)),
+                source_binding: source_binding.clone(),
+                defining_module: "static/provider/logic.js".to_owned(),
+                export: "call".to_owned(),
+                local: "callImpl".to_owned(),
+                callable_key: 701,
+            };
+            let mut calls = SynchronousCalls::default();
+            calls.conditional_provider_targets.push(requirement);
+            let mut purity_snapshot = PuritySnapshot::default();
+            let saved =
+                SavedSynchronousCalls::snapshot(&calls, &writer_ordinals, &mut purity_snapshot)
+                    .expect("snapshot provider target");
+            (
+                serde_json::to_value(saved).expect("serialize provider target"),
+                source_binding,
+            )
+        });
+        assert_eq!(
+            encoded["conditional_provider_targets"][0]["source_binding"]["symbol"],
+            "importedCall"
+        );
+        assert_ne!(
+            encoded["conditional_provider_targets"][0]["source_binding"]["context_ordinal"],
+            0
+        );
+        assert_eq!(
+            encoded["conditional_provider_targets"][0]["defining_module"],
+            "static/provider/logic.js"
+        );
+
+        // Chunk ordinals are artifact-local. The stable module path and saved
+        // source binding must survive reconstruction under a different table.
+        let mut reader_chunks = ChunkTable::default();
+        reader_chunks.intern("static/provider".to_owned());
+        reader_chunks.intern("static/other".to_owned());
+        GLOBALS.set(&Globals::new(), || {
+            let _unrelated_context = SyntaxContext::empty().apply_mark(Mark::new());
+            let reader_context = SyntaxContext::empty().apply_mark(Mark::new());
+            assert_ne!(reader_context, source_binding.1);
+            let reader_ordinals =
+                ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &reader_chunks);
+            let mut reader_ordinals = reader_ordinals;
+            reader_ordinals.visit_syntax_context(&reader_context);
+            let restored_purities = PuritySnapshot::default().finish().restore().unwrap();
+            let decoded: SavedSynchronousCalls<'_> =
+                serde_json::from_value(encoded).expect("decode provider target");
+            let restored = decoded
+                .restore(&reader_ordinals, &restored_purities)
+                .expect("restore provider target");
+            assert_eq!(
+                restored.conditional_provider_targets,
+                vec![
+                    super::super::statement_facts::ConditionalProviderTargetRequirement {
+                        owner: SourceUnitOrdinal(11),
+                        call_span: Span::new(BytePos(21), BytePos(29)),
+                        source_binding: (source_binding.0, reader_context),
+                        defining_module: "static/provider/logic.js".to_owned(),
+                        export: "call".to_owned(),
+                        local: "callImpl".to_owned(),
+                        callable_key: 701,
+                    }
+                ]
+            );
+        });
     }
 }

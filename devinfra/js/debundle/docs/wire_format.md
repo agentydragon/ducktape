@@ -276,13 +276,32 @@ required-cell set remains complete even when a refusal is reported. Current
 refusal values are `prepared_emission_unavailable`,
 `unsupported_candidate_graph`, `provider_closure_changed`,
 `foreign_initialization_changed`, and `provider_incomplete_at_consumer`.
+`provider_targets` independently lists conditional imported-body target
+requirements, preserved targets, unproved targets, and a typed refusal. Each
+report address includes the source-unit owner and callsite span, source binding
+name, and analyzed provider module/export/local/callable identity. Internally,
+the completeness join uses the full hygiene-aware source binding identity
+before projecting a readable report name. Capture-free conditional bodies
+still require this target proof. The current proof scope is one materialized
+consumer, unchanged vendor planning, and a retained ordinary-ESM provider
+route checked against the prepared output-first resolver. The exact owner body
+must contain the canonical named-import binding for the applied call, and
+precomputed named export/import records trace that route to the analyzed
+provider. This live selected local survives dead-import pruning; a bare request
+does not establish binding preservation. Export-star routes and
+consumer-generated forwarding identities without a tracked binding remain
+unproved. The proof establishes binding target identity, not provider
+initialization chronology; that remains the separate
+`module_initialization` obligation.
 The top-level candidate `status` distinguishes `blocked_by_effect`,
 `blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
-means the effect decision, a required placement domain, or required module-cell
-initialization remains unproved. `accepted_within_checked_scope` means the
+means the effect decision, a required placement domain, required module-cell
+initialization, or required provider target remains unproved.
+`accepted_within_checked_scope` means the
 effect component accepted, all four placement checks completed without a known
-structural blocker, and module initialization has no unproved required cells,
-with `placement.emission_mappable: true`. This joint verdict authorizes
+structural blocker, module initialization has no unproved required cells, and
+provider targets have no unproved requirements, with
+`placement.emission_mappable: true`. This joint verdict authorizes
 relocation lowering; vendor replacement, final export and reconstruction checks
 still apply. `legacy_gate_ordering_veto` identifies semantic-order SCCs rejected
 by the diagnostic graph comparison. An ordering-only comparison veto is neither

@@ -1,28 +1,38 @@
-//! Check the bounded provider-cell initialization obligations against the exact
-//! prepared file layout and requests that emission consumes. Source completion
-//! is a prerequisite, never the candidate proof.
+//! Check bounded provider identity and module-cell initialization obligations
+//! against the exact prepared file layout and requests that emission consumes.
+//! Source completion is a prerequisite, never the candidate proof.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::facts::StatementFacts;
-use artifact::reports::{StaticModuleRequest, StaticModuleRequestMode};
-use artifact::{ArtifactIndexes, ChunkBundle, ImportReferenceKind, JsFileBody};
-use gate::{CandidateModuleInitializationEvidence, ModuleInitializationRefusal};
+use artifact::reports::{ImportSpecifierKind, StaticModuleRequest, StaticModuleRequestMode};
+use artifact::{
+    ArtifactIndexes, CandidateArtifactImportResolver, ChunkBundle, ImportReferenceKind, JsFileBody,
+};
+use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportKind};
+use gate::{
+    AssignmentAnalysis, CandidateModuleInitializationEvidence, CandidateProviderTargetEvidence,
+    ModuleInitializationRefusal, ProviderTargetRefusal,
+};
 use source_identity::{ChunkId, ModuleCellId};
 
+use crate::body_facts::{PreparedImportTarget, PreparedStaticRequest};
 use crate::lower::PreparedCandidateEmissionPlan;
 
 type ModuleFile = (ChunkId, String);
 type ModuleGraph = BTreeMap<ModuleFile, Vec<ModuleFile>>;
 
+#[derive(Clone, Copy)]
 pub(super) struct ModuleInitializationContext<'a, 'output> {
     pub(super) artifact: &'a ChunkBundle,
     pub(super) indexes: &'a ArtifactIndexes,
+    pub(super) assignment_analysis: &'a AssignmentAnalysis,
     pub(super) consumer: ChunkId,
     pub(super) materialized_chunks: &'a BTreeSet<ChunkId>,
     pub(super) vendor_unchanged: bool,
     pub(super) prepared: Option<&'a PreparedCandidateEmissionPlan<'output>>,
     pub(super) source_initialized_cells: Option<&'a BTreeSet<ModuleCellId>>,
+    pub(super) runtime_import_facts: &'a RuntimeImportFacts,
 }
 
 pub(super) fn assess_module_initialization(
@@ -46,6 +56,481 @@ pub(super) fn assess_module_initialization(
             refusal: Some(refusal),
         },
     }
+}
+
+pub(super) fn assess_conditional_provider_targets(
+    context: &ModuleInitializationContext<'_, '_>,
+    facts: &[StatementFacts],
+) -> CandidateProviderTargetEvidence {
+    let required = facts
+        .iter()
+        .flat_map(StatementFacts::required_conditional_provider_targets)
+        .collect::<Vec<_>>();
+    if required.is_empty() {
+        return CandidateProviderTargetEvidence::default();
+    }
+    match preserve_conditional_provider_targets(context, &required) {
+        Ok(()) => CandidateProviderTargetEvidence::preserved(required.iter().copied()),
+        Err(refusal) => CandidateProviderTargetEvidence::refused(refusal),
+    }
+}
+
+fn preserve_conditional_provider_targets(
+    context: &ModuleInitializationContext<'_, '_>,
+    required: &[&analysis::facts::ConditionalProviderTargetRequirement],
+) -> Result<(), ProviderTargetRefusal> {
+    use ProviderTargetRefusal::{
+        BindingRouteChanged, ExportIdentityChanged, PreparedEmissionUnavailable,
+        ProviderRouteChanged, UnknownProvider, UnsupportedCandidateScope, UnsupportedRequest,
+    };
+
+    let prepared = context.prepared.ok_or(PreparedEmissionUnavailable)?;
+    if context.materialized_chunks != &BTreeSet::from([context.consumer])
+        || !context.vendor_unchanged
+    {
+        return Err(UnsupportedCandidateScope);
+    }
+    let resolver = project_prepared_layout(context, prepared)?;
+    let consumer = context
+        .artifact
+        .find_chunk(context.consumer)
+        .ok_or(UnknownProvider)?;
+    let source_entry = &consumer.analysis.entry_file;
+    let assignment = context.assignment_analysis.assignment();
+    let entry_destination = assignment.entry_destination().module_id();
+    for requirement in required {
+        let import = context
+            .runtime_import_facts
+            .imports
+            .get(&requirement.source_binding)
+            .ok_or(BindingRouteChanged)?;
+        let imported_name = match &import.kind {
+            RuntimeImportKind::Named { imported } => imported,
+            RuntimeImportKind::Default | RuntimeImportKind::Namespace => {
+                return Err(ExportIdentityChanged);
+            }
+        };
+        let source_first_hop = context
+            .indexes
+            .resolve_runtime_import_reference(
+                &import.src,
+                context.consumer,
+                source_entry,
+                &context.artifact.chunk_table,
+            )
+            .ok_or(UnknownProvider)?;
+        let defining_chunk = context
+            .artifact
+            .chunk_table
+            .get(&requirement.defining_module)
+            .filter(|chunk| context.artifact.find_chunk(*chunk).is_some())
+            .ok_or(UnknownProvider)?;
+        let owner = assignment
+            .iter()
+            .find(|(source_unit, _)| source_unit.0 == requirement.owner.0)
+            .map(|(_, destination)| destination)
+            .ok_or(BindingRouteChanged)?;
+        let (emitted_file, _, requests, _) = prepared
+            .prepared_static_request_inventory_for_destination(owner, entry_destination)
+            .ok_or(BindingRouteChanged)?;
+        let mut matching_bindings = Vec::new();
+        for request in requests {
+            for binding in request
+                .bindings
+                .iter()
+                .filter(|binding| binding.source_binding == requirement.source_binding)
+            {
+                matching_bindings.push((request, binding));
+            }
+        }
+        let [(request, binding)] = matching_bindings.as_slice() else {
+            return Err(BindingRouteChanged);
+        };
+        // This request row comes from the exact named-import constructor in
+        // the body selected by `requirement.owner`. The obligation itself was
+        // recorded from this source Id as the callee at `call_span`; the
+        // assignment projection places that source unit in this prepared
+        // body, and canonical body-use planning emits the matching import
+        // binding. Therefore this is a live named local, not an unrelated or
+        // side-effect-only graph edge that dead-import pruning may discard.
+        if request.request.mode != StaticModuleRequestMode::OrdinaryEsm {
+            return Err(UnsupportedRequest);
+        }
+        if binding.imported_name != *imported_name
+            || !matches!(
+                &binding.target,
+                PreparedImportTarget::OriginalSource { specifier }
+                    if specifier == &import.src
+            )
+        {
+            return Err(ExportIdentityChanged);
+        }
+        if request.targets.iter().any(|target| {
+            matches!(
+                target,
+                PreparedImportTarget::Unsupported
+                    | PreparedImportTarget::UnsupportedOriginalSource { .. }
+            )
+        }) {
+            return Err(UnsupportedRequest);
+        }
+        let candidate_target = resolver
+            .resolve_runtime_import_reference(
+                &request.request.specifier,
+                context.consumer,
+                emitted_file,
+            )
+            .filter(|target| {
+                owner == entry_destination || target.kind == ImportReferenceKind::ArtifactPath
+            })
+            .ok_or(BindingRouteChanged)?;
+        if candidate_target.target_chunk_id != source_first_hop.target_chunk_id
+            || candidate_target.target_file != source_first_hop.target_file
+        {
+            return Err(BindingRouteChanged);
+        }
+        preserve_provider_export_route(
+            context,
+            &resolver,
+            (
+                source_first_hop.target_chunk_id,
+                source_first_hop.target_file.clone(),
+            ),
+            imported_name,
+            defining_chunk,
+            &requirement.export,
+            &requirement.local,
+        )?;
+        let provider_closure = preserve_provider_route_closure(
+            context,
+            &resolver,
+            (
+                source_first_hop.target_chunk_id,
+                source_first_hop.target_file,
+            ),
+            defining_chunk,
+        )
+        .map_err(|_| ProviderRouteChanged)?;
+        for (consumer_file, consumer_source_file, consumer_requests, consumer_entry) in
+            prepared.prepared_static_request_inventories()
+        {
+            preserve_consumer_request_targets(
+                context,
+                &resolver,
+                consumer_file,
+                consumer_source_file,
+                consumer_requests,
+                consumer_entry,
+                &provider_closure,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Follow the retained provider's canonical export/import records from the
+/// source import name to the exact analyzed callable export. These records
+/// are produced by source analysis; each forwarding hop is then resolved with
+/// the shared source and candidate layout resolvers. Export-star and any
+/// forwarding shape without a named route remain unproved.
+fn preserve_provider_export_route(
+    context: &ModuleInitializationContext<'_, '_>,
+    resolver: &CandidateArtifactImportResolver<'_>,
+    first_hop: ModuleFile,
+    imported_name: &str,
+    defining_chunk: ChunkId,
+    defining_export: &str,
+    defining_local: &str,
+) -> Result<(), ProviderTargetRefusal> {
+    let mut current = first_hop;
+    let mut exported_name = imported_name.to_owned();
+    let mut seen = BTreeSet::new();
+    loop {
+        if current.0 == defining_chunk {
+            if exported_name == defining_export {
+                return Ok(());
+            }
+            let chunk = context
+                .artifact
+                .find_chunk(current.0)
+                .ok_or(ProviderTargetRefusal::UnknownProvider)?;
+            let aliases = chunk
+                .analysis
+                .export_aliases
+                .iter()
+                .filter(|alias| alias.exported == exported_name && alias.source.is_none())
+                .collect::<Vec<_>>();
+            if matches!(aliases.as_slice(), [alias] if alias.local.as_deref() == Some(defining_local))
+            {
+                return Ok(());
+            }
+        }
+        if !seen.insert((current.0, current.1.clone(), exported_name.clone())) {
+            return Err(ProviderTargetRefusal::ExportIdentityChanged);
+        }
+        let chunk = context
+            .artifact
+            .find_chunk(current.0)
+            .filter(|chunk| chunk.analysis.entry_file == current.1)
+            .ok_or(ProviderTargetRefusal::UnknownProvider)?;
+        let aliases = chunk
+            .analysis
+            .export_aliases
+            .iter()
+            .filter(|alias| alias.exported == exported_name)
+            .collect::<Vec<_>>();
+        let [alias] = aliases.as_slice() else {
+            return Err(ProviderTargetRefusal::ExportIdentityChanged);
+        };
+
+        let (specifier, next_export) = if let Some(source) = &alias.source {
+            (
+                source.as_str(),
+                alias
+                    .local
+                    .as_deref()
+                    .ok_or(ProviderTargetRefusal::ExportIdentityChanged)?,
+            )
+        } else {
+            let local = alias
+                .local
+                .as_deref()
+                .ok_or(ProviderTargetRefusal::ExportIdentityChanged)?;
+            let matching_imports = chunk
+                .analysis
+                .imports
+                .iter()
+                .filter_map(|import| {
+                    let specifier = import.specifiers.iter().find(|specifier| {
+                        specifier.kind == ImportSpecifierKind::Named && specifier.local == local
+                    })?;
+                    Some((import, specifier))
+                })
+                .collect::<Vec<_>>();
+            let [(import, specifier)] = matching_imports.as_slice() else {
+                return Err(ProviderTargetRefusal::ExportIdentityChanged);
+            };
+            (
+                import.source.as_str(),
+                specifier.imported.as_deref().unwrap_or(local),
+            )
+        };
+
+        let source_target = context
+            .indexes
+            .resolve_runtime_import_reference(
+                specifier,
+                current.0,
+                &current.1,
+                &context.artifact.chunk_table,
+            )
+            .ok_or(ProviderTargetRefusal::UnknownProvider)?;
+        let candidate_target = resolver
+            .resolve_runtime_import_reference(specifier, current.0, &current.1)
+            .ok_or(ProviderTargetRefusal::ProviderRouteChanged)?;
+        if source_target.target_chunk_id != candidate_target.target_chunk_id
+            || source_target.target_file != candidate_target.target_file
+        {
+            return Err(ProviderTargetRefusal::ProviderRouteChanged);
+        }
+        current = (source_target.target_chunk_id, source_target.target_file);
+        exported_name = next_export.to_owned();
+    }
+}
+
+/// Recheck every prepared request in the body that contains the applied call.
+/// Only paths entering the proved provider route are relevant to this target
+/// obligation; other imports remain under their existing checks. The original
+/// target comes from constructor-carried intent and the source resolver, while
+/// the candidate target is resolved from the actual prepared output path.
+fn preserve_consumer_request_targets(
+    context: &ModuleInitializationContext<'_, '_>,
+    resolver: &CandidateArtifactImportResolver<'_>,
+    emitted_file: &str,
+    source_file: &str,
+    requests: &[PreparedStaticRequest],
+    entry_body: bool,
+    provider_closure: &BTreeSet<ModuleFile>,
+) -> Result<(), ProviderTargetRefusal> {
+    use ProviderTargetRefusal::{BindingRouteChanged, ProviderRouteChanged, UnsupportedRequest};
+
+    let check = |request: &PreparedStaticRequest,
+                 intended: Option<ModuleFile>,
+                 unknown_intent: bool|
+     -> Result<(), ProviderTargetRefusal> {
+        let candidate = resolver.resolve_runtime_import_reference(
+            &request.request.specifier,
+            context.consumer,
+            emitted_file,
+        );
+        let candidate_module = candidate
+            .as_ref()
+            .map(|target| (target.target_chunk_id, target.target_file.clone()));
+        let intended_is_provider = intended
+            .as_ref()
+            .is_some_and(|target| provider_closure.contains(target));
+        let candidate_is_provider = candidate_module
+            .as_ref()
+            .is_some_and(|target| provider_closure.contains(target));
+        if !intended_is_provider && !candidate_is_provider {
+            return Ok(());
+        }
+        if request.request.mode != StaticModuleRequestMode::OrdinaryEsm {
+            return Err(UnsupportedRequest);
+        }
+        if unknown_intent || intended != candidate_module {
+            return Err(if unknown_intent {
+                UnsupportedRequest
+            } else {
+                ProviderRouteChanged
+            });
+        }
+        let candidate = candidate.ok_or(ProviderRouteChanged)?;
+        if !entry_body && candidate.kind != ImportReferenceKind::ArtifactPath {
+            return Err(ProviderRouteChanged);
+        }
+        Ok(())
+    };
+
+    for request in requests {
+        if request.targets.is_empty() {
+            let candidate = resolver.resolve_runtime_import_reference(
+                &request.request.specifier,
+                context.consumer,
+                emitted_file,
+            );
+            let candidate_is_provider = candidate.as_ref().is_some_and(|target| {
+                provider_closure.contains(&(target.target_chunk_id, target.target_file.clone()))
+            });
+            if candidate_is_provider {
+                return Err(UnsupportedRequest);
+            }
+            continue;
+        }
+        for target in &request.targets {
+            match target {
+                PreparedImportTarget::OriginalSource { specifier } => {
+                    let intended = context
+                        .indexes
+                        .resolve_runtime_import_reference(
+                            specifier,
+                            context.consumer,
+                            source_file,
+                            &context.artifact.chunk_table,
+                        )
+                        .map(|resolved| (resolved.target_chunk_id, resolved.target_file));
+                    check(request, intended, false)?;
+                }
+                PreparedImportTarget::UnsupportedOriginalSource { specifier } => {
+                    let intended = context
+                        .indexes
+                        .resolve_runtime_import_reference(
+                            specifier,
+                            context.consumer,
+                            source_file,
+                            &context.artifact.chunk_table,
+                        )
+                        .map(|resolved| (resolved.target_chunk_id, resolved.target_file));
+                    check(request, intended, true)?;
+                }
+                PreparedImportTarget::CandidateOutput { chunk, file } => {
+                    check(request, Some((*chunk, file.clone())), false)?;
+                }
+                PreparedImportTarget::Unsupported => check(request, None, true)?,
+            }
+        }
+    }
+    Ok(())
+}
+
+fn preserve_provider_route_closure(
+    context: &ModuleInitializationContext<'_, '_>,
+    resolver: &CandidateArtifactImportResolver<'_>,
+    first_hop: ModuleFile,
+    defining_chunk: ChunkId,
+) -> Result<BTreeSet<ModuleFile>, ProviderTargetRefusal> {
+    let mut pending = vec![first_hop];
+    let mut seen = BTreeSet::new();
+    while let Some((chunk_id, file_path)) = pending.pop() {
+        if chunk_id == context.consumer {
+            return Err(ProviderTargetRefusal::ProviderRouteChanged);
+        }
+        if !seen.insert((chunk_id, file_path.clone())) {
+            continue;
+        }
+        let chunk = context
+            .artifact
+            .find_chunk(chunk_id)
+            .ok_or(ProviderTargetRefusal::UnknownProvider)?;
+        if chunk.js.files.len() != 1 || chunk.analysis.entry_file != file_path {
+            return Err(ProviderTargetRefusal::UnsupportedCandidateScope);
+        }
+        let file = chunk
+            .js
+            .get_file(&file_path)
+            .ok_or(ProviderTargetRefusal::UnknownProvider)?;
+        let mut source_targets = Vec::new();
+        for request in &chunk.analysis.runtime_facts.static_requests {
+            if request.mode != StaticModuleRequestMode::OrdinaryEsm {
+                return Err(ProviderTargetRefusal::UnsupportedRequest);
+            }
+            let source_target = context.indexes.resolve_runtime_import_reference(
+                &request.specifier,
+                chunk_id,
+                &file_path,
+                &context.artifact.chunk_table,
+            );
+            let candidate_target =
+                resolver.resolve_runtime_import_reference(&request.specifier, chunk_id, &file_path);
+            if source_target
+                .as_ref()
+                .map(|target| (target.target_chunk_id, target.target_file.as_str()))
+                != candidate_target
+                    .as_ref()
+                    .map(|target| (target.target_chunk_id, target.target_file.as_str()))
+            {
+                return Err(ProviderTargetRefusal::ProviderRouteChanged);
+            }
+            let Some(candidate_target) = candidate_target else {
+                continue;
+            };
+            if candidate_target.kind != ImportReferenceKind::ArtifactPath && file.ast().is_none() {
+                return Err(ProviderTargetRefusal::ProviderRouteChanged);
+            }
+            source_targets.push((
+                candidate_target.target_chunk_id,
+                candidate_target.target_file,
+            ));
+        }
+        pending.extend(source_targets);
+    }
+    if !seen.iter().any(|(chunk, _)| *chunk == defining_chunk) {
+        return Err(ProviderTargetRefusal::ExportIdentityChanged);
+    }
+    Ok(seen)
+}
+
+fn project_prepared_layout<'a>(
+    context: &ModuleInitializationContext<'a, '_>,
+    prepared: &PreparedCandidateEmissionPlan<'_>,
+) -> Result<CandidateArtifactImportResolver<'a>, ProviderTargetRefusal> {
+    let inventories: Vec<_> = prepared.prepared_static_request_inventories().collect();
+    let Some((entry_file, _, _, _)) = inventories.first() else {
+        return Err(ProviderTargetRefusal::PreparedEmissionUnavailable);
+    };
+    let layout: Vec<_> = prepared.output_file_layout().collect();
+    if inventories.len() != layout.len() {
+        return Err(ProviderTargetRefusal::UnsupportedCandidateScope);
+    }
+    context
+        .indexes
+        .project_replaced_chunk_layout(
+            context.consumer,
+            entry_file,
+            layout,
+            &context.artifact.chunk_table,
+        )
+        .map_err(|_| ProviderTargetRefusal::UnsupportedCandidateScope)
 }
 
 fn preserve_initialization(
@@ -110,23 +595,12 @@ fn preserve_initialization(
     let original_entry = (context.consumer, consumer_entry);
     let source_order = evaluation_order(&source, &original_entry, None)?;
 
-    let inventories: Vec<_> = prepared.static_request_inventories().collect();
-    let Some((entry_file, _)) = inventories.first() else {
+    let inventories: Vec<_> = prepared.prepared_static_request_inventories().collect();
+    let Some((entry_file, _, _, _)) = inventories.first() else {
         return Err(PreparedEmissionUnavailable);
     };
-    let layout: Vec<_> = prepared.output_file_layout().collect();
-    if inventories.len() != layout.len() {
-        return Err(UnsupportedCandidateGraph);
-    }
-    let resolver = context
-        .indexes
-        .project_replaced_chunk_layout(
-            context.consumer,
-            entry_file,
-            layout,
-            &context.artifact.chunk_table,
-        )
-        .map_err(|_| UnsupportedCandidateGraph)?;
+    let resolver =
+        project_prepared_layout(context, prepared).map_err(|_| UnsupportedCandidateGraph)?;
     // A new output can shadow a source-path fallback without changing provider
     // completion. Retained imports must still select the defining source module
     // whose body receipt the analysis used.
@@ -166,14 +640,14 @@ fn preserve_initialization(
         }
         candidate.insert((chunk.chunk_id, file.clone()), targets);
     }
-    for (index, (file, requests)) in inventories.iter().enumerate() {
-        let targets = resolve_requests(requests, |specifier| {
+    for (file, _, requests, entry_body) in &inventories {
+        let targets = resolve_prepared_requests(requests, |specifier| {
             resolver
                 .resolve_runtime_import_reference(specifier, context.consumer, file)
                 // Materialized modules skip SourceCanonicalizer. In particular,
                 // an unre-based named/star reexport is not a runtime edge merely
                 // because original source-path fallback finds its provider.
-                .filter(|target| index == 0 || target.kind == ImportReferenceKind::ArtifactPath)
+                .filter(|target| *entry_body || target.kind == ImportReferenceKind::ArtifactPath)
         })?;
         if candidate
             .insert((context.consumer, (*file).to_owned()), targets)
@@ -269,6 +743,24 @@ fn preserve_initialization(
         return Err(ProviderIncompleteAtConsumer);
     }
     Ok(())
+}
+
+fn resolve_prepared_requests(
+    requests: &[PreparedStaticRequest],
+    mut resolve: impl FnMut(&str) -> Option<artifact::ResolvedImportReference>,
+) -> Result<Vec<ModuleFile>, ModuleInitializationRefusal> {
+    requests
+        .iter()
+        .map(|prepared| {
+            let request = &prepared.request;
+            if request.mode != StaticModuleRequestMode::OrdinaryEsm {
+                return Err(ModuleInitializationRefusal::UnsupportedCandidateGraph);
+            }
+            let target = resolve(&request.specifier)
+                .ok_or(ModuleInitializationRefusal::UnsupportedCandidateGraph)?;
+            Ok((target.target_chunk_id, target.target_file))
+        })
+        .collect()
 }
 
 fn resolve_requests(

@@ -8,13 +8,17 @@ use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
-use super::body_facts::IndexedStaticModuleRequest;
+use super::body_facts::{
+    IndexedStaticModuleRequest, PreparedImportBinding, PreparedImportTarget, PreparedStaticRequest,
+    source_import_bindings, source_request_targets,
+};
 use super::module_output::{
     LoweredModuleOutput, ModuleEmissionInputs, PreparedModuleEmission, prepare_module_emission,
 };
 use swc_common::{DUMMY_SP, GLOBALS};
 
 use super::chunk_renames::CHUNK_RENAMES_CONTRIBUTOR;
+use super::imports::PreparedImportDecl;
 use super::imports::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
     relative_source,
@@ -43,7 +47,7 @@ use crate::rename_ledger::{
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
-use artifact::reports::{SelectedModuleLowering, StaticModuleRequest};
+use artifact::reports::SelectedModuleLowering;
 use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
 use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_names};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
@@ -72,7 +76,7 @@ pub(super) struct PreparedCandidateEmissionPlan<'a> {
     file_records: Vec<(String, FileRole)>,
     modules: Vec<PreparedModuleEmission<'a>>,
     cross_chunk_import_aliases: Vec<(String, String)>,
-    entry_static_requests: Vec<StaticModuleRequest>,
+    entry_static_requests: Vec<PreparedStaticRequest>,
 }
 
 impl PreparedCandidateEmissionPlan<'_> {
@@ -91,18 +95,53 @@ impl PreparedCandidateEmissionPlan<'_> {
     /// Ordered static requests from the same construction passes that prepare
     /// each output body. The entry comes first, followed by logical-module
     /// order; later whole-artifact postpasses are outside this inventory.
-    pub(super) fn static_request_inventories<'a>(
+    pub(super) fn prepared_static_request_inventories<'a>(
         &'a self,
-    ) -> impl Iterator<Item = (&'a str, &'a [StaticModuleRequest])> + 'a {
+    ) -> impl Iterator<Item = (&'a str, &'a str, &'a [PreparedStaticRequest], bool)> + 'a {
         let entry = self
             .files
             .first()
             .expect("a candidate emission plan always contains its entry file");
-        std::iter::once((entry.path.as_str(), self.entry_static_requests.as_slice())).chain(
-            self.modules
-                .iter()
-                .map(|module| module.static_request_inventory()),
-        )
+        std::iter::once((
+            entry.path.as_str(),
+            entry.metadata.source_path.as_str(),
+            self.entry_static_requests.as_slice(),
+            true,
+        ))
+        .chain(self.modules.iter().map(|module| {
+            let (output_file, source_file, requests) = module.prepared_static_request_inventory();
+            (output_file, source_file, requests, false)
+        }))
+    }
+
+    /// The one prepared body that owns a source-unit destination. The entry
+    /// inventory is addressed by the assignment's explicit entry destination;
+    /// logical bodies retain their canonical ModuleId from ModulePlan.
+    pub(super) fn prepared_static_request_inventory_for_destination(
+        &self,
+        destination: ModuleId,
+        entry_destination: ModuleId,
+    ) -> Option<(&str, &str, &[PreparedStaticRequest], bool)> {
+        if destination == entry_destination {
+            let entry = self
+                .files
+                .first()
+                .expect("a candidate emission plan always contains its entry file");
+            return Some((
+                entry.path.as_str(),
+                entry.metadata.source_path.as_str(),
+                self.entry_static_requests.as_slice(),
+                true,
+            ));
+        }
+        self.modules
+            .iter()
+            .find(|module| module.destination_id() == destination)
+            .map(|module| {
+                let (output_file, source_file) = module.output_file_layout();
+                let (_, _, requests) = module.prepared_static_request_inventory();
+                (output_file, source_file, requests, false)
+            })
     }
 
     pub(super) fn prepend_entry_header_lines(&mut self, prefix: &[String]) {
@@ -294,7 +333,7 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
     // the import-collision contract while satisfying Lemma 2's
     // emit-side constraint. See docs/design.md "Module dep graphs"
     // and "Lemma 2".
-    let mut entry_imports: Vec<(ModuleId, ModuleItem)> = Vec::new();
+    let mut entry_imports: Vec<(ModuleId, PreparedImportDecl)> = Vec::new();
     // Entry-side renames flow through ONE per-chunk ledger sealed once:
     // the chunk_renames entries staying in entry (Explicit, Chunk scope),
     // the entry import-local mints (ImportInduced, Chunk scope), and the
@@ -370,10 +409,17 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
             if !selected_by_module[module_index].is_empty() {
                 entry_imports.push((
                     ModuleId(module_index),
-                    import_decl_module_item(
-                        Vec::new(),
-                        &relative_source(entry_file, &plan.target_file),
-                    ),
+                    PreparedImportDecl {
+                        item: import_decl_module_item(
+                            Vec::new(),
+                            &relative_source(entry_file, &plan.target_file),
+                        ),
+                        targets: vec![PreparedImportTarget::CandidateOutput {
+                            chunk: chunk_id_interned,
+                            file: plan.target_file.clone(),
+                        }],
+                        bindings: Vec::new(),
+                    },
                 ));
             }
             continue;
@@ -403,14 +449,30 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
                 });
             }
         }
+        let targets = vec![PreparedImportTarget::CandidateOutput {
+            chunk: chunk_id_interned,
+            file: plan.target_file.clone(),
+        }];
+        let bindings = live_bindings
+            .iter()
+            .map(|(source_local, imported_name)| PreparedImportBinding {
+                source_binding: top_level_id(source_local, chunk_top_level_mark),
+                imported_name: imported_name.clone(),
+                target: targets[0].clone(),
+            })
+            .collect();
         entry_imports.push((
             ModuleId(module_index),
-            import_decl_for_plan(
-                entry_file,
-                &plan.target_file,
-                &resolved,
-                chunk_top_level_mark,
-            ),
+            PreparedImportDecl {
+                item: import_decl_for_plan(
+                    entry_file,
+                    &plan.target_file,
+                    &resolved,
+                    chunk_top_level_mark,
+                ),
+                targets,
+                bindings,
+            },
         ));
     }
     // Order entry imports through the shared `EsmImportOrder`
@@ -425,7 +487,8 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
     assignment_analysis
         .import_order()
         .sort_entry_imports(&mut entry_imports);
-    let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
+    let entry_imports: Vec<PreparedImportDecl> =
+        entry_imports.into_iter().map(|(_, it)| it).collect();
     // Capture probe: a read-only walk of the un-renamed entry body with
     // the pending Chunk-scope map, reporting the precise capture facts
     // seal validates (a target bound nested is harmless when the source
@@ -554,6 +617,13 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
             "entry rename executor captured despite seal validation: {:?}",
             renamer.captured,
         );
+        for request in &mut entry_requests_by_item {
+            for binding in &mut request.bindings {
+                if entry_binding_renames_by_id.contains_key(&binding.source_binding) {
+                    binding.target = PreparedImportTarget::Unsupported;
+                }
+            }
+        }
     }
     if !entry_imports.is_empty() {
         let import_insert_index = entry_body
@@ -567,10 +637,12 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
         let inserted_requests: Vec<IndexedStaticModuleRequest> = entry_imports
             .iter()
             .enumerate()
-            .filter_map(|(item_offset, item)| {
-                static_request_for_item(item).map(|request| IndexedStaticModuleRequest {
+            .filter_map(|(item_offset, prepared)| {
+                static_request_for_item(&prepared.item).map(|request| IndexedStaticModuleRequest {
                     item_index: import_insert_index + item_offset,
                     request,
+                    targets: prepared.targets.clone(),
+                    bindings: prepared.bindings.clone(),
                 })
             })
             .collect();
@@ -578,7 +650,7 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
             request.item_index += entry_imports.len();
         }
         let tail = entry_body.split_off(import_insert_index);
-        entry_body.extend(entry_imports);
+        entry_body.extend(entry_imports.into_iter().map(|prepared| prepared.item));
         entry_body.extend(tail);
         entry_requests_by_item.splice(
             request_insert_index..request_insert_index,
@@ -696,6 +768,7 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
         assignment_analysis,
         chunk_id_interned,
         module_plans.len(),
+        runtime_import_facts,
     )?;
     let source_import_cache = Mutex::new(ArtifactSourceImportResolutionCache::new(
         artifact,
@@ -727,7 +800,11 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
     let file_records = vec![(entry_file.to_string(), FileRole::Entry)];
     let entry_static_requests = entry_requests_by_item
         .into_iter()
-        .map(|indexed_request| indexed_request.request)
+        .map(|indexed_request| PreparedStaticRequest {
+            request: indexed_request.request,
+            targets: indexed_request.targets,
+            bindings: indexed_request.bindings,
+        })
         .collect();
 
     // Filter chunk_renames down to entries the per-module emit path
@@ -885,6 +962,8 @@ fn push_entry_item(
         static_requests.push(IndexedStaticModuleRequest {
             item_index: body.len(),
             request,
+            targets: source_request_targets(&item),
+            bindings: source_import_bindings(&item),
         });
     }
     body.push(item);

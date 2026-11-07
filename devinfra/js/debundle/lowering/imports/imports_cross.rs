@@ -9,6 +9,9 @@
 use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };
+use super::imports_runtime::PreparedImportDecl;
+use super::plan_references::PlannedCrossModuleBinding;
+use crate::body_facts::{PreparedImportBinding, PreparedImportTarget};
 use crate::imports::EntryExport;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{ModuleId, top_level_id};
@@ -16,6 +19,7 @@ use anyhow::{Result, bail};
 use frontend_elaboration::chunk_ast::declaration_names;
 use gate::AssignmentAnalysis;
 use js_ast::import_decl_module_item;
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -63,10 +67,10 @@ impl ImportLocalRenameSink<'_> {
 /// independent of the final emitted order.
 pub(crate) fn cross_module_imports_for_plan(
     from_file: &str,
-    imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
+    imports_by_provider: BTreeMap<usize, BTreeMap<String, PlannedCrossModuleBinding>>,
     assignment_analysis: &AssignmentAnalysis,
     sink: &mut ImportLocalRenameSink<'_>,
-) -> Vec<(ModuleId, ModuleItem)> {
+) -> Vec<(ModuleId, PreparedImportDecl)> {
     imports_by_provider
         .into_iter()
         .filter_map(|(provider_index, bindings)| {
@@ -74,19 +78,42 @@ pub(crate) fn cross_module_imports_for_plan(
                 .inputs()
                 .planned_module(ModuleId(provider_index))
                 .map(|provider| {
+                    let import_names = bindings
+                        .iter()
+                        .map(|(local, binding)| (local.clone(), binding.imported_name.clone()))
+                        .collect();
                     let mut minted = BTreeMap::new();
                     let scope = sink.scope();
                     let resolved =
-                        disambiguate_import_locals(&bindings, sink.ledger, scope, &mut minted);
+                        disambiguate_import_locals(&import_names, sink.ledger, scope, &mut minted);
                     sink.submit(minted, CROSS_MODULE_IMPORT_CONTRIBUTOR);
+                    let prepared_bindings = bindings
+                        .into_iter()
+                        .map(|(_local, binding)| PreparedImportBinding {
+                            source_binding: binding.source_binding,
+                            imported_name: binding.imported_name,
+                            target: PreparedImportTarget::CandidateOutput {
+                                chunk: assignment_analysis.inputs().chunk_identity(),
+                                file: provider.target_file.clone(),
+                            },
+                        })
+                        .collect();
+                    let targets = prepared_bindings
+                        .iter()
+                        .map(|binding| binding.target.clone())
+                        .collect();
                     (
                         ModuleId(provider_index),
-                        import_decl_for_plan(
-                            from_file,
-                            &provider.target_file,
-                            &resolved,
-                            sink.chunk_top_level_mark,
-                        ),
+                        PreparedImportDecl {
+                            item: import_decl_for_plan(
+                                from_file,
+                                &provider.target_file,
+                                &resolved,
+                                sink.chunk_top_level_mark,
+                            ),
+                            targets,
+                            bindings: prepared_bindings,
+                        },
                     )
                 })
         })
@@ -111,7 +138,7 @@ pub(crate) fn phantom_side_effect_imports(
     from_file: &str,
     phantom_providers: BTreeSet<usize>,
     assignment_analysis: &AssignmentAnalysis,
-) -> Vec<(ModuleId, ModuleItem)> {
+) -> Vec<(ModuleId, PreparedImportDecl)> {
     phantom_providers
         .into_iter()
         .filter_map(|provider_index| {
@@ -121,7 +148,14 @@ pub(crate) fn phantom_side_effect_imports(
             let source = super::import_emit::relative_source(from_file, &provider.target_file);
             Some((
                 ModuleId(provider_index),
-                import_decl_module_item(Vec::new(), &source),
+                PreparedImportDecl {
+                    item: import_decl_module_item(Vec::new(), &source),
+                    targets: vec![PreparedImportTarget::CandidateOutput {
+                        chunk: assignment_analysis.inputs().chunk_identity(),
+                        file: provider.target_file.clone(),
+                    }],
+                    bindings: Vec::new(),
+                },
             ))
         })
         .collect()
@@ -131,10 +165,11 @@ pub(crate) fn residual_entry_imports_for_moved_body(
     module_id: &str,
     entry_file: &str,
     from_file: &str,
+    chunk: ChunkId,
     imports: BTreeMap<String, EntryExport>,
     missing_exports: BTreeSet<String>,
     sink: &mut ImportLocalRenameSink<'_>,
-) -> Result<Vec<ModuleItem>> {
+) -> Result<Vec<PreparedImportDecl>> {
     if !missing_exports.is_empty() {
         // Defense-in-depth: `auto_grown_residual_exports` is supposed
         // to make sure every cross-destination read into residual
@@ -154,15 +189,33 @@ pub(crate) fn residual_entry_imports_for_moved_body(
     }
     let mut minted = BTreeMap::new();
     let scope = sink.scope();
+    let import_names = imports
+        .iter()
+        .map(|(local, binding)| (local.clone(), binding.entry_export.clone()))
+        .collect();
     let resolved =
-        disambiguate_residual_entry_import_locals(&imports, sink.ledger, scope, &mut minted);
+        disambiguate_residual_entry_import_locals(&import_names, sink.ledger, scope, &mut minted);
     sink.submit(minted, RESIDUAL_ENTRY_IMPORT_CONTRIBUTOR);
-    Ok(vec![import_decl_for_plan(
-        from_file,
-        entry_file,
-        &resolved,
-        sink.chunk_top_level_mark,
-    )])
+    let bindings = imports
+        .into_values()
+        .map(|binding| PreparedImportBinding {
+            source_binding: binding.source_binding,
+            imported_name: binding.entry_export.exported_name,
+            target: PreparedImportTarget::CandidateOutput {
+                chunk,
+                file: entry_file.to_owned(),
+            },
+        })
+        .collect();
+    let targets = bindings
+        .iter()
+        .map(|binding| binding.target.clone())
+        .collect();
+    Ok(vec![PreparedImportDecl {
+        item: import_decl_for_plan(from_file, entry_file, &resolved, sink.chunk_top_level_mark),
+        targets,
+        bindings,
+    }])
 }
 
 pub(crate) fn collect_entry_exports_by_original_local(

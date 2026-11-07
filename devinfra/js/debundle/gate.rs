@@ -21,11 +21,13 @@ pub use assignment_analysis::{
     ApplicationAssessmentError, ApplicationRelocationAssessmentReport, AssignmentAnalysis,
     AssignmentAnalysisBuildError, AtomicGroupPlacementClass, AtomicGroupPlacementObligation,
     CandidateEvaluation, CandidateModuleInitializationEvidence, CandidatePreflight,
-    CandidateRelocationAssessment, CandidateRelocationAssessmentReport, CandidateRelocationStatus,
+    CandidateProviderTargetEvidence, CandidateRelocationAssessment,
+    CandidateRelocationAssessmentReport, CandidateRelocationStatus,
+    ConditionalProviderTargetAddress, ConditionalProviderTargetAssessment,
     CrossDestinationRebindObligation, ModuleCellAddress, ModuleInitializationAssessment,
-    ModuleInitializationRefusal, RejectedAssignment, SemanticOrderSccObligation,
-    StructuralPlacementAssessment, StructuralPlacementCoverage, StructuralPlacementStatus,
-    ValidatedAssignment,
+    ModuleInitializationRefusal, ProviderTargetRefusal, RejectedAssignment,
+    SemanticOrderSccObligation, StructuralPlacementAssessment, StructuralPlacementCoverage,
+    StructuralPlacementStatus, ValidatedAssignment,
 };
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
