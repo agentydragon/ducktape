@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import shutil
 import threading
 import time
@@ -48,6 +49,27 @@ def _has_payload(path: Path, payload: bytes) -> bool:
     )
 
 
+_KERNEL_PRINTK_FRAME = re.compile(rb"\[[ \t]*[0-9]+\.[0-9]{6}\] \S.*")
+
+
+def _has_boot_readiness_payload(path: Path) -> bool:
+    """Accept the readiness marker when a kernel printk shares its CRI record."""
+    for line in path.read_bytes().splitlines(keepends=True):
+        if not line.endswith(b"\n"):
+            continue
+        fields = line.rstrip(b"\r\n").split(b" ", 3)
+        if fields[1:3] != [b"stdout", b"F"] or len(fields) != 4:
+            continue
+        payload = fields[3]
+        if payload == BOOT_EVIDENCE_READY:
+            return True
+        if payload.startswith(BOOT_EVIDENCE_READY) and _KERNEL_PRINTK_FRAME.fullmatch(
+            payload[len(BOOT_EVIDENCE_READY) :]
+        ):
+            return True
+    return False
+
+
 def _require_boot_evidence(consoles: Path) -> None:
     selected: set[Path] = set()
     for path in consoles.glob("*/*.cri.log"):
@@ -67,7 +89,7 @@ def _require_boot_evidence(consoles: Path) -> None:
     # The selected guest can rotate/restart its console container between boot and teardown.
     # Retention stores each inode as a separate CRI log under the same launcher UID directory.
     logs = list(incarnation.glob("*.cri.log"))
-    if not any(_has_payload(path, BOOT_EVIDENCE_READY) for path in logs):
+    if not any(_has_boot_readiness_payload(path) for path in logs):
         raise GuestBootEvidenceError(
             f"Guest boot-device monitor did not report readiness; see retained console {incarnation}"
         )
