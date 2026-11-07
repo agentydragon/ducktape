@@ -16,6 +16,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
