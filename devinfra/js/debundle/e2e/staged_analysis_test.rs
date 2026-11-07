@@ -1674,16 +1674,6 @@ fn capture_free_conditional_provider_target_survives_moved_wrapper_and_saved_ana
     );
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "ok\n", "");
     let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
-    assert!(
-        direct.result.status.success(),
-        "direct candidate CLI rejected the capture-free provider target: {}",
-        direct.result.stderr
-    );
-    assert!(
-        saved.result.status.success(),
-        "saved-analysis candidate CLI rejected the capture-free provider target: {}",
-        saved.result.stderr
-    );
     for (mode, invocation) in [("direct", &direct), ("saved", &saved)] {
         let consumer_root = invocation.output_root().join("app/static/app");
         let diagnostics = save_relocation_reports(
@@ -1698,6 +1688,19 @@ fn capture_free_conditional_provider_target_survives_moved_wrapper_and_saved_ana
             fs::create_dir_all(destination.parent().unwrap()).unwrap();
             fs::write(destination, bytes).unwrap();
         }
+    }
+    assert!(
+        direct.result.status.success(),
+        "direct candidate CLI rejected the capture-free provider target: {}",
+        direct.result.stderr
+    );
+    assert!(
+        saved.result.status.success(),
+        "saved-analysis candidate CLI rejected the capture-free provider target: {}",
+        saved.result.stderr
+    );
+    for invocation in [&direct, &saved] {
+        let consumer_root = invocation.output_root().join("app/static/app");
         let report = candidate_relocation_report(invocation, "static/app");
         assert_eq!(
             report["status"], "accepted_within_checked_scope",
