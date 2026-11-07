@@ -8733,17 +8733,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome: &mut Outcome,
     ) -> Option<Values> {
         use crate::analysis_inputs::ParameterHeapRead;
-        let Some(bodies) = self.conditional_foreign_bodies(call.kind, &call.callee) else {
-            return None;
-        };
-        let Some(values) = args.first() else {
-            return None;
-        };
-        let Some(input) =
-            self.own_property_projection(values, OwnPropertyRequest::DescriptorLayout)
-        else {
-            return None;
-        };
+        let bodies = self.conditional_foreign_bodies(call.kind, &call.callee)?;
+        let values = args.first()?;
+        let input = self.own_property_projection(values, OwnPropertyRequest::DescriptorLayout)?;
         let super::super::property_inference::OwnPropertyProjection::Descriptors(projection) =
             &input.projection
         else {
@@ -8754,16 +8746,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return None;
         };
-        let Some(body) = bodies
+        let body = bodies
             .iter()
             .find(|body| {
                 self.conditional_foreign_body_is_usable(body)
                     && body.input.matches_projection(projection)
             })
-            .cloned()
-        else {
-            return None;
-        };
+            .cloned()?;
         let mut result_reads = BTreeSet::new();
         let mut result =
             self.instantiate_conditional_result(&body, args, origin, &mut result_reads);
