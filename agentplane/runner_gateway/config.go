@@ -35,7 +35,6 @@ type config struct {
 	Kubeconfig                   string                                 `mapstructure:"kubeconfig"`
 	KubernetesClientQPS          float32                                `mapstructure:"kubernetes_client_qps"`
 	ListenAddress                string                                 `mapstructure:"listen_address"`
-	HTTPListenAddress            string                                 `mapstructure:"http_listen_address"`
 	ProxyPort                    int                                    `mapstructure:"proxy_port"`
 	RunnerControlTargetTemplate  string                                 `mapstructure:"runner_control_target_template"`
 	DispatcherAudience           string                                 `mapstructure:"dispatcher_audience"`

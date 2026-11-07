@@ -13,7 +13,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import grpc
-import httpx
 import yaml
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from python.runfiles import Runfiles
@@ -64,8 +63,6 @@ class GatewayProcess:
 
     process: asyncio.subprocess.Process
     target: str
-    # The Dispatcher's generated HTTP/JSON facade.
-    http_url: str
     log_path: Path
     environment_runtime_ca: CertificateAuthority
     environment_runtime_ca_file: Path
@@ -152,25 +149,6 @@ async def _wait_health(service: GatewayProcess, target: str, *, timeout_s: float
     await service._check_process()
 
 
-async def _wait_http_facade(service: GatewayProcess, *, timeout_s: float) -> None:
-    deadline = asyncio.get_running_loop().time() + timeout_s
-    async with httpx.AsyncClient(timeout=2, trust_env=False) as client:
-        while True:
-            await service._check_process()
-            try:
-                response = await client.get(f"{service.http_url}/v1/dispatches")
-            except httpx.TransportError:
-                pass
-            else:
-                if response.status_code == 401:
-                    return
-                raise ConnectionError(f"HTTP facade returned {response.status_code} without credentials")
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                raise TimeoutError(f"Runner Gateway HTTP facade did not become ready; see {service.log_path}")
-            await asyncio.sleep(min(0.05, remaining))
-
-
 async def _wait_ready(service: GatewayProcess, *, timeout_s: float) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_s
     while True:
@@ -180,10 +158,6 @@ async def _wait_ready(service: GatewayProcess, *, timeout_s: float) -> None:
             if remaining <= 0:
                 raise TimeoutError
             await _wait_health(service, service.target, timeout_s=remaining)
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                raise TimeoutError
-            await _wait_http_facade(service, timeout_s=remaining)
             return
         except ConnectionError, grpc.aio.AioRpcError, TimeoutError:
             remaining = deadline - asyncio.get_running_loop().time()
@@ -213,8 +187,8 @@ async def run_gateway(
     """Migrate the supplied database, then run the full Gateway on deployment-shaped settings.
 
     The Kubernetes API and PostgreSQL database are owned by the caller. The Goose migration
-    runner applies the schema before the server starts. Platform gRPC and HTTP use the public
-    listeners; Runner connections use each active Sandbox's direct mTLS gRPC server.
+    runner applies the schema before the server starts. Platform gRPC uses the public
+    listener; Runner connections use each active Sandbox's direct mTLS gRPC server.
     """
     binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
@@ -225,7 +199,6 @@ async def run_gateway(
     # runtime sources. The explicit empty wake list exercises the authoring schema and Go loader contract.
     with ExitStack() as listeners:
         grpc_listener = listeners.enter_context(listen_tcp())
-        http_listener = listeners.enter_context(listen_tcp())
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
             settings_directory = Path(settings_dir)
             environment_runtime_ca = make_ca("Environment Runtime transport test CA")
@@ -248,7 +221,6 @@ async def run_gateway(
                 runner_token_file=runner_proxy_token_file,
                 kubeconfig=kubeconfig,
                 listen_address=f"fd:{grpc_listener.socket.fileno()}",
-                http_listen_address=f"fd:{http_listener.socket.fileno()}",
                 proxy_port=grpc_listener.port,
                 runner_control_target_template=f"{grpc_listener.host}:{grpc_listener.port}",
                 dispatcher_audience=dispatcher_audience,
@@ -288,7 +260,7 @@ async def run_gateway(
                 # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
                 env_name(Settings, "pod_ip"): "192.0.2.10",
             }
-            pass_fds = [grpc_listener.socket.fileno(), http_listener.socket.fileno()]
+            pass_fds = [grpc_listener.socket.fileno()]
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(
                     binary, env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
@@ -301,7 +273,6 @@ async def run_gateway(
                 orphan = GatewayProcess(
                     process=process,
                     target=f"{grpc_listener.host}:{grpc_listener.port}",
-                    http_url=f"http://{http_listener.host}:{http_listener.port}",
                     log_path=log_path,
                     environment_runtime_ca=environment_runtime_ca,
                     environment_runtime_ca_file=environment_runtime_ca_file,
@@ -314,11 +285,9 @@ async def run_gateway(
                     raise
                 raise
             grpc_listener.socket.close()
-            http_listener.socket.close()
             service = GatewayProcess(
                 process=process,
                 target=f"{grpc_listener.host}:{grpc_listener.port}",
-                http_url=f"http://{http_listener.host}:{http_listener.port}",
                 log_path=log_path,
                 environment_runtime_ca=environment_runtime_ca,
                 environment_runtime_ca_file=environment_runtime_ca_file,

@@ -7,16 +7,17 @@ pilot)
 	mode=pilot
 	marker=AGENTPLANE_CGROUP_PILOT
 	pairs=2
+	unit=agentplane-cgroup-pilot-resident.service
 	;;
 stress)
 	mode=stress
 	marker=AGENTPLANE_CGROUP_STRESS
 	pairs=5
+	unit=agentplane-cgroup-stress-resident.service
 	;;
 *) exit 2 ;;
 esac
 probe_start_uptime=$("$busybox" awk '{print int($1)}' /proc/uptime)
-unit=agentplane-cgroup-pilot-resident.service
 slice=/sys/fs/cgroup/pilot.slice
 tracefs=/sys/kernel/tracing
 scratch=$("$busybox" mktemp -d /run/agentplane-cgroup-pilot.XXXXXX)
@@ -316,8 +317,18 @@ while [ "$pair" -le "$pairs" ]; do
 			exit 1
 		fi
 		printf '0\n' >"$tracefs/tracing_on"
+		printf 'nop\n' >"$tracefs/current_tracer"
+		printf '\n' >"$tracefs/set_ftrace_pid"
+		printf '\n' >"$tracefs/set_graph_function"
 		trace_supported=no
-		emit "TRACE_PHASE after=pair1_on tracing_on=$("$busybox" cat "$tracefs/tracing_on")"
+		tracing_now=$("$busybox" cat "$tracefs/tracing_on")
+		tracer_now=$("$busybox" cat "$tracefs/current_tracer")
+		emit "TRACE_PHASE after=pair1_on tracing_on=$tracing_now current_tracer=$tracer_now"
+		if [ "$tracing_now" != 0 ] || [ "$tracer_now" != nop ]; then
+			emit 'UNEXERCISED step=pair1_on reason=tracer_reset_failed'
+			exit 1
+		fi
+		trace_reason=disabled_after_first_witness
 	fi
 	change_property "pair${pair}_off" no
 	pair=$((pair + 1))
