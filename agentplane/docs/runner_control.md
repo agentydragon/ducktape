@@ -373,8 +373,9 @@ certificate. TLS owns its CA bundle, and its `auth` variant owns either the toke
 certificate/key pair. A TLS failure ends the request. Files reload for credential rotation.
 
 The Rules API shares the proxy's configured authentication policy and serving TLS material on its
-existing API port. For SPIFFE, the sidecar opens destination TLS through an opaque central tunnel;
-the API verifies the actual peer and live Sandbox itself. Until the remaining service cutover,
+shared native gRPC port. The workload dials the local `EgressRules.GetRules` route on port 3133.
+For SPIFFE, the sidecar opens destination TLS through an opaque central tunnel; the server verifies
+the actual peer and live Sandbox itself. Until the remaining service cutover,
 their explicit projected audience tokens remain destination credentials, verified against the
 Sandbox's bound Pod. Staging defaults to the legacy plaintext bearer hop until cutover. Callers
 without Sandbox certificates require their separate authentication design before that flip.
