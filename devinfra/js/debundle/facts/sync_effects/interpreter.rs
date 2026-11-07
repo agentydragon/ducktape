@@ -2257,17 +2257,16 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     self.body.single_identifier_call_initializer() == Some(span)
                 }
             };
-            let terminal_local_call = terminal_position
-                && matches!(callee, EvaluatedCallee::Direct(_))
-                && self
-                    .executor
-                    .local_call_target(targets)
-                    .is_some_and(|(key, target)| {
-                        !target.opaque
-                            && !target.generator
-                            && !self.executor.inputs.index.async_callables.contains(&key)
-                    });
-            if terminal_local_call {
+            let terminal_local_target = (terminal_position
+                && matches!(callee, EvaluatedCallee::Direct(_)))
+            .then(|| self.executor.local_call_target(targets))
+            .flatten()
+            .filter(|(key, target)| {
+                !target.opaque
+                    && !target.generator
+                    && !self.executor.inputs.index.async_callables.contains(key)
+            });
+            if let Some((key, _)) = terminal_local_target {
                 // The admitted source call already ran and supplied its
                 // conservative effects. This exact return has no caller
                 // remainder to summarize: publishing the entire caller frame
@@ -2277,10 +2276,12 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 self.outcome.complete = false;
                 self.outcome.effect_coverage = EffectCoverageFragment::default();
                 frame.returns.extend(values);
-                frame.returns.extend([
-                    AbstractValue::Value(Value::Top),
-                    AbstractValue::Value(Value::Unavailable),
-                ]);
+                frame
+                    .returns
+                    .insert(AbstractValue::Value(Value::Unavailable));
+                if !self.executor.callable_has_no_normal_return(key) {
+                    frame.returns.insert(AbstractValue::Value(Value::Top));
+                }
                 return None;
             }
             reached.extend(values);
@@ -10828,18 +10829,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             fresh_checked_constructor,
         );
         self.record_callable_heap_contents(key, &mut outcome);
-        let no_normal_return = self
-            .inputs
-            .index
-            .callables
-            .get(&key)
-            .is_some_and(|callable| {
-                !callable.generator
-                    && !self.inputs.index.async_callables.contains(&key)
-                    && !callable.may_fall_through
-                    && callable.body_facts.value_flow().returns().is_empty()
-            });
-        if no_normal_return
+        if self.callable_has_no_normal_return(key)
             && outcome
                 .returns
                 .iter()
@@ -10864,6 +10854,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         self.state.active_cells = outer_cells;
         outcome
+    }
+
+    fn callable_has_no_normal_return(&self, key: u32) -> bool {
+        self.inputs
+            .index
+            .callables
+            .get(&key)
+            .is_some_and(|callable| {
+                !callable.generator
+                    && !self.inputs.index.async_callables.contains(&key)
+                    && !callable.may_fall_through
+                    && callable.body_facts.value_flow().returns().is_empty()
+            })
     }
 
     fn invoke_with_cells(

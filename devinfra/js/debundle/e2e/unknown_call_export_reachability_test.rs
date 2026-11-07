@@ -1,6 +1,25 @@
 //! Export bindings become externally reachable according to their ESM initialization timing.
 
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+
+fn has_constraining_callback_edge(
+    fixture: &Fixture,
+    caller_binding: &str,
+    target_binding: &str,
+) -> bool {
+    let graph = fixture.dependency_graph();
+    let caller = source_unit_for_binding(&graph, caller_binding);
+    let target = source_unit_for_binding(&graph, target_binding);
+    graph.edges.iter().any(|edge| {
+        edge.source == caller
+            && edge.target == target
+            && edge.edge_kind == DepKind::EagerUse
+            && edge.binding.as_deref() == Some(target_binding)
+            && edge.constrains_init_order
+    })
+}
 
 fn split_fixture(source: &'static str) -> FixtureOpts<'static> {
     FixtureOpts::new(
@@ -225,5 +244,85 @@ console.log(later);
         "static/app/modules/values/later.js",
         &["later"],
         &[],
+    );
+}
+
+#[test]
+fn terminal_call_completion_preserves_abrupt_and_callback_reach_boundaries() {
+    let throw_only = run_fixture(FixtureOpts::new(
+        r#"function stop() { throw new TypeError("stopped"); }
+const dynamic = stop();
+const sequel = dynamic(() => later);
+const later = 1;
+console.log(sequel);
+"#,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("stop"),
+                Member::new("dynamic"),
+                Member::new("sequel"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(&throw_only, "stopped");
+    assert!(
+        !has_constraining_callback_edge(&throw_only, "sequel", "later"),
+        "a call after the throw-only initializer must not acquire callback reach"
+    );
+
+    let normal_return = run_fixture(FixtureOpts::new(
+        r#"function returnCallback() { return callback => callback(); }
+const dynamic = returnCallback();
+const sequel = dynamic(() => later);
+const later = 1;
+console.log(sequel);
+"#,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("returnCallback"),
+                Member::new("dynamic"),
+                Member::new("sequel"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(
+        &normal_return,
+        "Cannot access 'later' before initialization",
+    );
+    assert!(
+        has_constraining_callback_edge(&normal_return, "sequel", "later"),
+        "a normal returned callable must retain callback reach at its later invocation"
+    );
+
+    let incomplete_throw_only = run_fixture(FixtureOpts::new(
+        r#"function stopAfterCallback(callback) {
+  callback();
+  foreignTag`unreached`;
+  throw new TypeError("stopped after callback");
+}
+const dynamic = stopAfterCallback(() => later);
+const later = 1;
+console.log(dynamic);
+"#,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("stopAfterCallback"),
+                Member::new("dynamic"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(
+        &incomplete_throw_only,
+        "Cannot access 'later' before initialization",
+    );
+    assert!(
+        has_constraining_callback_edge(&incomplete_throw_only, "dynamic", "later"),
+        "an incomplete no-normal-return body must keep callback effects reached before throw"
     );
 }
