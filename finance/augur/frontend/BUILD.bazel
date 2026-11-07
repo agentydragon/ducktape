@@ -51,7 +51,7 @@ ts_library(
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//finance/augur/frontend/lib:casing",
+        "//:node_modules/zod",
         "//finance/augur/frontend/lib:schema_zod",
     ],
 )
@@ -459,7 +459,6 @@ filegroup(
         "scenario_tabs.tsx",
         "skeleton.tsx",
         "terminal_distribution.tsx",
-        "//finance/augur/frontend/lib:casing",
         "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:controls",
         "//finance/augur/frontend/lib:format",
@@ -673,6 +672,7 @@ augur_vitest_test(
     srcs = ["format.test.ts"],
     deps = [
         "//:node_modules/vitest",
+        "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:format",
     ],
 )

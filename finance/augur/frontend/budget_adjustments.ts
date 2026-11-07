@@ -4,7 +4,7 @@
 // budget.tsx owns reading/writing window.location.
 
 import Decimal from "decimal.js";
-import type { BudgetSummaryCsvRequest } from "./client";
+import type { fetchBudgetSummaryCsv } from "./client";
 
 // Preserve the backend's finite Decimal precision through budget rollups and rate-independent
 // planning arithmetic; the library default of 20 significant digits is too small for the wire.
@@ -88,8 +88,10 @@ export function adjustmentsToParams(adjustments: Adjustments): { bhide: string |
 }
 
 /** Convert local Decimal adjustments to the generated string-valued request shape. */
-export function adjustmentsToRequest(adjustments: Adjustments): BudgetSummaryCsvRequest["adjustments"] {
-  const request: BudgetSummaryCsvRequest["adjustments"] = {};
+export function adjustmentsToRequest(
+  adjustments: Adjustments
+): Parameters<typeof fetchBudgetSummaryCsv>[0]["adjustments"] {
+  const request: Parameters<typeof fetchBudgetSummaryCsv>[0]["adjustments"] = {};
   for (const [id, adjustment] of adjustments) {
     request[id] =
       adjustment.kind === "hidden" ? adjustment : { kind: "override", monthly: adjustment.monthly.toString() };

@@ -9,27 +9,31 @@ import {
 } from "./lib/format";
 import { METRIC_OPTIONS, sleeveKey, type LifecycleInputEvent, type productInputDefaults } from "./input_helpers";
 import type {
-  CalibrationRunResponse,
-  ProductPortfolioResponse,
-  ProductProjectionSummary,
-  ProductRolloutResponse,
+  fetchCalibrationRun,
+  fetchProductPortfolio,
+  fetchProductProjectionSummary,
+  fetchProductRollout,
 } from "./client";
 import { ROLLOUT_EVENT_KIND_ORDER, type RolloutEventKind } from "./rollout_event_vocabulary.generated";
 
 export { ROLLOUT_EVENT_KIND_ORDER };
 
-type ProductMetricFan = ProductProjectionSummary["metricFan"];
-type ProductTerminalDistribution = ProductProjectionSummary["terminalDistribution"];
+type ProductProjectionSummary = Awaited<ReturnType<typeof fetchProductProjectionSummary>>;
+type ProductPortfolio = Awaited<ReturnType<typeof fetchProductPortfolio>>;
+type ProductRolloutResponse = Awaited<ReturnType<typeof fetchProductRollout>>;
+type CalibrationRun = Awaited<ReturnType<typeof fetchCalibrationRun>>;
+type ProductMetricFan = ProductProjectionSummary["metric_fan"];
+type ProductTerminalDistribution = ProductProjectionSummary["terminal_distribution"];
 type ProductRollout = ProductRolloutResponse["rollout"];
 type RolloutEvent = ProductRollout["events"][number];
 type CurrencyMetadata = { currencyCode?: string; currencyQuantum?: string };
 type RolloutEventWithCurrency = RolloutEvent & { _currency: CurrencyMetadata };
 type EventKind = RolloutEvent["kind"];
 type EventOfKind<Kind extends EventKind> = Extract<RolloutEventWithCurrency, { kind: Kind }>;
-type CalibrationMarkFan = NonNullable<CalibrationRunResponse["markFans"]>[number];
+type CalibrationMarkFan = NonNullable<CalibrationRun["mark_fans"]>[number];
 type MetricOption = (typeof METRIC_OPTIONS)[number];
 type ProductInput = ReturnType<typeof productInputDefaults>;
-type RolloutSummary = Pick<ProductRollout, "failed" | "endingMetrics">;
+type RolloutSummary = Pick<ProductRollout, "failed" | "ending_metrics">;
 type DueWithShortfallEvent = EventOfKind<
   | "monthly_expense"
   | "outside_rent"
@@ -46,8 +50,8 @@ type EventFormatterMap = {
   };
 };
 
-function currency(result: { currencyCode: string; currencyQuantum: string } | null | undefined): CurrencyMetadata {
-  return { currencyCode: result?.currencyCode, currencyQuantum: result?.currencyQuantum };
+function currency(result: { currency_code: string; currency_quantum: string } | null | undefined): CurrencyMetadata {
+  return { currencyCode: result?.currency_code, currencyQuantum: result?.currency_quantum };
 }
 
 function cu(value: unknown, currencyMeta: CurrencyMetadata | undefined) {
@@ -106,15 +110,15 @@ export const SELECTED_COL_HEADER = "px-3 py-2 text-right font-semibold text-teal
 export const SELECTED_COL_CELL = "px-3 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300";
 
 export function metricFanRows(result: ProductMetricFan | null | undefined) {
-  if (!result?.monthlyMetricFan) return [];
+  if (!result?.monthly_metric_fan) return [];
   const byMonth = new Map<number, Map<number, number>>();
   const displayValuesByMonth = new Map<number, Map<number, string | number | boolean>>();
-  for (const row of rowsFrom(result.monthlyMetricFan)) {
-    if (row.valueQuanta == null) continue;
-    const monthIndex = Number(row.monthIndex);
+  for (const row of rowsFrom(result.monthly_metric_fan)) {
+    if (row.value_quanta == null) continue;
+    const monthIndex = Number(row.month_index);
     const percentile = Number(row.percentile);
-    const rawValue = row.valueQuanta;
-    const metricValue = currencyQuantaChartNumber(rawValue, result.currencyQuantum);
+    const rawValue = row.value_quanta;
+    const metricValue = currencyQuantaChartNumber(rawValue, result.currency_quantum);
     if (!Number.isFinite(monthIndex) || !Number.isFinite(percentile) || !Number.isFinite(metricValue)) continue;
     let monthValues = byMonth.get(monthIndex);
     if (monthValues == null) {
@@ -140,7 +144,7 @@ export function metricFanRows(result: ProductMetricFan | null | undefined) {
     }));
 }
 
-// Adapt a calibration `MarkFan` (`months: [{ monthIndex, values: { "5.0": float, ... } }]`)
+// Adapt a calibration `MarkFan` (`months: [{ month_index, values: { "5.0": float, ... } }]`)
 // to the row shape `MetricFanChart` consumes: `{ monthIndex, year, values: Map<pct, value> }`.
 // The fan's `percentiles` are numbers (5, 25, ...) while each month's `values` is keyed by the
 // stringified percentile ("5.0", ...), so we re-key the Map by `Number(...)` to line up with the
@@ -149,8 +153,8 @@ export function markFanRows(markFan: CalibrationMarkFan | null | undefined) {
   if (!markFan?.months) return [];
   return markFan.months
     .map((month) => ({
-      monthIndex: Number(month.monthIndex),
-      year: Number(month.monthIndex) / 12,
+      monthIndex: Number(month.month_index),
+      year: Number(month.month_index) / 12,
       values: new Map(
         Object.entries(month.values ?? {})
           .map(([percentile, value]) => [Number(percentile), Number(value)] as [number, number])
@@ -162,26 +166,26 @@ export function markFanRows(markFan: CalibrationMarkFan | null | undefined) {
 }
 
 export function terminalPercentileValue(
-  result: Pick<ProductTerminalDistribution, "terminalMetricPercentiles"> | null | undefined,
+  result: Pick<ProductTerminalDistribution, "terminal_metric_percentiles"> | null | undefined,
   percentile: number
 ) {
-  if (!result?.terminalMetricPercentiles) return null;
-  for (const row of rowsFrom(result?.terminalMetricPercentiles)) {
+  if (!result?.terminal_metric_percentiles) return null;
+  for (const row of rowsFrom(result?.terminal_metric_percentiles)) {
     if (Number(row.percentile) === percentile) {
-      return row.valueQuanta;
+      return row.value_quanta;
     }
   }
   return null;
 }
 
 export function terminalMetricSamples(result: ProductTerminalDistribution | null | undefined, metric: MetricOption) {
-  if (result?.metric !== metric.value || !result?.terminalMetricSamples) return [];
-  return rowsFrom(result.terminalMetricSamples)
-    .filter((row) => row.valueQuanta != null)
+  if (result?.metric !== metric.value || !result?.terminal_metric_samples) return [];
+  return rowsFrom(result.terminal_metric_samples)
+    .filter((row) => row.value_quanta != null)
     .map((row) => ({
       seed: Number(row.seed),
-      value: currencyQuantaChartNumber(row.valueQuanta, result.currencyQuantum),
-      currencyQuanta: row.valueQuanta,
+      value: currencyQuantaChartNumber(row.value_quanta, result.currency_quantum),
+      currencyQuanta: row.value_quanta,
       currency: currency(result),
       failed: Boolean(row.failed),
     }))
@@ -203,7 +207,7 @@ export function terminalSampleAtPercentile(
 }
 
 export function endingMetricValue(
-  endingMetrics: ProductRollout["endingMetrics"] | null | undefined,
+  endingMetrics: ProductRollout["ending_metrics"] | null | undefined,
   metric: MetricOption
 ) {
   return endingMetrics?.[metric.chartValue] ?? null;
@@ -224,7 +228,7 @@ export function visibleMetricOptions(input: ProductInput | null | undefined) {
 
 export function rolloutStatusText(summary: RolloutSummary | null | undefined) {
   if (!summary) return "No rollout selected";
-  const failedMonth = summary.endingMetrics?.failedMonthIndex;
+  const failedMonth = summary.ending_metrics?.failed_month_index;
   if (summary.failed) return Number.isFinite(failedMonth) ? `failed m${failedMonth}` : "failed";
   return "completed";
 }
@@ -232,19 +236,19 @@ export function rolloutStatusText(summary: RolloutSummary | null | undefined) {
 export function selectedRolloutMetricRows(detail: ProductRolloutResponse | null | undefined, metric: MetricOption) {
   if (detail == null) return [];
   const rollout = detail.rollout;
-  if (rollout == null || !rollout.monthlyMetrics) return [];
+  if (rollout == null || !rollout.monthly_metrics) return [];
   const failed = rollout.failed;
-  const endingSnapshotIndex = rollout.endingMetrics?.snapshotIndex;
-  const endingFailedMonthIndex = rollout.endingMetrics?.failedMonthIndex;
-  return rowsFrom(rollout.monthlyMetrics)
+  const endingSnapshotIndex = rollout.ending_metrics?.snapshot_index;
+  const endingFailedMonthIndex = rollout.ending_metrics?.failed_month_index;
+  return rowsFrom(rollout.monthly_metrics)
     .map((row) => ({
-      monthIndex: Number(row.monthIndex),
+      monthIndex: Number(row.month_index),
       // The stopped post-event book has not observed the next month's market mark.
       year:
-        (failed && Number(row.monthIndex) === endingSnapshotIndex
+        (failed && Number(row.month_index) === endingSnapshotIndex
           ? Number(endingFailedMonthIndex)
-          : Number(row.monthIndex)) / 12,
-      value: currencyQuantaChartNumber(row[metric.chartValue], detail.currencyQuantum),
+          : Number(row.month_index)) / 12,
+      value: currencyQuantaChartNumber(row[metric.chartValue], detail.currency_quantum),
       currencyQuanta: row[metric.chartValue],
       currency: currency(detail),
     }))
@@ -258,7 +262,7 @@ export function selectedRolloutEvents(detail: ProductRolloutResponse | null | un
 }
 
 export function eventMonthIndex(event: RolloutEvent | null | undefined) {
-  const monthIndex = Number(event?.monthIndex);
+  const monthIndex = Number(event?.month_index);
   return Number.isFinite(monthIndex) ? monthIndex : null;
 }
 
@@ -290,10 +294,10 @@ export function eventColor(event: RolloutEvent | null | undefined) {
 }
 
 export function eventAmount(event: RolloutEvent | null | undefined) {
-  return event?.amountQuanta ?? null;
+  return event?.amount_quanta ?? null;
 }
 
-export function jurisdictionLabel(jurisdictionId: EventOfKind<"tax_accrual">["jurisdictionId"] | null | undefined) {
+export function jurisdictionLabel(jurisdictionId: EventOfKind<"tax_accrual">["jurisdiction_id"] | null | undefined) {
   if (jurisdictionId === "federal_us") return "federal";
   if (jurisdictionId === "california") return "California";
   return (jurisdictionId ?? "").replace(/_/g, " ");
@@ -309,45 +313,46 @@ export function formatDueWithShortfall(
 }
 
 export function shortfallLabel(event: DueWithShortfallEvent, { ok, shortfall }: { ok: string; shortfall: string }) {
-  return currencyQuantaIsPositive(event.shortfallQuanta) ? shortfall : ok;
+  return currencyQuantaIsPositive(event.shortfall_quanta) ? shortfall : ok;
 }
 
 export function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
-  const isShortfall = currencyQuantaIsPositive(event.shortfallQuanta);
-  if (event.obligationType === "estimated_tax") return isShortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
-  if (event.obligationType === "tax_true_up") return isShortfall ? "Tax true-up shortfall" : "Paid tax true-up";
+  const isShortfall = currencyQuantaIsPositive(event.shortfall_quanta);
+  if (event.obligation_type === "estimated_tax")
+    return isShortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
+  if (event.obligation_type === "tax_true_up") return isShortfall ? "Tax true-up shortfall" : "Paid tax true-up";
   return isShortfall ? "Tax payment shortfall" : "Paid taxes";
 }
 
 export function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
-  const gain = currencyQuantaAdd(event.ltcgQuanta, event.stcgQuanta);
+  const gain = currencyQuantaAdd(event.ltcg_quanta, event.stcg_quanta);
   const parts = [
-    `ordinary tax ${cu(event.ordinaryTaxQuanta, event._currency)}`,
-    `gain tax ${cu(event.capitalGainTaxQuanta, event._currency)}`,
+    `ordinary tax ${cu(event.ordinary_tax_quanta, event._currency)}`,
+    `gain tax ${cu(event.capital_gain_tax_quanta, event._currency)}`,
     `gains ${cu(gain, event._currency)}`,
   ];
-  if (currencyQuantaIsPositive(event.mortgageInterestDeductionQuanta)) {
+  if (currencyQuantaIsPositive(event.mortgage_interest_deduction_quanta)) {
     const usedItemized =
-      currencyQuantaIsPositive(event.itemizedDeductionQuanta) &&
-      BigInt(event.itemizedDeductionQuanta) > BigInt(event.standardDeductionQuanta);
-    parts.push(`MID ${cu(event.mortgageInterestDeductionQuanta, event._currency)}`);
+      currencyQuantaIsPositive(event.itemized_deduction_quanta) &&
+      BigInt(event.itemized_deduction_quanta) > BigInt(event.standard_deduction_quanta);
+    parts.push(`MID ${cu(event.mortgage_interest_deduction_quanta, event._currency)}`);
     parts.push(
-      `deduction ${cu(usedItemized ? event.itemizedDeductionQuanta : event.standardDeductionQuanta, event._currency)} (${usedItemized ? "itemized" : "standard"})`
+      `deduction ${cu(usedItemized ? event.itemized_deduction_quanta : event.standard_deduction_quanta, event._currency)} (${usedItemized ? "itemized" : "standard"})`
     );
   }
   return parts.join("; ");
 }
 
 export function propertyPurchaseDetail(event: EventOfKind<"property_purchase">) {
-  const parts = [`down ${cu(event.downPaymentQuanta, event._currency)}`];
-  if (currencyQuantaIsPositive(event.mortgagePrincipalQuanta)) {
-    parts.push(`mortgage ${cu(event.mortgagePrincipalQuanta, event._currency)}`);
+  const parts = [`down ${cu(event.down_payment_quanta, event._currency)}`];
+  if (currencyQuantaIsPositive(event.mortgage_principal_quanta)) {
+    parts.push(`mortgage ${cu(event.mortgage_principal_quanta, event._currency)}`);
   }
   return parts.join("; ");
 }
 
 const dueWithShortfallDetail = (event: DueWithShortfallEvent) =>
-  formatDueWithShortfall(event.amountDueQuanta, event.shortfallQuanta, event._currency);
+  formatDueWithShortfall(event.amount_due_quanta, event.shortfall_quanta, event._currency);
 
 // A human-friendly name for the typed `AssetKey` an event carries — the display fallback when
 // no curated `assetLabel` is set. Derived from the kind's own identifying field (the security's
@@ -363,7 +368,7 @@ function assetDisplayName(asset: EventAsset | null | undefined) {
     case "security":
       return asset.symbol.toUpperCase();
     case "private_equity":
-      return asset.issuerId;
+      return asset.issuer_id;
     default:
       return undefined;
   }
@@ -379,16 +384,16 @@ const tlhOperationLabel: Record<EventOfKind<"tlh_financial_effect">["operation"]
 
 export const EVENT_FORMATTERS: EventFormatterMap = {
   holding_sale: {
-    label: (event) => `Sold ${event.assetLabel ?? assetDisplayName(event.asset) ?? "asset"}`,
-    detail: (event) => `${fmtNumber(event.units)} units; basis ${cu(event.costBasisQuanta, event._currency)}`,
+    label: (event) => `Sold ${event.asset_label ?? assetDisplayName(event.asset) ?? "asset"}`,
+    detail: (event) => `${fmtNumber(event.units)} units; basis ${cu(event.cost_basis_quanta, event._currency)}`,
   },
   tlh_financial_effect: {
     label: (event) => {
       const operation = tlhOperationLabel[event.operation];
-      return `TLH ${operation}: ${event.portfolioId}`;
+      return `TLH ${operation}: ${event.portfolio_id}`;
     },
     detail: (event) =>
-      `cash ${cu(event.amountQuanta, event._currency)}; ST gain ${cu(event.shortTermGainQuanta, event._currency)}; LT gain ${cu(event.longTermGainQuanta, event._currency)}; basis change ${cu(event.basisChangeQuanta, event._currency)}; income ${cu(event.incomeQuanta, event._currency)}`,
+      `cash ${cu(event.amount_quanta, event._currency)}; ST gain ${cu(event.short_term_gain_quanta, event._currency)}; LT gain ${cu(event.long_term_gain_quanta, event._currency)}; basis change ${cu(event.basis_change_quanta, event._currency)}; income ${cu(event.income_quanta, event._currency)}`,
   },
   monthly_expense: {
     label: (event) => shortfallLabel(event, { ok: "Paid monthly expenses", shortfall: "Monthly expenses shortfall" }),
@@ -399,7 +404,7 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
     detail: dueWithShortfallDetail,
   },
   tax_accrual: {
-    label: (event) => `Accrued ${jurisdictionLabel(event.jurisdictionId)} tax`,
+    label: (event) => `Accrued ${jurisdictionLabel(event.jurisdiction_id)} tax`,
     detail: taxAccrualDetail,
   },
   tax_payment: { label: taxPaymentLabel, detail: dueWithShortfallDetail },
@@ -408,7 +413,7 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
   mortgage_payment: {
     label: () => "Paid mortgage",
     detail: (event) =>
-      `interest ${cu(event.interestQuanta, event._currency)}; principal ${cu(event.principalQuanta, event._currency)}`,
+      `interest ${cu(event.interest_quanta, event._currency)}; principal ${cu(event.principal_quanta, event._currency)}`,
   },
   property_tax_payment: {
     label: (event) => shortfallLabel(event, { ok: "Paid property tax", shortfall: "Property tax shortfall" }),
@@ -429,92 +434,92 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
   },
   failure: {
     label: () => "Rollout failed",
-    detail: (event) => `shortfall ${cu(event.shortfallQuanta, event._currency)}`,
+    detail: (event) => `shortfall ${cu(event.shortfall_quanta, event._currency)}`,
   },
   set_rented_fraction: {
     label: (event) => {
-      const fraction = Number(event.rentedFraction);
+      const fraction = Number(event.rented_fraction);
       if (fraction <= 0) return "Stopped renting";
       if (fraction >= 1) return "Started renting out fully";
       return `Set rented to ${(fraction * 100).toFixed(0)}%`;
     },
-    detail: (event) => `${event.propertyId}`,
+    detail: (event) => `${event.property_id}`,
   },
   set_primary_residence: {
-    label: (event) => (event.isPrimaryResidence ? "Set primary home" : "Cleared primary home"),
-    detail: (event) => event.propertyId ?? event.agentId ?? "",
+    label: (event) => (event.is_primary_residence ? "Set primary home" : "Cleared primary home"),
+    detail: (event) => event.property_id ?? event.agent_id ?? "",
   },
   capital_improvement: {
     label: () => "Capital improvement",
-    detail: (event) => `${event.propertyId}; basis bump ${cu(event.amountQuanta, event._currency)}`,
+    detail: (event) => `${event.property_id}; basis bump ${cu(event.amount_quanta, event._currency)}`,
   },
   property_sale: {
     label: () => "Sold property",
     detail: (event) => {
       const parts = [
-        `${event.propertyId}`,
-        `proceeds ${cu(event.grossProceedsQuanta, event._currency)}`,
-        `payoff ${cu(event.mortgagePayoffQuanta, event._currency)}`,
-        `net cash ${cu(event.netCashToOwnerQuanta, event._currency)}`,
+        `${event.property_id}`,
+        `proceeds ${cu(event.gross_proceeds_quanta, event._currency)}`,
+        `payoff ${cu(event.mortgage_payoff_quanta, event._currency)}`,
+        `net cash ${cu(event.net_cash_to_owner_quanta, event._currency)}`,
       ];
-      if (currencyQuantaIsPositive(event.depreciationRecaptureQuanta)) {
-        parts.push(`§1250 ${cu(event.depreciationRecaptureQuanta, event._currency)}`);
+      if (currencyQuantaIsPositive(event.depreciation_recapture_quanta)) {
+        parts.push(`§1250 ${cu(event.depreciation_recapture_quanta, event._currency)}`);
       }
-      if (currencyQuantaIsPositive(event.section121ExclusionQuanta)) {
-        parts.push(`§121 ${cu(event.section121ExclusionQuanta, event._currency)}`);
+      if (currencyQuantaIsPositive(event.section_121_exclusion_quanta)) {
+        parts.push(`§121 ${cu(event.section_121_exclusion_quanta, event._currency)}`);
       }
-      if (currencyQuantaIsPositive(event.longTermCapitalGainQuanta)) {
-        parts.push(`LTCG ${cu(event.longTermCapitalGainQuanta, event._currency)}`);
+      if (currencyQuantaIsPositive(event.long_term_capital_gain_quanta)) {
+        parts.push(`LTCG ${cu(event.long_term_capital_gain_quanta, event._currency)}`);
       }
       return parts.join("; ");
     },
   },
   private_equity_event: {
     label: (event) => {
-      const label = event.assetLabel ?? assetDisplayName(event.asset) ?? "Private equity";
-      if (event.eventKind === "tender") return `Tender: ${label}`;
-      if (event.eventKind === "public_market_open") return `Public market: ${label}`;
-      if (event.eventKind === "acquisition_cashout") return `Acquisition: ${label}`;
-      if (event.eventKind === "legal_impairment") return `Liquidity impaired: ${label}`;
-      if (event.eventKind === "forced_recovery") return `Recovery cashout: ${label}`;
-      if (event.eventKind === "collapse") return `Collapsed: ${label}`;
+      const label = event.asset_label ?? assetDisplayName(event.asset) ?? "Private equity";
+      if (event.event_kind === "tender") return `Tender: ${label}`;
+      if (event.event_kind === "public_market_open") return `Public market: ${label}`;
+      if (event.event_kind === "acquisition_cashout") return `Acquisition: ${label}`;
+      if (event.event_kind === "legal_impairment") return `Liquidity impaired: ${label}`;
+      if (event.event_kind === "forced_recovery") return `Recovery cashout: ${label}`;
+      if (event.event_kind === "collapse") return `Collapsed: ${label}`;
       return `PE event: ${label}`;
     },
     detail: (event) => {
-      const parts = [`mark ${cu(event.markQuanta, event._currency)}`, String(event.regime ?? "").replace(/_/g, " ")];
-      const capacity = Number(event.saleCapacityFraction);
+      const parts = [`mark ${cu(event.mark_quanta, event._currency)}`, String(event.regime ?? "").replace(/_/g, " ")];
+      const capacity = Number(event.sale_capacity_fraction);
       if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
-      const eligible = Number(event.eligibleFraction);
+      const eligible = Number(event.eligible_fraction);
       if (Number.isFinite(eligible) && eligible < 1) parts.push(`eligible ${(eligible * 100).toFixed(0)}%`);
-      const forcedSale = Number(event.forcedSaleFraction);
+      const forcedSale = Number(event.forced_sale_fraction);
       if (forcedSale > 0) parts.push(`forced sale ${(forcedSale * 100).toFixed(0)}%`);
-      if (event.liquidityBlocked) parts.push("liquidity blocked");
-      if (currencyQuantaIsPositive(event.forcedRecoveryCashoutQuanta)) {
-        parts.push(`recovery ${cu(event.forcedRecoveryCashoutQuanta, event._currency)}`);
+      if (event.liquidity_blocked) parts.push("liquidity blocked");
+      if (currencyQuantaIsPositive(event.forced_recovery_cashout_quanta)) {
+        parts.push(`recovery ${cu(event.forced_recovery_cashout_quanta, event._currency)}`);
       }
       return parts.filter(Boolean).join("; ");
     },
   },
   private_equity_opportunity: {
     label: (event) => {
-      const label = event.assetLabel ?? assetDisplayName(event.asset) ?? "Private equity";
+      const label = event.asset_label ?? assetDisplayName(event.asset) ?? "Private equity";
       const outcome = String(event.outcome ?? "").replace(/_/g, " ");
       return `PE opportunity: ${label}${outcome ? ` (${outcome})` : ""}`;
     },
     detail: (event) => {
       const parts = [
-        `mark ${cu(event.markQuanta, event._currency)}`,
-        `shortfall ${cu(event.shortfallQuanta, event._currency)}`,
-        `target ${fmtNumber(event.targetUnits)} units`,
+        `mark ${cu(event.mark_quanta, event._currency)}`,
+        `shortfall ${cu(event.shortfall_quanta, event._currency)}`,
+        `target ${fmtNumber(event.target_units)} units`,
       ];
-      if (currencyQuantaIsPositive(event.proceedsQuanta)) {
-        parts.push(`proceeds ${cu(event.proceedsQuanta, event._currency)}`);
+      if (currencyQuantaIsPositive(event.proceeds_quanta)) {
+        parts.push(`proceeds ${cu(event.proceeds_quanta, event._currency)}`);
       }
-      const capacity = Number(event.saleCapacityFraction);
+      const capacity = Number(event.sale_capacity_fraction);
       if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
-      const eligible = Number(event.eligibleFraction);
+      const eligible = Number(event.eligible_fraction);
       if (Number.isFinite(eligible) && eligible < 1) parts.push(`eligible ${(eligible * 100).toFixed(0)}%`);
-      if (event.liquidityBlocked) parts.push("liquidity blocked");
+      if (event.liquidity_blocked) parts.push("liquidity blocked");
       return parts.filter(Boolean).join("; ");
     },
   },
@@ -629,14 +634,14 @@ export function eventTitle(event: RolloutEventWithCurrency) {
 // Each TLH portfolio is a row of its own, named by its id and labelled with its own label: it is
 // valued in money and drawn on as a managed portfolio, never merged with lots of its index.
 // Private equity is absent because its key carries no symbol: it leaves only via a tender event.
-export function sellableSleeves(portfolio: ProductPortfolioResponse | null | undefined) {
+export function sellableSleeves(portfolio: ProductPortfolio | null | undefined) {
   const bySymbol = new Map<string, { symbol: string; labels: string[]; valueQuanta: string | null }>();
   for (const position of portfolio?.holdings ?? []) {
     if (position.asset.kind === "private_equity") continue;
     const symbol = position.asset.symbol;
     if (!symbol) continue;
     const label = position.label || position.symbol || symbol;
-    const valueQuanta = position.currentValueQuanta ?? "0";
+    const valueQuanta = position.current_value_quanta ?? "0";
     const row = bySymbol.get(symbol);
     if (row) {
       row.labels.push(label);
@@ -646,11 +651,11 @@ export function sellableSleeves(portfolio: ProductPortfolioResponse | null | und
   const securities = [...bySymbol.values()].map(({ symbol, labels, valueQuanta }) =>
     sellableRow({ kind: "security", symbol }, labels.join(" + "), valueQuanta)
   );
-  const managed = (portfolio?.tlhPortfolios ?? []).map((managedPortfolio) =>
+  const managed = (portfolio?.tlh_portfolios ?? []).map((managedPortfolio) =>
     sellableRow(
-      { kind: "managed_portfolio", portfolioId: managedPortfolio.portfolioId },
+      { kind: "managed_portfolio", portfolioId: managedPortfolio.portfolio_id },
       managedPortfolio.label,
-      managedPortfolio.currentValueQuanta ?? "0"
+      managedPortfolio.current_value_quanta ?? "0"
     )
   );
   return [...securities, ...managed];
@@ -666,11 +671,11 @@ function sellableRow(
 
 // Reads the typed asset key, not a display string: private equity is a different KIND of
 // holding, and `securityKind` now describes only how to present a tradable security.
-type PrivateEquityAsset = Extract<ProductPortfolioResponse["holdings"][number]["asset"], { kind: "private_equity" }>;
+type PrivateEquityAsset = Extract<ProductPortfolio["holdings"][number]["asset"], { kind: "private_equity" }>;
 
 export function isPrivateSecurityPosition(
-  position: ProductPortfolioResponse["holdings"][number]
-): position is ProductPortfolioResponse["holdings"][number] & { asset: PrivateEquityAsset } {
+  position: ProductPortfolio["holdings"][number]
+): position is ProductPortfolio["holdings"][number] & { asset: PrivateEquityAsset } {
   return position?.asset?.kind === "private_equity";
 }
 

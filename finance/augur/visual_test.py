@@ -53,7 +53,7 @@ async def _wait_for_product_chart_geometry(page: Page) -> None:
     await page.wait_for_function(
         """
         () => {
-          const chart = document.querySelector("[data-product-fan-chart='netWorthQuanta'] svg[role='img']");
+          const chart = document.querySelector("[data-product-fan-chart='net_worth_quanta'] svg[role='img']");
           if (!chart) return false;
           // Horizon is now driven by the wheel/`?h=`, not an input. Use the chart's own rightmost
           // "N yr" tick as the final-year marker whose geometry must have settled within bounds.
@@ -125,13 +125,13 @@ async def _click_terminal_distribution_percentile(page: Page, *, percentile: flo
 async def _wait_for_product_page(page: Page) -> None:
     """Wait for the product surface's net-worth fan to render at non-zero height."""
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
     await page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     await page.get_by_label("Metric to plot").wait_for(state="visible", timeout=30_000)
     await page.wait_for_function(
         """
         () => {
-          const chart = document.querySelector("[data-product-fan-chart='netWorthQuanta'] svg[role='img']");
+          const chart = document.querySelector("[data-product-fan-chart='net_worth_quanta'] svg[role='img']");
           if (!chart) return false;
           const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
             const points = (polygon.getAttribute("points") || "")
@@ -217,7 +217,7 @@ async def _wait_for_property_panel(page: Page) -> None:
 async def _wait_for_distribution_failures(page: Page) -> None:
     """Inspect a stopped book without placing it in the terminal-wealth distribution."""
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
     await _wait_for_terminal_distribution_density(page, min_series=1)
     stopped_selector = page.get_by_label("Inspect stopped rollout", exact=True)
     await stopped_selector.wait_for(state="visible", timeout=30_000)
@@ -325,7 +325,7 @@ async def _wait_for_scenario_comparison(page: Page) -> None:
     and the per-scenario comparison table."""
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
-    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-scenario-comparison]").wait_for(state="visible", timeout=30_000)
     # The editor spreadsheet shows Base + the two variants as columns (rows = knobs), including the

@@ -12,14 +12,14 @@ type Scenario = { id: string; label: string };
 
 function terminalPercentilePoints(result: ProductTerminalDistribution | null | undefined, metric: MetricOption) {
   if (result?.metric !== metric.value) return [];
-  return rowsFrom(result?.terminalMetricPercentiles)
-    .filter((row) => row.valueQuanta != null)
+  return rowsFrom(result?.terminal_metric_percentiles)
+    .filter((row) => row.value_quanta != null)
     .map((row) => ({
       percentile: Number(row.percentile) / 100,
       rawPercentile: Number(row.percentile),
-      value: currencyQuantaChartNumber(row.valueQuanta, result.currencyQuantum),
-      currencyQuanta: row.valueQuanta,
-      currency: { currencyCode: result.currencyCode, currencyQuantum: result.currencyQuantum },
+      value: currencyQuantaChartNumber(row.value_quanta, result.currency_quantum),
+      currencyQuanta: row.value_quanta,
+      currency: { currencyCode: result.currency_code, currencyQuantum: result.currency_quantum },
     }))
     .filter(
       (point) =>

@@ -11,7 +11,7 @@ export function normalizeMetricScale(metricScale: string): MetricScale {
 }
 
 export function metricIsCurrency(metricName: string | null | undefined) {
-  return metricName?.endsWith("Quanta") || metricName?.includes("Value") || metricName?.includes("CashFlow");
+  return metricName?.endsWith("_quanta") || metricName?.includes("_value") || metricName?.includes("_cash_flow");
 }
 
 export function fmtMetricValue(
@@ -20,7 +20,7 @@ export function fmtMetricValue(
   _currencyDisplay = "exact",
   currency?: CurrencyFormat
 ) {
-  if (metricName?.endsWith("Pct")) {
+  if (metricName?.endsWith("_pct")) {
     return fmtPct(value);
   }
   if (metricIsCurrency(metricName)) {

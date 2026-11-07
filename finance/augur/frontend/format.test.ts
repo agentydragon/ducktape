@@ -1,5 +1,6 @@
 import { test, expect } from "vitest";
 
+import { fanChartAxis, fmtAxisMetricValue } from "./lib/chart";
 import { currencyQuantaChartNumber, fmtQuanta, fmtNumber, fmtQuantity } from "./lib/format";
 
 test("fmtQuantity preserves fractional crypto-sized positions", () => {
@@ -29,4 +30,15 @@ test("fmtQuanta renders zero-decimal and non-cent currency quanta", () => {
 
 test("chart conversion is isolated from exact label rendering", () => {
   expect(currencyQuantaChartNumber("123456", "0.05")).toBe(6172.8);
+});
+
+test("snake-case wire metrics retain rounded currency chart axes and labels", () => {
+  const axis = fanChartAxis("net_worth_quanta", [5100, 11900]);
+
+  expect(axis.ticks).toEqual([12000, 10000, 8000, 6000, 4000]);
+  expect(fmtAxisMetricValue("net_worth_quanta", axis.ticks[0], { currencyCode: "USD" })).toBe("USD\u00a012,000");
+});
+
+test("snake-case percentage metrics retain percent labels", () => {
+  expect(fmtAxisMetricValue("return_pct", 0.42)).toBe("42.0%");
 });
