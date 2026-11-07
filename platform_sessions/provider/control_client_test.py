@@ -33,9 +33,15 @@ class Provider(rpc.SessionProviderControlServicer):
         self.info = pb.GetInfoResponse(
             provider=pb.ProviderInfo(
                 provider_id="example",
+                display_name="Example",
+                version="test",
                 instances=[
                     pb.ProviderInstanceInfo(
                         instance_id="account",
+                        supports_candidate_verification=True,
+                        instructions=[
+                            pb.ExportInstruction(text="Export the browser session.", command="example export")
+                        ],
                         routes=[
                             pb.RouteDescription(
                                 operation_id="read_account",
@@ -227,6 +233,44 @@ async def test_protocol_errors_reject_missing_and_mismatched_responses_without_c
         provider.probe_result.result.failure.reason = pb.PROBE_FAILURE_REASON_UNSPECIFIED
         with pytest.raises(ProviderProtocolError, match="typed result"):
             await client.probe(source=pb.PROBE_SOURCE_MANUAL)
+
+
+@pytest.mark.asyncio
+async def test_owner_metadata_and_storage_error_snapshot_validation(tmp_path):
+    async with served(tmp_path) as (provider, client, _, _):
+        info = provider.info.provider.instances[0]
+        assert (await client.get_info()).provider.instances[0].instructions[0].command == "example export"
+        info.instructions[0].command = "\x00bad"
+        with pytest.raises(ProviderProtocolError, match="owner presentation"):
+            await client.get_info()
+        info.instructions[0].command = "example export"
+        info.instructions[0].text = " "
+        with pytest.raises(ProviderProtocolError, match="owner presentation"):
+            await client.get_info()
+        info.instructions[0].text = "Export the browser session."
+        info.accepted_session_import_formats.clear()
+        with pytest.raises(ProviderProtocolError, match="candidate verification"):
+            await client.get_info()
+
+        snapshot = provider.session.snapshot
+        snapshot.state = pb.SESSION_STATE_STORAGE_ERROR
+        snapshot.ClearField("state_changed_at")
+        assert (await client.get_session()).snapshot.state == pb.SESSION_STATE_STORAGE_ERROR
+        snapshot.imported_at.CopyFrom(_now())
+        snapshot.owner_presentation.message = "Stored session unavailable"
+        snapshot.owner_presentation.help = "Check provider logs."
+        assert (await client.get_session()).snapshot.imported_at == _now()
+        snapshot.imported_at.seconds = 315_576_000_000
+        with pytest.raises(ProviderProtocolError, match="timestamp"):
+            await client.get_session()
+        snapshot.imported_at.CopyFrom(_now())
+        snapshot.owner_presentation.help = "\x00bad"
+        with pytest.raises(ProviderProtocolError, match="owner presentation"):
+            await client.get_session()
+        snapshot.owner_presentation.help = "Check provider logs."
+        snapshot.owner_presentation.message = " "
+        with pytest.raises(ProviderProtocolError, match="owner presentation"):
+            await client.get_session()
 
 
 @pytest.mark.asyncio

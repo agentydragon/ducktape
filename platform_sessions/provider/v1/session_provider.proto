@@ -73,8 +73,8 @@ message ProviderInstanceInfo {
 message ExportInstruction {
   // Nonempty UTF-8 owner guidance, at most 2,048 bytes.
   string text = 1;
-  // Optional nonempty owner-UI action hint, at most 128 bytes, such as "copy". This is display
-  // metadata, not a command to run.
+  // Optional nonempty user-facing export command, at most 128 bytes. The owner UI may display
+  // it for copying; the service must never execute it.
   optional string command = 2;
 }
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import math
 import re
+import unicodedata
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -28,6 +29,7 @@ _SESSION_STATES = {
     pb.SESSION_STATE_REAUTHENTICATION_REQUIRED,
     pb.SESSION_STATE_CHALLENGE_REQUIRED,
     pb.SESSION_STATE_OUTCOME_UNKNOWN,
+    pb.SESSION_STATE_STORAGE_ERROR,
 }
 _ROUTE_CLASSES = {
     pb.ROUTE_ACCESS_CLASS_READ_ONLY,
@@ -135,11 +137,26 @@ class ProviderControlClient:
         if result is None or (result == "rejected" and rejection_reason not in _REJECTION_REASONS):
             raise ProviderProtocolError("Provider returned a candidate operation without a valid typed result")
 
+    @staticmethod
+    def _check_owner_text(value: str, *, max_bytes: int, allow_newlines: bool = True) -> None:
+        allowed_controls = {"\t", "\n", "\r"} if allow_newlines else set()
+        if (
+            not value.strip()
+            or len(value.encode("utf-8")) > max_bytes
+            or any(unicodedata.category(char) == "Cc" and char not in allowed_controls for char in value)
+        ):
+            raise ProviderProtocolError("Provider returned invalid owner presentation")
+
     async def get_info(self) -> pb.GetInfoResponse:
         response = await self.stub.GetInfo(
             pb.GetInfoRequest(), metadata=await self._metadata(), timeout=self.timeout_s, wait_for_ready=False
         )
-        if not response.HasField("provider") or response.provider.provider_id != self.instance.provider_id:
+        if (
+            not response.HasField("provider")
+            or response.provider.provider_id != self.instance.provider_id
+            or not response.provider.display_name
+            or not response.provider.version
+        ):
             raise ProviderProtocolError("Provider info has the wrong provider identity")
         seen_instances: set[str] = set()
         for info in response.provider.instances:
@@ -170,6 +187,12 @@ class ProviderControlClient:
                 if not all(identity) or identity in seen_formats:
                     raise ProviderProtocolError("Provider info has an invalid import format")
                 seen_formats.add(identity)
+            if info.supports_candidate_verification and not seen_formats:
+                raise ProviderProtocolError("Provider info declares candidate verification without an import format")
+            for instruction in info.instructions:
+                self._check_owner_text(instruction.text, max_bytes=2048)
+                if instruction.HasField("command"):
+                    self._check_owner_text(instruction.command, max_bytes=128, allow_newlines=False)
         if self.instance.instance_id not in seen_instances:
             raise ProviderProtocolError("Provider info omits the configured instance")
         return response
@@ -184,11 +207,21 @@ class ProviderControlClient:
         self._check_instance(response.instance)
         if not response.HasField("snapshot") or response.snapshot.state not in _SESSION_STATES:
             raise ProviderProtocolError("Provider returned an invalid session snapshot")
-        if not response.snapshot.HasField("state_changed_at"):
+        if response.snapshot.state != pb.SESSION_STATE_STORAGE_ERROR and not response.snapshot.HasField(
+            "state_changed_at"
+        ):
             raise ProviderProtocolError("Provider returned an incomplete session snapshot")
-        self._check_timestamp(response.snapshot.state_changed_at)
+        if response.snapshot.HasField("state_changed_at"):
+            self._check_timestamp(response.snapshot.state_changed_at)
         if response.snapshot.HasField("last_verified_at"):
             self._check_timestamp(response.snapshot.last_verified_at)
+        if response.snapshot.HasField("imported_at"):
+            self._check_timestamp(response.snapshot.imported_at)
+        if response.snapshot.HasField("owner_presentation"):
+            presentation = response.snapshot.owner_presentation
+            self._check_owner_text(presentation.message, max_bytes=512)
+            if presentation.HasField("help"):
+                self._check_owner_text(presentation.help, max_bytes=4096)
         if response.snapshot.HasField("last_probe"):
             self._check_probe_result(response.snapshot.last_probe)
         return response
