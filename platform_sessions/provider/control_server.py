@@ -57,7 +57,7 @@ class SecureControlServer:
         self._bind_address = bind_address
         self._host = host
         self._token_file = token_file
-        self._server_credentials = grpc.ssl_server_credentials(((private_key_pem, certificate_chain_pem),))
+        self._server_credentials = grpc.ssl_server_credentials([(private_key_pem, certificate_chain_pem)])
         self._register_services = register_services
         self._startup_timeout_seconds = startup_timeout_seconds
         self._shutdown_grace_seconds = shutdown_grace_seconds
