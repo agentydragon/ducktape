@@ -1,0 +1,6 @@
+[Unit]
+Description=Opt-in isolated cgroup controller stress slice
+ConditionKernelCommandLine=agentplane.cgroup-stress=1
+
+[Slice]
+IOAccounting=no

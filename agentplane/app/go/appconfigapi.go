@@ -22,6 +22,7 @@ func RegisterAppConfigRoutes(server *HTTPServer, service *appService) error {
 	const prefix = "/upstream/app-config"
 	server.RegisterRawRoute("GET "+prefix+"/v1/models", http.StripPrefix(prefix, gateway), false)
 	server.RegisterRawRoute("GET "+prefix+"/v1/presets", http.StripPrefix(prefix, gateway), false)
+	server.RegisterRawRoute("GET "+prefix+"/v1/frontend-config", http.StripPrefix(prefix, gateway), false)
 	return nil
 }
 
@@ -72,4 +73,23 @@ func (s *appService) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb
 		})
 	}
 	return response, nil
+}
+
+func (s *appService) GetFrontendConfig(context.Context, *apppb.GetFrontendConfigRequest) (*apppb.GetFrontendConfigResponse, error) {
+	config := &apppb.FrontendConfig{}
+	if settings := s.config.FrontendConfig.TraceSearch; settings != nil {
+		config.TraceSearch = &apppb.TraceSearchSettings{
+			GrafanaBaseUrl: settings.GrafanaBaseURL, TempoDatasourceUid: settings.TempoDatasourceUID,
+			DeploymentEnvironment: settings.DeploymentEnvironment,
+		}
+	}
+	if settings := s.config.FrontendConfig.LangfuseSearch; settings != nil {
+		config.LangfuseSearch = &apppb.LangfuseSearchSettings{
+			BaseUrl: settings.BaseURL, ProjectId: settings.ProjectID,
+			SessionMetadataKey:               settings.SessionMetadataKey,
+			SandboxNamespaceMetadataKey:      settings.SandboxNamespaceMetadataKey,
+			SandboxServiceAccountMetadataKey: settings.SandboxServiceAccountMetadataKey,
+		}
+	}
+	return &apppb.GetFrontendConfigResponse{FrontendConfig: config}, nil
 }

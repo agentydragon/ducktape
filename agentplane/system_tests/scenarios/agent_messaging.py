@@ -1,9 +1,9 @@
 """One agent messages another, which reads and acknowledges it, each from its own Sandbox.
 
-The sender runs `agentplane notifications send` through the egress proxy, which puts the Pod's workload
+The sender runs `agentplane notifications send` through the local gRPC route, which puts the Pod's workload
 identity on the request; the grant is the fixture's `send_grant`, a `session_inbox_access` rule to an inbox
 tag the recipient carries, as staging's inbox groups are. The recipient learns of the message only from the
-notice the platform delivers, and reads and acknowledges its inbox over HTTP, as the inbox-handling guide
+notice the platform delivers, and reads and acknowledges its inbox through the CLI, as the inbox-handling guide
 tells an agent to.
 
 What is checked is what the Notification Service recorded, never what either agent said: the entry names
@@ -40,9 +40,6 @@ from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, Shell
 BODY = "Test message: the change is ready for review."
 # What a notice's user message starts with, before its JSON (agentplane/notification_service/store/notices.go).
 NOTICE_PREFIX = "Agentplane inbox notice: "
-# The base URL and placeholder bearer the runner gives every Session (agentplane/docs/agent_cli.md).
-NOTIFICATIONS = '"$AGENTPLANE_NOTIFICATIONS_URL"'
-AUTHORIZATION = '-H "Authorization: Bearer $AGENTPLANE_NOTIFICATIONS_CREDENTIAL"'
 
 
 class Notice(BaseModel):
@@ -150,8 +147,8 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         assert not held.acknowledged, f"acknowledged before the recipient acknowledged anything: {held}"
 
         read = _shell(
-            f"curl -sSf {AUTHORIZATION} {NOTIFICATIONS}'/v1/sessions/{recipient_agent.thread_id}/inbox/entries"
-            f"?afterCursor={notice.acknowledged_at_preparation}&limit=128'"
+            f"agentplane --json notifications inbox read {recipient_agent.thread_id} "
+            f"--after {notice.acknowledged_at_preparation} --limit 128"
         )
         with tracer.start_as_current_span(
             "system_test.agent_messaging.read_inbox", record_exception=False, set_status_on_exception=False
@@ -166,8 +163,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         assert entry.payload["from_session"] == str(sender_agent.thread_id), entry
 
         acknowledge = _shell(
-            f"curl -sSf -X PUT {AUTHORIZATION} -H 'Content-Type: application/json'"
-            f" -d '{{\"throughCursor\": {entry.cursor}}}' {NOTIFICATIONS}'/v1/sessions/{recipient_agent.thread_id}/inbox/acknowledgement'"
+            f"agentplane --json notifications inbox ack {recipient_agent.thread_id} --through {entry.cursor}"
         )
         with tracer.start_as_current_span(
             "system_test.agent_messaging.acknowledge", record_exception=False, set_status_on_exception=False

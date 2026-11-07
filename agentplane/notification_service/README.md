@@ -34,9 +34,9 @@ The configured `unavailable_destination_retry_s` controls the retry interval for
 destination; a source due earlier is still read. A same-name replacement never receives the
 old notice. Explicit inbox retirement remains available through the API.
 
-Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription, inbox-handling,
-GitHub and messaging workflows served under `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides
-when those contracts change.
+Agent entry point: `agentplane notifications guide` ([source](docs/agents/llms.txt)), with subscription,
+inbox-handling, GitHub and messaging workflows. The service also serves the same guides under `/llms.txt`
+and `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides when those contracts change.
 
 - [API and caller-visible delivery semantics](docs/api.md)
 - [Storage, worker and delivery architecture](docs/architecture.md)

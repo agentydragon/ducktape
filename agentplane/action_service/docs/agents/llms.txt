@@ -11,10 +11,10 @@ Find operations with `agentplane actions list` and fetch the chosen Action's arg
 bindings, expiry, and exact argument constraints. A catalog entry alone grants nothing.
 `agentplane actions --help` lists every command. Newer CLI images bundle this index and its guides:
 use `agentplane actions guide` for this index or `agentplane actions guide NAME` for one guide. If that
-subcommand is unavailable, fetch this index and its linked guides from the service HTTP paths below.
-MCP clients can read this index with `get_guide(name="index")` and a linked guide with
-`get_guide(name="session_delegation")`, for example. A guide name is its filename without `.md`.
-Read current Action descriptions and schemas with `get_action`; documentation is not a live catalogue.
+subcommand is unavailable, use the temporary old-runner fallback below. MCP clients can read this
+index with `get_guide(name="index")` and another guide with `get_guide(name="session_delegation")`,
+for example. A guide name is its filename without `.md`. Read current Action descriptions and schemas
+with `get_action`; documentation is not a live catalogue.
 
 Prefer your own Kubernetes access, allowed egress credentials, or matching auto-approved Actions
 before submitting a request that needs an operator click. A submitted request's decision and
@@ -22,13 +22,19 @@ execution result are authoritative; approval alone is not success.
 
 ## Workflows
 
-- [Session delegation](/docs/agents/session_delegation.md): Read before choosing an existing environment, opening a child Session, submitting its task, reading results or controlling it.
-- [Action lifecycle](/docs/agents/action_lifecycle.md): Read before submitting an Action or following its result.
-- [Recovery and cancellation](/docs/agents/recovery.md): Read after a lost response, timeout, uncertain execution, or before switching to an alternative.
-- [Kubernetes and temporary grants](/docs/agents/kubernetes.md): Read when checking Kubernetes permissions, using admin Actions, or requesting additional PolicySets.
+- `session_delegation`: Read before choosing an existing environment, opening a child Session, submitting its task, reading results or controlling it.
+- `action_lifecycle`: Read before submitting an Action or following its result.
+- `recovery`: Read after a lost response, timeout, uncertain execution, or before switching to an alternative.
+- `kubernetes`: Read when checking Kubernetes permissions, using admin Actions, or requesting additional PolicySets.
 
-## Reference
+## Temporary fallback for older runner images
 
-- [OpenAPI](/openapi.json): Generated HTTP routes, request fields, response schemas and streaming waits, for a harness without the command.
-- [Action catalog](/v1/action-groups): Available operations; fetch individual argument schemas as needed.
-- [Current Action policy](/v1/action-policy): Your effective auto-approval bindings, not a dry-run guarantee.
+Use this only when `agentplane actions --help` does not list `guide`. Until the runner image is
+updated, the Action Service temporarily serves this index at `/llms.txt` and the workflow guides at
+the following compatibility paths. These HTTP documentation routes will be removed after the old
+image rollout is complete.
+
+- [Session delegation fallback](/docs/agents/session_delegation.md)
+- [Action lifecycle fallback](/docs/agents/action_lifecycle.md)
+- [Recovery fallback](/docs/agents/recovery.md)
+- [Kubernetes and grants fallback](/docs/agents/kubernetes.md)

@@ -14,6 +14,7 @@ go_library(
         "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/policy_controller",
         "//agentplane/policy_controller/service",
+        "//agentplane/sandboxes/api",
         "//agentplane/workload_auth/auth",
         "@com_github_go_logr_logr//:logr",
         "@com_github_spf13_viper//:viper",

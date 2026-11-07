@@ -40,32 +40,36 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | Egress rules | {{ egress_api_url }} | `platform-route` |
 | Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
 | Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
-| Notifications | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
+| Notifications HTTP | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
 
-The `agentplane` command calls these APIs for you. Its service commands read the base URLs and
-placeholders above from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
-or proxy flag. Start with
+The `agentplane` command calls these APIs for you. Its service commands read their base URLs and
+placeholders from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
+or proxy flag. Recent Notification commands use their configured gRPC route rather than the HTTP URL above. Start with
 `agentplane --help`; each command's `--help` says what it does and what its exit status means.
 
-Actions and Notifications serve `/llms.txt` over HTTP for workflow indexes and linked guides; both also
-serve `/openapi.json` for request/response schemas. The Action guides are bundled in newer CLI images:
-when `agentplane actions --help` lists `guide`, use `agentplane actions guide [NAME]` to read the index
-or one guide without a service call. On an older image without that subcommand, read the Actions
-`/llms.txt` index and linked `/docs/agents/` guide through the configured proxy, using the Actions URL
-and Bearer placeholder above. The Session Dispatcher exposes gRPC methods only, with no HTTP index.
-Check `agentplane --help` for commands available in this image; when it lists `sessions`, use
-`agentplane sessions --help`. Read only the relevant workflow guide; you do not need every index at startup.
+The Action guides are bundled in CLI images: when `agentplane actions --help` lists `guide`, use
+`agentplane actions guide [NAME]` to read the index or one guide without a service call. On an older
+image without that subcommand, fetch the Actions `/llms.txt` index and follow its compatibility guide
+paths through the configured proxy, using the Actions URL and Bearer placeholder above. This is a
+temporary fallback until old runner images are retired.
+The Notification HTTP service serves `/llms.txt` for its overview and guide links. When this image's
+`agentplane notifications --help` lists `guide`, use
+`agentplane notifications guide` for the Notification overview and workflow guides; on older images,
+use the Notifications HTTP index.
+The Session Dispatcher exposes gRPC methods only, with no HTTP index. Check `agentplane --help` for
+the commands available in this image; when it lists `sessions`, use `agentplane sessions --help`.
+Read only relevant workflow guides; you do not need every index at startup.
 
 | Task | Starting point |
 | --- | --- |
 | Call a protected service or diagnose an egress refusal | `agentplane egress rules`; `agentplane egress guide` explains credential presentation |
 | Find an Action and its arguments | `agentplane actions list`, then `agentplane actions show GROUP/ACTION` |
 | Establish expected auto-approval | `agentplane actions policy`: match the exact Action and intended arguments |
-| Submit, recover, cancel, or follow an Action | `agentplane actions guide` when available; otherwise Actions `/llms.txt`: lifecycle and recovery guides |
+| Submit, recover, cancel, or follow an Action | `agentplane actions guide` when available; older images may use the temporary Actions HTTP index fallback |
 | Open or manage a Session | Check `agentplane --help`; if this image lists `sessions`, use `agentplane sessions --help` |
-| Delegate work to another Session | `agentplane actions guide session_delegation` when available; otherwise Actions `/llms.txt`; discover the target and runtime, then open and submit input separately |
-| Check Kubernetes access or request a temporary grant | `agentplane egress rules`, then `kubectl auth can-i`; read the Actions Kubernetes and grants guide with `agentplane actions guide kubernetes` when available, otherwise from Actions `/llms.txt` |
-| Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`; Notifications `/llms.txt` |
+| Delegate work to another Session | `agentplane actions guide session_delegation` when available; older images may use the temporary Actions HTTP index fallback; discover the target and runtime, then open and submit input separately |
+| Check Kubernetes access or request a temporary grant | `agentplane egress rules`, then `kubectl auth can-i`; read `agentplane actions guide kubernetes` when available; older images may use the temporary Actions HTTP index fallback |
+| Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`, then `agentplane notifications guide` if available; otherwise Notifications `/llms.txt` |
 | Discover an existing environment (when `agentplane --help` lists `environments`) | `agentplane environments list`, then `agentplane environments get NAMESPACE NAME UID` for one exact target |
 
 Agentplane source and component documentation live in

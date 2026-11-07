@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -19,6 +20,7 @@ type config struct {
 	GRPCBindAddress        string   `mapstructure:"grpc_bind_address"`
 	GRPCAudience           string   `mapstructure:"grpc_audience"`
 	ReaderAccounts         []string `mapstructure:"reader_accounts"`
+	WriterAccounts         []string `mapstructure:"writer_accounts"`
 }
 
 func defaultConfig() config {
@@ -52,6 +54,12 @@ func (c config) validate() error {
 			if len(validation.IsDNS1123Label(namespace)) > 0 {
 				return fmt.Errorf("%s holds an invalid namespace name", setting.name)
 			}
+		}
+	}
+	for _, name := range append(append([]string(nil), c.ReaderAccounts...), c.WriterAccounts...) {
+		var account auth.Account
+		if err := account.UnmarshalText([]byte(name)); err != nil {
+			return fmt.Errorf("invalid PolicyService account allowlist")
 		}
 	}
 	return nil

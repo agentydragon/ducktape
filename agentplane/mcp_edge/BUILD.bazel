@@ -76,6 +76,7 @@ go_proto_library(
 go_library(
     name = "main_lib",
     srcs = [
+        "action_metadata.go",
         "callers.go",
         "config.go",
         "core_client.go",
@@ -86,6 +87,7 @@ go_library(
     deps = [
         ":connection_service_go_proto",
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service:linkage_service_go_proto",
         "//agentplane/action_service/api",
         "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
@@ -129,12 +131,14 @@ go_library(
 go_test(
     name = "runtime_test",
     srcs = [
+        "action_metadata_test.go",
         "config_test.go",
         "core_client_test.go",
     ],
     embed = [":main_lib"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service:linkage_service_go_proto",
         "//agentplane/watchhealth",
         "//agentplane/workload_auth/auth",
         "@com_github_modelcontextprotocol_go_sdk//auth",
