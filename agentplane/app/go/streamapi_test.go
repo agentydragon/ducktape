@@ -106,6 +106,20 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 			}
 		})
 	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/upstream/policy/v1/sandboxes/tools/demo/policy-bindings"},
+		{http.MethodDelete, "/upstream/policy/v1/sandboxes/tools/demo/policy-bindings/grant?sandboxUid=sandbox-uid&bindingUid=binding-uid"},
+	} {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			request := httptest.NewRequest(route.method, route.path, nil)
+			request.Header.Set("Authorization", "Bearer accepted")
+			response := httptest.NewRecorder()
+			server.Handler(authentication).ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("workload-token access to operator policy mutation = %d %s, want 403", response.Code, response.Body.String())
+			}
+		})
+	}
 }
 
 func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {

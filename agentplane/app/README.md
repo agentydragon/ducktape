@@ -633,7 +633,7 @@ up.
 ## Policy bindings
 
 The Sandbox page's Policies tab, carried in the live snapshot frame, lists every `PolicyBinding` naming
-the ServiceAccount the Sandbox runs as, from the objects the app's own watch holds (`go/policyaccess/`).
+the ServiceAccount the Sandbox runs as, from the generated PolicyService watch.
 A row is the binding's provenance (git; the Sandbox's own, which its controller keeps equal to the
 Sandbox's policy sets; or an operator's grant), its expiry, and the sets it names, a missing or refused
 one in red. Its icon sums up the verdicts each reader wrote to the binding's status (`KubernetesReady`,
@@ -643,9 +643,12 @@ missing or refused. The reasons are the icon's hover text. Expanding a row shows
 every type in the set's order: an egress rule as its hosts, methods, paths and credential, any other as
 the set states it. A binding is the grant, so nothing here depends on the Action Service being asked.
 
-Revoke deletes an operator's grant; a binding from git or the Sandbox's own refuses, since each would be
-applied again. **Grant policy sets** adds a binding naming the Sandbox and is, with revocation and the
-launch pick (drawn from `GET /sandboxes/form`, the namespace's PolicySet names), the only write the tab makes.
+Revoke requests deletion of an operator's grant; the Policy Controller refuses bindings from git or
+the Sandbox's own, since each would be applied again. **Grant policy sets** requests a binding naming
+the exact Sandbox UID and is, with revocation and the launch pick (drawn from `GET /sandboxes/form`,
+the namespace's PolicySet names), the only write the tab makes. The app sends those mutations through
+the operator-authenticated generated PolicyService facade; the Policy Controller validates ownership
+and performs the Kubernetes writes.
 
 Below the bindings, **Auto-approve if** follows the Action Service's generated
 `/upstream/actions/v1/action-policy:watch` facade for the execution ServiceAccount. Each protobuf snapshot is

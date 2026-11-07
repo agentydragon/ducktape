@@ -15,7 +15,7 @@ func exportOpenAPI(writer io.Writer) error {
 	server := NewHTTPServer(nil)
 	defer server.Close()
 	config := Config{}
-	RegisterPolicyRoutes(server, config, nil, (*policyaccess.Access)(nil))
+	RegisterPolicyRoutes(server, config, (*policyaccess.Access)(nil))
 	RegisterOperatorRoutes(server, nil)
 	RegisterStatusRoutes(server, nil)
 

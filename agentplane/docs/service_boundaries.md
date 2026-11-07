@@ -14,7 +14,9 @@ and shared infrastructure, never services to the app.
 ```mermaid
 flowchart LR
     App[Integration app] -->|authenticated management facade| Gateway[Runner Gateway]
-    Gateway --> Kubernetes[Kubernetes API: Sandbox spec and operator grants]
+    Gateway --> Kubernetes[Kubernetes API: Sandbox spec]
+    App -->|generated PolicyService facade| Policy[Policy Controller]
+    Policy --> Kubernetes
     App -->|health probe| Gateway
     App -->|UID/owner-fenced live inventory and status| Proxy[Per-Sandbox Runner Proxy]
     App -->|Session creation and durable commands| Dispatcher[Session Dispatcher]
@@ -84,7 +86,8 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
 ## Ownership
 
 - **Integration app:** user-facing composition and interaction. As the requesting operator, it writes
-  Sandbox `spec` and operator-owned `PolicyBinding` grants through Kubernetes. It reads Sandbox
+  Sandbox `spec` through the Runner Gateway and requests operator-owned `PolicyBinding` grants and
+  revocations through the generated PolicyService facade. It reads Sandbox
   projections for the UI, opens Sessions and submits commands through the Session Dispatcher, uses
   the Runner Gateway for placement, and uses each Sandbox's Runner Proxy for UID/owner-fenced live
   inventory and process/Session diagnostics. Manual resume is a Sandbox lifecycle request through
@@ -95,6 +98,8 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.
+- **Policy Controller:** owns operator grant validation and PolicyBinding creation and revocation,
+  plus expiry and reconciliation of the Kubernetes grants those bindings represent.
 - **Runner Gateway:** runner control stream, verified destination bindings, the per-Sandbox Runner
   Proxy and `EnvironmentService` RPCs. The service owns Sandbox create, templates and mutations;
   it returns existing-target facts only after exact ServiceAccount UID and Sandbox-owner checks,
