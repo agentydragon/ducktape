@@ -445,10 +445,13 @@ data:
           token_file: /var/run/agentplane-egress/token
     audience_token_files: {}
     platform_routes:
-      egress-rules:
-        listen_address: 127.0.0.1:3133
-        upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
-        token_file: /var/run/agentplane-egress/token
+      listen_address: 127.0.0.1:3130
+      routes:
+        egress-rules:
+          service_prefixes:
+            - /agentplane.egress.EgressRules/
+          upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
+          token_file: /var/run/agentplane-egress/token
     listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
@@ -531,7 +534,7 @@ spec:
             - name: MATRIX_PASSWORD
               value: agentplane-credential-public-coder-matrix
             - name: AGENTPLANE_EGRESS_GRPC_URL
-              value: http://127.0.0.1:3133
+              value: http://127.0.0.1:3130
             - name: AGENTPLANE_EGRESS_GRPC_CREDENTIAL
               value: platform-route
             - name: NODE_USE_ENV_PROXY

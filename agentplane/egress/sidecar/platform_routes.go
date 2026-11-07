@@ -20,12 +20,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type platformRoute struct {
-	name   string
-	config platformRouteConfig
-	conn   *grpc.ClientConn
+type platformRoutes struct {
 	server *grpc.Server
 	listen net.Listener
+	conns  []*grpc.ClientConn
 }
 
 type routeForwarder struct {
@@ -33,8 +31,12 @@ type routeForwarder struct {
 	tokenFile string
 }
 
-func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute, error) {
-	return bindPlatformRoutesWithKeepalive(routes, keepalive.ClientParameters{
+type platformRouteDispatcher struct {
+	byService map[string]*routeForwarder
+}
+
+func bindPlatformRoutes(config platformRoutesConfig) (*platformRoutes, error) {
+	return bindPlatformRoutesWithKeepalive(config, keepalive.ClientParameters{
 		Time:                time.Minute,
 		Timeout:             10 * time.Second,
 		PermitWithoutStream: false,
@@ -42,50 +44,86 @@ func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute
 }
 
 func bindPlatformRoutesWithKeepalive(
-	routes map[string]platformRouteConfig,
+	config platformRoutesConfig,
 	keepaliveParameters keepalive.ClientParameters,
-) ([]*platformRoute, error) {
-	names := make([]string, 0, len(routes))
-	for name := range routes {
+) (*platformRoutes, error) {
+	if len(config.Routes) == 0 {
+		return nil, nil
+	}
+	listener, err := netlistener.Open(config.ListenAddress)
+	if err != nil {
+		return nil, fmt.Errorf("listen for platform routes: %w", err)
+	}
+	started := &platformRoutes{listen: listener}
+	dispatcher := &platformRouteDispatcher{byService: make(map[string]*routeForwarder)}
+	names := make([]string, 0, len(config.Routes))
+	for name := range config.Routes {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	started := make([]*platformRoute, 0, len(names))
 	for _, name := range names {
-		config := routes[name]
-		listener, err := netlistener.Open(config.ListenAddress)
-		if err != nil {
-			stopPlatformRoutes(started)
-			return nil, fmt.Errorf("listen for platform route %q: %w", name, err)
-		}
+		route := config.Routes[name]
 		conn, err := grpc.NewClient(
-			config.Upstream,
+			route.Upstream,
 			observability.GRPCClientOption(),
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithKeepaliveParams(keepaliveParameters),
 		)
 		if err != nil {
-			_ = listener.Close()
-			stopPlatformRoutes(started)
+			closePlatformRoutes(started)
 			return nil, fmt.Errorf("create upstream for platform route %q: %w", name, err)
 		}
-		forwarder := &routeForwarder{conn: conn, tokenFile: config.TokenFile}
-		server := grpc.NewServer(
-			observability.GRPCServerOption(),
-			grpc.UnknownServiceHandler(forwarder.forward),
-			grpc.ForceServerCodec(rawCodec{}),
-		)
-		route := &platformRoute{name: name, config: config, conn: conn, server: server, listen: listener}
-		started = append(started, route)
+		started.conns = append(started.conns, conn)
+		forwarder := &routeForwarder{conn: conn, tokenFile: route.TokenFile}
+		for _, prefix := range route.ServicePrefixes {
+			dispatcher.byService[prefix] = forwarder
+		}
 	}
+	started.server = grpc.NewServer(
+		observability.GRPCServerOption(),
+		grpc.UnknownServiceHandler(dispatcher.forward),
+		grpc.ForceServerCodec(rawCodec{}),
+	)
 	return started, nil
 }
 
-func stopPlatformRoutes(routes []*platformRoute) {
-	for i := len(routes) - 1; i >= 0; i-- {
-		routes[i].server.Stop()
-		_ = routes[i].conn.Close()
-		_ = routes[i].listen.Close()
+func validPlatformServicePrefix(prefix string) bool {
+	if !strings.HasPrefix(prefix, "/") || !strings.HasSuffix(prefix, "/") {
+		return false
+	}
+	service := strings.TrimSuffix(strings.TrimPrefix(prefix, "/"), "/")
+	return service != "" && !strings.ContainsAny(service, "/ \t\r\n")
+}
+
+func (d *platformRouteDispatcher) forward(server any, workload grpc.ServerStream) error {
+	method, okay := grpc.MethodFromServerStream(workload)
+	if !okay {
+		return status.Error(codes.Internal, "gRPC method is unavailable")
+	}
+	separator := strings.LastIndexByte(method, '/')
+	if separator <= 0 || separator == len(method)-1 {
+		return status.Errorf(codes.Unimplemented, "no platform route for gRPC method %q", method)
+	}
+	prefix := method[:separator+1]
+	forwarder, exists := d.byService[prefix]
+	if !exists {
+		return status.Errorf(codes.Unimplemented, "no platform route for gRPC service %q", prefix)
+	}
+	return forwarder.forward(server, workload)
+}
+
+func closePlatformRoutes(routes *platformRoutes) {
+	if routes == nil {
+		return
+	}
+	if routes.server != nil {
+		routes.server.Stop()
+	}
+	for i := len(routes.conns) - 1; i >= 0; i-- {
+		_ = routes.conns[i].Close()
+	}
+	if routes.listen != nil {
+		_ = routes.listen.Close()
 	}
 }
 

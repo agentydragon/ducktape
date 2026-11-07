@@ -88,7 +88,7 @@ def test_runner_control_accepts_explicit_insecure_mode_without_tls_files() -> No
 
 
 def test_runner_accepts_model_config_service() -> None:
-    endpoint = {"target": "127.0.0.1:3134", "bearer": "platform-route"}
+    endpoint = {"target": "127.0.0.1:3130", "bearer": "platform-route"}
     config = Configuration.model_validate(_configuration() | {"model_config_service": endpoint})
     assert json.loads(config.model_dump_json(exclude_none=True))["model_config_service"] == endpoint
 
@@ -100,7 +100,7 @@ def test_runner_accepts_model_config_service() -> None:
         {"session_reconcile_concurrency": 0},
         {"session_reconcile_concurrency": -1},
         {"model_config_service": {"target": "host:notaport", "bearer": "placeholder"}},
-        {"model_config_service": {"target": "host:3134", "bearer": ""}},
+        {"model_config_service": {"target": "host:3130", "bearer": ""}},
         {"state_dir": "relative"},
         {"workspace_root": ""},
         {"harness_environment": {"inherit": ["NAME=value"]}},

@@ -17,9 +17,14 @@ import (
 const configFileEnv = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
 type platformRouteConfig struct {
-	ListenAddress string `yaml:"listen_address"`
-	Upstream      string `yaml:"upstream"`
-	TokenFile     string `yaml:"token_file,omitempty"`
+	ServicePrefixes []string `yaml:"service_prefixes"`
+	Upstream        string   `yaml:"upstream"`
+	TokenFile       string   `yaml:"token_file,omitempty"`
+}
+
+type platformRoutesConfig struct {
+	ListenAddress string                         `yaml:"listen_address"`
+	Routes        map[string]platformRouteConfig `yaml:"routes"`
 }
 
 type proxyTransportMode string
@@ -42,11 +47,11 @@ type proxyConfig struct {
 }
 
 type config struct {
-	Proxy                  proxyConfig                    `yaml:"proxy"`
-	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
-	PlatformRoutes         map[string]platformRouteConfig `yaml:"platform_routes"`
-	ListenAddress          string                         `yaml:"listen_address"`
-	ReadinessListenAddress string                         `yaml:"readiness_listen_address"`
+	Proxy                  proxyConfig          `yaml:"proxy"`
+	AudienceTokenFiles     map[string]string    `yaml:"audience_token_files"`
+	PlatformRoutes         platformRoutesConfig `yaml:"platform_routes"`
+	ListenAddress          string               `yaml:"listen_address"`
+	ReadinessListenAddress string               `yaml:"readiness_listen_address"`
 }
 
 // loadConfig applies the settings file named by the configFileEnv variable over the defaults.
@@ -57,7 +62,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	c := config{
 		AudienceTokenFiles:     map[string]string{},
-		PlatformRoutes:         map[string]platformRouteConfig{},
+		PlatformRoutes:         platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "0.0.0.0:3129",
 	}
@@ -84,12 +89,28 @@ func (c config) validate() error {
 	if c.ListenAddress == "" || c.ReadinessListenAddress == "" {
 		return errors.New("listen_address and readiness_listen_address are required")
 	}
-	if c.PlatformRoutes == nil {
-		return errors.New("platform_routes must be an object")
+	if c.PlatformRoutes.Routes == nil {
+		return errors.New("platform_routes.routes must be an object")
 	}
-	for name, route := range c.PlatformRoutes {
-		if route.ListenAddress == "" || route.Upstream == "" {
-			return fmt.Errorf("platform route %q requires listen_address and upstream", name)
+	if len(c.PlatformRoutes.Routes) > 0 && c.PlatformRoutes.ListenAddress == "" {
+		return errors.New("platform_routes.listen_address is required when routes are configured")
+	}
+	seenPrefixes := map[string]string{}
+	for name, route := range c.PlatformRoutes.Routes {
+		if route.Upstream == "" {
+			return fmt.Errorf("platform route %q requires upstream", name)
+		}
+		if len(route.ServicePrefixes) == 0 {
+			return fmt.Errorf("platform route %q requires service_prefixes", name)
+		}
+		for _, prefix := range route.ServicePrefixes {
+			if !validPlatformServicePrefix(prefix) {
+				return fmt.Errorf("platform route %q has invalid service prefix %q", name, prefix)
+			}
+			if previous, exists := seenPrefixes[prefix]; exists {
+				return fmt.Errorf("platform service prefix %q is claimed by routes %q and %q", prefix, previous, name)
+			}
+			seenPrefixes[prefix] = name
 		}
 	}
 	return nil

@@ -7,7 +7,7 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoutes
 
 CONTAINER_NAME = "egress-sidecar"
 READINESS_PATH = "/readyz"
@@ -91,10 +91,10 @@ class Settings(BaseModel):
         "central proxy to substitute where a rule names that audience. The hop token above is not one of "
         "these: it carries the proxy's own audience, which a destination validating its own refuses.",
     )
-    platform_routes: dict[str, PlatformRoute] = Field(
-        default_factory=dict,
-        description="Agentplane services this Pod calls directly, by name: each gets a loopback gRPC "
-        "listener that forwards with the service's token, bypassing the central proxy.",
+    platform_routes: PlatformRoutes = Field(
+        default_factory=lambda: PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS),
+        description="One local gRPC listener dispatching allowlisted service prefixes to isolated upstream "
+        "connections and their own token audiences, bypassing the central proxy.",
     )
     listen_address: str = Field(
         default="127.0.0.1:3128", description="Address the runner container's HTTP(S)_PROXY names."

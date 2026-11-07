@@ -4,7 +4,7 @@ same egress sidecar, routes and projected tokens as a runner Pod's (environment_
 rendered runner template, with settings rendered from the template's own so the two cannot drift.
 
 The guest reaches the relay at its masquerade gateway, `10.0.2.1`, on the ports a runner Pod's
-workload dials on loopback: the HTTP proxy and one listener per platform route (platform_routes.py).
+workload dials on loopback: the HTTP proxy and the shared platform gRPC listener (platform_routes.py).
 The tokens are mounted into the relay and nowhere else in the Pod, and the guest gets none. The
 VirtualMachine's template carries the runner Pods' labels, which KubeVirt copies onto the launcher, so
 the runner fence and the platform-route rules apply to it unchanged.

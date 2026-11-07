@@ -66,7 +66,7 @@ func TestConfigurationRequiresExplicitControlSecurity(t *testing.T) {
 func TestConfigurationAcceptsModelConfigService(t *testing.T) {
 	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
 	value, path, launch := configurationFixture(t)
-	value["model_config_service"] = map[string]string{"target": "127.0.0.1:3134", "bearer": "platform-route"}
+	value["model_config_service"] = map[string]string{"target": "127.0.0.1:3130", "bearer": "platform-route"}
 	writeJSONFixture(t, path, value)
 	if _, _, _, err := load(path, launch); err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 			v["model_config_service"] = map[string]string{"target": "host:notaport", "bearer": "placeholder"}
 		}},
 		{"missing model config bearer", func(v map[string]any) {
-			v["model_config_service"] = map[string]string{"target": "host:3134"}
+			v["model_config_service"] = map[string]string{"target": "host:3130"}
 		}},
 		{"partial provider", func(v map[string]any) { v["codex"] = map[string]string{"binary": "/opt/codex"} }},
 		{"missing provider token", func(v map[string]any) { v["codex"].(map[string]string)["token_env"] = "ABSENT_PROVIDER_TOKEN" }},
