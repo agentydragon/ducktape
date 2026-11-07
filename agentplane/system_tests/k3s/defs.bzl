@@ -250,3 +250,14 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
             "//agentplane/system_tests/deployment:system_test_target",
         ] + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else []),
     )
+
+def k3s_tcg_vm_image_manifest(name):
+    """Declare only the KubeVirt and CI guest image layouts for a standalone TCG VMI test."""
+    image_manifest(
+        name = name,
+        testonly = True,
+        fixture = {},
+        pki = {},
+        vm = _VM_IMAGES,
+        guest = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, _VM_GUEST_ROOT_IMAGE, _VM_RUNNER_DISK_IMAGE),
+    )
