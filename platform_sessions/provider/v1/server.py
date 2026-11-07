@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import unicodedata
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from enum import Enum
@@ -18,6 +19,10 @@ from platform_sessions.routes import Route
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+_MAX_INSTRUCTION_TEXT_BYTES = 2048
+_MAX_INSTRUCTION_COMMAND_BYTES = 128
+_MAX_OWNER_MESSAGE_BYTES = 512
+_MAX_OWNER_HELP_BYTES = 4096
 
 type ImportSessionOutcome = (
     pb.SessionInstalled
@@ -280,6 +285,15 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 if not all(item) or item in accepted_formats:
                     raise ValueError("session import formats must be complete and unique")
                 accepted_formats.add(item)
+            for instruction in instance.instructions:
+                if not SessionProviderControlService._valid_owner_text(
+                    instruction.text, max_bytes=_MAX_INSTRUCTION_TEXT_BYTES
+                ):
+                    raise ValueError("provider export instruction text is invalid")
+                if instruction.HasField("command") and not SessionProviderControlService._valid_owner_text(
+                    instruction.command, max_bytes=_MAX_INSTRUCTION_COMMAND_BYTES, allow_newlines=False
+                ):
+                    raise ValueError("provider export instruction command is invalid")
             operation_ids: set[str] = set()
             for route in instance.routes:
                 if not route.operation_id or route.operation_id in operation_ids:
@@ -312,16 +326,33 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             pb.SESSION_STATE_REAUTHENTICATION_REQUIRED,
             pb.SESSION_STATE_CHALLENGE_REQUIRED,
             pb.SESSION_STATE_OUTCOME_UNKNOWN,
+            pb.SESSION_STATE_STORAGE_ERROR,
         ):
             return False
-        if not snapshot.HasField("state_changed_at"):
+        if snapshot.state != pb.SESSION_STATE_STORAGE_ERROR and not snapshot.HasField("state_changed_at"):
             return False
-        if not SessionProviderControlService._valid_timestamp(snapshot.state_changed_at):
+        if snapshot.HasField("state_changed_at") and not SessionProviderControlService._valid_timestamp(
+            snapshot.state_changed_at
+        ):
             return False
         if snapshot.HasField("last_verified_at") and not SessionProviderControlService._valid_timestamp(
             snapshot.last_verified_at
         ):
             return False
+        if snapshot.HasField("imported_at") and not SessionProviderControlService._valid_timestamp(
+            snapshot.imported_at
+        ):
+            return False
+        if snapshot.HasField("owner_presentation"):
+            presentation = snapshot.owner_presentation
+            if not SessionProviderControlService._valid_owner_text(
+                presentation.message, max_bytes=_MAX_OWNER_MESSAGE_BYTES
+            ):
+                return False
+            if presentation.HasField("help") and not SessionProviderControlService._valid_owner_text(
+                presentation.help, max_bytes=_MAX_OWNER_HELP_BYTES
+            ):
+                return False
         if snapshot.HasField("last_probe"):
             result = snapshot.last_probe
             if not SessionProviderControlService._valid_probe_result(result):
@@ -354,6 +385,13 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         except OverflowError, ValueError:
             return False
         return True
+
+    @staticmethod
+    def _valid_owner_text(value: str, *, max_bytes: int, allow_newlines: bool = True) -> bool:
+        if not value.strip() or len(value.encode("utf-8")) > max_bytes:
+            return False
+        allowed_controls = {"\t", "\n", "\r"} if allow_newlines else set()
+        return all(unicodedata.category(character) != "Cc" or character in allowed_controls for character in value)
 
     async def _set_import_outcome(
         self, response: pb.ImportSessionResponse, outcome: ImportSessionOutcome, context: grpc.aio.ServicerContext
