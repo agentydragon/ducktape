@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -38,7 +39,13 @@ func (s *Service) CompleteCallback(ctx context.Context, request *linkage_service
 	case errors.Is(err, ErrUnknownServer):
 		return nil, status.Error(codes.NotFound, ErrUnknownServer.Error())
 	case errors.As(err, &refused):
-		return nil, status.Error(codes.Unavailable, refused.message)
+		failure, detailErr := status.New(codes.Unavailable, refused.message).WithDetails(&errdetails.ErrorInfo{
+			Reason: "MCP_TOKEN_EXCHANGE_FAILED", Domain: "agentplane.actions",
+		})
+		if detailErr != nil {
+			return nil, status.Error(codes.Unavailable, refused.message)
+		}
+		return nil, failure.Err()
 	case err != nil:
 		slog.WarnContext(ctx, "MCP linkage callback failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "the Action Service is temporarily unavailable")

@@ -33,6 +33,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -458,6 +459,21 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 	}
 	if _, err := service.linkages.CompleteCallback(t.Context(), &linkage_servicepb.CompleteCallbackRequest{}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("an incomplete callback returned %v", err)
+	}
+	started, err = replica.Start(t.Context(), "test-linked", nil, testOperator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.linkages.CompleteCallback(t.Context(), &linkage_servicepb.CompleteCallbackRequest{
+		State: oauthprovider.State(t, started.GetAuthorizationUrl()), Code: oauthprovider.RefusedCode,
+	})
+	details := status.Convert(err).Details()
+	if status.Code(err) != codes.Unavailable || len(details) != 1 {
+		t.Fatalf("a refused exchange returned %v", err)
+	}
+	info, ok := details[0].(*errdetails.ErrorInfo)
+	if !ok || info.GetReason() != "MCP_TOKEN_EXCHANGE_FAILED" || info.GetDomain() != "agentplane.actions" {
+		t.Fatalf("a refused exchange returned details %v", details)
 	}
 
 	code, body = fetch(t, service.url+linkage.ClientMetadataPath)

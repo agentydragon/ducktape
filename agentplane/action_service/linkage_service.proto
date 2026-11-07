@@ -9,7 +9,8 @@ import "agentplane/action_service/operator_action_service.proto";
 service LinkageService {
   // Completes a single-use OAuth flow. The unguessable state is the capability authorizing the callback; neither an
   // operator bearer nor a workload identity is required. Invalid, expired or already consumed state fails
-  // FAILED_PRECONDITION. An unconfigured server fails NOT_FOUND; an unavailable token endpoint fails UNAVAILABLE.
+  // FAILED_PRECONDITION. An unconfigured server fails NOT_FOUND. A token exchange failure is UNAVAILABLE with
+  // google.rpc.ErrorInfo reason MCP_TOKEN_EXCHANGE_FAILED and domain agentplane.actions; the flow is already spent.
   rpc CompleteCallback(CompleteCallbackRequest) returns (CompleteCallbackResponse);
 
   // Returns the public Client ID Metadata Document, or NOT_FOUND when no server uses the shared client.
