@@ -70,7 +70,7 @@ fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) 
     fixture
 }
 
-fn assert_imported_read_receipt(fixture: &Fixture, binding: &str) {
+fn assert_root_read_receipt(fixture: &Fixture, binding: &str) {
     let graph = fixture.dependency_graph();
     let node = graph
         .nodes
@@ -85,13 +85,15 @@ fn assert_imported_read_receipt(fixture: &Fixture, binding: &str) {
     let Some(analysis::reports::schema::BindingEffectAuthorityReport::OperationReceipt { receipt }) =
         execution.binding_effect_authority.as_ref()
     else {
-        panic!("imported primitive read lacks an operation receipt: {execution:#?}");
+        panic!("binding read lacks an operation receipt: {execution:#?}");
     };
     assert_eq!(
         receipt.binding.as_str(),
         binding,
-        "receipt must identify the exact imported-value initializer: {receipt:#?}"
+        "receipt must identify the exact binding initializer: {receipt:#?}"
     );
+    assert_eq!(receipt.owner, node.statement_ordinal, "{receipt:#?}");
+    assert!(receipt.initializer_span.is_some(), "{receipt:#?}");
 }
 
 #[test]
@@ -138,7 +140,30 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
         position("computed") < position("before") || position("after") < position("computed"),
         "the computed initializer must cross an executable anchor, beyond static linkage: {assessment:#}"
     );
-    assert_imported_read_receipt(&fixture, "computed");
+    assert_root_read_receipt(&fixture, "computed");
+}
+
+fn assert_uncovered_root_read(fixture: &Fixture, binding: &str) {
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, binding))
+        .unwrap();
+    let execution = node
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing execution report for {binding}: {node:#?}"));
+    assert!(
+        matches!(
+            execution.binding_effect_authority.as_ref(),
+            Some(analysis::reports::schema::BindingEffectAuthorityReport::OrderedRootInitializerUncovered {
+                binding: actual,
+                ..
+            }) if actual == binding
+        ),
+        "{binding} must retain the selected root's uncovered authority: {execution:#?}"
+    );
 }
 
 #[test]
@@ -188,6 +213,129 @@ fn local_copies_preserve_imported_primitive_callback_timing() {
         "local copies keep the imported Number type: {:?}",
         node.purity
     );
+}
+
+#[test]
+fn split_binding_copies_have_receipts_for_an_actual_inversion() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  const before = 0;\n\
+                  var first = bytes, second = first;\n\
+                  const after = 1;\n\
+                  console.log(before, first, second, after);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("compute", &[Member::new("first"), Member::new("second")]),
+                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "0 2 2 1\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the binding copies must participate in an actual inversion: {assessment:#}"
+    );
+    let graph = fixture.dependency_graph();
+    let position = |binding| {
+        let unit = source_unit_for_binding(&graph, binding);
+        let ordinal = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == unit)
+            .unwrap()
+            .statement_ordinal
+            .0;
+        assessment["emitted_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|row| row.as_u64() == Some(ordinal as u64))
+            .unwrap()
+    };
+    assert!(
+        position("first") < position("before") || position("after") < position("first"),
+        "the binding copy must cross an executable anchor: {assessment:#}"
+    );
+    assert_root_read_receipt(&fixture, "first");
+    assert_root_read_receipt(&fixture, "second");
+}
+
+#[test]
+fn split_binding_copies_keep_mutable_import_reads_uncovered() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  let later = 0;\nconst callback = () => later;\n\
+                  globalThis.saved = callback;\n\
+                  var first = bytes, second = first;\n\
+                  const computed = 4 * second + 256;\n\
+                  later = 42;\nconsole.log(computed, callback());\n";
+    let peers = [("static/peer", "export let limit = 2;\n")];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "compute",
+                    &[
+                        Member::new("callback"),
+                        Member::new("first"),
+                        Member::new("second"),
+                        Member::new("computed"),
+                    ],
+                    &["globalThis.saved = callback;"],
+                ),
+                logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peers),
+        &["compute", "later"],
+        &["eager_use"],
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "all",
+                &[
+                    Member::new("callback"),
+                    Member::new("first"),
+                    Member::new("second"),
+                    Member::new("computed"),
+                    Member::new("later"),
+                ],
+                &["globalThis.saved = callback;", "later = 42;"],
+            )],
+        )
+        .with_extra_chunks(&peers),
+    );
+    assert_preserved_entry_output(&fixture, "264 42\n");
+    assert_uncovered_root_read(&fixture, "first");
+    assert_root_read_receipt(&fixture, "second");
+}
+
+#[test]
+fn split_binding_copy_from_a_tdz_cell_keeps_the_root_uncovered() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  let first = second, second = bytes;\n\
+                  console.log(first, second);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "all",
+                &[Member::new("first"), Member::new("second")],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+    );
+    assert_preserved_entry_error(&fixture, "ReferenceError");
+    assert_uncovered_root_read(&fixture, "first");
 }
 
 #[test]
