@@ -13,9 +13,8 @@ rules:
   - apiGroups: [""]
     # list: the GraderSupervisor reconciles graders by listing pods by label
     # (reconcile-from-API), so it survives restarts and reaps duplicates/orphans.
-    # watch: K8sPodHandle waits for terminal pod status without polling.
     resources: ["pods"]
-    verbs: ["create", "get", "list", "watch", "delete"]
+    verbs: ["create", "get", "list", "delete"]
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
