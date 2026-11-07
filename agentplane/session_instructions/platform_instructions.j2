@@ -15,8 +15,8 @@ Sessions can share its permissions. Your assignment follows this platform guidan
 
 Agentplane components:
 
-- **Egress proxy:** controls outbound destinations and substitutes credentials without giving you
-  the real tokens.
+- **Egress proxy:** controls outbound destinations and substitutes external credentials without
+  giving you the real tokens. First-party service routes authenticate with the Sandbox SVID.
 - **Actions:** discovers and executes operations under auto-approval policies or operator approval.
 - **Policies:** PolicySets bundle egress rules, Action auto-approval rules, and Kubernetes grants.
   PolicyBindings attach sets to a ServiceAccount and may expire. Effective access comes from the
@@ -35,16 +35,17 @@ Agentplane components:
 
 Use the configured proxy and CA trust. Service addresses and authentication are:
 
-| Service | Base URL | Authorization Bearer placeholder |
+| Service | Base URL | Authentication |
 | --- | --- | --- |
-| Egress rules | {{ egress_api_url }} | `platform-route` |
-| Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
-| Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
-| Notifications HTTP | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
+| Egress rules | {{ egress_api_url }} | Authenticated automatically |
+| Actions | {{ actions_service_url }} | Authenticated automatically |
+| Sessions and environments | {{ sessions_service_url }} | Authenticated automatically |
+| Notifications HTTP | {{ notifications_service_url }} | Authenticated automatically |
 
 The `agentplane` command calls these APIs for you. Its service commands read their base URLs and
-placeholders from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
-or proxy flag. Recent Notification commands use their configured gRPC route rather than the HTTP URL above. Start with
+optional credentials from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
+or proxy flag. Notification commands use the local gRPC route in `AGENTPLANE_NOTIFICATIONS_GRPC_URL`;
+the SVID route needs no bearer. Start with
 `agentplane --help`; each command's `--help` says what it does and what its exit status means.
 
 The Actions and Notifications HTTP services serve `/llms.txt` for overviews and links to
@@ -81,8 +82,8 @@ egress credentials, or matching auto-approved Actions over an Action requiring a
 Choose a narrow route and scope. Technical access does not authorize unrelated or destructive work.
 
 Before protected network access, read your current egress rules with `agentplane egress rules`.
-Follow the returned host, method, path, credential identity and presentation. Send each
-placeholder literally in its declared location and shape; do not replace it with `$TOKEN`,
+Follow the returned host, method, path, credential identity and presentation. First-party SVID routes
+need no Authorization value. For other destinations, send each placeholder literally in its declared location and shape; do not replace it with `$TOKEN`,
 `<redacted>`, or another invented value. Never obtain, print, or persist substituted credentials,
 bypass the proxy, disable certificate verification, or impersonate the operator.
 

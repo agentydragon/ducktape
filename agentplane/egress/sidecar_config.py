@@ -7,6 +7,7 @@ from typing import Annotated, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.environment_runtime_transport.config import TLS
 
 CONTAINER_NAME = "egress-sidecar"
 READINESS_PATH = "/readyz"
@@ -109,6 +110,16 @@ class Proxy(BaseModel):
         return value
 
 
+class WorkloadRoute(BaseModel):
+    """One HTTP origin whose sidecar presents the Sandbox SVID to its destination."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    upstream: str
+    server_uri: str
+    tls: TLS
+
+
 class Settings(BaseModel):
     """The Go runtime reads the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE` and nothing
     else: no per-setting env variables and no flags."""
@@ -122,6 +133,10 @@ class Settings(BaseModel):
         description="Audience to the projected token file holding this Pod's identity for it, offered to the "
         "central proxy to substitute where a rule names that audience. Destination tokens are independent "
         "of the proxy hop authentication.",
+    )
+    workload_routes: dict[str, WorkloadRoute] = Field(
+        default_factory=dict,
+        description="Exact HTTP origin to service-owned SVID TLS through an opaque central CONNECT.",
     )
     platform_routes: dict[str, PlatformRoute] = Field(
         default_factory=dict,

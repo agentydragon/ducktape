@@ -95,7 +95,7 @@ platform_routes:
   egress-rules:
     listen_address: 127.0.0.1:3133
     upstream: egress-admin.agentplane.svc.cluster.local:8081
-    transport: {mode: tls_connect}
+    transport: {mode: tls_connect, server_uri: 'spiffe://agentplane/egress-proxy'}
 `)
 	config, err := loadConfig(settingsFileEnv(path))
 	if err != nil {
@@ -182,19 +182,22 @@ func TestLoadConfigRefusesMalformedOrContradictorySettings(t *testing.T) {
 		"SPIFFE empty token": strings.Replace(required,
 			"auth: {mode: kubernetes_bearer, token_file: /token}",
 			"auth: {mode: spiffe, cert_file: /c, key_file: /k, token_file: ''}", 1),
-		"top-level auth is unknown":      required + "auth: {mode: spiffe}\n",
-		"not an object":                  "- proxy\n",
-		"empty":                          "",
-		"explicit null routes":           required + "platform_routes: null\n",
-		"routes not an object":           required + "platform_routes: [control]\n",
-		"audience value object":          required + "audience_token_files: {a: {nested: 1}}\n",
-		"removed Rules HTTP setting":     required + "rules_api: rules.test:80\n",
-		"route missing transport":        required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081'}}\n",
-		"unknown route transport":        required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: http}}}\n",
-		"unknown route transport key":    required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: plaintext, extra: true}}}\n",
-		"plaintext route token relative": required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: plaintext, token_file: token}}}\n",
-		"TLS route rejects token":        required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: tls_connect, token_file: /token}}}\n",
-		"TLS route requires mTLS proxy":  required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: tls_connect}}}\n",
+		"workload routes not an object":    required + "workload_routes: [control]\n",
+		"plaintext route rejects identity": required + "platform_routes: {rules: {listen_address: '127.0.0.1:3133', upstream: 'rules:8081', transport: {mode: plaintext, server_uri: 'spiffe://agentplane/egress-proxy'}}}\n",
+		"TLS route requires identity":      required + "platform_routes: {rules: {listen_address: '127.0.0.1:3133', upstream: 'rules:8081', transport: {mode: tls_connect}}}\n",
+		"top-level auth is unknown":        required + "auth: {mode: spiffe}\n",
+		"not an object":                    "- proxy\n",
+		"empty":                            "",
+		"explicit null routes":             required + "platform_routes: null\n",
+		"routes not an object":             required + "platform_routes: [control]\n",
+		"audience value object":            required + "audience_token_files: {a: {nested: 1}}\n",
+		"removed Rules HTTP setting":       required + "rules_api: rules.test:80\n",
+		"route missing transport":          required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081'}}\n",
+		"unknown route transport":          required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: http}}}\n",
+		"unknown route transport key":      required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: plaintext, extra: true}}}\n",
+		"plaintext route token relative":   required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: plaintext, token_file: token}}}\n",
+		"TLS route rejects token":          required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: tls_connect, token_file: /token}}}\n",
+		"TLS route requires mTLS proxy":    required + "platform_routes: {rules: {listen_address: 127.0.0.1:3133, upstream: 'rules:8081', transport: {mode: tls_connect, server_uri: 'spiffe://agentplane/egress-proxy'}}}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadConfig(settingsFileEnv(writeSettingsFile(t, content))); err == nil {
@@ -216,7 +219,7 @@ platform_routes:
   egress-rules:
     listen_address: 127.0.0.1:3133
     upstream: egress-admin.agentplane.svc.cluster.local:8081
-    transport: {mode: tls_connect}
+    transport: {mode: tls_connect, server_uri: 'spiffe://agentplane/egress-proxy'}
 `
 	if _, err := loadConfig(settingsFileEnv(writeSettingsFile(t, contents))); err == nil {
 		t.Fatal("TLS CONNECT route accepted a TLS proxy configured only with bearer authentication")

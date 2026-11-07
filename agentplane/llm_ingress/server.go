@@ -121,9 +121,7 @@ func (c writeTimeoutConn) Write(data []byte) (int, error) {
 
 func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if request.URL.Path == "/healthz" && request.Method == http.MethodGet {
-		writer.Header().Set("Content-Type", "application/json")
-		writer.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(writer, `{"status":"ok"}`)
+		writeHealth(writer)
 		return
 	}
 	if !allowedMethod(request.Method) {
@@ -135,6 +133,45 @@ func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 	if !okay {
 		return
 	}
+	h.serveAuthenticated(writer, request, principal)
+}
+
+// WorkloadHandler creates the separate Sandbox SVID-only listener. It never
+// examines Authorization or falls back to the TokenReview resolver.
+func (h *ingressHandler) WorkloadHandler(resolver *auth.SVIDResolver) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		principal, err := resolver.ResolveRequest(request)
+		switch {
+		case errors.Is(err, auth.ErrInvalidBearer):
+			writeJSONError(writer, http.StatusUnauthorized, "invalid workload SVID", "")
+			return
+		case errors.Is(err, auth.ErrUnavailable):
+			writeJSONError(writer, http.StatusServiceUnavailable, "workload authentication unavailable", "")
+			return
+		case err != nil:
+			writeJSONError(writer, http.StatusUnauthorized, "invalid workload SVID", "")
+			return
+		}
+		if request.URL.Path == "/healthz" && request.Method == http.MethodGet {
+			writeHealth(writer)
+			return
+		}
+		if !allowedMethod(request.Method) {
+			writer.Header().Set("Allow", strings.Join(proxyMethods, ", "))
+			http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+		h.serveAuthenticated(writer, request, principal)
+	})
+}
+
+func writeHealth(writer http.ResponseWriter) {
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(writer, `{"status":"ok"}`)
+}
+
+func (h *ingressHandler) serveAuthenticated(writer http.ResponseWriter, request *http.Request, principal auth.Principal) {
 	if request.URL.Path == "/agentplane/model-config" && request.Method == http.MethodGet {
 		query := request.URL.Query()
 		if !query.Has("model") {

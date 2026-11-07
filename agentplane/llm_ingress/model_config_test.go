@@ -23,7 +23,9 @@ func TestModelConfigGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := newModelConfigServer(resolver, map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}})
+	server := newModelConfigServer(resolver, &modelConfigService{
+		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
+	})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))

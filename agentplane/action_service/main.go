@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -44,6 +45,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -59,7 +61,9 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadfacade "github.com/agentydragon/ducktape/agentplane/workload_auth/facade"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
+	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -121,7 +125,15 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer listener.Close()
-	return serve(ctx, c, cluster, listener)
+	var workloadListener net.Listener
+	if c.WorkloadTLS != nil {
+		workloadListener, err = net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.WorkloadPort)))
+		if err != nil {
+			return fmt.Errorf("workload TLS listener: %w", err)
+		}
+		defer workloadListener.Close()
+	}
+	return serve(ctx, c, cluster, listener, workloadListener)
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
@@ -355,7 +367,7 @@ func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
 // share the listener, each served natively (graceful.Shared), so a sandbox reaches both at one address. The worker,
 // the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listener's shutdown, and serve
 // returns once they have and the policy watches have stopped.
-func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
+func serve(ctx context.Context, c config, d deps, listener, workloadListener net.Listener) error {
 	policy := informer.NewIndex(c.CallerServiceAccountNamespaces)
 	admission, err := gate(c, d, policy)
 	if err != nil {
@@ -530,6 +542,54 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	linkages.Mount(routes)
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
 	shared := graceful.NewShared(listener, grpcServer, server)
+	var workloadServer *http.Server
+	var workloadGRPC *grpc.Server
+	var workloadGate *api.Gate
+	if workloadListener != nil {
+		svid, err := auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces)
+		if err != nil {
+			return err
+		}
+		workloadGate = api.NewGate(api.GateOptions{SVID: svid, Callers: policy, ReaderAccounts: c.ReaderAccounts})
+		workloadAPI := api.NewService(requests, hub, c.ActionGroups, workloadGate, policy, api.Submissions{
+			Executors: actions, Provider: policies.NewProvider(visibility),
+		})
+		tlsConfig, err := c.WorkloadTLS.WorkloadServerTLSConfig(environment_runtime_transport.ActionsURI)
+		if err != nil {
+			return err
+		}
+		workloadGRPC = grpc.NewServer(observability.GRPCServerOption(),
+			grpc.ChainUnaryInterceptor(workloadGate.UnaryInterceptor), grpc.ChainStreamInterceptor(workloadGate.StreamInterceptor))
+		action_servicepb.RegisterActionServiceServer(workloadGRPC, workloadAPI)
+		workloadHTTP, err := workloadfacade.NewHandler(facadeContext,
+			workloadfacade.Interceptors{Unary: workloadGate.UnaryInterceptor, Stream: workloadGate.StreamInterceptor},
+			facade.HandlerOptions{}, workloadfacade.Registration{
+				Server: func(registrar grpc.ServiceRegistrar) {
+					action_servicepb.RegisterActionServiceServer(registrar, workloadAPI)
+				},
+				HTTP: func(ctx context.Context, mux *gatewayruntime.ServeMux, conn grpc.ClientConnInterface) error {
+					return action_servicepb.RegisterActionServiceHandlerClient(ctx, mux, action_servicepb.NewActionServiceClient(conn))
+				},
+			})
+		if err != nil {
+			return err
+		}
+		workloadRoutes, err := newRoutes(workloadHTTP)
+		if err != nil {
+			return err
+		}
+		workloadServer = &http.Server{
+			ConnState: environment_runtime_transport.HTTPServerTLSExpiryConnState(nil),
+			TLSConfig: tlsConfig, ReadHeaderTimeout: readHeaderTimeout,
+			Handler: observability.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+					workloadGRPC.ServeHTTP(w, r)
+					return
+				}
+				workloadRoutes.ServeHTTP(w, r)
+			})),
+		}
+	}
 
 	working, drain := context.WithCancel(ctx)
 	var supervising sync.WaitGroup
@@ -579,6 +639,11 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	}()
 	failed := make(chan error, 3)
 	shared.Serve(failed)
+	if workloadServer != nil {
+		go func() {
+			failed <- fmt.Errorf("workload TLS listener: %w", workloadServer.ServeTLS(workloadListener, "", ""))
+		}()
+	}
 	var result error
 	select {
 	case result = <-failed:
@@ -587,10 +652,19 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	}
 	health.Drain()
 	admission.Drain()
+	if workloadGate != nil {
+		workloadGate.Drain()
+	}
 	drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
 	shared.Shutdown(stopped)
+	if workloadServer != nil {
+		if err := workloadServer.Shutdown(stopped); err != nil {
+			workloadServer.Close()
+		}
+		graceful.Stop(stopped, workloadGRPC)
+	}
 	<-worked
 	supervising.Wait()
 	return result

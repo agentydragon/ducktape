@@ -116,6 +116,9 @@ func (c *config) validate() error {
 	if err := c.Forward.Validate(); err != nil {
 		return fmt.Errorf("forward listener: %w", err)
 	}
+	if !c.Forward.Has(listener.SPIFFE) || c.Forward.Has(listener.KubernetesBearer) {
+		return errors.New("forward authentication must enable only spiffe")
+	}
 	for _, limit := range []bounded{
 		{"decision_history_size", c.DecisionHistorySize, 1, history.MaxCapacity},
 		{"decision_retention_days", c.DecisionRetentionDays, 1, 365},

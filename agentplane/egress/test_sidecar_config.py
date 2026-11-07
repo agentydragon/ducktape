@@ -69,7 +69,11 @@ def test_proxy_address_requires_exact_host_port(address: str) -> None:
 
 
 def test_tls_connect_route_requires_svid_proxy_hop() -> None:
-    route = PlatformRoute(listen_address="127.0.0.1:3133", upstream="rules:8081", transport=TLSConnectRouteTransport())
+    route = PlatformRoute(
+        listen_address="127.0.0.1:3133",
+        upstream="rules:8081",
+        transport=TLSConnectRouteTransport(server_uri="spiffe://agentplane/egress-proxy"),
+    )
     with pytest.raises(ValidationError, match="TLS CONNECT platform routes require"):
         Settings(
             proxy=Proxy(

@@ -3,24 +3,24 @@
 - the sidecar's routes and the runner's endpoint flags in the runner SandboxTemplates;
 - the network rules on both ends.
 
-Plaintext routes replace `authorization` with a sidecar-projected audience token when they have one;
-telemetry is unauthenticated. In runner SVID mode, only Egress Rules uses TLS through the central
-proxy. Network fences mirror the direct routes for each environment.
+The sidecar presents its SVID to Rules, Notification and model configuration through the central
+proxy. Telemetry remains a direct unauthenticated route.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Literal
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
-from agentplane.egress.platform_routes import PlaintextRouteTransport, PlatformRoute, TLSConnectRouteTransport
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import egress, history_service, llm_ingress, notifications, sandbox_pod, telemetry
+from agentplane.egress.platform_routes import (
+    PlaintextRouteTransport,
+    PlatformRoute,
+    PlatformRouteTransport,
+    TLSConnectRouteTransport,
+)
+from cluster.cdk8s.agentplane import egress, llm_ingress, notifications, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -29,8 +29,7 @@ from cluster.cdk8s.service_ref import Pods, ServiceRef
 class Route:
     name: str
     service: ServiceRef
-    audience: str | None
-    transport: Literal["plaintext", "tls_connect"]
+    transport: PlatformRouteTransport
     # On the sidecar's loopback, beside its proxy (3128) and readiness (3129) ports.
     listen_port: int
 
@@ -39,64 +38,55 @@ class Route:
         return f"127.0.0.1:{self.listen_port}"
 
 
-# Bearer-authenticated routes replace `authorization` with their projected token.
+# Runtime's local model-config client sends this inert placeholder; the TLS route discards it.
 ROUTE_BEARER = "platform-route"
 
 
-def ingress(namespace: str) -> Route:
-    return Route("ingress", history_service.ingress_service(namespace), RUNNER_INGRESS_AUDIENCE, "plaintext", 3131)
-
-
-def egress_rules(namespace: str, *, runner_egress_mtls: bool = False) -> Route:
+def egress_rules(namespace: str) -> Route:
     return Route(
         "egress-rules",
         egress.admin(namespace),
-        None if runner_egress_mtls else WORKLOAD_TOKEN_AUDIENCE,
-        "tls_connect" if runner_egress_mtls else "plaintext",
+        TLSConnectRouteTransport(server_uri="spiffe://agentplane/egress-proxy"),
         3133,
     )
 
 
 def model_config(namespace: str) -> Route:
-    return Route("model-config", llm_ingress.grpc_service(namespace), WORKLOAD_TOKEN_AUDIENCE, "plaintext", 3135)
-
-
-def notifications_grpc(namespace: str) -> Route:
-    return Route("notifications", notifications.service(namespace), notifications.TOKEN_AUDIENCE, "plaintext", 3134)
-
-
-def telemetry_route() -> Route:
-    """The runner's local, unauthenticated gRPC hop to Alloy; the runner never dials Alloy directly."""
-    return Route("telemetry", telemetry.ALLOY_OTLP_GRPC, None, "plaintext", 3132)
-
-
-def routes(namespace: str, *, runner_egress_mtls: bool = False) -> tuple[Route, ...]:
-    return (
-        ingress(namespace),
-        telemetry_route(),
-        egress_rules(namespace, runner_egress_mtls=runner_egress_mtls),
-        notifications_grpc(namespace),
-        model_config(namespace),
+    return Route(
+        "model-config",
+        llm_ingress.workload_service(namespace),
+        TLSConnectRouteTransport(server_uri=llm_ingress.WORKLOAD_URI),
+        3135,
     )
 
 
-def sidecar_routes(
-    namespace: str, *, listen_host: str = "127.0.0.1", runner_egress_mtls: bool = False
-) -> dict[str, PlatformRoute]:
+def notifications_grpc(namespace: str) -> Route:
+    return Route(
+        "notifications",
+        notifications.workload_service(namespace),
+        TLSConnectRouteTransport(server_uri=notifications.WORKLOAD_URI),
+        3134,
+    )
+
+
+def telemetry_route() -> Route:
+    """The local, unauthenticated gRPC hop to Alloy."""
+    return Route("telemetry", telemetry.ALLOY_OTLP_GRPC, PlaintextRouteTransport(), 3132)
+
+
+def routes(namespace: str) -> tuple[Route, ...]:
+    return telemetry_route(), egress_rules(namespace), notifications_grpc(namespace), model_config(namespace)
+
+
+def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> dict[str, PlatformRoute]:
     """The sidecar's `platform_routes` setting."""
     return {
         route.name: PlatformRoute(
             listen_address=f"{listen_host}:{route.listen_port}",
             upstream=f"{route.service.fqdn}:{route.service.pod_port}",
-            transport=(
-                TLSConnectRouteTransport()
-                if route.transport == "tls_connect"
-                else PlaintextRouteTransport(
-                    token_file=Path(sandbox_pod.audience_token_file(route.audience)) if route.audience else None
-                )
-            ),
+            transport=route.transport,
         )
-        for route in routes(namespace, runner_egress_mtls=runner_egress_mtls)
+        for route in routes(namespace)
     }
 
 

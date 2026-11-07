@@ -1,4 +1,229 @@
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: runner-gateway
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: runner-gateway
+  name: runner-gateway
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
+        app.kubernetes.io/name: runner-gateway
+        cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
+              value: agentplane-staging
+            - name: AGENTPLANE_RUNNER_GATEWAY_LISTEN_ADDRESS
+              value: 0.0.0.0:8080
+            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_TOKEN_FILE
+              value: /var/run/secrets/agentplane-runner-gateway/token
+            - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE
+              value: session-dispatcher
+            - name: AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE
+              value: agentplane-runner-gateway
+            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_CONTROL_TARGET_TEMPLATE
+              value: "{sandbox}-control.{namespace}.svc:8080"
+            - name: AGENTPLANE_RUNNER_GATEWAY_KUBERNETES_CLIENT_QPS
+              value: "-1"
+            - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_CONTROLLER_ACCOUNT
+              value: agentplane-staging/sandbox-controller
+            - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-session-dispatcher
+            - name: AGENTPLANE_RUNNER_GATEWAY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: OTEL_SERVICE_NAME
+              value: runner-gateway
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
+            - name: AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE
+              value: /etc/agentplane-runner-gateway/settings/settings.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: runner-gateway
+          ports:
+            - containerPort: 8080
+              name: grpc
+              protocol: TCP
+            - containerPort: 8082
+              name: workload
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 60
+            grpc:
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 5
+          volumeMounts:
+            - mountPath: /run/agentplane/workload-tls
+              name: workload-tls
+              readOnly: true
+            - mountPath: /run/agentplane/workload-trust
+              name: workload-trust
+              readOnly: true
+            - mountPath: /etc/agentplane-runner-gateway/settings
+              name: configmap-runner-gateway-settings
+              readOnly: true
+            - mountPath: /run/agentplane/runner-tls
+              name: runner-tls
+              readOnly: true
+            - mountPath: /var/run/secrets/agentplane-runner-gateway
+              name: runner-gateway-token
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: runner-gateway
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: workload-tls
+          secret:
+            secretName: runner-gateway-workload-tls
+        - configMap:
+            name: cluster-internal-ca-bundle
+          name: workload-trust
+        - configMap:
+            name: runner-gateway-settings
+          name: configmap-runner-gateway-settings
+        - name: runner-tls
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: tls.crt
+                      path: tls.crt
+                    - key: tls.key
+                      path: tls.key
+                  name: agentplane-runner-gateway-tls
+              - configMap:
+                  items:
+                    - key: ca-certificates.crt
+                      path: ca.crt
+                  name: cluster-internal-ca-bundle
+        - name: runner-gateway-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-runner-gateway
+                  expirationSeconds: 3600
+                  path: token
+              - serviceAccountToken:
+                  audience: central-sampler
+                  expirationSeconds: 3600
+                  path: central-sampler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: runner-gateway
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: runner-gateway
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: runner-gateway-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: Issuer
+    name: agentplane-runner-ca
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: runner-gateway-workload-tls
+  uris:
+    - spiffe://agentplane/session-dispatcher
+  usages:
+    - digital signature
+    - server auth
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: runner-gateway-settings
@@ -28,6 +253,14 @@ data:
         cert_file: /run/agentplane/runner-tls/tls.crt
         key_file: /run/agentplane/runner-tls/tls.key
         ca_file: /run/agentplane/runner-tls/ca.crt
+    workload:
+      listen_address: 0.0.0.0:8082
+      tls:
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+      auth:
+        - mode: spiffe
+          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     central_sampler:
       target: central-sampler.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler
@@ -212,193 +445,24 @@ data:
         - /agentplane.environments.v1.EnvironmentService/ResumeEnvironment
 immutable: false
 ---
-apiVersion: v1
-kind: ServiceAccount
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
 metadata:
-  name: runner-gateway
-  namespace: agentplane-staging
-automountServiceAccountToken: true
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/name: runner-gateway
-  name: runner-gateway
+  name: runner-gateway-workload-workload-forwarder-0
   namespace: agentplane-staging
 spec:
-  minReadySeconds: 5
-  progressDeadlineSeconds: 600
-  replicas: 2
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
-  template:
-    metadata:
-      labels:
-        agentplane.io/otel-class: service
-        agentplane.io/otel-emitter: "true"
-        app.kubernetes.io/name: runner-gateway
-        cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
-    spec:
-      automountServiceAccountToken: true
-      containers:
-        - env:
-            - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
-              value: agentplane-staging
-            - name: AGENTPLANE_RUNNER_GATEWAY_LISTEN_ADDRESS
-              value: 0.0.0.0:8080
-            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_TOKEN_FILE
-              value: /var/run/secrets/agentplane-runner-gateway/token
-            - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE
-              value: session-dispatcher
-            - name: AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE
-              value: agentplane-runner-gateway
-            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_CONTROL_TARGET_TEMPLATE
-              value: "{sandbox}-control.{namespace}.svc:8080"
-            - name: AGENTPLANE_RUNNER_GATEWAY_KUBERNETES_CLIENT_QPS
-              value: "-1"
-            - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_CONTROLLER_ACCOUNT
-              value: agentplane-staging/sandbox-controller
-            - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-session-dispatcher
-            - name: AGENTPLANE_RUNNER_GATEWAY_POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-            - name: OTEL_SERVICE_NAME
-              value: runner-gateway
-            - name: OTEL_RESOURCE_ATTRIBUTES
-              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
-            - name: OTEL_TRACES_EXPORTER
-              value: otlp
-            - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: grpc
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://alloy.monitoring.svc.cluster.local:4317
-            - name: OTEL_TRACES_SAMPLER
-              value: parentbased_always_on
-            - name: AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE
-              value: /etc/agentplane-runner-gateway/settings/settings.yaml
-          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset
-          imagePullPolicy: IfNotPresent
-          livenessProbe:
-            failureThreshold: 3
-            grpc:
-              port: 8080
-            initialDelaySeconds: 20
-            periodSeconds: 30
-          name: runner-gateway
-          ports:
-            - containerPort: 8080
-              name: grpc
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
               protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            grpc:
-              port: 8080
-            initialDelaySeconds: 3
-            periodSeconds: 10
-          resources:
-            limits:
-              memory: 1024Mi
-            requests:
-              cpu: 100m
-              memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-          startupProbe:
-            failureThreshold: 60
-            grpc:
-              port: 8080
-            initialDelaySeconds: 0
-            periodSeconds: 5
-          volumeMounts:
-            - mountPath: /etc/agentplane-runner-gateway/settings
-              name: configmap-runner-gateway-settings
-              readOnly: true
-            - mountPath: /run/agentplane/runner-tls
-              name: runner-tls
-              readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      restartPolicy: Always
-      securityContext:
-        fsGroup: 1000
-        fsGroupChangePolicy: Always
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: runner-gateway
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - configMap:
-            name: runner-gateway-settings
-          name: configmap-runner-gateway-settings
-        - name: runner-tls
-          projected:
-            defaultMode: 288
-            sources:
-              - secret:
-                  items:
-                    - key: tls.crt
-                      path: tls.crt
-                    - key: tls.key
-                      path: tls.key
-                  name: agentplane-runner-gateway-tls
-              - configMap:
-                  items:
-                    - key: ca-certificates.crt
-                      path: ca.crt
-                  name: cluster-internal-ca-bundle
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
-              - serviceAccountToken:
-                  audience: central-sampler
-                  expirationSeconds: 3600
-                  path: central-sampler
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: runner-gateway
-  namespace: agentplane-staging
-spec:
-  minAvailable: 1
-  selector:
+  endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: runner-gateway
+      app.kubernetes.io/name: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -625,6 +689,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
               protocol: TCP
     - fromEndpoints:
         - matchLabels:

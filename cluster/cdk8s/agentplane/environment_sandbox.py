@@ -39,6 +39,7 @@ from agentplane.env.config import (
     EnvironmentRuntimeControl,
     Harness,
     PodEnvironment,
+    SVIDEndpoint,
 )
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
@@ -47,12 +48,14 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     egress,
     environment_vm,
+    history_service,
     launcher_relay,
     llm_ingress,
     platform_routes,
     runner_gateway,
     sandbox_pod,
     telemetry,
+    workload_routes,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
@@ -92,9 +95,9 @@ _EXECUTOR_URL = "ws://127.0.0.1:4501"
 _EXECUTOR_HEALTH_PORT = 4502
 _EXECUTOR_CONTAINER_NAME = "codex-executor"
 _CONFIG_VOLUME = "environment-runtime-config"
-# The bearers a Session presents: the placeholders the agentplane-workload and the notifications
-# EgressCredentials derive from their names, which the egress proxy substitutes.
-_WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
+# Harness clients require an API-key environment value, but the exact-origin SVID route strips
+# Authorization before the destination sees it.
+_SVID_ROUTE_AUTH_VALUE = "unused"
 
 
 @dataclass(frozen=True)
@@ -210,7 +213,6 @@ class EnvironmentSandbox(Construct):
                 namespace=namespace,
                 runner_pod=template.spec["pod"],
                 settings_config_map=template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar"),
-                runner_tls_enabled=env.runner_egress_mtls,
             )
             # VM claim storage is separate from the runner Pod's state claim. Copy it before
             # selecting the VM class so the Pod template keeps its own storage policy.
@@ -378,7 +380,6 @@ class EnvironmentSandboxTemplate(Construct):
                 ]
             )
         )
-        ingress = platform_routes.ingress(self.env.namespace)
         llm_url = llm_ingress.proxied_url(self.env.namespace)
         config = Configuration(
             version=2,
@@ -396,7 +397,13 @@ class EnvironmentSandboxTemplate(Construct):
                     )
                 ),
             ),
-            ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
+            ingress=Endpoint(
+                target=f"{history_service.workload_service(self.env.namespace).fqdn}:{history_service.workload_service(self.env.namespace).pod_port}",
+                svid=SVIDEndpoint(
+                    server_uri=history_service.WORKLOAD_URI,
+                    proxy_address=f"127.0.0.1:{sandbox_pod.SIDECAR_LISTEN_PORT}",
+                ),
+            ),
             model_config_service=Endpoint(
                 target=platform_routes.model_config(self.env.namespace).local_target,
                 bearer=platform_routes.ROUTE_BEARER,
@@ -446,13 +453,10 @@ class EnvironmentSandboxTemplate(Construct):
                     *sandbox_pod.proxy_environment(),
                     *(k8s.EnvVar(name=name, value=value) for name, value in self.agent_cli_env.items()),
                     *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if self.disable_otel_sdk else []),
-                    # Neither a workload token nor a LiteLLM key: the placeholder the
-                    # agentplane-workload EgressCredential derives from its name. Central
-                    # substitutes the sidecar-only projected token; the ingress replaces
-                    # that with its server-held LiteLLM virtual key after live
-                    # workload authentication.
-                    k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_WORKLOAD_PLACEHOLDER),
-                    k8s.EnvVar(name="OPENAI_API_KEY", value=_WORKLOAD_PLACEHOLDER),
+                    # Harnesses require these API-key variables, but the sidecar's exact-origin
+                    # SVID route strips Authorization before the LLM ingress receives the request.
+                    k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_SVID_ROUTE_AUTH_VALUE),
+                    k8s.EnvVar(name="OPENAI_API_KEY", value=_SVID_ROUTE_AUTH_VALUE),
                 ],
             ),
             resources=self.environment_runtime_resources
@@ -478,25 +482,20 @@ class EnvironmentSandboxTemplate(Construct):
 
     def _add_sidecar_settings(self, *, name: str, listen_host: str | None = None) -> SettingsFile:
         bind_host = listen_host or "127.0.0.1"
-        if self.env.runner_egress_mtls:
-            tls_path = Path(sidecar_config.RUNNER_TLS_MOUNT_PATH)
-            proxy_transport: sidecar_config.ProxyTransport = sidecar_config.TLSProxyTransport(
-                ca_file=tls_path / "ca.crt",
-                auth=sidecar_config.SpiffeProxyAuth(cert_file=tls_path / "tls.crt", key_file=tls_path / "tls.key"),
-            )
-        else:
-            proxy_transport = sidecar_config.PlaintextProxyTransport(
-                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=sandbox_pod.EGRESS_TOKEN_FILE)
-            )
         return sandbox_pod.add_sidecar_settings(
             self,
             self.env,
             name=name,
-            platform_routes=platform_routes.sidecar_routes(
-                self.env.namespace, listen_host=bind_host, runner_egress_mtls=self.env.runner_egress_mtls
-            ),
+            platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
+            workload_routes=workload_routes.sidecar_routes(self.env.namespace),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
-            proxy_transport=proxy_transport,
+            proxy_transport=sidecar_config.TLSProxyTransport(
+                ca_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "ca.crt",
+                auth=sidecar_config.SpiffeProxyAuth(
+                    cert_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "tls.crt",
+                    key_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "tls.key",
+                ),
+            ),
         )
 
     def _add_sandbox_template(self) -> dict[str, Any]:

@@ -12,8 +12,8 @@ the Sandbox's own ServiceAccount. Reading it proves the model used the platform'
 guidance, the projected workload token, and the proxy's credential substitution.
 
 What these encode is the deployed form of agentplane/egress/SPEC.md: a sandbox reaches what its
-policies name and nothing else, with the credential substituted at the proxy, and the model call is
-one of those requests rather than an exception to them. They exist because the last gap of this kind
+policies name and nothing else, and the model call uses the Sandbox SVID route through the proxy.
+They exist because the last gap of this kind
 -- a runner that dropped the proxy variables, so every call bypassed the proxy and hung, leaving an
 empty history behind a green unit suite -- was caught by a person noticing.
 """
@@ -67,7 +67,7 @@ def _probe(configmap: str, namespace: str) -> str:
     Read key `value` from ConfigMap `{configmap}` in namespace `{namespace}` using the platform's
     normal Kubernetes access guidance.
 
-    Also fetch the refs of {PUBLIC_REPO} and try to fetch https://{UNLISTED_HOST}/.
+    Also run `git ls-remote {PUBLIC_REPO}` (no clone) and try to fetch https://{UNLISTED_HOST}/.
 
     End with exactly one JSON object and nothing after it:
 
@@ -90,13 +90,15 @@ class Probe(BaseModel):
 async def _decision_for(
     cluster: Cluster, client: Client, sandbox: str, uid: str, host: str, *, after: datetime | None = None
 ) -> Decision:
-    """The newest decision about `host`, once the proxy has one later than `after`."""
+    """The newest decision for this live Sandbox ServiceAccount about `host`, after `after`."""
     with tracer.start_as_current_span(
         "system_test.egress.proxy_decision", record_exception=False, set_status_on_exception=False
     ):
         target = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid)
         environment = await client.get_environment(target)
         subject = environment.execution_account.account
+        assert subject.namespace == cluster.namespace
+        assert subject.name == sandbox
         async with egress_decisions.watch_client(cluster) as (stub, caller):
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True
@@ -215,19 +217,19 @@ async def the_model_call_itself_goes_through_the_proxy(
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
-    """The runner holds only an inert placeholder, not the LiteLLM key, so a turn happens at all only
-    if the proxy admits the model call and substitutes its sidecar-only workload token for the
-    authenticated ingress. The ingress then verifies that workload identity and presents its
-    server-held LiteLLM key on the separate internal hop.
+    """The SVID route strips caller authorization and authenticates the destination TLS connection
+    with the runner's Runtime certificate. The proxy admits the CONNECT under the Sandbox's own
+    ServiceAccount; the ingress verifies the same live SVID and presents its server-held LiteLLM key
+    on the separate internal hop.
 
     That makes the turn its own proof of reachability -- an agent that answers has been served -- and
-    leaves the decision to say *how*: through the proxy with a credential substituted, rather than
-    around it on a key the sandbox held. Both halves matter, because the failure this replaces was a
+    the subject-filtered decision history proves the CONNECT was admitted through the proxy. Both
+    halves matter, because the failure this replaces was a
     sandbox reaching LiteLLM directly with the key in its own environment, which answers just as well
     and is what routing the model endpoint through the proxy exists to stop.
 
-    The sandbox names no policy. `basic` reaching the ingress anyway is what the app's
-    default PolicySets are for.
+    The sandbox names no policy. The SVID route is an exact-origin platform route, and the service
+    independently verifies the leaf before forwarding.
     """
     assert view.kubernetes_diagnostics.HasField("pod")
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
@@ -257,11 +259,9 @@ async def the_model_call_itself_goes_through_the_proxy(
         cluster, client, view.target.name, view.target.uid, f"llm-ingress.{cluster.namespace}.svc.cluster.local"
     )
     assert served.outcome == Decision.OUTCOME_ALLOW, f"{served!r}\n{turn.transcript}"
-    assert served.policy == BASIC_POLICY, f"the model call was admitted by another policy: {served!r}"
-    assert served.substituted, (
-        f"the model call was admitted with no credential substituted, so the sandbox did not present "
-        f"only the inert placeholder to the authenticated ingress: {served!r}"
-    )
+    assert served.method == "CONNECT", f"the model call did not traverse the proxy as CONNECT: {served!r}"
+    assert not served.policy, f"the exact-origin SVID route should not use an egress policy: {served!r}"
+    assert not served.substituted, f"the SVID route must not substitute a bearer: {served!r}"
 
 
 async def _kubectl_create_binding(
@@ -295,11 +295,12 @@ async def _kubectl_create_binding(
         await cluster.kubectl("create", "-f", "-", body=body)
 
 
-async def _granted_request(cluster: Cluster) -> tuple[str, str]:
-    """The host and path the fixture's runtime-grant PolicySet admits."""
+async def _granted_request(cluster: Cluster) -> tuple[str, int, str]:
+    """The intercepted destination the fixture's runtime-grant PolicySet admits."""
     result = await cluster.kubectl("get", "policyset", runtime_grant.POLICY_SET, "-o", "json", timeout_s=20)
-    rule = json.loads(result)["spec"]["rules"][0]
-    return rule["hosts"][0], rule["paths"][0]
+    policy = json.loads(result)
+    rule = policy["spec"]["rules"][0]
+    return rule["hosts"][0], int(policy["metadata"]["annotations"][runtime_grant.PORT_ANNOTATION]), rule["paths"][0]
 
 
 async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
@@ -312,14 +313,14 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     scripted: ScriptedUpstream,
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
-    host, path = await _granted_request(cluster)
+    host, port, path = await _granted_request(cluster)
     view = await sandbox(f"systest-bind-{harness}")
     assert view.kubernetes_diagnostics.HasField("pod")
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     agent = await Agent.create(
         client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=offered_model
     )
-    command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}:{runtime_grant.PORT}{path}"
+    command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}:{port}{path}"
 
     await agent.run_shell(model, command)
     refused = await _decision_for(cluster, client, view.target.name, view.target.uid, host)

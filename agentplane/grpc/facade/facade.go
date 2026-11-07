@@ -42,14 +42,7 @@ func NewHandlerWithOptions(ctx context.Context, target string, unaryTimeout time
 	if unaryTimeout < 0 {
 		return nil, errors.New("unary timeout must not be negative")
 	}
-	var muxOptions []runtime.ServeMuxOption
-	if options.RejectUnknownJSONFields {
-		// Match gRPC-Gateway's default response shape and HTTPBody behavior; only request decoding changes.
-		muxOptions = append(muxOptions, runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.HTTPBodyMarshaler{
-			Marshaler: &runtime.JSONPb{MarshalOptions: protojson.MarshalOptions{EmitUnpopulated: true}},
-		}))
-	}
-	mux := runtime.NewServeMux(muxOptions...)
+	mux := newMux(options)
 	for _, register := range registrations {
 		dialOptions := []grpc.DialOption{
 			observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry(),
@@ -70,4 +63,30 @@ func unaryTimeoutInterceptor(timeout time.Duration) grpc.UnaryClientInterceptor 
 		defer cancel()
 		return invoker(requestContext, method, request, response, connection, options...)
 	}
+}
+
+// LocalRegistration registers a generated HandlerClient backed by an in-process channel.
+type LocalRegistration func(context.Context, *runtime.ServeMux) error
+
+// NewLocalHandler retains generated HTTP decoding and streaming while leaving
+// service registration, transport and admission with the owning service.
+func NewLocalHandler(ctx context.Context, options HandlerOptions, registrations ...LocalRegistration) (http.Handler, error) {
+	mux := newMux(options)
+	for _, register := range registrations {
+		if err := register(ctx, mux); err != nil {
+			return nil, err
+		}
+	}
+	return mux, nil
+}
+
+func newMux(options HandlerOptions) *runtime.ServeMux {
+	var muxOptions []runtime.ServeMuxOption
+	if options.RejectUnknownJSONFields {
+		// Match gRPC-Gateway's default response shape and HTTPBody behavior; only request decoding changes.
+		muxOptions = append(muxOptions, runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.HTTPBodyMarshaler{
+			Marshaler: &runtime.JSONPb{MarshalOptions: protojson.MarshalOptions{EmitUnpopulated: true}},
+		}))
+	}
+	return runtime.NewServeMux(muxOptions...)
 }

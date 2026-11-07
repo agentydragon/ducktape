@@ -2,14 +2,9 @@
 
 from dataclasses import dataclass
 
-from agentplane.egress.resources import placeholder_of
 from agentplane.session_instructions.platform_instructions import SessionRuntime, render_platform_instructions
 from cluster.cdk8s.agentplane import actions, notifications, platform_routes, session_dispatcher
 from cluster.cdk8s.agentplane.environment import Environment
-
-_WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
-_NOTIFICATIONS_PLACEHOLDER = "agentplane-credential-agentplane-notifications-workload"
-_SESSIONS_PLACEHOLDER = placeholder_of(session_dispatcher.WORKLOAD_CREDENTIAL)
 
 
 @dataclass(frozen=True)
@@ -49,16 +44,11 @@ def platform_instructions(env: Environment, *, session_runtime: SessionRuntime, 
 
 
 def agent_cli_environment(urls: ServiceUrls) -> dict[str, str]:
-    """Return the service URLs and placeholder bearers read by the `agentplane` command."""
+    """Return first-party service URLs; callers configure bearer credentials only when needed."""
     return {
         "AGENTPLANE_ACTIONS_URL": urls.actions,
-        "AGENTPLANE_ACTIONS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
         "AGENTPLANE_SESSIONS_URL": urls.sessions,
-        "AGENTPLANE_SESSIONS_CREDENTIAL": _SESSIONS_PLACEHOLDER,
         "AGENTPLANE_NOTIFICATIONS_URL": urls.notifications,
-        "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": _NOTIFICATIONS_PLACEHOLDER,
         "AGENTPLANE_NOTIFICATIONS_GRPC_URL": urls.notifications_grpc,
-        "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL": platform_routes.ROUTE_BEARER,
         "AGENTPLANE_EGRESS_GRPC_URL": urls.egress_grpc,
-        "AGENTPLANE_EGRESS_GRPC_CREDENTIAL": platform_routes.ROUTE_BEARER,
     }

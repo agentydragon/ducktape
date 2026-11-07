@@ -14,6 +14,7 @@ from pydantic_settings import SettingsConfigDict
 
 from agentplane.environment_runtime_transport.config import Security
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
+from agentplane.workload_auth.listener import Listener
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
@@ -61,6 +62,9 @@ class Settings(YamlFileSettings):
 
     listen_address: str = Field(
         default=":8080", min_length=1, description="gRPC listen address for authenticated platform callers."
+    )
+    workload: Listener = Field(
+        description="Dedicated TLS listener and authentication methods for Sandbox service traffic."
     )
     proxy_port: int = Field(
         default=8080, ge=1, le=65535, description="Port advertised in each Sandbox control EndpointSlice."
@@ -132,6 +136,12 @@ class Settings(YamlFileSettings):
     def validate_operator_callers(self) -> Settings:
         if self.operator_callers and not self.operator_callers <= self.dispatcher_callers:
             raise ValueError("operator_callers must be a subset of dispatcher_callers")
+        return self
+
+    @model_validator(mode="after")
+    def workload_requires_tls(self) -> Settings:
+        if self.workload.tls is None:
+            raise ValueError("workload.tls is required")
         return self
 
     @field_validator("kubernetes_client_qps")

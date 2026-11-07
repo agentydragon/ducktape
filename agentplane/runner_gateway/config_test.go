@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -33,6 +34,10 @@ const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:
 const requiredFile = `dispatcher_callers: [agentplane/app, agentplane/notifications]
 gateway_callers: [agentplane/runner-gateway]
 runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
+workload:
+  listen_address: ':8082'
+  tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}
+  auth: [{mode: spiffe, ca_file: /tmp/workload-ca}]
 `
 
 type configTestTokenReviews struct{}
@@ -89,6 +94,33 @@ func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t 
 			"/agentplane.environments.v1.EnvironmentService/GetEnvironment",
 		}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
+	}
+}
+
+func TestWorkloadBearerUsesAnExplicitAudience(t *testing.T) {
+	mixed := strings.Replace(
+		requiredFile,
+		"auth: [{mode: spiffe, ca_file: /tmp/workload-ca}]",
+		"auth: [{mode: spiffe, ca_file: /tmp/workload-ca}, {mode: kubernetes_bearer, audience: test-workload}]",
+		1,
+	)
+	path := configtest.WriteSettings(t, mixed)
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Workload.Has(listener.SPIFFE) || !c.Workload.Has(listener.KubernetesBearer) || c.Workload.BearerAudience() != "test-workload" {
+		t.Fatalf("workload auth = %+v", c.Workload.Auth)
+	}
+}
+
+func TestGatewayWorkloadListenerRequiresTLSInBearerOnlyMode(t *testing.T) {
+	settings := strings.Replace(requiredFile,
+		"  tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}\n", "", 1)
+	settings = strings.Replace(settings, "auth: [{mode: spiffe, ca_file: /tmp/workload-ca}]", "auth: [{mode: kubernetes_bearer, audience: test-workload}]", 1)
+	path := configtest.WriteSettings(t, settings)
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil || !strings.Contains(err.Error(), "workload.tls is required") {
+		t.Fatalf("loadConfig without workload TLS = %v, want required-TLS error", err)
 	}
 }
 
@@ -305,7 +337,9 @@ func TestRunnerSecurityMustBeExplicitAndConsistent(t *testing.T) {
 		{name: "insecure with credentials", security: "{mode: insecure, tls: {cert_file: /a, key_file: /b, ca_file: /c}}"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			contents := "dispatcher_callers: [agentplane/app]\ngateway_callers: [agentplane/runner-gateway]\nrunner_security: " + test.security + "\n"
+			contents := "dispatcher_callers: [agentplane/app]\ngateway_callers: [agentplane/runner-gateway]\n" +
+				"workload: {listen_address: ':8082', tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}, auth: [{mode: spiffe, ca_file: /tmp/workload-ca}]}\n" +
+				"runner_security: " + test.security + "\n"
 			_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents)))
 			if (err == nil) != test.valid {
 				t.Fatalf("loadConfig error = %v, valid = %t", err, test.valid)

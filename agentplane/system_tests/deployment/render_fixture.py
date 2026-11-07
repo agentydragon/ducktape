@@ -44,13 +44,7 @@ def write_fixture(path: Path, fixture: RenderedFixture, *, models: Models, mcp: 
 
 
 def _render(
-    output: Path,
-    variant: FixtureVariant,
-    backend: Backend,
-    *,
-    vm_sandboxes: bool,
-    runner_egress_mtls: bool,
-    central_sampler: bool = False,
+    output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandboxes: bool, central_sampler: bool = False
 ) -> None:
     models = MODEL_PLACEHOLDERS[backend]
     fixture = RenderedFixture(
@@ -68,11 +62,7 @@ def _render(
         ],
         mcp_fixtures=None,
         objects=fixture_chart.objects(
-            **asdict(PLACEHOLDERS),
-            models=models,
-            vm_sandboxes=vm_sandboxes,
-            runner_egress_mtls=runner_egress_mtls,
-            central_sampler=central_sampler,
+            **asdict(PLACEHOLDERS), models=models, vm_sandboxes=vm_sandboxes, central_sampler=central_sampler
         ),
     )
     write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
@@ -81,11 +71,11 @@ def _render(
 def render_variant(output: Path, variant: FixtureVariant) -> None:
     match variant:
         case FixtureVariant.LOCAL_MODEL:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, runner_egress_mtls=True)
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
         case FixtureVariant.LOCAL_MODEL_VM:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True, runner_egress_mtls=False)
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True)
         case FixtureVariant.PUBLIC_LITELLM:
-            _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False, runner_egress_mtls=True)
+            _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
 
 
 def main() -> None:

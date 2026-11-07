@@ -18,6 +18,9 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     MemoryResources,
     PodSecurityContextProps,
+    Role,
+    RoleBinding,
+    RolePolicyRule,
     Secret,
     Service,
     ServiceAccount,
@@ -28,9 +31,10 @@ from constructs import Construct
 from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import central_sampler, telemetry
+from cluster.cdk8s.agentplane import central_sampler, telemetry, workload_tls
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -46,6 +50,7 @@ _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 # The Codex catalog is its own ConfigMap, so a catalog edit does not change the settings file.
 _CODEX_CATALOG_PATH = PurePosixPath("/etc/agentplane-llm-ingress-codex/codex_models.json")
+WORKLOAD_URI = "spiffe://agentplane/llm-ingress"
 
 
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
@@ -55,6 +60,15 @@ def service(namespace: str) -> ServiceRef:
     """The LLM ingress in one environment's namespace."""
     return ServiceRef(
         name=_NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
+
+
+def workload_service(namespace: str) -> ServiceRef:
+    """The separate listener that authenticates live Sandbox SVIDs."""
+    return ServiceRef(
+        name=_NAME,
+        port=Port(name="workload", number=8082),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
 
 
@@ -94,6 +108,7 @@ class LlmIngress(Construct):
         self.memory_limit = memory_limit
         self.service = service(env.namespace)
         self.grpc_service = grpc_service(env.namespace)
+        self.workload_service = workload_service(env.namespace)
 
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
         # calls TokenReview as itself, so it needs its own mounted token.
@@ -111,6 +126,28 @@ class LlmIngress(Construct):
             name=f"{env.namespace}-llm-ingress-token-reviewer",
             service_account_name=_NAME,
             namespace=env.namespace,
+        )
+        reader_role_name = f"{_NAME}-sandbox-reader"
+        Role(
+            self,
+            "sandbox-reader-role",
+            metadata=ApiObjectMetadata(name=reader_role_name, namespace=env.namespace),
+            rules=[
+                RolePolicyRule(
+                    resources=[custom_resource("agentplane.allegedly.works", "sandboxes")], verbs=["get", "list"]
+                ),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
+            ],
+        )
+        RoleBinding(
+            self,
+            "sandbox-reader-rolebinding",
+            metadata=ApiObjectMetadata(name=reader_role_name, namespace=env.namespace),
+            role=Role.from_role_name(self, "sandbox-reader-role-ref", reader_role_name),
+        ).add_subjects(
+            ServiceAccount.from_service_account_name(
+                self, "llm-ingress-account-ref", _NAME, namespace_name=env.namespace
+            )
         )
         catalog = codex_catalog(env.llm_ingress.codex_routes)
         catalog_map = (
@@ -136,6 +173,12 @@ class LlmIngress(Construct):
             "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
             **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
         }
+        deployment = self._add_deployment(service_account, catalog_map)
+        serving_tls = workload_tls.serving_certificate(
+            self, env, container=deployment.containers[0], name=_NAME, uri=WORKLOAD_URI
+        )
+        content["workload_tls"] = serving_tls.model_dump(mode="json", exclude_none=True)
+        content["workload_listen_address"] = f"0.0.0.0:{self.workload_service.pod_port}"
         settings = SettingsFile(
             self,
             "settings",
@@ -143,16 +186,14 @@ class LlmIngress(Construct):
             content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
-        deployment = self._add_deployment(service_account, settings, catalog_map)
+        settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
         self._add_service(deployment)
 
     def add_platform_resources(self) -> None:
         """Add fleet Cilium network admission."""
         self._add_network_policy()
 
-    def _add_deployment(
-        self, service_account: ServiceAccount, settings: SettingsFile, catalog_map: ConfigMap | None
-    ) -> Deployment:
+    def _add_deployment(self, service_account: ServiceAccount, catalog_map: ConfigMap | None) -> Deployment:
         deployment = Deployment(
             self,
             "deployment",
@@ -162,7 +203,9 @@ class LlmIngress(Construct):
                 labels=_LABELS,
                 annotations={
                     "configmap.reloader.stakater.com/reload": ",".join(
-                        config_map.name for config_map in (settings.config_map, catalog_map) if config_map is not None
+                        config_map
+                        for config_map in (f"{_NAME}-settings", None if catalog_map is None else catalog_map.name)
+                        if config_map is not None
                     ),
                     "secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name,
                 },
@@ -206,7 +249,11 @@ class LlmIngress(Construct):
                 .key("api-key")
                 .env_value(self, "litellm-key-secret"),
             },
-            ports=[self.service.port.container_port(), self.grpc_service.port.container_port()],
+            ports=[
+                self.service.port.container_port(),
+                self.grpc_service.port.container_port(),
+                self.workload_service.port.container_port(),
+            ],
             readiness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
@@ -217,7 +264,6 @@ class LlmIngress(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
-        settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
         if catalog_map is not None:
             deployment.containers[0].mount(
                 str(_CODEX_CATALOG_PATH.parent),
@@ -236,7 +282,11 @@ class LlmIngress(Construct):
             "service",
             metadata=ApiObjectMetadata(name=self.service.name, namespace=self.env.namespace),
             selector=deployment,
-            ports=[self.service.port.service_port(), self.grpc_service.port.service_port()],
+            ports=[
+                self.service.port.service_port(),
+                self.grpc_service.port.service_port(),
+                self.workload_service.port.service_port(),
+            ],
         )
 
     def _add_network_policy(self) -> None:
@@ -251,7 +301,8 @@ class LlmIngress(Construct):
             ingress=[
                 # egress.py imports this module, so the proxy's Pods are named here.
                 IngressRule.from_endpoints(
-                    cilium.endpoint_labels(self.env.namespace, "egress"), ports=[self.service.pod_port]
+                    cilium.endpoint_labels(self.env.namespace, "egress"),
+                    ports=[self.service.pod_port, self.workload_service.pod_port],
                 ),
                 *(
                     [central_sampler.pods(self.env.namespace).admit(self.service.pod_port)]

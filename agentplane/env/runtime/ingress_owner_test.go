@@ -374,7 +374,14 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 		}
 		deliveryCtx, cancel := context.WithCancel(ctx)
 		deliveryDone := make(chan error, 1)
-		go func() { deliveryDone <- r.ingressSupervisor(endpoint, r.fail).Run(deliveryCtx) }()
+		go func() {
+			supervisor, err := r.ingressSupervisor(endpoint, r.fail)
+			if err != nil {
+				deliveryDone <- err
+				return
+			}
+			deliveryDone <- supervisor.Run(deliveryCtx)
+		}()
 		select {
 		case <-failDelivery:
 			cancel()

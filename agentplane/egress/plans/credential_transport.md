@@ -1,8 +1,9 @@
 # Credential destination transport
 
-**Proposed decision, 2026-10-19; no enforcement change selected.** Decide which upstream schemes
-and ports may receive a substituted credential. This applies to the central proxy's Secret,
-authenticated-workload-token, and projected-workload-token sources alike.
+**Historical transport inventory, 2026-10-19.** The proposal below considered which upstream
+schemes and ports may receive a substituted `EgressCredential`. First-party Sandbox SVID routes use
+mutually authenticated TLS and do not use credential substitution; this inventory applies only to
+remaining bearer and Secret-backed credentials.
 
 ## Current boundary
 
@@ -33,9 +34,8 @@ constraints. Retain existing host, method, path, and identity restrictions.
 | `google-readonly`, `grocy-sf-readonly`, `activitywatch-read`, public `aiquota-read`, `haku-mailbox`   | HTTPS 443                        | `cluster/cdk8s/agentplane/egress_staging_credentials.py` and `actions_staging_policies.py` |
 | Public `forgejo-haku` and `forgejo-finance-agent`: `git.allegedly.works`                              | HTTPS 443                        | `egress_staging_credentials.py::_forgejo_rules`                                            |
 | `brave-search`, `public-coder-matrix`, plus reused GitHub/AIQuota credentials                         | HTTPS 443                        | `cluster/cdk8s/public_coder/egress.py`                                                     |
-| `agentplane-workload`: LLM ingress and Actions; `agentplane-notifications-workload`: Notifications    | HTTP 8080                        | `cluster/cdk8s/agentplane/{egress,llm_ingress,actions,notifications}.py`                   |
+| Kubernetes projected workload token                                                                   | HTTPS 443                        | `cluster/cdk8s/agentplane/egress.py`, `sandbox_pod.py`                                     |
 | `agentplane-runner-ingress`: History ingress                                                          | HTTP/h2c 8081                    | `history_service.py::ingress_service`                                                      |
-| `kubernetes-workload`: `kubernetes.default.svc.cluster.local`                                         | HTTPS 443                        | `egress.py`, `sandbox_pod.py`                                                              |
 | `ollama`, `litellm-cheap-experiments`                                                                 | HTTP 11435 and 4000 respectively | `egress.py::_egress_policies`, Ollama and LiteLLM Service definitions                      |
 | Internal Forgejo credentials and existing host aliases                                                | HTTP 3000                        | `egress_staging_credentials.py::_forgejo_rules`, `cluster/cdk8s/forgejo/app.py`            |
 | `home-assistant-readonly`; internal `aiquota-read`                                                    | HTTP 8123 and 8080 respectively  | `home_assistant_read_egress_rules`, `cluster/cdk8s/aiquota.py`                             |

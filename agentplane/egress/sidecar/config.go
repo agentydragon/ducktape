@@ -31,7 +31,7 @@ type plaintextRouteTransportConfig struct{ TokenFile string }
 
 func (plaintextRouteTransportConfig) mode() platformRouteMode { return platformRoutePlaintext }
 
-type tlsConnectRouteTransportConfig struct{}
+type tlsConnectRouteTransportConfig struct{ ServerURI string }
 
 func (tlsConnectRouteTransportConfig) mode() platformRouteMode { return platformRouteTLSConnect }
 
@@ -66,12 +66,16 @@ func decodePlatformRouteTransport(node *yaml.Node) (platformRouteTransportConfig
 	var transport struct {
 		Mode      platformRouteMode `yaml:"mode"`
 		TokenFile yaml.Node         `yaml:"token_file"`
+		ServerURI yaml.Node         `yaml:"server_uri"`
 	}
 	if err := decodeKnownFields(node, &transport); err != nil {
 		return nil, err
 	}
 	switch transport.Mode {
 	case platformRoutePlaintext:
+		if transport.ServerURI.Kind != 0 {
+			return nil, errors.New("plaintext route cannot set server_uri")
+		}
 		var tokenFile string
 		if transport.TokenFile.Kind != 0 {
 			var err error
@@ -85,7 +89,11 @@ func decodePlatformRouteTransport(node *yaml.Node) (platformRouteTransportConfig
 		if transport.TokenFile.Kind != 0 {
 			return nil, errors.New("TLS CONNECT route cannot set token_file")
 		}
-		return tlsConnectRouteTransportConfig{}, nil
+		serverURI, err := requiredYAMLString(&transport.ServerURI, "server_uri")
+		if err != nil {
+			return nil, err
+		}
+		return tlsConnectRouteTransportConfig{ServerURI: serverURI}, nil
 	default:
 		return nil, fmt.Errorf("mode must be %q or %q: %q", platformRoutePlaintext, platformRouteTLSConnect, transport.Mode)
 	}
@@ -278,6 +286,7 @@ func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
 type config struct {
 	Proxy                  proxyConfig                    `yaml:"proxy"`
 	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
+	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
 	PlatformRoutes         map[string]platformRouteConfig `yaml:"platform_routes"`
 	ListenAddress          string                         `yaml:"listen_address"`
 	ReadinessListenAddress string                         `yaml:"readiness_listen_address"`
@@ -291,6 +300,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	c := config{
 		AudienceTokenFiles:     make(map[string]string),
+		WorkloadRoutes:         make(map[string]workloadRouteConfig),
 		PlatformRoutes:         make(map[string]platformRouteConfig),
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "0.0.0.0:3129",
@@ -336,6 +346,14 @@ func (c config) validate() error {
 			if _, ok := transport.Auth.(spiffeProxyAuth); !ok {
 				return fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE proxy authentication", name)
 			}
+		}
+	}
+	if c.WorkloadRoutes == nil {
+		return errors.New("workload_routes must be an object")
+	}
+	for authority, route := range c.WorkloadRoutes {
+		if err := validateWorkloadRoute(authority, route); err != nil {
+			return fmt.Errorf("workload route %q: %w", authority, err)
 		}
 	}
 	return nil

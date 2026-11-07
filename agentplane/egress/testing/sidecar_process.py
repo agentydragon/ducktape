@@ -14,7 +14,7 @@ import yaml
 from python.runfiles import Runfiles
 
 from agentplane.egress.platform_routes import PlatformRoute
-from agentplane.egress.sidecar_config import Proxy, Settings
+from agentplane.egress.sidecar_config import Proxy, Settings, WorkloadRoute
 from util.net import Listener, listen_tcp
 
 _BINARY = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/egress/sidecar/egress-sidecar_/egress-sidecar"
@@ -26,10 +26,12 @@ class SidecarProcess:
         *,
         proxy: Proxy,
         audience_token_files: Mapping[str, Path] = MappingProxyType({}),
+        workload_routes: Mapping[str, WorkloadRoute] = MappingProxyType({}),
         platform_routes: Mapping[str, PlatformRoute] = MappingProxyType({}),
     ) -> None:
         self._proxy = proxy
         self._audience_token_files = audience_token_files
+        self._workload_routes = workload_routes
         self._platform_routes = platform_routes
         self._listener_stack = ExitStack()
         self._proxy_listener: Listener | None = None
@@ -55,6 +57,7 @@ class SidecarProcess:
             settings = Settings(
                 proxy=self._proxy,
                 audience_token_files=dict(self._audience_token_files),
+                workload_routes=dict(self._workload_routes),
                 platform_routes=routes,
                 listen_address=self._fd_address(self.proxy_listener),
                 readiness_listen_address=self._fd_address(self.readiness_listener),

@@ -34,7 +34,7 @@ func (a *app) connectEnvironment() (*environmentConnection, error) {
 
 func (a *app) environmentsCommand() *cobra.Command {
 	return group("environments", "Discover existing environments this account may use",
-		"Lists and refreshes exact Sandbox identities (namespace/name/UID) for the ServiceAccount proved by AGENTPLANE_SESSIONS_CREDENTIAL. Explicit resume still requires current backend policy.",
+		"Lists and refreshes exact Sandbox identities (namespace/name/UID) for the authenticated caller. AGENTPLANE_SESSIONS_CREDENTIAL is an optional bearer for forwarders that require it; explicit resume still requires current backend policy.",
 		a.listEnvironmentsCommand(), a.getEnvironmentCommand(), a.resumeEnvironmentCommand())
 }
 
@@ -144,7 +144,7 @@ func (a *app) listEnvironmentsCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "list [--limit N] [--after TOKEN]",
 		Short: "List one page of usable existing environments",
-		Long: `Lists only Sandboxes whose live, controller-owned ServiceAccount UID matches this credential.
+		Long: `Lists only Sandboxes whose live, controller-owned ServiceAccount UID matches the authenticated caller.
 Use the complete target namespace/name/UID from a result with environments get. The current
 Sandbox-owned account lookup returns no continuation token. Workspace paths and runtime choices are
 deployment-configured offers; custom templates without a published mapping remain unavailable.`,

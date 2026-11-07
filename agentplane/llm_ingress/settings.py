@@ -1,11 +1,12 @@
 """Authoring schema for the Go LLM ingress deployment settings."""
 
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Self
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.environment_runtime_transport.config import TLS
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
@@ -57,4 +58,16 @@ class Settings(YamlFileSettings):
     host: str = Field(default="0.0.0.0", description="Listener bind address.")
     port: int = Field(default=8080, description="Listener port.")
     grpc_port: int = Field(default=8081, description="Native gRPC listener port.")
+    workload_tls: TLS | None = Field(
+        default=None, description="Serving certificate and client trust roots for the Sandbox SVID listener."
+    )
+    workload_listen_address: str | None = Field(
+        default=None, min_length=1, description="Address for the separate Sandbox SVID listener."
+    )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+
+    @model_validator(mode="after")
+    def workload_listener_pair(self) -> Self:
+        if (self.workload_tls is None) != (self.workload_listen_address is None):
+            raise ValueError("workload_tls and workload_listen_address must be configured together")
+        return self

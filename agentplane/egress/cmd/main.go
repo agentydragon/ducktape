@@ -119,25 +119,18 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 	return base, nil
 }
 
-// workloadIdentity reviews an enabled bearer hop and each projected token for its audience,
-// accepting only ServiceAccounts of the allowed namespaces. SPIFFE-only listeners have no hop
-// bearer resolver.
+// workloadIdentity reviews the remaining projected destination tokens for their audiences.
+// The SPIFFE-only forward listener has no hop bearer resolver.
 func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
-	var hop *auth.Resolver
-	var err error
-	if c.Forward.Has(listener.KubernetesBearer) {
-		hop, err = auth.NewResolver(reviews, c.Forward.BearerAudience(), c.AllowedServiceAccountNamespaces)
+	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
+	for _, audience := range c.ProjectedTokenAudiences {
+		resolver, err := auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces)
 		if err != nil {
 			return nil, err
 		}
+		projected[audience] = resolver
 	}
-	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
-	for _, audience := range c.ProjectedTokenAudiences {
-		if projected[audience], err = auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces); err != nil {
-			return nil, err
-		}
-	}
-	return identity.NewVerifier(hop, projected), nil
+	return identity.NewVerifier(nil, projected), nil
 }
 
 // upstreamRoots is the bundle destinations are verified against: the file when given, else the

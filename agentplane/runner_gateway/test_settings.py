@@ -20,6 +20,11 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
                 "runner_token_file": "/run/test/token",
                 "dispatcher_audience": "test-dispatcher",
                 "gateway_audience": "test-gateway",
+                "workload": {
+                    "listen_address": ":8082",
+                    "tls": {"cert_file": "/test/workload-cert", "key_file": "/test/workload-key"},
+                    "auth": [{"mode": "spiffe", "ca_file": "/test/workload-ca"}],
+                },
                 "dispatcher_callers": {"test-app/test-dispatcher"},
                 "gateway_callers": {"test-app/test-gateway"},
                 "operator_callers": {"test-app/test-dispatcher"},
@@ -67,6 +72,22 @@ def test_operator_callers_are_an_optional_subset_of_dispatcher_callers() -> None
     source = settings.model_dump()
     source["operator_callers"] = {"test-app/other"}
     with pytest.raises(ValidationError, match="operator_callers must be a subset"):
+        Settings.model_validate(source)
+
+
+def test_workload_bearer_auth_may_reuse_backend_audience() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["workload"]["auth"] = [{"mode": "kubernetes_bearer", "audience": "test-dispatcher"}]
+    assert Settings.model_validate(source).workload.model_dump(mode="json")["auth"] == [
+        {"mode": "kubernetes_bearer", "audience": "test-dispatcher"}
+    ]
+
+
+def test_workload_tls_remains_required_in_bearer_only_mode() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["workload"]["auth"] = [{"mode": "kubernetes_bearer", "audience": "test-workload"}]
+    source["workload"]["tls"] = None
+    with pytest.raises(ValidationError, match=r"workload\.tls is required"):
         Settings.model_validate(source)
 
 

@@ -701,3 +701,16 @@ func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
 		t.Fatalf("summary did not preserve review status: %v", &status)
 	}
 }
+
+func TestNotificationClientOmitsBearerWhenCredentialIsUnset(t *testing.T) {
+	servicer := answering(pullRequestSubscription(1, false))
+	env := notificationsEnv(serveNotifications(t, servicer))
+	delete(env, "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL")
+	code, _, stderr := invoke(env, "notifications", "subscriptions", "--limit", "1", "--json")
+	if code != 0 {
+		t.Fatalf("subscriptions: exit %d: %s", code, stderr)
+	}
+	if len(servicer.authorization) != 0 {
+		t.Fatalf("authorization = %v; want no bearer when the gRPC credential is unset", servicer.authorization)
+	}
+}

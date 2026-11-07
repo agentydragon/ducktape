@@ -166,12 +166,7 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
 
 
 def environment(
-    *,
-    vm_sandboxes: bool,
-    runner_egress_mtls: bool,
-    models: Models,
-    app_origin: str = APP_ORIGIN,
-    central_sampler: bool = False,
+    *, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORIGIN, central_sampler: bool = False
 ) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
     app_login = login_client(app_origin)
@@ -285,7 +280,6 @@ def environment(
             hostname=None,
         ),
         vm_sandboxes=vm_sandboxes,
-        runner_egress_mtls=runner_egress_mtls,
         vm_resources=vm_configuration.RESOURCES if vm_sandboxes else None,
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
@@ -347,20 +341,19 @@ def objects(
     cluster_ca: str,
     models: Models,
     vm_sandboxes: bool,
-    runner_egress_mtls: bool,
     central_sampler: bool = False,
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
-    env = environment(
-        vm_sandboxes=vm_sandboxes, runner_egress_mtls=runner_egress_mtls, models=models, central_sampler=central_sampler
-    )
+    env = environment(vm_sandboxes=vm_sandboxes, models=models, central_sampler=central_sampler)
     fixture = build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
     synthesized = list(Testing.synth(fixture.chart))
     if vm_sandboxes:
         _boot_test_guest(synthesized)
-    return synthesized
+    # Service-owned workload listeners render Cilium admission in production. Bare k3s has no
+    # Cilium CRD or dataplane; network-policy validation remains a rendering/staging boundary.
+    return [doc for doc in synthesized if doc["kind"] != "CiliumNetworkPolicy"]
 
 
 def build_chart(
@@ -423,7 +416,6 @@ def build_chart(
         chart,
         "egress",
         env,
-        enable_svid_auth=env.runner_egress_mtls,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
@@ -433,6 +425,13 @@ def build_chart(
         registry_secret_name=None,
         container_env=database_env,
         memory_limit=None,
+        tls_passthrough_services=[
+            history_service.workload_service(env.namespace),
+            llm_ingress.workload_service(env.namespace),
+            notifications.workload_service(env.namespace),
+            runner_gateway.workload_service(env.namespace),
+            actions.workload_service(NAMESPACE),
+        ],
     )
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {
@@ -563,6 +562,7 @@ def build_chart(
         "actions",
         env,
         database_url=actions_database_url,
+        workload_callers=[egress.proxy(NAMESPACE).pods],
         history=history_service.service(NAMESPACE),
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
@@ -593,12 +593,7 @@ def build_chart(
         memory_limit=None,
     )
     command_sandbox.CommandSandbox(
-        chart,
-        "command-sandbox",
-        env,
-        sidecar_resources=sandbox_sidecar_resources,
-        image_pull_secret_name=None,
-        trust_mounts=sandbox_pod.egress_proxy_mounts(),
+        chart, "command-sandbox", env, image_pull_secret_name=None, trust_mounts=sandbox_pod.egress_proxy_mounts()
     )
     # The app and the Actions MCP client read their normal Secret names.
     add_secret(
@@ -642,14 +637,19 @@ def build_chart(
         metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=NAMESPACE),
         rules=access.rules_for_grants([tool_config_grant]),
     )
-    # A request `basic` refuses: GET on a path it does not name, on a host it does.
+    # Keep this policy probe off service-owned SVID routes, whose receivers authorize their
+    # requests after opaque CONNECT. The app origin is an ordinary intercepted destination.
     PolicySet(
         chart,
         f"policy-set-{runtime_grant.POLICY_SET}",
-        metadata=ApiObjectMetadata(name=runtime_grant.POLICY_SET, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(
+            name=runtime_grant.POLICY_SET,
+            namespace=NAMESPACE,
+            annotations={runtime_grant.PORT_ANNOTATION: str(APP_SERVICE.port.number)},
+        ),
         rules=[
             Rule.egress(
-                hosts=[session_dispatcher.service(NAMESPACE).fqdn],
+                hosts=[APP_SERVICE.fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/test-runtime-grant"],

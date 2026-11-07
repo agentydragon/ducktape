@@ -127,9 +127,9 @@ func (s *seconds) Type() string { return "seconds" }
 const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions get, read-turns,
 and observe-input. Notifications and egress rules use gRPC through local sidecar routes.
 The environments group reads the co-hosted Runner Gateway discovery
-API. It adds no authority and keeps no state. Each group reads its AGENTPLANE_*_URL and AGENTPLANE_*_CREDENTIAL pair
-(the placeholder bearer) and fails alone with exit 2 when they are missing; environments uses AGENTPLANE_SESSIONS_URL
-and AGENTPLANE_SESSIONS_CREDENTIAL.
+API. It adds no authority and keeps no state. Each group reads its AGENTPLANE_*_URL; when a
+AGENTPLANE_*_CREDENTIAL is configured, the CLI sends it as bearer metadata. A group fails alone with
+exit 2 when its URL is missing; environments uses AGENTPLANE_SESSIONS_URL and an optional bearer.
 
 With --json stdout is the service's own JSON, unmodified: one value, or one per line for a list. Text
 is for reading, not parsing. stdout is the answer and stderr the diagnostics; after exit 1-5 or 15

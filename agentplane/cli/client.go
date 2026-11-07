@@ -71,15 +71,8 @@ func (bearerCredential) RequireTransportSecurity() bool { return false }
 func (a *app) connectGRPC(group string) (*grpc.ClientConn, error) {
 	urlVariable, credentialVariable := "AGENTPLANE_"+group+"_URL", "AGENTPLANE_"+group+"_CREDENTIAL"
 	base, credential := a.getenv(urlVariable), a.getenv(credentialVariable)
-	var missing []string
 	if base == "" {
-		missing = append(missing, urlVariable)
-	}
-	if credential == "" {
-		missing = append(missing, credentialVariable)
-	}
-	if len(missing) > 0 {
-		return nil, usageFailure("%s not set", strings.Join(missing, " and "))
+		return nil, usageFailure("%s not set", urlVariable)
 	}
 	parsed, err := parseServiceURL(base, urlVariable)
 	if err != nil {
@@ -96,12 +89,14 @@ func (a *app) connectGRPC(group string) (*grpc.ClientConn, error) {
 	if parsed.Scheme == "https" {
 		transportCredentials = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12, ServerName: parsed.Hostname()})
 	}
-	connection, err := grpc.NewClient(
-		target,
+	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(transportCredentials),
-		grpc.WithPerRPCCredentials(bearerCredential(credential)),
 		grpc.WithDisableRetry(),
-	)
+	}
+	if credential != "" {
+		options = append(options, grpc.WithPerRPCCredentials(bearerCredential(credential)))
+	}
+	connection, err := grpc.NewClient(target, options...)
 	if err != nil {
 		return nil, usageFailure("%s is not a valid gRPC endpoint", urlVariable)
 	}

@@ -112,6 +112,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         "actions",
         env,
         database_url=EnvValue.from_value("postgres://unused"),
+        workload_callers=[],
         history=history_service.service(env.namespace),
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),

@@ -5,10 +5,10 @@
 Use `agentplane notifications inbox read SESSION_ID --after CURSOR --limit 128 --json` to read one
 bounded page and `agentplane notifications inbox ack SESSION_ID --through CURSOR` to acknowledge the
 handled prefix. Reads do not acknowledge; acknowledgement covers every entry through the cursor,
-across all subscriptions in that inbox. The CLI reads the configured Notifications URL and credential
-from `AGENTPLANE_NOTIFICATIONS_GRPC_URL` and `AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL`. For raw HTTP calls,
-use the Notifications URL and Bearer placeholder from your platform instructions through the egress
-proxy. No call lists enabled providers: a service without the GitHub App refuses a GitHub subscription
+across all subscriptions in that inbox. The CLI reads `AGENTPLANE_NOTIFICATIONS_GRPC_URL`; its bearer
+credential is optional. Sandbox routes authenticate the caller's SVID, and a configured credential is
+sent as bearer metadata for other routes. For raw HTTP calls, use the Notifications URL from your
+platform instructions. No call lists enabled providers: a service without the GitHub App refuses a GitHub subscription
 with `PERMISSION_DENIED`. JSON from the service uses camelCase field names and writes 64-bit integers
 (cursors, versions) as strings. Requests accept either protobuf or camelCase field spelling and reject
 unknown fields; check that the response echoes what you sent.

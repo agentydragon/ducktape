@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -117,5 +118,39 @@ models: []
 	_, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
 	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 		t.Fatalf("got unsafe or missing config error: %v", err)
+	}
+}
+
+func TestValidateConfigRequiresWorkloadTLSListenerAsAPair(t *testing.T) {
+	base := config{
+		AllowedServiceAccountNamespaces: []string{"test-namespace"},
+		TokenAudience:                   testAudience,
+		LiteLLMURL:                      "http://127.0.0.1:8100",
+		LiteLLMKey:                      testBackendKey,
+		Attribution:                     defaultAttribution(),
+		Host:                            "0.0.0.0",
+		Port:                            8080,
+	}
+	for _, test := range []struct {
+		name    string
+		tls     *environment_runtime_transport.Config
+		address string
+		wantErr bool
+	}{
+		{name: "disabled"},
+		{name: "address without TLS", address: "0.0.0.0:8081", wantErr: true},
+		{name: "TLS without address", tls: &environment_runtime_transport.Config{CertFile: "/tls/tls.crt", KeyFile: "/tls/tls.key", CAFile: "/tls/ca.crt"}, wantErr: true},
+		{name: "enabled", tls: &environment_runtime_transport.Config{CertFile: "/tls/tls.crt", KeyFile: "/tls/tls.key", CAFile: "/tls/ca.crt"}, address: "0.0.0.0:8081"},
+		{name: "incomplete TLS", tls: &environment_runtime_transport.Config{CertFile: "/tls/tls.crt"}, address: "0.0.0.0:8081", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base
+			candidate.WorkloadTLS = test.tls
+			candidate.WorkloadListenAddress = test.address
+			err := validateConfig(&candidate)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateConfig() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
 	}
 }

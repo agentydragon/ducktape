@@ -1,4 +1,4 @@
-"""The Gateway keeps one public Service and uses mTLS client connections to runner Pods."""
+"""The Gateway exposes its gRPC and SVID workload listeners with mTLS connections to runner Pods."""
 
 from dataclasses import replace
 from pathlib import PurePosixPath
@@ -15,6 +15,7 @@ from cluster.cdk8s.agentplane import (
     actions,
     app,
     chart as agentplane_chart,
+    egress,
     environment_sandbox,
     history_service,
     notifications,
@@ -68,6 +69,14 @@ def test_environment_provisions_cert_manager_runner_issuer_and_gateway_identity(
     assert set(spec["usages"]) == {"digital signature", "client auth"}
     assert spec["privateKey"]["rotationPolicy"] == "Always"
 
+    workload_certificate = _resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-workload")
+    workload_spec = workload_certificate["spec"]
+    assert workload_spec["secretName"] == f"{runner_gateway.NAME}-workload-tls"
+    assert workload_spec["issuerRef"] == {"kind": "Issuer", "name": runner_gateway.RUNNER_CERTIFICATE_ISSUER}
+    assert workload_spec["uris"] == [runner_gateway.WORKLOAD_URI]
+    assert set(workload_spec["usages"]) == {"digital signature", "server auth"}
+    assert workload_spec["privateKey"]["rotationPolicy"] == "Always"
+
 
 def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App) -> None:
     docs = _gateway_objects(scratch_app)
@@ -80,11 +89,21 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert not pod.get("initContainers")
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
     assert pod["serviceAccountName"] == runner_gateway.NAME
+    workload = runner_gateway.workload_service(staging.ENV.namespace)
     listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
     settings = _gateway_settings(docs, container)
     assert settings["listen_address"].startswith("0.0.0.0:")
     assert "http_listen_address" not in settings
     assert int(settings["listen_address"].rsplit(":", 1)[1]) == listener_ports["grpc"]
+    assert settings["workload"]["listen_address"].startswith("0.0.0.0:")
+    assert int(settings["workload"]["listen_address"].rsplit(":", 1)[1]) == listener_ports["workload"]
+    assert settings["workload"]["tls"] == {
+        "cert_file": "/run/agentplane/workload-tls/tls.crt",
+        "key_file": "/run/agentplane/workload-tls/tls.key",
+    }
+    assert settings["workload"]["auth"] == [
+        {"mode": "spiffe", "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt"}
+    ]
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
     assert settings["runner_security"] == {
@@ -113,7 +132,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         )
         assert all(port["targetPort"] == listener_ports[port["name"]] for port in service["ports"])
     gateway_service = _resource(root_docs, "Service", runner_gateway.NAME)["spec"]
-    assert one(gateway_service["ports"])["port"] == 8080
+    assert one(port for port in gateway_service["ports"] if port["name"] == "grpc")["port"] == 8080
+    assert one(port for port in gateway_service["ports"] if port["name"] == "workload")["port"] == workload.port.number
     dispatcher_service = _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]
     assert {port["name"] for port in dispatcher_service["ports"]} == {"grpc"}
     policy = _resource(docs, "CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
@@ -126,6 +146,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert (app.NAME, "8080") in ingress
     assert (notifications.NAME, "8080") in ingress
     assert (runner_gateway.NAME, "8080") in ingress
+    assert (egress.NAME, str(workload.pod_port)) in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
     runner_label = environment_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
     assert (runner_label, "8090") not in ingress

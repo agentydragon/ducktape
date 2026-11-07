@@ -17,6 +17,7 @@ py_library(
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:settings",
         "//agentplane/testing:tls",
+        "//agentplane/workload_auth:listener",
         "//devinfra/testing:undeclared_outputs",
         "//util:db_url",
         "//util:net",

@@ -14,6 +14,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
+from agentplane.environment_runtime_transport.config import TLS
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
@@ -67,8 +68,19 @@ class Settings(YamlFileSettings):
     log_levels: LogLevels
     host: str = "127.0.0.1"
     port: int = 8080
-    token_audience: str = Field(min_length=1, description="Accepted projected-token audience of Sandbox callers.")
+    workload_port: int | None = Field(default=None, ge=1, le=65535)
+    workload_tls: TLS | None = None
+    token_audience: str = Field(min_length=1, description="Accepted projected-token audience of backend callers.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
+
+    @model_validator(mode="after")
+    def workload_listener(self) -> Settings:
+        if (self.workload_port is None) != (self.workload_tls is None):
+            raise ValueError("workload_port and workload_tls must be set together")
+        if self.workload_port == self.port:
+            raise ValueError("workload_port must be distinct from port")
+        return self
+
     policy_namespace: str = Field(
         description="Kubernetes namespace whose PolicySets and PolicyBindings this service watches; "
         "it writes `ActionsReady` conditions only on those bindings."

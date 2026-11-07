@@ -2,23 +2,32 @@ package dispatcher
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -109,7 +118,7 @@ func authorityClient(t *testing.T, store *Store, inventory *authorityInventory, 
 		Store: store, DispatcherCallers: configuredDispatcherCallers(),
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
-	connection := grpcmethods.Serve(t, Methods(resolver), func(server *grpc.Server) {
+	connection := grpcmethods.Serve(t, Methods(auth.ReviewedServiceAccount(resolver)), func(server *grpc.Server) {
 		dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	})
 	return dispatcherpb.NewSessionDispatcherClient(connection)
@@ -120,6 +129,60 @@ func authorityContext(t *testing.T, token string) context.Context {
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	t.Cleanup(cancel)
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+}
+
+func authoritySVIDContext(t *testing.T, token string) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	t.Cleanup(cancel)
+	return metadata.NewOutgoingContext(ctx, metadata.Pairs(
+		"authorization", "Bearer "+token,
+		"x-agentplane-subject", "attacker/forged",
+	))
+}
+
+func authoritySVIDClient(
+	t *testing.T,
+	address, workloadURI string,
+	ca *transporttesting.CA,
+	presented environment_runtime_transport.Config,
+) dispatcherpb.SessionDispatcherClient {
+	t.Helper()
+	clientCredential := ca.Issue(t, workloadURI)
+	clientTLS, err := clientCredential.ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair, err := tls.LoadX509KeyPair(presented.CertFile, presented.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		return &pair, nil
+	}
+	connection, err := grpc.NewClient(
+		address,
+		grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)),
+		grpc.WithNoProxy(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	return dispatcherpb.NewSessionDispatcherClient(connection)
+}
+
+type countingAuthorityDispatcher struct {
+	dispatcherpb.SessionDispatcherServer
+	listCalls atomic.Int32
+}
+
+func (s *countingAuthorityDispatcher) ListSessions(
+	ctx context.Context,
+	request *dispatcherpb.ListSessionsRequest,
+) (*dispatcherpb.ListSessionsResponse, error) {
+	s.listCalls.Add(1)
+	return s.SessionDispatcherServer.ListSessions(ctx, request)
 }
 
 func delegatedAuthorityContext(
@@ -194,6 +257,103 @@ func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDisp
 		SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: uuid.NewString(), TurnId: "unregistered-turn",
 	}); status.Code(err) != codes.NotFound {
 		t.Fatalf("unregistered Session interrupt: %v", err)
+	}
+}
+
+func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
+	api, err := kubeapiserver.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := api.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	owner := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
+	foreign := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-foreign-caller")
+	ownerAccount := owner.Principal.Account
+	ownerIdentity := serviceAccountIdentityFor(ownerAccount, owner.Principal.ServiceAccountUID)
+	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
+	inventory := &authorityInventory{sandbox: ownerSandbox, account: ownerIdentity, accountFound: true}
+	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := testStore(t, 10)
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
+	service := &Service{
+		Store: store, DispatcherCallers: map[auth.Account]struct{}{},
+		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
+	}
+	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
+	methods := Methods(auth.AnyAccount(svids))
+	ca := transporttesting.NewCA(t)
+	serverCredential := ca.Issue(t, environment_runtime_transport.SessionDispatcherURI)
+	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS.NextProtos = []string{"h2", "http/1.1"}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	dispatcherpb.RegisterSessionDispatcherServer(server, counted)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	validOwnerLeaf := ca.Issue(t, owner.URI)
+	invalidLeaves := map[string]environment_runtime_transport.Config{
+		"forged":  transporttesting.NewCA(t).Issue(t, owner.URI),
+		"expired": ca.IssueWithValidity(t, owner.URI, time.Now().Add(-time.Hour), time.Now().Add(-time.Minute), x509.ExtKeyUsageClientAuth),
+	}
+	for name, leaf := range invalidLeaves {
+		t.Run(name+"_leaf_rejected_before_dispatcher_handler", func(t *testing.T) {
+			client := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, leaf)
+			_, err := client.ListSessions(authoritySVIDContext(t, "owner-bearer"), &dispatcherpb.ListSessionsRequest{})
+			if err == nil {
+				t.Fatal("invalid workload leaf reached a successful Dispatcher RPC")
+			}
+			if calls := counted.listCalls.Load(); calls != 0 {
+				t.Fatalf("invalid workload leaf reached Dispatcher ListSessions handler %d times", calls)
+			}
+		})
+	}
+
+	ownerClient := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, validOwnerLeaf)
+	sessionID := uuid.NewString()
+	opened, err := ownerClient.CreateSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.CreateSessionRequest{
+		SessionId: sessionID,
+		Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
+			EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+				Environment: &sessionpb.ExactEnvironment{Name: ownerSandbox.Name, Uid: ownerSandbox.UID},
+				Harness:     sessionpb.Harness_HARNESS_CODEX,
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("Sandbox SVID owner CreateSession with a foreign bearer: %v", err)
+	}
+	if !proto.Equal(opened.GetSession().GetExecutionIdentity(), ownerIdentity) {
+		t.Fatalf("SVID-owned Session execution identity = %v, want %v", opened.GetSession().GetExecutionIdentity(), ownerIdentity)
+	}
+	owned, err := ownerClient.GetSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.GetSessionRequest{SessionId: sessionID})
+	if err != nil || !proto.Equal(owned.GetSession().GetExecutionIdentity(), ownerIdentity) {
+		t.Fatalf("Sandbox SVID owner GetSession = %v, %v; want owner identity %v", owned, err, ownerIdentity)
+	}
+	listed, err := ownerClient.ListSessions(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.ListSessionsRequest{})
+	if err != nil || len(listed.GetSessions()) != 1 || listed.GetSessions()[0].GetSessionId() != sessionID {
+		t.Fatalf("Sandbox SVID owner ListSessions = %v, %v; want its Session", listed, err)
+	}
+	if calls := counted.listCalls.Load(); calls != 1 {
+		t.Fatalf("valid owner ListSessions handler calls = %d, want 1", calls)
+	}
+
+	foreignClient := authoritySVIDClient(t, listener.Addr().String(), foreign.URI, ca, ca.Issue(t, foreign.URI))
+	if _, err := foreignClient.GetSession(authoritySVIDContext(t, "owner-bearer"), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
+		t.Fatalf("foreign Sandbox SVID with owner bearer GetSession = %v, want NotFound", err)
 	}
 }
 

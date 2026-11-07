@@ -34,6 +34,8 @@ from util.testing.otel_tracing import configure_tracing
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
+_CALL_REPORT = pytest.StashKey[pytest.TestReport]()
+
 
 @pytest.fixture(scope="session")
 def k3s_binary(runfiles: Runfiles) -> Path:
@@ -73,6 +75,8 @@ def pytest_runtest_makereport(
     item: pytest.Item, call: pytest.CallInfo
 ) -> Generator[None, pytest.TestReport, pytest.TestReport]:
     report = yield
+    if call.when == "call":
+        item.stash[_CALL_REPORT] = report
     if call.when == "call" and CASE_RESULT in item.stash:
         # Pytest waits for already-running tasks sequentially. Report the task's real
         # OTel span duration, rather than just the time spent waiting for its result.
@@ -88,7 +92,8 @@ async def client(
         try:
             yield opened
         finally:
-            if request.node.get_closest_marker("vm_sandboxes") is not None:
+            report = request.node.stash.get(_CALL_REPORT, None)
+            if request.node.get_closest_marker("vm_sandboxes") is not None or (report is not None and report.failed):
                 for uid in opened.opened_sandbox_uids:
                     with phase_tracer.start_as_current_span(
                         "system_test.diagnostics", attributes={"sandbox.uid": str(uid)}

@@ -20,7 +20,7 @@ from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
+from agentplane.runner_gateway.testing.gateway_process import WORKLOAD_AUDIENCE, GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -71,6 +71,7 @@ async def gateway_service(
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
         runner_proxy_token_file=token_file,
+        workload_bearer_audience=WORKLOAD_AUDIENCE,
     ) as service:
         yield service
 

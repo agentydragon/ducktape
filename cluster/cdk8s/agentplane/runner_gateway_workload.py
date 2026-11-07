@@ -34,6 +34,7 @@ from agentplane.crd_group import GROUP
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.runner_gateway.settings import CentralSamplerTarget, Settings
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth import listener as workload_listener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
@@ -46,6 +47,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     sandbox_controller,
     session_dispatcher,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -89,11 +91,14 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
     """Keep stable Services in their root Flux owner, targeting the shared listener."""
     proxy = runner_gateway.service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
+    workload = runner_gateway.workload_service(env.namespace)
     k8s.KubeService(
         scope,
         "runner-gateway-service",
         metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
-        spec=k8s.ServiceSpec(selector=proxy.pods.selector, ports=[proxy.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(
+            selector=proxy.pods.selector, ports=[proxy.port.k8s_service_port(), workload.port.k8s_service_port()]
+        ),
     )
     k8s.KubeService(
         scope,
@@ -116,7 +121,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
 
 
 class RunnerGateway(Construct):
-    """One workload with public gRPC, dispatcher HTTP and an mTLS client for runner Pods."""
+    """One workload with public gRPC, a SVID-authenticated workload listener and runner mTLS."""
 
     def __init__(
         self,
@@ -152,6 +157,7 @@ class RunnerGateway(Construct):
         self.dispatcher_callers = dispatcher_callers
         self.sandbox_controller_pods = sandbox_controller[1]
         proxy = runner_gateway.service(namespace)
+        workload_endpoint = runner_gateway.workload_service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
         # the per-Sandbox control Service with this projected Gateway-audience token.
@@ -186,7 +192,47 @@ class RunnerGateway(Construct):
             if env.central_sampler is not None
             else {}
         )
+        workload = add_service_workload(
+            self,
+            env,
+            serves=[proxy],
+            extra_ports=[workload_endpoint.container_port()],
+            container="runner-gateway",
+            image=image,
+            env_variables={
+                **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
+                env_name(Settings, "dispatcher_database_url"): database_url,
+                env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
+                **(container_env or {}),
+            },
+            readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
+            liveness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=20, period_seconds=30),
+            startup=grpc_probe(port=proxy.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60),
+            resources=ContainerResources(
+                cpu=CpuResources(request=Cpu.millis(100)),
+                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
+            ),
+            termination_grace=Duration.seconds(60),
+            # A Recreate drops delivery and every runner connection, so the Gateway rolls
+            # (a surged replica is Ready before the old one goes) even where the environment recreates.
+            replica_profile=replace(
+                env.replicas,
+                strategy=DeploymentStrategy.rolling_update(
+                    max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+                ),
+            ),
+            create_service=False,
+            telemetry_enabled=True,
+            registry_secret_name=registry_secret_name,
+            placement=placement,
+        )
         # Lists are file-only settings.
+        serving_tls = workload_tls.serving_certificate(
+            self, env, container=workload.container, name=runner_gateway.NAME, uri=runner_gateway.WORKLOAD_URI
+        )
+        assert serving_tls.cert_file is not None
+        assert serving_tls.key_file is not None
+        assert serving_tls.ca_file is not None
         content = {
             "dispatcher_callers": dispatcher_accounts,
             "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
@@ -196,6 +242,11 @@ class RunnerGateway(Construct):
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
                 tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
+            ).model_dump(mode="json"),
+            "workload": workload_listener.Listener(
+                listen_address=f"0.0.0.0:{workload_endpoint.pod_port}",
+                tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+                auth=[workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
             ).model_dump(mode="json"),
             **central_sampler_settings,
             **(
@@ -234,39 +285,6 @@ class RunnerGateway(Construct):
             content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
-        workload = add_service_workload(
-            self,
-            env,
-            serves=[proxy],
-            container="runner-gateway",
-            image=image,
-            env_variables={
-                **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
-                env_name(Settings, "dispatcher_database_url"): database_url,
-                env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
-                **(container_env or {}),
-            },
-            readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
-            liveness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=20, period_seconds=30),
-            startup=grpc_probe(port=proxy.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60),
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(100)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
-            ),
-            termination_grace=Duration.seconds(60),
-            # A Recreate drops delivery and every runner connection, so the Gateway rolls
-            # (a surged replica is Ready before the old one goes) even where the environment recreates.
-            replica_profile=replace(
-                env.replicas,
-                strategy=DeploymentStrategy.rolling_update(
-                    max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
-                ),
-            ),
-            create_service=False,
-            telemetry_enabled=True,
-            registry_secret_name=registry_secret_name,
-            placement=placement,
-        )
         settings.mount_into(workload.container, env=Settings.config_file_env)
         trust_projection = k8s.ProjectedVolumeSource(
             default_mode=0o440,
@@ -303,6 +321,12 @@ class RunnerGateway(Construct):
         if env.central_sampler is not None:
             gateway_tokens["central-sampler"] = central_sampler.TOKEN_AUDIENCE
         workload.project_tokens("runner-gateway-token", "/var/run/secrets/agentplane-runner-gateway", gateway_tokens)
+        workload_tls.admit_forwarders(
+            self,
+            name=f"{runner_gateway.NAME}-workload",
+            endpoint=workload_endpoint,
+            forwarders=[egress.proxy(namespace).pods],
+        )
         self._add_rbac(workload.account, namespace)
 
     def add_platform_resources(self) -> None:
@@ -310,6 +334,7 @@ class RunnerGateway(Construct):
         namespace = self.env.namespace
         proxy = runner_gateway.service(namespace)
         dispatcher = dispatcher_service(namespace)
+        workload_endpoint = runner_gateway.workload_service(namespace)
         NetworkPolicy(
             self,
             "network-policy",
@@ -326,6 +351,7 @@ class RunnerGateway(Construct):
                 # Sandbox-audience bearer remains the Gateway's caller identity.
                 egress.proxy(namespace).pods.admit(dispatcher.pod_port),
                 self.sandbox_controller_pods.admit(proxy.pod_port),
+                egress.proxy(namespace).pods.admit(workload_endpoint.pod_port),
                 *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
             ],
             egress=[

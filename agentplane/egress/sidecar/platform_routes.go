@@ -78,11 +78,16 @@ func (s *sidecar) bindPlatformRoutesWithKeepalive(
 			// Keep the configured authority intact: the central proxy resolves it
 			// after applying its hostname policy and destination TLS identity.
 			clientTarget = "passthrough:///" + config.Upstream
-			if proxyTransport.grpcCredentials == nil {
+			if proxyTransport.svid == nil {
 				stopPlatformRoutes(started)
 				return nil, fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE gRPC credentials", name)
 			}
-			transportCredentials = proxyTransport.grpcCredentials
+			routeCredentials, err := proxyTransport.svid.ClientCredentials(transport.ServerURI)
+			if err != nil {
+				stopPlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q TLS credentials: %w", name, err)
+			}
+			transportCredentials = routeCredentials
 			dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
 				if address != config.Upstream {
 					return nil, fmt.Errorf("unexpected platform route destination %q", address)
