@@ -16,7 +16,7 @@ def _proto_openapi_impl(ctx):
     # The plugin names a merged document `<merge_file_name>.swagger.json` under the output root, so the
     # merge name is this rule's own path and the declared output is where the plugin writes it.
     document = ctx.actions.declare_file(ctx.label.name + ".swagger.json")
-    merge_file_name = "{}/{}".format(ctx.label.package, ctx.label.name)
+    merge_file_name = document.path.removeprefix(ctx.bin_dir.path + "/").removesuffix(".swagger.json")
 
     # External imports (googleapis' `google/api/annotations.proto`) resolve under their own source root.
     import_roots = ["-I" + root for root in proto_info.transitive_proto_path.to_list() if root != "."]
