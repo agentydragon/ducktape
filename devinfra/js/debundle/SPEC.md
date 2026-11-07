@@ -658,6 +658,13 @@ evaluated operand, while `!` applies JavaScript's non-invoking `ToBoolean`.
 Every evaluated operand, including a discarded sequence operand, composes its
 access/coverage judgment and possible abrupt outcome. A normally completing
 last value does not discharge an earlier unproved read or throw.
+In a supported ordered callable body, an untagged template evaluates each
+substitution once and converts it to String before the next substitution.
+Known non-Symbol primitives use the scalar conversion transfer. Symbol
+alternatives retain possible abrupt completion; object or unknown values
+retain ordinary coercion fallback and cannot close operation coverage. The
+String result alone never certifies the substitution reads or effects. Tagged
+templates remain outside this transfer.
 All operand binding reads remain subject to the initialized-local check. Array
 creation does not consult the global `Array` binding or iterate the element
 values. Every source binding read, including one in an overwritten duplicate

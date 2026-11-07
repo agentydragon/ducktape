@@ -103,6 +103,11 @@ pub(super) enum LocalExpression {
     /// The fresh receiver supplied by a checked constructor query.
     This,
     Sequence(Arc<[Self]>),
+    /// Each substitution is evaluated and converted before the next one.
+    Template {
+        substitutions: Arc<[Self]>,
+        span: Span,
+    },
     Binary {
         op: BinaryOp,
         left: Arc<Self>,
@@ -417,9 +422,19 @@ impl LocalExpression {
                     })
                     .collect::<Option<Arc<[_]>>>()?,
             }),
-            Expr::Tpl(template) if template.exprs.is_empty() => Some(Self::Value(
-                ValueExpr::NonCallable(analysis_model::PrimKinds::STRING),
-            )),
+            Expr::Tpl(template) if template.exprs.is_empty() => {
+                Some(Self::Value(ValueExpr::NonCallable(PrimKinds::STRING)))
+            }
+            Expr::Tpl(template) => Some(Self::Template {
+                substitutions: template
+                    .exprs
+                    .iter()
+                    .map(|expression| {
+                        Self::lower_with_binary(expression, class_template, allow_binary)
+                    })
+                    .collect::<Option<Arc<[_]>>>()?,
+                span: template.span,
+            }),
             Expr::Fn(function)
                 if (function.ident.is_none() || !class_template)
                     && function.function.decorators.is_empty()
@@ -557,7 +572,11 @@ impl LocalExpression {
                     element.reads(reads);
                 }
             }
-            Self::Sequence(expressions) => {
+            Self::Sequence(expressions)
+            | Self::Template {
+                substitutions: expressions,
+                ..
+            } => {
                 for expression in expressions.iter() {
                     expression.reads(reads);
                 }
@@ -637,7 +656,11 @@ impl LocalExpression {
                 }
                 (allocation_only, closure_allowed)
             }
-            Self::Sequence(expressions) => {
+            Self::Sequence(expressions)
+            | Self::Template {
+                substitutions: expressions,
+                ..
+            } => {
                 let (mut allocation_only, mut closure_allowed) = (true, true);
                 for expression in expressions.iter() {
                     let (allocation, closure) =
@@ -678,9 +701,11 @@ impl LocalExpression {
                 .iter()
                 .flatten()
                 .any(Self::requires_keyed_collection_new),
-            Self::Sequence(expressions) => {
-                expressions.iter().any(Self::requires_keyed_collection_new)
-            }
+            Self::Sequence(expressions)
+            | Self::Template {
+                substitutions: expressions,
+                ..
+            } => expressions.iter().any(Self::requires_keyed_collection_new),
             Self::Binary { left, right, .. } => {
                 left.requires_keyed_collection_new() || right.requires_keyed_collection_new()
             }
@@ -713,7 +738,11 @@ impl LocalExpression {
                     element.writes(writes);
                 }
             }
-            Self::Sequence(expressions) => {
+            Self::Sequence(expressions)
+            | Self::Template {
+                substitutions: expressions,
+                ..
+            } => {
                 for expression in expressions.iter() {
                     expression.writes(writes);
                 }
