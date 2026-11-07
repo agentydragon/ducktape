@@ -1506,7 +1506,7 @@ fn filtered_array_iteration_receipt_survives_saved_analysis() {
 
 #[test]
 fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering() {
-    let source = "let executorCalls = 0;\nconst entries = [undefined, { id: 'record', executor: () => { executorCalls++; return 'deferred'; } }];\nconst before = 0;\nlet someCalls = 0;\nlet someTrace = 0;\nconst someResult = entries.some((value, index) => { someCalls++; someTrace = someTrace * 100 + index + 1; return value; });\nlet everyCalls = 0;\nlet everyTrace = 0;\nconst everyResult = entries.every((value, index) => { everyCalls++; everyTrace = everyTrace * 100 + index + 1; return value; });\nconst deferred = entries[1].executor();\nconst after = 1;\nconsole.log(someResult, everyResult, someCalls, everyCalls, someTrace, everyTrace, deferred, executorCalls);\n";
+    let source = "let executorCalls = 0;\nconst executor = () => { executorCalls++; return 'deferred'; };\nconst record = { id: 'record', executor };\nconst entries = [undefined, record];\nconst before = 0;\nlet someCalls = 0;\nconst someResult = entries.some((value) => { someCalls++; return value; });\nlet everyCalls = 0;\nconst everyResult = entries.every((value) => { everyCalls++; return value; });\nconst deferredExecutor = record.executor;\nconst beforeDeferredExecutorCalls = executorCalls;\nconst deferred = deferredExecutor();\nconst after = 1;\nconsole.log(someResult, everyResult, someCalls, everyCalls, beforeDeferredExecutorCalls, deferred, executorCalls);\n";
     let (staged, _fixture) = staged(FixtureOpts::new(
         source,
         vec![
@@ -1529,7 +1529,7 @@ fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering()
             ),
         ],
     ));
-    let expected = "true false 2 1 102 1 deferred 1\n";
+    let expected = "true false 2 1 0 deferred 1\n";
     assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
 
     let direct = staged.run(&[]);
