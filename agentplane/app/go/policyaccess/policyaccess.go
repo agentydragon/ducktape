@@ -9,7 +9,6 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/policy"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -43,33 +42,6 @@ func (a *Access) PolicySetNames(ctx context.Context) ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
-}
-
-// ActionPolicySets returns the Action Service's inventory view: every set, ordered by name, with
-// the same refusal boundary it uses when parsing action_auto_approve rules.
-func (a *Access) ActionPolicySets(ctx context.Context) ([]ActionPolicySetView, error) {
-	var sets policyapi.PolicySetList
-	if err := a.objects.List(ctx, &sets, client.InNamespace(a.namespace)); err != nil {
-		return nil, fmt.Errorf("list PolicySets: %w", err)
-	}
-	views := make([]ActionPolicySetView, 0, len(sets.Items))
-	for index := range sets.Items {
-		set := &sets.Items[index]
-		view := ActionPolicySetView{Name: set.Name, Generation: set.Generation}
-		for ruleIndex, rule := range set.Spec.Rules {
-			if rule.Type != policies.RuleType {
-				continue
-			}
-			if _, err := policies.ParseRule(rule); err != nil {
-				reason := truncateReason(fmt.Sprintf("rules[%d]: %v", ruleIndex, err))
-				view.Refused = &reason
-				break
-			}
-		}
-		views = append(views, view)
-	}
-	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
-	return views, nil
 }
 
 // Grant creates a new generated-name binding owned by the Sandbox. Repeated grants create

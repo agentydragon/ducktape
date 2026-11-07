@@ -1,19 +1,6 @@
 package policyaccess
 
-import (
-	"unicode/utf8"
-
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-)
-
-const maxRefusalReasonCharacters = 32_768
-
-// ActionPolicySetView is the Action Service inventory projection returned to the browser.
-type ActionPolicySetView struct {
-	Name       string  `json:"name"`
-	Generation int64   `json:"generation"`
-	Refused    *string `json:"refused"`
-}
+import policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 
 // BindingProvenance identifies the authority that owns a binding's source of truth.
 type BindingProvenance string
@@ -23,14 +10,6 @@ const (
 	BindingFromSandbox  BindingProvenance = "sandbox"
 	BindingFromOperator BindingProvenance = "operator"
 )
-
-func truncateReason(reason string) string {
-	if utf8.RuneCountInString(reason) <= maxRefusalReasonCharacters {
-		return reason
-	}
-	runes := []rune(reason)
-	return string(runes[:maxRefusalReasonCharacters])
-}
 
 func bindingProvenance(binding *policyapi.PolicyBinding) BindingProvenance {
 	if _, ok := binding.Labels[fluxKustomizationLabel]; ok {

@@ -40,7 +40,7 @@ func TestPublicMCPCallbackForwardsQueryAndRedirects(t *testing.T) {
 	body := &operatorAPICloseTracker{}
 	callback := &operatorAPICallback{response: &http.Response{StatusCode: http.StatusOK, Body: body}}
 	server := NewHTTPServer(nil)
-	RegisterOperatorRoutes(server, nil, callback, "https://actions.example.test")
+	RegisterOperatorRoutes(server, callback, "https://actions.example.test")
 	values := url.Values{"state": {"state +&"}, "code": {"code/with?chars"}}
 	request := httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?"+values.Encode(), nil)
 	recorder := httptest.NewRecorder()
@@ -69,7 +69,7 @@ func TestPublicMCPCallbackRequiresStateAndCode(t *testing.T) {
 		{query: "code=two", want: []string{"state"}},
 	} {
 		server := NewHTTPServer(nil)
-		RegisterOperatorRoutes(server, nil, nil, "")
+		RegisterOperatorRoutes(server, nil, "")
 		recorder := httptest.NewRecorder()
 		server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?"+test.query, nil))
 		var response struct {
@@ -108,7 +108,7 @@ func TestPublicMCPCallbackPreservesPythonFailureStatuses(t *testing.T) {
 			body := &operatorAPICloseTracker{}
 			callback := &operatorAPICallback{response: &http.Response{StatusCode: test.status, Body: body}}
 			server := NewHTTPServer(nil)
-			RegisterOperatorRoutes(server, nil, callback, "https://actions.example.test")
+			RegisterOperatorRoutes(server, callback, "https://actions.example.test")
 			recorder := httptest.NewRecorder()
 			server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 				"/mcp-linkage/callback?state=one&code=two", nil))
@@ -126,7 +126,7 @@ func TestPublicMCPCallbackPreservesPythonFailureStatuses(t *testing.T) {
 func TestPublicMCPCallbackReportsConfigurationAndTransportFailureSafely(t *testing.T) {
 	t.Run("unconfigured", func(t *testing.T) {
 		server := NewHTTPServer(nil)
-		RegisterOperatorRoutes(server, nil, nil, "https://actions.example.test")
+		RegisterOperatorRoutes(server, nil, "https://actions.example.test")
 		recorder := httptest.NewRecorder()
 		server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 			"/mcp-linkage/callback?state=one&code=two", nil))
@@ -142,7 +142,7 @@ func TestPublicMCPCallbackReportsConfigurationAndTransportFailureSafely(t *testi
 	t.Run("transport error is credential free", func(t *testing.T) {
 		callback := &operatorAPICallback{err: errors.New("dial failed")}
 		server := NewHTTPServer(nil)
-		RegisterOperatorRoutes(server, nil, callback, "https://user:secret@actions.example.test/base?token=hidden")
+		RegisterOperatorRoutes(server, callback, "https://user:secret@actions.example.test/base?token=hidden")
 		recorder := httptest.NewRecorder()
 		server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 			"/mcp-linkage/callback?state=one&code=two", nil))
