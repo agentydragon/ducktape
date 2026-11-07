@@ -26,6 +26,11 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
+py_library(
+    name = "limits",
+    srcs = ["limits.py"],
+)
+
 py_test(
     name = "registry_test",
     srcs = ["registry_test.py"],
@@ -71,6 +76,7 @@ py_library(
     data = ["//platform_sessions/frontend:assets"],
     deps = [
         ":auth",
+        ":limits",
         ":registry",
         "@pypi//fastapi",
     ],
