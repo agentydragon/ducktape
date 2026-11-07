@@ -18,6 +18,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver"
@@ -33,6 +34,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -127,6 +129,13 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	routes := http.NewServeMux()
 	routes.Handle("/v1/", httpFacade)
 	routes.Handle("/metrics", promhttp.Handler())
+	// This public document is owned by Actions; the edge supplies only its HTTP presentation.
+	metadataConnection, err := grpc.NewClient(c.ActionsTarget, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("configure Action client metadata: %w", err)
+	}
+	defer metadataConnection.Close()
+	routes.Handle("GET "+actionClientMetadataPath, actionClientMetadata(linkage_servicepb.NewLinkageServiceClient(metadataConnection)))
 	if c.OAuth != nil {
 		connection, err := mountOAuth(ctx, routes, c, db, connectionStore, callers, kube)
 		if err != nil {
