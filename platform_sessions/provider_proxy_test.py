@@ -95,5 +95,26 @@ def test_private_endpoint_authenticates_and_enforces_routes():
     assert len(local.requests) == 3
 
 
+def test_private_endpoint_normalizes_redirects_to_provider_paths():
+    app, local = provider()
+    client = TestClient(app)
+    auth = {"authorization": "Bearer route-secret"}
+    for location, expected in (
+        (b"https://upstream.test/api/orders/2?x=1", "/orders/2?x=1"),
+        (b"../orders/2", "/orders/2"),
+        (b"?page=2", "/orders/1?page=2"),
+    ):
+        local.response = ProxyResponse(302, ((b"location", location),), b"")
+        response = client.get("/internal/proxy/example/orders/1", headers=auth, follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers["location"] == expected
+
+    for location in (b"https://evil.test/api/orders/2", b"/outside", b"/api/%2fescape"):
+        local.response = ProxyResponse(302, ((b"location", location),), b"")
+        response = client.get("/internal/proxy/example/orders/1", headers=auth, follow_redirects=False)
+        assert response.status_code == 502
+        assert "location" not in response.headers
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

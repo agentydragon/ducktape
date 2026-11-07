@@ -20,7 +20,9 @@ may mean the provider changed upstream credentials; check session state before a
 operation.
 
 The provider data plane remains HTTP and is governed by the gateway's route grants. Providers
-enforce their own upstream header policies. A provider may advertise an OpenAPI document path in
+enforce their own upstream header policies and normalize redirects to origin-relative paths under
+their upstream base; the gateway prefixes those paths with the instance proxy route. A provider may
+advertise an OpenAPI document path in
 its control information; the gateway fetches the document from that provider over authenticated
 TLS and exposes it with the provider's proxy URL. Provider documents remain in provider images.
 The shared gateway image is built and published by Ducktape CI. The existing in-process service

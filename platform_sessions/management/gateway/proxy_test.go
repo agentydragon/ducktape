@@ -18,12 +18,12 @@ func TestProxyAuthorizesRoutesAndFiltersInternalBoundary(t *testing.T) {
 		if r.URL.EscapedPath() != "/internal/proxy/personal/conversations/abc" || r.URL.RawQuery != "limit=1" {
 			t.Errorf("wrong target %s", r.URL.String())
 		}
-		if r.Header.Get("Authorization") != "Bearer "+strings.Repeat("r", 40) || r.Header.Get("Cookie") != "" || r.Header.Get("X-Strip") != "" {
+		if r.Header.Get("Authorization") != "Bearer "+strings.Repeat("r", 40) || r.Header.Get("Cookie") != "" {
 			t.Errorf("incorrect forwarded headers")
 		}
 		w.Header().Set(resultHeader, "1")
 		w.Header().Set("Set-Cookie", "secret=x")
-		w.Header().Set("Location", "https://upstream.invalid/api/conversations/def?q=1")
+		w.Header().Set("Location", "/conversations/def?q=1")
 		w.WriteHeader(http.StatusFound)
 	}))
 	defer provider.Close()
@@ -32,11 +32,10 @@ func TestProxyAuthorizesRoutesAndFiltersInternalBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	bearer := strings.Repeat("b", 40)
-	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: provider.URL, Upstream: "https://upstream.invalid/api", OwnerToken: strings.Repeat("o", 40), RouteToken: strings.Repeat("r", 40), CAFile: ca, RequestHeaders: []string{"x-strip"}}}, bearers: []Bearer{{Token: bearer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/conversations/*"}}}}}
+	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: provider.URL, OwnerToken: strings.Repeat("o", 40), RouteToken: strings.Repeat("r", 40), CAFile: ca}}, bearers: []Bearer{{Token: bearer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/conversations/*"}}}}}
 	request := httptest.NewRequest("GET", "https://gateway.invalid/proxy/personal/conversations/abc?limit=1", nil)
 	request.Header.Set("Authorization", "Bearer "+bearer)
 	request.Header.Set("Cookie", "secret")
-	request.Header.Set("X-Strip", "private")
 	response := httptest.NewRecorder()
 	gateway.ServeHTTP(response, request)
 	if response.Code != 302 || response.Header().Get("Location") != "/proxy/personal/conversations/def?q=1" || response.Header().Get("Set-Cookie") != "" || response.Header().Get(resultHeader) != "" || calls != 1 {
@@ -66,7 +65,7 @@ func TestProxyRejectsUnmarkedProviderResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := strings.Repeat("x", 40)
-	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: server.URL, Upstream: "https://upstream.invalid", OwnerToken: token, CAFile: ca}}, bearers: []Bearer{{Token: token, Owner: true}}}
+	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: server.URL, OwnerToken: token, CAFile: ca}}, bearers: []Bearer{{Token: token, Owner: true}}}
 	req := httptest.NewRequest("GET", "https://gateway.invalid/proxy/p/x", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	out := httptest.NewRecorder()
@@ -92,21 +91,21 @@ func TestSegmentsRejectAmbiguousPaths(t *testing.T) {
 	}
 }
 
-func TestRedirectStaysInsideConfiguredOriginAndPrefix(t *testing.T) {
-	for _, location := range []string{"https://evil.invalid/api/a", "https://upstream.invalid/outside", "//evil.invalid/api/a", "/api/%2fescape"} {
-		if _, err := rewriteLocation(location, "https://upstream.invalid/api", "id", []string{"a"}, ""); err == nil {
+func TestProviderRedirectMustBeAbsolutePath(t *testing.T) {
+	for _, location := range []string{"https://evil.invalid/a", "//evil.invalid/a", "/a/%2fescape", "relative"} {
+		if _, err := rewriteLocation(location, "id"); err == nil {
 			t.Errorf("accepted redirect %q", location)
 		}
 	}
-	got, err := rewriteLocation("../new?x=1", "https://upstream.invalid/api", "id", []string{"a", "b"}, "")
+	got, err := rewriteLocation("/new?x=1", "id")
 	if err != nil || got != "/proxy/id/new?x=1" {
-		t.Fatalf("relative redirect: %q %v", got, err)
+		t.Fatalf("provider redirect: %q %v", got, err)
 	}
 }
 
 func TestConnectionNominatedHeadersAreRemoved(t *testing.T) {
 	headers := http.Header{"Connection": []string{"X-Custom, keep-alive"}, "X-Custom": []string{"secret"}, "X-Visible": []string{"ok"}, "Cookie": []string{"secret"}}
-	filtered := filterHeaders(headers, requestPrivate, nil)
+	filtered := filterHeaders(headers, requestPrivate)
 	if filtered.Get("X-Custom") != "" || filtered.Get("Cookie") != "" || filtered.Get("Connection") != "" || filtered.Get("X-Visible") != "ok" {
 		t.Fatalf("headers: %v", filtered)
 	}

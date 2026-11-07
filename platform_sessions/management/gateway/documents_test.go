@@ -36,7 +36,7 @@ func TestProviderDocumentComesFromAuthenticatedProvider(t *testing.T) {
 	}
 	routeToken := strings.Repeat("r", 40)
 	consumer := strings.Repeat("b", 40)
-	handler, err := HTTPServer(context.Background(), service, HTTPConfig{Owner: testOwnerConfig(), Bearers: []Bearer{{Token: consumer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/x"}}}}, Providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: providerHTTP.URL, Upstream: "https://chatgpt.com", OwnerToken: ownerToken, RouteToken: routeToken, CAFile: ca}}})
+	handler, err := HTTPServer(context.Background(), service, HTTPConfig{Owner: testOwnerConfig(), Bearers: []Bearer{{Token: consumer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/x"}}}}, Providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: providerHTTP.URL, OwnerToken: ownerToken, RouteToken: routeToken, CAFile: ca}}})
 	if err != nil {
 		t.Fatal(err)
 	}

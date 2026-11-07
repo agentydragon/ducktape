@@ -113,7 +113,7 @@ def _origin(url: str) -> tuple[str, str | None, int | None]:
     return parsed.scheme, parsed.hostname, port
 
 
-def _rewrite_location(location: bytes, upstream_url: str, base_url: str, instance_id: str) -> bytes:
+def _relative_location(location: bytes, upstream_url: str, base_url: str) -> bytes:
     try:
         value = location.decode("ascii")
         if any(ord(c) < 32 or ord(c) == 127 for c in value):
@@ -128,9 +128,13 @@ def _rewrite_location(location: bytes, upstream_url: str, base_url: str, instanc
         if segments[: len(prefix)] != prefix:
             raise ValueError("Redirect outside configured base path")
         suffix = _encoded_path(segments[len(prefix) :])
-        return urlunsplit(("", "", f"/proxy/{instance_id}{suffix}", target.query, target.fragment)).encode("ascii")
+        return urlunsplit(("", "", suffix, target.query, target.fragment)).encode("ascii")
     except (UnicodeError, ValueError) as exc:
         raise ValueError("Redirect cannot be mapped") from exc
+
+
+def _rewrite_location(location: bytes, upstream_url: str, base_url: str, instance_id: str) -> bytes:
+    return f"/proxy/{instance_id}".encode("ascii") + _relative_location(location, upstream_url, base_url)
 
 
 class _Proxy:
