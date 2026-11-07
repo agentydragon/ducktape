@@ -849,7 +849,7 @@ pub(super) fn transfer(
             context.heap().invalidate_spread_copy(allocation);
             let mut refused = context.refused_object_spread(*site, &source.values);
             refused.judgment.compose(&source.judgment);
-            Some(refused)
+            return Some(refused);
         }
         _ => {
             context.unmodeled_effect_operation();

@@ -109,7 +109,8 @@ fn contained_roots(
                 roots.insert(NativeIntrinsic::Object);
             }
         }
-        ValueExpr::ArrayIteratorPrototype(expression)
+        ValueExpr::ObjectSpreadLiteral(_, expression)
+        | ValueExpr::ArrayIteratorPrototype(expression)
         | ValueExpr::SetIteratorPrototype(expression) => {
             roots.extend(contained_roots(expression, aliases, index, declared));
         }
@@ -175,7 +176,8 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
             }
         }
         ValueExpr::Member(base, ..) => contained_root_bindings(base, index, bindings),
-        ValueExpr::ArrayIteratorPrototype(expression)
+        ValueExpr::ObjectSpreadLiteral(_, expression)
+        | ValueExpr::ArrayIteratorPrototype(expression)
         | ValueExpr::SetIteratorPrototype(expression) => {
             contained_root_bindings(expression, index, bindings);
         }
