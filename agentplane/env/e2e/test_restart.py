@@ -277,6 +277,9 @@ async def test_competing_runner_cannot_take_state_and_successor_leaves_uncertain
     await first.submit_input("handoff-seed", "Reply with exactly: HANDOFF_SEED_OK")
     await model.reply(await model.request(), Text("HANDOFF_SEED_OK"))
     await first.until(events.turn_completed)
+    await _wait_for_claude_transcript(
+        spec, first.attached.session_id, first.seen, tmp_path / "state", "HANDOFF_SEED_OK"
+    )
     await first.submit_input(command_id, "Reply with exactly: HANDOFF_REPLACEMENT_OK")
     await first.until(events.is_kind("command_admitted"))
     checkpoint = await first.until(events.is_kind("debug_checkpoint"))
@@ -328,6 +331,11 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     """A successor cannot dispatch while the killed runner's native harness awaits upstream."""
     first_runner = await start_runner()
     first = await driver.attach("writer-handoff-active", spec=spec)
+    # Establish a durable resume point before interrupting the later active turn.
+    await first.submit_input("seed-before-active-crash", "Reply with exactly: ACTIVE_SEED_OK")
+    await model.reply(await model.request(), Text("ACTIVE_SEED_OK"))
+    await first.until(events.turn_completed)
+    await _wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "ACTIVE_SEED_OK")
     await first.submit_input("active-before-crash", "Reply with exactly: ACTIVE_FENCE_OK")
     active_request = await model.request()
     assert active_request.user_texts[-1] == "Reply with exactly: ACTIVE_FENCE_OK"
@@ -337,7 +345,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
 
     await contend(tmp_path / "state")
-    assert model.request_count == 1
+    assert model.request_count == 2
 
     # ``crash`` waits the actual native harness PID, not merely the dead runner or supervisor.
     await first_runner.crash(harness_pids)
@@ -361,7 +369,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     await replacement.submit_input("successor-input", "Reply with exactly: SUCCESSOR_FENCE_OK")
     successor_request = await model.request()
     assert successor_request.user_texts[-1] == "Reply with exactly: SUCCESSOR_FENCE_OK"
-    assert model.request_count == 2
+    assert model.request_count == 3
     await model.reply(successor_request, Text("SUCCESSOR_FENCE_OK"))
     await replacement.until(events.turn_completed)
 
@@ -767,6 +775,7 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     model: ScriptedModel,
     spec: session_pb2.SessionSpec,
     driver: RunnerDriver,
+    tmp_path: Path,
 ) -> None:
     """A committed terminal effect replays exactly after process death, without receipt repair."""
     command_id = "replay-persisted-effect"
@@ -778,6 +787,7 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     seed_request = await model.request()
     await model.reply(seed_request, Text("EFFECT_SEED_OK"))
     await first.until(events.turn_completed)
+    await _wait_for_claude_transcript(spec, first.attached.session_id, first.seen, tmp_path / "state", "EFFECT_SEED_OK")
     await first.submit_input(command_id, "Reply with exactly: EFFECT_REPLAY_OK")
     await first.until(events.is_kind("command_admitted"))
     # Claude's confirmation correlation is its first response-side `message_start`, unlike
