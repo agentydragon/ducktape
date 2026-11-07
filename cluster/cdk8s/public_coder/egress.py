@@ -1,8 +1,10 @@
-"""Static OpenClaw Agentplane egress credentials and rules.
+"""Static OpenClaw's Agentplane egress attachment.
 
-OpenClaw remains paused until a supported workload-auth path is available. Credential values
-stay in the gateway's isolated namespace; the app configuration keeps canonical placeholders.
+Only the relay holds the Pod-bound token. Credential values stay in the gateway's
+isolated namespace; the app receives canonical placeholders under its existing env names.
 """
+
+from pathlib import Path
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
@@ -14,7 +16,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesMethods,
 )
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import ServiceAccount
+from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
@@ -25,11 +27,13 @@ from cluster.cdk8s.agentplane import actions, egress, platform_routes
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.settings_file import PodWiring, SettingsFile
 
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": NAMESPACE}
