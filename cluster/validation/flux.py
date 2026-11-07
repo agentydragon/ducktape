@@ -109,16 +109,13 @@ class Inventory(BaseModel):
 
 
 def parse_go_duration(s: str | None) -> float:
-    """Convert a Flux Go duration to seconds; missing or invalid values are zero.
+    """Convert a Flux Go duration to seconds; a missing duration is zero.
 
     durationpy uses timedelta, so the result has microsecond precision.
     """
-    if not s:
+    if s is None:
         return 0.0
-    try:
-        return durationpy.from_str(s).total_seconds()
-    except durationpy.DurationError:
-        return 0.0
+    return durationpy.from_str(s).total_seconds()
 
 
 class _HistoryMetadata(BaseModel):
