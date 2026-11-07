@@ -48,7 +48,7 @@ class SidecarProcess:
             if routes:
                 self._platform_route_listener = self._listener_stack.enter_context(listen_tcp())
                 routes_config = PlatformRoutes(
-                    listen_address=self._fd_address(self._platform_route_listener), routes=routes
+                    listen_address=self._fd_address(self._platform_route_listener), routes=dict(routes)
                 )
             else:
                 routes_config = PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS)
