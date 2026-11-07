@@ -108,3 +108,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "control_auth",
+    srcs = ["control_auth.py"],
+    deps = ["@pypi//grpcio"],
+)
+
+py_test(
+    name = "control_auth_test",
+    srcs = ["control_auth_test.py"],
+    deps = [
+        ":control_auth",
+        "//:conftest",
+        "@pypi//grpcio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
