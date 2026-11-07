@@ -3038,9 +3038,9 @@ element under the same witness, using the stored heap value and recording its
 exact `OwnProperty(origin, index)` cell. Dynamic keys, holes, out-of-range
 indices, mutations and pooled sites retain fallback; the slot proof grants no
 write or prototype-read capability.
-The length cell shares a uniquely eager array's existing birth proof against
-older opaque heap operations. An intervening opaque operation or a repeated
-allocation site retains the conservative frontier.
+Length and checked index cells share a uniquely eager array's existing birth
+proof against older opaque heap operations. An intervening opaque operation
+or a repeated allocation site retains the conservative frontier.
 A provider query starts
 with scoped opaque parameters and an empty private heap. Parameters,
 instantiated locals and checked private `var` captures can supply binding

@@ -739,7 +739,7 @@ impl Visit for ArrayContentCollector<'_> {
     }
 }
 
-fn is_array_index(value: &str) -> bool {
+pub(crate) fn is_array_index(value: &str) -> bool {
     value
         .parse::<u32>()
         .is_ok_and(|index| index != u32::MAX && index.to_string() == value)
