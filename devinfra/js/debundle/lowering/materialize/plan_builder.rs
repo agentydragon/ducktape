@@ -69,7 +69,16 @@ pub(super) struct ChunkPlan {
     /// Positional IDs of plans constructed specifically by coarse residual
     /// synthesis. This provenance is never inferred from a module path.
     pub(super) generated_residual_plans: BTreeSet<usize>,
+    /// Source units adopted by an explicitly opted-in authored module to
+    /// complete a partially claimed atomic group.
+    pub(super) atomic_group_owner_completions: Vec<AtomicGroupOwnerCompletion>,
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
+}
+
+pub(super) struct AtomicGroupOwnerCompletion {
+    pub(super) owner_path: String,
+    pub(super) atomic_group_source_unit_ids: Vec<SourceUnitId>,
+    pub(super) adopted_source_unit_ids: Vec<SourceUnitId>,
 }
 
 /// Per-explicit-request inputs the builder reads but does not own.
@@ -100,6 +109,7 @@ pub(super) struct ChunkPlanBuilder {
     module_plans: Vec<ModulePlan>,
     /// Positional IDs of plans constructed by coarse residual synthesis.
     generated_residual_plans: BTreeSet<usize>,
+    atomic_group_owner_completions: Vec<AtomicGroupOwnerCompletion>,
     /// Authoritative destination of every claimed binding, including imported
     /// bindings claimed only for re-export. Module plans retain export/name
     /// decisions; syntax placement reads this catalogue.
@@ -149,6 +159,7 @@ impl ChunkPlanBuilder {
             whole_statement_assignment: BTreeMap::new(),
             module_plans: Vec::new(),
             generated_residual_plans: BTreeSet::new(),
+            atomic_group_owner_completions: Vec::new(),
             bindings_catalogue: HashMap::new(),
             residual_plan_index: None,
             unmatched_spec_claims: Vec::new(),
@@ -1213,6 +1224,227 @@ impl ChunkPlanBuilder {
         )
     }
 
+    /// Complete a partially claimed atomic group only for an explicitly
+    /// opted-in authored owner. This runs after rebind folding and ownership
+    /// subset filtering. Groups with zero or multiple current owners, and
+    /// groups whose sole owner is not listed, remain untouched for ordinary
+    /// residual routing and the complete-assignment gate.
+    pub(super) fn route_partial_atomic_groups_to_named_owners(
+        &mut self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        opted_in_owner_paths: &[String],
+        single_authored_owner_groups: &BTreeSet<Vec<SourceUnitId>>,
+    ) -> Result<()> {
+        if opted_in_owner_paths.is_empty() {
+            return Ok(());
+        }
+
+        let dependency_graph = &precomputed.dependency_graph;
+        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
+        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
+        for node in dependency_graph.iter_nodes() {
+            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            source_unit_statements.insert(node.id, location.statement);
+        }
+
+        let opted_in_owner_paths: BTreeSet<String> = opted_in_owner_paths.iter().cloned().collect();
+        let mut atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
+            .atomic_groups
+            .iter()
+            .map(|atomic_group| &atomic_group.members)
+            .collect();
+        atomic_groups.sort_by_key(|members| members.iter().next().copied());
+
+        for members in atomic_groups {
+            let member_key: Vec<_> = members.iter().copied().collect();
+            // Ownership subsets must not turn a two-owner authored atom into
+            // an eligible one-owner atom by removing one of its owners.
+            if !single_authored_owner_groups.contains(&member_key) {
+                continue;
+            }
+            let mut current_owners = BTreeSet::<usize>::new();
+            let mut unowned_bindings = Vec::<(SourceUnitId, Id)>::new();
+            let mut unowned_anonymous = Vec::<(SourceUnitId, StatementId)>::new();
+            let mut has_imported_binding = false;
+
+            for &source_unit_id in members {
+                let names = source_unit_declared_names
+                    .get(&source_unit_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if names.is_empty() {
+                    let body_index = *source_unit_statements
+                        .get(&source_unit_id)
+                        .expect("every graph node was checked against the source-unit layout");
+                    match self.whole_statement_assignment.get(&body_index).copied() {
+                        Some(owner) => {
+                            current_owners.insert(owner);
+                        }
+                        None => unowned_anonymous.push((source_unit_id, body_index)),
+                    }
+                    continue;
+                }
+
+                for name in names {
+                    match self.bindings_catalogue.get(name) {
+                        Some(BindingKind::Owned { module }) => {
+                            current_owners.insert(module.0);
+                        }
+                        Some(BindingKind::Imported { .. }) => {
+                            // Imported re-exports are not declarations that
+                            // this chunk can adopt into an authored owner.
+                            has_imported_binding = true;
+                        }
+                        None => unowned_bindings.push((source_unit_id, name.clone())),
+                    }
+                }
+            }
+
+            if has_imported_binding || current_owners.len() != 1 {
+                continue;
+            }
+            let owner_index = *current_owners
+                .iter()
+                .next()
+                .expect("the owner count was checked above");
+            let Some((owner_role, owner_path)) = self
+                .module_plans
+                .get(owner_index)
+                .map(|plan| (plan.role, plan.target_path.clone()))
+            else {
+                bail!("atomic group owner index {owner_index} is outside the module plan");
+            };
+            if owner_role != ModuleRole::Specified || !opted_in_owner_paths.contains(&owner_path) {
+                continue;
+            }
+            if unowned_bindings.is_empty() && unowned_anonymous.is_empty() {
+                continue;
+            }
+
+            let owner_module = ModuleId(owner_index);
+            let mut adopted_source_unit_ids = BTreeSet::new();
+            for (source_unit_id, binding) in unowned_bindings {
+                let name = binding.0.to_string();
+                let owner_plan = &mut self.module_plans[owner_index];
+                owner_plan
+                    .bindings
+                    .entry(name.clone())
+                    .or_insert_with(|| name.clone());
+                self.bindings_catalogue.insert(
+                    binding,
+                    BindingKind::Owned {
+                        module: owner_module,
+                    },
+                );
+                adopted_source_unit_ids.insert(source_unit_id);
+            }
+            for (source_unit_id, body_index) in unowned_anonymous {
+                self.whole_statement_assignment
+                    .insert(body_index, owner_index);
+                self.module_plans[owner_index]
+                    .anonymous_statements
+                    .push(body_index);
+                adopted_source_unit_ids.insert(source_unit_id);
+            }
+            let anonymous_statements = &mut self.module_plans[owner_index].anonymous_statements;
+            anonymous_statements.sort_unstable();
+            anonymous_statements.dedup();
+
+            self.atomic_group_owner_completions
+                .push(AtomicGroupOwnerCompletion {
+                    owner_path,
+                    atomic_group_source_unit_ids: members.iter().copied().collect(),
+                    adopted_source_unit_ids: adopted_source_unit_ids.into_iter().collect(),
+                });
+        }
+        Ok(())
+    }
+
+    /// Snapshot which atoms had exactly one opted-in authored owner before an
+    /// ownership subset can remove plans or claims. Completion itself runs
+    /// later, after subset filtering and rebind folds.
+    pub(super) fn single_authored_owner_atomic_groups(
+        &self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        opted_in_owner_paths: &[String],
+    ) -> Result<BTreeSet<Vec<SourceUnitId>>> {
+        if opted_in_owner_paths.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+
+        let dependency_graph = &precomputed.dependency_graph;
+        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
+        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
+        for node in dependency_graph.iter_nodes() {
+            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            source_unit_statements.insert(node.id, location.statement);
+        }
+
+        let opted_in_owner_paths: BTreeSet<&str> =
+            opted_in_owner_paths.iter().map(String::as_str).collect();
+        let mut atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
+            .atomic_groups
+            .iter()
+            .map(|atomic_group| &atomic_group.members)
+            .collect();
+        atomic_groups.sort_by_key(|members| members.iter().next().copied());
+
+        let mut eligible_groups = BTreeSet::new();
+        for members in atomic_groups {
+            let mut current_owners = BTreeSet::<usize>::new();
+            let mut has_imported_binding = false;
+            for &source_unit_id in members {
+                let names = source_unit_declared_names
+                    .get(&source_unit_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if names.is_empty() {
+                    let body_index = *source_unit_statements
+                        .get(&source_unit_id)
+                        .expect("every graph node was checked against the source-unit layout");
+                    if let Some(owner) = self.whole_statement_assignment.get(&body_index) {
+                        current_owners.insert(*owner);
+                    }
+                    continue;
+                }
+                for name in names {
+                    match self.bindings_catalogue.get(name) {
+                        Some(BindingKind::Owned { module }) => {
+                            current_owners.insert(module.0);
+                        }
+                        Some(BindingKind::Imported { .. }) => has_imported_binding = true,
+                        None => {}
+                    }
+                }
+            }
+
+            if has_imported_binding || current_owners.len() != 1 {
+                continue;
+            }
+            let owner_index = *current_owners
+                .iter()
+                .next()
+                .expect("the owner count was checked above");
+            let Some(owner_plan) = self.module_plans.get(owner_index) else {
+                bail!("atomic group owner index {owner_index} is outside the module plan");
+            };
+            if owner_plan.role == ModuleRole::Specified
+                && opted_in_owner_paths.contains(owner_plan.target_path.as_str())
+            {
+                eligible_groups.insert(members.iter().copied().collect());
+            }
+        }
+        Ok(eligible_groups)
+    }
+
     /// Coarse residual routing merges wholly-unclaimed atomic groups when
     /// their strict constraining-edge reachability to existing owners agrees
     /// within one interval between fixed owners' fine-plan evaluations. This
@@ -1569,6 +1801,7 @@ impl ChunkPlanBuilder {
             bindings_catalogue: BindingCatalogue::new(chunk_id, self.bindings_catalogue),
             whole_statement_assignment: self.whole_statement_assignment,
             generated_residual_plans: self.generated_residual_plans,
+            atomic_group_owner_completions: self.atomic_group_owner_completions,
             unmatched_spec_claims: self.unmatched_spec_claims,
         })
     }

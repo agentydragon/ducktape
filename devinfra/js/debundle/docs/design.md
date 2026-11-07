@@ -3052,12 +3052,15 @@ The spec's explicit claims are resolved against the dependency graph in
 
 - Two different logical modules may not claim source units from the same
   atomic group.
-- A module claim that only covers part of an atomic group is a
-  conflict, not an implicit request to move the rest.
+- A module claim that only covers part of an atomic group is a conflict,
+  unless `coarse_atomic_groups.complete_partial_atomic_groups_for` explicitly
+  names that module as an allowed sole owner; groups with multiple owners
+  remain conflicts.
 - Unclaimed source units default to the typed entry destination, after the
   planned output modules.
-- The materializer consumes only the final explicit assignment; it
-  does not silently co-move extra source units on behalf of the author.
+- The materializer does not silently co-move extra source units on behalf of
+  the author. The coarse-mode opt-in is an explicit placement instruction and
+  still leaves the complete-assignment gate authoritative.
 
 If the explicit assignment is inconsistent, `debundle run` rejects
 and emits diagnostic side outputs (`cycles.json` or
@@ -3098,13 +3101,18 @@ the catchall file, or a generated per-atomic-group module.
 Empty-`declared` (anonymous) statements default to the entry destination
 unless explicitly claimed by a logical module's `anonymous_statements`
 shape selector or routed to a catchall or generated atomic-group plan.
-There is no implicit pulling into an explicitly named logical module: when an
+There is no silent pulling into an explicitly named logical module. When an
 atomic group or planner proposal includes anonymous statements, the spec author
-copies their source into `anonymous_statements` (one entry per claimed
-statement). `per_atomic_group` may place an unclaimed whole atomic group,
-including anonymous statements, into a generated plan.
-`coarse_atomic_groups` begins from those same wholly unclaimed atomic groups
-after the named and rebind-fold destinations are known. It assigns each
+normally copies their source into `anonymous_statements` (one entry per claimed
+statement). The narrow exception is the explicit
+`coarse_atomic_groups.complete_partial_atomic_groups_for` array: a listed
+authored module may adopt only the currently unclaimed source units of an atom
+for which it is the sole authored owner. Mixed-owner atoms remain unchanged and
+the ordinary gate rejects them. `per_atomic_group` may place an unclaimed whole
+atomic group, including anonymous statements, into a generated plan.
+`coarse_atomic_groups` applies the named-owner completions after rebind-fold
+destinations are known, then begins residual synthesis from the remaining
+wholly-unclaimed atomic groups. It assigns each
 candidate atom a temporary destination using the borrowed graph and ownership
 catalogue, then initially groups atoms with equal reachable nonvirtual owners
 in the canonical strict constraining module projection and the same interval

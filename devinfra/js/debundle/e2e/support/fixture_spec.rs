@@ -1048,7 +1048,9 @@ pub fn unassigned_mode_per_atomic_group() -> UnassignedMode {
 
 /// Build an `unassigned_mode: coarse_atomic_groups` entry.
 pub fn unassigned_mode_coarse_atomic_groups() -> UnassignedMode {
-    UnassignedMode::CoarseAtomicGroups
+    UnassignedMode::CoarseAtomicGroups {
+        complete_partial_atomic_groups_for: Vec::new(),
+    }
 }
 
 /// Fluent wrapper for building a `(chunk, ChunkExportPurity)` tuple with the

@@ -30,9 +30,9 @@ use crate::plans::ModulePlan;
 use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
-    BindingSourceUnitAssociation, ChunkModulesCounts, ChunkModulesReport, ExportReentryReport,
-    FinalModuleContent, GateRejectionPolicy, GraphReportSelection, ReportEmission,
-    RequestedLogicalModule,
+    AtomicGroupOwnerCompletionReport, BindingSourceUnitAssociation, ChunkModulesCounts,
+    ChunkModulesReport, ExportReentryReport, FinalModuleContent, GateRejectionPolicy,
+    GraphReportSelection, ReportEmission, RequestedLogicalModule,
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::reports::source_unit_key;
@@ -217,6 +217,11 @@ pub(super) fn prepare_logical_chunk<'a>(
         ..
     } = frontend;
     ensure!(frontend_chunk_id == chunk_id, "frontend chunk id mismatch");
+    validate_partial_atomic_group_completion_owners(
+        &chunk_unassigned_mode,
+        &explicit_requests,
+        chunk_id,
+    )?;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
     emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
     let mut explicit_requests = explicit_requests;
@@ -265,6 +270,29 @@ pub(super) fn prepare_logical_chunk<'a>(
         source_only_initializer_bindings,
         builder,
     })
+}
+
+/// Validate the coarse-mode owner opt-in against the complete authored request
+/// list, before ownership-subset filtering can remove a requested module.
+fn validate_partial_atomic_group_completion_owners(
+    unassigned_mode: &UnassignedMode,
+    authored_requests: &[LogicalRequest],
+    chunk_id: &str,
+) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    for owner_path in unassigned_mode.partial_atomic_group_completion_owners() {
+        ensure!(
+            seen.insert(owner_path),
+            "unassigned_mode for chunk {chunk_id} repeats complete_partial_atomic_groups_for module {owner_path:?}"
+        );
+        ensure!(
+            authored_requests
+                .iter()
+                .any(|request| request.target_path == *owner_path),
+            "unassigned_mode for chunk {chunk_id} names {owner_path:?} in complete_partial_atomic_groups_for, but that path is not an authored logical_modules request"
+        );
+    }
+    Ok(())
 }
 
 /// The file a chunk's modules are cut from (`materialize_logical_modules.file`,
@@ -447,6 +475,14 @@ pub(super) fn finish_logical_chunk(
         &ast_analysis.source_unit_syntax_locations,
         runtime_ast.module.body.len(),
     );
+    let single_authored_owner_groups = match &chunk_unassigned_mode {
+        UnassignedMode::CoarseAtomicGroups { .. } => builder.single_authored_owner_atomic_groups(
+            &precomputed,
+            &source_unit_layout,
+            chunk_unassigned_mode.partial_atomic_group_completion_owners(),
+        )?,
+        _ => BTreeSet::new(),
+    };
     // Selector outcomes, resolved-member anchors, and analysis assumptions
     // have already been collected from the complete authored ownership.
     let ownership_subset = ownership_subset.map(|subset| subset.modules_for_chunk(chunk_id));
@@ -467,10 +503,16 @@ pub(super) fn finish_logical_chunk(
         .transpose()?;
     builder.add_residual_sweep(catchall_request, &declarations, target_dir)?;
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
-    if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
+    if matches!(&chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;
     }
-    if matches!(chunk_unassigned_mode, UnassignedMode::CoarseAtomicGroups) {
+    if let UnassignedMode::CoarseAtomicGroups { .. } = &chunk_unassigned_mode {
+        builder.route_partial_atomic_groups_to_named_owners(
+            &precomputed,
+            &source_unit_layout,
+            chunk_unassigned_mode.partial_atomic_group_completion_owners(),
+            &single_authored_owner_groups,
+        )?;
         builder.synthesize_coarse_atomic_groups(&precomputed, &source_unit_layout, target_dir)?;
     }
     builder.route_nested_var_statements(&ast_analysis.nested_var_statements);
@@ -487,9 +529,13 @@ pub(super) fn finish_logical_chunk(
         bindings_catalogue,
         mut whole_statement_assignment,
         mut generated_residual_plans,
+        atomic_group_owner_completions,
         unmatched_spec_claims,
     } = builder.finalize(chunk_id_interned)?;
-    let coarse_residual_mode = matches!(chunk_unassigned_mode, UnassignedMode::CoarseAtomicGroups);
+    let coarse_residual_mode = matches!(
+        &chunk_unassigned_mode,
+        UnassignedMode::CoarseAtomicGroups { .. }
+    );
     let initial_generated_residual_count = generated_residual_plans.len();
     let maximum_coarsening_rounds = initial_generated_residual_count.saturating_sub(1);
     let refine_coarse_residuals = coarse_residual_mode && initial_generated_residual_count > 0;
@@ -745,6 +791,23 @@ pub(super) fn finish_logical_chunk(
             selected_bindings: placement.bindings().len(),
         },
         final_module_contents: final_modules,
+        atomic_group_owner_completions: atomic_group_owner_completions
+            .into_iter()
+            .map(|completion| AtomicGroupOwnerCompletionReport {
+                owner_path: spec::ModulePath::parse(&completion.owner_path, "")
+                    .expect("owner path was validated against authored requests"),
+                atomic_group_source_unit_ids: completion
+                    .atomic_group_source_unit_ids
+                    .into_iter()
+                    .map(source_unit_key)
+                    .collect(),
+                adopted_source_unit_ids: completion
+                    .adopted_source_unit_ids
+                    .into_iter()
+                    .map(source_unit_key)
+                    .collect(),
+            })
+            .collect(),
         requested_logical_modules: requests
             .iter()
             .map(|request| RequestedLogicalModule {
