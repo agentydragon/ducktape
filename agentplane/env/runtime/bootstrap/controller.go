@@ -38,7 +38,7 @@ func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r contr
 		if ptr.ID() != ResourceID {
 			return nil, nil
 		}
-		signal, found, err := componentRead[operationSignal](ctx, r, ResourceID)
+		signal, found, err := lifecycle.Read[operationSignal](ctx, r, ResourceID)
 		if err != nil || !found || signal.Revision < operationCompletionRevision {
 			return nil, err
 		}
@@ -53,16 +53,16 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if h == nil {
 		return errors.New("bootstrap host is not configured")
 	}
-	input, found, err := componentRead[Request](ctx, r, ptr.ID())
+	input, found, err := lifecycle.Read[Request](ctx, r, ptr.ID())
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := componentRead[Status](ctx, r, ptr.ID())
+	current, _, err := lifecycle.Read[Status](ctx, r, ptr.ID())
 	if err != nil {
 		return err
 	}
 	write := func() error {
-		changed, err := componentWrite(ctx, r, ptr.ID(), current)
+		changed, err := lifecycle.Write(ctx, r, ptr.ID(), current)
 		h.runtimeChanged(changed)
 		return err
 	}

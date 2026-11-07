@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -23,7 +24,7 @@ type interceptedSnapshotState struct {
 
 func (s *interceptedSnapshotState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
 	return s.State.Modify(ctx, value, func(current resource.Resource) error {
-		snapshot, ok := current.(*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]])
+		snapshot, ok := current.(*typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]])
 		var old ReconcileSnapshot
 		if ok {
 			old = *snapshot.TypedSpec()
@@ -109,7 +110,7 @@ func TestOperationSignalsWakeUnchangedSnapshotWithoutExecutionDemand(t *testing.
 		events := make(chan state.Event, 8)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		if err := st.Watch(ctx, componentResource(s.id, ReconcileSnapshot{}).Metadata(), events); err != nil {
+		if err := st.Watch(ctx, lifecycle.ResourceFor(s.id, ReconcileSnapshot{}).Metadata(), events); err != nil {
 			t.Fatal(err)
 		}
 		<-events // Initial snapshot.
@@ -127,7 +128,7 @@ func TestOperationSignalsWakeUnchangedSnapshotWithoutExecutionDemand(t *testing.
 		}
 		for revision := uint64(1); revision <= 2; revision++ {
 			event := <-events
-			input := event.Resource.(*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]).TypedSpec()
+			input := event.Resource.(*typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]]).TypedSpec()
 			if event.Type != state.Updated || input.OperationRevision != revision || input.Demand != 0 {
 				t.Fatalf("operation signal: event=%v snapshot=%+v", event.Type, input)
 			}
@@ -191,7 +192,7 @@ func TestSnapshotConflictPreservesOperationCompletion(t *testing.T) {
 				}}
 				s, m := operationTestSession(t, st)
 				if reset {
-					if err := publish(t.Context(), st.State, s.id, ReconcileSnapshot{Demand: 1}); err != nil {
+					if err := lifecycle.Publish(t.Context(), st.State, s.id, ReconcileSnapshot{Demand: 1}, lifecycle.EnvironmentOwner); err != nil {
 						t.Fatal(err)
 					}
 				}

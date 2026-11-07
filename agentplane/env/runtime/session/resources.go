@@ -4,14 +4,10 @@ package session
 import (
 	"context"
 
-	"github.com/agentydragon/ducktape/agentplane/env/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/state"
 )
 
 const (
@@ -83,55 +79,23 @@ type LifecycleStatus struct {
 	Error                  string
 }
 
-type componentSpec[T any] interface {
-	comparable
-	typed.DeepCopyable[T]
-	resourceType() resource.Type
-}
-
-type componentExtension[T componentSpec[T]] struct{}
-
-func (componentExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
-	var value T
-	return spec.ResourceDefinitionSpec{Type: value.resourceType(), DefaultNamespace: lifecycle.Namespace}
-}
-
-func componentResource[T componentSpec[T]](id string, value T) *typed.Resource[T, componentExtension[T]] {
-	return typed.NewResource[T, componentExtension[T]](
-		resource.NewMetadata(lifecycle.Namespace, value.resourceType(), id, resource.VersionUndefined), value,
-	)
-}
-
-func componentRead[T componentSpec[T]](ctx context.Context, reader controller.Reader, id string) (T, bool, error) {
-	var zero T
-	return cosi.Read(ctx, reader, componentResource(id, zero))
-}
-
-func componentWrite[T componentSpec[T]](ctx context.Context, writer controller.ReaderWriter, id string, value T) (bool, error) {
-	return cosi.Write(ctx, writer, componentResource(id, value), value)
-}
-
-func publish[T componentSpec[T]](ctx context.Context, writer state.State, id string, value T) error {
-	return cosi.Publish(ctx, writer, componentResource(id, value), value, lifecycle.EnvironmentOwner)
-}
-
 func ReadReconcileSnapshot(ctx context.Context, reader controller.Reader, id string) (ReconcileSnapshot, bool, error) {
-	return componentRead[ReconcileSnapshot](ctx, reader, id)
+	return lifecycle.Read[ReconcileSnapshot](ctx, reader, id)
 }
 
 func ReadLifecycleStatus(ctx context.Context, reader controller.Reader, id string) (LifecycleStatus, bool, error) {
-	return componentRead[LifecycleStatus](ctx, reader, id)
+	return lifecycle.Read[LifecycleStatus](ctx, reader, id)
 }
 
-func (ReconcileSnapshot) resourceType() resource.Type       { return ReconcileSnapshotType }
+func (ReconcileSnapshot) ResourceType() resource.Type       { return ReconcileSnapshotType }
 func (value ReconcileSnapshot) DeepCopy() ReconcileSnapshot { return value }
-func (LifecycleStatus) resourceType() resource.Type         { return LifecycleStatusType }
+func (LifecycleStatus) ResourceType() resource.Type         { return LifecycleStatusType }
 func (value LifecycleStatus) DeepCopy() LifecycleStatus     { return value }
-func (OwnerStatus) resourceType() resource.Type             { return OwnerStatusType }
+func (OwnerStatus) ResourceType() resource.Type             { return OwnerStatusType }
 func (value OwnerStatus) DeepCopy() OwnerStatus             { return value }
-func (ownerRetry) resourceType() resource.Type              { return ownerRetryType }
+func (ownerRetry) ResourceType() resource.Type              { return ownerRetryType }
 func (value ownerRetry) DeepCopy() ownerRetry               { return value }
 
 func ReadOwnerStatus(ctx context.Context, reader controller.Reader, id string) (OwnerStatus, bool, error) {
-	return componentRead[OwnerStatus](ctx, reader, id)
+	return lifecycle.Read[OwnerStatus](ctx, reader, id)
 }

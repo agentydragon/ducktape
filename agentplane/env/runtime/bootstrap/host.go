@@ -87,13 +87,13 @@ func (h *Host) Controller() controller.QController {
 func (h *Host) Configured() bool { return h != nil && h.config.Script != nil }
 
 func (h *Host) Initialize(ctx context.Context) error {
-	if err := publish(ctx, h.state, ResourceID, Request{}); err != nil {
+	if err := lifecycle.Publish(ctx, h.state, ResourceID, Request{}, HostOwner); err != nil {
 		return err
 	}
 	if !h.Configured() {
 		return nil
 	}
-	return publish(ctx, h.state, ResourceID, operationSignal{})
+	return lifecycle.Publish(ctx, h.state, ResourceID, operationSignal{}, HostOwner)
 }
 
 // Request records accepted bootstrap demand while Runtime's admission guard
@@ -144,7 +144,7 @@ func (h *Host) Request(ctx context.Context) error {
 			return nil
 		}
 		current.Requested = true
-		return publish(effectCtx, h.state, ResourceID, current)
+		return lifecycle.Publish(effectCtx, h.state, ResourceID, current, HostOwner)
 	})
 	if err != nil || effectInvoked {
 		return err
@@ -181,13 +181,13 @@ func (h *Host) Wait(ctx context.Context) error {
 	defer cancel()
 	stop := context.AfterFunc(h.ctx, cancel)
 	defer stop()
-	if _, err := safe.StateWatchFor[*typed.Resource[Status, componentExtension[Status]]](
+	if _, err := safe.StateWatchFor[*typed.Resource[Status, lifecycle.Extension[Status]]](
 		waitCtx,
 		h.state,
-		componentResource(ResourceID, Status{}).Metadata(),
+		lifecycle.ResourceFor(ResourceID, Status{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
-			current, ok := value.(*typed.Resource[Status, componentExtension[Status]])
+			current, ok := value.(*typed.Resource[Status, lifecycle.Extension[Status]])
 			if !ok {
 				return false, fmt.Errorf("unexpected bootstrap status resource %T", value)
 			}
@@ -276,7 +276,7 @@ func (h *Host) startOperation(work func(context.Context) error) error {
 }
 
 func (h *Host) publishOperationSignal() error {
-	_, err := safe.StateUpdateWithConflicts(h.ctx, h.state, componentResource(ResourceID, operationSignal{}).Metadata(), func(current *typed.Resource[operationSignal, componentExtension[operationSignal]]) error {
+	_, err := safe.StateUpdateWithConflicts(h.ctx, h.state, lifecycle.ResourceFor(ResourceID, operationSignal{}).Metadata(), func(current *typed.Resource[operationSignal, lifecycle.Extension[operationSignal]]) error {
 		current.TypedSpec().Revision++
 		return nil
 	}, state.WithUpdateOwner(HostOwner))

@@ -22,7 +22,7 @@ const (
 func (m *Manager) signalOperation(sessionID string) error {
 	// Completion holds the Session mutex. Do not take publishMu here: snapshot
 	// publication holds publishMu while reading Session fields under that mutex.
-	return safe.StateModify(m.ctx, m.state, componentResource(sessionID, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
+	return safe.StateModify(m.ctx, m.state, lifecycle.ResourceFor(sessionID, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]]) error {
 		current.TypedSpec().OperationRevision++
 		return nil
 	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))

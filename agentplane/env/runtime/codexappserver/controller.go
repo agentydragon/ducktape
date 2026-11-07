@@ -58,7 +58,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 	server := c.host
 	write := func() error {
-		changed, err := componentWrite(ctx, r, ResourceID, current)
+		changed, err := lifecycle.Write(ctx, r, ResourceID, current)
 		if changed && server != nil {
 			server.observe()
 		}

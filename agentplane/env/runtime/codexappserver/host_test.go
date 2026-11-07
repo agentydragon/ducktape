@@ -53,7 +53,7 @@ func (s *operationSignalState) UpdateWithConflicts(ctx context.Context, ptr reso
 		if err := update(value); err != nil {
 			return err
 		}
-		signal, ok := value.(*typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]])
+		signal, ok := value.(*typed.Resource[LifecycleSignal, lifecycle.Extension[LifecycleSignal]])
 		if !ok {
 			return nil
 		}
@@ -579,8 +579,8 @@ func TestOperationRevisionPreservesConcurrentResetAndNativeExit(t *testing.T) {
 	if err := process.process.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
-	_, err = safe.StateWatchFor[*typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]]](ctx, f.store, componentResource(ResourceID, LifecycleSignal{}).Metadata(), state.WithEventTypes(state.Created, state.Updated), state.WithCondition(func(value resource.Resource) (bool, error) {
-		return value.(*typed.Resource[LifecycleSignal, componentExtension[LifecycleSignal]]).TypedSpec().ExitSequence > signal.ExitSequence, nil
+	_, err = safe.StateWatchFor[*typed.Resource[LifecycleSignal, lifecycle.Extension[LifecycleSignal]]](ctx, f.store, lifecycle.ResourceFor(ResourceID, LifecycleSignal{}).Metadata(), state.WithEventTypes(state.Created, state.Updated), state.WithCondition(func(value resource.Resource) (bool, error) {
+		return value.(*typed.Resource[LifecycleSignal, lifecycle.Extension[LifecycleSignal]]).TypedSpec().ExitSequence > signal.ExitSequence, nil
 	}))
 	if err != nil {
 		t.Fatal(err)

@@ -59,7 +59,7 @@ func (s *operationSignalState) UpdateWithConflicts(ctx context.Context, ptr reso
 		if err := update(value); err != nil {
 			return err
 		}
-		signal, ok := value.(*typed.Resource[operationSignal, componentExtension[operationSignal]])
+		signal, ok := value.(*typed.Resource[operationSignal, lifecycle.Extension[operationSignal]])
 		if !ok || signal.TypedSpec().Revision != s.revision {
 			return nil
 		}
@@ -165,7 +165,7 @@ func (s initialOperationFailureState) UpdateWithConflicts(ctx context.Context, p
 		if err := update(value); err != nil {
 			return err
 		}
-		if result, ok := value.(*typed.Resource[operationSignal, componentExtension[operationSignal]]); ok && result.TypedSpec().Revision == 1 {
+		if result, ok := value.(*typed.Resource[operationSignal, lifecycle.Extension[operationSignal]]); ok && result.TypedSpec().Revision == 1 {
 			return s.err
 		}
 		return nil
@@ -200,7 +200,7 @@ func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.
 	if err := host.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(ctx, store, ResourceID, Request{Requested: true}); err != nil {
+	if err := lifecycle.Publish(ctx, store, ResourceID, Request{Requested: true}, HostOwner); err != nil {
 		t.Fatal(err)
 	}
 	engine, err := runtime.NewRuntime(store, zap.NewNop())
@@ -224,11 +224,11 @@ func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.
 		}
 		workers.Wait()
 	})
-	if _, err := safe.StateWatchFor[*typed.Resource[Status, componentExtension[Status]]](
+	if _, err := safe.StateWatchFor[*typed.Resource[Status, lifecycle.Extension[Status]]](
 		ctx, store,
-		componentResource(ResourceID, Status{}).Metadata(), state.WithEventTypes(state.Created, state.Updated),
+		lifecycle.ResourceFor(ResourceID, Status{}).Metadata(), state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
-			current, ok := value.(*typed.Resource[Status, componentExtension[Status]])
+			current, ok := value.(*typed.Resource[Status, lifecycle.Extension[Status]])
 			if !ok {
 				return false, fmt.Errorf("unexpected bootstrap status resource %T", value)
 			}
@@ -464,7 +464,7 @@ func TestConcurrentBootstrapWaitersShareOneAttempt(t *testing.T) {
 	script := fmt.Sprintf(": > %q\nwhile [ ! -f %q ]; do sleep 0.01; done\nprintf b >> %q\nprintf ready", started, release, count)
 	r := newHostTestRuntime(t, &script, stateDir, nil)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
-	initialSignal, found, err := componentRead[operationSignal](t.Context(), r.state, ResourceID)
+	initialSignal, found, err := lifecycle.Read[operationSignal](t.Context(), r.state, ResourceID)
 	if err != nil || !found || initialSignal.Revision != 0 {
 		t.Fatalf("bootstrap operation signal before admission = (%+v, found=%t, err=%v), want initialized revision 0", initialSignal, found, err)
 	}
@@ -489,7 +489,7 @@ func TestConcurrentBootstrapWaitersShareOneAttempt(t *testing.T) {
 	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
 		t.Fatalf("bootstrap script count = %q, %v; want one execution", data, err)
 	}
-	signal, found, err := componentRead[operationSignal](ctx, r.state, ResourceID)
+	signal, found, err := lifecycle.Read[operationSignal](ctx, r.state, ResourceID)
 	if err != nil || !found || signal.Revision != 2 {
 		t.Fatalf("bootstrap operation signal = (%+v, found=%t, err=%v), want revision 2", signal, found, err)
 	}
@@ -533,7 +533,7 @@ func TestCompletedBootstrapSignalSurvivesControllerRestart(t *testing.T) {
 	if err != nil || !found || status.Phase != Succeeded {
 		t.Fatalf("bootstrap status after controller restart = (%+v, found=%t, err=%v), want succeeded", status, found, err)
 	}
-	signal, found, err := componentRead[operationSignal](ctx, r.state, ResourceID)
+	signal, found, err := lifecycle.Read[operationSignal](ctx, r.state, ResourceID)
 	if err != nil || !found || signal.Revision != 2 {
 		t.Fatalf("bootstrap operation signal after controller restart = (%+v, found=%t, err=%v), want retained revision 2", signal, found, err)
 	}
@@ -569,7 +569,7 @@ func TestCompletionSignalPublicationFailureKeepsBootstrapFailClosed(t *testing.T
 	if op == nil || !errors.Is(op.Err(), publicationErr) {
 		t.Fatalf("completed bootstrap result = %v, want publication error retained in operation slot", op)
 	}
-	signal, found, err := componentRead[operationSignal](t.Context(), r.state, ResourceID)
+	signal, found, err := lifecycle.Read[operationSignal](t.Context(), r.state, ResourceID)
 	if err != nil || !found || signal.Revision != 1 {
 		t.Fatalf("bootstrap operation signal after failed completion publication = (%+v, found=%t, err=%v), want revision 1", signal, found, err)
 	}
@@ -742,13 +742,13 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		}
 		versions[i] = updated.Metadata().Version()
 	}
-	if err := publish(t.Context(), store, ResourceID, Request{Requested: true}); err != nil {
+	if err := lifecycle.Publish(t.Context(), store, ResourceID, Request{Requested: true}, HostOwner); err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(t.Context(), store, ResourceID, Status{Phase: Running}); err != nil {
+	if err := lifecycle.Publish(t.Context(), store, ResourceID, Status{Phase: Running}, HostOwner); err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(t.Context(), store, ResourceID, operationSignal{Revision: 2}); err != nil {
+	if err := lifecycle.Publish(t.Context(), store, ResourceID, operationSignal{Revision: 2}, HostOwner); err != nil {
 		t.Fatal(err)
 	}
 	if err := closer.Close(); err != nil {
@@ -759,7 +759,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = restoredCloser.Close() })
-	if _, found, err := componentRead[operationSignal](t.Context(), restored, ResourceID); err != nil || found {
+	if _, found, err := lifecycle.Read[operationSignal](t.Context(), restored, ResourceID); err != nil || found {
 		t.Fatalf("restored bootstrap operation signal = (%t, %v), want live-only signal absent", found, err)
 	}
 	for i, item := range metadata {
@@ -857,7 +857,7 @@ func TestRequestDetectsAdmissionGuardThatSkippedEffect(t *testing.T) {
 	if err != nil || !found || input.Requested {
 		t.Fatalf("input after skipped admission = (%+v, found=%t, err=%v), want unrequested", input, found, err)
 	}
-	if err := publish(r.ctx, r.state, ResourceID, Request{Requested: true}); err != nil {
+	if err := lifecycle.Publish(r.ctx, r.state, ResourceID, Request{Requested: true}, HostOwner); err != nil {
 		t.Fatal(err)
 	}
 	if err := lifecycle.PublishEnvironmentDesired(r.ctx, r.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: 2}); err != nil {

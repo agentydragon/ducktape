@@ -19,7 +19,7 @@ import (
 func TestSessionReconcileSnapshotsIgnoreJournalOnlyChanges(t *testing.T) {
 	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
-	inputPointer := componentResource(s.id, ReconcileSnapshot{}).Metadata()
+	inputPointer := lifecycle.ResourceFor(s.id, ReconcileSnapshot{}).Metadata()
 	before, err := resources.Get(ctx, inputPointer)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestSessionDemandPublicationRetriesFromCurrentDemand(t *testing.T) {
 	manager.state = state.WrapCore(conflictingState)
 	manager.publishSession(s, true)
 
-	input, found, err := componentRead[ReconcileSnapshot](ctx, manager.state, s.id)
+	input, found, err := lifecycle.Read[ReconcileSnapshot](ctx, manager.state, s.id)
 	if err != nil || !found {
 		t.Fatalf("read Session reconcile snapshot after conflict retry: found=%t error=%v", found, err)
 	}
@@ -109,7 +109,7 @@ func TestSessionDemandPublicationRetriesFromCurrentDemand(t *testing.T) {
 func TestSessionDemandPublicationStartsFromZeroWhenInputIsMissing(t *testing.T) {
 	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
-	if err := resources.Destroy(ctx, componentResource(s.id, ReconcileSnapshot{}).Metadata(), state.WithDestroyOwner(lifecycle.EnvironmentOwner)); err != nil {
+	if err := resources.Destroy(ctx, lifecycle.ResourceFor(s.id, ReconcileSnapshot{}).Metadata(), state.WithDestroyOwner(lifecycle.EnvironmentOwner)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -139,7 +139,7 @@ func (s *sessionDemandConflictCoreState) Update(ctx context.Context, value resou
 			if err != nil {
 				return fmt.Errorf("read competing Session reconcile snapshot: %w", err)
 			}
-			input, ok := current.(*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]])
+			input, ok := current.(*typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]])
 			if !ok {
 				return fmt.Errorf("unexpected Session reconcile snapshot type %T", current)
 			}

@@ -38,7 +38,7 @@ func TestSessionControllerMapsAppServerStatusToCodexSessions(t *testing.T) {
 		"claude-session": sessionpb.Harness_HARNESS_CLAUDE,
 		"codex-session":  sessionpb.Harness_HARNESS_CODEX,
 	} {
-		if err := publish(context.Background(), resources, id, ReconcileSnapshot{Harness: harness}); err != nil {
+		if err := lifecycle.Publish(context.Background(), resources, id, ReconcileSnapshot{Harness: harness}, lifecycle.EnvironmentOwner); err != nil {
 			t.Fatal(err)
 		}
 	}
