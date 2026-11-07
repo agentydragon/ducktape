@@ -87,6 +87,13 @@ pub(super) fn select_iteration(
     result: Option<u32>,
     argument_count: usize,
 ) -> Option<(ArrayIterationSelection, EffectCoverageFragment)> {
+    // This shared constructor admits only rows with a sound positional
+    // transfer here. Other recognized rows remain available for conservative
+    // fallback, but their current result protocol does not prove exact
+    // positions or short-circuit execution.
+    if !matches!(row.member, "map" | "forEach") {
+        return None;
+    }
     let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
         receivers.iter().collect::<Vec<_>>().as_slice()
     else {
