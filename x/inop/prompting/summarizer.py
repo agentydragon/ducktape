@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from openai_utils.model import InputTextPart, OpenAIModelProto, ResponsesRequest, SystemMessage, UserMessage
+from openai_utils.model import InputTextPart, Model, ResponsesRequest, SystemMessage, UserMessage
 from openai_utils.model_metadata import get_model_metadata
 from openai_utils.text_extraction import first_assistant_text
 from x.inop.engine.models import FileInfo, GradedRollout
@@ -16,7 +16,7 @@ logger = DualOutputLogging.get_logger()
 
 @dataclass
 class PatternSummarizer(FeedbackProvider):
-    model: OpenAIModelProto
+    model: Model
     truncation_manager: TruncationManager
     max_file_size_pattern_analysis: int
     context_model_id: str | None = None
@@ -115,7 +115,7 @@ class PatternSummarizer(FeedbackProvider):
             tools=[],
             tool_choice="auto",
         )
-        resp = await self.model.responses_create(req)
+        resp = await self.model.sample(self.model.prepare(req))
         result: str = first_assistant_text(resp)
         return result
         # TODO: store, log

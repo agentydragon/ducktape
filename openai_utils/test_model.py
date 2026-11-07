@@ -1,5 +1,6 @@
 """Tests for ResponsesResult.from_sdk output-item parsing."""
 
+import json
 from typing import Any, cast
 
 import httpx2
@@ -18,6 +19,8 @@ from openai_utils.model import (
     ReasoningContentItem,
     ReasoningItem,
     ReasoningOutputTextItem,
+    ResponsesModel,
+    ResponsesRequest,
     ResponsesResult,
     ResponseUsage,
 )
@@ -188,6 +191,40 @@ def test_from_sdk_keeps_standard_reasoning_text() -> None:
     reasoning = ResponsesResult.from_sdk(resp).output[0]
     assert isinstance(reasoning, ReasoningItem)
     assert reasoning.content == [ReasoningContentItem(text="standard cot")]
+
+
+async def test_response_adapter_sends_the_prepared_request() -> None:
+    captured: dict[str, Any] | None = None
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal captured
+        captured = json.loads(request.content)
+        return httpx2.Response(
+            200,
+            json={
+                "id": "resp_prepared",
+                "object": "response",
+                "created_at": 1,
+                "model": "configured-model",
+                "output": [],
+            },
+        )
+
+    async with AsyncOpenAI(
+        base_url="http://test/v1",
+        api_key="sk-test",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    ) as client:
+        model = ResponsesModel(client=client, model="configured-model")
+        source = ResponsesRequest(input="hello", instructions="prepared instructions", max_output_tokens=7)
+        prepared = model.prepare(source)
+        source.instructions = "changed after preparation"
+        await model.sample(prepared)
+
+    assert captured is not None
+    assert captured["model"] == "configured-model"
+    assert captured["instructions"] == "prepared instructions"
+    assert captured == prepared.model_dump()
 
 
 if __name__ == "__main__":

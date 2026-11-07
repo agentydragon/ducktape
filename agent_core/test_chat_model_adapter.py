@@ -9,7 +9,7 @@ import pytest_bazel
 from openai import AsyncOpenAI
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 
-from agent_core.model import AgentModelRequest, ChatCompletionsAgentModel
+from agent_core.model import ChatCompletionsAgentModel
 from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
@@ -18,6 +18,7 @@ from openai_utils.model import (
     InputTokensDetails,
     OutputTokensDetails,
     ReasoningItem,
+    ResponsesRequest,
     ResponseUsage,
     SystemMessage,
     UserMessage,
@@ -81,7 +82,7 @@ async def test_chat_adapter_preserves_reported_usage(
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
     ) as client:
         model = ChatCompletionsAgentModel(client=client, model="chat-model")
-        result = await model.sample(model.prepare(AgentModelRequest(input=[UserMessage.text("hello")])))
+        result = await model.sample(model.prepare(ResponsesRequest(input=[UserMessage.text("hello")])))
 
     assert result.usage == ResponseUsage(
         input_tokens=10,
@@ -137,7 +138,7 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
     try:
         client = AsyncOpenAI(base_url="http://test/v1", api_key="sk-test", http_client=http_client)
         model = ChatCompletionsAgentModel(client=client, model="chat-model")
-        request = AgentModelRequest(
+        request = ResponsesRequest(
             input=[
                 SystemMessage.text("static system"),
                 UserMessage.text("hello"),
@@ -158,7 +159,7 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
         )
 
         prepared = model.prepare(request)
-        wire_body = prepared.wire_body
+        wire_body = prepared
         assert isinstance(wire_body, dict)
         assert wire_body["messages"] == [
             {"role": "system", "content": "static system"},
@@ -178,7 +179,7 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
     finally:
         await http_client.aclose()
 
-    assert captured_body == prepared.wire_body
+    assert captured_body == prepared
     assert result.id == "chatcmpl_test"
     assert result.usage is not None
     assert result.usage.input_tokens == 10
@@ -227,7 +228,7 @@ async def test_chat_adapter_rejects_custom_tool_call() -> None:
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
     ) as client:
         model = ChatCompletionsAgentModel(client=client, model="chat-model")
-        prepared = model.prepare(AgentModelRequest(input=[UserMessage.text("hello")]))
+        prepared = model.prepare(ResponsesRequest(input=[UserMessage.text("hello")]))
 
         with pytest.raises(ValueError, match="Unsupported chat completion tool call type: 'custom'"):
             await model.sample(prepared)
@@ -236,10 +237,10 @@ async def test_chat_adapter_rejects_custom_tool_call() -> None:
 def test_chat_adapter_adds_kickoff_for_instructions_only_request() -> None:
     model = ChatCompletionsAgentModel(client=AsyncOpenAI(api_key="sk-test"), model="chat-model")
 
-    prepared = model.prepare(AgentModelRequest(input=[], instructions="system instructions"))
+    prepared = model.prepare(ResponsesRequest(input=[], instructions="system instructions"))
 
-    assert isinstance(prepared.wire_body, dict)
-    assert prepared.wire_body["messages"] == [
+    assert isinstance(prepared, dict)
+    assert prepared["messages"] == [
         {"role": "system", "content": "system instructions"},
         {"role": "user", "content": "Begin the task using the available tools."},
     ]
@@ -248,10 +249,10 @@ def test_chat_adapter_adds_kickoff_for_instructions_only_request() -> None:
 def test_chat_adapter_does_not_add_kickoff_when_user_input_exists() -> None:
     model = ChatCompletionsAgentModel(client=AsyncOpenAI(api_key="sk-test"), model="chat-model")
 
-    prepared = model.prepare(AgentModelRequest(input=[SystemMessage.text("static system"), UserMessage.text("hello")]))
+    prepared = model.prepare(ResponsesRequest(input=[SystemMessage.text("static system"), UserMessage.text("hello")]))
 
-    assert isinstance(prepared.wire_body, dict)
-    assert prepared.wire_body["messages"] == [
+    assert isinstance(prepared, dict)
+    assert prepared["messages"] == [
         {"role": "system", "content": "static system"},
         {"role": "user", "content": "hello"},
     ]

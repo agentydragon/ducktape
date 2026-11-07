@@ -53,7 +53,7 @@ import pytest
 import pytest_asyncio
 
 from devinfra.oci.oci import BazelImage, bazel_crane, push_bazel_image
-from openai_utils.model import OpenAIModelProto
+from openai_utils.model import Model
 from openai_utils.model_metadata import get_model_metadata
 from props.backend.app import BackendDeps, create_app
 from props.config import CustomModelConfig, DockerExecutorConfig, PropsConfig, UpstreamConfig
@@ -279,7 +279,7 @@ async def e2e_stack(
 
     @asynccontextmanager
     async def _factory(
-        mocks: Mapping[str, OpenAIModelProto], model: str = DEFAULT_TEST_MODEL, *, images: Sequence[BazelImage] = ()
+        mocks: Mapping[str, Model], model: str = DEFAULT_TEST_MODEL, *, images: Sequence[BazelImage] = ()
     ) -> AsyncIterator[E2EStack]:
         fake_openai = FakeOpenAIServer(dict(mocks))
         async with _make_stack(

@@ -34,7 +34,6 @@ from agent_core.loop_control import (
     RequireAnyTool,
     ToolPolicy,
 )
-from agent_core.model import AgentModelProto, AgentModelRequest, ResponsesAgentModel
 from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolOutputData, ToolProvider, ToolResult
 from openai_utils.model import (
     AssistantMessage,
@@ -43,8 +42,9 @@ from openai_utils.model import (
     FunctionCallOutputItem,
     FunctionToolParam,
     InputItem,
-    OpenAIModelProto,
+    Model,
     ReasoningItem,
+    ResponsesRequest,
     SystemMessage,
     ToolChoice,
     UserMessage,
@@ -207,7 +207,7 @@ class Agent:
         self,
         *,
         tool_provider: ToolProvider,
-        client: AgentModelProto | OpenAIModelProto,
+        client: Model,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool,
@@ -216,7 +216,7 @@ class Agent:
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._tool_provider = tool_provider
-        self._client = client if isinstance(client, AgentModelProto) else ResponsesAgentModel(client)
+        self._client = client
         self._parallel_tool_calls = parallel_tool_calls
         self._tool_policy = tool_policy
         self._transcript: list[TranscriptItem] = []
@@ -337,7 +337,7 @@ class Agent:
             prompt_file = Path(__file__).parent / "compaction_prompt.md"
             custom_prompt = prompt_file.read_text()
 
-        req = AgentModelRequest(input=[UserMessage.text(conversation)], instructions=custom_prompt, stream=False)
+        req = ResponsesRequest(input=[UserMessage.text(conversation)], instructions=custom_prompt, stream=False)
 
         resp = await self._client.sample(self._client.prepare(req))
 
@@ -519,7 +519,7 @@ class Agent:
             reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
             tool_schemas = await self._tool_provider.list_tools()
 
-            req = AgentModelRequest(
+            req = ResponsesRequest(
                 input=self.to_openai_messages(),
                 instructions=await self._build_effective_instructions(),
                 stream=False,
@@ -538,8 +538,8 @@ class Agent:
             for h in self._handlers:
                 h.on_api_request_event(
                     ApiRequest(
-                        api_shape=prepared_request.api_shape,
-                        request=prepared_request.wire_body,
+                        api_shape=self._client.api_shape,
+                        request=prepared_request,
                         model=self._client.model,
                         request_id=request_id,
                         phase_number=phase_number,
@@ -628,7 +628,7 @@ class Agent:
         *,
         tool_provider: ToolProvider,
         handlers: Iterable[BaseHandler],
-        client: AgentModelProto | OpenAIModelProto,
+        client: Model,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from openai_utils.client_factory import build_client
-from openai_utils.model import OpenAIModelProto
+from openai_utils.model import Model
 from openai_utils.types import ReasoningEffort
 from x.inop.config import OptimizerConfig
 
@@ -12,14 +12,14 @@ from x.inop.config import OptimizerConfig
 class OptimizerModels:
     """Adapter model instances injected into the optimizer flow.
 
-    All models implement OpenAIModelProto and are fully constructed by the caller.
+    All models implement Model and are fully constructed by the caller.
     This factory is a convenience for standard configs; higher layers should DI
     these instances rather than constructing models inside the optimizer.
     """
 
-    pe_model: OpenAIModelProto
-    grader_model: OpenAIModelProto
-    summarizer_model: OpenAIModelProto
+    pe_model: Model
+    grader_model: Model
+    summarizer_model: Model
 
 
 def create_optimizer_models(cfg: OptimizerConfig, *, enable_debug_logging: bool = False) -> OptimizerModels:

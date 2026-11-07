@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, Literal, Self, cast
 
 from openai import AsyncOpenAI
+from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -15,6 +16,7 @@ from openai.types.responses import (
 from openai.types.responses.response_reasoning_item import Content as SdkReasoningContent, ResponseReasoningItem
 from pydantic import BaseModel, ConfigDict, Field
 
+from openai_utils.api_shape import LLMApiShape
 from openai_utils.errors import translate_context_length
 from openai_utils.types import ReasoningEffort, ReasoningParams, build_reasoning_params
 
@@ -350,25 +352,24 @@ class ResponsesResult(BaseModel):
         return cls(id=sdk_resp.id, usage=usage, output=out_items)
 
 
-# ------------------------------
-# Protocol for bound model interface
-# ------------------------------
+type WireRequest = ResponsesRequest | CompletionCreateParamsNonStreaming
 
 
-class OpenAIModelProto(ABC):
-    """Abstract base class for AsyncOpenAI adapters with bound model."""
+class Model(ABC):
+    api_shape = LLMApiShape.RESPONSES
 
     @property
     @abstractmethod
     def model(self) -> str: ...
 
+    def prepare(self, request: ResponsesRequest) -> WireRequest:
+        return request.model_copy(update={"model": self.model})
+
     @abstractmethod
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...
+    async def sample(self, request: WireRequest) -> ResponsesResult: ...
 
 
-class BoundOpenAIModel(OpenAIModelProto):
-    """AsyncOpenAI adapter that binds a specific model and returns Pydantic results."""
-
+class ResponsesModel(Model):
     def __init__(self, *, client: AsyncOpenAI, model: str, reasoning_effort: ReasoningEffort | None = None) -> None:
         self._client = client
         self._model = model
@@ -378,14 +379,18 @@ class BoundOpenAIModel(OpenAIModelProto):
     def model(self) -> str:
         return self._model
 
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        kwargs = req.model_dump()
+    def prepare(self, request: ResponsesRequest) -> ResponsesRequest:
+        kwargs = request.model_dump()
         kwargs["model"] = self._model
         if self._reasoning_effort and "reasoning" not in kwargs:
             kwargs["reasoning"] = build_reasoning_params(effort=self._reasoning_effort)
+        return ResponsesRequest.model_validate(kwargs)
 
+    async def sample(self, request: WireRequest) -> ResponsesResult:
+        if not isinstance(request, ResponsesRequest):
+            raise TypeError("ResponsesModel expects a prepared Responses request")
         create: Callable[..., Awaitable[Response]] = cast(
             Callable[..., Awaitable[Response]], self._client.responses.create
         )
-        sdk_resp: Response = await translate_context_length(create, **kwargs)
+        sdk_resp: Response = await translate_context_length(create, **request.model_dump())
         return ResponsesResult.from_sdk(sdk_resp)

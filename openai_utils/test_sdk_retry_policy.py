@@ -14,7 +14,7 @@ import pytest_bazel
 
 from openai_utils.client_factory import get_async_openai
 from openai_utils.errors import ContextLengthExceededError
-from openai_utils.model import BoundOpenAIModel, ResponsesRequest
+from openai_utils.model import ResponsesModel, ResponsesRequest
 from openai_utils.requests import create_chat_completion
 
 
@@ -84,9 +84,9 @@ async def test_context_length_error_translates_without_retry() -> None:
         )
 
     async with _client(httpx2.MockTransport(respond)) as client:
-        model = BoundOpenAIModel(client=client, model="test")
+        model = ResponsesModel(client=client, model="test")
         with pytest.raises(ContextLengthExceededError):
-            await model.responses_create(ResponsesRequest(input="too long"))
+            await model.sample(model.prepare(ResponsesRequest(input="too long")))
 
     assert attempts == 1
 

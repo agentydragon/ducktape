@@ -4,13 +4,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from openai_utils.model import (
-    FunctionCallItem,
-    FunctionToolParam,
-    OpenAIModelProto,
-    ResponsesRequest,
-    ToolChoiceFunction,
-)
+from openai_utils.model import FunctionCallItem, FunctionToolParam, Model, ResponsesRequest, ToolChoiceFunction
 from openai_utils.types import build_reasoning_params
 from x.inop.config import OptimizerConfig
 from x.inop.engine.models import (
@@ -35,7 +29,7 @@ async def grade_rollout(
     rollout: Rollout,
     task: TaskDefinition,
     grading_config: FileBasedGrading | ComparisonGrading | MessageBasedGrading,
-    model: OpenAIModelProto,
+    model: Model,
     cfg: OptimizerConfig,
     environment: RunnerEnvironment | None = None,
 ) -> Grade:
@@ -60,7 +54,7 @@ async def grade_rollout(
 
 
 async def _grade_comparison(
-    task: TaskDefinition, prepared: dict[str, Any], model: OpenAIModelProto, cfg: OptimizerConfig, rollout: Rollout
+    task: TaskDefinition, prepared: dict[str, Any], model: Model, cfg: OptimizerConfig, rollout: Rollout
 ) -> Grade:
     """Grade by comparing agent output to reference (for code reviews).
 
@@ -119,7 +113,7 @@ Return a JSON object with:
         reasoning=build_reasoning_params(cfg.grader.reasoning_effort),
     )
 
-    response = await model.responses_create(req)
+    response = await model.sample(model.prepare(req))
 
     # Extract the function call from response
     call: FunctionCallItem | None = None
@@ -156,7 +150,7 @@ async def _grade_with_criteria(
     task: TaskDefinition,
     prepared: dict[str, Any],
     criteria: list[Criterion],
-    model: OpenAIModelProto,
+    model: Model,
     cfg: OptimizerConfig,
     rollout: Rollout,
     strategy: GradingStrategy,
@@ -216,7 +210,7 @@ async def _grade_with_criteria(
         reasoning=build_reasoning_params(cfg.grader.reasoning_effort),
     )
 
-    response = await model.responses_create(req)
+    response = await model.sample(model.prepare(req))
 
     # Extract the function call (accept SDK or adapter types)
     call = None

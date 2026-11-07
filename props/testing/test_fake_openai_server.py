@@ -2,15 +2,16 @@ import httpx
 import pytest
 import pytest_bazel
 
-from openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
+from openai_utils.model import Model, ResponsesRequest, ResponsesResult, WireRequest
 from props.testing.fake_openai_server import FakeOpenAIServer
 from util.testing.asgi import bind_http_server
 
 
-class RaisingOpenAIModel(OpenAIModelProto):
+class RaisingOpenAIModel(Model):
     model = "raising-model"
 
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+    async def sample(self, req: WireRequest) -> ResponsesResult:
+        assert isinstance(req, ResponsesRequest)
         raise RuntimeError("mock failure")
 
 

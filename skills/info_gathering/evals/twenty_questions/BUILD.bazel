@@ -90,6 +90,7 @@ py_test(
         ":twenty_questions",
         "//:conftest",
         "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
         "@pypi//pytest_bazel",
     ],
 )

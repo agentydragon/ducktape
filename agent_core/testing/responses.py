@@ -23,12 +23,13 @@ from openai_utils.model import (
     FunctionCallItem,
     FunctionCallOutputItem,
     InputTokensDetails,
-    OpenAIModelProto,
+    Model,
     OutputTokensDetails,
     ResponseOutItem,
     ResponsesRequest,
     ResponsesResult,
     ResponseUsage,
+    WireRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,11 +108,11 @@ def tool_roundtrip[T](call: FunctionCallItem, output_type: type[T]) -> Generator
 PlayGen = Generator[ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest]
 
 
-class GeneratorMock(ItemFactory, OpenAIModelProto):
+class GeneratorMock(ItemFactory, Model):
     """Abstract base for generator-based OpenAI mocks.
 
     Subclasses ItemFactory for convenient item construction and implements
-    OpenAIModelProto for use as a mock client.
+    Model for use as a mock client.
 
     Subclass and override play() to provide the generator.
     For MCP-aware methods,
@@ -129,8 +130,9 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
     def play(self) -> PlayGen:
         """Override in subclass to provide the generator."""
 
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+    async def sample(self, req: WireRequest) -> ResponsesResult:
         """Send request to generator, return wrapped response."""
+        assert isinstance(req, ResponsesRequest)
         try:
             result = self._gen.send(req)
         except StopIteration:

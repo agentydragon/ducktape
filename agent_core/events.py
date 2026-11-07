@@ -17,12 +17,11 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 from pydantic import BaseModel, Field
 
 from agent_core.tool_provider import ToolResult
 from openai_utils.api_shape import LLMApiShape
-from openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem, ResponsesRequest
+from openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem, WireRequest
 
 
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
@@ -73,7 +72,7 @@ class ApiRequest(BaseModel):
     type: Literal["api_request"] = "api_request"
 
     api_shape: LLMApiShape = LLMApiShape.RESPONSES
-    request: ResponsesRequest | CompletionCreateParamsNonStreaming
+    request: WireRequest
 
     # TODO: Consider moving model into ResponsesRequest and removing the "model handle" layer
     # Currently model lives on client, not in request object

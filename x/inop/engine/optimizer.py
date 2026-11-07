@@ -48,7 +48,7 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
-from openai_utils.model import OpenAIModelProto, UserMessage
+from openai_utils.model import Model, UserMessage
 from x.inop.config import OptimizerConfig
 from x.inop.engine import runner_factory
 from x.inop.engine.models import AgentTaskType, Criterion, GradedRollout, TaskDefinition
@@ -104,9 +104,9 @@ def setup_signal_handlers():
 @dataclass
 class OptimizeMcpArgs:
     anthropic_log: JSONLLogger
-    pe_model: OpenAIModelProto
-    grader_model: OpenAIModelProto
-    summarizer_model: OpenAIModelProto
+    pe_model: Model
+    grader_model: Model
+    summarizer_model: Model
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -299,9 +299,9 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
 class OptimizeArgs:
     anthropic_log: JSONLLogger
     # Required DI: adapter model instances for specific roles.
-    pe_model: OpenAIModelProto
-    grader_model: OpenAIModelProto
-    summarizer_model: OpenAIModelProto
+    pe_model: Model
+    grader_model: Model
+    summarizer_model: Model
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
