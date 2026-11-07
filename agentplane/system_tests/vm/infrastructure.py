@@ -182,8 +182,8 @@ def wait_for_apis(kubectl: Kubectl) -> None:
 
 
 @tracer.start_as_current_span("system_test.virtualization.ready")
-def wait_until_ready(kubectl: Kubectl) -> None:
-    """KubeVirt serves VMs, and Kyverno enforces every ClusterPolicy, the launcher relay's among them."""
+def wait_until_ready(kubectl: Kubectl, *, require_cluster_policies: bool = True) -> None:
+    """Wait for KubeVirt and Kyverno; optionally wait for the Agentplane policy set too."""
     kubectl(
         "-n", KUBEVIRT_NAMESPACE, "wait", "kubevirt/kubevirt", "--for=condition=Available",
         f"--timeout={READY_SECONDS}s",
@@ -192,4 +192,5 @@ def wait_until_ready(kubectl: Kubectl) -> None:
         "-n", KYVERNO_NAMESPACE, "wait", "--for=condition=Available", f"deployment/{_KYVERNO_ADMISSION}",
         f"--timeout={READY_SECONDS}s",
     )  # fmt: skip
-    kubectl("wait", "--for=condition=Ready", "clusterpolicy", "--all", f"--timeout={READY_SECONDS}s")
+    if require_cluster_policies:
+        kubectl("wait", "--for=condition=Ready", "clusterpolicy", "--all", f"--timeout={READY_SECONDS}s")

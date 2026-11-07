@@ -9,7 +9,14 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_EXEC_PROPERTIES")
+load(
+    "//agentplane/system_tests/k3s:defs.bzl",
+    "K3S_BINARY",
+    "K3S_BINARY_RLOCATION",
+    "K3S_EXEC_PROPERTIES",
+    "K3S_TAGS",
+    "k3s_tcg_vm_image_manifest",
+)
 load("//devinfra/erofs:defs.bzl", "erofs_image")
 
 package(
@@ -248,5 +255,74 @@ py_library(
         "//agentplane/system_tests/deployment:virtualization",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
+    ],
+)
+
+k3s_tcg_vm_image_manifest(
+    name = "test_tcg_vmi_shutdown_image_manifest",
+)
+
+py_test(
+    name = "test_tcg_vmi_shutdown",
+    size = "enormous",
+    srcs = ["test_tcg_vmi_shutdown.py"],
+    data = [
+        K3S_BINARY,
+        ":test_tcg_vmi_shutdown_image_manifest",
+        "@kubevirt_operator_bundle//file",
+        "@kyverno_install//file",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :test_tcg_vmi_shutdown_image_manifest)",
+        "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
+        "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "AGENTPLANE_K3S_REQUIRE_KVM": "0",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | {"EstimatedComputeUnits": "8"},
+    main = "test_tcg_vmi_shutdown.py",
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        ":guest_logs",
+        ":host_qemu",
+        ":infrastructure",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/k3s:baseline",
+        "//cluster/cdk8s/agentplane:launcher_relay",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_tcg_vmi_shutdown_policy",
+    size = "small",
+    srcs = ["test_tcg_vmi_shutdown.py"],
+    args = [
+        "-k",
+        "policy",
+    ],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    main = "test_tcg_vmi_shutdown.py",
+    deps = [
+        ":guest_logs",
+        ":host_qemu",
+        ":infrastructure",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/k3s:baseline",
+        "//cluster/cdk8s/agentplane:launcher_relay",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
