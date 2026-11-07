@@ -433,9 +433,9 @@ fn set_primitive_array_constructor(
 }
 
 impl OriginalInitializer {
-    pub(super) fn collect<'source>(
+    pub(super) fn collect(
         source: Result<
-            (InitializationSourceIdentity, &'source Expr),
+            (InitializationSourceIdentity, &Expr),
             OwnerInitializationCoverageRefusalReason,
         >,
     ) -> Result<Self, OwnerInitializationCoverageRefusalReason> {

@@ -1924,7 +1924,11 @@ fn accepted_primitive_fixture_with_reports(
     }
 }
 
-fn assert_operation_receipt(fixture: &Fixture, binding: &str, expected_calls: usize) -> Value {
+fn assert_operation_receipt(
+    fixture: &impl FixtureGraphExt,
+    binding: &str,
+    expected_calls: usize,
+) -> Value {
     let graph = fixture.dependency_graph();
     let unit = source_unit_for_binding(&graph, binding);
     let node = graph
