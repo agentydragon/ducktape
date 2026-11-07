@@ -207,7 +207,6 @@ py_library(
         ":owner_web",
         ":proxy",
         ":proxy_support",
-        "//platform_sessions/management:http",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",

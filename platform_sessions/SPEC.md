@@ -11,12 +11,13 @@ provider control messages directly. A listed instance without `info` has an unav
 service; it is still a configured instance. A failed status RPC is not evidence that no session
 exists.
 
-The gateway checks the owner session or owner bearer for every management HTTP request and requires
-a same-origin request for browser mutations. The generated facade and the management gRPC server
-listen only on loopback. The facade forwards a separate process-local bearer, checked for each gRPC
-call; it must not be exposed to callers. The facade disables gRPC retries and the gateway does not
-retry HTTP requests. A failed or lost import, candidate verification or probe response may mean the
-provider changed upstream credentials; check session state before attempting another operation.
+The gateway runs as one Go process. Its HTTP/JSON handlers are generated from the protobuf
+contract and call the management service in-process. An optional TLS gRPC listener exposes the
+same service using a dedicated owner bearer. HTTP management requires an owner session or owner
+bearer and same-origin browser mutations. The provider gRPC clients use verified TLS, bounded
+calls and no automatic retries. A failed or lost import, candidate verification or probe response
+may mean the provider changed upstream credentials; check session state before attempting another
+operation.
 
 The provider data plane remains HTTP and is governed by the gateway's route grants. Its endpoints
 and provider-specific OpenAPI documents are independent of this management contract. The existing

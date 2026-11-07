@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+go_binary(
+    name = "platform_sessions_gateway",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/platform_sessions/management/gateway/cmd",
+    deps = [
+        "//platform_sessions/frontend",
+        "//platform_sessions/management/gateway",
+        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials",
+    ],
+)

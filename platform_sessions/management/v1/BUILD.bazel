@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
@@ -44,4 +45,9 @@ go_proto_library(
         "//platform_sessions/provider/v1:session_provider_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
+)
+
+proto_openapi(
+    name = "management_openapi",
+    proto = ":management_proto",
 )
