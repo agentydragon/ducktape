@@ -3239,13 +3239,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ) else {
             return false;
         };
-        // Identity discharges this lookup only. Record the exact read's
-        // author dependency without certifying a subsequent invocation.
-        self.record_inference_use(
+        // Identity discharges this lookup only. Heap read analysis records
+        // the exact read use; invocation uses require separate admission.
+        self.record_proof_dependencies(
             NativeIntegrityGuard::NativeCallIdentity,
-            premise.inference_use,
             &premise.dependencies,
         );
+        self.state
+            .inference_uses
+            .borrow_mut()
+            .insert(premise.inference_use);
         true
     }
 
