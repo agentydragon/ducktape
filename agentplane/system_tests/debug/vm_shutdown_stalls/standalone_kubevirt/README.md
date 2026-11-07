@@ -10,15 +10,18 @@ The exact target ran three times in each arm, with test-result caching disabled 
 
 ```bash
 bbr test //agentplane/system_tests/vm:test_tcg_vmi_shutdown \
+  --test_tag_filters=manual \
+  --test_env=AGENTPLANE_TCG_VMI_SKIP_VIRTIOFS_POLICY=0 \
   --runs_per_test=3 --flaky_test_attempts=1 --nocache_test_results
 
 bbr test //agentplane/system_tests/vm:test_tcg_vmi_shutdown \
+  --test_tag_filters=manual \
   --runs_per_test=3 --flaky_test_attempts=1 --nocache_test_results \
   --test_env=AGENTPLANE_TCG_VMI_SKIP_VIRTIOFS_POLICY=1
 ```
 
-- Policy on: [BuildBuddy invocation `c0d4a2d1`](https://app.buildbuddy.io/invocation/c0d4a2d1-9523-436e-a787-d2d74b19c77c), 3/3 passed. Admission evidence shows `virtiofs-state` as an `initContainer` with `restartPolicy: Always`. All three guests emitted the shutdown proof and powered down.
-- Policy off: [BuildBuddy invocation `4f90f797`](https://app.buildbuddy.io/invocation/4f90f797-ca4c-486f-a998-308d8e876501), 3/3 failed with `GuestShutdownError` because shutdown proof was missing. Admission evidence shows `virtiofs-state` as an ordinary container. The guest ACPI request-marker counts were 3, 3, and 4; the test did not observe QMP `system_powerdown` command counts. All three serial traces contain no shutdown proof or `reboot: Power down`.
+- Policy on: [BuildBuddy test invocation `d2d5853d`](https://app.buildbuddy.io/invocation/d2d5853d-62d8-43e2-a56b-960dc6f90bb8) (runner wrapper: [c0d4a2d1](https://app.buildbuddy.io/invocation/c0d4a2d1-9523-436e-a787-d2d74b19c77c)), 3/3 passed. Admission evidence shows `virtiofs-state` as an `initContainer` with `restartPolicy: Always`. All three guests emitted the shutdown proof and powered down.
+- Policy off: [BuildBuddy test invocation `6c6dde43`](https://app.buildbuddy.io/invocation/6c6dde43-5fd9-444a-a8e6-263a7c4c3a04) (runner wrapper: [4f90f797](https://app.buildbuddy.io/invocation/4f90f797-ca4c-486f-a998-308d8e876501)), 3/3 failed with `GuestShutdownError` because shutdown proof was missing. Admission evidence shows `virtiofs-state` as an ordinary container. The guest ACPI request-marker counts were 3, 3, and 4; the test did not observe QMP `system_powerdown` command counts. All three serial traces contain no shutdown proof or `reboot: Power down`.
 
 In the policy-off runs, the `virtiofs-state` container received containerd `StopContainer`/SIGTERM about 0.2–0.3 seconds after VMI deletion began, then exited with status 1. The serial snapshots show `sd-sync` blocked through `fuse_sync_fs`/`ksys_sync` and unmount/journal helpers blocked through FUSE request paths (`request_wait_answer`, `__fuse_simple_request`, `fuse_do_getattr`/`fuse_permission`). KubeVirt later stopped QEMU after its shutdown grace. This is consistent with shutdown work waiting on FUSE as the sidecar is stopped, but the delayed host snapshots do not establish whether virtiofsd had already stopped servicing requests before SIGTERM. The KubeVirt Pod's `Running` status is not used as daemon-liveness proof; containerd's per-container stop/exit record is retained.
 
