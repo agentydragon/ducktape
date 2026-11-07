@@ -359,6 +359,7 @@ author premise for one exact direct native initializer. The schema admits
 `operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
 `operation: set_from_primitive_array`,
 `operation: set_from_set_spread`, `operation: object_own_data_function_read`,
+`operation: symbol_well_known_class_keys`,
 and `operation: array_spread_from_primitive_arrays`.
 For `symbol` and `symbol_for`, the canonical selector engine identifies one
 direct top-level simple binding initialized by an ordinary, nonoptional,
@@ -1039,6 +1040,21 @@ visits its operands; static initializers keep their own effects. The executor
 uses the same slot obligations, and purity records a failed lookup obligation
 when the slots are unproved. No purity verdict for a whole class discharges a
 heap frontier.
+
+When the native census cannot establish those slots, an audited
+`symbol_well_known_class_keys` input may select one direct top-level simple
+class-variable initializer. It certifies only eager ordinary computed method
+keys that are exactly `Symbol.asyncIterator`, `Symbol.asyncDispose` or
+`Symbol.dispose`. The original global Symbol data binding and selected own
+data property must hold at every such read in every emitted initialization
+schedule. The canonical declaration shape excludes inheritance, decorators,
+static blocks, computed fields/accessors, aliases and wrapped keys. Other
+computed keys reject the input. Known writes to required slots in any analyzed
+chunk reject it, and the audited parser-input digest remains compulsory.
+Fresh and restored validation install separate exact-read axioms and records;
+purity, callback timing and heap collection consume the same own-data proof.
+Static field initializers and deferred instance code retain their normal
+effects. No class shape, whole-class purity or heap-locality premise is added.
 
 ## Function-valued data properties — reads vs calls
 

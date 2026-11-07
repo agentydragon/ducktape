@@ -173,6 +173,19 @@ For an Object member read, the shared semantic certificate instead binds the
 selected read span and its exact Object property slot. The author premise
 covers unknown mutation paths after known exact-slot contradictions are
 excluded; it never certifies a subsequent invocation of the function value.
+The `symbol_well_known_class_keys` input uses the same own-data proof for
+computed ordinary method keys in one direct plain class-variable initializer.
+The canonical declaration visitor retains only exact eager reads of
+`Symbol.asyncIterator`, `Symbol.asyncDispose` and `Symbol.dispose`; the shared
+recognizer also requires their existing primitive data-property rows. Other
+computed keys, inheritance, decorators and static blocks reject the input.
+Each selected read independently asserts the original global Symbol data
+binding and exact own data property through every admitted initialization
+schedule. Fresh and restored validation share resolution and known-slot
+contradiction checks, including writes in other chunks. The existing member
+read consumers use the canonical read span for the site axiom and evidence.
+Static field initializers and deferred instance code keep ordinary analysis;
+neither class result shape nor whole-class purity is inferred from this input.
 For a primitive array spread, the premise covers only the Array iterator and
 iterator `next` identities at the selected initializer; the source shape, not
 the author, proves the declarator interval has no producer.

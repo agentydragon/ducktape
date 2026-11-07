@@ -2522,6 +2522,7 @@ the facts came from a saved artifact.
 | `set_from_primitive_array`           | Top-level simple binding initialized by `new Set([primitive literals or earlier stable primitive bindings])` over a dense, nonspread array                                 | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
 | `set_from_set_spread`                | `new Set([...seed, primitive literals])` in the same declaration as a selected `set_from_primitive_array` seed and every declarator between; all stay in one output module | Those slots and `%SetIteratorPrototype%`                                    |
 | `object_own_data_function_read`      | Top-level simple binding initialized by `Object.<name>`, a function-valued data property in the builtin summary table                                                      | `%Object%`, `%Object.<name>%`                                               |
+| `symbol_well_known_class_keys`       | Top-level simple class-variable initializer with direct `Symbol.asyncIterator`, `Symbol.asyncDispose` or `Symbol.dispose` computed ordinary method keys                    | `%Symbol%` and the exact `%Symbol.<name>%` at each selected read            |
 | `array_spread_from_primitive_arrays` | Last declarator of a `const` whose earlier declarators are dense primitive arrays and whose initializer holds primitives and spreads of them                               | `%Array.prototype%`, `%ArrayIteratorPrototype%`                             |
 | `callee: object_freeze`              | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                                                           | `%Object%`, `%Object.freeze%` at that call                                  |
 | `callee: set_empty_private_field`    | Stable top-level class with an implicit constructor and one private field initialized by zero-argument `new Set`                                                           | `%Set%` at that constructor                                                 |
@@ -2633,6 +2634,31 @@ Shadowed or imported constructors and known contradicting global `Map` writes
 remain rejected. The object and its fields retain ordinary value and heap
 inference; the input does not make the selected binding a Map or certify heap
 locality, later collection behavior, or program-wide native integrity.
+
+`symbol_well_known_class_keys` selects one unambiguous direct top-level simple
+variable initialized by a class expression without `extends`, decorators or
+static blocks. At least one computed method key is required. Every computed
+key of that class must be an ordinary method key whose expression is exactly
+`Symbol.asyncIterator`, `Symbol.asyncDispose` or `Symbol.dispose`, with an
+unshadowed bare global `Symbol` receiver and uncomputed member access. The
+supported names must also have primitive own-data rows in the builtin table;
+other primitive properties, function/object properties, computed fields,
+computed accessors, aliases, wrappers and other computed expressions are
+rejected. For example:
+`var Stream = class { [Symbol.asyncIterator]() {} [Symbol.asyncDispose]() {} };`.
+
+The author promises the original global `Symbol` data binding and original
+selected own data properties at each exact key read in every admitted
+initialization schedule. The audited parser-input digest is required. Known
+writes to the global binding or a selected property anywhere in the analyzed
+program, including deferred and cross-chunk writes, contradict the input;
+opaque mutation witnesses remain under the author's audit. Each read has its
+own resolved record, site axiom, evidence and proof dependencies, including
+after saved-analysis restoration. The existing own-data-read proof governs
+callback timing and heap ordering at that read. Instance field initializers,
+method bodies and static field initializers retain their ordinary analysis.
+The input establishes no whole-class purity, class result shape, heap locality,
+future method behavior or integrity at another Symbol read.
 
 ### Bundle-owned globals
 
