@@ -365,8 +365,27 @@ fn opaque_consumer_of_an_instance_still_blocks_later_construction() {
         .as_ref()
         .expect("first actual class-members publication");
     let publication = serde_json::to_value(publication).expect("serialize publication");
-    assert_ne!(publication["writer"], "bounded_invocation_fallback");
-    assert!(publication.get("bounded_fallback_input_path").is_none());
+    assert_eq!(publication["writer"], "bounded_invocation_fallback");
+    // Opaque callback analysis visits the stored arrow before recording
+    // argument retention. Its unsupported read retains the actual receiver.
+    assert_eq!(publication["top_level_owner"], 4, "{publication:#}");
+    let callback = "() => this.record.value";
+    let start = OPAQUE_SOURCE.find(callback).expect("receiver callback") + 1;
+    assert_eq!(publication["span_start"], start, "{publication:#}");
+    assert_eq!(
+        publication["span_end"],
+        start + callback.len(),
+        "{publication:#}"
+    );
+    assert_eq!(
+        publication["bounded_fallback_input_path"],
+        serde_json::json!({
+            "kind": "retained",
+            "seed": {"kind": "captured_receiver"},
+            "edges": [{"kind": "class_members_capability"}],
+        }),
+        "{publication:#}"
+    );
 }
 
 #[test]
