@@ -250,6 +250,20 @@ async def test_import_failure_preserves_bounded_diagnostics_and_rejects_invalid_
         assert result.WhichOneof("result") == "outcome_unknown"
         assert result.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
         provider.outcome = pb.ImportSessionResponse(
+            outcome_unknown=pb.OperationOutcomeUnknown(
+                credential_rotation_may_have_occurred=True,
+                reason=pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
+                upstream_http_status=429,
+            )
+        )
+        result = await client.ImportSession(request)
+        assert result.WhichOneof("result") == "outcome_unknown"
+        assert result.outcome_unknown.upstream_http_status == 429
+        provider.outcome.outcome_unknown.upstream_http_status = 999
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.ImportSession(request)
+        assert error.value.code() == grpc.StatusCode.INTERNAL
+        provider.outcome = pb.ImportSessionResponse(
             failure=pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429)
         )
         with pytest.raises(grpc.aio.AioRpcError) as error:
