@@ -2,12 +2,18 @@ import { readFileSync } from "node:fs";
 import { TextDecoder, TextEncoder } from "node:util";
 import { URLSearchParams } from "node:url";
 import { runInNewContext } from "node:vm";
-import { fromJson } from "@bufbuild/protobuf";
+import { create, fromJson, type JsonObject } from "@bufbuild/protobuf";
+import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
 
-import { Verdict as ProtoVerdict } from "../../../action_service/action_service_pb";
+import {
+  ActionIdentitySchema,
+  ActionRequestSchema,
+  ActionState,
+  Verdict as ProtoVerdict,
+} from "../../../action_service/action_service_pb";
 import { DecideActionRequestRequestSchema } from "../../../action_service/operator_action_service_pb";
-import type { ActionRequestView } from "../actions/types";
+import type { ActionRequest } from "../../../action_service/action_service_pb";
 import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../actions/testing/proto_fixtures";
 
 type PushMessage =
@@ -16,7 +22,7 @@ type PushMessage =
       action_id: string;
       action_group: string;
       action_name: string;
-      version: number;
+      version: string;
       url: string;
     }
   | { kind: "retract"; action_id: string };
@@ -43,25 +49,28 @@ type TestWorker = {
   windows: string[];
   notices: Notice[];
   closed: string[];
-  setPending(actions: ActionRequestView[] | null): void;
+  setPending(actions: ActionRequest[] | null): void;
 };
 
-function actionRequest(
-  fields: Pick<ActionRequestView, "action" | "arguments" | "title" | "description">
-): ActionRequestView {
-  return {
+function actionRequest(fields: {
+  action: { group: string; name: string };
+  arguments: JsonObject;
+  title: string;
+  description?: string | null;
+}): ActionRequest {
+  return create(ActionRequestSchema, {
     id: "00000000-0000-4000-8000-000000000001",
-    idempotency_key: "notification-format-test",
-    ...fields,
+    idempotencyKey: "notification-format-test",
+    action: create(ActionIdentitySchema, fields.action),
+    arguments: fields.arguments,
+    title: fields.title,
+    description: fields.description ?? undefined,
     caller: { namespace: "test-namespace", name: "test-account" },
-    caller_uid: null,
-    state: "decision_pending",
-    version: 1,
-    created_at: "2026-10-09T12:00:00Z",
-    updated_at: "2026-10-09T12:00:00Z",
-    decision: null,
-    execution: null,
-  };
+    state: ActionState.DECISION_PENDING,
+    version: 1n,
+    createdAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
+    updatedAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
+  });
 }
 
 function loadWorker(): TestWorker {
@@ -70,7 +79,7 @@ function loadWorker(): TestWorker {
   const windows: TestWorker["windows"] = [];
   const notices: TestWorker["notices"] = [];
   const closed: string[] = [];
-  let pending: ActionRequestView[] | null = [
+  let pending: ActionRequest[] | null = [
     actionRequest({
       action: { group: "finance", name: "transfer" },
       title: "Transfer $400 to vendor",
@@ -138,7 +147,7 @@ const showMessage: PushMessage = {
   action_id: "request",
   action_group: "finance",
   action_name: "transfer",
-  version: 1,
+  version: "1",
   url: "/#/actions",
 };
 
@@ -216,6 +225,16 @@ describe("service worker notifications", () => {
 
     const retracted = await show(worker, { kind: "retract", action_id: "request" });
     expect(retracted.silent).toBe(true);
+  });
+
+  it("opens Actions when a notification version cannot be parsed", async () => {
+    const worker = loadWorker();
+    const notification = { data: { ...showMessage, version: "invalid" }, close: () => {} };
+
+    await dispatch(worker, "notificationclick", { action: "approve", notification });
+
+    expect(worker.requests).toHaveLength(0);
+    expect(worker.windows).toEqual(["/#/actions"]);
   });
 
   it("keeps one notification for any number of waiting Actions", async () => {

@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-route
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { ActionRequestDetail } from "./detail";
-import type { ActionRequestView } from "./client";
+import { ActionRequest } from "../../../action_service/action_service_pb";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { answerApi, mount, request, send, unmountLast, type Sent } from "./testing/harness";
@@ -16,7 +16,7 @@ const ROW = {
   arguments: { host: "test-host.example", user: "test-user", command: "echo exact-command" },
 };
 /** Answers the detail page's reads: `stored` for the request itself, `decided` for a decision. */
-function serve({ stored, decided }: { stored?: ActionRequestView; decided?: ActionRequestView | Response }): Sent[] {
+function serve({ stored, decided }: { stored?: ActionRequest; decided?: ActionRequest | Response }): Sent[] {
   return answerApi(({ method, path }) => {
     if (path === "/upstream/actions/v1/action-groups") return [];
     if (method === "GET" && path === `/upstream/actions/v1/action-requests/${ROW.id}`) return stored;

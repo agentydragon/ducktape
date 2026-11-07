@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { actionArguments } from "../../presentation";
 
-import type { ActionRequestView } from "../../types";
+import type { ActionRequest } from "../../../../../action_service/action_service_pb";
 import type { ActionNotificationParts } from "../types";
 
 const eventsListNotificationArguments = z.strictObject({
@@ -8,8 +9,8 @@ const eventsListNotificationArguments = z.strictObject({
   fieldSelector: z.string().min(1).optional(),
 });
 
-export function eventsListNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = eventsListNotificationArguments.safeParse(request.arguments);
+export function eventsListNotification(request: ActionRequest): ActionNotificationParts | null {
+  const parsed = eventsListNotificationArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
   const { namespace } = parsed.data;
 

@@ -49,10 +49,13 @@ ts_library(
 )
 
 ts_library(
-    name = "types",
-    srcs = ["types.ts"],
+    name = "presentation",
+    srcs = ["presentation.ts"],
     tsconfig = TSCONFIG,
-    deps = [],
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/action_service:action_service_pb",
+    ],
 )
 
 ts_library(
@@ -60,7 +63,6 @@ ts_library(
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":types",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
@@ -77,9 +79,11 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
+        ":presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:text_block",
@@ -98,9 +102,11 @@ ts_library(
     deps = [
         ":action_client",
         ":call",
+        ":presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:stream_reader",
@@ -116,12 +122,14 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
+        ":presentation",
         ":requests",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:text_block",
@@ -140,6 +148,7 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
@@ -155,6 +164,7 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
@@ -166,11 +176,13 @@ ts_library(
     deps = [
         ":action_client",
         ":history",
+        ":presentation",
         ":requests",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:icons",
     ],
 )
@@ -199,12 +211,13 @@ ts_library(
         ":action_client",
         ":call",
         ":call_tool_result",
+        ":presentation",
         ":requests",
-        ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:icons",
@@ -280,10 +293,12 @@ agentplane_vitest_test(
         ":action_client",
         ":history",
         ":requests",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
         "//util/frontend:test_intersection_observer",
     ],
@@ -358,10 +373,11 @@ ts_library(
     deps = [
         ":github_action_schemas",
         ":kubernetes_action_schemas",
+        ":presentation",
         ":sandbox_action_schemas",
         ":ssh_action_schemas",
-        ":types",
         "//:node_modules/zod",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:argv_text",
     ],
 )
@@ -371,7 +387,8 @@ agentplane_vitest_test(
     srcs = ["notifications/index.test.ts"],
     deps = [
         ":notifications",
-        ":types",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
     ],
 )

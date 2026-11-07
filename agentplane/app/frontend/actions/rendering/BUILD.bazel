@@ -38,6 +38,7 @@ ts_library(
         ":tana",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:call_tool_result",

@@ -16,7 +16,22 @@ import {
   type ServerSentEvent,
   UNANSWERED,
 } from "./network";
-import type { ActionGroupView, ActionRequestView } from "../actions/client";
+import {
+  ActionGroupSchema,
+  ActionRequestSchema,
+  ListActionRequestHistoryResponseSchema,
+  ActionState,
+  ExecutorKind,
+  ExecutionState,
+  McpLifecycle,
+  McpHealthSchema,
+  McpUnavailableReason,
+  PolicyKind,
+  PolicySource,
+  Verdict,
+  type ActionGroup,
+  type ActionRequest,
+} from "../../../action_service/action_service_pb";
 import {
   PolicyBindingSchema,
   PolicySetSchema,
@@ -49,6 +64,7 @@ import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../t
 import "@mantine/core/styles.css";
 
 import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
+import { TimestampSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -1085,24 +1101,24 @@ const SSH_EXEC_RESULT = {
   stderr_truncated: false,
 };
 
-const ACTIONS: ActionRequestView[] = [
-  {
+const ACTIONS: ActionRequest[] = [
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000001",
     action: { group: "everything", name: "echo" },
     arguments: { repository: "test-owner/test-repository", token: "test-token" },
     title: "echo the test repository handle back",
     description: "Confirms the fixture connection still reaches the echo Action before the demo run.",
-    idempotency_key: "visual-pending",
+    idempotencyKey: "visual-pending",
     caller: { namespace: "agentplane-visual", name: "test-coder" },
-    caller_uid: null,
-    state: "decision_pending",
-    version: 1,
-    created_at: ago(3 * 60_000),
-    updated_at: ago(3 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_DECISION_PENDING",
+    version: "1",
+    createdAt: ago(3 * 60_000),
+    updatedAt: ago(3 * 60_000),
     decision: null,
     execution: null,
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000006",
     // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh/exec.tsx).
     action: { group: "ssh", name: "exec" },
@@ -1114,17 +1130,17 @@ const ACTIONS: ActionRequestView[] = [
     },
     title: "restart the test backup service",
     description: "Its last run stopped on a stale lock, which a restart clears.",
-    idempotency_key: "visual-ssh-pending",
+    idempotencyKey: "visual-ssh-pending",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    caller_uid: null,
-    state: "decision_pending",
-    version: 1,
-    created_at: ago(2 * 60_000),
-    updated_at: ago(2 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_DECISION_PENDING",
+    version: "1",
+    createdAt: ago(2 * 60_000),
+    updatedAt: ago(2 * 60_000),
     decision: null,
     execution: null,
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000007",
     action: { group: "ssh", name: "exec" },
     arguments: {
@@ -1134,28 +1150,28 @@ const ACTIONS: ActionRequestView[] = [
     },
     title: "list the test backup archive",
     description: null,
-    idempotency_key: "visual-ssh-completed",
+    idempotencyKey: "visual-ssh-completed",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    caller_uid: null,
-    state: "succeeded",
-    version: 4,
-    created_at: ago(5 * 60_000),
-    updated_at: ago(4 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_SUCCEEDED",
+    version: "4",
+    createdAt: ago(5 * 60_000),
+    updatedAt: ago(4 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000007",
-      verdict: "allow",
+      verdict: "VERDICT_ALLOW",
       provider: "human_operator",
       operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decision_note: null,
-      reason_code: null,
-      reason_description: null,
-      policy_evidence: null,
-      idempotency_key: "visual-allow-ssh",
-      decided_at: ago(4 * 60_000),
+      decisionNote: null,
+      reasonCode: null,
+      reasonDescription: null,
+      policyEvidence: null,
+      idempotencyKey: "visual-allow-ssh",
+      decidedAt: ago(4 * 60_000),
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000007",
-      state: "succeeded",
+      state: "EXECUTION_STATE_SUCCEEDED",
       // The whole CallToolResult, as FastMCP answers with the ExecResult: the value as structured
       // content and again as one JSON text block, and the server's info in `_meta`.
       result: {
@@ -1165,41 +1181,41 @@ const ACTIONS: ActionRequestView[] = [
         isError: false,
       },
       error: null,
-      created_at: ago(4 * 60_000),
-      started_at: ago(4 * 60_000 - 500),
-      completed_at: ago(4 * 60_000 - 1_900),
-      reconciled_at: null,
+      createdAt: ago(4 * 60_000),
+      startedAt: ago(4 * 60_000 - 500),
+      completedAt: ago(4 * 60_000 - 1_900),
+      reconciledAt: null,
     },
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000002",
     // An MCP group in MCP_GROUPS below, so its stored result is the tool's whole CallToolResult.
     action: { group: "example_docs", name: "render_diagram" },
     arguments: { path: "docs/test-diagram.mmd" },
     title: "render the test diagram",
     description: null,
-    idempotency_key: "visual-completed",
+    idempotencyKey: "visual-completed",
     caller: { namespace: "test-agentplane", name: "test-workload" },
-    caller_uid: null,
-    state: "succeeded",
-    version: 4,
-    created_at: ago(40 * 60_000),
-    updated_at: ago(39 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_SUCCEEDED",
+    version: "4",
+    createdAt: ago(40 * 60_000),
+    updatedAt: ago(39 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000002",
-      verdict: "allow",
+      verdict: "VERDICT_ALLOW",
       provider: "human_operator",
       operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decision_note: null,
-      reason_code: null,
-      reason_description: null,
-      policy_evidence: null,
-      idempotency_key: "visual-allow",
-      decided_at: ago(39 * 60_000),
+      decisionNote: null,
+      reasonCode: null,
+      reasonDescription: null,
+      policyEvidence: null,
+      idempotencyKey: "visual-allow",
+      decidedAt: ago(39 * 60_000),
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000002",
-      state: "succeeded",
+      state: "EXECUTION_STATE_SUCCEEDED",
       result: {
         content: [
           { type: "text", text: "Rendered docs/test-diagram.mmd as a 32x32 PNG." },
@@ -1215,147 +1231,152 @@ const ACTIONS: ActionRequestView[] = [
         isError: false,
       },
       error: null,
-      created_at: ago(39 * 60_000),
-      started_at: ago(39 * 60_000 - 500),
-      completed_at: ago(39 * 60_000 - 900),
-      reconciled_at: null,
+      createdAt: ago(39 * 60_000),
+      startedAt: ago(39 * 60_000 - 500),
+      completedAt: ago(39 * 60_000 - 900),
+      reconciledAt: null,
     },
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000003",
     action: { group: "everything", name: "echo" },
     arguments: { repository: "test-owner/other-repository" },
     title: "echo a repository outside the binding",
     description: "Reads test-owner/other-repository, which this workload has no binding for.",
-    idempotency_key: "visual-denied",
+    idempotencyKey: "visual-denied",
     caller: { namespace: "agentplane-visual", name: "test-coder" },
-    caller_uid: null,
-    state: "denied",
-    version: 2,
-    created_at: ago(80 * 60_000),
-    updated_at: ago(79 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_DENIED",
+    version: "2",
+    createdAt: ago(80 * 60_000),
+    updatedAt: ago(79 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000003",
-      verdict: "deny",
+      verdict: "VERDICT_DENY",
       provider: "human_operator",
       operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decision_note: "Out of scope for this workload's binding.",
-      reason_code: null,
-      reason_description: null,
-      policy_evidence: null,
-      idempotency_key: "visual-deny",
-      decided_at: ago(79 * 60_000),
+      decisionNote: "Out of scope for this workload's binding.",
+      reasonCode: null,
+      reasonDescription: null,
+      policyEvidence: null,
+      idempotencyKey: "visual-deny",
+      decidedAt: ago(79 * 60_000),
     },
     execution: null,
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000004",
     action: { group: "github", name: "search_code" },
     arguments: { repository: "agentydragon/ducktape", query: "auto_allow" },
     title: "search ducktape for auto_allow",
     description: null,
-    idempotency_key: "visual-auto-approved",
+    idempotencyKey: "visual-auto-approved",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    caller_uid: null,
-    state: "succeeded",
-    version: 3,
-    created_at: ago(15 * 60_000),
-    updated_at: ago(14 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_SUCCEEDED",
+    version: "3",
+    createdAt: ago(15 * 60_000),
+    updatedAt: ago(14 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000004",
-      verdict: "allow",
+      verdict: "VERDICT_ALLOW",
       provider: "policy_engine",
       operator: null,
-      decision_note: null,
-      reason_code: null,
-      reason_description: null,
-      idempotency_key: "visual-policy-allow",
-      decided_at: ago(14 * 60_000),
-      policy_evidence: {
-        bindings: [{ namespace: "agentplane-visual", name: "ready-sandbox-github-public", resource_version: "12345" }],
-        policy_sets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
+      decisionNote: null,
+      reasonCode: null,
+      reasonDescription: null,
+      idempotencyKey: "visual-policy-allow",
+      decidedAt: ago(14 * 60_000),
+      policyEvidence: {
+        bindings: [{ namespace: "agentplane-visual", name: "ready-sandbox-github-public", resourceVersion: "12345" }],
+        policySets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
         matched: {
           namespace: "agentplane-visual",
-          policy_set: "fixture_auto_allow",
-          source: "rules",
+          policySet: "fixture_auto_allow",
+          source: "POLICY_SOURCE_RULES",
           index: 0,
-          type: "exact_actions",
+          type: "POLICY_KIND_EXACT_ACTIONS",
           repository: null,
         },
       },
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000004",
-      state: "succeeded",
+      state: "EXECUTION_STATE_SUCCEEDED",
       result: { matches: 3 },
       error: null,
-      created_at: ago(14 * 60_000),
-      started_at: ago(14 * 60_000 - 500),
-      completed_at: ago(14 * 60_000 - 900),
-      reconciled_at: null,
+      createdAt: ago(14 * 60_000),
+      startedAt: ago(14 * 60_000 - 500),
+      completedAt: ago(14 * 60_000 - 900),
+      reconciledAt: null,
     },
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000005",
     // A tool's error answer: the Action succeeded, and the CallToolResult says the tool failed.
     action: { group: "example_notes", name: "get_note" },
     arguments: { note_id: "test-missing-note" },
     title: "read the missing test note",
     description: null,
-    idempotency_key: "visual-tool-error",
+    idempotencyKey: "visual-tool-error",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    caller_uid: null,
-    state: "succeeded",
-    version: 4,
-    created_at: ago(10 * 60_000),
-    updated_at: ago(9 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_SUCCEEDED",
+    version: "4",
+    createdAt: ago(10 * 60_000),
+    updatedAt: ago(9 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000005",
-      verdict: "allow",
+      verdict: "VERDICT_ALLOW",
       provider: "human_operator",
       operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decision_note: null,
-      reason_code: null,
-      reason_description: null,
-      policy_evidence: null,
-      idempotency_key: "visual-allow-tool-error",
-      decided_at: ago(9 * 60_000),
+      decisionNote: null,
+      reasonCode: null,
+      reasonDescription: null,
+      policyEvidence: null,
+      idempotencyKey: "visual-allow-tool-error",
+      decidedAt: ago(9 * 60_000),
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000005",
-      state: "succeeded",
+      state: "EXECUTION_STATE_SUCCEEDED",
       result: { content: [{ type: "text", text: "No note has the id test-missing-note." }], isError: true },
       error: null,
-      created_at: ago(9 * 60_000),
-      started_at: ago(9 * 60_000 - 500),
-      completed_at: ago(9 * 60_000 - 900),
-      reconciled_at: null,
+      createdAt: ago(9 * 60_000),
+      startedAt: ago(9 * 60_000 - 500),
+      completedAt: ago(9 * 60_000 - 900),
+      reconciledAt: null,
     },
-  },
+  }),
 ];
 
 // A single losslessly rendered request, for compact approval screenshots.
-const COMPACT_POD_ACTION: ActionRequestView = {
-  ...ACTIONS[1]!,
-  id: "70000000-0000-4000-8000-000000000009",
-  action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
-  arguments: { namespace: "test-apps", labelSelector: "app=demo", fieldSelector: "status.phase=Running" },
-  title: "inspect running demo pods",
-  description: "Read-only inspection of the demo workload.",
-  idempotency_key: "visual-pods-compact-pending",
+const COMPACT_POD_ACTION = clone(ActionRequestSchema, ACTIONS[1]!);
+COMPACT_POD_ACTION.id = "70000000-0000-4000-8000-000000000009";
+COMPACT_POD_ACTION.action = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" });
+COMPACT_POD_ACTION.arguments = {
+  namespace: "test-apps",
+  labelSelector: "app=demo",
+  fieldSelector: "status.phase=Running",
 };
+COMPACT_POD_ACTION.title = "inspect running demo pods";
+COMPACT_POD_ACTION.description = "Read-only inspection of the demo workload.";
+COMPACT_POD_ACTION.idempotencyKey = "visual-pods-compact-pending";
 
-const COMPACT_RESOURCE_ACTION: ActionRequestView = {
-  ...COMPACT_POD_ACTION,
-  id: "70000000-0000-4000-8000-000000000011",
-  action: { group: "kubernetes_admin", name: "resources_get" },
-  arguments: { apiVersion: "v1", kind: "ConfigMap", namespace: "test-apps", name: "test-demo-config" },
-  title: "read the demo config",
-  description: "Read-only inspection of the demo configuration.",
-  idempotency_key: "visual-resource-compact-pending",
+const COMPACT_RESOURCE_ACTION = clone(ActionRequestSchema, COMPACT_POD_ACTION);
+COMPACT_RESOURCE_ACTION.id = "70000000-0000-4000-8000-000000000011";
+COMPACT_RESOURCE_ACTION.action = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "resources_get" });
+COMPACT_RESOURCE_ACTION.arguments = {
+  apiVersion: "v1",
+  kind: "ConfigMap",
+  namespace: "test-apps",
+  name: "test-demo-config",
 };
+COMPACT_RESOURCE_ACTION.title = "read the demo config";
+COMPACT_RESOURCE_ACTION.description = "Read-only inspection of the demo configuration.";
+COMPACT_RESOURCE_ACTION.idempotencyKey = "visual-resource-compact-pending";
 
-const GMAIL_DRAFT_ACTION: ActionRequestView = {
+const GMAIL_DRAFT_ACTION: ActionRequest = fromJson(ActionRequestSchema, {
   id: "70000000-0000-4000-8000-000000000010",
   action: { group: "gmail", name: "drafts_create" },
   arguments: {
@@ -1367,28 +1388,28 @@ const GMAIL_DRAFT_ACTION: ActionRequestView = {
   },
   title: "prepare the release email",
   description: "Check the recipients and body before approving.",
-  idempotency_key: "visual-gmail-draft-completed",
+  idempotencyKey: "visual-gmail-draft-completed",
   caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-  caller_uid: null,
-  state: "succeeded",
-  version: 4,
-  created_at: ago(7 * 60_000),
-  updated_at: ago(6 * 60_000),
+  callerUid: null,
+  state: "ACTION_STATE_SUCCEEDED",
+  version: "4",
+  createdAt: ago(7 * 60_000),
+  updatedAt: ago(6 * 60_000),
   decision: {
     id: "71000000-0000-4000-8000-000000000010",
-    verdict: "allow",
+    verdict: "VERDICT_ALLOW",
     provider: "human_operator",
     operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-    decision_note: null,
-    reason_code: null,
-    reason_description: null,
-    policy_evidence: null,
-    idempotency_key: "visual-allow-gmail-draft",
-    decided_at: ago(6 * 60_000),
+    decisionNote: null,
+    reasonCode: null,
+    reasonDescription: null,
+    policyEvidence: null,
+    idempotencyKey: "visual-allow-gmail-draft",
+    decidedAt: ago(6 * 60_000),
   },
   execution: {
     id: "72000000-0000-4000-8000-000000000010",
-    state: "succeeded",
+    state: "EXECUTION_STATE_SUCCEEDED",
     result: {
       content: [],
       structuredContent: {
@@ -1398,12 +1419,12 @@ const GMAIL_DRAFT_ACTION: ActionRequestView = {
       isError: false,
     },
     error: null,
-    created_at: ago(6 * 60_000),
-    started_at: ago(6 * 60_000 - 500),
-    completed_at: ago(6 * 60_000 - 1_500),
-    reconciled_at: null,
+    createdAt: ago(6 * 60_000),
+    startedAt: ago(6 * 60_000 - 500),
+    completedAt: ago(6 * 60_000 - 1_500),
+    reconciledAt: null,
   },
-};
+});
 
 const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
@@ -2518,60 +2539,76 @@ const MCP_LINKAGES: McpLinkageView[] = [
   },
 ];
 
-type McpFailure = Pick<NonNullable<ActionGroupView["health"]>, "reason" | "detail" | "last_discovery_at" | "failures">;
+type McpFailure = {
+  reason: McpUnavailableReason;
+  detail: string;
+  lastDiscoveryAt: string | undefined;
+  failures: number;
+};
 
 /** An MCP group, available unless `failure` says why it is disconnected. */
-function mcpGroup(key: string, executorDescription: string, failure?: McpFailure): ActionGroupView {
-  return {
+function mcpGroup(key: string, executorDescription: string, failure?: McpFailure): ActionGroup {
+  return create(ActionGroupSchema, {
     key,
     title: key,
     description: `Test MCP backend ${key}.`,
-    executor_kind: "mcp",
-    executor_description: executorDescription,
+    executorKind: ExecutorKind.MCP,
+    executorDescription,
     available: failure === undefined,
     health: failure
-      ? { state: "disconnected", retry_at: new Date(NOW + 20_000).toISOString(), ...failure }
-      : { state: "available", reason: null, detail: null, last_discovery_at: ago(60_000), retry_at: null, failures: 0 },
+      ? create(McpHealthSchema, {
+          state: McpLifecycle.DISCONNECTED,
+          reason: failure.reason,
+          detail: failure.detail,
+          lastDiscoveryAt:
+            failure.lastDiscoveryAt === undefined ? undefined : fromJson(TimestampSchema, failure.lastDiscoveryAt),
+          retryAt: fromJson(TimestampSchema, new Date(NOW + 20_000).toISOString()),
+          failures: failure.failures,
+        })
+      : create(McpHealthSchema, {
+          state: McpLifecycle.AVAILABLE,
+          lastDiscoveryAt: fromJson(TimestampSchema, ago(60_000)),
+        }),
     actions: [],
-    direct_tools: [],
-  };
+    directTools: [],
+  });
 }
 
 const LINKED = "Linked operator account.";
 const BEARER = "Test MCP backend behind a static bearer.";
-const MCP_GROUPS: ActionGroupView[] = [
+const MCP_GROUPS: ActionGroup[] = [
   mcpGroup("example_docs", LINKED),
   mcpGroup("example_cluster", LINKED, {
-    reason: "linkage_unavailable",
+    reason: McpUnavailableReason.LINKAGE_UNAVAILABLE,
     detail: `the access token expired at ${ago(2 * HOUR)
       .replace("T", " ")
       .slice(0, 19)} UTC and has not been refreshed`,
-    last_discovery_at: ago(3 * HOUR),
+    lastDiscoveryAt: ago(3 * HOUR),
     failures: 12,
   }),
   mcpGroup("example_calendar", LINKED, {
-    reason: "linkage_unavailable",
+    reason: McpUnavailableReason.LINKAGE_UNAVAILABLE,
     detail: "refreshing the token failed in a way retrying cannot fix; link the account again",
-    last_discovery_at: ago(HOUR),
+    lastDiscoveryAt: ago(HOUR),
     failures: 9,
   }),
   mcpGroup("example_pantry", LINKED, {
-    reason: "linkage_unavailable",
+    reason: McpUnavailableReason.LINKAGE_UNAVAILABLE,
     detail: "no account is linked",
-    last_discovery_at: null,
+    lastDiscoveryAt: undefined,
     failures: 4,
   }),
   mcpGroup("example_mail", BEARER, {
-    reason: "connect_failed",
+    reason: McpUnavailableReason.CONNECT_FAILED,
     detail: "RuntimeError: Client failed to connect: All connection attempts failed",
-    last_discovery_at: null,
+    lastDiscoveryAt: undefined,
     failures: 7,
   }),
   mcpGroup("gmail", "Test Gmail action group for Agentplane rendering."),
   mcpGroup("example_notes", BEARER),
   mcpGroup("ssh", BEARER),
 ];
-let receiptActionGroup: ActionGroupView | undefined;
+let receiptActionGroup: ActionGroup | undefined;
 
 /** Switches a test sets on the mock services, before mounting or (`publish`) while a stream is open. */
 type Flag =
@@ -2600,21 +2637,21 @@ type Flag =
   | "mcpHealthChanged";
 const flags = new Set<Flag>();
 
-function actionGroups(): ActionGroupView[] {
+function actionGroups(): ActionGroup[] {
   return MCP_GROUPS.map((row) =>
     row.key === "example_docs" && flags.has("mcpHealthChanged")
-      ? {
+      ? create(ActionGroupSchema, {
           ...row,
           available: false,
-          health: {
-            state: "disconnected" as const,
-            reason: "connect_failed" as const,
+          health: create(McpHealthSchema, {
+            state: McpLifecycle.DISCONNECTED,
+            reason: McpUnavailableReason.CONNECT_FAILED,
             detail: "Connection refused",
-            last_discovery_at: row.health?.last_discovery_at ?? null,
-            retry_at: new Date(NOW + 20_000).toISOString(),
+            lastDiscoveryAt: row.health?.lastDiscoveryAt,
+            retryAt: fromJson(TimestampSchema, new Date(NOW + 20_000).toISOString()),
             failures: 1,
-          },
-        }
+          }),
+        })
       : row
   );
 }
@@ -2625,8 +2662,8 @@ function mcpLinkages(): McpLinkageView[] {
   );
 }
 
-function pendingActions(): ActionRequestView[] {
-  const pending = ACTIONS.filter((request) => request.state === "decision_pending");
+function pendingActions(): ActionRequest[] {
+  const pending = ACTIONS.filter((request) => request.state === ActionState.DECISION_PENDING);
   return previewAction !== null
     ? [previewAction]
     : flags.has("compactPodAction")
@@ -2794,15 +2831,22 @@ routes.push(
     (_match, query) => {
       const past = flags.has("gmailDraftHistory")
         ? [GMAIL_DRAFT_ACTION]
-        : ACTIONS.filter((request) => request.state !== "decision_pending");
+        : ACTIONS.filter((request) => request.state !== ActionState.DECISION_PENDING);
       const filtered =
         query.get("includeAutoAllowed") === "false"
-          ? past.filter((request) => !(request.decision?.verdict === "allow" && request.decision.operator === null))
+          ? past.filter(
+              (request) => !(request.decision?.verdict === Verdict.ALLOW && request.decision.operator === undefined)
+            )
           : past;
       const page =
         flags.has("pagedActionHistory") && !query.has("cursor")
-          ? { items: filtered.slice(0, 2), next_cursor: "second-page" }
-          : { items: flags.has("pagedActionHistory") ? filtered.slice(2) : filtered, next_cursor: null };
+          ? create(ListActionRequestHistoryResponseSchema, {
+              actionRequests: filtered.slice(0, 2),
+              nextCursor: "second-page",
+            })
+          : create(ListActionRequestHistoryResponseSchema, {
+              actionRequests: flags.has("pagedActionHistory") ? filtered.slice(2) : filtered,
+            });
       return listActionHistoryProtoJson(page);
     },
   ],
@@ -2894,7 +2938,9 @@ routes.push(
     (match) => {
       const request = ACTIONS.find((item) => item.id === match[1]);
       return request
-        ? decideActionRequestProtoJson({ ...request, state: "allowed", version: 2 })
+        ? decideActionRequestProtoJson(
+            create(ActionRequestSchema, { ...request, state: ActionState.ALLOWED, version: 2n })
+          )
         : Response.json({ code: 5, message: "Action request not found" }, { status: 404 });
     },
   ],
@@ -3645,7 +3691,7 @@ routes.unshift(
 );
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
-let previewAction: ActionRequestView | null = null;
+let previewAction: ActionRequest | null = null;
 let queueCreateResponses = false;
 let queuedSessionId: string | null = null;
 
@@ -3768,22 +3814,21 @@ const visualHarness = {
       Array.from(renderers.keys(), (name) => `${group}.${name}`)
     ).flat();
   },
-  showActionPreview(action: ActionRequestView["action"], args: ActionRequestView["arguments"]): void {
-    previewAction = {
-      ...COMPACT_POD_ACTION,
-      action,
-      arguments: args,
-      title:
-        action.group === "kubernetes_admin" && action.name === "pods_list_in_namespace"
-          ? "inspect running demo pods"
-          : `review ${action.name.replaceAll("_", " ")}`,
-      description: "Check the exact call before approving.",
-    };
+  showActionPreview(action: NonNullable<ActionRequest["action"]>, args: NonNullable<ActionRequest["arguments"]>): void {
+    const preview = clone(ActionRequestSchema, COMPACT_POD_ACTION);
+    preview.action = action;
+    preview.arguments = args;
+    preview.title =
+      action.group === "kubernetes_admin" && action.name === "pods_list_in_namespace"
+        ? "inspect running demo pods"
+        : `review ${action.name.replaceAll("_", " ")}`;
+    preview.description = "Check the exact call before approving.";
+    previewAction = preview;
   },
   showActionResult(
-    action: ActionRequestView["action"],
-    args: ActionRequestView["arguments"],
-    result: NonNullable<ActionRequestView["execution"]>["result"]
+    action: NonNullable<ActionRequest["action"]>,
+    args: NonNullable<ActionRequest["arguments"]>,
+    result: NonNullable<ActionRequest["execution"]>["result"]
   ): void {
     ACTIONS[2]!.action = action;
     ACTIONS[2]!.arguments = args;
@@ -3791,23 +3836,22 @@ const visualHarness = {
     ACTIONS[2]!.execution!.result = result;
   },
   showActionReceipt(
-    action: ActionRequestView["action"],
-    args: ActionRequestView["arguments"],
-    result: NonNullable<ActionRequestView["execution"]>["result"]
+    action: NonNullable<ActionRequest["action"]>,
+    args: NonNullable<ActionRequest["arguments"]>,
+    result: NonNullable<ActionRequest["execution"]>["result"]
   ): void {
     receiptActionGroup =
       action.group === "sandbox" || MCP_GROUPS.some((group) => group.key === action.group)
         ? undefined
         : mcpGroup(action.group, "Test MCP backend for the receipt renderer.");
-    const receipt = ACTIONS[2]!;
-    ACTIONS.splice(0, ACTIONS.length, {
-      ...receipt,
-      action,
-      arguments: args,
-      title: "Long action text",
-      description: null,
-      execution: { ...receipt.execution!, result },
-    });
+    const receipt = clone(ActionRequestSchema, ACTIONS[2]!);
+    receipt.action = action;
+    receipt.arguments = args;
+    receipt.title = "Long action text";
+    receipt.description = undefined;
+    if (receipt.execution === undefined) throw new Error("Receipt fixture has no Execution.");
+    receipt.execution.result = result;
+    ACTIONS.splice(0, ACTIONS.length, receipt);
   },
   longPendingAction(): void {
     ACTIONS[1]!.arguments = {
@@ -3829,12 +3873,12 @@ const visualHarness = {
       stdout: "review result: visible start \u202Ereversed\u202C, joined\u200Bword, and control\u001Bmarker",
       stderr: "stderr contains a zero-width\u200B separator and U+202E bidi override\u202C\n",
     };
-    ACTIONS[2]!.execution!.result = {
+    ACTIONS[2]!.execution!.result = fromJson(ValueSchema, {
       _meta: { "io.modelcontextprotocol/serverInfo": { name: "ssh-mcp", version: "4.0.3" } },
       content: [{ type: "text", text: JSON.stringify(result) }],
       structuredContent: result,
       isError: false,
-    };
+    });
   },
   recovery(kind: "messages" | "tools" | "quiet"): void {
     threadEntityRows = (id) => recoveryRows(id, kind);

@@ -6,17 +6,33 @@ import { displayableError } from "../client";
 import type { StreamConnection } from "../stream_reader";
 import { useOptionalStreamStatus } from "../stream_status";
 import { ActionCall } from "./call";
-import {
-  decideAction,
-  followActionRequests,
-  getAction,
-  type ActionRequestView,
-  type ActionState,
-  type Verdict,
-} from "./client";
+import { ActionState, Verdict, type ActionRequest } from "../../../action_service/action_service_pb";
+import { timestampText } from "./presentation";
+import { decideAction, followActionRequests, getAction } from "./client";
 
 export function stateLabel(state: ActionState): string {
-  return state.replaceAll("_", " ");
+  switch (state) {
+    case ActionState.DECISION_PENDING:
+      return "decision pending";
+    case ActionState.ALLOWED:
+      return "allowed";
+    case ActionState.DENIED:
+      return "denied";
+    case ActionState.DISPATCHING:
+      return "dispatching";
+    case ActionState.RUNNING:
+      return "running";
+    case ActionState.SUCCEEDED:
+      return "succeeded";
+    case ActionState.FAILED:
+      return "failed";
+    case ActionState.CANCELLED:
+      return "cancelled";
+    case ActionState.EXECUTION_UNKNOWN:
+      return "execution unknown";
+    default:
+      throw new Error(`Unknown Action state (${state}).`);
+  }
 }
 
 /** Paired human decisions, shared by the Actions list, detail page, and compact card. */
@@ -42,7 +58,7 @@ export function ActionDecisionButtons({
         color="red"
         leftSection={<IconX size={iconSize} aria-hidden="true" />}
         loading={deciding}
-        onClick={() => onDecide("deny")}
+        onClick={() => onDecide(Verdict.DENY)}
       >
         Deny
       </Button>
@@ -54,7 +70,7 @@ export function ActionDecisionButtons({
         color="green"
         leftSection={<IconCheck size={iconSize} aria-hidden="true" />}
         loading={deciding}
-        onClick={() => onDecide("allow")}
+        onClick={() => onDecide(Verdict.ALLOW)}
       >
         Approve
       </Button>
@@ -64,33 +80,33 @@ export function ActionDecisionButtons({
 
 /** Shared fetch/decide plumbing for the pending and history views, over Action Service watches. */
 export function useActionRequests(enabled = true): {
-  requests: ActionRequestView[];
+  requests: ActionRequest[];
   error: string | null;
   loading: boolean;
   deciding: string | null;
-  decide: (request: ActionRequestView, verdict: Verdict) => void;
-  knownRequests: ReadonlyMap<string, ActionRequestView>;
+  decide: (request: ActionRequest, verdict: Verdict) => void;
+  knownRequests: ReadonlyMap<string, ActionRequest>;
   staleRequestIds: ReadonlySet<string>;
   detailLoadingIds: ReadonlySet<string>;
   detailErrors: ReadonlyMap<string, string>;
-  loadDetail: (requestId: string, forceRefresh?: boolean) => Promise<ActionRequestView>;
+  loadDetail: (requestId: string, forceRefresh?: boolean) => Promise<ActionRequest>;
 } {
-  const [requests, setRequests] = useState<ActionRequestView[]>([]);
+  const [requests, setRequests] = useState<ActionRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
-  const [knownRequests, setKnownRequests] = useState<ReadonlyMap<string, ActionRequestView>>(() => new Map());
+  const [knownRequests, setKnownRequests] = useState<ReadonlyMap<string, ActionRequest>>(() => new Map());
   const [staleRequestIds, setStaleRequestIds] = useState<ReadonlySet<string>>(() => new Set());
   const [detailLoadingIds, setDetailLoadingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [detailErrors, setDetailErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
-  const requestsRef = useRef<ActionRequestView[]>([]);
-  const knownRequestsRef = useRef(new Map<string, ActionRequestView>());
+  const requestsRef = useRef<ActionRequest[]>([]);
+  const knownRequestsRef = useRef(new Map<string, ActionRequest>());
   const staleRequestIdsRef = useRef(new Set<string>());
-  const detailLoadsRef = useRef(new Map<string, Promise<ActionRequestView>>());
+  const detailLoadsRef = useRef(new Map<string, Promise<ActionRequest>>());
   useOptionalStreamStatus("Actions", connection);
 
-  const rememberRequests = useCallback((rows: readonly ActionRequestView[]): void => {
+  const rememberRequests = useCallback((rows: readonly ActionRequest[]): void => {
     let next = knownRequestsRef.current;
     let changed = false;
     for (const request of rows) {
@@ -130,14 +146,14 @@ export function useActionRequests(enabled = true): {
   }, []);
 
   const storePendingSnapshot = useCallback(
-    (rows: ActionRequestView[]): void => {
+    (rows: ActionRequest[]): void => {
       const nextIds = new Set(rows.map((request) => request.id));
       const stale = new Set(staleRequestIdsRef.current);
       for (const previous of requestsRef.current) {
         if (
-          previous.state === "decision_pending" &&
+          previous.state === ActionState.DECISION_PENDING &&
           !nextIds.has(previous.id) &&
-          knownRequestsRef.current.get(previous.id)?.state === "decision_pending"
+          knownRequestsRef.current.get(previous.id)?.state === ActionState.DECISION_PENDING
         ) {
           stale.add(previous.id);
         }
@@ -158,7 +174,7 @@ export function useActionRequests(enabled = true): {
   );
 
   const loadDetail = useCallback(
-    (requestId: string, forceRefresh = false): Promise<ActionRequestView> => {
+    (requestId: string, forceRefresh = false): Promise<ActionRequest> => {
       const cached = knownRequestsRef.current.get(requestId);
       if (!forceRefresh && !staleRequestIdsRef.current.has(requestId) && cached !== undefined) {
         return Promise.resolve(cached);
@@ -199,7 +215,7 @@ export function useActionRequests(enabled = true): {
 
   useEffect(() => {
     if (!enabled) return;
-    let snapshot: ActionRequestView[] = [];
+    let snapshot: ActionRequest[] = [];
     return followActionRequests({
       onOpen: () => {
         snapshot = [];
@@ -219,12 +235,16 @@ export function useActionRequests(enabled = true): {
             const current = requestsRef.current;
             const exists = current.some((item) => item.id === frame.request.id);
             const next =
-              frame.request.state === "decision_pending"
+              frame.request.state === ActionState.DECISION_PENDING
                 ? exists
                   ? current.map((item) =>
                       item.id === frame.request.id && frame.request.version >= item.version ? frame.request : item
                     )
-                  : [...current, frame.request].sort((left, right) => right.created_at.localeCompare(left.created_at))
+                  : [...current, frame.request].sort(
+                      (left, right) =>
+                        Date.parse(timestampText(right.createdAt) ?? "") -
+                        Date.parse(timestampText(left.createdAt) ?? "")
+                    )
                 : current.filter((item) => item.id !== frame.request.id);
             requestsRef.current = next;
             setRequests(next);
@@ -241,7 +261,7 @@ export function useActionRequests(enabled = true): {
     });
   }, [enabled, rememberRequests, storePendingSnapshot]);
 
-  async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<void> {
+  async function decideRequest(request: ActionRequest, verdict: Verdict): Promise<void> {
     setDeciding(request.id);
     try {
       const updated = await decideAction(request, verdict);
@@ -286,9 +306,9 @@ export function PendingActionCard({
   deciding,
   onDecide,
 }: {
-  request: ActionRequestView;
+  request: ActionRequest;
   deciding: boolean;
-  onDecide: (request: ActionRequestView, verdict: Verdict) => void;
+  onDecide: (request: ActionRequest, verdict: Verdict) => void;
 }): JSX.Element {
   const [raw, setRaw] = useState(false);
   return (
@@ -314,7 +334,7 @@ export function ActionRequests({ embedded = false }: { embedded?: boolean }): JS
   const shared = useContext(ActionRequestsContext);
   const local = useActionRequests(shared === null);
   const { requests, error, loading, deciding, decide } = shared ?? local;
-  const pending = requests.filter((request) => request.state === "decision_pending");
+  const pending = requests.filter((request) => request.state === ActionState.DECISION_PENDING);
 
   return (
     <Stack>

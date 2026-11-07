@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { mount, request, send, unmountLast } from "./testing/harness";
-import type { ActionRequestView } from "./types";
+import type { ActionRequest } from "../../../action_service/action_service_pb";
 
 function CurrentPath(): JSX.Element {
   const location = useLocation();
@@ -154,7 +154,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       <ActionsSidebarSection />
     </ActionsTestApp>
   );
-  const reads: { request: ActionRequestView; visible: string[]; expands: boolean }[] = [
+  const reads: { request: ActionRequest; visible: string[]; expands: boolean }[] = [
     {
       request: {
         ...request("decision_pending", 3),
@@ -276,9 +276,9 @@ it("shows the first two pending requests in the closed-sidebar strip and the res
     </ActionsTestApp>
   );
   const [first, second, third] = [1, 2, 3].map((index) => request("decision_pending", index)) as [
-    ActionRequestView,
-    ActionRequestView,
-    ActionRequestView,
+    ActionRequest,
+    ActionRequest,
+    ActionRequest,
   ];
   const shown = (): (string | undefined)[] =>
     Array.from(container.querySelectorAll<HTMLAnchorElement>(".agentplane-actions-sidebar-request-heading a"), (link) =>

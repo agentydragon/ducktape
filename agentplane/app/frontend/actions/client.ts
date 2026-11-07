@@ -1,18 +1,17 @@
 import { create, fromJson, toJson, type JsonValue as ProtoJsonValue } from "@bufbuild/protobuf";
-import { TimestampSchema, ValueSchema, type Timestamp, type Value } from "@bufbuild/protobuf/wkt";
 
 import { fetchWithLogin, HttpError } from "../client";
 import type { StreamConnection } from "../stream_reader";
 import { followWatch } from "../watch_stream";
 import {
-  ActionState as ProtoActionState,
-  ExecutorKind as ProtoExecutorKind,
-  ExecutionState as ProtoExecutionState,
-  McpLifecycle as ProtoMcpLifecycle,
-  McpUnavailableReason as ProtoMcpUnavailableReason,
-  PolicyKind as ProtoPolicyKind,
-  PolicySource as ProtoPolicySource,
-  Verdict as ProtoVerdict,
+  ActionState,
+  ExecutorKind,
+  ExecutionState,
+  McpLifecycle,
+  McpUnavailableReason,
+  PolicyKind,
+  PolicySource,
+  Verdict,
   GetActionRequestResponseSchema,
   ListActionGroupsResponseSchema,
   ListActionRequestHistoryResponseSchema,
@@ -20,337 +19,137 @@ import {
   ListActionRequestsResponseSchema,
   WatchActionGroupsResponseSchema,
   WatchActionRequestsResponseSchema,
-  type Action,
   type ActionGroup,
   type ActionRequest,
-  type BindingEvidence as ProtoBindingEvidence,
-  type Decision as ProtoDecision,
-  type Execution as ProtoExecution,
-  type MatchedPolicy as ProtoMatchedPolicy,
-  type PolicyEvidence as ProtoPolicyEvidence,
-  type PolicySetEvidence as ProtoPolicySetEvidence,
+  type Decision,
+  type Execution,
+  type ListActionRequestHistoryResponse,
+  type PolicyEvidence,
 } from "../../../action_service/action_service_pb";
 import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
 } from "../../../action_service/operator_action_service_pb";
-import type {
-  ActionGroupView,
-  ActionHistoryPage,
-  ActionRequestView,
-  ActionState,
-  DecisionView,
-  ExecutionView,
-  JsonValue,
-  McpHealthView,
-  McpLifecycle,
-  McpUnavailableReason,
-  PolicyEvidence,
-  Verdict,
-} from "./types";
-
-export type { ActionGroupView, ActionHistoryPage, ActionRequestView, ActionState, Verdict } from "./types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 const ACTIONS_PATH = "/upstream/actions";
+
 function required<T>(value: T | undefined, field: string): T {
   if (value === undefined) throw new Error(`The Action Service omitted ${field}.`);
   return value;
 }
 
-function structJson(value: { [key: string]: ProtoJsonValue } | undefined): { [key: string]: JsonValue } {
-  if (value === undefined) return {};
-  const result: { [key: string]: JsonValue } = {};
-  for (const [key, child] of Object.entries(value)) result[key] = child;
-  return result;
-}
-
-function valueJson(value: Value | undefined): JsonValue | null {
-  return value === undefined ? null : toJson(ValueSchema, value);
-}
-
-function timestampJson(value: Timestamp | undefined, field: string): string {
-  const json = toJson(TimestampSchema, required(value, field));
-  if (typeof json !== "string") throw new Error(`The Action Service returned an invalid ${field}.`);
-  return json;
-}
-
-function optionalTimestampJson(value: Timestamp | undefined): string | null {
-  return value === undefined ? null : timestampJson(value, "timestamp");
-}
-
-function safeInt64(value: bigint, field: string): number {
-  const number = Number(value);
-  if (!Number.isSafeInteger(number)) throw new Error(`The Action Service returned an unsafe ${field}.`);
-  return number;
-}
-
-function actionState(value: ProtoActionState): ActionState {
-  switch (value) {
-    case ProtoActionState.DECISION_PENDING:
-      return "decision_pending";
-    case ProtoActionState.ALLOWED:
-      return "allowed";
-    case ProtoActionState.DENIED:
-      return "denied";
-    case ProtoActionState.DISPATCHING:
-      return "dispatching";
-    case ProtoActionState.RUNNING:
-      return "running";
-    case ProtoActionState.SUCCEEDED:
-      return "succeeded";
-    case ProtoActionState.FAILED:
-      return "failed";
-    case ProtoActionState.CANCELLED:
-      return "cancelled";
-    case ProtoActionState.EXECUTION_UNKNOWN:
-      return "execution_unknown";
-    default:
-      throw new Error(`The Action Service returned an unknown request state (${value}).`);
-  }
-}
-
-function verdict(value: ProtoVerdict): Verdict {
-  switch (value) {
-    case ProtoVerdict.ALLOW:
-      return "allow";
-    case ProtoVerdict.DENY:
-      return "deny";
-    default:
-      throw new Error(`The Action Service returned an unknown verdict (${value}).`);
-  }
-}
-
-function policySource(value: ProtoPolicySource): string {
-  switch (value) {
-    case ProtoPolicySource.RULES:
-      return "rules";
-    default:
-      throw new Error(`The Action Service returned an unknown policy source (${value}).`);
-  }
-}
-
-function policyKind(value: ProtoPolicyKind): string {
-  switch (value) {
-    case ProtoPolicyKind.EXACT_ACTIONS:
-      return "exact_actions";
-    case ProtoPolicyKind.ARGUMENT_SCHEMA:
-      return "argument_schema";
-    case ProtoPolicyKind.GITHUB_REPOSITORY:
-      return "github_repository";
-    case ProtoPolicyKind.GITHUB_PUBLIC_REPOSITORY:
-      return "github_public_repository";
-    case ProtoPolicyKind.HOME_ASSISTANT_ENTITY_CONTROL:
-      return "home_assistant_entity_control";
-    default:
-      throw new Error(`The Action Service returned an unknown policy kind (${value}).`);
-  }
-}
-
-function requestPolicyEvidence(value: ProtoPolicyEvidence | undefined): PolicyEvidence | null {
-  if (value === undefined) return null;
+function validatePolicyEvidence(value: PolicyEvidence): void {
   const matched = required(value.matched, "policy evidence match");
-  return {
-    bindings: value.bindings.map(bindingEvidence),
-    policy_sets: value.policySets.map(policySetEvidence),
-    matched: matchedPolicy(matched),
-  };
-}
-
-function bindingEvidence(value: ProtoBindingEvidence): PolicyEvidence["bindings"][number] {
-  return { namespace: value.namespace, name: value.name, resource_version: value.resourceVersion };
-}
-
-function policySetEvidence(value: ProtoPolicySetEvidence): PolicyEvidence["policy_sets"][number] {
-  return { namespace: value.namespace, name: value.name, generation: safeInt64(value.generation, "policy generation") };
-}
-
-function matchedPolicy(value: ProtoMatchedPolicy): PolicyEvidence["matched"] {
-  return {
-    namespace: value.namespace,
-    policy_set: value.policySet,
-    source: policySource(value.source),
-    index: value.index,
-    type: policyKind(value.type),
-    repository:
-      value.repository === undefined
-        ? null
-        : {
-            owner: value.repository.owner,
-            repository: value.repository.repository,
-            confirmed_public: value.repository.confirmedPublic,
-          },
-  };
-}
-
-function decisionView(value: ProtoDecision): DecisionView {
-  return {
-    id: value.id,
-    verdict: verdict(value.verdict),
-    provider: value.provider,
-    operator: value.operator === undefined ? null : { issuer: value.operator.issuer, subject: value.operator.subject },
-    decision_note: value.decisionNote ?? null,
-    reason_code: value.reasonCode ?? null,
-    reason_description: value.reasonDescription ?? null,
-    policy_evidence: requestPolicyEvidence(value.policyEvidence),
-    idempotency_key: value.idempotencyKey,
-    decided_at: timestampJson(value.decidedAt, "Decision.decided_at"),
-  };
-}
-
-function executionState(value: ProtoExecutionState): ExecutionView["state"] {
-  switch (value) {
-    case ProtoExecutionState.PENDING_DISPATCH:
-      return "pending_dispatch";
-    case ProtoExecutionState.DISPATCHING:
-      return "dispatching";
-    case ProtoExecutionState.RUNNING:
-      return "running";
-    case ProtoExecutionState.SUCCEEDED:
-      return "succeeded";
-    case ProtoExecutionState.FAILED:
-      return "failed";
-    case ProtoExecutionState.CANCELLED:
-      return "cancelled";
-    case ProtoExecutionState.EXECUTION_UNKNOWN:
-      return "execution_unknown";
+  switch (matched.source) {
+    case PolicySource.RULES:
+      break;
     default:
-      throw new Error(`The Action Service returned an unknown execution state (${value}).`);
+      throw new Error(`The Action Service returned an unknown policy source (${matched.source}).`);
+  }
+  switch (matched.type) {
+    case PolicyKind.EXACT_ACTIONS:
+    case PolicyKind.ARGUMENT_SCHEMA:
+    case PolicyKind.GITHUB_REPOSITORY:
+    case PolicyKind.GITHUB_PUBLIC_REPOSITORY:
+    case PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL:
+      break;
+    default:
+      throw new Error(`The Action Service returned an unknown policy kind (${matched.type}).`);
   }
 }
 
-function executionView(value: ProtoExecution): ExecutionView {
-  return {
-    id: value.id,
-    state: executionState(value.state),
-    result: valueJson(value.result),
-    error: value.error === undefined ? null : structJson(value.error),
-    created_at: timestampJson(value.createdAt, "Execution.created_at"),
-    started_at: optionalTimestampJson(value.startedAt),
-    completed_at: optionalTimestampJson(value.completedAt),
-    reconciled_at: optionalTimestampJson(value.reconciledAt),
-  };
-}
-
-function actionRequestFromMessage(message: ActionRequest): ActionRequestView {
-  const action = required(message.action, "ActionRequest.action");
-  const caller = required(message.caller, "ActionRequest.caller");
-  return {
-    id: message.id,
-    idempotency_key: message.idempotencyKey,
-    action: { group: action.group, name: action.name },
-    arguments: structJson(message.arguments),
-    title: message.title,
-    description: message.description ?? null,
-    caller: { namespace: caller.namespace, name: caller.name },
-    caller_uid: message.callerUid ?? null,
-    state: actionState(message.state),
-    version: safeInt64(message.version, "request version"),
-    created_at: timestampJson(message.createdAt, "ActionRequest.created_at"),
-    updated_at: timestampJson(message.updatedAt, "ActionRequest.updated_at"),
-    decision: message.decision === undefined ? null : decisionView(message.decision),
-    execution: message.execution === undefined ? null : executionView(message.execution),
-  };
-}
-
-function executorKind(value: ProtoExecutorKind): ActionGroupView["executor_kind"] {
-  switch (value) {
-    case ProtoExecutorKind.MCP:
-      return "mcp";
-    case ProtoExecutorKind.POD:
-      return "pod";
-    case ProtoExecutorKind.ORCHESTRATION_V1:
-      return "orchestration_v1";
+function validateDecision(value: Decision): void {
+  switch (value.verdict) {
+    case Verdict.ALLOW:
+    case Verdict.DENY:
+      break;
     default:
-      throw new Error(`The Action Service returned an unknown executor kind (${value}).`);
+      throw new Error(`The Action Service returned an unknown verdict (${value.verdict}).`);
   }
+  required(value.decidedAt, "Decision.decided_at");
+  if (value.policyEvidence !== undefined) validatePolicyEvidence(value.policyEvidence);
 }
 
-function mcpLifecycle(value: ProtoMcpLifecycle): McpLifecycle {
-  switch (value) {
-    case ProtoMcpLifecycle.DISCONNECTED:
-      return "disconnected";
-    case ProtoMcpLifecycle.CONNECTING:
-      return "connecting";
-    case ProtoMcpLifecycle.DISCOVERING:
-      return "discovering";
-    case ProtoMcpLifecycle.AVAILABLE:
-      return "available";
-    case ProtoMcpLifecycle.DRAINING:
-      return "draining";
-    case ProtoMcpLifecycle.STOPPED:
-      return "stopped";
+function validateExecution(value: Execution): void {
+  switch (value.state) {
+    case ExecutionState.PENDING_DISPATCH:
+    case ExecutionState.DISPATCHING:
+    case ExecutionState.RUNNING:
+    case ExecutionState.SUCCEEDED:
+    case ExecutionState.FAILED:
+    case ExecutionState.CANCELLED:
+    case ExecutionState.EXECUTION_UNKNOWN:
+      break;
     default:
-      throw new Error(`The Action Service returned an unknown MCP lifecycle state (${value}).`);
+      throw new Error(`The Action Service returned an unknown execution state (${value.state}).`);
   }
+  required(value.createdAt, "Execution.created_at");
 }
 
-function mcpUnavailableReason(value: ProtoMcpUnavailableReason): McpUnavailableReason | null {
-  switch (value) {
-    case ProtoMcpUnavailableReason.CONNECT_FAILED:
-      return "connect_failed";
-    case ProtoMcpUnavailableReason.DISCOVERY_FAILED:
-      return "discovery_failed";
-    case ProtoMcpUnavailableReason.INVALID_CATALOG:
-      return "invalid_catalog";
-    case ProtoMcpUnavailableReason.LINKAGE_UNAVAILABLE:
-      return "linkage_unavailable";
-    case ProtoMcpUnavailableReason.SESSION_FAILED:
-      return "session_failed";
-    case ProtoMcpUnavailableReason.SUPERVISOR_STOPPED:
-      return "supervisor_stopped";
-    case ProtoMcpUnavailableReason.UNSPECIFIED:
-      return null;
+function validateActionRequest(value: ActionRequest): ActionRequest {
+  required(value.action, "ActionRequest.action");
+  required(value.caller, "ActionRequest.caller");
+  required(value.createdAt, "ActionRequest.created_at");
+  required(value.updatedAt, "ActionRequest.updated_at");
+  switch (value.state) {
+    case ActionState.DECISION_PENDING:
+    case ActionState.ALLOWED:
+    case ActionState.DENIED:
+    case ActionState.DISPATCHING:
+    case ActionState.RUNNING:
+    case ActionState.SUCCEEDED:
+    case ActionState.FAILED:
+    case ActionState.CANCELLED:
+    case ActionState.EXECUTION_UNKNOWN:
+      break;
     default:
-      throw new Error(`The Action Service returned an unknown MCP unavailable reason (${value}).`);
+      throw new Error(`The Action Service returned an unknown request state (${value.state}).`);
   }
+  if (value.decision !== undefined) validateDecision(value.decision);
+  if (value.execution !== undefined) validateExecution(value.execution);
+  return value;
 }
 
-function mcpHealth(value: ActionGroup["health"]): McpHealthView | null {
-  if (value === undefined) return null;
-  return {
-    state: mcpLifecycle(value.state),
-    reason: value.reason === undefined ? null : mcpUnavailableReason(value.reason),
-    detail: value.detail ?? null,
-    last_discovery_at: optionalTimestampJson(value.lastDiscoveryAt),
-    retry_at: optionalTimestampJson(value.retryAt),
-    failures: value.failures,
-  };
-}
-
-function actionView(value: Action): ActionGroupView["actions"][number] {
-  const annotations = value.annotations;
-  return {
-    group: value.group,
-    name: value.name,
-    description: value.description,
-    input_schema: structJson(value.inputSchema),
-    title: value.title ?? null,
-    annotations:
-      annotations === undefined
-        ? null
-        : {
-            read_only_hint: annotations.readOnlyHint ?? null,
-            destructive_hint: annotations.destructiveHint ?? null,
-            idempotent_hint: annotations.idempotentHint ?? null,
-            open_world_hint: annotations.openWorldHint ?? null,
-          },
-  };
-}
-
-function actionGroupFromMessage(message: ActionGroup): ActionGroupView {
-  return {
-    key: message.key,
-    title: message.title,
-    description: message.description,
-    executor_kind: executorKind(message.executorKind),
-    executor_description: message.executorDescription,
-    available: message.available,
-    health: mcpHealth(message.health),
-    actions: message.actions.map(actionView),
-    direct_tools: message.directTools,
-  };
+function validateActionGroup(value: ActionGroup): ActionGroup {
+  switch (value.executorKind) {
+    case ExecutorKind.MCP:
+    case ExecutorKind.POD:
+    case ExecutorKind.ORCHESTRATION_V1:
+    case ExecutorKind.SESSION_DELEGATION:
+      break;
+    default:
+      throw new Error(`The Action Service returned an unknown executor kind (${value.executorKind}).`);
+  }
+  if (value.health !== undefined) {
+    switch (value.health.state) {
+      case McpLifecycle.DISCONNECTED:
+      case McpLifecycle.CONNECTING:
+      case McpLifecycle.DISCOVERING:
+      case McpLifecycle.AVAILABLE:
+      case McpLifecycle.DRAINING:
+      case McpLifecycle.STOPPED:
+        break;
+      default:
+        throw new Error(`The Action Service returned an unknown MCP lifecycle state (${value.health.state}).`);
+    }
+    if (value.health.reason !== undefined) {
+      switch (value.health.reason) {
+        case McpUnavailableReason.UNSPECIFIED:
+        case McpUnavailableReason.CONNECT_FAILED:
+        case McpUnavailableReason.DISCOVERY_FAILED:
+        case McpUnavailableReason.INVALID_CATALOG:
+        case McpUnavailableReason.LINKAGE_UNAVAILABLE:
+        case McpUnavailableReason.SESSION_FAILED:
+        case McpUnavailableReason.SUPERVISOR_STOPPED:
+          break;
+        default:
+          throw new Error(`The Action Service returned an unknown MCP unavailable reason (${value.health.reason}).`);
+      }
+    }
+  }
+  return value;
 }
 
 function protoJson(value: unknown): ProtoJsonValue {
@@ -376,7 +175,7 @@ async function readJson(
   return protoJson(await response.json());
 }
 
-function actionStateJson(value: ProtoActionState): string {
+function actionStateJson(value: ActionState): string {
   const json = toJson(ListActionRequestsRequestSchema, create(ListActionRequestsRequestSchema, { state: [value] }));
   if (json === null || Array.isArray(json) || typeof json !== "object") {
     throw new Error("Could not encode the Action state.");
@@ -386,65 +185,56 @@ function actionStateJson(value: ProtoActionState): string {
   return states[0];
 }
 
-function protoVerdict(value: Verdict): ProtoVerdict {
-  switch (value) {
-    case "allow":
-      return ProtoVerdict.ALLOW;
-    case "deny":
-      return ProtoVerdict.DENY;
-  }
-}
-
 export async function listActionRequests(
-  state?: "decision_pending",
+  state?: ActionState,
   fetcher: Fetcher = fetchWithLogin
-): Promise<ActionRequestView[]> {
+): Promise<ActionRequest[]> {
   const query = new URLSearchParams();
-  if (state !== undefined) query.set("state", actionStateJson(ProtoActionState.DECISION_PENDING));
-  const json = await readJson(`${ACTIONS_PATH}/v1/action-requests${query.size ? `?${query}` : ""}`, {}, fetcher);
-  const response = fromJson(ListActionRequestsResponseSchema, json);
-  return response.actionRequests.map(actionRequestFromMessage);
+  if (state !== undefined) query.set("state", actionStateJson(state));
+  const response = fromJson(
+    ListActionRequestsResponseSchema,
+    await readJson(`${ACTIONS_PATH}/v1/action-requests${query.size ? `?${query}` : ""}`, {}, fetcher)
+  );
+  return response.actionRequests.map(validateActionRequest);
 }
 
-export async function listActionGroups(): Promise<ActionGroupView[]> {
+export async function listActionGroups(): Promise<ActionGroup[]> {
   const response = fromJson(ListActionGroupsResponseSchema, await readJson(`${ACTIONS_PATH}/v1/action-groups`));
-  return response.actionGroups.map(actionGroupFromMessage);
+  return response.actionGroups.map(validateActionGroup);
 }
 
-export async function getAction(requestId: string): Promise<ActionRequestView> {
+export async function getAction(requestId: string): Promise<ActionRequest> {
   const response = fromJson(
     GetActionRequestResponseSchema,
     await readJson(`${ACTIONS_PATH}/v1/action-requests/${encodeURIComponent(requestId)}`)
   );
-  if (response.actionRequest === undefined) throw new Error("The Action Service returned no request.");
-  return actionRequestFromMessage(response.actionRequest);
+  return validateActionRequest(required(response.actionRequest, "request"));
 }
 
-export async function actionHistory(cursor?: string, includeAutoAllowed = true): Promise<ActionHistoryPage> {
+export async function actionHistory(
+  cursor?: string,
+  includeAutoAllowed = true
+): Promise<ListActionRequestHistoryResponse> {
   const query = new URLSearchParams({ limit: "50", includeAutoAllowed: String(includeAutoAllowed) });
   if (cursor !== undefined) query.set("cursor", cursor);
   const response = fromJson(
     ListActionRequestHistoryResponseSchema,
     await readJson(`${ACTIONS_PATH}/v1/action-requests:history?${query}`)
   );
-  return {
-    items: response.actionRequests.map(actionRequestFromMessage),
-    next_cursor: response.nextCursor ?? null,
-  };
+  response.actionRequests.forEach(validateActionRequest);
+  return response;
 }
 
 export async function decideActionById(
   requestId: string,
-  expectedVersion: number,
+  expectedVersion: bigint,
   verdict: Verdict,
   fetcher: Fetcher = fetchWithLogin
-): Promise<ActionRequestView> {
-  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
-    throw new Error("The reviewed Action version is outside the supported integer range.");
-  }
+): Promise<ActionRequest> {
+  if (expectedVersion < 1n) throw new Error("The reviewed Action version must be positive.");
   const decision = create(DecideActionRequestRequestSchema, {
-    verdict: protoVerdict(verdict),
-    expectedVersion: BigInt(expectedVersion),
+    verdict,
+    expectedVersion,
     idempotencyKey: crypto.randomUUID(),
   });
   const response = fromJson(
@@ -459,24 +249,23 @@ export async function decideActionById(
       fetcher
     )
   );
-  if (response.actionRequest === undefined) throw new Error("The Action Service returned no decided request.");
-  return actionRequestFromMessage(response.actionRequest);
+  return validateActionRequest(required(response.actionRequest, "decided request"));
 }
 
-export function decideAction(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {
+export function decideAction(request: ActionRequest, verdict: Verdict): Promise<ActionRequest> {
   return decideActionById(request.id, request.version, verdict);
 }
 
 export type ActionRequestWatchFrame =
-  | { kind: "snapshot"; requests: ActionRequestView[] }
+  | { kind: "snapshot"; requests: ActionRequest[] }
   | { kind: "snapshot_complete" }
-  | { kind: "upsert"; request: ActionRequestView }
+  | { kind: "upsert"; request: ActionRequest }
   | { kind: "reconnect_required" };
 
 export type ActionGroupWatchFrame =
-  | { kind: "snapshot"; groups: ActionGroupView[] }
+  | { kind: "snapshot"; groups: ActionGroup[] }
   | { kind: "snapshot_complete" }
-  | { kind: "upsert"; group: ActionGroupView }
+  | { kind: "upsert"; group: ActionGroup }
   | { kind: "reconnect_required" };
 
 export function followActionRequests(handlers: {
@@ -484,7 +273,7 @@ export function followActionRequests(handlers: {
   onFrame: (frame: ActionRequestWatchFrame) => void;
   onConnection: (connection: StreamConnection) => void;
 }): () => void {
-  const query = new URLSearchParams({ state: actionStateJson(ProtoActionState.DECISION_PENDING) });
+  const query = new URLSearchParams({ state: actionStateJson(ActionState.DECISION_PENDING) });
   return followWatch(`${ACTIONS_PATH}/v1/action-requests:watch?${query}`, {
     ...handlers,
     onFrame: (result) => {
@@ -493,14 +282,14 @@ export function followActionRequests(handlers: {
         case "snapshot":
           handlers.onFrame({
             kind: "snapshot",
-            requests: message.frame.value.actionRequests.map(actionRequestFromMessage),
+            requests: message.frame.value.actionRequests.map(validateActionRequest),
           });
           break;
         case "snapshotComplete":
           handlers.onFrame({ kind: "snapshot_complete" });
           break;
         case "upsert":
-          handlers.onFrame({ kind: "upsert", request: actionRequestFromMessage(message.frame.value) });
+          handlers.onFrame({ kind: "upsert", request: validateActionRequest(message.frame.value) });
           break;
         case "reconnectRequired":
           handlers.onFrame({ kind: "reconnect_required" });
@@ -523,16 +312,13 @@ export function followActionGroups(handlers: {
       const message = fromJson(WatchActionGroupsResponseSchema, protoJson(result));
       switch (message.frame.case) {
         case "snapshot":
-          handlers.onFrame({
-            kind: "snapshot",
-            groups: message.frame.value.actionGroups.map(actionGroupFromMessage),
-          });
+          handlers.onFrame({ kind: "snapshot", groups: message.frame.value.actionGroups.map(validateActionGroup) });
           break;
         case "snapshotComplete":
           handlers.onFrame({ kind: "snapshot_complete" });
           break;
         case "upsert":
-          handlers.onFrame({ kind: "upsert", group: actionGroupFromMessage(message.frame.value) });
+          handlers.onFrame({ kind: "upsert", group: validateActionGroup(message.frame.value) });
           break;
         case "reconnectRequired":
           handlers.onFrame({ kind: "reconnect_required" });
