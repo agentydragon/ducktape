@@ -34,9 +34,16 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import egress_rules_pb2, egress_rules_pb2_grpc
+from agentplane.egress.platform_routes import PlatformRoute, TLSConnectRouteTransport
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
+from agentplane.egress.sidecar_config import (
+    KubernetesBearerProxyAuth,
+    PlaintextProxyTransport,
+    Proxy,
+    SpiffeProxyAuth,
+    TLSProxyTransport,
+)
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -1262,14 +1269,14 @@ async def test_rules_grpc_uses_forward_listener_authentication(mixed_egress: Egr
             response = await client.GetRules(request, metadata=metadata, timeout=5)
             assert response.subject.namespace == SANDBOX_NAMESPACE
             assert response.subject.name == SANDBOX_A
-        for client, metadata in (
+        for rejected_client, rejected_metadata in (
             (svid, (("authorization", f"Bearer {egress.token}"),)),
             (bearer, ()),
             (bearer, (("authorization", f"Bearer {egress.projected_token}"),)),
             (plaintext, (("authorization", f"Bearer {egress.token}"),)),
         ):
             with pytest.raises(grpc.aio.AioRpcError) as failure:
-                await client.GetRules(request, metadata=metadata, timeout=5)
+                await rejected_client.GetRules(request, metadata=rejected_metadata, timeout=5)
             assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
         # Reusing the same authenticated HTTP/2 connection must recheck acceptance on every RPC.
         await cast(
@@ -1286,6 +1293,42 @@ async def test_rules_grpc_uses_forward_listener_authentication(mixed_egress: Egr
         with pytest.raises(grpc.aio.AioRpcError) as failure:
             await svid.GetRules(request, timeout=5)
         assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+async def test_rules_grpc_sidecar_presents_its_svid_and_discards_caller_credentials(mixed_egress: Egress) -> None:
+    egress = mixed_egress
+    certificate, key = issue_runner_svid(egress, egress.tmp_path / "rules-sidecar-client")
+    root = write_ca(egress.runtime_ca, egress.tmp_path, "rules-sidecar-root")[0]
+    caller_token = await egress.api.workload_token(
+        ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B), [AUDIENCE]
+    )
+    async with SidecarProcess(
+        proxy=Proxy(
+            address=f"{egress.proxy_listener.host}:{egress.proxy_listener.port}",
+            transport=TLSProxyTransport(ca_file=root, auth=SpiffeProxyAuth(cert_file=certificate, key_file=key)),
+        ),
+        platform_routes={
+            "rules": PlatformRoute(
+                listen_address="127.0.0.1:0",
+                upstream=f"localhost:{egress.replica.admin_listener.port}",
+                transport=TLSConnectRouteTransport(),
+            )
+        },
+    ) as sidecar:
+        listener = sidecar.platform_route_listeners["rules"]
+        async with grpc.aio.insecure_channel(f"{listener.host}:{listener.port}") as channel:
+            response = await egress_rules_pb2_grpc.EgressRulesStub(channel).GetRules(
+                egress_rules_pb2.GetRulesRequest(),
+                metadata=(
+                    ("authorization", f"Bearer {caller_token}"),
+                    ("proxy-authorization", f"Bearer {caller_token}"),
+                    ("x-agentplane-subject", f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"),
+                ),
+                timeout=5,
+            )
+            assert response.subject.namespace == SANDBOX_NAMESPACE
+            assert response.subject.name == SANDBOX_A
+    assert not egress.upstream.requests
 
 
 @pytest.mark.parametrize("leaf", ["forged", "expired"])

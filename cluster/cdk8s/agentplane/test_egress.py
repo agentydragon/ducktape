@@ -138,7 +138,7 @@ def test_mixed_listener_adds_svid_auth_on_the_existing_port(svid_egress_manifest
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
     assert sandbox_rules == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
     all_resources = [resource for rule in role["rules"] for resource in rule["resources"]]
-    assert not any(resource.endswith(("/pods", "/serviceaccounts")) for resource in all_resources)
+    assert set(all_resources).isdisjoint({"pods", "serviceaccounts"})
 
     certificate = _by_name(svid_egress_manifests, "Certificate", "agentplane-egress-proxy")
     assert certificate["spec"]["uris"] == ["spiffe://agentplane/egress-proxy"]
