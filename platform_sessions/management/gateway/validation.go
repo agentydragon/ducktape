@@ -21,7 +21,7 @@ func probeValid(p *providerpb.ProbeResult) bool {
 		_, ok := providerpb.ProbeFailureReason_name[int32(f.GetReason())]
 		return ok && f.GetReason() != providerpb.ProbeFailureReason_PROBE_FAILURE_REASON_UNSPECIFIED
 	}
-	return true
+	return unknownValid(p.GetOutcomeUnknown())
 }
 
 func snapshotValid(s *providerpb.SessionSnapshot) bool {
@@ -34,6 +34,29 @@ func snapshotValid(s *providerpb.SessionSnapshot) bool {
 		return false
 	}
 	return timestampValid(s.GetStateChangedAt()) && timestampValid(s.GetLastVerifiedAt()) && timestampValid(s.GetImportedAt()) && (s.GetLastProbe() == nil || probeValid(s.GetLastProbe()))
+}
+
+func unknownValid(value *providerpb.OperationOutcomeUnknown) bool {
+	if value == nil {
+		return true
+	}
+	_, ok := providerpb.UnknownOutcomeReason_name[int32(value.GetReason())]
+	return ok
+}
+
+func importFailureValid(value *providerpb.ImportFailure) bool {
+	if value == nil {
+		return true
+	}
+	reason := value.GetReason()
+	_, ok := providerpb.ImportFailureReason_name[int32(reason)]
+	if !ok || reason == providerpb.ImportFailureReason_IMPORT_FAILURE_REASON_UNSPECIFIED {
+		return false
+	}
+	if value.UpstreamHttpStatus != nil && (reason != providerpb.ImportFailureReason_IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR || value.GetUpstreamHttpStatus() < 100 || value.GetUpstreamHttpStatus() > 599) {
+		return false
+	}
+	return true
 }
 
 func rejectedValid(r *providerpb.CandidateRejected) bool {

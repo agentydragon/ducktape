@@ -75,3 +75,37 @@ func TestProxyRejectsUnmarkedProviderResponse(t *testing.T) {
 		t.Fatalf("untrusted response: %d %q", out.Code, out.Body.String())
 	}
 }
+
+func TestSegmentsRejectAmbiguousPaths(t *testing.T) {
+	for _, path := range []string{"/a/%2F", "/a/%5c", "/a/%252f", "/a/%2e%2e", "/a//b", "/a/%00", "/a/%ff", "/a/%", "/a/has?query"} {
+		if _, err := segments(path, false); err == nil {
+			t.Errorf("accepted ambiguous path %q", path)
+		}
+	}
+	for _, path := range []string{"/a/%2a", "/a/pre*", "/a/**"} {
+		if _, err := segments(path, true); err == nil {
+			t.Errorf("accepted ambiguous wildcard %q", path)
+		}
+	}
+	if _, err := segments("/a/*", true); err != nil {
+		t.Fatalf("single segment wildcard: %v", err)
+	}
+}
+func TestRedirectStaysInsideConfiguredOriginAndPrefix(t *testing.T) {
+	for _, location := range []string{"https://evil.invalid/api/a", "https://upstream.invalid/outside", "//evil.invalid/api/a", "/api/%2fescape"} {
+		if _, err := rewriteLocation(location, "https://upstream.invalid/api", "id", []string{"a"}, ""); err == nil {
+			t.Errorf("accepted redirect %q", location)
+		}
+	}
+	got, err := rewriteLocation("../new?x=1", "https://upstream.invalid/api", "id", []string{"a", "b"}, "")
+	if err != nil || got != "/proxy/id/new?x=1" {
+		t.Fatalf("relative redirect: %q %v", got, err)
+	}
+}
+func TestConnectionNominatedHeadersAreRemoved(t *testing.T) {
+	headers := http.Header{"Connection": []string{"X-Custom, keep-alive"}, "X-Custom": []string{"secret"}, "X-Visible": []string{"ok"}, "Cookie": []string{"secret"}}
+	filtered := filterHeaders(headers, requestPrivate, nil)
+	if filtered.Get("X-Custom") != "" || filtered.Get("Cookie") != "" || filtered.Get("Connection") != "" || filtered.Get("X-Visible") != "ok" {
+		t.Fatalf("headers: %v", filtered)
+	}
+}

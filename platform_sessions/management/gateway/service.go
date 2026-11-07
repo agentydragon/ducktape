@@ -121,7 +121,7 @@ func (s *Service) ImportSession(ctx context.Context, req *managementpb.Candidate
 		return nil, status.Error(codes.InvalidArgument, "invalid session candidate")
 	}
 	response, err := p.Client.ImportSession(ctx, &providerpb.ImportSessionRequest{Instance: p.Ref, MediaType: req.GetMediaType(), FormatVersion: req.GetFormatVersion(), Candidate: req.GetCandidate()}, grpc.WaitForReady(false))
-	if err != nil || response == nil || !sameRef(response.GetInstance(), p.Ref) || response.GetResult() == nil || !rejectedValid(response.GetRejected()) {
+	if err != nil || response == nil || !sameRef(response.GetInstance(), p.Ref) || response.GetResult() == nil || !rejectedValid(response.GetRejected()) || !unknownValid(response.GetOutcomeUnknown()) || !importFailureValid(response.GetFailure()) {
 		return nil, status.Error(codes.Unknown, "operation outcome unknown; inspect session state before retrying")
 	}
 	return response, nil
@@ -139,7 +139,7 @@ func (s *Service) VerifyCandidate(ctx context.Context, req *managementpb.Candida
 	if status.Code(err) == codes.Unimplemented {
 		return nil, status.Error(codes.Unimplemented, "candidate verification unsupported")
 	}
-	if err != nil || response == nil || !sameRef(response.GetInstance(), p.Ref) || response.GetResult() == nil || !rejectedValid(response.GetRejected()) {
+	if err != nil || response == nil || !sameRef(response.GetInstance(), p.Ref) || response.GetResult() == nil || !rejectedValid(response.GetRejected()) || !unknownValid(response.GetOutcomeUnknown()) {
 		return nil, status.Error(codes.Unknown, "operation outcome unknown; inspect session state before retrying")
 	}
 	return response, nil
