@@ -1,8 +1,8 @@
 import { Badge, Stack, Table, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { ComponentStatus } from "./schema";
-import { api, displayableError, ok } from "./client";
+import { displayableError } from "./client";
+import { getSystemStatus, type SystemComponentStatus } from "./system_status_client";
 import { TimeAgo } from "./time_ago";
 import { TopbarTitle } from "./topbar";
 import "./system.css";
@@ -11,14 +11,14 @@ const REFRESH_SECONDS = 15;
 
 /** Whether each service the app depends on answers a health check, as the app itself sees it. */
 export function SystemStatus(): JSX.Element {
-  const [components, setComponents] = useState<ComponentStatus[] | null>(null);
+  const [components, setComponents] = useState<SystemComponentStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function refresh(): Promise<void> {
       try {
-        const next = ok(await api.GET("/system/status"));
+        const next = await getSystemStatus();
         if (cancelled) return;
         setComponents(next);
         setError(null);

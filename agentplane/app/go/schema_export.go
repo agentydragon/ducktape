@@ -20,7 +20,6 @@ func exportOpenAPI(writer io.Writer) error {
 	}
 	RegisterPolicyRoutes(server, config, nil, (*policyaccess.Access)(nil))
 	RegisterOperatorRoutes(server, nil, nil, "")
-	RegisterStatusRoutes(server, nil)
 
 	encoded, err := json.MarshalIndent(server.api.OpenAPI(), "", "  ")
 	if err != nil {

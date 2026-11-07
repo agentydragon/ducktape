@@ -21,6 +21,11 @@ service AppService {
     option (google.api.http) = {get: "/v1/presets"};
   }
 
+  // Read the health checks for services the app depends on.
+  rpc GetSystemStatus(GetSystemStatusRequest) returns (GetSystemStatusResponse) {
+    option (google.api.http) = {get: "/v1/system/status"};
+  }
+
   // App-owned Thread metadata; Session fields belong to History.
   // Get metadata for an app-owned Thread.
   rpc GetThreadMetadata(ThreadMetadataTarget) returns (ThreadMetadata) {
@@ -97,6 +102,25 @@ message HarnessModelOffers {
 
 message ListSandboxPresetsResponse {
   repeated SandboxPreset presets = 1;
+}
+
+message GetSystemStatusRequest {}
+
+message GetSystemStatusResponse {
+  repeated SystemComponentStatus components = 1;
+}
+
+message SystemComponentStatus {
+  string name = 1;
+  SystemComponentState state = 2;
+  optional string detail = 3;
+  google.protobuf.Timestamp checked_at = 4;
+}
+
+enum SystemComponentState {
+  SYSTEM_COMPONENT_STATE_UNSPECIFIED = 0;
+  SYSTEM_COMPONENT_STATE_OK = 1;
+  SYSTEM_COMPONENT_STATE_DOWN = 2;
 }
 
 message SandboxPreset {
