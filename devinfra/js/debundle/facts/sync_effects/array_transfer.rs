@@ -95,9 +95,9 @@ pub(super) fn select_iteration(
     result: Option<u32>,
 ) -> Result<(ArrayIterationSelection, EffectCoverageFragment), OrderedCallAdmissionRefusal> {
     let mut receiver_values = receivers.iter();
-    let Some(receiver) = receiver_values.next() else {
-        return Err(OrderedCallAdmissionRefusal::ArrayIterationReceiverNotSingleton);
-    };
+    let receiver = receiver_values
+        .next()
+        .ok_or(OrderedCallAdmissionRefusal::ArrayIterationReceiverNotSingleton)?;
     if receiver_values.next().is_some() {
         return Err(OrderedCallAdmissionRefusal::ArrayIterationReceiverNotSingleton);
     }

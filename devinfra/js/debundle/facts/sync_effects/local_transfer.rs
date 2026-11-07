@@ -246,8 +246,7 @@ pub(super) trait LocalContext: OwnDataContext {
         None
     }
     /// Select an exact intrinsic before arguments run. A missing selection
-    /// keeps the ordinary binding/member transfer and conservative fallback;
-    /// a refusal is diagnostic-only and still uses that ordinary transfer.
+    /// keeps the ordinary binding/member transfer and conservative fallback.
     fn native_callee(
         &mut self,
         _frame: &mut LocalFrame,
@@ -269,6 +268,8 @@ pub(super) trait LocalContext: OwnDataContext {
     ) -> Option<(Values, LocalValueResult)> {
         None
     }
+    /// Select an array method before arguments run. A diagnosed refusal keeps
+    /// the ordinary member read and call transfer as the fallback.
     fn array_method_callee(
         &mut self,
         _receivers: &Values,

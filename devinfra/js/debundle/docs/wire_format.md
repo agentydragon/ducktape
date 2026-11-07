@@ -637,8 +637,9 @@ GetValue selection, first-failure post-argument categories are
 `array_iteration_unsettled_elements`. These new categories identify checks
 at the stated phase, retain the existing call source site and fallback reach,
 and do not retain target identities or alter call admission, effect promotion,
-reachability, emitted code, or gate acceptance. Callback-body result refusals
-keep the generic `unsupported_native_operation` category. A complete
+reachability, emitted code, or gate acceptance. Callback completion or predicate
+uncertainty keeps `unsupported_operation` without an admission reason; defensive
+result-row mismatches use `array_iteration_result_shape_mismatch`. A complete
 effects-only call uses `missing_call_result`; an incomplete invocation does
 not use this field.
 

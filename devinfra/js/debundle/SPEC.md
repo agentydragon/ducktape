@@ -4731,8 +4731,10 @@ field can instead name the first failed post-argument body-admission check:
 `array_iteration_exceeds_invocation_limit`, or
 `array_iteration_unsettled_elements`. These categories retain check order after
 callee and argument evaluation. The text explanation labels pre-argument
-selection versus post-argument body admission. Callback-body result refusals
-remain `unsupported_native_operation`. The reason names the first ordered
+selection versus post-argument body admission or iteration transfer. Callback
+completion or predicate uncertainty keeps `unsupported_operation` without an
+admission reason; defensive result-row mismatches use
+`array_iteration_result_shape_mismatch`. The reason names the first ordered
 admission check that failed at its stated phase; a pre-argument selection
 reason does not suppress argument evaluation.
 Unknown-target classification remains a separate precision loss where the

@@ -123,9 +123,9 @@ impl OrderedCallAdmissionRefusal {
             | Self::ArrayIterationResultAllocationUnavailable => {
                 Some("pre-argument GetValue selection")
             }
+            Self::ArrayIterationResultShapeMismatch => Some("post-argument iteration transfer"),
             Self::ArrayIterationCallKindMismatch
             | Self::ArrayIterationCallSiteMismatch
-            | Self::ArrayIterationResultShapeMismatch
             | Self::ArrayIterationCallbackArityMismatch
             | Self::ArrayIterationCallbackTargetUnavailable
             | Self::ArrayIterationGeneratorCallback

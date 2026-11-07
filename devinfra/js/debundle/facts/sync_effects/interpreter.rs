@@ -2349,10 +2349,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         if self.retained_query.is_some() {
             return Ok(None);
         }
-        let selected = if let Some((selection, effects)) =
+        let (selection, effects) = if let Some((selection, effects)) =
             array_transfer::select_push(self.executor, receivers, property)
         {
-            Some((ArrayMethodSelection::Push(selection), effects))
+            (ArrayMethodSelection::Push(selection), effects)
         } else {
             let Some(proof) = self
                 .executor
@@ -2373,10 +2373,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 proof.row,
                 proof.result,
             )?;
-            Some((ArrayMethodSelection::Iteration(selection), effects))
-        };
-        let Some((selection, effects)) = selected else {
-            return Ok(None);
+            (ArrayMethodSelection::Iteration(selection), effects)
         };
         for cell in [
             EffectCell::ObjectShape(selection.object()),
@@ -14953,13 +14950,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 },
                 outcome,
             );
-            return match transfer {
-                CallTransfer::UnsupportedOperands(
-                    OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
-                ) if let Some(refusal) = array_iteration_refusal => {
-                    CallTransfer::UnsupportedOperands(refusal)
-                }
-                transfer => transfer,
+            return match (transfer, array_iteration_refusal) {
+                (
+                    CallTransfer::UnsupportedOperands(
+                        OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
+                    ),
+                    Some(refusal),
+                ) => CallTransfer::UnsupportedOperands(refusal),
+                (transfer, _) => transfer,
             };
         }
         if self.host_call_does_not_reenter(call) {
