@@ -1030,6 +1030,17 @@ values and normal continuation while refusing heap-domain coverage; there is
 no origin-only summary address alongside the instance addresses. Opaque escape
 and recursive fallback retain their unknown heap effects. Object and Set heap
 allocation sites remain pooled independently of declarative-cell identity.
+
+Whole-program analysis also preserves address correspondence for unambiguous
+simple module variable declarations and resolved named imports/re-exports.
+Their `module_cell` address combines the defining source chunk and canonical
+declaration offset. Provider initialization, local accesses and importer aliases
+retain that address alongside existing binding effects; identical offsets in
+different chunks remain distinct. Saved analysis resolves checked source names
+into the loading artifact's chunk namespace. Missing or ambiguous correspondence
+adds no address. This records may-accesses only: it grants no value, initialization,
+normal-completion or captured-body authority.
+
 Named function-expression environments are initialized at function-object
 creation, rather than on each call. Their immutable invocation views do not
 emit fresh-cell allocations or writes. A direct or descendant closure's name
@@ -4883,6 +4894,7 @@ impure initializer appears in `sequenced_source_unit`. The edge's
   `write_after_write`, `write_after_read`, `use_after_allocation` or
   `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
   `array_contents`, `set_contents`, `global_symbol_registry`, `lexical_cell`,
+  `module_cell` with `chunk` and `declaration_origin`,
   `object_shape`, `descriptor_map_contents`, or `own_property` with `origin`
   and `property`), `private_slot` with `origin`, `class` and `name`, or
   `after_barrier` / `barrier_after_prior`

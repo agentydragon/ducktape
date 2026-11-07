@@ -423,6 +423,10 @@ pub struct ExportAliasRecord {
     pub exported: String,
     pub line: Option<usize>,
     pub local: Option<String>,
+    /// Present for a named re-export; `local` then names its provider export,
+    /// not a binding declared in this module.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

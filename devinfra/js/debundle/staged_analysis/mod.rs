@@ -129,12 +129,12 @@ pub struct ExportReentryTarget {
 /// `debundle analyze` and a run that loads its artifact parse the same files,
 /// retain the same ASTs and re-parse the same entries, so both number the same
 /// contexts.
-fn context_ordinals(
-    artifact: &ChunkBundle,
+fn context_ordinals<'a>(
+    artifact: &'a ChunkBundle,
     analysed_chunk_ids: &[String],
     file: Option<&str>,
     reparsed: &BTreeMap<ChunkId, program_summary::ReparsedEntry>,
-) -> Result<ContextOrdinals> {
+) -> Result<ContextOrdinals<'a>> {
     let mut modules = Vec::new();
     for chunk_id in analysed_chunk_ids {
         let interned = artifact
@@ -154,7 +154,7 @@ fn context_ordinals(
         }
     }
     modules.extend(reparsed.values().map(|entry| &entry.parsed.module));
-    Ok(ContextOrdinals::new(modules))
+    Ok(ContextOrdinals::new(modules, &artifact.chunk_table))
 }
 
 fn chunk_source_digests(provenance: &GraphProvenance) -> BTreeMap<String, String> {

@@ -31,8 +31,9 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use js_ast::SourceLineIndex;
+use source_identity::{ChunkTable, ModuleCellId};
 use swc_common::{BytePos, Span};
-use swc_ecma_ast::ModuleItem;
+use swc_ecma_ast::{Id, ModuleItem};
 
 use crate::analysis_inputs::{
     BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
@@ -165,6 +166,9 @@ pub struct ModulePurityFacts<'a> {
     pub imports: BTreeMap<String, ResolvedImport>,
     /// Export name → the local binding this module re-exports under it.
     pub exports: BTreeMap<String, String>,
+    /// Named re-exports retain the defining storage cell rather than minting a
+    /// local binding. Unresolved and namespace exports have no correspondence.
+    pub reexports: BTreeMap<String, ResolvedImport>,
     /// Origin of direct function-body reasons, if the caller retained the
     /// source line index. Imports reuse these locations unchanged.
     pub source: Option<(String, SourceLineIndex)>,
@@ -546,6 +550,7 @@ pub fn resolve_imported_purities(
 /// from author assertions. Missing exports and unsupported bodies stay opaque.
 #[derive(Default)]
 pub struct ResolvedCallableSummaries {
+    pub module_cells: BTreeMap<SourceModuleKey, BTreeMap<Id, ModuleCellId>>,
     pub imported_callables: BTreeMap<SourceModuleKey, BTreeMap<String, CallableSummary>>,
     pub native_integrity: Option<NativeIntegrity>,
     pub value_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedBindingValueInput>>,
@@ -718,6 +723,7 @@ fn solve_callable_import_projections(
 /// The author inputs and host claims `resolve_imported_callable_summaries`
 /// checks the providers against.
 pub struct CallableSummaryInputs<'a> {
+    pub chunk_table: &'a ChunkTable,
     pub source_callable_members: &'a BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
     pub selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
     pub selected_native_operation_inputs:
@@ -731,6 +737,85 @@ pub struct CallableSummaryInputs<'a> {
     pub intrinsics_never_written: BTreeSet<NativeIntrinsic>,
 }
 
+fn qualified_module_cells(
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    prepared: &BTreeMap<
+        &SourceModuleKey,
+        crate::facts::sync_effects::execution_index::PreparedCallableCapabilities,
+    >,
+    chunks: &ChunkTable,
+) -> BTreeMap<SourceModuleKey, BTreeMap<Id, ModuleCellId>> {
+    let declarations: BTreeMap<_, _> = prepared
+        .iter()
+        .filter_map(|(module, capabilities)| {
+            let chunk = chunks.get(module)?;
+            Some((
+                (*module).clone(),
+                capabilities
+                    .module_cell_declarations()
+                    .into_iter()
+                    .map(|(binding, declaration_origin)| {
+                        (
+                            binding,
+                            ModuleCellId {
+                                chunk,
+                                declaration_origin,
+                            },
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>(),
+            ))
+        })
+        .collect();
+    let mut cells = declarations.clone();
+    for (module, facts) in modules {
+        let Some(capabilities) = prepared.get(module) else {
+            continue;
+        };
+        for (local, target) in &facts.imports {
+            let Some(binding) = capabilities.imported_binding_id(local) else {
+                continue;
+            };
+            if let Some(cell) =
+                exported_module_cell(&target.module, &target.export, modules, &declarations)
+            {
+                cells
+                    .entry(module.clone())
+                    .or_default()
+                    .insert(binding.clone(), cell);
+            }
+        }
+    }
+    cells
+}
+
+fn exported_module_cell(
+    module: &str,
+    export: &str,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    declarations: &BTreeMap<SourceModuleKey, BTreeMap<Id, ModuleCellId>>,
+) -> Option<ModuleCellId> {
+    let mut key = (module.to_owned(), export.to_owned());
+    let mut visiting = BTreeSet::new();
+    while visiting.insert(key.clone()) {
+        let facts = modules.get(&key.0)?;
+        let target = if let Some(local) = facts.exports.get(&key.1) {
+            if let Some(cell) = declarations.get(&key.0).and_then(|cells| {
+                cells
+                    .iter()
+                    .find_map(|(binding, cell)| (binding.0.as_ref() == local).then_some(*cell))
+            }) {
+                return Some(cell);
+            }
+            facts.imports.get(local)?
+        } else {
+            facts.reexports.get(&key.1)?
+        };
+        key = (target.module.clone(), target.export.clone());
+    }
+    None
+}
+
 pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
@@ -741,6 +826,7 @@ pub fn resolve_imported_callable_summaries(
     inputs: CallableSummaryInputs<'_>,
 ) -> Result<ResolvedCallableSummaries> {
     let CallableSummaryInputs {
+        chunk_table,
         source_callable_members,
         selected_value_inputs,
         selected_native_operation_inputs,
@@ -1322,6 +1408,7 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
+    let module_cells = qualified_module_cells(modules, &prepared, chunk_table);
     // Specialize only layouts demanded by canonical imported call sites. The
     // resulting conditions remain independent of all return capabilities.
     let mut conditional_demands: BTreeMap<
@@ -1676,6 +1763,7 @@ pub fn resolve_imported_callable_summaries(
         .filter_map(|(module, flow)| Some((module.clone(), flow.into_inner()?)))
         .collect();
     Ok(ResolvedCallableSummaries {
+        module_cells,
         bundle_globals,
         imported_callables,
         native_integrity: Some(native_integrity),
@@ -2097,6 +2185,7 @@ mod tests {
                 .iter()
                 .map(|(name, local)| ((*name).to_string(), (*local).to_string()))
                 .collect(),
+            reexports: BTreeMap::new(),
             source: None,
             replacement_packages: BTreeMap::new(),
         }
@@ -2492,11 +2581,16 @@ mod tests {
             ("lib".to_string(), BTreeSet::from(["audited".to_string()])),
             ("vendor".to_string(), BTreeSet::from(["wrap".to_string()])),
         ]);
+        let mut chunks = ChunkTable::default();
+        for name in modules.keys() {
+            chunks.intern(name.clone());
+        }
         let resolved = resolve_imported_callable_summaries(
             &modules,
             &asserted,
             &BTreeMap::new(),
             CallableSummaryInputs {
+                chunk_table: &chunks,
                 source_callable_members: &BTreeMap::new(),
                 selected_value_inputs: &BTreeMap::new(),
                 selected_native_operation_inputs: &BTreeMap::new(),

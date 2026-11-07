@@ -530,7 +530,9 @@ fn sweep_unreachable_top_level(
     };
     let private_cell = |cell: &EffectCell| -> bool {
         match cell {
-            EffectCell::GlobalProp(_) | EffectCell::ExecutionProgress => false,
+            EffectCell::GlobalProp(_)
+            | EffectCell::ModuleCell(_)
+            | EffectCell::ExecutionProgress => false,
             EffectCell::GlobalSymbolRegistry => false,
             EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
                 born_in_dropped_item(*origin)
@@ -1183,6 +1185,10 @@ fn format_effect_cell(cell: &EffectCell) -> String {
         EffectCell::LexicalCell { origin, instance } => {
             format!("lexical cell #{origin} instance {instance}")
         }
+        EffectCell::ModuleCell(cell) => format!(
+            "module cell in chunk {} at declaration #{}",
+            cell.chunk.0, cell.declaration_origin
+        ),
         EffectCell::GlobalProp(key) => format!("global `{key}`"),
         EffectCell::ExecutionProgress => "synchronous initialization progress".to_owned(),
         EffectCell::GlobalSymbolRegistry => "global symbol registry".to_owned(),

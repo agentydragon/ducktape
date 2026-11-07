@@ -3,7 +3,7 @@ use std::fmt;
 
 use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
-use source_identity::{SourceUnitId, SourceUnitOrdinal};
+use source_identity::{ChunkId, SourceUnitId, SourceUnitOrdinal};
 use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
@@ -311,6 +311,10 @@ pub enum EffectCellReport {
         origin: u32,
         instance: LexicalCellId,
     },
+    ModuleCell {
+        chunk: ChunkId,
+        declaration_origin: u32,
+    },
     GlobalProp {
         key: String,
     },
@@ -349,6 +353,10 @@ impl From<&EffectCell> for EffectCellReport {
                 origin: *origin,
                 instance: *instance,
             },
+            EffectCell::ModuleCell(cell) => Self::ModuleCell {
+                chunk: cell.chunk,
+                declaration_origin: cell.declaration_origin,
+            },
             EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
             EffectCell::ExecutionProgress => Self::ExecutionProgress,
             EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
@@ -382,6 +390,14 @@ impl fmt::Display for EffectCellReport {
             Self::LexicalCell { origin, instance } => {
                 write!(f, "lexical cell #{origin} instance {instance}")
             }
+            Self::ModuleCell {
+                chunk,
+                declaration_origin,
+            } => write!(
+                f,
+                "module cell in chunk {} at declaration #{declaration_origin}",
+                chunk.0
+            ),
             Self::GlobalProp { key } => write!(f, "global property `{key}`"),
             Self::ExecutionProgress => f.write_str("synchronous initialization progress"),
             Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),

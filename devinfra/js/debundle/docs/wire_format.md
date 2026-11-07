@@ -309,6 +309,17 @@ permission. There is no pooled lexical-cell address: an access without an
 active cell/source correspondence retains unknown heap coverage instead.
 Immutable function-name invocation views do not emit per-call lexical-cell
 births or writes; source-checked initialized name reads have no exterior effect.
+
+`module_cell` carries `chunk` (the source artifact's interned chunk ID) and
+`declaration_origin` (the canonical binding declaration offset). Unambiguous
+simple module variable declarations and resolved named import/re-export aliases
+share this address; matching offsets in distinct chunks differ. These are
+may-access correspondences, independent of contents, initialization and body
+coverage. A report's chunk ID is scoped to its artifact. Saved effect cells and
+the required program-summary `module_cells` field encode checked source names,
+then resolve them into the reader's current chunk table; raw IDs are not restored
+across worlds. Missing namespaces/identities and duplicate saved bindings refuse.
+
 `coverage.covered_owner_dependencies` retains the typed conditions for
 all owner coverage certificates in the analyzed facts. `relocation_dependencies`
 retains the typed conditions for closed owners participating in candidate

@@ -6183,6 +6183,10 @@ struct ExecutionIndex {
     dynamic_global_member: bool,
     global_alias_written: bool,
     imported_bindings: BTreeSet<Id>,
+    /// Import bindings whose storage can be matched through ordinary ESM
+    /// requests. Other import phases, attributes and type-only bindings carry
+    /// no module-cell correspondence.
+    ordinary_imported_bindings: BTreeSet<Id>,
     hoisted_bindings: BTreeMap<Id, u32>,
     direct_top_level_functions: BTreeSet<Id>,
     /// Exact sole-return calls in top-level function declarations, collected
@@ -6381,6 +6385,7 @@ impl Default for ExecutionIndex {
             dynamic_global_member: false,
             global_alias_written: false,
             imported_bindings: BTreeSet::new(),
+            ordinary_imported_bindings: BTreeSet::new(),
             hoisted_bindings: BTreeMap::new(),
             direct_top_level_functions: BTreeSet::new(),
             direct_return_calls: BTreeMap::new(),
@@ -9723,6 +9728,13 @@ impl ExecutionIndex {
                 for specifier in &import.specifiers {
                     let local = specifier.local();
                     index.imported_bindings.insert(local.to_id());
+                    if !import.type_only
+                        && matches!(&import.phase, ImportPhase::Evaluation)
+                        && import.with.is_none()
+                        && !matches!(specifier, ImportSpecifier::Named(named) if named.is_type_only)
+                    {
+                        index.ordinary_imported_bindings.insert(local.to_id());
+                    }
                     if host_async_local_storage
                         && let ImportSpecifier::Named(named) = specifier
                         && !named.is_type_only
@@ -14361,6 +14373,34 @@ pub(crate) struct PreparedCallableCapabilities {
 }
 
 impl PreparedCallableCapabilities {
+    /// Storage identity only: no value, initialization or writer invariant is
+    /// inferred from an unambiguous direct module declaration.
+    pub(crate) fn module_cell_declarations(&self) -> BTreeMap<Id, u32> {
+        self.index
+            .binding_declaration_writes
+            .iter()
+            .filter_map(|(binding, declarations)| {
+                let [declaration] = declarations.as_slice() else {
+                    return None;
+                };
+                (declaration.direct_top_level
+                    && declaration.simple_identifier
+                    && !declaration.binding_span.is_dummy())
+                .then(|| (binding.clone(), declaration.binding_span.lo.0))
+            })
+            .collect()
+    }
+
+    pub(crate) fn imported_binding_id(&self, local: &str) -> Option<&Id> {
+        let mut matches = self
+            .index
+            .ordinary_imported_bindings
+            .iter()
+            .filter(|binding| binding.0.as_ref() == local);
+        let binding = matches.next()?;
+        matches.next().is_none().then_some(binding)
+    }
+
     /// Demand layouts from the canonical call census. No argument expression
     /// executes here; the consuming call must prove its actual current layout.
     pub(crate) fn imported_record_inputs(

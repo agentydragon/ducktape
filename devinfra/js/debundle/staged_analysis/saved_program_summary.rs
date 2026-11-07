@@ -13,8 +13,8 @@ use analysis::analysis_inputs::{
     ResolvedNativeOperationInput, StableSetIterableUse, ValueInputEvidence,
 };
 use analysis::facts::abstract_domain::value::Value;
-use analysis_codec::{ContextOrdinals, SavedBinding};
-use anyhow::Result;
+use analysis_codec::{ContextOrdinals, SavedBinding, SavedModuleCell};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
@@ -33,6 +33,7 @@ pub(super) struct SavedProgramSummary<'a> {
     fluent: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     constructors: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     imported_callables: BTreeMap<String, BTreeMap<String, SavedCallableSummary<'a>>>,
+    module_cells: BTreeMap<String, Vec<SavedModuleCellEntry>>,
     /// Required field, nullable value: missing must differ from explicit None.
     #[serde(deserialize_with = "Deserialize::deserialize")]
     native_integrity: Option<SavedNativeIntegrity<'a>>,
@@ -53,6 +54,12 @@ pub(super) struct SavedProgramSummary<'a> {
     no_reentry_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
     no_reentry_record_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
     namespace_independent_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedModuleCellEntry {
+    binding: SavedBinding,
+    cell: SavedModuleCell,
 }
 
 impl<'a> SavedProgramSummary<'a> {
@@ -102,6 +109,24 @@ impl<'a> SavedProgramSummary<'a> {
                 )
             })
             .collect();
+        let module_cells = summary
+            .module_cells
+            .iter()
+            .map(|(chunk, cells)| {
+                Ok((
+                    chunk.clone(),
+                    cells
+                        .iter()
+                        .map(|(binding, cell)| {
+                            Ok(SavedModuleCellEntry {
+                                binding: ordinals.snapshot_binding(binding)?,
+                                cell: ordinals.snapshot_module_cell(*cell)?,
+                            })
+                        })
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
         let native_operation_inputs = summary
             .native_operation_inputs
             .iter()
@@ -173,6 +198,7 @@ impl<'a> SavedProgramSummary<'a> {
             fluent: Cow::Borrowed(&summary.fluent),
             constructors: Cow::Borrowed(&summary.constructors),
             imported_callables,
+            module_cells,
             native_integrity: summary
                 .native_integrity
                 .as_ref()
@@ -241,6 +267,21 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
+        let module_cells = self
+            .module_cells
+            .into_iter()
+            .map(|(chunk, entries)| {
+                let mut cells = BTreeMap::new();
+                for entry in entries {
+                    let binding = ordinals.restore_binding(entry.binding)?;
+                    let cell = ordinals.restore_module_cell(entry.cell)?;
+                    if cells.insert(binding, cell).is_some() {
+                        bail!("duplicate saved module-cell binding in chunk {chunk}");
+                    }
+                }
+                Ok((chunk, cells))
+            })
+            .collect::<Result<_>>()?;
         let native_operation_inputs = self
             .native_operation_inputs
             .into_iter()
@@ -302,6 +343,7 @@ impl<'a> SavedProgramSummary<'a> {
             fluent: self.fluent.into_owned(),
             constructors: self.constructors.into_owned(),
             imported_callables,
+            module_cells,
             native_integrity: self
                 .native_integrity
                 .map(SavedNativeIntegrity::restore)
@@ -536,6 +578,8 @@ impl SavedInferredSetOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use source_identity::{ChunkTable, ModuleCellId};
+    use swc_common::SyntaxContext;
 
     #[test]
     fn required_saved_summary_fields_cannot_be_omitted() {
@@ -556,6 +600,20 @@ mod tests {
                 },
             )]),
         )]);
+        let binding: swc_ecma_ast::Id = ("effect".into(), SyntaxContext::empty());
+        let mut writer_chunks = ChunkTable::default();
+        let writer_provider = writer_chunks.intern("provider".to_owned());
+        writer_chunks.intern("other".to_owned());
+        let module_cells = BTreeMap::from([(
+            "app".to_string(),
+            BTreeMap::from([(
+                binding.clone(),
+                ModuleCellId {
+                    chunk: writer_provider,
+                    declaration_origin: 41,
+                },
+            )]),
+        )]);
         let summary = ProgramSummary {
             bindings: BTreeMap::new(),
             values: BTreeMap::new(),
@@ -564,6 +622,7 @@ mod tests {
             fluent: BTreeMap::new(),
             constructors: BTreeMap::new(),
             imported_callables: BTreeMap::new(),
+            module_cells,
             native_integrity: None,
             bundle_globals: Default::default(),
             value_inputs: BTreeMap::new(),
@@ -582,14 +641,23 @@ mod tests {
             no_reentry_record_members: BTreeMap::new(),
             namespace_independent_members: BTreeMap::new(),
         };
-        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let ordinals =
+            ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &writer_chunks);
         let mut purities = PuritySnapshot::default();
         let saved = SavedProgramSummary::snapshot(&summary, &ordinals, &mut purities)
             .expect("empty program summary snapshots");
         let saved_json = serde_json::to_value(&saved).expect("saved summary serializes");
         assert!(saved_json["native_integrity"].is_null());
+        assert_eq!(
+            saved_json["module_cells"]["app"][0]["binding"]["symbol"],
+            "effect"
+        );
+        assert_eq!(
+            saved_json["module_cells"]["app"][0]["cell"]["chunk"],
+            "provider"
+        );
 
-        for field in ["native_integrity", "primitive_reads"] {
+        for field in ["native_integrity", "primitive_reads", "module_cells"] {
             let mut missing_field = saved_json.clone();
             missing_field
                 .as_object_mut()
@@ -607,10 +675,29 @@ mod tests {
             .finish()
             .restore()
             .expect("empty purity graph restores");
+        let mut reader_chunks = ChunkTable::default();
+        reader_chunks.intern("other".to_owned());
+        let reader_provider = reader_chunks.intern("provider".to_owned());
+        assert_ne!(writer_provider, reader_provider);
+        let reader_ordinals =
+            ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &reader_chunks);
         let restored = decoded
-            .restore(&ordinals, &restored_purities)
+            .restore(&reader_ordinals, &restored_purities)
             .expect("absent native census restores");
         assert!(restored.native_integrity.is_none());
         assert_eq!(restored.primitive_reads, primitive_reads);
+        assert_eq!(
+            restored.module_cells,
+            BTreeMap::from([(
+                "app".to_string(),
+                BTreeMap::from([(
+                    binding,
+                    ModuleCellId {
+                        chunk: reader_provider,
+                        declaration_origin: 41,
+                    },
+                )]),
+            )]),
+        );
     }
 }

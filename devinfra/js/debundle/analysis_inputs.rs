@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use source_identity::SourceUnitOrdinal;
+use source_identity::{ModuleCellId, SourceUnitOrdinal};
 use swc_common::Span;
 use swc_ecma_ast::{CallExpr, Expr, Id, Lit};
 
@@ -1113,6 +1113,9 @@ pub struct AnalysisInputs {
     /// established each one. These may depend on defining-chunk author
     /// contracts; they are never local author assumptions.
     pub imported_callables: BTreeMap<String, CallableSummary>,
+    /// Resolved addresses of local and imported module bindings. This correspondence
+    /// carries no authority over the cell's value, initialization, or body.
+    pub module_cells: BTreeMap<Id, ModuleCellId>,
     /// Source-proved imported primitive values admitted to ordinary candidate
     /// execution, keyed by local binding name. The program-summary adapter
     /// supplies one only alongside a matching `imported_primitive_reads`

@@ -709,6 +709,7 @@ where
             &graph,
             &global_object_names,
         );
+        fact.record_module_cell_accesses(&hints.module_cells);
     }
     let disagreements: Vec<_> = facts
         .iter()

@@ -1198,6 +1198,36 @@ fn graph_node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no graph node declares {binding:?}: {graph:#}"))
 }
 
+fn module_cell_samples(graph_node: &Value, summary: &str, access: &str) -> Vec<Value> {
+    graph_node["synchronous_execution"]["heap_frontier"][summary][access]["sample"]
+        .as_array()
+        .map(|samples| {
+            samples
+                .iter()
+                .filter(|cell| cell["kind"] == "module_cell")
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn module_cell_for_binding(graph: &Value, binding: &str, access: &str) -> Value {
+    let node = graph_node_for_binding(graph, binding);
+    let cells = module_cell_samples(node, "own_at_init", access);
+    assert_eq!(
+        cells.len(),
+        1,
+        "expected one module cell for {binding}: {node:#}"
+    );
+    cells[0].clone()
+}
+
+fn assert_module_cell_address(address: &Value) {
+    assert_eq!(address["kind"], "module_cell", "{address:#}");
+    assert!(!address["chunk"].is_null(), "{address:#}");
+    assert!(!address["declaration_origin"].is_null(), "{address:#}");
+}
+
 #[test]
 fn imported_impure_call_causes_survive_staged_analysis_as_shared_refs() {
     let provider = "let calls = 0;\n\
@@ -2011,6 +2041,129 @@ fn callback_factory_privacy_decision_matches_saved_analysis() {
                 "export function factory(callback) { return () => callback(); }\n",
             )]),
             &["--effect-conflicts-jsonl"],
+        );
+    }
+}
+
+#[test]
+fn qualified_module_cells_follow_provider_aliases_and_survive_saved_analysis() {
+    const PROVIDER: &str = "export let count = 1;\ncount = count + 1;\nexport function increment() { count = count + 1; return {}; }\n";
+    const BARREL: &str = "import { count as sourceCount } from './provider.js';\nexport { sourceCount as localAlias };\nexport { count as namedAlias } from './provider.js';\n";
+    const APP: &str = "import { count as first } from './provider.js';\nimport { count as second } from './provider.js';\nimport { localAlias, namedAlias } from './barrel.js';\nimport { count as peerCount } from './peer.js';\nimport { increment } from './provider.js';\nconst observedFirst = first;\nconst observedSecond = second;\nconst observedLocal = localAlias;\nconst observedNamed = namedAlias;\nconst observedPeer = peerCount;\nconst bodyResult = increment();\nconsole.log(observedFirst, observedSecond, observedLocal, observedNamed, observedPeer, typeof bodyResult);\n";
+
+    let extra_chunks = [
+        ("static/provider", PROVIDER),
+        ("static/peer", PROVIDER),
+        ("static/barrel", BARREL),
+    ];
+    let provider_modules = logical_module_with_anon(
+        "provider",
+        &[Member::new("count"), Member::new("increment")],
+        &["count = count + 1;"],
+    );
+    let peer_modules = logical_module_with_anon(
+        "peer",
+        &[Member::new("count"), Member::new("increment")],
+        &["count = count + 1;"],
+    );
+    let extra_modules = [
+        ("static/provider", vec![provider_modules]),
+        ("static/peer", vec![peer_modules]),
+    ];
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(APP, vec![])
+            .with_extra_chunks(&extra_chunks)
+            .with_extra_chunk_logical_modules(&extra_modules),
+    );
+
+    let direct = staged.run(&["--emit-on-rejection"]);
+    let artifact = path(&staged.artifact).to_owned();
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", artifact.as_str()]);
+    assert_eq!(
+        direct.result.status.code(),
+        saved.result.status.code(),
+        "direct and saved-analysis CLI verdicts differ: direct={} saved={}",
+        direct.result.stderr,
+        saved.result.stderr
+    );
+    assert_same_invocation_trees(&direct, &saved);
+
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "2 2 2 2 2 object\n",
+            "",
+        );
+
+        let output_root = invocation.output_root();
+        let app_graph: Value =
+            read_gzip_json(&output_root.join("reports/tree/static/app/dependency_graph.json.gz"));
+        let provider_graph: Value = read_gzip_json(
+            &output_root.join("reports/tree/static/provider/dependency_graph.json.gz"),
+        );
+        let peer_graph: Value =
+            read_gzip_json(&output_root.join("reports/tree/static/peer/dependency_graph.json.gz"));
+
+        let provider_cell = module_cell_for_binding(&provider_graph, "count", "writes");
+        let peer_cell = module_cell_for_binding(&peer_graph, "count", "writes");
+        assert_module_cell_address(&provider_cell);
+        assert_module_cell_address(&peer_cell);
+        assert_eq!(
+            provider_cell["declaration_origin"], peer_cell["declaration_origin"],
+            "byte-identical provider sources should share the spelling-derived origin"
+        );
+        assert_ne!(
+            provider_cell["chunk"], peer_cell["chunk"],
+            "the cell identity must include the provider chunk"
+        );
+
+        let provider_writes = provider_graph["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|node| module_cell_samples(node, "own_at_init", "writes"))
+            .collect::<Vec<_>>();
+        let matching_provider_writes = provider_writes
+            .iter()
+            .filter(|cell| *cell == &provider_cell)
+            .count();
+        assert!(
+            matching_provider_writes >= 2,
+            "the declaration initialization and direct assignment should both write its cell: {provider_graph:#}"
+        );
+
+        for binding in [
+            "observedFirst",
+            "observedSecond",
+            "observedLocal",
+            "observedNamed",
+        ] {
+            let read = module_cell_for_binding(&app_graph, binding, "reads");
+            assert_eq!(
+                read, provider_cell,
+                "direct and named barrel aliases of the provider binding must share its cell"
+            );
+        }
+        let peer_read = module_cell_for_binding(&app_graph, "observedPeer", "reads");
+        assert_eq!(peer_read, peer_cell);
+
+        let body_result =
+            &graph_node_for_binding(&app_graph, "bodyResult")["synchronous_execution"];
+        assert_ne!(
+            body_result["binding_effect_authority"]["authority"], "operation_receipt",
+            "a provider cell address does not establish mutable captured-body authority: {body_result:#}"
+        );
+        let app_effects: Value = read_json(
+            &output_root.join("reports/tree/static/app/effect_translation_validation.json"),
+        );
+        let unknown_coverage = app_effects["coverage"]["unknown_coverage"]
+            .as_object()
+            .expect("the call retains typed effect-coverage accounting");
+        assert!(
+            unknown_coverage
+                .values()
+                .any(|count| count.as_u64().is_some_and(|n| n > 0)),
+            "the imported mutating body remains uncovered by module-cell projection: {app_effects:#}"
         );
     }
 }

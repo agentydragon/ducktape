@@ -672,7 +672,10 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             && !named.specifiers.is_empty()
         {
             for specifier in &named.specifiers {
-                if let ExportSpecifier::Named(named_specifier) = specifier {
+                if let ExportSpecifier::Named(named_specifier) = specifier
+                    && !named.type_only
+                    && !named_specifier.is_type_only
+                {
                     export_aliases.push(ExportAliasRecord {
                         exported: module_export_name(
                             named_specifier
@@ -682,6 +685,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                         ),
                         line: line_index.line_for_span(named.span),
                         local: Some(module_export_name(&named_specifier.orig)),
+                        source: named.src.as_ref().map(|source| str_value(source)),
                     });
                 }
             }
@@ -693,6 +697,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 exported: "default".to_string(),
                 line: line_index.line_for_span(default_decl.span),
                 local: export_default_decl_name(default_decl),
+                source: None,
             });
             continue;
         }
@@ -702,6 +707,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 exported: "default".to_string(),
                 line: line_index.line_for_span(default_expr.span),
                 local: None,
+                source: None,
             });
             continue;
         }

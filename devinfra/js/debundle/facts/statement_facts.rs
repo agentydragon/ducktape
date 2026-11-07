@@ -1,6 +1,6 @@
 use super::*;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
-use source_identity::SourceUnitOrdinal;
+use source_identity::{ModuleCellId, SourceUnitOrdinal};
 
 /// One value per syntactic position bucket. Collapses the repeated
 /// eager / lazy / first-order-lazy triples (reads, rebinds, calls)
@@ -489,6 +489,39 @@ impl StatementFacts {
         reads.extend(self.heap_contents.reads.iter().cloned());
         StatementEffectSummary { writes, reads }
     }
+
+    /// Preserve the correspondence between this chunk's lexical names and
+    /// resolved module storage. These are may-accesses, never coverage or
+    /// initialized-value evidence, and retain the original binding effects.
+    pub(crate) fn record_module_cell_accesses(&mut self, cells: &BTreeMap<Id, ModuleCellId>) {
+        let effects = self.effects();
+        for (accesses, target) in [
+            (&effects.reads, &mut self.heap_contents.reads),
+            (&effects.writes, &mut self.heap_contents.writes),
+        ] {
+            target.extend(accesses.iter().filter_map(|access| {
+                let EffectCell::Binding(binding) = access else {
+                    return None;
+                };
+                cells.get(binding).copied().map(EffectCell::ModuleCell)
+            }));
+        }
+        if let Some(calls) = &mut self.synchronous_calls {
+            calls.heap_contents.reads.extend(
+                calls
+                    .reads
+                    .keys()
+                    .chain(&calls.uninitialized_reads)
+                    .filter_map(|binding| cells.get(binding).copied().map(EffectCell::ModuleCell)),
+            );
+            calls.heap_contents.writes.extend(
+                calls
+                    .rebinds
+                    .keys()
+                    .filter_map(|binding| cells.get(binding).copied().map(EffectCell::ModuleCell)),
+            );
+        }
+    }
 }
 
 /// Identity in a chunk's declarative-cell arena. Slots are never reused; saved
@@ -521,6 +554,10 @@ pub enum EffectCell {
         origin: u32,
         instance: LexicalCellId,
     },
+    /// One declarative module binding cell, scoped to its source chunk.
+    /// Persisted analysis uses a checked chunk name instead of this interned ID.
+    #[serde(skip)]
+    ModuleCell(ModuleCellId),
     GlobalProp(String),
     /// Shared synchronous module-initialization progress across all logical
     /// modules in one exact per-chunk relocation sweep.
@@ -558,7 +595,10 @@ pub enum EffectCell {
 impl EffectCell {
     pub(crate) fn is_heap_content(&self) -> bool {
         match self {
-            Self::Binding(_) | Self::GlobalProp(_) | Self::ExecutionProgress => false,
+            Self::Binding(_)
+            | Self::ModuleCell(_)
+            | Self::GlobalProp(_)
+            | Self::ExecutionProgress => false,
             Self::ArrayContents(_)
             | Self::LexicalCell { .. }
             | Self::SetContents(_)

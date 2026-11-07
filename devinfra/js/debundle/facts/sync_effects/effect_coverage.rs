@@ -2328,7 +2328,8 @@ mod tests {
             calls: Vec::new(),
             skipped_calls: vec![skipped_call.clone()],
         };
-        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let chunks = source_identity::ChunkTable::default();
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &chunks);
         let saved = SavedLexicalBindingEffectReceipt::snapshot(&receipt, &ordinals).unwrap();
         let bytes = serde_json::to_vec(&saved).unwrap();
         let saved: SavedLexicalBindingEffectReceipt = serde_json::from_slice(&bytes).unwrap();

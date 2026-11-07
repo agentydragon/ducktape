@@ -134,6 +134,11 @@ pub fn compute_logical_chunk_facts(
                 .unwrap_or_default(),
             native_integrity: program_summary.native_integrity.clone(),
             current_chunk_id: Some(chunk_id.to_string()),
+            module_cells: program_summary
+                .module_cells
+                .get(chunk_id)
+                .cloned()
+                .unwrap_or_default(),
             ..AnalysisInputs::default()
         };
         inputs.assumptions.captured_value_inputs = program_summary

@@ -339,7 +339,7 @@ mod tests {
             let artifact = bundle(&[0, 1]);
             let body = analyze(&artifact);
             assert_shared_imported_cause(&body);
-            let ordinals = ContextOrdinals::new(modules(&artifact));
+            let ordinals = ContextOrdinals::new(modules(&artifact), &artifact.chunk_table);
             (
                 write_artifact(&header(), &body, &ordinals).expect("encode"),
                 format!("{:?}", body.chunks),
@@ -351,7 +351,7 @@ mod tests {
             js_ast::parse_js_module("shift.js", "let a = () => { let b; };").expect("parses");
             let artifact = bundle(&[1, 0]);
             let fresh = analyze(&artifact);
-            let ordinals = ContextOrdinals::new(modules(&artifact));
+            let ordinals = ContextOrdinals::new(modules(&artifact), &artifact.chunk_table);
             let (read, body) = read_header(&bytes).expect("header");
             assert_eq!(read, header());
             let decoded = read_body(body, &ordinals).expect("decode");
@@ -383,7 +383,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             let artifact = bundle(order);
             let body = analyze(&artifact);
-            let ordinals = ContextOrdinals::new(modules(&artifact));
+            let ordinals = ContextOrdinals::new(modules(&artifact), &artifact.chunk_table);
             std::fs::write(
                 output.with_extension("dba"),
                 write_artifact(&header(), &body, &ordinals).expect("encode"),

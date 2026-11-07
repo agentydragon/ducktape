@@ -6,7 +6,7 @@
 //! `AnalysisInputs`, including `imported_purities` for imported calls.
 
 use analysis_model::{PrimKinds, StableExportValue};
-use source_identity::ChunkId;
+use source_identity::{ChunkId, ModuleCellId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -42,7 +42,7 @@ use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
-    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, Module,
+    ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, Id, MemberProp, Module,
     ModuleDecl, ModuleItem, Pat, SetterProp,
 };
 use swc_ecma_visit::{Visit, VisitWith};
@@ -106,6 +106,9 @@ pub struct ProgramSummary {
     pub constructors: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk bare imported callable summaries with their defining evidence.
     pub imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
+    /// Per-chunk local and imported binding addresses. These identify the defining cell
+    /// but do not grant value, initialization, or body authority.
+    pub module_cells: BTreeMap<String, BTreeMap<Id, ModuleCellId>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub native_integrity: Option<NativeIntegrity>,
     /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
@@ -505,11 +508,46 @@ pub fn collect_program_summary(
         // directly from the body — their export name is the local name.
         let mut exports: BTreeMap<String, String> = export_alias_records
             .iter()
+            .filter(|alias| alias.source.is_none())
             .filter_map(|alias| {
                 alias
                     .local
                     .clone()
                     .map(|local| (alias.exported.clone(), local))
+            })
+            .collect();
+        let reexports = export_alias_records
+            .iter()
+            .filter_map(|alias| {
+                let source = alias.source.as_ref()?;
+                if !module_static_requests.iter().any(|request| {
+                    &request.specifier == source
+                        && request.mode == StaticModuleRequestMode::OrdinaryEsm
+                }) || module_static_requests.iter().any(|request| {
+                    &request.specifier == source
+                        && request.mode != StaticModuleRequestMode::OrdinaryEsm
+                }) {
+                    return None;
+                }
+                let target = indexes.resolve_runtime_import_reference(
+                    source,
+                    chunk_artifact.chunk_id,
+                    entry_file,
+                    &artifact.chunk_table,
+                )?;
+                if !chunk_allowed(target.target_chunk_id, chunk_filter)
+                    || !resolved_target_is_entry(artifact, &target)
+                {
+                    return None;
+                }
+                Some((
+                    alias.exported.clone(),
+                    ResolvedImport {
+                        module: artifact.chunk_table.name(target.target_chunk_id).to_owned(),
+                        export: alias.local.clone()?,
+                        source_specifier: source.clone(),
+                    },
+                ))
             })
             .collect();
         for item in &parsed.module.body {
@@ -525,6 +563,7 @@ pub fn collect_program_summary(
                 body: &parsed.module.body,
                 imports,
                 exports,
+                reexports,
                 source: Some((
                     chunk_artifact.js.get_file(entry_file).map_or_else(
                         || chunk_artifact.analysis.source_path.clone(),
@@ -789,6 +828,7 @@ pub fn collect_program_summary(
             })
             .collect(),
         CallableSummaryInputs {
+            chunk_table: &artifact.chunk_table,
             source_callable_members: &source_callable_members,
             selected_value_inputs: &value_inputs,
             selected_native_operation_inputs: &native_operation_inputs,
@@ -860,6 +900,7 @@ pub fn collect_program_summary(
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
+        module_cells: callable_summaries.module_cells,
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
         bundle_globals: callable_summaries.bundle_globals,

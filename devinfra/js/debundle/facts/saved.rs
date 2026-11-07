@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use analysis_codec::{ContextOrdinals, SavedBinding};
+use analysis_codec::{ContextOrdinals, SavedBinding, SavedModuleCell};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -102,6 +102,7 @@ enum SavedEffectCell {
         origin: u32,
         instance: LexicalCellId,
     },
+    ModuleCell(SavedModuleCell),
     GlobalProp(String),
     ExecutionProgress,
     ArrayContents(u32),
@@ -128,6 +129,7 @@ impl SavedEffectCell {
                 origin: *origin,
                 instance: *instance,
             },
+            EffectCell::ModuleCell(cell) => Self::ModuleCell(ordinals.snapshot_module_cell(*cell)?),
             EffectCell::GlobalProp(property) => Self::GlobalProp(property.clone()),
             EffectCell::ExecutionProgress => Self::ExecutionProgress,
             EffectCell::ArrayContents(origin) => Self::ArrayContents(*origin),
@@ -155,6 +157,7 @@ impl SavedEffectCell {
         Ok(match self {
             Self::Binding(binding) => EffectCell::Binding(ordinals.restore_binding(binding)?),
             Self::LexicalCell { origin, instance } => EffectCell::LexicalCell { origin, instance },
+            Self::ModuleCell(cell) => EffectCell::ModuleCell(ordinals.restore_module_cell(cell)?),
             Self::GlobalProp(property) => EffectCell::GlobalProp(property),
             Self::ExecutionProgress => EffectCell::ExecutionProgress,
             Self::ArrayContents(origin) => EffectCell::ArrayContents(origin),
@@ -725,12 +728,15 @@ mod tests {
     use crate::analysis_inputs::ProofDependencies;
     use crate::purity::{PurityReason, PurityRule};
     use crate::reports::schema::PurityCompletionDisagreement;
+    use analysis_codec::{SavedChunk, SavedModuleCell};
+    use source_identity::{ChunkId, ChunkTable, ModuleCellId};
     use std::sync::Arc;
     use swc_common::{BytePos, Span};
 
     #[test]
     fn saved_synchronous_calls_require_binding_effect_authority() {
-        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let chunks = ChunkTable::default();
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &chunks);
         let mut purities = PuritySnapshot::default();
         let mut calls = SynchronousCalls::default();
         calls.record_operation_support(
@@ -813,7 +819,8 @@ mod tests {
             .expect("precision-loss report serializes");
         assert!(report.get("span").is_none());
         let mut snapshot = PuritySnapshot::default();
-        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let chunks = ChunkTable::default();
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &chunks);
         let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut snapshot)
             .expect("execution facts snapshot");
         let cause_id = snapshot.snapshot(&cause);
@@ -838,5 +845,50 @@ mod tests {
             reasons[0].cause.as_ref().expect("preserved cause"),
             &purities.get(cause_id).expect("shared node"),
         ));
+    }
+
+    #[test]
+    fn saved_module_cells_resolve_by_checked_chunk_name() {
+        let mut writer_chunks = ChunkTable::default();
+        let writer_provider = writer_chunks.intern("static/provider".to_owned());
+        writer_chunks.intern("static/other".to_owned());
+        let writer_ordinals =
+            ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &writer_chunks);
+        let cell = EffectCell::ModuleCell(ModuleCellId {
+            chunk: writer_provider,
+            declaration_origin: 17,
+        });
+        let saved = SavedEffectCell::snapshot(&cell, &writer_ordinals).expect("snapshot cell");
+        let bytes = rmp_serde::to_vec_named(&saved).expect("encode saved cell");
+
+        let mut reader_chunks = ChunkTable::default();
+        reader_chunks.intern("static/other".to_owned());
+        let reader_provider = reader_chunks.intern("static/provider".to_owned());
+        assert_ne!(writer_provider, reader_provider);
+        let reader_ordinals =
+            ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &reader_chunks);
+        let decoded: SavedEffectCell = rmp_serde::from_slice(&bytes).expect("decode saved cell");
+        assert_eq!(
+            decoded.restore(&reader_ordinals).expect("restore cell"),
+            EffectCell::ModuleCell(ModuleCellId {
+                chunk: reader_provider,
+                declaration_origin: 17,
+            }),
+        );
+
+        assert!(
+            writer_ordinals
+                .snapshot_chunk(ChunkId(writer_chunks.len()))
+                .is_err(),
+            "unknown runtime chunk IDs must refuse snapshot"
+        );
+        let unknown_name = SavedEffectCell::ModuleCell(SavedModuleCell {
+            chunk: SavedChunk("static/missing".to_owned()),
+            declaration_origin: 17,
+        });
+        assert!(
+            unknown_name.restore(&reader_ordinals).is_err(),
+            "unknown saved chunk names must refuse restore"
+        );
     }
 }
