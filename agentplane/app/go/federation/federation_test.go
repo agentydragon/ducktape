@@ -72,6 +72,7 @@ func (p *testProvider) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/jwks/target":
 		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{publicJWK(&p.target.PublicKey, "target-kid")}})
 	case "/token":
+		w.Header().Set("Content-Type", "application/json")
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
 			return
@@ -364,6 +365,29 @@ func TestRefusedRefreshEndsSession(t *testing.T) {
 	defer row.mu.Unlock()
 	if row.login != nil {
 		t.Fatalf("refused refresh retained login: %#v", row.login)
+	}
+}
+
+func TestRefreshUsesBasicAuthAndAcceptsAbsoluteExpiry(t *testing.T) {
+	now := time.Date(2026, time.October, 23, 12, 0, 0, 0, time.UTC)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		id, secret, ok := r.BasicAuth()
+		if !ok || id != "client" || secret != "secret" || r.FormValue("grant_type") != "refresh_token" || r.FormValue("refresh_token") != "old" {
+			t.Errorf("incorrect refresh request")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"fresh","expires_at":"2026-10-23T12:05:00Z"}`))
+	}))
+	defer server.Close()
+	client := &Client{clientID: "client", clientSecret: "secret", tokenURL: server.URL, httpClient: server.Client(), now: func() time.Time { return now }}
+	token, refused, err := client.refresh(context.Background(), "old")
+	if err != nil || refused || token.AccessToken != "fresh" || token.RefreshToken != "old" || !token.ExpiresAt.Equal(now.Add(5*time.Minute)) {
+		t.Fatalf("refresh = (%+v, %v, %v)", token, refused, err)
+	}
+	if requests != 1 {
+		t.Fatalf("refresh requests = %d, want 1", requests)
 	}
 }
 
