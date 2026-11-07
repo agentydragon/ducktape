@@ -48,6 +48,9 @@ _SYNTHETIC_SLICE_WAIT_SECONDS = 90
 _CGROUP_PILOT_ENV = "AGENTPLANE_TCG_VMI_CGROUP_PILOT"
 _CGROUP_PILOT_WAIT_SECONDS = 120
 _CGROUP_PILOT_STEPS = ("pair1_on", "pair1_off", "pair2_on", "pair2_off")
+_CGROUP_STRESS_ENV = "AGENTPLANE_TCG_VMI_CGROUP_STRESS"
+_CGROUP_STRESS_PAIRS = 5
+_CGROUP_STRESS_STEPS = tuple(f"pair{pair}_{direction}" for pair in range(1, 6) for direction in ("on", "off"))
 
 
 def _cycle_count() -> int:
@@ -99,6 +102,16 @@ def _cgroup_pilot() -> bool:
             return True
         case value:
             raise ValueError(f"{_CGROUP_PILOT_ENV} must be '0' or '1', got {value!r}")
+
+
+def _cgroup_stress() -> bool:
+    match os.environ.get(_CGROUP_STRESS_ENV, "0"):
+        case "0":
+            return False
+        case "1":
+            return True
+        case value:
+            raise ValueError(f"{_CGROUP_STRESS_ENV} must be '0' or '1', got {value!r}")
 
 
 def _skip_virtiofs_shutdown_policy() -> bool:
@@ -243,6 +256,7 @@ def _vmi(
     boot_rcu_observe: bool = False,
     synthetic_slice_probe: bool = False,
     cgroup_pilot: bool = False,
+    cgroup_stress: bool = False,
 ) -> dict[str, Any]:
     boot_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-boot:unset"))
     root_image = next(reference for reference in images if reference.endswith("agentplane-vm-guest-root:unset"))
@@ -269,6 +283,7 @@ def _vmi(
                             + (" agentplane.boot-rcu-observe=1" if boot_rcu_observe else "")
                             + (" agentplane.synthetic-slice-probe=1" if synthetic_slice_probe else "")
                             + (" agentplane.cgroup-pilot=1" if cgroup_pilot else "")
+                            + (" agentplane.cgroup-stress=1" if cgroup_stress else "")
                         ),
                         "container": {
                             "image": boot_image,
@@ -622,6 +637,77 @@ def _wait_for_cgroup_pilot(k3s: baseline.K3s, namespace: str, pod: str, output: 
         time.sleep(1)
     raise TimeoutError(
         f"cgroup pilot did not complete four ordered property changes within {_CGROUP_PILOT_WAIT_SECONDS}s; see {output}"
+    )
+
+
+def _cgroup_stress_complete(console: str) -> bool:
+    prefix = "AGENTPLANE_CGROUP_STRESS"
+    records = [line.rstrip("\r") for line in console.splitlines()]
+    if any(record.startswith(f"{prefix}_UNEXERCISED ") for record in records):
+        return False
+    if any(
+        record.startswith((f"{prefix}_TRACE_CPU_STATS ", f"{prefix}_TRACE_INTEGRITY ", f"{prefix}_TRACE_CHAIN "))
+        and " step=pair1_on " not in record
+        for record in records
+    ):
+        return False
+
+    cursor = -1
+
+    def take(start: str) -> str | None:
+        nonlocal cursor
+        for index in range(cursor + 1, len(records)):
+            if records[index].startswith(start):
+                cursor = index
+                return records[index]
+        return None
+
+    def matching_mask(record: str | None, expected_io: bool) -> bool:
+        if record is None:
+            return False
+        fields = dict(field.split("=", 1) for field in record.split()[1:] if "=" in field)
+        return fields.get("resident") == "yes" and all(
+            ("io" in fields.get(mask, "").split(",")) is expected_io for mask in ("root", "slice")
+        )
+
+    if take(f"{prefix}_BEGIN pairs={_CGROUP_STRESS_PAIRS} direct_root_writes=none active_budget_seconds=75") is None:
+        return False
+    for step in _CGROUP_STRESS_STEPS:
+        value = "yes" if step.endswith("_on") else "no"
+        expected_io = value == "yes"
+        if not matching_mask(take(f"{prefix}_SNAPSHOT step={step}_before "), not expected_io):
+            return False
+        if step == "pair1_on":
+            if take(f"{prefix}_TRACE_INTEGRITY step=pair1_on ") is None:
+                return False
+            if "counters=clean" not in records[cursor]:
+                return False
+            if take(f"{prefix}_TRACE_CHAIN step=pair1_on status=proven ") is None:
+                return False
+        if not matching_mask(take(f"{prefix}_SNAPSHOT step={step}_after "), expected_io):
+            return False
+        if take(f"{prefix}_RESULT step={step} value={value} property_status=0 ") is None:
+            return False
+        if step == "pair1_on" and take(f"{prefix}_TRACE_PHASE after=pair1_on tracing_on=0") is None:
+            return False
+    return take(f"{prefix}_SUCCESS transitions=10 ") is not None
+
+
+def _wait_for_cgroup_stress(k3s: baseline.K3s, namespace: str, pod: str, output: Path) -> None:
+    prefix = "AGENTPLANE_CGROUP_STRESS"
+    deadline = time.monotonic() + _CGROUP_PILOT_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        console = k3s.kubectl(
+            "logs", pod, "-n", namespace, "-c", "guest-console-log", "--limit-bytes=262144", check=False
+        )
+        output.write_text(console)
+        if any(line.rstrip("\r").startswith(f"{prefix}_UNEXERCISED ") for line in console.splitlines()):
+            raise RuntimeError(f"cgroup stress did not exercise ten verified controller changes; see {output}")
+        if _cgroup_stress_complete(console):
+            return
+        time.sleep(1)
+    raise TimeoutError(
+        f"cgroup stress did not complete ten verified controller changes within {_CGROUP_PILOT_WAIT_SECONDS}s; see {output}"
     )
 
 
@@ -1107,6 +1193,65 @@ def test_cgroup_pilot_requires_all_ordered_exact_results_before_acpi(
     assert output.read_text() == complete
 
 
+def test_cgroup_stress_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_CGROUP_STRESS_ENV, raising=False)
+    assert _cgroup_stress() is False
+    monkeypatch.setenv(_CGROUP_STRESS_ENV, "1")
+    assert _cgroup_stress() is True
+    monkeypatch.setenv(_CGROUP_STRESS_ENV, "true")
+    with pytest.raises(ValueError, match="must be '0' or '1'"):
+        _cgroup_stress()
+
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
+    observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, cgroup_stress=True)
+    plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    observed_args = observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
+    assert observed_args == f"{plain_args} agentplane.cgroup-stress=1"
+    observed["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] = plain_args
+    assert observed == plain
+
+
+def test_cgroup_stress_requires_first_witness_ten_alternating_masks_and_trace_off() -> None:
+    prefix = "AGENTPLANE_CGROUP_STRESS"
+    records = [f"{prefix}_BEGIN pairs=5 direct_root_writes=none active_budget_seconds=75"]
+    for step in _CGROUP_STRESS_STEPS:
+        on = step.endswith("_on")
+        before = "memory,pids" if on else "io,memory,pids"
+        after = "io,memory,pids" if on else "memory,pids"
+        records.append(
+            f"{prefix}_SNAPSHOT step={step}_before uptime=40 root={before} slice={before} resident=yes pid=497"
+        )
+        if step == "pair1_on":
+            records.append(f"{prefix}_TRACE_INTEGRITY step=pair1_on total_lines=5000 ring_kib=1027 counters=clean")
+            records.append(
+                f"{prefix}_TRACE_CHAIN step=pair1_on status=proven tree=3 "
+                "path=cgroup_subtree_control_write>cgroup_update_dfl_csses>percpu_down_write>rcu_sync_enter"
+            )
+        records.append(f"{prefix}_SNAPSHOT step={step}_after uptime=46 root={after} slice={after} resident=yes pid=497")
+        records.append(f"{prefix}_RESULT step={step} value={'yes' if on else 'no'} property_status=0 trace=enabled")
+        if step == "pair1_on":
+            records.append(f"{prefix}_TRACE_PHASE after=pair1_on tracing_on=0")
+    records.append(f"{prefix}_SUCCESS transitions=10 trace=enabled trace_hits_total=2")
+    complete = "\n".join(records) + "\n"
+    assert _cgroup_stress_complete(complete)
+    assert not _cgroup_stress_complete(complete.replace(f"{prefix}_TRACE_CHAIN step=pair1_on status=proven", "noise"))
+    assert not _cgroup_stress_complete(complete.replace("counters=clean", "counters=cpu0:overflow_or_drop"))
+    assert not _cgroup_stress_complete(complete.replace("tracing_on=0", "tracing_on=1"))
+    assert not _cgroup_stress_complete(
+        complete.replace("step=pair3_on_after uptime=46 root=io", "step=pair3_on_after uptime=46 root=memory")
+    )
+    assert not _cgroup_stress_complete(
+        complete.replace(f"{prefix}_RESULT step=pair5_off", f"noise{prefix}_RESULT step=pair5_off")
+    )
+    assert not _cgroup_stress_complete(complete + f"{prefix}_TRACE_INTEGRITY step=pair2_on counters=clean\n")
+    assert not _cgroup_stress_complete(complete + f"{prefix}_UNEXERCISED step=pair5_off reason=active_budget\n")
+
+
 def test_shutdown_policy_lifecycle_sample_distinguishes_absent_from_api_error_and_replaced_pod() -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
 
@@ -1167,6 +1312,7 @@ def _run_cycle(
     boot_rcu_observe: bool,
     synthetic_slice_probe: bool,
     cgroup_pilot: bool,
+    cgroup_stress: bool,
 ) -> None:
     """Run one isolated VMI lifecycle and keep its evidence before cleanup."""
     output.mkdir(parents=True, exist_ok=True)
@@ -1214,6 +1360,7 @@ def _run_cycle(
             boot_rcu_observe=boot_rcu_observe,
             synthetic_slice_probe=synthetic_slice_probe,
             cgroup_pilot=cgroup_pilot,
+            cgroup_stress=cgroup_stress,
         )
         (output / "vmi.json").write_text(json.dumps(vmi, indent=2, sort_keys=True))
 
@@ -1267,6 +1414,7 @@ def _run_cycle(
                         "boot_rcu_observer": boot_rcu_observe,
                         "synthetic_slice_probe": synthetic_slice_probe,
                         "cgroup_pilot": cgroup_pilot,
+                        "cgroup_stress": cgroup_stress,
                     },
                     indent=2,
                     sort_keys=True,
@@ -1316,6 +1464,8 @@ def _run_cycle(
                 _wait_for_synthetic_slice(k3s, namespace_name, pod_name, output / "synthetic-slice-console.txt")
             if cgroup_pilot:
                 _wait_for_cgroup_pilot(k3s, namespace_name, pod_name, output / "cgroup-pilot-console.txt")
+            if cgroup_stress:
+                _wait_for_cgroup_stress(k3s, namespace_name, pod_name, output / "cgroup-stress-console.txt")
             _, qemu_cmdline = _qemu_evidence(k3s, namespace_name, pod_name, output)
             (output / "qemu-pre-shutdown.txt").write_text(
                 f"namespace_uid={namespace_uid}\nvmi_uid={vmi_uid}\npvc_uid={pvc['metadata']['uid']}\n"
@@ -1415,12 +1565,17 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
     boot_rcu_observe = _boot_rcu_observer()
     synthetic_slice_probe = _synthetic_slice_probe()
     cgroup_pilot = _cgroup_pilot()
+    cgroup_stress = _cgroup_stress()
     if synthetic_slice_probe and not boot_rcu_observe:
         raise ValueError(f"{_SYNTHETIC_SLICE_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
     if cgroup_pilot and not boot_rcu_observe:
         raise ValueError(f"{_CGROUP_PILOT_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
     if cgroup_pilot and synthetic_slice_probe:
         raise ValueError(f"{_CGROUP_PILOT_ENV}=1 cannot run with {_SYNTHETIC_SLICE_ENV}=1")
+    if cgroup_stress and not boot_rcu_observe:
+        raise ValueError(f"{_CGROUP_STRESS_ENV}=1 requires {_BOOT_RCU_ENV}=1 for PID 1 and timer evidence")
+    if cgroup_stress and (cgroup_pilot or synthetic_slice_probe):
+        raise ValueError(f"{_CGROUP_STRESS_ENV}=1 cannot run with {_CGROUP_PILOT_ENV}=1 or {_SYNTHETIC_SLICE_ENV}=1")
     (output / "run-config.json").write_text(
         json.dumps(
             {
@@ -1430,6 +1585,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 "boot_rcu_observer": boot_rcu_observe,
                 "synthetic_slice_probe": synthetic_slice_probe,
                 "cgroup_pilot": cgroup_pilot,
+                "cgroup_stress": cgroup_stress,
                 "debug_kernel_args_value": _DEBUG_KERNEL_ARGS if debug_kernel_args else "",
             },
             indent=2,
@@ -1459,6 +1615,7 @@ def test_ci_guest_shutdown_via_standalone_kubevirt_vmi() -> None:
                 boot_rcu_observe=boot_rcu_observe,
                 synthetic_slice_probe=synthetic_slice_probe,
                 cgroup_pilot=cgroup_pilot,
+                cgroup_stress=cgroup_stress,
             )
     except BaseException as error:
         primary_error = error
