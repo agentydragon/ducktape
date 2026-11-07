@@ -79,6 +79,8 @@ class PolicyController(Construct):
             **scalars,
             "subject_namespaces": ",".join(sorted(subject_namespaces)),
             "reader_accounts": f"{namespace}/app",
+            # Set only after the server image with this configuration key is deployed and healthy.
+            "writer_accounts": f"{namespace}/app",
         }
         workload = add_service_workload(
             self,
