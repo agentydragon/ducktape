@@ -366,7 +366,7 @@ func TestUnavailableLocalConnectionDoesNotClaimAnotherReplicaOwnsIt(t *testing.T
 	identity := &sandboxreader.Identity{Uid: uid}
 	local := newConnections()
 
-	if _, err := local.holder(uid); status.Code(err) != codes.Unavailable || status.Message(err) != runnerConnectionUnavailable {
+	if _, err := local.holder(uid); status.Code(err) != codes.Unavailable || status.Convert(err).Message() != runnerConnectionUnavailable {
 		t.Fatalf("missing local connection error = %v, want Unavailable %q", err, runnerConnectionUnavailable)
 	}
 
@@ -375,7 +375,7 @@ func TestUnavailableLocalConnectionDoesNotClaimAnotherReplicaOwnsIt(t *testing.T
 		t.Fatal(err)
 	}
 	local.replaceLease("", uid, 2)
-	if _, err := local.holder(uid); status.Code(err) != codes.Unavailable || status.Message(err) != runnerConnectionUnavailable {
+	if _, err := local.holder(uid); status.Code(err) != codes.Unavailable || status.Convert(err).Message() != runnerConnectionUnavailable {
 		t.Fatalf("connection behind watched Lease error = %v, want Unavailable %q", err, runnerConnectionUnavailable)
 	}
 }
