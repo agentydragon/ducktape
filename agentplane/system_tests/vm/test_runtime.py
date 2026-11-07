@@ -108,6 +108,7 @@ def test_boot_rcu_observer_is_off_by_default_for_all_full_suite_templates(
     monkeypatch.delenv("AGENTPLANE_VM_BOOT_EVIDENCE", raising=False)
     monkeypatch.delenv("AGENTPLANE_VM_LIBVIRT_MONITOR_DEBUG", raising=False)
     monkeypatch.delenv("AGENTPLANE_VM_NATIVE_PROFILE", raising=False)
+    monkeypatch.setenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", "0")
     monkeypatch.setattr(vm_infrastructure, "releases", list)
     objects = [_vm_template("base"), _vm_template("oom"), {"kind": "ConfigMap", "metadata": {"name": "other"}}]
 
@@ -150,9 +151,7 @@ def test_boot_rcu_observer_rejects_malformed_opt_in(tmp_path: Path, monkeypatch:
         runtime.configure([_vm_template("base")])
 
 
-def test_shutdown_sysrq_is_opt_in_and_applies_once_per_vm_template(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_shutdown_sysrq_is_on_by_default_and_can_be_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", raising=False)
     monkeypatch.setattr(vm_infrastructure, "releases", list)
     objects = [_vm_template("base"), _vm_template("oom"), {"kind": "ConfigMap", "metadata": {"name": "other"}}]
@@ -164,11 +163,13 @@ def test_shutdown_sysrq_is_opt_in_and_applies_once_per_vm_template(
         assert isinstance(value, str)
         return value
 
-    assert all(vm_sandboxes.SHUTDOWN_SYSRQ_ARG not in args(obj).split() for obj in objects[:2])
-    monkeypatch.setenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", "1")
-    runtime.configure(objects)
+    assert all(args(obj).split().count(vm_sandboxes.SHUTDOWN_SYSRQ_ARG) == 1 for obj in objects[:2])
     runtime.configure(objects)
     assert all(args(obj).split().count(vm_sandboxes.SHUTDOWN_SYSRQ_ARG) == 1 for obj in objects[:2])
+    monkeypatch.setenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", "0")
+    fresh = [_vm_template("base"), _vm_template("oom")]
+    runtime.configure(fresh)
+    assert all(vm_sandboxes.SHUTDOWN_SYSRQ_ARG not in args(obj).split() for obj in fresh)
     monkeypatch.setenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", "invalid")
     with pytest.raises(ValueError, match="AGENTPLANE_VM_SHUTDOWN_SYSRQ"):
         runtime.configure(objects)
