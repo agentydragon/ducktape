@@ -3,7 +3,7 @@
 use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
-use debundle_e2e_support::{read_json, write_text_file};
+use debundle_e2e_support::{assert_potential_suppression_rejection, read_json, write_text_file};
 use serde_yaml::Value;
 
 #[test]
