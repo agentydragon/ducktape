@@ -9,7 +9,7 @@ import {
   type productInputDefaults,
   type scenarioSetFromSearch,
 } from "./input_helpers";
-import type { fetchAugurCatalog, ProductPortfolioResponse } from "./client";
+import type { fetchAugurCatalog, fetchProductPortfolio } from "./client";
 import {
   DisclosureArrow,
   SleeveWeightsControl,
@@ -61,7 +61,7 @@ type InputChange = (key: InputKey, value: InputValue) => void;
 type VariantPatch = (id: string, patch: Partial<ProductInput>) => void;
 type RevertKeys = (id: string, keys: InputKey[]) => void;
 type CatalogPropertyFact = { label: string; value: (property: CatalogProperty) => React.ReactNode };
-type Portfolio = ProductPortfolioResponse | null;
+type Portfolio = Awaited<ReturnType<typeof fetchProductPortfolio>> | null;
 
 const INDEX_DATA = [
   { value: "inflation", label: "Inflation" },
@@ -214,11 +214,11 @@ const HOUSE_FACTS = [
         : `${numOrDash(property.beds)} / ${numOrDash(property.baths)}`,
   },
   { label: "Sqft", value: (property: CatalogProperty) => numOrDash(property.sqft) },
-  { label: "Year built", value: (property: CatalogProperty) => property.yearBuilt ?? "—" },
+  { label: "Year built", value: (property: CatalogProperty) => property.year_built ?? "—" },
   { label: "Price", value: (property: CatalogProperty) => usdOrDash(property.price) },
-  { label: "HOA / mo", value: (property: CatalogProperty) => usdOrDash(property.hoaMonthly) },
-  { label: "Property tax / yr", value: (property: CatalogProperty) => usdOrDash(property.annualTaxOnList) },
-  { label: "Rent estimate", value: (property: CatalogProperty) => usdOrDash(property.rentEstimate) },
+  { label: "HOA / mo", value: (property: CatalogProperty) => usdOrDash(property.hoa_monthly) },
+  { label: "Property tax / yr", value: (property: CatalogProperty) => usdOrDash(property.annual_tax_on_list) },
+  { label: "Rent estimate", value: (property: CatalogProperty) => usdOrDash(property.rent_estimate) },
 ] satisfies readonly CatalogPropertyFact[];
 
 function propertyOptions(bootstrap: Bootstrap) {
@@ -269,7 +269,7 @@ function knobApplies(knob: Knob, input: ProductInput): boolean {
 function cellPlaceholder(knob: Knob, input: ProductInput, bootstrap: Bootstrap): string | undefined {
   if (knob.key !== "rentalFullPropertyMonthly") return undefined;
   const property = findProperty(bootstrap, input.propertyId);
-  const estimate = Number(property?.rentEstimate);
+  const estimate = Number(property?.rent_estimate);
   return estimate > 0 ? `${fmtUsd(estimate)} (property default)` : "(required)";
 }
 

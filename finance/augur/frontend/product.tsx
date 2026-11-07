@@ -5,8 +5,7 @@ import {
   fetchProductPortfolio,
   fetchProductProjectionSummary,
   fetchProductRollout,
-  type AugurDeployment,
-  type ProductPortfolioResponse,
+  type fetchAugurDeployment,
 } from "./client";
 import { fmtQuanta, fmtNumber } from "./lib/format";
 import { rowsFrom } from "./lib/frame";
@@ -47,6 +46,8 @@ import {
 } from "./data_helpers";
 
 type ProjectionSummaryResponse = Awaited<ReturnType<typeof fetchProductProjectionSummary>>;
+type ProductPortfolio = Awaited<ReturnType<typeof fetchProductPortfolio>>;
+type Deployment = Awaited<ReturnType<typeof fetchAugurDeployment>>;
 type ScenarioEditorProps = React.ComponentProps<typeof ScenarioEditor>;
 type ProductInput = ScenarioEditorProps["base"]["input"];
 type Bootstrap = ScenarioEditorProps["bootstrap"];
@@ -55,13 +56,13 @@ type MetricScale = React.ComponentProps<typeof SharedControls>["metricScale"];
 type CurrencyDisplay = React.ComponentProps<typeof SharedControls>["currencyDisplay"];
 type SharedControlProps = React.ComponentProps<typeof SharedControls>;
 type Scenario = { id: string; label: string; input: ProductInput };
-type TerminalResults = ReadonlyMap<string, ProjectionSummaryResponse["terminalDistribution"]>;
+type TerminalResults = ReadonlyMap<string, ProjectionSummaryResponse["terminal_distribution"]>;
 type SelectedSummary = NonNullable<React.ComponentProps<typeof TerminalMetricTable>["selectedSummary"]>;
 type EventSelection = ReturnType<typeof useEventSelection>;
 type EventVisibility = ReturnType<typeof useVisibleEventKinds>;
 type ProductWorkspaceProps = {
   bootstrap: Bootstrap;
-  deployment: AugurDeployment | null;
+  deployment: Deployment | null;
   tab: AugurTab;
   onSelectTab: (tab: AugurTab) => void;
   rolloutCount: SharedControlProps["rolloutCount"];
@@ -82,8 +83,8 @@ type ProjectionSelection =
   { kind: "percentile"; value: number } | { kind: "stopped"; seed: number; scenarioKey: string } | null;
 type ProjectionSnapshot = {
   requestKey: string;
-  metricFan: ProjectionSummaryResponse["metricFan"];
-  terminalDistribution: ProjectionSummaryResponse["terminalDistribution"];
+  metricFan: ProjectionSummaryResponse["metric_fan"];
+  terminalDistribution: ProjectionSummaryResponse["terminal_distribution"];
 };
 type ProjectionResource =
   | { status: "pending"; requestKey: string; stale: ProjectionSnapshot | null; error: string | null }
@@ -166,7 +167,7 @@ function RolloutResultsPanel({
   terminalResultsById: TerminalResults;
   activeId: string;
   activeTerminalResult:
-    ProjectionSummaryResponse["metricFan"] | ProjectionSummaryResponse["terminalDistribution"] | null;
+    ProjectionSummaryResponse["metric_fan"] | ProjectionSummaryResponse["terminal_distribution"] | null;
   selectedRows: ReturnType<typeof selectedRolloutMetricRows>;
   selectedEvents: ReturnType<typeof selectedRolloutEvents>;
   selectedSummary: SelectedSummary | null;
@@ -360,7 +361,7 @@ export function ProductProjectionWorkspace({
   const [projectionResourcesById, setProjectionResourcesById] = useState<Map<string, ProjectionResource>>(
     () => new Map()
   );
-  const [portfolio, setPortfolio] = useState<ProductPortfolioResponse | null>(null);
+  const [portfolio, setPortfolio] = useState<ProductPortfolio | null>(null);
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
   const [selection, setSelection] = useState<ProjectionSelection>(null);
   const selectedPercentile = selection?.kind === "percentile" ? selection.value : null;
@@ -442,7 +443,7 @@ export function ProductProjectionWorkspace({
       ? activeProjection.terminalDistribution
       : null;
   const terminalResultsForDisplay = useMemo(() => {
-    const next = new Map<string, ProjectionSummaryResponse["terminalDistribution"]>();
+    const next = new Map<string, ProjectionSummaryResponse["terminal_distribution"]>();
     for (const entry of projectionRequestEntries) {
       const snapshot = projectionSnapshot(projectionResourcesById.get(entry.id));
       if (snapshot?.terminalDistribution.metric === selectedMetric.value && snapshot.requestKey === entry.requestKey) {
@@ -481,7 +482,7 @@ export function ProductProjectionWorkspace({
         : terminalSampleAtPercentile(activeTerminalSelectionResult, selectedMetric, selectedPercentile),
     [activeTerminalSelectionResult, selectedMetric, selectedPercentile]
   );
-  const stoppedSeeds = rowsFrom(activeTerminalSelectionResult?.terminalMetricSamples)
+  const stoppedSeeds = rowsFrom(activeTerminalSelectionResult?.terminal_metric_samples)
     .filter((row) => row.failed)
     .map((row) => Number(row.seed));
   const selectedRolloutSeed =
@@ -500,7 +501,7 @@ export function ProductProjectionWorkspace({
         ? {
             seed: Number(selectedDetail.rollout.seed),
             failed: Boolean(selectedDetail.rollout.failed),
-            endingMetrics: selectedDetail.rollout.endingMetrics,
+            ending_metrics: selectedDetail.rollout.ending_metrics,
           }
         : null,
     [selectedDetail]
@@ -510,7 +511,7 @@ export function ProductProjectionWorkspace({
     [selectedDetail, selectedMetric]
   );
   const selectedEvents = useMemo(() => selectedRolloutEvents(selectedDetail), [selectedDetail]);
-  const failedCount = activeResult?.failedCount ?? null;
+  const failedCount = activeResult?.failed_count ?? null;
   const terminalP50 = terminalPercentileValue(activeTerminalDisplayResult, 50);
   const selectedRolloutLoading =
     selectedRolloutSeed != null && activeTerminalDisplayResult != null && !selectedDetail && !rolloutError;
@@ -636,8 +637,8 @@ export function ProductProjectionWorkspace({
                 status: "ready",
                 snapshot: {
                   requestKey,
-                  metricFan: payload.metricFan,
-                  terminalDistribution: payload.terminalDistribution,
+                  metricFan: payload.metric_fan,
+                  terminalDistribution: payload.terminal_distribution,
                 },
               });
             });
@@ -707,7 +708,7 @@ export function ProductProjectionWorkspace({
         <SharedControls
           rolloutCount={rolloutCount}
           onChangeRolloutCount={onChangeRolloutCount}
-          maxRolloutCount={bootstrap.maxRolloutSamples}
+          maxRolloutCount={bootstrap.max_rollout_samples}
           model={model}
           onChangeModel={onChangeModel}
           models={bootstrap.models}
@@ -753,19 +754,19 @@ export function ProductProjectionWorkspace({
               </div>
               <div className="text-xs augur-muted">
                 {activeResult.basis === "observed_through_stop" ? "Through stop/completion" : "Completed paths only"} (
-                {activeResult.observationCount} observations)
+                {activeResult.observation_count} observations)
               </div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
                 {fmtQuanta(terminalP50, {
-                  currencyCode: activeTerminalDisplayResult?.currencyCode,
-                  currencyQuantum: activeTerminalDisplayResult?.currencyQuantum,
+                  currencyCode: activeTerminalDisplayResult?.currency_code,
+                  currencyQuantum: activeTerminalDisplayResult?.currency_quantum,
                 })}
               </div>
             </div>
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Failed rollouts</div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
-                {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rolloutCount)}
+                {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rollout_count)}
               </div>
               {stoppedSeeds.length > 0 && (
                 <NativeSelect
@@ -786,11 +787,11 @@ export function ProductProjectionWorkspace({
               )}
               {selectedSummary?.failed && selectedDetail != null && (
                 <div className="mt-2 text-sm" data-product-stop-book="">
-                  At stop in event month {selectedSummary.endingMetrics.failedMonthIndex} (snapshot{" "}
-                  {selectedSummary.endingMetrics.snapshotIndex}):{" "}
-                  {fmtQuanta(selectedSummary.endingMetrics[selectedMetric.chartValue], {
-                    currencyCode: selectedDetail.currencyCode,
-                    currencyQuantum: selectedDetail.currencyQuantum,
+                  At stop in event month {selectedSummary.ending_metrics.failed_month_index} (snapshot{" "}
+                  {selectedSummary.ending_metrics.snapshot_index}):{" "}
+                  {fmtQuanta(selectedSummary.ending_metrics[selectedMetric.chartValue], {
+                    currencyCode: selectedDetail.currency_code,
+                    currencyQuantum: selectedDetail.currency_quantum,
                   })}
                   .{" "}
                   {activeResult.basis === "observed_through_stop"
@@ -812,14 +813,14 @@ export function ProductProjectionWorkspace({
             metricScale={metricScale}
             horizonMonths={horizonMonths}
             onChangeHorizonMonths={onChangeHorizonMonths}
-            maxHorizonMonths={bootstrap.maxHorizonMonths}
+            maxHorizonMonths={bootstrap.max_horizon_months}
             selectedSeed={selectedSeed}
             selectedPercentile={selectedPercentile}
             onSelectPercentile={onSelectPercentile}
             onClearSelection={clearSelectedRollout}
             selectedRolloutLoading={selectedRolloutLoading}
             fanSeries={fanSeries}
-            percentiles={activeRequest.fanPercentiles}
+            percentiles={activeRequest.fan_percentiles}
             scenarios={chartScenarios}
             terminalResultsById={terminalResultsForDisplay}
             activeId={activeId}

@@ -16,14 +16,14 @@ import {
   METRIC_OPTIONS,
 } from "./input_helpers";
 
-// `productInputDefaults` only reads `productInputDefaults` (deployment overrides) and
+// `productInputDefaults` only reads `product_input_defaults` (deployment overrides) and
 // `locations[0]?.id`; an empty bootstrap exercises the pure hard-coded defaults.
 const bootstrap: Parameters<typeof productInputDefaults>[0] = {
-  maxRolloutSamples: 500,
-  maxHorizonMonths: 240,
-  productInputDefaults: {},
+  max_rollout_samples: 500,
+  max_horizon_months: 240,
+  product_input_defaults: {},
   models: ["test-model"],
-  defaultModelId: "test-model",
+  default_model_id: "test-model",
   locations: [],
 };
 type ProductInput = ReturnType<typeof productInputDefaults>;
@@ -35,7 +35,7 @@ function baseWith(overrides: Partial<ProductInput>, label = "Base") {
 test("the combined projection builder carries distinct fan and terminal percentiles", () => {
   const request = productProjectionSummaryRequest(
     productInputDefaults(bootstrap),
-    { ...bootstrap, maxRolloutSamples: 100 },
+    { ...bootstrap, max_rollout_samples: 100 },
     METRIC_OPTIONS.find((metric) => metric.value === "cash")!,
     { rolloutCount: 20, firstSeed: 7, model: "test-model", horizonMonths: 12, sellable: [] },
     [5, 50, 95],
@@ -43,11 +43,11 @@ test("the combined projection builder carries distinct fan and terminal percenti
   );
 
   expect(request).toMatchObject({
-    firstSeed: 7,
-    rolloutCount: 20,
+    first_seed: 7,
+    rollout_count: 20,
     metric: "cash",
-    fanPercentiles: [5, 50, 95],
-    terminalPercentiles: [0, 1, 50, 99, 100],
+    fan_percentiles: [5, 50, 95],
+    terminal_percentiles: [0, 1, 50, 99, 100],
   });
 });
 
@@ -225,7 +225,7 @@ test("the scenario always carries an explicit sleeve list, never the unedited nu
     12,
     SELLABLE
   );
-  expect(scenario.fundingPolicy?.sleeveWeights).toEqual([
+  expect(scenario.funding_policy?.sleeve_weights).toEqual([
     { kind: "security", symbol: "spy", weight: 90 },
     { kind: "security", symbol: "btc", weight: 10 },
   ]);
@@ -241,5 +241,5 @@ test("the cash ceiling is never below the floor", () => {
     12,
     SELLABLE
   );
-  expect(scenario.fundingPolicy?.cashCeiling).toBe("50000");
+  expect(scenario.funding_policy?.cash_ceiling).toBe("50000");
 });

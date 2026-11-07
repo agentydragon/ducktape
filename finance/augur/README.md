@@ -122,8 +122,8 @@ than duplicating this convention.
 - `api/`: `Config`, wire shapes, `Backend`, HTTP server, catalog/settings/calibration assembly,
   OpenAPI export
 - `sim/`: the `World` — declared books, tracked actors, deterministic monthly execution
-- `frontend/`: React + Tailwind app, casing/columnar-table helpers, scenario-set state, backend
-  client
+- `frontend/`: React + Tailwind app, generated snake_case API schema, columnar-table helpers,
+  scenario-set state, backend client
 
 ## Deployment
 

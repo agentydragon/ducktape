@@ -15,13 +15,13 @@ import {
 function band(overrides: Partial<SanityBand> = {}): SanityBand {
   return {
     label: "band",
-    seriesId: "security:SPY",
+    series_id: "security:SPY",
     kind: "percentile_range",
     month: null,
-    expectedLower: null,
-    expectedUpper: null,
+    expected_lower: null,
+    expected_upper: null,
     observed: [],
-    observedLabels: [],
+    observed_labels: [],
     status: "pass",
     detail: "",
     ...overrides,
@@ -90,9 +90,9 @@ test("fmtBandValue: null/undefined/non-finite render as em dash", () => {
 });
 
 test("fmtExpectedBand: two-sided, one-sided, and absent bounds", () => {
-  expect(fmtExpectedBand("percentile_range", band({ expectedLower: 0.2, expectedUpper: 20 }))).toBe("[0.2, 20]");
-  expect(fmtExpectedBand("percentile_bound", band({ expectedLower: 0.2 }))).toBe("≥ 0.2");
-  expect(fmtExpectedBand("percentile_bound", band({ expectedUpper: 20 }))).toBe("≤ 20");
+  expect(fmtExpectedBand("percentile_range", band({ expected_lower: 0.2, expected_upper: 20 }))).toBe("[0.2, 20]");
+  expect(fmtExpectedBand("percentile_bound", band({ expected_lower: 0.2 }))).toBe("≥ 0.2");
+  expect(fmtExpectedBand("percentile_bound", band({ expected_upper: 20 }))).toBe("≤ 20");
   expect(fmtExpectedBand("codes_allowed", band({}))).toBe("—");
 });
 
@@ -100,23 +100,23 @@ test("fmtExpectedBand: probability bound formats endpoints as percent", () => {
   expect(
     fmtExpectedBand(
       "threshold_probability",
-      band({ kind: "threshold_probability", expectedLower: 0.1, expectedUpper: 0.9 })
+      band({ kind: "threshold_probability", expected_lower: 0.1, expected_upper: 0.9 })
     )
   ).toBe("[10.0%, 90.0%]");
 });
 
 test("fmtObserved: pairs values with labels", () => {
-  expect(fmtObserved(band({ observed: [0.25, 16.7], observedLabels: ["p1", "p99"] }))).toBe("p1 0.25 · p99 16.7");
-  expect(fmtObserved(band({ observed: [0.42], observedLabels: ["p50"] }))).toBe("p50 0.42");
+  expect(fmtObserved(band({ observed: [0.25, 16.7], observed_labels: ["p1", "p99"] }))).toBe("p1 0.25 · p99 16.7");
+  expect(fmtObserved(band({ observed: [0.42], observed_labels: ["p50"] }))).toBe("p50 0.42");
 });
 
 test("fmtObserved: probability kind observed values render as percent", () => {
-  expect(fmtObserved(band({ kind: "threshold_probability", observed: [0.42], observedLabels: ["probability"] }))).toBe(
+  expect(fmtObserved(band({ kind: "threshold_probability", observed: [0.42], observed_labels: ["probability"] }))).toBe(
     "probability 42.0%"
   );
 });
 
 test("fmtObserved: missing labels and empty observed degrade gracefully", () => {
-  expect(fmtObserved(band({ observed: [0.5], observedLabels: [] }))).toBe("0.5");
+  expect(fmtObserved(band({ observed: [0.5], observed_labels: [] }))).toBe("0.5");
   expect(fmtObserved(band({ observed: [] }))).toBe("—");
 });

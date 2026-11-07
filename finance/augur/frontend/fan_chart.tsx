@@ -142,7 +142,7 @@ function FanEventMarker({
   const drawsGuideLine = stackIndex === stackCount - 1;
   return (
     <g
-      key={`${event.kind}-${event.monthIndex}-${index}`}
+      key={`${event.kind}-${event.month_index}-${index}`}
       role="button"
       tabIndex={0}
       aria-label={title}
@@ -655,7 +655,7 @@ export function MetricFanChart({
         )}
         {eventMarkers.map((markerProps) => (
           <FanEventMarker
-            key={`${markerProps.event.kind}-${markerProps.event.monthIndex}-${markerProps.index}`}
+            key={`${markerProps.event.kind}-${markerProps.event.month_index}-${markerProps.index}`}
             {...markerProps}
             x={x}
             y={y}

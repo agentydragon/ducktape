@@ -1,7 +1,7 @@
 """Request/response wire types for the model-only calibration endpoints.
 
 These mirror `augur.product.wire`: Pydantic models at the HTTP boundary, snake_case
-on the wire (the frontend camelizes), exported to the frontend Zod schema via
+on the wire (consumed directly by the frontend), exported to the frontend Zod schema via
 `augur.api.export_schema`. The run response embeds the calibration library's
 `CalibrationResult` (clean/surfaced rows) plus issuer fan charts.
 """

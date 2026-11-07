@@ -1,23 +1,29 @@
 import { clampInteger } from "./lib/format";
-import type { fetchAugurCatalog, fetchAugurSettings, ProductProjectionSummaryRequest } from "./client";
+import type { fetchAugurCatalog, fetchAugurSettings, fetchProductProjectionSummary } from "./client";
 
 type Catalog = Awaited<ReturnType<typeof fetchAugurCatalog>>;
 type Settings = Awaited<ReturnType<typeof fetchAugurSettings>>;
 type Bootstrap = Pick<Catalog, "locations"> &
-  Pick<Settings, "maxRolloutSamples" | "maxHorizonMonths" | "productInputDefaults" | "models" | "defaultModelId">;
-type ProductScenario = ProductProjectionSummaryRequest["scenario"];
-type ProductPropertyPurchase = NonNullable<ProductScenario["propertyPurchase"]>;
+  Pick<
+    Settings,
+    "max_rollout_samples" | "max_horizon_months" | "product_input_defaults" | "models" | "default_model_id"
+  >;
+type ProductScenario = Parameters<typeof fetchProductProjectionSummary>[0]["scenario"];
+type ProductPropertyPurchase = NonNullable<ProductScenario["property_purchase"]>;
 type ProductPropertyFinancing = NonNullable<ProductPropertyPurchase["financing"]>;
-type ProductLifecycleEvent = NonNullable<ProductPropertyPurchase["lifecycleEvents"]>[number];
-type ProductSleeveWeight = NonNullable<NonNullable<ProductScenario["fundingPolicy"]>["sleeveWeights"]>[number];
+type ProductLifecycleEvent = NonNullable<ProductPropertyPurchase["lifecycle_events"]>[number];
+type ProductSleeveWeight = NonNullable<NonNullable<ProductScenario["funding_policy"]>["sleeve_weights"]>[number];
+type WithoutWeight<T> = T extends unknown ? Omit<T, "weight"> : never;
+type RequiredKind<T> = T extends { kind?: infer Kind } ? Omit<T, "kind"> & { kind: NonNullable<Kind> } : never;
+type ProductSleeveWeightWithKind = RequiredKind<ProductSleeveWeight>;
 export type LifecycleInputEvent =
   | { _id: string; kind: "set_rented_fraction"; month: number; rentedFractionPct: number | null }
   | { _id: string; kind: "set_primary_residence"; month: number; livesHere: boolean }
   | { _id: string; kind: "capital_improvement"; month: number; amount: number | null }
   | { _id: string; kind: "property_sale"; month: number; closingCostPct: number | null };
-type SleeveWeight = ProductSleeveWeight;
-type WithoutWeight<T> = T extends unknown ? Omit<T, "weight"> : never;
-type RequiredKind<T> = T extends { kind?: infer Kind } ? Omit<T, "kind"> & { kind: NonNullable<Kind> } : never;
+type SleeveWeight =
+  | { kind: "security"; symbol: Extract<ProductSleeveWeightWithKind, { kind: "security" }>["symbol"]; weight: number }
+  | { kind: "managed_portfolio"; portfolioId: string; weight: number };
 type SleeveIdentity = RequiredKind<WithoutWeight<SleeveWeight>>;
 type ProductInput = Omit<
   typeof DEFAULT_PRODUCT_INPUT_BASE,
@@ -30,7 +36,7 @@ type ProductInput = Omit<
   | "rentalFullPropertyMonthly"
   | "propertyLifecycleEvents"
 > & {
-  spendIndex: NonNullable<ProductScenario["spendIndex"]>;
+  spendIndex: NonNullable<ProductScenario["spend_index"]>;
   sleeveWeights: SleeveWeight[] | null;
   rentalLocationId: string | null;
   propertyId: string | null;
@@ -39,7 +45,6 @@ type ProductInput = Omit<
   propertyLifecycleEvents: LifecycleInputEvent[];
 };
 type ProductInputWithHorizon = ProductInput & Pick<typeof DEFAULT_PRODUCT_INPUT_BASE, "horizonMonths">;
-type ProductInputOverrides = Bootstrap["productInputDefaults"];
 type SellableRow = {
   key: string | null;
   sleeve: SleeveIdentity;
@@ -118,23 +123,23 @@ export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_v
 // (value, mortgage, home equity) plus liquid net worth feed Net worth. Cash shortfall is a
 // diagnostic, kept last. This order drives the metric picker and both terminal tables.
 export const METRIC_OPTIONS = [
-  { value: "holding_value", chartValue: "holdingValueQuanta", label: "Holdings value" },
+  { value: "holding_value", chartValue: "holding_value_quanta", label: "Holdings value" },
   {
     value: "private_equity_value",
-    chartValue: "privateEquityValueQuanta",
+    chartValue: "private_equity_value_quanta",
     label: "Private equity value",
   },
   // Face still on the books. Above Liquid net worth because it is NOT in it — a bond held to
   // maturity is neither marked nor saleable — but it is in Net worth below.
-  { value: "bond_value", chartValue: "bondValueQuanta", label: "Bond value" },
-  { value: "cash", chartValue: "cashQuanta", label: "Cash balance" },
-  { value: "liquid_net_worth", chartValue: "liquidNetWorthQuanta", label: "Liquid net worth" },
-  { value: "property_value", chartValue: "propertyValueQuanta", label: "Property value" },
-  { value: "mortgage_balance", chartValue: "mortgageBalanceQuanta", label: "Mortgage balance" },
-  { value: "home_equity", chartValue: "homeEquityQuanta", label: "Home equity" },
-  { value: "net_worth", chartValue: "netWorthQuanta", label: "Net worth" },
+  { value: "bond_value", chartValue: "bond_value_quanta", label: "Bond value" },
+  { value: "cash", chartValue: "cash_quanta", label: "Cash balance" },
+  { value: "liquid_net_worth", chartValue: "liquid_net_worth_quanta", label: "Liquid net worth" },
+  { value: "property_value", chartValue: "property_value_quanta", label: "Property value" },
+  { value: "mortgage_balance", chartValue: "mortgage_balance_quanta", label: "Mortgage balance" },
+  { value: "home_equity", chartValue: "home_equity_quanta", label: "Home equity" },
+  { value: "net_worth", chartValue: "net_worth_quanta", label: "Net worth" },
 ] as const satisfies readonly {
-  value: ProductProjectionSummaryRequest["metric"];
+  value: Parameters<typeof fetchProductProjectionSummary>[0]["metric"];
   chartValue: string;
   label: string;
 }[];
@@ -142,12 +147,37 @@ export const METRIC_OPTIONS = [
 export function productInputDefaults(bootstrap: Bootstrap): ProductInput {
   // Server-provided overrides (from the deployment's augur YAML's `product_input_defaults`).
   // Each field is `null` when the deployment didn't set it; we drop those entries so the
-  // frontend's hard-coded base value stays. The decamelize layer in `client.js` already
-  // converted snake_case keys, so `cash_band_index_to_inflation` arrives as `cashBandIndexToInflation`.
-  const overrides = bootstrap.productInputDefaults ?? {};
+  // frontend's hard-coded base value stays. The API contract uses the same snake_case key.
+  const overrides = bootstrap.product_input_defaults;
   const overridesNotNull = Object.fromEntries(
-    Object.entries(overrides).filter(([, value]) => value != null)
-  ) as Partial<ProductInputOverrides>;
+    Object.entries({
+      horizonMonths: overrides?.horizon_months,
+      monthlySpend: overrides?.monthly_spend,
+      spendIndex: overrides?.spend_index,
+      cashFloor: overrides?.cash_floor,
+      cashCeiling: overrides?.cash_ceiling,
+      cashBandIndexToInflation: overrides?.cash_band_index_to_inflation,
+      peLnwFloor: overrides?.pe_lnw_floor,
+      peIndexFloorToInflation: overrides?.pe_index_floor_to_inflation,
+      monthlyRent: overrides?.monthly_rent,
+      rentalLocationId: overrides?.rental_location_id,
+      propertyId: overrides?.property_id,
+      livesHere: overrides?.lives_here,
+      financingKind: overrides?.financing_kind,
+      downPaymentPct: overrides?.down_payment_pct,
+      mortgageTermMonths: overrides?.mortgage_term_months,
+      annualRatePct: overrides?.annual_rate_pct,
+      annualInsurancePct: overrides?.annual_insurance_pct,
+      annualMaintenancePct: overrides?.annual_maintenance_pct,
+      rentalFullPropertyMonthly: overrides?.rental_full_property_monthly,
+      rentalFractionRentedPct: overrides?.rental_fraction_rented_pct,
+      rentalVacancyPct: overrides?.rental_vacancy_pct,
+      useRentalManagement: overrides?.use_rental_management,
+      managementFeePct: overrides?.management_fee_pct,
+      leasingFeeMonths: overrides?.leasing_fee_months,
+      avgTenancyMonths: overrides?.avg_tenancy_months,
+    }).filter(([, value]) => value != null)
+  ) as Partial<ProductInputWithHorizon>;
   const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull } as ProductInputWithHorizon;
   for (const key of [
     "monthlySpend",
@@ -173,12 +203,12 @@ export function productInputDefaults(bootstrap: Bootstrap): ProductInput {
 // product and calibration workspaces both read it. The default honors a deployment's
 // `product_input_defaults.rollout_count` override and is clamped to `max_rollout_samples`.
 export function rolloutCountDefault(bootstrap: Bootstrap) {
-  const override = bootstrap.productInputDefaults?.rolloutCount;
-  return clampInteger(override ?? DEFAULT_ROLLOUT_COUNT, 1, bootstrap.maxRolloutSamples);
+  const override = bootstrap.product_input_defaults?.rollout_count;
+  return clampInteger(override ?? DEFAULT_ROLLOUT_COUNT, 1, bootstrap.max_rollout_samples);
 }
 
 export function clampRolloutCount(value: number | null, bootstrap: Bootstrap) {
-  return clampInteger(value, 1, bootstrap.maxRolloutSamples);
+  return clampInteger(value, 1, bootstrap.max_rollout_samples);
 }
 
 export function rolloutCountFromSearch(searchString: string, bootstrap: Bootstrap) {
@@ -192,7 +222,7 @@ export function rolloutCountFromSearch(searchString: string, bootstrap: Bootstra
 // start; it's a fixed default (no longer user-tunable) so identical seeds reproduce identical
 // sampled exogenous paths across runs.
 export function firstSeedDefault(bootstrap: Bootstrap) {
-  const override = bootstrap.productInputDefaults?.firstSeed;
+  const override = bootstrap.product_input_defaults?.first_seed;
   return clampFirstSeed(override ?? DEFAULT_FIRST_SEED);
 }
 
@@ -205,7 +235,7 @@ export function clampFirstSeed(value: number) {
 // not in `bootstrap.models` (stale URL, empty) falls back to the deployment default. The
 // selected id is always one of `bootstrap.models`.
 export function defaultModel(bootstrap: Bootstrap) {
-  const preferred = bootstrap.defaultModelId;
+  const preferred = bootstrap.default_model_id;
   return bootstrap.models.includes(preferred) ? preferred : bootstrap.models[0];
 }
 
@@ -219,12 +249,12 @@ export function modelFromSearch(searchString: string, bootstrap: Bootstrap) {
 // honors a deployment's `product_input_defaults.horizon_months` override, clamped to
 // `max_horizon_months`.
 export function horizonMonthsDefault(bootstrap: Bootstrap) {
-  const override = bootstrap.productInputDefaults?.horizonMonths;
-  return clampInteger(override ?? DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.maxHorizonMonths);
+  const override = bootstrap.product_input_defaults?.horizon_months;
+  return clampInteger(override ?? DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.max_horizon_months);
 }
 
 export function clampHorizonMonths(value: number | null, bootstrap: Bootstrap) {
-  return clampInteger(value, 1, bootstrap.maxHorizonMonths);
+  return clampInteger(value, 1, bootstrap.max_horizon_months);
 }
 
 export function horizonMonthsFromSearch(searchString: string, bootstrap: Bootstrap) {
@@ -263,15 +293,15 @@ export function buildPropertyFinancing(input: ProductInput): ProductPropertyFina
   if (input.financingKind !== "mortgage") return { kind: "cash" };
   return {
     kind: "mortgage",
-    termMonths: Number(input.mortgageTermMonths) === 180 ? 180 : 360,
-    downPaymentPct: Math.max(0, Number(input.downPaymentPct) || 0),
-    annualRatePct: Math.max(0, Number(input.annualRatePct) || 0),
+    term_months: Number(input.mortgageTermMonths) === 180 ? 180 : 360,
+    down_payment_pct: Math.max(0, Number(input.downPaymentPct) || 0),
+    annual_rate_pct: Math.max(0, Number(input.annualRatePct) || 0),
   };
 }
 
 export function buildRentalIncomePlan(
   input: ProductInput
-): NonNullable<ProductPropertyPurchase["initialRental"]> | null {
+): NonNullable<ProductPropertyPurchase["initial_rental"]> | null {
   // `rentalFractionRentedPct` = 0 → property isn't rented at all; no rental plan on the wire.
   const fractionPct = Number(input.rentalFractionRentedPct) || 0;
   if (fractionPct <= 0) return null;
@@ -280,18 +310,18 @@ export function buildRentalIncomePlan(
   const fullPropertyMonthlyRent = override == null ? null : String(Math.max(0, Number(override) || 0));
   const fraction = Math.min(1, Math.max(0.01, fractionPct / 100));
   const vacancyPct = Math.min(1, Math.max(0, (Number(input.rentalVacancyPct) || 0) / 100));
-  return { fullPropertyMonthlyRent, fractionRented: fraction, vacancyPct };
+  return { full_property_monthly_rent: fullPropertyMonthlyRent, fraction_rented: fraction, vacancy_pct: vacancyPct };
 }
 
 export function buildRentalManagement(
   input: ProductInput
-): NonNullable<ProductPropertyPurchase["rentalManagement"]> | null {
+): NonNullable<ProductPropertyPurchase["rental_management"]> | null {
   // Management agency only makes sense when there's something to rent.
   if (!input.useRentalManagement || (Number(input.rentalFractionRentedPct) || 0) <= 0) return null;
   return {
-    managementFeePct: Math.max(0, Number(input.managementFeePct) || 0),
-    leasingFeeMonths: Math.max(0, Number(input.leasingFeeMonths) || 0),
-    avgTenancyMonths: clampInteger(input.avgTenancyMonths, 1, 600),
+    management_fee_pct: Math.max(0, Number(input.managementFeePct) || 0),
+    leasing_fee_months: Math.max(0, Number(input.leasingFeeMonths) || 0),
+    avg_tenancy_months: clampInteger(input.avgTenancyMonths, 1, 600),
   };
 }
 
@@ -301,14 +331,14 @@ export function buildPropertyPurchase(input: ProductInput): ProductPropertyPurch
   // Wire enforces is_primary_residence=False when fraction_rented=1.0; mirror that here
   // so the user can't submit an inconsistent ScenarioKey from the UI. The check is on the
   // normalized 0..1 fraction the builder just emitted (UI keeps the percentage form).
-  const isPrimaryResidence = initialRental?.fractionRented === 1.0 ? false : Boolean(input.livesHere);
+  const isPrimaryResidence = initialRental?.fraction_rented === 1.0 ? false : Boolean(input.livesHere);
   return {
-    propertyId: input.propertyId,
+    property_id: input.propertyId,
     financing: buildPropertyFinancing(input),
-    isPrimaryResidence,
-    initialRental,
-    rentalManagement: buildRentalManagement(input),
-    lifecycleEvents: buildLifecycleEvents(input.propertyLifecycleEvents),
+    is_primary_residence: isPrimaryResidence,
+    initial_rental: initialRental,
+    rental_management: buildRentalManagement(input),
+    lifecycle_events: buildLifecycleEvents(input.propertyLifecycleEvents),
   };
 }
 
@@ -323,14 +353,14 @@ export function buildLifecycleEvents(events: LifecycleInputEvent[]): ProductLife
         return {
           kind: "set_rented_fraction",
           month: event.month,
-          rentedFraction: (Number(event.rentedFractionPct) || 0) / 100,
+          rented_fraction: (Number(event.rentedFractionPct) || 0) / 100,
         };
       }
       if (event.kind === "set_primary_residence") {
         return {
           kind: "set_primary_residence",
           month: event.month,
-          isPrimaryResidence: Boolean(event.livesHere),
+          is_primary_residence: Boolean(event.livesHere),
         };
       }
       if (event.kind === "capital_improvement") {
@@ -341,7 +371,7 @@ export function buildLifecycleEvents(events: LifecycleInputEvent[]): ProductLife
         };
       }
       if (event.kind === "property_sale") {
-        return { kind: "property_sale", month: event.month, closingCostPct: Number(event.closingCostPct) || 0 };
+        return { kind: "property_sale", month: event.month, closing_cost_pct: Number(event.closingCostPct) || 0 };
       }
       throw new Error(`unknown lifecycle event kind ${eventKind}`);
     });
@@ -408,32 +438,36 @@ export function productScenario(
   modelId: string | null,
   horizonMonths: number | null,
   sellable: readonly SellableRow[] | null | undefined
-): ProductProjectionSummaryRequest["scenario"] {
+): Parameters<typeof fetchProductProjectionSummary>[0]["scenario"] {
   const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, sellable);
   const monthlyRent = Math.max(0, Number(input.monthlyRent) || 0);
   const rentalLocationId = monthlyRent > 0 ? input.rentalLocationId : null;
   return {
-    modelId: modelId || defaultModel(bootstrap),
-    horizonMonths: clampHorizonMonths(horizonMonths, bootstrap),
-    monthlySpend: String(Math.max(1, Number(input.monthlySpend) || 1)),
-    spendIndex: input.spendIndex === "none" ? "none" : "inflation",
-    fundingPolicy: {
-      cashFloor: String(Math.max(0, Number(input.cashFloor) || 0)),
-      cashCeiling: String(
+    model_id: modelId || defaultModel(bootstrap),
+    horizon_months: clampHorizonMonths(horizonMonths, bootstrap),
+    monthly_spend: String(Math.max(1, Number(input.monthlySpend) || 1)),
+    spend_index: input.spendIndex === "none" ? "none" : "inflation",
+    funding_policy: {
+      cash_floor: String(Math.max(0, Number(input.cashFloor) || 0)),
+      cash_ceiling: String(
         Math.max(Math.max(0, Number(input.cashFloor) || 0), Math.max(0, Number(input.cashCeiling) || 0))
       ),
-      cashBandIndexToInflation: Boolean(input.cashBandIndexToInflation),
-      sleeveWeights,
+      cash_band_index_to_inflation: Boolean(input.cashBandIndexToInflation),
+      sleeve_weights: sleeveWeights.map((sleeve) =>
+        sleeve.kind === "managed_portfolio"
+          ? { kind: sleeve.kind, portfolio_id: sleeve.portfolioId, weight: sleeve.weight }
+          : sleeve
+      ),
     },
-    peTenderPolicy: {
-      liquidNetWorthFloor: String(Math.max(0, Number(input.peLnwFloor) || 0)),
-      indexFloorToInflation: Boolean(input.peIndexFloorToInflation),
+    pe_tender_policy: {
+      liquid_net_worth_floor: String(Math.max(0, Number(input.peLnwFloor) || 0)),
+      index_floor_to_inflation: Boolean(input.peIndexFloorToInflation),
     },
-    monthlyRent: String(monthlyRent),
-    rentalLocationId,
-    propertyPurchase: buildPropertyPurchase(input),
-    annualInsurancePct: Math.max(0, Number(input.annualInsurancePct) || 0),
-    annualMaintenancePct: Math.max(0, Number(input.annualMaintenancePct) || 0),
+    monthly_rent: String(monthlyRent),
+    rental_location_id: rentalLocationId,
+    property_purchase: buildPropertyPurchase(input),
+    annual_insurance_pct: Math.max(0, Number(input.annualInsurancePct) || 0),
+    annual_maintenance_pct: Math.max(0, Number(input.annualMaintenancePct) || 0),
   };
 }
 
@@ -447,14 +481,14 @@ function productProjectionSamplingRequest(
   metric: (typeof METRIC_OPTIONS)[number],
   shared: ProjectionShared,
   percentiles: number[]
-): Pick<ProductProjectionSummaryRequest, "scenario" | "firstSeed" | "rolloutCount" | "metric"> & {
+): Pick<Parameters<typeof fetchProductProjectionSummary>[0], "scenario" | "first_seed" | "rollout_count" | "metric"> & {
   percentiles: number[];
 } {
   const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
   return {
     scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
-    firstSeed: clampFirstSeed(firstSeed),
-    rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
+    first_seed: clampFirstSeed(firstSeed),
+    rollout_count: clampRolloutCount(rolloutCount, bootstrap),
     metric: metric.value,
     percentiles,
   };
@@ -467,15 +501,15 @@ export function productProjectionSummaryRequest(
   shared: ProjectionShared,
   fanPercentiles: number[],
   terminalPercentiles: number[]
-): ProductProjectionSummaryRequest {
+): Parameters<typeof fetchProductProjectionSummary>[0] {
   const request = productProjectionSamplingRequest(input, bootstrap, metric, shared, fanPercentiles);
   return {
     scenario: request.scenario,
-    firstSeed: request.firstSeed,
-    rolloutCount: request.rolloutCount,
+    first_seed: request.first_seed,
+    rollout_count: request.rollout_count,
     metric: request.metric,
-    fanPercentiles: request.percentiles,
-    terminalPercentiles,
+    fan_percentiles: request.percentiles,
+    terminal_percentiles: terminalPercentiles,
   };
 }
 
@@ -575,7 +609,7 @@ const SCENARIO_INPUT_FIELD_KINDS = {
   propertyLifecycleEvents: "lifecycleEvents",
 } satisfies Record<keyof ProductInput, ScenarioInputFieldKind>;
 
-const SCENARIO_SPEND_INDEXES = ["none", "inflation"] as const satisfies readonly ProductScenario["spendIndex"][];
+const SCENARIO_SPEND_INDEXES = ["none", "inflation"] as const satisfies readonly ProductScenario["spend_index"][];
 const SCENARIO_FINANCING_KINDS = ["cash", "mortgage"] as const satisfies readonly ProductPropertyFinancing["kind"][];
 
 function isFiniteNumber(value: unknown): value is number {
@@ -622,7 +656,7 @@ function parseLifecycleEvents(value: unknown): LifecycleInputEvent[] | null {
   return events;
 }
 
-function isSleeveWeight(value: unknown): value is ProductSleeveWeight {
+function isSleeveWeight(value: unknown): value is SleeveWeight {
   if (!isRecord(value) || !isFiniteNumber(value.weight) || !Number.isInteger(value.weight) || value.weight < 0) {
     return false;
   }

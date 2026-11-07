@@ -5,9 +5,10 @@
 import React from "react";
 
 import { fmtPct } from "./lib/format";
-import type { CalibrationRunResponse } from "./client";
+import type { fetchCalibrationRun } from "./client";
 
-type Platform = CalibrationRunResponse["result"]["clean"][number]["platform"];
+type CalibrationRun = Awaited<ReturnType<typeof fetchCalibrationRun>>;
+type Platform = CalibrationRun["result"]["clean"][number]["platform"];
 
 export function fmtProb(value: unknown) {
   return value == null || !Number.isFinite(Number(value)) ? "n/a" : fmtPct(value);
