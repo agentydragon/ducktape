@@ -162,54 +162,58 @@ function protobufStatus(data) {
   };
   const [state, fallback] = states[snapshot.state] ?? ["unavailable", "Status unavailable"];
   const probe = snapshot.lastProbe;
-  let outcome = snapshot.state === "SESSION_STATE_NO_SESSION" ? "uninitialized" : "not_checked";
-  if (probe) {
-    const outcomes = {
-      PROBE_OUTCOME_VERIFIED: "success",
-      PROBE_OUTCOME_NO_SESSION: "uninitialized",
-      PROBE_OUTCOME_REAUTHENTICATION_REQUIRED: "reauth_required",
-      PROBE_OUTCOME_CHALLENGE_REQUIRED: "security_challenge",
-      PROBE_OUTCOME_UPSTREAM_UNAVAILABLE: "network_error",
-      PROBE_OUTCOME_UNKNOWN: "outcome_unknown",
-    };
-    outcome = outcomes[probe.outcome] ?? "outcome_unknown";
-    if (probe.outcome === "PROBE_OUTCOME_FAILURE" && probe.failure?.reason)
-      outcome = probe.failure.reason.replace("PROBE_FAILURE_REASON_", "").toLowerCase();
-  }
+  const probeOutcome = probe?.outcome === "PROBE_OUTCOME_FAILURE" ? probe.failure?.reason : probe?.outcome;
+  const probeMessage = !probe
+    ? "Not checked yet"
+    : typeof probeOutcome === "string"
+      ? probeOutcome
+          .replace(/^PROBE_(OUTCOME|FAILURE_REASON)_/, "")
+          .replaceAll("_", " ")
+          .toLowerCase()
+      : "Check outcome unknown";
   const imported = snapshot.importedAt;
   const checked = probe?.completedAt;
   const age = imported && checked ? Math.max(0, Math.floor((Date.parse(checked) - Date.parse(imported)) / 1000)) : null;
   return {
     state,
-    outcome,
     message: snapshot.ownerPresentation?.message ?? fallback,
     help: snapshot.ownerPresentation?.help,
     details: [
       { key: "imported_at", value: imported, format: "time" },
       { key: "age_seconds", value: age, format: "duration" },
       { key: "checked_at", value: checked, format: "time" },
-      { key: "outcome", value: outcome },
+      { key: "outcome", value: probeMessage },
     ],
   };
 }
 
-function protobufImportError(data) {
-  if (data.outcome === "IMPORT_OUTCOME_REJECTED") return "invalid_session";
-  if (data.outcome === "IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED") return "reauth_required";
-  if (data.outcome === "IMPORT_OUTCOME_CHALLENGE_REQUIRED") return "security_challenge";
-  if (data.outcome === "IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE") return "upstream_unavailable";
+function protobufImportMessage(data) {
+  if (data.outcome === "IMPORT_OUTCOME_REJECTED") return importErrorMessages.invalid_session;
+  if (data.outcome === "IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED") return importErrorMessages.reauth_required;
+  if (data.outcome === "IMPORT_OUTCOME_CHALLENGE_REQUIRED") return importErrorMessages.security_challenge;
+  if (data.outcome === "IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE") return importErrorMessages.upstream_unavailable;
   const failure = data.outcome === "IMPORT_OUTCOME_FAILURE" ? data.failure : null;
-  if (failure?.reason === "IMPORT_FAILURE_REASON_INVALID_RESPONSE") return "invalid_response";
-  if (failure?.reason === "IMPORT_FAILURE_REASON_STORAGE_ERROR") return "storage_error";
-  if (failure?.reason === "IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR")
-    return failure.upstreamHttpStatus ? `upstream_http_${failure.upstreamHttpStatus}` : "upstream_unavailable";
+  if (failure?.reason === "IMPORT_FAILURE_REASON_INVALID_RESPONSE") return importErrorMessages.invalid_response;
+  if (failure?.reason === "IMPORT_FAILURE_REASON_STORAGE_ERROR") return importErrorMessages.storage_error;
+  if (failure?.reason === "IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR") {
+    const status = failure.upstreamHttpStatus;
+    return Number.isInteger(status) && status >= 100 && status <= 599
+      ? `The provider returned HTTP ${status}. Check the session status before retrying.`
+      : importErrorMessages.upstream_unavailable;
+  }
   const unknown = data.outcome === "IMPORT_OUTCOME_UNKNOWN" ? data.outcomeUnknown : null;
-  if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_TIMEOUT") return "verification_timeout";
-  if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE") return "upstream_unavailable";
-  if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE") return "outcome_unknown_invalid_response";
-  if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR")
-    return unknown.upstreamHttpStatus ? `outcome_unknown_http_${unknown.upstreamHttpStatus}` : "outcome_unknown_http";
-  return "outcome_unknown";
+  if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_TIMEOUT") return importErrorMessages.verification_timeout;
+  if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE")
+    return importErrorMessages.upstream_unavailable;
+  if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE")
+    return importErrorMessages.outcome_unknown_invalid_response;
+  if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR") {
+    const status = unknown.upstreamHttpStatus;
+    return Number.isInteger(status) && status >= 100 && status <= 599
+      ? `The provider returned HTTP ${status}. The import outcome is unknown; check the session status before retrying.`
+      : importErrorMessages.outcome_unknown_http;
+  }
+  return importErrorMessages.outcome_unknown;
 }
 
 function protobufCandidate(payload) {
@@ -359,10 +363,8 @@ document.getElementById("session-form").addEventListener("submit", async (event)
       updateSelection();
       importResult.textContent = `${selected.id} session imported.`;
     } else {
-      importResult.textContent = importErrorMessage(
-        grpcManagement && response.ok ? { error: protobufImportError(data) } : data,
-        response.status
-      );
+      importResult.textContent =
+        grpcManagement && response.ok ? protobufImportMessage(data) : importErrorMessage(data, response.status);
     }
   } catch {
     importResult.textContent = "The connection was interrupted. Check the session status before trying again.";
