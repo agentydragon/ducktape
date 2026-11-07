@@ -94,7 +94,7 @@ func (c Config) ClientCredentials(expectedPeerURI string) (credentials.Transport
 	if err != nil {
 		return nil, err
 	}
-	return credentials.NewTLS(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth))), nil
 }
 
 // ServerCredentials creates mTLS server credentials pinned to the expected client URI.
@@ -107,7 +107,7 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	if err != nil {
 		return nil, err
 	}
-	return credentials.NewTLS(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
+	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
 }
 
 // LocalIdentity returns the certificate URI after validating its chain and the

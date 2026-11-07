@@ -1,9 +1,11 @@
 package environment_runtime_transport_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"net"
 	"net/url"
@@ -14,7 +16,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/peer"
 )
 
@@ -203,6 +208,110 @@ func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	}
 }
 
+func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	short := ca.IssueWithValidity(t, runnerURI, now.Add(-time.Minute), now.Add(4*time.Second), x509.ExtKeyUsageClientAuth)
+	rotated := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth)
+	gateway := ca.IssueWithUsage(t, environment_runtime_transport.GatewayURI, x509.ExtKeyUsageServerAuth)
+	clientCredentials, err := short.ClientCredentials(environment_runtime_transport.GatewayURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCredentials, err := gateway.ServerCredentials(runnerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortLeaf, err := x509.ParseCertificate(readCertificateDER(t, short.CertFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGRPCClientReconnectsAfterExpiry(t, clientCredentials, serverCredentials, shortLeaf.NotAfter, func() {
+		copyFile(t, rotated.CertFile, short.CertFile)
+		copyFile(t, rotated.KeyFile, short.KeyFile)
+	})
+}
+
+func assertGRPCClientReconnectsAfterExpiry(
+	t *testing.T,
+	clientCredentials, serverCredentials credentials.TransportCredentials,
+	oldCertificateNotAfter time.Time,
+	rotate func(),
+) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	peerCertificates := make(chan []byte, 8)
+	server := grpc.NewServer(
+		grpc.Creds(serverCredentials),
+		grpc.UnaryInterceptor(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			remote, ok := peer.FromContext(ctx)
+			if !ok {
+				return nil, errors.New("gRPC peer missing")
+			}
+			tlsInfo, ok := remote.AuthInfo.(credentials.TLSInfo)
+			if !ok || len(tlsInfo.State.PeerCertificates) == 0 {
+				return nil, errors.New("gRPC TLS peer missing")
+			}
+			select {
+			case peerCertificates <- append([]byte(nil), tlsInfo.State.PeerCertificates[0].Raw...):
+			default:
+			}
+			return handler(ctx, request)
+		}),
+	)
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(server, healthServer)
+	go func() { _ = server.Serve(listener) }()
+	defer server.Stop()
+
+	client, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(clientCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	invoke := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		return client.Invoke(ctx, "/grpc.health.v1.Health/Check", &grpc_health_v1.HealthCheckRequest{}, &grpc_health_v1.HealthCheckResponse{})
+	}
+	if err := invoke(); err != nil {
+		t.Fatalf("initial Health.Check: %v", err)
+	}
+	var initialCertificate []byte
+	select {
+	case initialCertificate = <-peerCertificates:
+	case <-time.After(time.Second):
+		t.Fatal("server did not observe initial client certificate")
+	}
+	rotate()
+	if wait := time.Until(oldCertificateNotAfter) + 50*time.Millisecond; wait > 0 {
+		time.Sleep(wait)
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := invoke(); err == nil {
+			select {
+			case current := <-peerCertificates:
+				if !bytes.Equal(initialCertificate, current) {
+					return
+				}
+			case <-time.After(250 * time.Millisecond):
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("same gRPC ClientConn did not reconnect with the rotated certificate after expiry")
+}
+
 func TestPeerIdentityRequiresTLSPeerCertificate(t *testing.T) {
 	cases := []struct {
 		name string
@@ -343,4 +452,20 @@ func copyFile(t *testing.T, source, destination string) {
 		t.Fatal(err)
 	}
 	replaceFile(t, destination, contents)
+}
+
+func readCertificateDER(t *testing.T, path string) []byte {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(contents)
+	if block == nil {
+		t.Fatalf("%s does not contain a PEM certificate", path)
+	}
+	if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+		t.Fatal(err)
+	}
+	return block.Bytes
 }

@@ -297,8 +297,9 @@ signed by the cluster internal CA. trust-manager distributes the cluster interna
 Pods use projected credential files; guests use a mounted Secret filesystem. Both ends verify the
 peer with go-spiffe against the mounted roots and authorize exactly the expected SPIFFE ID and EKU.
 A replaced certificate, key or root file is reloaded at the next TLS handshake. Every control call
-and observation snapshot rechecks the peer leaf's validity period. An established connection keeps
-the roots it was verified with until its observation ends. Workload deletion or replacement is
+and observation snapshot rechecks the peer leaf's validity period. Established gRPC connections close
+when either selected leaf expires, so a persistent channel reconnects with rotated credentials. A
+connection keeps the roots it was verified with until it closes. Workload deletion or replacement is
 checked on continuing observation.
 
 The certificate authenticates the Sandbox workload, not every process within it. Code able to read
