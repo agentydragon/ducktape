@@ -16,7 +16,7 @@ See the [proxy contract](gateway/SPEC.md). The Sandbox
 Controller owns `Sandbox.status`.
 
 The required `workload` settings block configures the dedicated TLS listener used by Sandbox
-gRPC and HTTP/JSON traffic. Its `auth` list explicitly enables `spiffe`, `kubernetes_bearer`, or
+gRPC traffic. Its `auth` list explicitly enables `spiffe`, `kubernetes_bearer`, or
 both; the deployed Gateway enables SPIFFE only. Mixed mode accepts a TLS bearer when no client
 certificate is presented. Calls must present exactly one enabled credential: an invalid presented
 SVID cannot fall back to bearer authentication, and certificate plus authorization or delegation

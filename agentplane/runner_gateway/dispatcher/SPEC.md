@@ -1,6 +1,7 @@
 # Session Dispatcher caller authority
 
-This contract governs the gRPC and generated HTTP/JSON SessionDispatcher methods served by the Runner Gateway.
+This contract governs SessionDispatcher gRPC methods served by the Runner Gateway and the generated
+HTTP/JSON facade served by the App.
 It scopes existing Sessions and existing environments; it does not create environments or select templates.
 
 ## Caller proof
@@ -12,11 +13,9 @@ It scopes existing Sessions and existing environments; it does not create enviro
   resolver proves the live Sandbox credential, current Sandbox-owned ServiceAccount UID, and accepted
   Pod binding for SVID calls. It selects by presented credentials before method admission, rejects
   disabled or ambiguous credentials, and never falls back from an invalid presented SVID.
-- Sandbox traffic retains the existing `session-dispatcher.<namespace>.svc.cluster.local:8080` gRPC
-  and `:8081` HTTP origins. The credential-holding sidecar maps those exact authorities to the
-  Runner Gateway's `:8082` workload listener through central-proxy CONNECT, then originates TLS with
-  its Runner SVID. Native gRPC frames pass opaquely through the CONNECT tunnel; HTTP/JSON calls use
-  the same listener's generated facade. No Dispatcher-audience token is projected into Sandbox Pods.
+- Sandbox traffic reaches the Runner Gateway's native gRPC workload listener on `:8082` through
+  central-proxy CONNECT, originating TLS with its Runner SVID. The workload listener does not serve
+  HTTP/JSON. No Dispatcher-audience token is projected into Sandbox Pods.
 - A normal caller is the ServiceAccount identity returned by TokenReview, including the actual ServiceAccount
   UID. Request fields never assert this identity.
 - The existing configured backend account list remains a privileged compatibility path only when the same
@@ -144,12 +143,12 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Transport boundary
 
-Sandbox Pods retain proxy-only egress. Their existing Dispatcher URL now reaches the dedicated workload
-TLS listener through an exact sidecar route and opaque central CONNECT; the listener authenticates the
-Runner SVID before applying the unchanged Dispatcher and EnvironmentService method rules. The configured
-CLI credential string remains inert for compatibility. Backend callers continue to use the existing
-TokenReview listeners and allowlists. A concrete MCP/client and History provenance propagation remain
-outside this transport change.
+Sandbox Pods retain proxy-only egress. Their credential-holding relay reaches the dedicated workload
+TLS gRPC listener through central CONNECT; the listener authenticates the Runner SVID before applying
+the unchanged Dispatcher and EnvironmentService method rules. The configured CLI credential string
+remains inert for compatibility. Backend callers continue to use the existing TokenReview listeners
+and allowlists. A concrete MCP/client and History provenance propagation remain outside this transport
+change.
 
 ## Typed delivery observations
 

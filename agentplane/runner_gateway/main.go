@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"maps"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -33,10 +31,8 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	workloadfacade "github.com/agentydragon/ducktape/agentplane/workload_auth/facade"
 	workloadlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-logr/logr"
-	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -165,26 +161,6 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 	failed <- fmt.Errorf("%s: %w", role, err)
 }
 
-func newWorkloadFacade(ctx context.Context, methods auth.Methods, service *dispatcher.Service, environmentService *environments.Service) (http.Handler, error) {
-	return workloadfacade.NewHandlerWithOptionalClientCertificate(
-		ctx,
-		workloadfacade.Interceptors{Unary: methods.UnaryInterceptor(0), Stream: methods.StreamInterceptor(0)},
-		facade.HandlerOptions{},
-		workloadfacade.Registration{
-			Server: func(registrar grpc.ServiceRegistrar) {
-				dispatcherpb.RegisterSessionDispatcherServer(registrar, service)
-				environmentpb.RegisterEnvironmentServiceServer(registrar, environmentService)
-			},
-			HTTP: func(ctx context.Context, mux *gatewayruntime.ServeMux, connection grpc.ClientConnInterface) error {
-				if err := dispatcherpb.RegisterSessionDispatcherHandlerClient(ctx, mux, dispatcherpb.NewSessionDispatcherClient(connection)); err != nil {
-					return err
-				}
-				return environmentpb.RegisterEnvironmentServiceHandlerClient(ctx, mux, environmentpb.NewEnvironmentServiceClient(connection))
-			},
-		},
-	)
-}
-
 func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DispatcherDatabaseURL, migrations.Up); err != nil {
 		return err
@@ -218,7 +194,11 @@ func serve(ctx context.Context, c config, listener, workloadListener net.Listene
 	if workloadTLS == nil {
 		return errors.New("workload.tls is required")
 	}
-	workloadTLS.NextProtos = []string{"h2", "http/1.1"}
+	workloadTLS.NextProtos = []string{"h2"}
+	workloadCredentials, err := environment_runtime_transport.ServerCredentials(workloadTLS)
+	if err != nil {
+		return fmt.Errorf("workload listener gRPC credentials: %w", err)
+	}
 	if c.RunnerSecurity.Mode == environment_runtime_transport.MutualTLS {
 		identity, err := c.RunnerSecurity.TLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
 		if err != nil {
@@ -440,6 +420,7 @@ func serve(ctx context.Context, c config, listener, workloadListener net.Listene
 	}
 	workloadGRPCServer := grpc.NewServer(append(
 		workloadMethods.ServerOptions(0),
+		grpc.Creds(workloadCredentials),
 		observability.GRPCServerOption(),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             30 * time.Second,
@@ -453,24 +434,9 @@ func serve(ctx context.Context, c config, listener, workloadListener net.Listene
 	healthpb.RegisterHealthServer(workloadGRPCServer, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
 	go func() { reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx)) }()
-	workloadHTTPHandler, err := newWorkloadFacade(ctx, workloadMethods, service, environmentService)
-	if err != nil {
-		return fmt.Errorf("create workload facade: %w", err)
-	}
-	workloadHandler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.ProtoMajor == 2 && strings.HasPrefix(request.Header.Get("Content-Type"), "application/grpc") {
-			workloadGRPCServer.ServeHTTP(writer, request)
-			return
-		}
-		workloadHTTPHandler.ServeHTTP(writer, request)
-	})
-	workloadHTTPServer := &http.Server{
-		Handler:   observability.HTTPHandler(workloadHandler),
-		TLSConfig: workloadTLS, ReadHeaderTimeout: 10 * time.Second,
-		ConnState: environment_runtime_transport.HTTPServerTLSExpiryConnState(nil),
-	}
+	defer workloadGRPCServer.Stop()
 	go func() {
-		reportUnexpected(ctx, failed, "workload listener", workloadHTTPServer.ServeTLS(workloadListener, "", ""))
+		reportUnexpected(ctx, failed, "workload gRPC listener", workloadGRPCServer.Serve(workloadListener))
 	}()
 
 	// Serving once the gRPC listener accepts calls.
@@ -486,11 +452,7 @@ func serve(ctx context.Context, c config, listener, workloadListener net.Listene
 	cancel()
 	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
 	defer release()
-	if err := workloadHTTPServer.Shutdown(closing); err != nil {
-		slog.Warn("workload listener did not drain", "error", err)
-		_ = workloadHTTPServer.Close()
-	}
-	workloadGRPCServer.Stop()
+	graceful.Stop(closing, workloadGRPCServer)
 	graceful.Stop(closing, server)
 	return result
 }

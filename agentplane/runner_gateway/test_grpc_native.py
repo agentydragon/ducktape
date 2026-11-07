@@ -2,14 +2,12 @@
 
 import asyncio
 import shlex
-import ssl
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import grpc
-import httpx
 import pytest
 import pytest_bazel
 from more_itertools import one
@@ -24,7 +22,7 @@ from agentplane.history_service.testing.go_service import wait_for_history_sessi
 from agentplane.proto import command_pb2, event_log_pb2, session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.runner_gateway.testing.gateway_process import WORKLOAD_AUDIENCE, GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -70,29 +68,34 @@ async def test_mixed_workload_listener_accepts_one_svid_or_bearer(
             }
         }
     )
-    ca_file = str(gateway_service.environment_runtime_ca_file)
-    async with httpx.AsyncClient(verify=ca_file, timeout=10) as client:
-        bearer = await sandbox.pod_token(WORKLOAD_AUDIENCE)
-        response = await client.get(
-            f"{gateway_service.workload_url}/v1/sessions", headers={"Authorization": f"Bearer {bearer}"}
-        )
-        assert response.status_code == 200, response.text
+    bearer = await sandbox.pod_token(WORKLOAD_AUDIENCE)
+    root_certificates = gateway_service.environment_runtime_ca_file.read_bytes()
 
-        workload_tls = gateway_service.issue_environment_runtime_tls(
-            sandbox.environment_runtime_identity_uri, tmp_path / "mixed-workload-client"
+    async def list_sessions(*, client_certificate: tuple[Path, Path] | None = None, token: str | None = None) -> None:
+        private_key = certificate_chain = None
+        if client_certificate is not None:
+            certificate_chain = client_certificate[0].read_bytes()
+            private_key = client_certificate[1].read_bytes()
+        credentials = grpc.ssl_channel_credentials(
+            root_certificates=root_certificates, private_key=private_key, certificate_chain=certificate_chain
         )
-        assert workload_tls.cert_file is not None
-        assert workload_tls.key_file is not None
-        svid_context = ssl.create_default_context(cafile=ca_file)
-        svid_context.load_cert_chain(workload_tls.cert_file, workload_tls.key_file)
-        svid_client = httpx.AsyncClient(verify=svid_context, timeout=10)
-        async with svid_client:
-            response = await svid_client.get(f"{gateway_service.workload_url}/v1/sessions")
-            assert response.status_code == 200, response.text
-            response = await svid_client.get(
-                f"{gateway_service.workload_url}/v1/sessions", headers={"Authorization": f"Bearer {bearer}"}
+        async with grpc.aio.secure_channel(gateway_service.workload_target, credentials) as channel:
+            metadata = (("authorization", f"Bearer {token}"),) if token is not None else ()
+            await session_dispatcher_pb2_grpc.SessionDispatcherStub(channel).ListSessions(
+                session_dispatcher_pb2.ListSessionsRequest(), metadata=metadata, timeout=10
             )
-            assert response.status_code == 401, response.text
+
+    await list_sessions(token=bearer)
+    workload_tls = gateway_service.issue_environment_runtime_tls(
+        sandbox.environment_runtime_identity_uri, tmp_path / "mixed-workload-client"
+    )
+    assert workload_tls.cert_file is not None
+    assert workload_tls.key_file is not None
+    client_certificate = (Path(workload_tls.cert_file), Path(workload_tls.key_file))
+    await list_sessions(client_certificate=client_certificate)
+    with pytest.raises(grpc.aio.AioRpcError) as rejected:
+        await list_sessions(client_certificate=client_certificate, token=bearer)
+    assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
 
 def _spec_at_target(spec: session_pb2.SessionSpec, target: SandboxDestination) -> session_pb2.SessionSpec:

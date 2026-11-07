@@ -4,8 +4,8 @@ The durable command queue is the Dispatcher role of the
 [Runner Gateway](../README.md). The Go integration app and the Notification Service use the
 Session Dispatcher gRPC contract; the stable Dispatcher Service maps its port `8080`
 to the shared listener on `8080`. The credential-holding Sandbox relay presents a Runner SVID to
-the dedicated workload listener on `8082`, which serves gRPC and generated HTTP/JSON under its
-explicit authentication allowlist; the deployed Gateway allows SPIFFE only. The worker delivers
+the dedicated native gRPC workload listener on `8082`, under its explicit authentication
+allowlist; the deployed Gateway allows SPIFFE only. The worker delivers
 through the Runner proxy once
 the exact Sandbox is ready, with per-Sandbox Lease and PostgreSQL generation fencing.
 
@@ -24,7 +24,7 @@ The manual queue, replica and wake probes are documented in the
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
   commands, so a caller holding a few of them does not replay a whole Session.
-- **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over gRPC.
+- **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over native gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
   `DELIVERY_STATE_HARNESS_CONFIRMED`, `DELIVERY_STATE_NO_OP`, `DELIVERY_STATE_FAILED`,
@@ -69,7 +69,7 @@ The manual queue, replica and wake probes are documented in the
   Native creation rejection and unconfirmed owner outcomes fence dependent queued commands; see
   [the outcome contract](SPEC.md#native-opening-outcomes-and-dependent-commands).
   Session records follow the deletion and retention rules below.
-- **Discovering Sessions**: `ListSessions` (`GET /v1/sessions`) returns one bounded
+- **Discovering Sessions**: `ListSessions` returns one bounded
   page of current Session records, including waiting and failed materialization before
   any Runtime or History record exists. It uses the same retained-owner read scope as
   `GetSession`, without contacting a live environment or History. `limit` defaults to 50 and
@@ -156,9 +156,9 @@ the Sandboxes with pending work that it does not own.
 ## Deviations and gaps
 
 - `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
-- Sandbox Pods keep their proxy-only egress and existing CLI URL. The relay maps the exact Dispatcher
-  authorities to the workload TLS listener through central CONNECT and authenticates with its Runner
-  SVID; the configured CLI credential string remains inert. Backend TokenReview listeners and their
+- Sandbox Pods keep their proxy-only egress. The relay reaches the workload TLS gRPC listener through
+  central CONNECT and authenticates with its Runner SVID; the configured CLI credential string remains
+  inert. Backend TokenReview listeners and their
   caller allowlists are unchanged. A concrete MCP/client caller and History provenance propagation
   remain outside this transport change.
 

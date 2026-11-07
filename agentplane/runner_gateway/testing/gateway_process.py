@@ -66,7 +66,7 @@ class GatewayProcess:
 
     process: asyncio.subprocess.Process
     target: str
-    workload_url: str
+    workload_target: str
     log_path: Path
     environment_runtime_ca: CertificateAuthority
     environment_runtime_ca_file: Path
@@ -300,7 +300,7 @@ async def run_gateway(
                 orphan = GatewayProcess(
                     process=process,
                     target=f"{grpc_listener.host}:{grpc_listener.port}",
-                    workload_url=f"https://localhost:{workload_socket.port}",
+                    workload_target=f"localhost:{workload_socket.port}",
                     log_path=log_path,
                     environment_runtime_ca=environment_runtime_ca,
                     environment_runtime_ca_file=environment_runtime_ca_file,
@@ -317,7 +317,7 @@ async def run_gateway(
             service = GatewayProcess(
                 process=process,
                 target=f"{grpc_listener.host}:{grpc_listener.port}",
-                workload_url=f"https://localhost:{workload_socket.port}",
+                workload_target=f"localhost:{workload_socket.port}",
                 log_path=log_path,
                 environment_runtime_ca=environment_runtime_ca,
                 environment_runtime_ca_file=environment_runtime_ca_file,
