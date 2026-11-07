@@ -39,6 +39,13 @@ _REJECTION_REASONS = {
     pb.CANDIDATE_REJECTION_REASON_MALFORMED,
     pb.CANDIDATE_REJECTION_REASON_NOT_ACCEPTED,
 }
+_PROBE_FAILURE_REASONS = {
+    pb.PROBE_FAILURE_REASON_INVALID_RESPONSE,
+    pb.PROBE_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
+    pb.PROBE_FAILURE_REASON_STORAGE_ERROR,
+    pb.PROBE_FAILURE_REASON_SUPERSEDED,
+    pb.PROBE_FAILURE_REASON_PROVIDER_INTERNAL,
+}
 
 
 class ProviderProtocolError(ValueError):
@@ -108,8 +115,25 @@ class ProviderControlClient:
         if not result.HasField("completed_at") or result.source not in _PROBE_SOURCES:
             raise ProviderProtocolError("Provider returned an incomplete probe result")
         ProviderControlClient._check_timestamp(result.completed_at)
-        if result.WhichOneof("result") is None:
+        kind = result.WhichOneof("result")
+        if kind is None or (kind == "failure" and result.failure.reason not in _PROBE_FAILURE_REASONS):
             raise ProviderProtocolError("Provider returned a probe without a typed result")
+
+    @staticmethod
+    def _check_candidate(candidate: bytes, media_type: str, format_version: str) -> None:
+        if (
+            not isinstance(candidate, bytes)
+            or not candidate
+            or len(candidate) > 65_536
+            or not media_type
+            or not format_version
+        ):
+            raise ValueError("Invalid session candidate request")
+
+    @staticmethod
+    def _check_candidate_result(result: str | None, rejection_reason: int) -> None:
+        if result is None or (result == "rejected" and rejection_reason not in _REJECTION_REASONS):
+            raise ProviderProtocolError("Provider returned a candidate operation without a valid typed result")
 
     async def get_info(self) -> pb.GetInfoResponse:
         response = await self.stub.GetInfo(
@@ -172,8 +196,7 @@ class ProviderControlClient:
     async def import_session(
         self, candidate: bytes, *, media_type: str, format_version: str
     ) -> pb.ImportSessionResponse:
-        if not isinstance(candidate, bytes) or not candidate or not media_type or not format_version:
-            raise ValueError("Invalid session import request")
+        self._check_candidate(candidate, media_type, format_version)
         response = await self.stub.ImportSession(
             pb.ImportSessionRequest(
                 instance=self.instance, media_type=media_type, format_version=format_version, candidate=candidate
@@ -183,9 +206,24 @@ class ProviderControlClient:
             wait_for_ready=False,
         )
         self._check_instance(response.instance)
-        result = response.WhichOneof("result")
-        if result is None or (result == "rejected" and response.rejected.reason not in _REJECTION_REASONS):
-            raise ProviderProtocolError("Provider returned an import without a valid typed result")
+        self._check_candidate_result(response.WhichOneof("result"), response.rejected.reason)
+        return response
+
+    async def verify_candidate(
+        self, candidate: bytes, *, media_type: str, format_version: str
+    ) -> pb.VerifyCandidateResponse:
+        """Check a candidate without installing it; never replay an ambiguous call."""
+        self._check_candidate(candidate, media_type, format_version)
+        response = await self.stub.VerifyCandidate(
+            pb.VerifyCandidateRequest(
+                instance=self.instance, media_type=media_type, format_version=format_version, candidate=candidate
+            ),
+            metadata=await self._metadata(),
+            timeout=self.timeout_s,
+            wait_for_ready=False,
+        )
+        self._check_instance(response.instance)
+        self._check_candidate_result(response.WhichOneof("result"), response.rejected.reason)
         return response
 
     async def probe(self, *, source: int) -> pb.ProbeResponse:
