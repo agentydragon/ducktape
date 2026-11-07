@@ -55,11 +55,13 @@ class Provider(rpc.SessionProviderControlServicer):
             instance=INSTANCE, snapshot=pb.SessionSnapshot(state=pb.SESSION_STATE_VERIFIED, state_changed_at=_now())
         )
         self.import_result = pb.ImportSessionResponse(instance=INSTANCE, installed=pb.SessionInstalled())
+        self.verify_result = pb.VerifyCandidateResponse(instance=INSTANCE, verified=pb.CandidateVerified())
         self.probe_result = pb.ProbeResponse(
             instance=INSTANCE,
             result=pb.ProbeResult(completed_at=_now(), source=pb.PROBE_SOURCE_MANUAL, verified=pb.ProbeVerified()),
         )
         self.abort_import = False
+        self.abort_verify = False
 
     def _record(self, method, context):
         self.calls[method] += 1
@@ -93,6 +95,15 @@ class Provider(rpc.SessionProviderControlServicer):
         assert request.instance == INSTANCE
         return self.probe_result
 
+    @override
+    async def VerifyCandidate(self, request, context):
+        self._record("VerifyCandidate", context)
+        assert request.instance == INSTANCE
+        self.candidates.append(request.candidate)
+        if self.abort_verify:
+            await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "provider response lost")
+        return self.verify_result
+
 
 @asynccontextmanager
 async def served(tmp_path):
@@ -125,9 +136,12 @@ async def test_round_trip_typed_results_and_rotated_projected_bearer(tmp_path):
             "result"
         ) == "installed"
         assert (await client.probe(source=pb.PROBE_SOURCE_MANUAL)).result.WhichOneof("result") == "verified"
-        assert provider.candidates == [candidate]
-        assert provider.tokens == ["Bearer " + "a" * 32, *("Bearer " + "b" * 32,) * 3]
-        assert provider.calls == Counter(GetInfo=1, GetSession=1, ImportSession=1, Probe=1)
+        assert (await client.verify_candidate(candidate, media_type="application/json", format_version="1")).WhichOneof(
+            "result"
+        ) == "verified"
+        assert provider.candidates == [candidate, candidate]
+        assert provider.tokens == ["Bearer " + "a" * 32, *("Bearer " + "b" * 32,) * 4]
+        assert provider.calls == Counter(GetInfo=1, GetSession=1, ImportSession=1, Probe=1, VerifyCandidate=1)
         # The client leaves its injected channel available to its owner.
         assert (
             await rpc.SessionProviderControlStub(channel).GetInfo(pb.GetInfoRequest())
@@ -153,6 +167,17 @@ async def test_typed_provider_failures_stay_distinct_from_rpc_failure(tmp_path):
             await client.import_session(b"opaque-secret", media_type="application/json", format_version="1")
         assert failure.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
         assert provider.calls["ImportSession"] == 2  # one completed call and exactly one aborted call
+        provider.verify_result = pb.VerifyCandidateResponse(
+            instance=INSTANCE, unsupported=pb.CandidateVerificationUnsupported()
+        )
+        assert (
+            await client.verify_candidate(b"opaque-secret", media_type="application/json", format_version="1")
+        ).WhichOneof("result") == "unsupported"
+        provider.abort_verify = True
+        with pytest.raises(grpc.aio.AioRpcError) as verify_failure:
+            await client.verify_candidate(b"opaque-secret", media_type="application/json", format_version="1")
+        assert verify_failure.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
+        assert provider.calls["VerifyCandidate"] == 2
 
 
 @pytest.mark.asyncio
@@ -188,8 +213,19 @@ async def test_protocol_errors_reject_missing_and_mismatched_responses_without_c
         with pytest.raises(ProviderProtocolError, match="typed result") as failure:
             await client.import_session(b"private-candidate", media_type="application/json", format_version="1")
         assert "private-candidate" not in str(failure.value)
+        provider.verify_result.ClearField("verified")
+        with pytest.raises(ProviderProtocolError, match="typed result"):
+            await client.verify_candidate(b"private-candidate", media_type="application/json", format_version="1")
+        provider.verify_result.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSPECIFIED
+        with pytest.raises(ProviderProtocolError, match="typed result"):
+            await client.verify_candidate(b"private-candidate", media_type="application/json", format_version="1")
         provider.probe_result.result.source = pb.PROBE_SOURCE_SCHEDULED
         with pytest.raises(ProviderProtocolError, match="wrong source"):
+            await client.probe(source=pb.PROBE_SOURCE_MANUAL)
+        provider.probe_result.result.source = pb.PROBE_SOURCE_MANUAL
+        provider.probe_result.result.ClearField("verified")
+        provider.probe_result.result.failure.reason = pb.PROBE_FAILURE_REASON_UNSPECIFIED
+        with pytest.raises(ProviderProtocolError, match="typed result"):
             await client.probe(source=pb.PROBE_SOURCE_MANUAL)
 
 
@@ -199,6 +235,14 @@ async def test_missing_bearer_prevents_dispatch(tmp_path):
         token_file.unlink()
         with pytest.raises(FileNotFoundError, match="gateway-bearer"):
             await client.get_session()
+        assert not provider.calls
+
+
+@pytest.mark.asyncio
+async def test_oversized_candidate_fails_before_dispatch(tmp_path):
+    async with served(tmp_path) as (provider, client, _, _):
+        with pytest.raises(ValueError, match="candidate request"):
+            await client.verify_candidate(b"x" * 65_537, media_type="application/json", format_version="1")
         assert not provider.calls
 
 
