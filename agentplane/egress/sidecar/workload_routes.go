@@ -76,6 +76,22 @@ func (s *sidecar) prepareWorkloadRoutes() error {
 	return nil
 }
 
+// dialTLSRoute verifies the service TLS peer inside the authenticated central CONNECT tunnel.
+func (s *sidecar) dialTLSRoute(ctx context.Context, target string, security *tls.Config) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	connection, err := s.dialRouteTunnel(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	secured, err := environment_runtime_transport.ClientTLSConnection(ctx, connection, security)
+	if err != nil {
+		_ = connection.Close()
+		return nil, fmt.Errorf("destination TLS: %w", err)
+	}
+	return secured, nil
+}
+
 func validateWorkloadRoute(authority string, config workloadRouteConfig) error {
 	for _, address := range []string{authority, config.Upstream} {
 		if err := validateAuthority(address); err != nil {

@@ -13,7 +13,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"google.golang.org/grpc/credentials"
 )
 
 func main() {
@@ -65,8 +64,8 @@ func (plaintextProxyTransport) dial(ctx context.Context, address string) (net.Co
 }
 
 type tlsProxyTransport struct {
-	security        *tls.Config
-	grpcCredentials credentials.TransportCredentials
+	security *tls.Config
+	svid     *environment_runtime_transport.Config
 }
 
 func (transport tlsProxyTransport) dial(ctx context.Context, address string) (net.Conn, error) {
@@ -102,22 +101,18 @@ func newProxyHop(config proxyConfig) (*proxyHop, error) {
 		transport = plaintextProxyTransport{}
 	case tlsProxyTransportConfig:
 		var security *tls.Config
-		var grpcCredentials credentials.TransportCredentials
+		var svid *environment_runtime_transport.Config
 		switch configuredAuth := configured.Auth.(type) {
 		case spiffeProxyAuth:
-			client := environment_runtime_transport.Config{
+			svid = &environment_runtime_transport.Config{
 				CertFile: configuredAuth.CertFile,
 				KeyFile:  configuredAuth.KeyFile,
 				CAFile:   configured.CAFile,
 			}
 			var err error
-			security, err = client.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+			security, err = svid.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
 			if err != nil {
 				return nil, fmt.Errorf("configure SPIFFE proxy authentication: %w", err)
-			}
-			grpcCredentials, err = client.ClientCredentials(environment_runtime_transport.EgressProxyURI)
-			if err != nil {
-				return nil, fmt.Errorf("configure SPIFFE gRPC authentication: %w", err)
 			}
 		case kubernetesBearerProxyAuth:
 			var err error
@@ -128,7 +123,7 @@ func newProxyHop(config proxyConfig) (*proxyHop, error) {
 		default:
 			return nil, fmt.Errorf("unsupported proxy authentication type %T", configuredAuth)
 		}
-		transport = tlsProxyTransport{security: security, grpcCredentials: grpcCredentials}
+		transport = tlsProxyTransport{security: security, svid: svid}
 	default:
 		return nil, fmt.Errorf("unsupported proxy transport type %T", configured)
 	}

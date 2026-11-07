@@ -374,7 +374,7 @@ func TestWorkloadGRPCConnectRoutePresentsRunnerSVIDAndCarriesNativeMetadata(t *t
 				connection.Close()
 				return nil, fmt.Errorf("sidecar CONNECT response: %s", response.Status)
 			}
-			return &bufferedTLSRoute{Conn: connection, reader: reader}, nil
+			return &bufferedRouteConn{Conn: connection, reader: reader}, nil
 		}), grpc.WithAuthority(target), grpc.WithBlock(), grpc.WithNoProxy())
 	if err != nil {
 		t.Fatal(err)
