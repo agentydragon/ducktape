@@ -17571,6 +17571,11 @@ impl Executor<'_, '_> {
             // bool-based path if its receipt or identity is lost.
             outcome.effects.binding_effect_coverage = BindingEffectCoverage::LegacyExecution;
         }
+        // Imported fragments can carry support without a caller heap cell.
+        // Publish that evidence with the same owner facts as local receipts.
+        for receipt in outcome.effect_coverage.operation_support_receipts() {
+            outcome.effects.record_operation_support(receipt.clone());
+        }
         *outcome.effects
     }
 }
