@@ -60,6 +60,10 @@ def provider_info(provider: pb.ProviderInfo) -> None:
             raise ProviderProtocolError("Provider info declares candidate verification without an import format")
 
 
+def _unknown(value: pb.OperationOutcomeUnknown) -> None:
+    _enum(value.reason, pb.UnknownOutcomeReason.Name, allow_unspecified=True)
+
+
 def probe_result(result: pb.ProbeResult, *, require_metadata: bool = True) -> None:
     if require_metadata:
         if not result.HasField("completed_at") or result.source not in PROBE_SOURCES:
@@ -73,6 +77,8 @@ def probe_result(result: pb.ProbeResult, *, require_metadata: bool = True) -> No
             _enum(result.failure.reason, pb.ProbeFailureReason.Name)
         except ProviderProtocolError as exc:
             raise ProviderProtocolError("Provider returned a probe without a valid typed result") from exc
+    elif kind == "outcome_unknown":
+        _unknown(result.outcome_unknown)
 
 
 def snapshot(value: pb.SessionSnapshot) -> None:
@@ -98,3 +104,13 @@ def candidate_result(result: pb.ImportSessionResponse | pb.VerifyCandidateRespon
             _enum(result.rejected.reason, pb.CandidateRejectionReason.Name)
         except ProviderProtocolError as exc:
             raise ProviderProtocolError("Provider returned a candidate operation without a valid typed result") from exc
+    elif kind == "outcome_unknown":
+        _unknown(result.outcome_unknown)
+    elif kind == "failure" and isinstance(result, pb.ImportSessionResponse):
+        failure = result.failure
+        _enum(failure.reason, pb.ImportFailureReason.Name)
+        if failure.HasField("upstream_http_status") and (
+            failure.reason != pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR
+            or not 100 <= failure.upstream_http_status <= 599
+        ):
+            raise ProviderProtocolError("Provider returned an invalid import failure")
