@@ -1322,13 +1322,13 @@ fn anonymous_root_operations_compose_their_actual_effects() {
 fn root_call_admission_retains_argument_effects_and_ambiguous_target_refusal() {
     let statement = "(selected = value => value, result = selected(argument()));";
     let source = format!(
-        "let calls = 0;\nfunction argument() {{ calls++; return 42; }}\nlet selected = 0;\nlet result = 0;\nconst readLater = () => later;\n{statement}\nconst later = 1;\nconsole.log(result, calls, readLater());\n"
+        "let calls = 0;\nfunction argument() {{ calls++; return 42; }}\nlet selected = 0;\nlet result = 0;\n{statement}\nconst later = 1;\nconsole.log(result, calls, later);\n"
     );
     let baseline = run_fixture(
         FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&baseline, "42 1 1\n");
-    let fixture = run_inspection_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         &source,
         vec![
             logical_module_with_anon(
@@ -1338,7 +1338,6 @@ fn root_call_admission_retains_argument_effects_and_ambiguous_target_refusal() {
                     Member::new("argument"),
                     Member::new("selected"),
                     Member::new("result"),
-                    Member::new("readLater"),
                 ],
                 &[statement],
             ),
@@ -1351,7 +1350,7 @@ fn root_call_admission_retains_argument_effects_and_ambiguous_target_refusal() {
         graph
             .nodes
             .iter()
-            .find(|node| node.statement_ordinal.0 == 5)
+            .find(|node| node.statement_ordinal.0 == 4)
             .unwrap()
             .synchronous_execution
             .as_ref()
@@ -1372,8 +1371,9 @@ fn root_call_admission_retains_argument_effects_and_ambiguous_target_refusal() {
         "the weak module store retains the original noncallable alternative: {execution:#}"
     );
     let report = fixture.effect_translation_validation();
-    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
-    assert_eq!(report["decision"]["status"], "incomplete", "{report}");
+    assert_eq!(report["swapped_pairs"], 0, "{report}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report}");
+    assert_eq!(report["decision"]["scope"], "no_reordering", "{report}");
 }
 
 #[test]

@@ -893,6 +893,11 @@ connectivity proof. Supported global-store expressions also use the ordered root
 plan. Eligible source plans select call targets after evaluating their callee
 and arguments in source order. A refused call retains the prefix's effects and
 summarizes its remainder without replaying operands or gaining a root receipt.
+An opaque getter's shared transfer retains conservative effects and a possible
+abrupt result while its unknown normal result permits argument evaluation.
+That result grants no target selection or effect proof; strict provider queries
+still refuse it. Unknown calls consume evaluated callback capabilities through
+the same bounded opaque-call protocol before the caller is summarized.
 An unproved global store retains incomplete execution, an uncovered root
 authority and conservative fallback; global lookup effects remain independent.
 Initial name lists cannot

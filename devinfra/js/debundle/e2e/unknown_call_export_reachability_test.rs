@@ -139,9 +139,11 @@ console.log(later);
 "#,
     ));
     assert_preserved_entry_output(&fixture, "1\n");
+    let prefix = binding_execution(&fixture, "prefix");
     let initializer = binding_execution(&fixture, "dynamic");
     let sequel = binding_execution(&fixture, "later");
-    assert!(!initializer.complete, "{initializer:#?}");
+    assert!(!prefix.complete, "{prefix:#?}");
+    assert!(initializer.complete, "{initializer:#?}");
     assert!(sequel.complete, "{sequel:#?}");
 }
 

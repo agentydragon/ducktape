@@ -129,6 +129,11 @@ struct NativeCallIdentity {
     target_postcondition: Option<Box<NativeObjectPostcondition>>,
 }
 
+struct CallExecution {
+    complete: bool,
+    transfer: CallTransfer,
+}
+
 fn from_flow(values: FlowValues) -> Values {
     values.into_iter().map(AbstractValue::Value).collect()
 }
@@ -3166,7 +3171,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation: ExecutionOperation::OpaqueExecution,
                 ordered_field_read_refusal: None,
-                ordered_call_admission_refusal: if complete { admission_refusal } else { None },
+                ordered_call_admission_refusal: admission_refusal,
             }
         };
         self.fallback(frame, reached, fallback_reason, span);
@@ -3316,14 +3321,27 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         // The receiver is only a declarative cell, so the value projection
         // cannot replay receiver code. Its judgment stays opaque; execution
         // completeness is not a source or provider coverage certificate.
-        if self
-            .executor
-            .execute_call(&call, &frame.environment, &frame.environment, self.outcome)
-            && !self.outcome.unknown_call
-        {
+        let execution =
+            self.executor
+                .execute_call(&call, &frame.environment, &frame.environment, self.outcome);
+        if execution.complete && !self.outcome.unknown_call {
             let values =
                 self.executor
                     .evaluate(&call.callee, &frame.environment, &frame.environment);
+            frame.inputs.extend(values.iter().cloned());
+            frame
+                .borrowed_records
+                .extend(self.executor.reachable_objects(&values));
+            return Some(super::super::allocation_transfer::AllocationValue::opaque(
+                values,
+            ));
+        }
+        if self.retained_query.is_none()
+            && let CallTransfer::Values(values) = execution.transfer
+        {
+            // Consume only the value actually supplied by the executed getter
+            // protocol. Its normal/abrupt alternatives carry no operation
+            // coverage; a strict source query still refuses this projection.
             frame.inputs.extend(values.iter().cloned());
             frame
                 .borrowed_records
@@ -13052,7 +13070,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
         }
         for call in &callable.calls {
-            if !self.execute_call(call, &env, &env, &mut outcome) {
+            if !self.execute_call(call, &env, &env, &mut outcome).complete {
                 // Local initializers are pre-evaluated for capability reach.
                 // A skipped operation may precede their real evaluation and
                 // change even a primitive member value into an object.
@@ -13175,7 +13193,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         env: &Context,
         captures: &Context,
         outcome: &mut Outcome,
-    ) -> bool {
+    ) -> CallExecution {
         // Completeness is cumulative in the returned outcome, but only this
         // transfer's skipped effects can invalidate its own inputs here.
         let complete_before = outcome.complete;
@@ -13188,7 +13206,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             operands: None,
         });
         let RuntimeValue::Call {
-            outcome: result, ..
+            outcome: result,
+            transfer,
         } = result
         else {
             unreachable!("call transfers produce outcomes");
@@ -13215,7 +13234,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let transfer_complete = outcome.complete;
         outcome.complete &= complete_before;
-        transfer_complete
+        CallExecution {
+            complete: transfer_complete,
+            transfer,
+        }
     }
 
     fn method_receiver_is_unused(&self, targets: &Values) -> bool {
@@ -13551,7 +13573,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if !self.state.object_accessors_are_settled(object))
             }) {
                 self.promote_possible_getter(call, &values, outcome);
-                return CallTransfer::EffectsOnly;
+                return CallTransfer::Values(Values::from([
+                    AbstractValue::Value(Value::Top),
+                    AbstractValue::Value(Value::Unavailable),
+                ]));
             }
             for value in &values {
                 if let AbstractValue::OwnDescriptorMap(site) = value {
@@ -13698,7 +13723,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if !self.state.object_accessors_are_settled(object))
             }) {
                 self.promote_possible_getter(call, &values, outcome);
-                return CallTransfer::EffectsOnly;
+                return CallTransfer::Values(Values::from([
+                    AbstractValue::Value(Value::Top),
+                    AbstractValue::Value(Value::Unavailable),
+                ]));
             }
             if values.contains(&AbstractValue::ForeignDeferredRecord) {
                 self.promote_foreign_record(outcome);
@@ -14126,6 +14154,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let prepared_receiver_unused = prepared_receiver
             .as_ref()
             .map(|_| self.method_receiver_is_unused(&targets));
+        let mut unknown_target_refusal = None;
         if needs_value {
             // Publication can change properties and captured state, but cannot
             // replace an ordinary source function's [[Call]]. Invocation reads
@@ -14167,7 +14196,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 None
             };
             if let Some(refusal) = admission_refusal {
-                return CallTransfer::UnsupportedOperands(refusal);
+                if refusal != OrderedCallAdmissionRefusal::UnknownTarget {
+                    return CallTransfer::UnsupportedOperands(refusal);
+                }
+                // Consume the evaluated argument/receiver capabilities through
+                // the existing opaque-call protocol before truncating the
+                // caller. No local target alternative is executed here.
+                unknown_target_refusal = Some(refusal);
             }
         }
         let from_entries_source_callbacks = if call.kind == CallKind::Call && !needs_value {
@@ -14658,6 +14693,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         outcome.return_selection =
             result_selection.filter(|selection| selection.matches(&result_values));
+        if let Some(refusal) = unknown_target_refusal {
+            return CallTransfer::UnsupportedOperands(refusal);
+        }
         CallTransfer::requested(needs_value, || result_values)
     }
 }

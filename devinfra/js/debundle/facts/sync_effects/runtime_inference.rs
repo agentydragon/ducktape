@@ -78,6 +78,8 @@ pub(super) enum CallTransfer {
     /// Consult the accompanying outcome for effect completeness. No return
     /// value was requested, or the selected proof supplies only effects.
     EffectsOnly,
+    /// A projection supplied by the executed call or lookup. Possible abrupt
+    /// values and effect completeness remain independent products.
     Values(Values),
     /// The ordered operand path declined this target. Its source-based
     /// helpers cannot safely replay already evaluated operands.
