@@ -177,6 +177,12 @@ pub(crate) fn source_chunk_import_for_target(
     )
 }
 
+struct ImportSpecifierGroup {
+    source: String,
+    named_or_default: Vec<(ImportSpecifier, PreparedImportBinding)>,
+    namespace: Vec<(ImportSpecifier, PreparedImportBinding)>,
+}
+
 /// Consolidate `(rewritten_source, specifier)` pairs into `ImportDecl`
 /// `ModuleItem`s, one statement per source group. First-occurrence order
 /// is preserved both for the source groups and for specifiers within each
@@ -192,26 +198,31 @@ pub(crate) fn source_chunk_import_for_target(
 pub(crate) fn group_specifiers_into_import_decls(
     pairs: Vec<(String, ImportSpecifier, PreparedImportBinding)>,
 ) -> Vec<PreparedImportDecl> {
-    let mut groups: Vec<(
-        String,
-        Vec<(ImportSpecifier, PreparedImportBinding)>,
-        Vec<(ImportSpecifier, PreparedImportBinding)>,
-    )> = Vec::new();
+    let mut groups = Vec::<ImportSpecifierGroup>::new();
     let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
     for (src, specifier, binding) in pairs {
         let group_index = *index_by_source.entry(src.clone()).or_insert_with(|| {
-            groups.push((src.clone(), Vec::new(), Vec::new()));
+            groups.push(ImportSpecifierGroup {
+                source: src.clone(),
+                named_or_default: Vec::new(),
+                namespace: Vec::new(),
+            });
             groups.len() - 1
         });
-        let (_, named_or_default, namespace) = &mut groups[group_index];
+        let group = &mut groups[group_index];
         match specifier {
-            ImportSpecifier::Namespace(_) => namespace.push((specifier, binding)),
-            _ => named_or_default.push((specifier, binding)),
+            ImportSpecifier::Namespace(_) => group.namespace.push((specifier, binding)),
+            _ => group.named_or_default.push((specifier, binding)),
         }
     }
     let mut result = Vec::with_capacity(groups.len());
-    for (src, mut named_or_default, mut namespace) in groups {
-        for (ns_specifier, binding) in namespace.drain(..) {
+    for ImportSpecifierGroup {
+        source: src,
+        mut named_or_default,
+        namespace,
+    } in groups
+    {
+        for (ns_specifier, binding) in namespace {
             result.push(PreparedImportDecl {
                 item: import_decl_module_item(vec![ns_specifier], &src),
                 targets: vec![binding.target.clone()],
