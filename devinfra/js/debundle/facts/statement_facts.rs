@@ -510,14 +510,16 @@ impl StatementFacts {
             calls.heap_contents.reads.extend(
                 calls
                     .reads
-                    .keys()
+                    .iter()
+                    .map(|(binding, _)| binding)
                     .chain(&calls.uninitialized_reads)
                     .filter_map(|binding| cells.get(binding).copied().map(EffectCell::ModuleCell)),
             );
             calls.heap_contents.writes.extend(
                 calls
                     .rebinds
-                    .keys()
+                    .iter()
+                    .map(|(binding, _)| binding)
                     .filter_map(|binding| cells.get(binding).copied().map(EffectCell::ModuleCell)),
             );
         }
