@@ -46,6 +46,7 @@ type EnvironmentRuntimeControlConfiguration struct {
 
 type Resolved struct {
 	Control                          EnvironmentRuntimeControlConfiguration
+	ModelConfigService               *Endpoint
 	StateDir                         string
 	SessionReconcileConcurrency      int
 	Launch                           SandboxLaunch

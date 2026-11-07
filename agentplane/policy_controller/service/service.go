@@ -56,6 +56,7 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 	return auth.Methods{
 		policypb.PolicyService_WatchPolicyBindings_FullMethodName: rule,
 		policypb.PolicyService_WatchPolicySets_FullMethodName:     rule,
+		policypb.PolicyService_ListPolicySetNames_FullMethodName:  rule,
 	}
 }
 
@@ -191,6 +192,44 @@ func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grp
 			return send(ctx, stream, &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Removed{Removed: id}})
 		},
 		func(item *policypb.PolicySet) *policypb.PolicyResourceIdentity { return item.GetIdentity() })
+}
+
+// ListPolicySetNames returns one sorted snapshot of the PolicySets visible to the caller.
+func (s *Service) ListPolicySetNames(ctx context.Context, _ *policypb.ListPolicySetNamesRequest) (*policypb.ListPolicySetNamesResponse, error) {
+	caller, broad, err := s.caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	allowed := map[string]struct{}{}
+	if !broad {
+		var bindings policyapi.PolicyBindingList
+		if err := s.objects.List(ctx, &bindings, client.InNamespace(s.namespace)); err != nil {
+			return nil, unavailable(ctx, err)
+		}
+		for _, binding := range bindings.Items {
+			if binding.Spec.Subject.Namespace == caller.Namespace && binding.Spec.Subject.Name == caller.Name {
+				for _, name := range binding.Spec.PolicySets {
+					allowed[name] = struct{}{}
+				}
+			}
+		}
+	}
+	var sets policyapi.PolicySetList
+	if err := s.objects.List(ctx, &sets, client.InNamespace(s.namespace)); err != nil {
+		return nil, unavailable(ctx, err)
+	}
+	names := make([]string, 0, len(sets.Items))
+	for _, set := range sets.Items {
+		if broad {
+			names = append(names, set.Name)
+			continue
+		}
+		if _, ok := allowed[set.Name]; ok {
+			names = append(names, set.Name)
+		}
+	}
+	slices.Sort(names)
+	return &policypb.ListPolicySetNamesResponse{Names: names}, nil
 }
 
 func bindingMessage(obj *policyapi.PolicyBinding) (*policypb.PolicyBinding, error) {

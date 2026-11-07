@@ -31,6 +31,7 @@ type Configuration struct {
 	InitializationCwd             string                                 `json:"initialization_cwd"`
 	Control                       EnvironmentRuntimeControlConfiguration `json:"control"`
 	Ingress                       Endpoint                               `json:"ingress"`
+	ModelConfigService            *Endpoint                              `json:"model_config_service"`
 	PlatformInstructions          string                                 `json:"platform_instructions"`
 	EnvironmentRuntimeEnvironment EnvironmentVariables                   `json:"environment_runtime_environment"`
 	HarnessEnvironment            *EnvironmentVariables                  `json:"harness_environment"`
@@ -345,7 +346,14 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if f.Ingress.Target == "" || f.Ingress.Bearer == "" {
 		return Resolved{}, nil, errors.New("invalid ingress endpoint")
 	}
-	for name, endpoint := range map[string]Endpoint{"ingress": f.Ingress} {
+	endpoints := map[string]Endpoint{"ingress": f.Ingress}
+	if f.ModelConfigService != nil {
+		if f.ModelConfigService.Bearer == "" {
+			return Resolved{}, nil, errors.New("invalid model_config_service endpoint")
+		}
+		endpoints["model_config_service"] = *f.ModelConfigService
+	}
+	for name, endpoint := range endpoints {
 		host, port, err := net.SplitHostPort(endpoint.Target)
 		number, numberErr := strconv.Atoi(port)
 		if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 {
@@ -413,6 +421,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		InitializationCwd:           f.InitializationCwd,
 		Launch:                      launch,
 		HarnessEnvironment:          child,
+		ModelConfigService:          f.ModelConfigService,
 		Claude:                      claude,
 		Codex:                       codex,
 		VMProcessLauncher:           launcher,

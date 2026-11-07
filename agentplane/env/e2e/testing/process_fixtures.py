@@ -19,6 +19,7 @@ from testcontainers.core import testcontainers_config
 from agentplane.env.config import Endpoint
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
+from agentplane.env.e2e.testing.model_config import model_config
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
@@ -185,55 +186,59 @@ async def start_runner(
     """Start a runner process on the test's state directory; it returns once the runner is connected."""
     started: list[RunnerProcess] = []
     ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
+    async with model_config() as model_endpoint:
 
-    async def start(
-        *,
-        test_debug_checkpoint: tuple[str, str] | None = None,
-        bootstrap: str | None = None,
-        home: Path = tmp_path / "home",
-        codex_binary: Path | None = None,
-        harness_env: Sequence[str] = (),
-        runner_binary: Path | None = None,
-        allow_user_namespaces: bool = False,
-    ) -> RunnerProcess:
-        command = launches.runner_command(
-            harness,
-            endpoint.origin,
-            state_dir=tmp_path / "state",
-            control=gateway.endpoint,
-            ingress=ingress,
-            test_debug_checkpoint=test_debug_checkpoint,
-            bootstrap=bootstrap,
-            codex_binary=codex_binary,
-            harness_env=harness_env,
-            runner_binary=runner_binary,
-        )
-        env = environment_runtime_environment(home)
-        env["PATH"] = "/usr/bin:/bin"
-        container = await asyncio.to_thread(pid1_container, command, tmp_path, env, allow_user_namespaces)
-        await asyncio.to_thread(container.__enter__)
-        runner = RunnerProcess(container)
-        started.append(runner)
-        connected = asyncio.create_task(gateway.control.connect(gateway.endpoint, launches.SANDBOX.uid))
-        exited = asyncio.create_task(runner.wait())
-        try:
-            done, _ = await asyncio.wait((connected, exited), return_when=asyncio.FIRST_COMPLETED)
-            if exited in done:
-                raise RuntimeError(f"Go runner exited with {exited.result()}")
-            await connected
-        except BaseException:
-            await runner.stop()
-            raise
-        finally:
-            connected.cancel()
-            exited.cancel()
-            await asyncio.gather(connected, exited, return_exceptions=True)
-        return runner
+        async def start(
+            *,
+            test_debug_checkpoint: tuple[str, str] | None = None,
+            bootstrap: str | None = None,
+            home: Path = tmp_path / "home",
+            codex_binary: Path | None = None,
+            harness_env: Sequence[str] = (),
+            runner_binary: Path | None = None,
+            allow_user_namespaces: bool = False,
+        ) -> RunnerProcess:
+            command = launches.runner_command(
+                harness,
+                endpoint.origin,
+                state_dir=tmp_path / "state",
+                control=gateway.endpoint,
+                ingress=ingress,
+                model_config_service=model_endpoint,
+                test_debug_checkpoint=test_debug_checkpoint,
+                bootstrap=bootstrap,
+                codex_binary=codex_binary,
+                harness_env=harness_env,
+                runner_binary=runner_binary,
+            )
+            env = environment_runtime_environment(home)
+            env["PATH"] = "/usr/bin:/bin"
+            container = await asyncio.to_thread(pid1_container, command, tmp_path, env, allow_user_namespaces)
+            await asyncio.to_thread(container.__enter__)
+            runner = RunnerProcess(container)
+            started.append(runner)
+            connected = asyncio.create_task(gateway.control.connect(gateway.endpoint, launches.SANDBOX.uid))
+            exited = asyncio.create_task(runner.wait())
+            try:
+                done, _ = await asyncio.wait((connected, exited), return_when=asyncio.FIRST_COMPLETED)
+                if exited in done:
+                    raise RuntimeError(f"Go runner exited with {exited.result()}")
+                await connected
+            except BaseException:
+                await runner.stop()
+                raise
+            finally:
+                connected.cancel()
+                exited.cancel()
+                await asyncio.gather(connected, exited, return_exceptions=True)
+            return runner
 
-    yield start
-    for runner in started:
         try:
-            await runner.stop()
+            yield start
         finally:
-            await runner.close()
-    await gateway.control.disconnect()
+            for runner in started:
+                try:
+                    await runner.stop()
+                finally:
+                    await runner.close()
+            await gateway.control.disconnect()

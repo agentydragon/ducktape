@@ -62,11 +62,6 @@ class Settings(YamlFileSettings):
     listen_address: str = Field(
         default=":8080", min_length=1, description="gRPC listen address for authenticated platform callers."
     )
-    http_listen_address: str | None = Field(
-        default=None,
-        min_length=1,
-        description="HTTP/JSON listen address of the Dispatcher's generated facade; unset serves none.",
-    )
     proxy_port: int = Field(
         default=8080, ge=1, le=65535, description="Port advertised in each Sandbox control EndpointSlice."
     )

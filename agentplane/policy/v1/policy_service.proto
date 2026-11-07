@@ -18,6 +18,9 @@ service PolicyService {
   rpc WatchPolicySets(WatchPolicySetsRequest) returns (stream WatchPolicySetsResponse) {
     option (google.api.http) = {get: "/v1/policy-sets:watch"};
   }
+  rpc ListPolicySetNames(ListPolicySetNamesRequest) returns (ListPolicySetNamesResponse) {
+    option (google.api.http) = {get: "/v1/policy-set-names"};
+  }
 }
 
 message WatchPolicyBindingsRequest {
@@ -25,6 +28,8 @@ message WatchPolicyBindingsRequest {
   agentplane.proto.ServiceAccount subject = 1;
 }
 message WatchPolicySetsRequest {}
+message ListPolicySetNamesRequest {}
+message ListPolicySetNamesResponse { repeated string names = 1; }
 
 message PolicyResourceIdentity {
   string namespace = 1;

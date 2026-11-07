@@ -45,8 +45,7 @@ conversation and from Runner admission.
 
 - `main.go`, `config.go`: process and listener wiring, and the settings (a YAML file named by
   `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` plus `AGENTPLANE_RUNNER_GATEWAY_*` environment variables;
-  [`settings.py`](settings.py) is the authoring schema), including the optional `http_listen_address`
-  for the generated Dispatcher and EnvironmentService HTTP/JSON facades (none when unset). The independent `delegation` policy names
+  [`settings.py`](settings.py) is the authoring schema). The independent `delegation` policy names
   an Actions actor, caller namespace scope, and exact full RPC methods; it can include the
   `EnvironmentService` list/get/watch methods and, when separately configured, `ResumeEnvironment`, without
   delegating other Gateway methods. `operator_callers` is optional and defaults empty; it is
@@ -63,13 +62,11 @@ conversation and from Runner admission.
 
 Listener settings accept ordinary TCP `host:port` addresses and `fd:N`, where `N`
 is the descriptor number **in the child process** (at least 3). An inherited
-socket must already be bound and listening on TCP. Both gRPC and the optional
-HTTP facade use the same convention. Invalid descriptors fail startup without
+socket must already be bound and listening on TCP. Invalid descriptors fail startup without
 falling back to another address.
 
 Startup follows Go's `ListenAndServe`/`Serve` separation: `listenAndServe` obtains
-and owns the listeners, while `serve` takes `net.Listener` values. A nil HTTP
-listener disables the facade. FD parsing and conversion stay at the process
+and owns the listener, while `serve` takes a `net.Listener`. FD parsing and conversion stay at the process
 boundary; serving code never handles descriptor numbers. `net.FileListener`
 duplicates the descriptor, so startup closes the inherited descriptor after
 conversion and closes the resulting listener on exit, including setup failure.

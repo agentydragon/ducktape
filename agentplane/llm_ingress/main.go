@@ -13,8 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -66,31 +71,54 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		return fmt.Errorf("could not listen on configured address: %w", err)
 	}
 	defer listener.Close()
+	grpcAddress := net.JoinHostPort(c.Host, strconv.Itoa(c.GRPCPort))
+	grpcListener, err := net.Listen("tcp", grpcAddress)
+	if err != nil {
+		return fmt.Errorf("could not listen on configured gRPC address: %w", err)
+	}
+	defer grpcListener.Close()
+	grpcServer := newModelConfigServer(resolver, handler.models)
 	server := &http.Server{
 		Handler:           observability.HTTPHandler(handler),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	logger.Info("forwarding authenticated Sandbox model traffic to LiteLLM", "url", c.LiteLLMURL, "address", address)
-	serveResult := make(chan error, 1)
+	serveResult := make(chan error, 2)
 	go func() { serveResult <- server.Serve(listener) }()
+	go func() { serveResult <- grpcServer.Serve(grpcListener) }()
 	select {
 	case err := <-serveResult:
+		grpcServer.Stop()
+		_ = server.Close()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return fmt.Errorf("HTTP listener failed: %w", err)
+		return fmt.Errorf("ingress listener failed: %w", err)
 	case <-ctx.Done():
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownContext); err != nil {
 			_ = server.Close()
+			grpcServer.Stop()
 			return errors.New("HTTP server shutdown exceeded five seconds")
 		}
-		if err := <-serveResult; !errors.Is(err, http.ErrServerClosed) && err != nil {
-			return fmt.Errorf("HTTP listener stopped with an error: %w", err)
+		graceful.Stop(shutdownContext, grpcServer)
+		for range 2 {
+			if err := <-serveResult; !errors.Is(err, http.ErrServerClosed) && err != nil {
+				return fmt.Errorf("ingress listener stopped with an error: %w", err)
+			}
 		}
 		return nil
 	}
+}
+
+func newModelConfigServer(resolver *auth.Resolver, models map[string]modelConfig) *grpc.Server {
+	methods := auth.HealthMethods()
+	methods[modelconfigpb.ModelConfigService_GetModelConfig_FullMethodName] = auth.AnyAccount(resolver)
+	server := grpc.NewServer(append(methods.ServerOptions(10*time.Second), observability.GRPCServerOption())...)
+	modelconfigpb.RegisterModelConfigServiceServer(server, &modelConfigService{models: models})
+	healthpb.RegisterHealthServer(server, health.NewServer())
+	return server
 }
 
 func kubernetesConfig(c config) (*rest.Config, error) {

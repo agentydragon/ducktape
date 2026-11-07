@@ -10,9 +10,6 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
-
-	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
-	"github.com/danielgtaylor/huma/v2"
 )
 
 type callbackUpstream interface {
@@ -20,47 +17,24 @@ type callbackUpstream interface {
 }
 
 type operatorRoutes struct {
-	policies         *policyaccess.Access
 	callback         callbackUpstream
 	actionServiceURL string
 }
 
-type actionPolicySetsOutput struct {
-	Body []policyaccess.ActionPolicySetView
-}
-
-// RegisterOperatorRoutes installs the caller-readable Action policy inventory and public MCP OAuth callback bridge. The callback is handled here because
-// it is a third-party redirect endpoint without a generated Action Service RPC.
+// RegisterOperatorRoutes installs the public MCP OAuth callback bridge. The callback is handled
+// here because it is a third-party redirect endpoint without a generated Action Service RPC.
 func RegisterOperatorRoutes(
 	server *HTTPServer,
-	policies *policyaccess.Access,
 	callback callbackUpstream,
 	actionServiceURL string,
 ) {
 	routes := &operatorRoutes{
-		policies: policies,
 		callback: callback, actionServiceURL: actionServiceURL,
 	}
-	api := server.ProtectedAPI()
-	huma.Register[struct{}, actionPolicySetsOutput](api, huma.Operation{
-		OperationID: "listActionPolicySets", Method: http.MethodGet, Path: "/action-policy/sets", Tags: []string{"action-policy"},
-		Summary: "List Action PolicySets and their parser verdicts",
-	}, routes.listActionPolicySets)
 	// Keep the public OAuth callback as a raw route: Huma's normal JSON response machinery
 	// interprets Location/body fields as an API response and cannot preserve the redirect status
 	// plus HTML body contract used by the browser callback.
 	server.mux.Handle("GET /mcp-linkage/callback", http.HandlerFunc(routes.completeMCPLinkage))
-}
-
-func (routes *operatorRoutes) listActionPolicySets(ctx context.Context, _ *struct{}) (*actionPolicySetsOutput, error) {
-	if routes.policies == nil {
-		return nil, huma.Error503ServiceUnavailable("Policy access is unavailable")
-	}
-	views, err := routes.policies.ActionPolicySets(ctx)
-	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("Action policy inventory is unavailable")
-	}
-	return &actionPolicySetsOutput{Body: views}, nil
 }
 
 func (routes *operatorRoutes) completeMCPLinkage(w http.ResponseWriter, request *http.Request) {

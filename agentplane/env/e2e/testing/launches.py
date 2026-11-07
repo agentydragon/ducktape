@@ -105,6 +105,7 @@ def runner_command(
     state_dir: Path,
     control: EnvironmentRuntimeControl,
     ingress: Endpoint,
+    model_config_service: Endpoint,
     test_debug_checkpoint: tuple[str, str] | None = None,
     bootstrap: str | None = None,
     codex_binary: Path | None = None,
@@ -136,6 +137,7 @@ def runner_command(
         initialization_cwd=str(state_dir),
         control=control,
         ingress=ingress,
+        model_config_service=model_config_service,
         platform_instructions=PLATFORM_INSTRUCTIONS,
         harness_environment=EnvironmentVariables(inherit=inherited, values=values),
         claude=Harness(binary=str(claude.binary), base_url=claude.base_url, token_env="ANTHROPIC_AUTH_TOKEN")
@@ -159,7 +161,9 @@ def runner_command(
     ]
 
 
-def command(config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ingress: Endpoint) -> list[str]:
+def command(
+    config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ingress: Endpoint, model_config_service: Endpoint
+) -> list[str]:
     """Serialize test launch values into the production executable's CLI."""
     config.state_dir.parent.mkdir(parents=True, exist_ok=True)
     launch_file = config.state_dir.parent / f"{config.state_dir.name}-launch.json"
@@ -172,6 +176,7 @@ def command(config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ing
         initialization_cwd=str(config.state_dir),
         control=control,
         ingress=ingress,
+        model_config_service=model_config_service,
         platform_instructions=config.launch.platform_instructions,
         harness_environment=EnvironmentVariables(values={**config.harness_environment, "PATH": "/usr/bin:/bin"}),
         claude=Harness(

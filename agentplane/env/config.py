@@ -247,6 +247,7 @@ class Configuration(_RuntimeConfigModel):
     initialization_cwd: str
     control: EnvironmentRuntimeControl
     ingress: Endpoint
+    model_config_service: Endpoint | None = None
     platform_instructions: str = Field(min_length=1)
     environment_runtime_environment: EnvironmentVariables = Field(default_factory=EnvironmentVariables)
     harness_environment: EnvironmentVariables
@@ -258,6 +259,8 @@ class Configuration(_RuntimeConfigModel):
 
     @model_validator(mode="after")
     def valid_configuration(self) -> Configuration:
+        if self.model_config_service is not None:
+            _valid_host_port(self.model_config_service.target, "model_config_service.target")
         if any(not Path(path).is_absolute() for path in (self.state_dir, self.initialization_cwd)):
             raise ValueError("state and initialization paths must be absolute")
         if self.workspace_root is not None and not Path(self.workspace_root).is_absolute():

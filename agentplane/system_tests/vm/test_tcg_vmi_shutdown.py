@@ -677,6 +677,10 @@ def _cgroup_stress_complete(console: str) -> bool:
         expected_io = value == "yes"
         if not matching_mask(take(f"{prefix}_SNAPSHOT step={step}_before "), not expected_io):
             return False
+        if take(f"{prefix}_MASK_WAIT step={step} ") is None:
+            return False
+        if not matching_mask(take(f"{prefix}_MASK_CONVERGED step={step} "), expected_io):
+            return False
         if step == "pair1_on":
             if take(f"{prefix}_TRACE_INTEGRITY step=pair1_on ") is None:
                 return False
@@ -686,9 +690,9 @@ def _cgroup_stress_complete(console: str) -> bool:
                 return False
         if not matching_mask(take(f"{prefix}_SNAPSHOT step={step}_after "), expected_io):
             return False
-        if take(f"{prefix}_RESULT step={step} value={value} property_status=0 ") is None:
+        if take(f"{prefix}_RESULT step={step} value={value} property_status=0 observed_property={value} ") is None:
             return False
-        if step == "pair1_on" and take(f"{prefix}_TRACE_PHASE after=pair1_on tracing_on=0") is None:
+        if step == "pair1_on" and take(f"{prefix}_TRACE_PHASE after=pair1_on tracing_on=0 current_tracer=nop") is None:
             return False
     return take(f"{prefix}_SUCCESS transitions=10 ") is not None
 
@@ -1216,6 +1220,33 @@ def test_cgroup_stress_is_opt_in_and_changes_only_guest_boot_args(monkeypatch: p
     assert observed == plain
 
 
+def test_cgroup_stress_resident_condition_matches_guest_boot_arg_and_probe_script() -> None:
+    guest_dir = Runfiles.CreateOrRaise().root() / "_main/agentplane/system_tests/vm/guest"
+    script = (guest_dir / "cgroup_pilot_probe").read_text()
+    images = {
+        "agentplane-vm-guest-boot:unset": "boot",
+        "agentplane-vm-guest-root:unset": "root",
+        "agentplane-runner-disk:unset": "runner",
+    }
+    for mode, kernel_arg in (("pilot", "agentplane.cgroup-pilot=1"), ("stress", "agentplane.cgroup-stress=1")):
+        vmi = _vmi(
+            _NAMESPACE_PREFIX + "unit-test", images, cgroup_pilot=mode == "pilot", cgroup_stress=mode == "stress"
+        )
+        boot_args = vmi["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"].split()
+        assert kernel_arg in boot_args
+        branch = script.split(f"\n{mode})\n", 1)[1].split("\n\t;;", 1)[0]
+        resident_name = next(
+            line.strip().removeprefix("unit=") for line in branch.splitlines() if line.strip().startswith("unit=")
+        )
+        resident = (guest_dir / resident_name).read_text()
+        assert f"ConditionKernelCommandLine={kernel_arg}" in resident.splitlines()
+        assert "Slice=pilot.slice" in resident.splitlines()
+        assert "ExecStart=/usr/bin/busybox sleep 120" in resident.splitlines()
+        if mode == "stress":
+            for name in ("agentplane-cgroup-stress-probe.service", "agentplane-cgroup-stress-probe.timer"):
+                assert f"ConditionKernelCommandLine={kernel_arg}" in (guest_dir / name).read_text().splitlines()
+
+
 def test_cgroup_stress_requires_first_witness_ten_alternating_masks_and_trace_off() -> None:
     prefix = "AGENTPLANE_CGROUP_STRESS"
     records = [f"{prefix}_BEGIN pairs=5 direct_root_writes=none active_budget_seconds=75"]
@@ -1226,6 +1257,14 @@ def test_cgroup_stress_requires_first_witness_ten_alternating_masks_and_trace_of
         records.append(
             f"{prefix}_SNAPSHOT step={step}_before uptime=40 root={before} slice={before} resident=yes pid=497"
         )
+        records.append(
+            f"{prefix}_MASK_WAIT step={step} sample=0 uptime=41 property={'yes' if on else 'no'} "
+            f"root={before} slice={before} resident=yes pid=497"
+        )
+        records.append(
+            f"{prefix}_MASK_CONVERGED step={step} sample=1 uptime=42 property={'yes' if on else 'no'} "
+            f"root={after} slice={after} resident=yes"
+        )
         if step == "pair1_on":
             records.append(f"{prefix}_TRACE_INTEGRITY step=pair1_on total_lines=5000 ring_kib=1027 counters=clean")
             records.append(
@@ -1233,17 +1272,25 @@ def test_cgroup_stress_requires_first_witness_ten_alternating_masks_and_trace_of
                 "path=cgroup_subtree_control_write>cgroup_update_dfl_csses>percpu_down_write>rcu_sync_enter"
             )
         records.append(f"{prefix}_SNAPSHOT step={step}_after uptime=46 root={after} slice={after} resident=yes pid=497")
-        records.append(f"{prefix}_RESULT step={step} value={'yes' if on else 'no'} property_status=0 trace=enabled")
+        records.append(
+            f"{prefix}_RESULT step={step} value={'yes' if on else 'no'} "
+            f"property_status=0 observed_property={'yes' if on else 'no'} trace=enabled"
+        )
         if step == "pair1_on":
-            records.append(f"{prefix}_TRACE_PHASE after=pair1_on tracing_on=0")
+            records.append(f"{prefix}_TRACE_PHASE after=pair1_on tracing_on=0 current_tracer=nop")
     records.append(f"{prefix}_SUCCESS transitions=10 trace=enabled trace_hits_total=2")
     complete = "\n".join(records) + "\n"
     assert _cgroup_stress_complete(complete)
     assert not _cgroup_stress_complete(complete.replace(f"{prefix}_TRACE_CHAIN step=pair1_on status=proven", "noise"))
     assert not _cgroup_stress_complete(complete.replace("counters=clean", "counters=cpu0:overflow_or_drop"))
     assert not _cgroup_stress_complete(complete.replace("tracing_on=0", "tracing_on=1"))
+    assert not _cgroup_stress_complete(complete.replace("current_tracer=nop", "current_tracer=function_graph"))
     assert not _cgroup_stress_complete(
         complete.replace("step=pair3_on_after uptime=46 root=io", "step=pair3_on_after uptime=46 root=memory")
+    )
+    assert not _cgroup_stress_complete(complete.replace(f"{prefix}_MASK_CONVERGED step=pair3_on", "noise"))
+    assert not _cgroup_stress_complete(
+        complete.replace("observed_property=no trace=enabled", "observed_property=yes trace=enabled")
     )
     assert not _cgroup_stress_complete(
         complete.replace(f"{prefix}_RESULT step=pair5_off", f"noise{prefix}_RESULT step=pair5_off")

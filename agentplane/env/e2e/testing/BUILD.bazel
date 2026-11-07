@@ -1,3 +1,5 @@
+# gazelle:resolve py agentplane.llm_ingress.v1.model_config_pb2 //agentplane/llm_ingress/v1:model_config_pb2
+# gazelle:resolve py agentplane.llm_ingress.v1.model_config_pb2_grpc //agentplane/llm_ingress/v1:model_config_pb2_grpc
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
@@ -9,6 +11,19 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = ["//agentplane/sandboxes:launch"],
+)
+
+py_library(
+    name = "model_config",
+    srcs = ["model_config.py"],
+    deps = [
+        "//agentplane/env:config",
+        "//agentplane/grpc:serving",
+        "//agentplane/llm_ingress/v1:model_config_pb2",
+        "//agentplane/llm_ingress/v1:model_config_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
 )
 
 py_library(
@@ -132,6 +147,7 @@ py_library(
     deps = [
         ":gateway",
         ":launches",
+        ":model_config",
         "//agentplane/env:config",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/native/claude/testing:messages",
@@ -157,6 +173,7 @@ py_library(
         ":config",
         ":gateway",
         ":launches",
+        ":model_config",
         ":process_fixtures",
         "//agentplane/env:config",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
