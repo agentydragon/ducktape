@@ -1,0 +1,61 @@
+--- a/tcg/run.sh
++++ b/tcg/run.sh
+@@ -84,0 +85 @@
++printf 'run\tmode\texec_exit\tiotlb_assertion\tmulti_user_reached\tshutdown_check\n' >"$output_dir/summary.tsv"
+@@ -87,0 +89,3 @@
++  mode=idle
++  if ((iteration % 2 == 0)); then mode=pressure; fi
++  printf '%s\n' "$mode" >"$run_dir/mode.txt"
+@@ -95 +99 @@
+-  timeout 180s kubectl -n "$namespace" exec qemu-smoke -- /bin/sh /scratch/guest.sh >"$run_dir/guest-exec.log" 2>&1 || result=$?
++  timeout 180s kubectl -n "$namespace" exec qemu-smoke -- /bin/sh /scratch/guest.sh "$mode" >"$run_dir/guest-exec.log" 2>&1 || result=$?
+@@ -99,2 +103,8 @@
+-  if [[ "$result" != 0 ]] \
+-    || ! "$script_dir/check.sh" "$run_dir/guest-serial.log" "$run_dir/qemu-monitor.log"; then
++  assertion=0
++  multi_user=0
++  shutdown_check=fail
++  if grep -Fq 'iotlb_to_section: Assertion' "$run_dir/qemu-monitor.log"; then assertion=1; fi
++  if grep -Eq 'Reached target.*multi-user.target' "$run_dir/guest-serial.log"; then multi_user=1; fi
++  if "$script_dir/check.sh" "$run_dir/guest-serial.log" "$run_dir/qemu-monitor.log"; then shutdown_check=pass; fi
++  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$iteration" "$mode" "$result" "$assertion" "$multi_user" "$shutdown_check" >>"$output_dir/summary.tsv"
++  if [[ "$result" != 0 || "$assertion" == 1 || "$multi_user" != 1 ]]; then
+@@ -102,0 +113,2 @@
++  elif [[ "$shutdown_check" == pass ]]; then
++    echo "Run $iteration ($mode) reached multi-user.target and shut down"
+@@ -104 +116,2 @@
+-    echo "Run $iteration recorded request, shutdown receipt and powerdown"
++    echo "Run $iteration ($mode) reached multi-user.target; shutdown check failed"
++    failed=1
+--- a/tcg/guest.sh
++++ b/tcg/guest.sh
+@@ -3,0 +4,6 @@
++MODE=${1:-idle}
++case "$MODE" in
++  idle|pressure) ;;
++  *) echo "INVALID_TRIAL_MODE=$MODE" >&2; exit 9 ;;
++esac
++
+@@ -37,0 +44,4 @@
++  if [ -n "${PRESSURE_PID:-}" ]; then
++    kill "$PRESSURE_PID" 2>/dev/null || true
++    wait "$PRESSURE_PID" 2>/dev/null || true
++  fi
+@@ -56,0 +67,8 @@
++echo "TRIAL_MODE=$MODE"
++cat /sys/fs/cgroup/cpu.stat > /scratch/cpu-before.log
++PRESSURE_PID=''
++if [ "$MODE" = pressure ]; then
++  yes >/dev/null &
++  PRESSURE_PID=$!
++  echo "CPU_PRESSURE_PID=$PRESSURE_PID"
++fi
+@@ -59,0 +78 @@
++set +e
+@@ -100,0 +120,2 @@
++set -e
++cat /sys/fs/cgroup/cpu.stat > /scratch/cpu-after.log
+@@ -103,0 +125,3 @@
++echo '--- cgroup CPU usage ---'
++cat /scratch/cpu-before.log
++cat /scratch/cpu-after.log

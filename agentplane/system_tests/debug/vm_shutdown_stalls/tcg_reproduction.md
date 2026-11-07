@@ -211,3 +211,69 @@ The [patch](tcg/results/three-virtiofs.patch) records differences from the commi
 sequence, `wyrm2` placement, and collection of the extra daemon logs. It applies
 with `patch -p1` from this directory. Both disposable namespaces were reported
 deleted by their drivers and verified absent with read-only `kubectl get namespace`.
+
+## Direct TCG pressure probe for the QEMU boot assertion
+
+The [uncached two-vCPU full-suite failure](README.md#uncached-control-after-observer-merges)
+ended during guest PCI enumeration with QEMU 10.1.0's
+`iotlb_to_section: Assertion 'section_index < d->map.sections_nb' failed`. To
+check whether a simple competing CPU consumer makes that assertion recur, ten
+fresh guests ran sequentially in one restricted pod on `wyrm2`, alternating
+idle and CPU-pressure trials. This is a boot-assertion probe; it is separate
+from the post-ACPI shutdown stall.
+
+The experiment used checkout `94e201503a1098648ba548ffc216111b46c73be8`; its
+base TCG driver came from `588822c81cc3524fc6cc6cf993e64116e8579dde`. The
+[recorded patch](tcg/results/iotlb-contention.patch) contains the complete
+scratch-only changes to `run.sh` and `guest.sh`. Every guest verified the same
+four CI inputs listed in `tcg/input.sha256`. The QEMU log reported
+`qemu-kvm-10.1.0-10.el9`, `-machine q35,accel=tcg`, two vCPUs, and no `/dev/kvm`.
+The pod used launcher image
+`quay.io/kubevirt/virt-launcher@sha256:574fabe0ff9719fa1e3800dcca8530fa4e02fd71ef74109508e59800e13e8b5d`.
+Each run had fresh workspace/state storage. Pressure trials started one `yes`
+process just before QEMU and stopped it at QEMU exit; cgroup `cpu.stat` was
+recorded before and after each launch.
+
+| Arm          | Runs | Reached `multi-user.target` | Assertion | Ordered shutdown check | CPU usage delta | Throttled periods |
+| ------------ | ---: | --------------------------: | --------: | ---------------------: | --------------: | ----------------: |
+| Idle         |    5 |                         5/5 |         0 |                    5/5 |     17.4–20.6 s |           143–165 |
+| CPU pressure |    5 |                         5/5 |         0 |                    5/5 |  89.8 s per run |           336–405 |
+
+All ten QEMU processes exited 0. Each serial log contained the actual
+`Reached target ... multi-user.target` line, the ordered ACPI request and
+shutdown-complete proof, and `reboot: Power down`; each monitor reported
+`kvm support: disabled` and `VM status: paused (shutdown)`. No run contained the
+`iotlb_to_section` assertion. The CPU-pressure cgroup consumed about one CPU
+for each 90-second launch, so the load was present, but ten trials are too few
+to exclude a rare failure.
+
+This direct launch shares the q35 machine type, two-vCPU count and guest images,
+but does not reproduce KubeVirt/libvirt's launch environment. It attaches a
+root block disk, runner block disk, disposable workspace block disk, three
+empty placeholder ISO disks, one virtio-net device, and one vhost-user virtiofs
+`/state`; it has no Agentplane application services. The original failed
+launcher command line was not retained, so exact PCI function ordering and
+device-graph equality cannot be established. This result is a non-reproduction
+in the reduced setup, not evidence that the QEMU issue is fixed or that the
+historical shutdown stall has the same cause.
+
+To repeat, populate `$scratch/inputs` using the extraction commands above and
+apply the recorded patch to a scratch copy of the bounded driver:
+
+```bash
+mkdir -p "$scratch/iotlb-contention/tcg"
+cp agentplane/system_tests/debug/vm_shutdown_stalls/tcg/{run.sh,guest.sh,check.sh,pod.yaml,input.sha256} \
+  "$scratch/iotlb-contention/tcg/"
+patch -p1 -d "$scratch/iotlb-contention" \
+  < agentplane/system_tests/debug/vm_shutdown_stalls/tcg/results/iotlb-contention.patch
+"$scratch/iotlb-contention/tcg/run.sh" \
+  NEW_DISPOSABLE_NAMESPACE "$scratch/inputs" "$scratch/iotlb-contention/output" 10
+```
+
+The driver alternates idle and pressure trials, captures the QEMU assertion,
+boot completion, shutdown evidence and cgroup counters, and stops after a timed
+out guest rather than overlapping an unknown QEMU process. Its cleanup deletes
+only the namespace UID it created. For this run the namespace was
+`agentplane-qemu-iotlb-20261106`; the driver deleted it and a separate API
+lookup confirmed it absent. Raw logs stayed in task scratch and are not
+committed.
