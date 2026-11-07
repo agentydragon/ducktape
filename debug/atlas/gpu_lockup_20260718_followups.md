@@ -1,8 +1,8 @@
 # RTX 5090 fall-off-the-bus on wyrm2 — going-forward plan (2026-07-18)
 
 Context: recurring **Xid 79 "GPU has fallen off the bus"** on the passed-through RTX 5090s
-(see <atlas/gpu_lockup_20260718/README.md>, <atlas/gpu_lockup_20260417/README.md>,
-<atlas/wyrm_gpu_lockup.md>). Each incident ends the same way: a GPU stops answering PCIe
+(see <gpu_lockup_20260718/README.md>, <gpu_lockup_20260417/README.md>,
+<wyrm_gpu_lockup.md>). Each incident ends the same way: a GPU stops answering PCIe
 (host config space → all `0xff`), the guest wedges, and only a host reboot (Xid 154 = Node
 Reboot Required) recovers it. Two workstreams: **detect + auto-collect diagnostics** (so we
 get data and an alert instead of discovering a silently-wedged VM hours later), and
@@ -20,7 +20,7 @@ window.
    capture (`nvidia-bug-report.sh --safe-mode`, `timeout 5 nvidia-smi -q`, `dmesg -T` tail,
    `/sys/.../current_link_speed`, PCI config hexdump) into the virtiofs `code`/`tank` share
    so it survives the guest dying, and fire an alert (telegram/ntfy). Reuse
-   <atlas/wyrm2-diagnose.sh> as the capture body; make it `--safe-mode` aware.
+   <../../nix/debug/wyrm2/wyrm2-diagnose.sh> as the capture body; make it `--safe-mode` aware.
 2. **Host-side wedge detector on atlas** (systemd timer, ~1–2 min). For each passed-through
    GPU, read `/sys/bus/pci/devices/<addr>/config` (all `0xff` ⇒ off the bus) and probe VM
    110 liveness (`qm guest cmd 110 ping` + `screendump` surface with timeouts). On a
@@ -94,7 +94,7 @@ Sources: [TPU] <https://www.techpowerup.com/331542/geforce-rtx-5090-power-excurs
 2. **Power-limit the 5090s** — `nvidia-smi -pl`, persistent. Demoted to a harmless secondary
    given the idle failure; keep it only if heavy-load events also show up in the metrics.
 3. **Fix the run-harness busy-spin bug** (E9 `llama-cli` EOF read-loop, ~1h48m at 103 % CPU;
-   <atlas/gpu_lockup_20260718/README.md>) — hygiene, unrelated to the idle fall-off.
+   <gpu_lockup_20260718/README.md>) — hygiene, unrelated to the idle fall-off.
 
 ## C. Quantifying frequency + telemetry (data sources)
 
