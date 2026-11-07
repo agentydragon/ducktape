@@ -163,6 +163,7 @@ console.log(later);
     assert_eq!(
         binding_execution_report(&fixture, "later")["binding_effect_authority"]["authority"],
         "operation_receipt"
+    );
 }
 
 #[test]
