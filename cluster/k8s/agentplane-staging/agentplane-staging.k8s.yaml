@@ -4742,7 +4742,6 @@ data:
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
-    workload_routes: {}
     platform_routes:
       ingress:
         listen_address: 127.0.0.1:3131
@@ -5161,7 +5160,6 @@ data:
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
-    workload_routes: {}
     platform_routes:
       ingress:
         listen_address: 0.0.0.0:3131
@@ -8484,7 +8482,6 @@ data:
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
-    workload_routes: {}
     platform_routes: {}
     listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
