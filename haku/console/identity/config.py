@@ -19,6 +19,8 @@ class ConsoleConfigFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     access_profiles: list[AccessProfile] = Field(min_length=1)
+    # CLEANUP(added 2026-11-07): Remove after the minimum supported Console image no longer
+    # requires this field; older replicas reject ConfigMaps that omit it during rollback.
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
 
     @model_validator(mode="after")

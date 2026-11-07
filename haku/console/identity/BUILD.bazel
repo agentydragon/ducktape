@@ -73,13 +73,8 @@ py_test(
 )
 
 py_library(
-    name = "naming",
-    srcs = ["naming.py"],
-)
-
-py_library(
-    name = "enrollment",
-    srcs = ["enrollment.py"],
+    name = "agent_management",
+    srcs = ["agent_management.py"],
     deps = [":agent"],
 )
 
@@ -87,7 +82,7 @@ py_library(
     name = "operator_agents",
     srcs = ["operator_agents.py"],
     deps = [
-        ":enrollment",
+        ":agent_management",
         "@pypi//fastapi",
     ],
 )
@@ -97,10 +92,7 @@ py_library(
     srcs = ["authorization.py"],
     deps = [
         ":agent",
-        ":enrollment",
-        ":naming",
-        ":operator_identity",
-        ":operator_identity_store",
+        ":agent_management",
         "//haku/console:database_schema",
         "@pypi//sqlalchemy",
     ],
@@ -111,7 +103,7 @@ py_library(
     srcs = ["agent_routes.py"],
     deps = [
         ":agent",
-        ":enrollment",
+        ":agent_management",
         ":operator_agents",
         ":operator_auth",
         "@pypi//fastapi",
@@ -120,24 +112,12 @@ py_library(
 )
 
 py_test(
-    name = "test_naming",
-    srcs = ["test_naming.py"],
-    deps = [
-        ":naming",
-        "//:conftest",
-        "//haku/console:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_agent_routes",
     srcs = ["test_agent_routes.py"],
     deps = [
         ":agent",
+        ":agent_management",
         ":agent_routes",
-        ":enrollment",
         ":operator_auth",
         "//:conftest",
         "//haku/console:conftest",
@@ -154,8 +134,8 @@ py_test(
     requires_docker = True,
     deps = [
         ":agent",
+        ":agent_management",
         ":authorization",
-        ":enrollment",
         ":operator_identity",
         ":operator_identity_store",
         "//:conftest",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import errno
+import hashlib
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -34,22 +35,14 @@ from haku.console.identity.agent import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.identity.authorization import AgentGrantAuthorityUnavailableError, PostgresAgentAuthority, _digest
-from haku.console.identity.enrollment import (
-    AgentAccessProfileManagedByDeploymentError,
-    CreateAgentDecision,
-    EnrollmentAllowed,
-    EnrollmentBrowserBindingError,
-    EnrollmentBrowserSession,
-    EnrollmentDecisionConflictError,
-)
+from haku.console.identity.agent_management import AgentAccessProfileManagedByDeploymentError
+from haku.console.identity.authorization import AgentGrantAuthorityUnavailableError, PostgresAgentAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from util.db_url import render_postgresql_url
 from util.testing.sqlalchemy_engines import managed_async_engine
 
 _BROWSER_ISSUER = "https://auth.test/browser/"
-_CLIENT_ID = "claude-test-client"
 _REDIRECT_URI = "https://claude.test/oauth/callback"
 
 
@@ -115,21 +108,12 @@ class MutableClock:
         self.now += delta
 
 
-@dataclass
-class SecretSequence:
-    sequence: int = 0
-
-    def __call__(self) -> str:
-        self.sequence += 1
-        return f"browser-secret-{self.sequence}"
-
-
 @dataclass(frozen=True)
 class Harness:
     authority: PostgresAgentAuthority
     sessions: async_sessionmaker[AsyncSession]
-    identities: PostgresOperatorIdentityStore
-    browser: EnrollmentBrowserSession
+    operator_id: UUID
+    identity_id: UUID
     clock: MutableClock
 
 
@@ -162,24 +146,12 @@ def harness_factory(db_url: str, migrated_sessions: async_sessionmaker[AsyncSess
             database_now = session.scalar(select(func.clock_timestamp()))
         assert isinstance(database_now, datetime.datetime)
         clock = MutableClock(database_now)
-        authority = PostgresAgentAuthority(
-            sessions,
-            operator_identity_store=identities,
-            clock=clock,
-            browser_secret_factory=SecretSequence(),
-            access_profiles=access_profiles,
-            default_access_profile_id=access_profiles[0],
-        )
+        authority = PostgresAgentAuthority(sessions, clock=clock, access_profiles=access_profiles)
         return Harness(
             authority=authority,
             sessions=sessions,
-            identities=identities,
-            browser=EnrollmentBrowserSession(
-                operator_id=browser_identity.operator_id,
-                identity_id=browser_identity.identity_id,
-                browser_session_id="browser-session",
-                display_name="Test Operator",
-            ),
+            operator_id=browser_identity.operator_id,
+            identity_id=browser_identity.identity_id,
             clock=clock,
         )
 
@@ -191,82 +163,87 @@ async def harness(harness_factory: HarnessFactory) -> Harness:
     return await harness_factory()
 
 
-async def _open(harness: Harness, label: str) -> tuple[UUID, str]:
+async def _seed_allowed_interaction(harness: Harness, *, label: str) -> UUID:
     now = harness.clock.now
     interaction_id = uuid4()
-    nonce = f"browser-nonce-{uuid4()}"
-    code_challenge = f"challenge-{label}-{uuid4()}"
+    token = str(uuid4())
+    client_id = f"legacy-{label}-{token}"
+    code_challenge = f"challenge-{token}"
+    expires_at = now + datetime.timedelta(minutes=10)
+    correlation_release_after = expires_at + datetime.timedelta(hours=2)
     async with harness.sessions.begin() as session:
-        client = await session.scalar(select(ClientSoftware).where(ClientSoftware.oauth_client_id == _CLIENT_ID))
-        if client is None:
-            client = ClientSoftware(
-                client_software_id=uuid4(),
-                registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
-                oauth_client_id=_CLIENT_ID,
-                validated_redirect_uris=[_REDIRECT_URI],
-                metadata_hash=b"test-client-metadata",
-                observed_name="Claude Desktop",
-                observed_icon_uri=None,
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(client)
-            await session.flush()
-        session.add(
-            EnrollmentInteraction(
-                interaction_id=interaction_id,
-                client_software_id=client.client_software_id,
-                client_id=_CLIENT_ID,
-                redirect_uri=_REDIRECT_URI,
-                code_challenge=code_challenge,
-                requested_scopes=["tools:call", "tools:list"],
-                presentation_snapshot={"display_name": "Claude Desktop"},
-                upstream_authorization_url=f"https://auth.test/authorize/{uuid4()}",
-                phase=EnrollmentPhase.AWAITING_BROWSER,
-                expires_at=now + datetime.timedelta(minutes=10),
-                correlation_release_after=now + datetime.timedelta(hours=2),
-                browser_nonce_digest=_digest("browser-nonce", nonce),
-                browser_identity_id=None,
-                browser_binding_digest=None,
-                decision_digest=None,
-                reconnect_agent_id=None,
-                reconnect_predecessor_binding_id=None,
-                access_profile_id=None,
-                closure_reason=None,
-                created_at=now,
-                updated_at=now,
-                closed_at=None,
-            )
+        client = ClientSoftware(
+            client_software_id=uuid4(),
+            registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
+            oauth_client_id=client_id,
+            validated_redirect_uris=[_REDIRECT_URI],
+            metadata_hash=b"legacy-client-metadata",
+            observed_name="Legacy client",
+            observed_icon_uri=None,
+            created_at=now,
+            updated_at=now,
         )
+        session.add(client)
+        await session.flush()
+        interaction = EnrollmentInteraction(
+            interaction_id=interaction_id,
+            client_software_id=client.client_software_id,
+            client_id=client_id,
+            redirect_uri=_REDIRECT_URI,
+            code_challenge=code_challenge,
+            requested_scopes=["tools:call"],
+            presentation_snapshot={"display_name": "Legacy client"},
+            upstream_authorization_url=f"https://auth.test/authorize/{token}",
+            phase=EnrollmentPhase.AWAITING_BROWSER,
+            expires_at=expires_at,
+            correlation_release_after=correlation_release_after,
+            browser_nonce_digest=hashlib.sha256(f"browser-nonce:{token}".encode()).digest(),
+            browser_identity_id=None,
+            browser_binding_digest=None,
+            decision_digest=None,
+            reconnect_agent_id=None,
+            reconnect_predecessor_binding_id=None,
+            access_profile_id=None,
+            closure_reason=None,
+            created_at=now,
+            updated_at=now,
+            closed_at=None,
+        )
+        session.add(interaction)
         await session.flush()
         session.add(
             EnrollmentCorrelationReservation(
                 interaction_id=interaction_id,
-                client_id=_CLIENT_ID,
+                client_id=client_id,
                 redirect_uri=_REDIRECT_URI,
                 code_challenge=code_challenge,
-                release_after=now + datetime.timedelta(hours=2),
+                release_after=correlation_release_after,
             )
         )
-    page = await harness.authority.open_interaction(
-        interaction_id=interaction_id, browser_nonce=nonce, interaction_cookie=None, browser=harness.browser
-    )
-    return interaction_id, page.form_token
-
-
-async def _allow_create(harness: Harness, *, label: str, display_name: str) -> UUID:
-    interaction_id, form_token = await _open(harness, label)
-    result = await harness.authority.decide(
-        interaction_id=interaction_id,
-        browser=harness.browser,
-        interaction_cookie=form_token,
-        decision=CreateAgentDecision(
-            form_token=form_token,
-            display_name=display_name,
-            access_profile_id=harness.authority.available_access_profiles()[0],
-        ),
-    )
-    assert isinstance(result, EnrollmentAllowed)
+        await session.flush()
+        interaction.phase = EnrollmentPhase.AWAITING_APPROVAL
+        interaction.browser_nonce_digest = None
+        interaction.browser_identity_id = harness.identity_id
+        interaction.browser_binding_digest = hashlib.sha256(f"browser-binding:{token}".encode()).digest()
+        await session.flush()
+        interaction.phase = EnrollmentPhase.ALLOWED
+        interaction.decision_digest = hashlib.sha256(f"decision:{token}".encode()).digest()
+        interaction.access_profile_id = harness.authority.available_access_profiles()[0]
+        interaction.updated_at = now
+        await session.flush()
+        session.add(
+            AgentNameReservation(
+                reservation_id=uuid4(),
+                display_name=f"Legacy Agent {token}",
+                display_name_key=f"legacy-agent-{token}",
+                originating_interaction_id=interaction_id,
+                pending_interaction_id=interaction_id,
+                agent_id=None,
+                created_at=now,
+                activated_at=None,
+            )
+        )
+        await session.flush()
     return interaction_id
 
 
@@ -340,7 +317,7 @@ async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> U
         await session.flush()
         interaction.phase = EnrollmentPhase.AWAITING_APPROVAL
         interaction.browser_nonce_digest = None
-        interaction.browser_identity_id = harness.browser.identity_id
+        interaction.browser_identity_id = harness.identity_id
         interaction.browser_binding_digest = b"legacy-browser-binding"
         await session.flush()
         interaction.phase = EnrollmentPhase.ALLOWED
@@ -362,7 +339,7 @@ async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> U
         session.add(
             Agent(
                 agent_id=agent_id,
-                owner_operator_id=harness.browser.operator_id,
+                owner_operator_id=harness.operator_id,
                 current_name_reservation_id=reservation_id,
                 status=AgentStatus.DRAFT,
                 created_at=older,
@@ -397,7 +374,7 @@ async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> U
         grant = AuthorizationGrant(
             grant_id=grant_id,
             binding_id=binding_id,
-            authorizing_identity_id=harness.browser.identity_id,
+            authorizing_identity_id=harness.identity_id,
             client_software_id=client_software_id,
             enrollment_interaction_id=interaction_id,
             allowed_scopes=["tools:call"],
@@ -439,7 +416,7 @@ async def _seed_retired_static_agent(harness: Harness, *, display_name: str, acc
         session.add(
             Agent(
                 agent_id=agent_id,
-                owner_operator_id=harness.browser.operator_id,
+                owner_operator_id=harness.operator_id,
                 current_name_reservation_id=reservation_id,
                 status=AgentStatus.DISABLED,
                 created_at=now,
@@ -495,7 +472,7 @@ async def test_list_agents_returns_owned_disabled_static_history(
         harness, display_name="Retired Agent", access_profile_id="no_auto_approval"
     )
 
-    agents = await harness.authority.list_agents(operator_id=harness.browser.operator_id)
+    agents = await harness.authority.list_agents(operator_id=harness.operator_id)
     [agent] = agents
     assert agent.agent_id == agent_id
     assert agent.display_name == "Retired Agent"
@@ -504,75 +481,15 @@ async def test_list_agents_returns_owned_disabled_static_history(
     assert agent.credential_status is CredentialBindingStatus.REVOKED
 
     other = await harness_factory(subject="other-operator")
-    assert await other.authority.list_agents(operator_id=other.browser.operator_id) == ()
-
-
-async def test_enrollment_persists_the_selected_access_profile_id(db_url: str, harness_factory: HarnessFactory) -> None:
-    harness = await harness_factory(access_profiles=("no_auto_approval", "haku_v1"))
-    interaction_id, form_token = await _open(harness, "policy-selection")
-    await harness.authority.decide(
-        interaction_id=interaction_id,
-        browser=harness.browser,
-        interaction_cookie=form_token,
-        decision=CreateAgentDecision(form_token=form_token, display_name="Policy Agent", access_profile_id="haku_v1"),
-    )
-    with _orm_session(db_url) as session:
-        interaction = session.get(EnrollmentInteraction, interaction_id)
-        assert interaction is not None
-        assert interaction.access_profile_id == "haku_v1"
-
-
-async def test_create_decision_is_idempotent(db_url: str, harness: Harness) -> None:
-    interaction_id, form_token = await _open(harness, "create")
-    decision = CreateAgentDecision(
-        form_token=form_token, display_name="Kitchen Claude", access_profile_id="no_auto_approval"
-    )
-    first = await harness.authority.decide(
-        interaction_id=interaction_id, browser=harness.browser, interaction_cookie=form_token, decision=decision
-    )
-    second = await harness.authority.decide(
-        interaction_id=interaction_id, browser=harness.browser, interaction_cookie=form_token, decision=decision
-    )
-    assert first == second
-    with pytest.raises(EnrollmentBrowserBindingError):
-        await harness.authority.decide(
-            interaction_id=interaction_id,
-            browser=harness.browser,
-            interaction_cookie=form_token,
-            decision=CreateAgentDecision(
-                form_token="different-form-token",
-                display_name=decision.display_name,
-                access_profile_id=decision.access_profile_id,
-            ),
-        )
-    with pytest.raises(EnrollmentDecisionConflictError):
-        await harness.authority.decide(
-            interaction_id=interaction_id,
-            browser=harness.browser,
-            interaction_cookie=form_token,
-            decision=CreateAgentDecision(
-                form_token=form_token, display_name="Different Agent", access_profile_id=decision.access_profile_id
-            ),
-        )
-
-    with _orm_session(db_url) as session:
-        interaction = session.get(EnrollmentInteraction, interaction_id)
-        assert interaction is not None
-        decision_digest = interaction.decision_digest
-        assert interaction.browser_nonce_digest is None
-        assert interaction.browser_binding_digest is not None
-        assert interaction.phase is EnrollmentPhase.ALLOWED
-        assert interaction.access_profile_id == "no_auto_approval"
-
-    assert decision_digest not in {form_token.encode(), b"browser-secret-1", b"browser-secret-2"}
+    assert await other.authority.list_agents(operator_id=other.operator_id) == ()
 
 
 async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_rows(
     db_url: str, harness: Harness
 ) -> None:
-    locked_interaction_id = await _allow_create(harness, label="locked-allowed", display_name="Locked Allowed")
+    locked_interaction_id = await _seed_allowed_interaction(harness, label="locked-allowed")
     harness.clock.advance(datetime.timedelta(seconds=1))
-    unlocked_interaction_id = await _allow_create(harness, label="unlocked-allowed", display_name="Unlocked Allowed")
+    unlocked_interaction_id = await _seed_allowed_interaction(harness, label="unlocked-allowed")
     harness.clock.advance(datetime.timedelta(minutes=11))
 
     engine = create_engine(db_url)
@@ -650,7 +567,7 @@ async def test_retained_static_agent_access_profile_remains_immutable(harness_fa
 
     with pytest.raises(AgentAccessProfileManagedByDeploymentError):
         await harness.authority.set_access_profile(
-            operator_id=harness.browser.operator_id, agent_id=agent_id, access_profile_id="no_auto_approval"
+            operator_id=harness.operator_id, agent_id=agent_id, access_profile_id="no_auto_approval"
         )
 
 
@@ -658,15 +575,7 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
     database_url = "postgresql+asyncpg://postgres:postgres@127.0.0.1:1/unavailable"
     async with managed_async_engine(create_async_engine(database_url, pool_pre_ping=True)) as engine:
         sessions = async_sessionmaker(engine, expire_on_commit=False)
-        identities = PostgresOperatorIdentityStore(
-            sessions, OperatorIdentityTrust(trust_domain="test", trusted_issuers=frozenset({_BROWSER_ISSUER}))
-        )
-        authority = PostgresAgentAuthority(
-            sessions,
-            operator_identity_store=identities,
-            access_profiles=("no_auto_approval",),
-            default_access_profile_id="no_auto_approval",
-        )
+        authority = PostgresAgentAuthority(sessions, access_profiles=("no_auto_approval",))
         with pytest.raises(AgentGrantAuthorityUnavailableError):
             await authority.list_agents(operator_id=uuid4())
 

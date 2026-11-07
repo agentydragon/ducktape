@@ -162,10 +162,7 @@ def create_app(settings: Settings) -> FastAPI:
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
     agent_authority = PostgresAgentAuthority(
-        db_sessions,
-        operator_identity_store=operator_identity_store,
-        access_profiles=tuple(profile.id for profile in settings.access_profiles),
-        default_access_profile_id=settings.default_access_profile_id,
+        db_sessions, access_profiles=tuple(profile.id for profile in settings.access_profiles)
     )
 
     @asynccontextmanager
@@ -183,7 +180,7 @@ def create_app(settings: Settings) -> FastAPI:
     # above uses these same objects rather than creating a second pool.
     app.state.db_engine = db_engine
     app.state.db_sessions = db_sessions
-    app.state.agent_enrollment_service = agent_authority
+    app.state.agent_management_service = agent_authority
     app.state.operator_identity_store = operator_identity_store
     app.state.operator_login_flows = operator_login_flows
     # Operator browser auth is mandatory; the /auth router drives the registry per request.

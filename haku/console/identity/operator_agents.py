@@ -6,11 +6,11 @@ from typing import Annotated, cast
 
 from fastapi import Depends, Request
 
-from haku.console.identity.enrollment import AgentEnrollmentService
+from haku.console.identity.agent_management import AgentManagementService
 
 
-def _enrollment_service(request: Request) -> AgentEnrollmentService:
-    return cast(AgentEnrollmentService, request.app.state.agent_enrollment_service)
+def _agent_management_service(request: Request) -> AgentManagementService:
+    return cast(AgentManagementService, request.app.state.agent_management_service)
 
 
-AgentEnrollmentServiceDep = Annotated[AgentEnrollmentService, Depends(_enrollment_service)]
+AgentManagementServiceDep = Annotated[AgentManagementService, Depends(_agent_management_service)]
