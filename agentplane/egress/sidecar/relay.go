@@ -35,7 +35,7 @@ type sidecar struct {
 	readinessServer   *http.Server
 	readinessListener net.Listener
 	proxyListener     net.Listener
-	routes            []*platformRoute
+	routes            *platformRoutes
 
 	activeMu sync.Mutex
 	active   map[net.Conn]struct{}
@@ -56,20 +56,20 @@ func (s *sidecar) run(ctx context.Context) error {
 	proxyListener, err := netlistener.Open(s.config.ListenAddress)
 	if err != nil {
 		_ = readinessListener.Close()
-		stopPlatformRoutes(routes)
+		closePlatformRoutes(routes)
 		return fmt.Errorf("start HTTP proxy listener: %w", err)
 	}
 	return s.serve(ctx, proxyListener, readinessListener, routes)
 }
 
-func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes []*platformRoute) error {
+func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes *platformRoutes) error {
 	s.proxyListener = proxyListener
 	s.routes = routes
 	s.bindReadiness(readinessListener)
 	var serving sync.WaitGroup
 	defer func() {
 		s.stopProxy()
-		stopPlatformRoutes(s.routes)
+		closePlatformRoutes(s.routes)
 		s.stopReadiness()
 		serving.Wait()
 	}()
@@ -77,7 +77,7 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 	if ctx.Err() != nil {
 		return nil
 	}
-	serveErrors := make(chan error, len(routes)+2)
+	serveErrors := make(chan error, 3)
 	serve := func(name string, run func() error) {
 		serving.Go(func() {
 			if err := run(); err != nil {
@@ -88,9 +88,9 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 		})
 	}
 	serve("readiness listener", func() error { return s.readinessServer.Serve(s.readinessListener) })
-	for _, route := range routes {
-		serve("platform route "+route.name, func() error { return route.server.Serve(route.listen) })
-		slog.Info("platform route listening", "route", route.name, "address", route.listen.Addr(), "upstream", route.config.Upstream)
+	if routes != nil {
+		serve("platform routes", func() error { return routes.server.Serve(routes.listen) })
+		slog.Info("platform routes listening", "address", routes.listen.Addr(), "route_count", len(s.config.PlatformRoutes.Routes))
 	}
 	serve("HTTP proxy listener", s.acceptLoop)
 	s.ready.Store(true)

@@ -408,9 +408,9 @@ flowchart LR
     browser -->|same-origin POST /telemetry/v1/traces| app
     app -->|OTLP/HTTP :4318| alloy
     services -->|OTLP/gRPC :4317| alloy
-    runner -.->|OTLP/gRPC 127.0.0.1:3132| sidecar
+    runner -.->|OTLP/gRPC 127.0.0.1:3130| sidecar
     sidecar -->|OTLP/gRPC :4317| alloy
-    guest -.->|OTLP/gRPC 10.0.2.1:3132| relay
+    guest -.->|OTLP/gRPC 10.0.2.1:3130| relay
     relay -->|OTLP/gRPC :4317| alloy
 ```
 

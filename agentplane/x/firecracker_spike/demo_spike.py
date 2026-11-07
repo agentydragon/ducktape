@@ -257,7 +257,7 @@ def main() -> None:
                     "readiness_listen_address": "127.0.0.1:3129",
                     "token_file": str(relay_token),
                     "audience_token_files": {"spike-audience": str(audience_token)},
-                    "platform_routes": {},
+                    "platform_routes": {"routes": {}},
                 }
             )
         )

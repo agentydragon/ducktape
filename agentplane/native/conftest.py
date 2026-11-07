@@ -49,7 +49,7 @@ def agent_cli_environment() -> dict[str, str]:
         "AGENTPLANE_ACTIONS_CREDENTIAL": "test-actions-bearer",
         "AGENTPLANE_NOTIFICATIONS_URL": "http://notifications.test:8080",
         "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": "test-notifications-bearer",
-        "AGENTPLANE_EGRESS_GRPC_URL": "http://127.0.0.1:3133",
+        "AGENTPLANE_EGRESS_GRPC_URL": "http://127.0.0.1:3130",
         "AGENTPLANE_EGRESS_GRPC_CREDENTIAL": "platform-route",
         "AGENTPLANE_SESSION_ID": "test-session",
     }

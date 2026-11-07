@@ -168,14 +168,16 @@ def test_rules_route_wires_workload_identity_without_mounting_the_token_into_ope
     app_objects: list[dict[str, Any]],
 ) -> None:
     settings = yaml.safe_load(_one(app_objects, "ConfigMap", "openclaw-egress-sidecar")["data"]["settings.yaml"])
-    route = settings["platform_routes"]["egress-rules"]
-    assert route["listen_address"] == "127.0.0.1:3133"
-    assert route["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
-    assert route["token_file"] == settings["proxy"]["transport"]["auth"]["token_file"]
+    route = settings["platform_routes"]
+    route_config = route["routes"]["egress-rules"]
+    assert route["listen_address"] == "127.0.0.1:3130"
+    assert route_config["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
+    assert route_config["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
+    assert route_config["token_file"] == settings["proxy"]["transport"]["auth"]["token_file"]
     pod = _one(app_objects, "Deployment", "public-coder-agent")["spec"]["template"]["spec"]
     app = one(c for c in pod["containers"] if c["name"] == "openclaw")
     env = {item["name"]: item.get("value") for item in app["env"]}
-    assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3133"
+    assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3130"
     assert env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
     assert "agentplane-egress-token" not in {mount["name"] for mount in app["volumeMounts"]}
 

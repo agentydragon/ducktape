@@ -46,6 +46,13 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
+def _host_port(address: str) -> tuple[str, int]:
+    parsed = urlsplit(address if "://" in address else f"//{address}")
+    assert parsed.hostname is not None
+    assert parsed.port is not None
+    return parsed.hostname, parsed.port
+
+
 def _filled_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
     cached = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIXTURE_RLOCATION"])
     return rendered_fixture.fill(
@@ -266,21 +273,23 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     sidecar_settings = yaml.safe_load(
         _resource(docs, "ConfigMap", f"{fixture_chart.POD_TEMPLATE}-egress-sidecar")["data"]["settings.yaml"]
     )
-    telemetry_route = sidecar_settings["platform_routes"]["telemetry"]
-    routes = sidecar_settings["platform_routes"]
-    addresses = [route["listen_address"] for route in routes.values()]
-    assert len(addresses) == len(set(addresses)), "platform routes must not compete for a listener"
+    platform_routes = sidecar_settings["platform_routes"]
+    routes = platform_routes["routes"]
+    telemetry_route = routes["telemetry"]
+    pod_listener = _host_port(platform_routes["listen_address"])
+    assert pod_listener[0] == "127.0.0.1"
+    assert len(routes["telemetry"]["service_prefixes"]) == 3
     runner_config = json.loads(
         _resource(docs, "ConfigMap", f"{fixture_chart.POD_TEMPLATE}-config")["data"]["environment-runtime.json"]
     )
-    assert runner_config["model_config_service"]["target"] == routes["model-config"]["listen_address"]
+    assert _host_port(runner_config["model_config_service"]["target"]) == pod_listener
     runtime = next(
         container
         for container in template["spec"]["pod"]["spec"]["containers"]
         if container["name"] == "environment-runtime"
     )
     runtime_env = {entry["name"]: entry["value"] for entry in runtime["env"] if "value" in entry}
-    assert runtime_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == f"http://{telemetry_route['listen_address']}"
+    assert _host_port(runtime_env["OTEL_EXPORTER_OTLP_ENDPOINT"]) == pod_listener
     assert runtime_env.get("OTEL_SDK_DISABLED") != "true"
     sidecar_env = {entry["name"]: entry["value"] for entry in runner_sidecar[0]["env"] if "value" in entry}
     assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == f"http://{telemetry_route['upstream']}"
@@ -469,10 +478,15 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     relay = yaml.safe_load(
         _resource(vm_fixture.objects, "ConfigMap", "launcher-relay-egress-sidecar")["data"]["settings.yaml"]
     )
-    relay_address = relay["platform_routes"]["model-config"]["listen_address"]
-    assert config["model_config_service"]["target"].rsplit(":", 1)[1] == relay_address.rsplit(":", 1)[1]
-    assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"] == "http://10.0.2.1:3133"
-    assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_URL"] == "http://10.0.2.1:3134"
+    vm_listener = _host_port(relay["platform_routes"]["listen_address"])
+    assert vm_listener[0] == "0.0.0.0"
+    guest_listener = ("10.0.2.1", vm_listener[1])
+    assert _host_port(config["model_config_service"]["target"]) == guest_listener
+    assert _host_port(config["ingress"]["target"]) == guest_listener
+    assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"]) == guest_listener
+    assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == guest_listener
+    vm_runtime_env = dict(line.split("=", 1) for line in config_map["data"]["environment-runtime.env"].splitlines())
+    assert _host_port(vm_runtime_env["OTEL_EXPORTER_OTLP_ENDPOINT"].strip('"')) == guest_listener
     assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
     assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
     oom_config_map = _resource(vm_fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
