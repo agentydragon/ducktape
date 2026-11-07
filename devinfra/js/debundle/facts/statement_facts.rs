@@ -263,6 +263,10 @@ pub(crate) struct SynchronousCalls {
     pub(crate) global_object_aliases: Option<BTreeSet<Id>>,
     /// Heap-content cells of the callables this statement invoked.
     pub(crate) heap_contents: HeapContentCells,
+    /// Conditional imported bodies whose checked module-cell reads and writes
+    /// are included in this execution require their source initialization to
+    /// precede every candidate invocation.
+    pub(crate) required_initialized_module_cells: BTreeSet<ModuleCellId>,
     /// Heap reads and writes reached without an assumed callback or fallback
     /// path. This is a subset of `heap_contents` and is used only to check
     /// explicit commuting premises; the conservative heap order uses all cells.
@@ -417,6 +421,15 @@ pub struct ReturnedRecordUseFact {
 }
 
 impl StatementFacts {
+    /// Module cells whose source initialization the statement's checked
+    /// conditional imported-body transfer requires. These are identities
+    /// only; the iterator grants no authority over cell contents or writes.
+    pub fn required_initialized_module_cells(&self) -> impl Iterator<Item = ModuleCellId> + '_ {
+        self.synchronous_calls
+            .iter()
+            .flat_map(|calls| calls.required_initialized_module_cells.iter().copied())
+    }
+
     /// What one synchronous call of the function or class this statement
     /// declares runs first-order (before nested closures and `await`):
     /// a class runs its constructor. The view at-init call promotion uses.

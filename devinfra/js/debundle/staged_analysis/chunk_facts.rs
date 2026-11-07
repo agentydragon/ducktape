@@ -139,6 +139,12 @@ pub fn compute_logical_chunk_facts(
                 .get(chunk_id)
                 .cloned()
                 .unwrap_or_default(),
+            module_cell_invariants: program_summary.module_cell_invariants.clone(),
+            source_initialized_module_cells: program_summary
+                .source_initialized_module_cells
+                .get(chunk_id)
+                .cloned()
+                .unwrap_or_default(),
             ..AnalysisInputs::default()
         };
         inputs.assumptions.captured_value_inputs = program_summary

@@ -74,6 +74,8 @@ pub(super) struct ChunkContext<'a> {
     pub(super) ownership_subset: Option<&'a OwnershipSubset>,
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
+    pub(super) materialized_chunks: &'a BTreeSet<ChunkId>,
+    pub(super) vendor_unchanged: bool,
     pub(super) chunk_id: &'a str,
     pub(super) target_dir: &'a str,
     pub(super) keep_going: bool,
@@ -388,6 +390,8 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         target_dir,
         ownership_subset,
+        materialized_chunks,
+        vendor_unchanged,
         report_emission,
         graph_reports,
         effect_conflicts_jsonl,
@@ -733,8 +737,29 @@ pub(super) fn finish_logical_chunk(
             })
             .map(|prepared| (placement, prepared))
         });
-    let (evaluation, report_out_dir) =
-        evaluate_chunk_candidate(report_context, preflight, &analysis.facts)?;
+    let module_initialization = crate::module_initialization::assess_module_initialization(
+        crate::module_initialization::ModuleInitializationContext {
+            artifact,
+            indexes: artifact_indexes,
+            consumer: chunk_id_interned,
+            materialized_chunks,
+            vendor_unchanged,
+            prepared: emission_preparation
+                .as_ref()
+                .ok()
+                .map(|(_, prepared)| prepared),
+            source_initialized_cells: program_summary
+                .source_initialized_module_cells
+                .get(chunk_id),
+        },
+        &analysis.facts,
+    );
+    let (evaluation, report_out_dir) = evaluate_chunk_candidate(
+        report_context,
+        preflight,
+        &analysis.facts,
+        module_initialization,
+    )?;
     let assessment = if assessment_only {
         let report = evaluation.candidate_assessment().report();
         if report.status != gate::CandidateRelocationStatus::AcceptedWithinCheckedScope {
@@ -1219,6 +1244,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
     context: ChunkReportContext<'b>,
     preflight: gate::CandidatePreflight<'a>,
     facts: &[analysis::facts::StatementFacts],
+    module_initialization: gate::CandidateModuleInitializationEvidence,
 ) -> Result<(gate::CandidateEvaluation<'a>, Option<&'b std::path::Path>)> {
     let ChunkReportContext {
         chunk_id,
@@ -1264,6 +1290,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
         };
         preflight.evaluate(
             facts,
+            module_initialization,
             full_translation_validation.then_some(&mut write_tv),
             effect_conflicts_jsonl.then_some(&mut write_effect),
         )?
@@ -1481,8 +1508,17 @@ fn emit_reports_and_resolve_gate<'a>(
             assessment.placement.coverage.unresolved_checks
         )
     };
+    let initialization_diagnostic = if assessment.module_initialization.is_complete() {
+        String::new()
+    } else {
+        format!(
+            " Provider initialization remains unproved for {} cell(s): {:?}.",
+            assessment.module_initialization.unproved_cells.len(),
+            assessment.module_initialization.refusal,
+        )
+    };
     let diagnostic = format!(
-        "materialize_logical_modules: chunk {chunk_id} — candidate relocation {status:?}; effects: {:?}.{placement_diagnostic}{evidence}{legacy_diagnostic}",
+        "materialize_logical_modules: chunk {chunk_id} — candidate relocation {status:?}; effects: {:?}.{placement_diagnostic}{initialization_diagnostic}{evidence}{legacy_diagnostic}",
         assessment.effect.assessment.decision,
     );
     match (policy, evaluation.into_validation()) {

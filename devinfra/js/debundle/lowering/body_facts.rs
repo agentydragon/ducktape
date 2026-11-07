@@ -3,7 +3,9 @@
 //! and referenced Ids. At the naturalization boundary, each reference is
 //! paired with its source binding Id before any import/export planner sees it.
 
+use artifact::reports::StaticModuleRequest;
 use frontend_elaboration::chunk_ast::{binding_names, top_level_declaration_ids};
+use program_analysis::static_module_request_for_decl;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
@@ -23,6 +25,16 @@ pub(super) struct ModuleBodyFacts {
     /// appears here under the post-rename `(sym, ctxt)` (the rename
     /// mutates `sym` in place; `ctxt` is preserved).
     pub(super) referenced_idents: HashSet<Id>,
+    /// Static requests in item order, with their original module-item index.
+    pub(super) static_requests: Vec<IndexedStaticModuleRequest>,
+    /// Static requests among the leading import declarations.
+    pub(super) leading_static_import_requests: usize,
+}
+
+#[derive(Clone)]
+pub(super) struct IndexedStaticModuleRequest {
+    pub(super) item_index: usize,
+    pub(super) request: StaticModuleRequest,
 }
 
 /// One reference after naturalization. `source_id` is present only when the
@@ -54,6 +66,8 @@ pub(super) struct NaturalizedBodyFacts {
     imported_locals: HashSet<Id>,
     provided_locals: HashSet<Id>,
     binding_uses: HashSet<BindingUse>,
+    static_requests: Vec<IndexedStaticModuleRequest>,
+    leading_static_import_requests: usize,
 }
 
 impl NaturalizedBodyFacts {
@@ -79,6 +93,8 @@ impl NaturalizedBodyFacts {
             imported_locals: facts.imported_locals,
             provided_locals: facts.provided_locals,
             binding_uses,
+            static_requests: facts.static_requests,
+            leading_static_import_requests: facts.leading_static_import_requests,
         }
     }
 
@@ -92,6 +108,14 @@ impl NaturalizedBodyFacts {
 
     pub(super) fn imports(&self, emitted_id: &Id) -> bool {
         self.imported_locals.contains(emitted_id)
+    }
+
+    pub(super) fn static_requests(&self) -> &[IndexedStaticModuleRequest] {
+        &self.static_requests
+    }
+
+    pub(super) fn leading_static_import_requests(&self) -> usize {
+        self.leading_static_import_requests
     }
 }
 
@@ -197,8 +221,28 @@ impl RefCollector {
 pub(super) fn collect_module_body_facts(body: &[ModuleItem]) -> ModuleBodyFacts {
     let mut facts = ModuleBodyFacts::default();
     let mut ref_collector = RefCollector::default();
-    for item in body {
+    let mut leading_import_prefix = true;
+    for (item_index, item) in body.iter().enumerate() {
         item.visit_with(&mut ref_collector);
+        let request = match item {
+            ModuleItem::ModuleDecl(decl) => static_module_request_for_decl(decl),
+            ModuleItem::Stmt(_) => None,
+        };
+        if leading_import_prefix {
+            if matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))) {
+                if request.is_some() {
+                    facts.leading_static_import_requests += 1;
+                }
+            } else {
+                leading_import_prefix = false;
+            }
+        }
+        if let Some(request) = request {
+            facts.static_requests.push(IndexedStaticModuleRequest {
+                item_index,
+                request,
+            });
+        }
         facts
             .provided_locals
             .extend(top_level_declaration_ids(item));

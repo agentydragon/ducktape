@@ -8,6 +8,7 @@ use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
+use super::body_facts::IndexedStaticModuleRequest;
 use super::module_output::{
     LoweredModuleOutput, ModuleEmissionInputs, PreparedModuleEmission, prepare_module_emission,
 };
@@ -18,6 +19,7 @@ use super::imports::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
     relative_source,
 };
+use super::imports::static_request_for_item;
 
 use super::scope_names::{
     collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
@@ -41,7 +43,7 @@ use crate::rename_ledger::{
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
-use artifact::reports::SelectedModuleLowering;
+use artifact::reports::{SelectedModuleLowering, StaticModuleRequest};
 use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
 use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_names};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
@@ -70,9 +72,39 @@ pub(super) struct PreparedCandidateEmissionPlan<'a> {
     file_records: Vec<(String, FileRole)>,
     modules: Vec<PreparedModuleEmission<'a>>,
     cross_chunk_import_aliases: Vec<(String, String)>,
+    entry_static_requests: Vec<StaticModuleRequest>,
 }
 
 impl PreparedCandidateEmissionPlan<'_> {
+    /// The exact file paths and source coordinates consumed by final emission.
+    pub(super) fn output_file_layout(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.files
+            .iter()
+            .map(|file| (file.path.as_str(), file.metadata.source_path.as_str()))
+            .chain(
+                self.modules
+                    .iter()
+                    .map(|module| module.output_file_layout()),
+            )
+    }
+
+    /// Ordered static requests from the same construction passes that prepare
+    /// each output body. The entry comes first, followed by logical-module
+    /// order; later whole-artifact postpasses are outside this inventory.
+    pub(super) fn static_request_inventories<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (&'a str, &'a [StaticModuleRequest])> + 'a {
+        let entry = self
+            .files
+            .first()
+            .expect("a candidate emission plan always contains its entry file");
+        std::iter::once((entry.path.as_str(), self.entry_static_requests.as_slice())).chain(
+            self.modules
+                .iter()
+                .map(|module| module.static_request_inventory()),
+        )
+    }
+
     pub(super) fn prepend_entry_header_lines(&mut self, prefix: &[String]) {
         let entry = self
             .files
@@ -89,6 +121,7 @@ impl PreparedCandidateEmissionPlan<'_> {
             mut file_records,
             modules,
             cross_chunk_import_aliases,
+            ..
         } = self;
         let module_outputs: Vec<LoweredModuleOutput> = GLOBALS.with(|globals| {
             modules
@@ -243,12 +276,14 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
     );
 
     let mut entry_body = Vec::new();
+    let mut entry_requests_by_item = Vec::<IndexedStaticModuleRequest>::new();
     split_entry_body(
         &runtime_ast.module.body,
         &selected_statements,
         whole_statement_assignment,
         binding_assignment,
         &mut entry_body,
+        &mut entry_requests_by_item,
         &mut selected_by_module,
     );
     // Two passes: build entry imports in plan order (so the
@@ -525,9 +560,30 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
             .iter()
             .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
             .count();
+        let request_insert_index = entry_requests_by_item
+            .iter()
+            .take_while(|request| request.item_index < import_insert_index)
+            .count();
+        let inserted_requests: Vec<IndexedStaticModuleRequest> = entry_imports
+            .iter()
+            .enumerate()
+            .filter_map(|(item_offset, item)| {
+                static_request_for_item(item).map(|request| IndexedStaticModuleRequest {
+                    item_index: import_insert_index + item_offset,
+                    request,
+                })
+            })
+            .collect();
+        for request in entry_requests_by_item.iter_mut().skip(request_insert_index) {
+            request.item_index += entry_imports.len();
+        }
         let tail = entry_body.split_off(import_insert_index);
         entry_body.extend(entry_imports);
         entry_body.extend(tail);
+        entry_requests_by_item.splice(
+            request_insert_index..request_insert_index,
+            inserted_requests,
+        );
     }
     for export in entry_exports_for_moved_bindings(
         declarations,
@@ -628,6 +684,8 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
     let local_bindings = assignment_analysis
         .inputs()
         .local_bindings(chunk_id_interned)?;
+    // Dead-import trimming removes only specifiers and retains the directive
+    // as a side-effect import, so its request inventory is unchanged.
     trim_dead_named_specifiers(&mut entry_body, local_bindings.as_map());
     let entry_exports_by_original_local = collect_entry_exports_by_original_local(
         &entry_body,
@@ -667,6 +725,10 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
         },
     }];
     let file_records = vec![(entry_file.to_string(), FileRole::Entry)];
+    let entry_static_requests = entry_requests_by_item
+        .into_iter()
+        .map(|indexed_request| indexed_request.request)
+        .collect();
 
     // Filter chunk_renames down to entries the per-module emit path
     // should apply: bindings *not* claimed by any logical module.
@@ -730,6 +792,7 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
         file_records,
         modules,
         cross_chunk_import_aliases,
+        entry_static_requests,
     })
 }
 
@@ -781,12 +844,13 @@ fn split_entry_body(
     whole_statement_assignment: &BTreeMap<StatementId, usize>,
     binding_assignment: &HashMap<Id, usize>,
     entry_body: &mut Vec<ModuleItem>,
+    entry_requests_by_item: &mut Vec<IndexedStaticModuleRequest>,
     selected_by_module: &mut [Vec<ModuleItem>],
 ) {
     for (index, item) in body.iter().enumerate() {
         let ordinal = StatementId(index);
         if !selected_statements.contains(&ordinal) {
-            entry_body.push(item.clone());
+            push_entry_item(entry_body, entry_requests_by_item, item.clone());
             continue;
         }
         if let Some(module_index) = whole_statement_assignment.get(&ordinal).copied() {
@@ -800,14 +864,28 @@ fn split_entry_body(
                 item,
                 ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none()
             ) {
-                entry_body.push(item.clone());
+                push_entry_item(entry_body, entry_requests_by_item, item.clone());
             }
             continue;
         }
-        entry_body.extend(remaining_item_after_selection(
-            item,
-            binding_assignment,
-            selected_by_module,
-        ));
+        if let Some(entry_item) =
+            remaining_item_after_selection(item, binding_assignment, selected_by_module)
+        {
+            push_entry_item(entry_body, entry_requests_by_item, entry_item);
+        }
     }
+}
+
+fn push_entry_item(
+    body: &mut Vec<ModuleItem>,
+    static_requests: &mut Vec<IndexedStaticModuleRequest>,
+    item: ModuleItem,
+) {
+    if let Some(request) = static_request_for_item(&item) {
+        static_requests.push(IndexedStaticModuleRequest {
+            item_index: body.len(),
+            request,
+        });
+    }
+    body.push(item);
 }

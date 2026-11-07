@@ -176,6 +176,45 @@ fn named_export_has_runtime_request(export: &NamedExport) -> bool {
             }))
 }
 
+/// Classify one static ESM module declaration for the ordered runtime request
+/// inventory shared by source analysis and candidate emission.
+pub fn static_module_request_for_decl(decl: &ModuleDecl) -> Option<StaticModuleRequest> {
+    let (source, mode) = match decl {
+        ModuleDecl::Import(import) if import_decl_has_runtime_request(import) => (
+            &import.src,
+            if matches!(&import.phase, ImportPhase::Evaluation) && import.with.is_none() {
+                StaticModuleRequestMode::OrdinaryEsm
+            } else {
+                StaticModuleRequestMode::Unsupported
+            },
+        ),
+        ModuleDecl::ExportNamed(export) if named_export_has_runtime_request(export) => {
+            let source = export.src.as_ref()?;
+            (
+                source,
+                if export.with.is_none() {
+                    StaticModuleRequestMode::OrdinaryEsm
+                } else {
+                    StaticModuleRequestMode::Unsupported
+                },
+            )
+        }
+        ModuleDecl::ExportAll(export) if !export.type_only => (
+            &export.src,
+            if export.with.is_none() {
+                StaticModuleRequestMode::OrdinaryEsm
+            } else {
+                StaticModuleRequestMode::Unsupported
+            },
+        ),
+        _ => return None,
+    };
+    Some(StaticModuleRequest {
+        specifier: str_value(source),
+        mode,
+    })
+}
+
 fn module_decl_is_runtime_esm(decl: &ModuleDecl) -> bool {
     match decl {
         ModuleDecl::Import(import) => import_decl_has_runtime_request(import),
@@ -600,18 +639,13 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     let mut primitive_imported_bindings = BTreeMap::new();
     let mut primitive_exports = BTreeMap::<String, Vec<Option<PrimitiveExportSource>>>::new();
     for item in &parsed.module.body {
+        if let ModuleItem::ModuleDecl(decl) = item
+            && let Some(request) = static_module_request_for_decl(decl)
+        {
+            runtime_facts.static_requests.push(request);
+        }
         collect_primitive_export_candidates(item, &mut primitive_bindings, &mut primitive_exports);
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
-            if import_decl_has_runtime_request(decl) {
-                runtime_facts.static_requests.push(StaticModuleRequest {
-                    specifier: str_value(&decl.src),
-                    mode: if matches!(&decl.phase, ImportPhase::Evaluation) && decl.with.is_none() {
-                        StaticModuleRequestMode::OrdinaryEsm
-                    } else {
-                        StaticModuleRequestMode::Unsupported
-                    },
-                });
-            }
             if !decl.type_only
                 && matches!(&decl.phase, ImportPhase::Evaluation)
                 && decl.with.is_none()
@@ -639,33 +673,6 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             );
             imports.push(import_record);
             continue;
-        }
-
-        if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item
-            && named_export_has_runtime_request(named)
-            && let Some(source) = &named.src
-        {
-            runtime_facts.static_requests.push(StaticModuleRequest {
-                specifier: str_value(source),
-                mode: if named.with.is_none() {
-                    StaticModuleRequestMode::OrdinaryEsm
-                } else {
-                    StaticModuleRequestMode::Unsupported
-                },
-            });
-        }
-
-        if let ModuleItem::ModuleDecl(ModuleDecl::ExportAll(export_all)) = item
-            && !export_all.type_only
-        {
-            runtime_facts.static_requests.push(StaticModuleRequest {
-                specifier: str_value(&export_all.src),
-                mode: if export_all.with.is_none() {
-                    StaticModuleRequestMode::OrdinaryEsm
-                } else {
-                    StaticModuleRequestMode::Unsupported
-                },
-            });
         }
 
         if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item

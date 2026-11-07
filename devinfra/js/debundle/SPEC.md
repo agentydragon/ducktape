@@ -560,6 +560,12 @@ Full per-chunk report emission also writes
 statement order from the existing single sweep with typed cross-destination
 rebind and split-atomic-group obligations from the same assignment validation,
 plus typed source/destination projection evidence from the final plan.
+Its `module_initialization` component independently lists fact-required module
+cells, preserved required cells, and unproved required-minus-preserved cells,
+each addressed by scoped chunk ID and declaration origin. It reports any typed
+prepared-output refusal; source imports alone do not establish preservation.
+Only required cells missing from the preserved set make an otherwise unblocked
+candidate incomplete; a refusal with no required cells remains diagnostic.
 Candidate assessment and normal lowering share one checked projection over the
 retained source-unit layout, whole-statement requests, binding catalogue,
 destructuring and nested-`var` groups, and stable Set intervals. Its maps are

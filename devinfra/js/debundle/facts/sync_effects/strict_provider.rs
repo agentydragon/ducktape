@@ -11,7 +11,9 @@ use super::super::effect_coverage::{
     EffectCoverageFragment, NativeCalleeSelection, OperationSupportOperation,
     OperationSupportReceipt,
 };
-use super::super::local_operations::{DeferredCallableCreation, LocalBinding, LocalCallee};
+use super::super::local_operations::{
+    DeferredCallableCreation, LocalBinding, LocalBody, LocalCallee,
+};
 use super::super::local_transfer::{
     self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult, SelectedValue,
 };
@@ -25,8 +27,8 @@ use super::super::value_model::{
 };
 use super::{Call, CallKind, ExecutionIndex, native_call_identity_key};
 use crate::analysis_inputs::{
-    ForeignInvocation, ForeignNativeOperation, ForeignReturn, ParameterHeapRead, ProofDependencies,
-    RecordInputProperty, RecordInputShape,
+    ForeignInvocation, ForeignNativeOperation, ForeignReturn, ParameterHeapRead,
+    PrimitiveCellInvariant, ProofDependencies, RecordInputProperty, RecordInputShape,
 };
 use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::OrderedFieldReadRefusal;
@@ -39,6 +41,7 @@ use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{NativePremise, names_intrinsic, native_premise};
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
+use source_identity::ModuleCellId;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::Id;
@@ -69,12 +72,28 @@ struct ProviderContext<'a> {
     /// Simple parameters and source-proved initialized var captures enter the
     /// shared body kernel; other projections retain allocation-only effects.
     body_effect_mode: bool,
+    /// A query-local lexical transfer context. Existing provider inference
+    /// leaves captured writes unsupported; only the post-init cell-kind query
+    /// enables this path, with every input binding seeded conservatively.
+    cell_transfer_mode: bool,
+    cell_transfer_bindings: BTreeSet<Id>,
+    module_cells: BTreeMap<Id, (ModuleCellId, PrimitiveCellInvariant)>,
+    module_cell_accesses: crate::analysis_inputs::ModuleCellAccesses,
     /// Static admission for the narrower private-birth support proof. Actual
     /// operation support still checks the current frame at every access.
     provider_local_birth_candidate: bool,
     body_effect_bindings: BTreeSet<Id>,
     input_shape: Option<RecordInputShape>,
     parameter_reads: BTreeSet<ParameterHeapRead>,
+}
+
+pub(super) struct PrimitiveCellTransfer {
+    pub(super) cell_values: Values,
+    pub(super) normal_completion: bool,
+    pub(super) possible_throw: bool,
+    /// The cell invariant accepts only covered, source-only transfers with no
+    /// additional proof dependencies. A possible throw does not relax this.
+    pub(super) allocation_covered: bool,
 }
 
 fn native_selection(
@@ -524,17 +543,62 @@ impl LocalContext for ProviderContext<'_> {
     }
     fn assign_capture(
         &mut self,
-        _frame: &mut LocalFrame,
-        _binding: &Id,
-        _selected: &SelectedValue,
+        frame: &mut LocalFrame,
+        binding: &Id,
+        selected: &SelectedValue,
         _span: Span,
     ) -> Option<LocalValueResult> {
-        None
+        if !self.cell_transfer_mode || !self.cell_transfer_bindings.contains(binding) {
+            return None;
+        }
+        if let Some((cell, invariant)) = self.module_cells.get(binding) {
+            if selected.values.is_empty()
+                || !selected.values.iter().all(|value| {
+                    matches!(value, AbstractValue::Value(Value::Prim(kinds))
+                    if kinds.is_only(invariant.post_init_kinds))
+                })
+            {
+                return None;
+            }
+            self.module_cell_accesses.writes.insert(*cell);
+            self.module_cell_accesses
+                .invariants
+                .insert(*cell, invariant.clone());
+        }
+        frame.binding_selections.remove(binding);
+        frame.binding_postconditions.remove(binding);
+        frame
+            .environment
+            .insert(binding.clone(), selected.values.clone());
+        frame.initialized_bindings.insert(binding.clone());
+        Some(LocalValueResult {
+            allocation: AllocationValue {
+                values: selected.values.clone(),
+                judgment: AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+            },
+            effects: EffectCoverageFragment::no_effects(),
+            selection: selected.selection.clone(),
+            postcondition: selected.postcondition.clone(),
+        })
     }
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult> {
         // The frame starts with scoped arguments and checked private var
         // captures. Other entries come from the covered local operations.
         let values = frame.environment.get(binding)?.clone();
+        if let Some((cell, invariant)) = self.module_cells.get(binding) {
+            if values.is_empty()
+                || !values.iter().all(|value| {
+                    matches!(value, AbstractValue::Value(Value::Prim(kinds))
+                    if kinds.is_only(invariant.post_init_kinds))
+                })
+            {
+                return None;
+            }
+            self.module_cell_accesses.reads.insert(*cell);
+            self.module_cell_accesses
+                .invariants
+                .insert(*cell, invariant.clone());
+        }
         let effects = if self.body_effect_mode
             && frame.initialized_bindings.contains(binding)
             && !values.is_empty()
@@ -769,6 +833,125 @@ impl LocalContext for ProviderContext<'_> {
     }
 }
 
+pub(super) fn transfer_primitive_cell_initializer(
+    index: &ExecutionIndex,
+    shadowed: &BTreeSet<&'static str>,
+    body: &LocalBody,
+    binding: &Id,
+    initial_cell: Values,
+) -> Option<PrimitiveCellTransfer> {
+    transfer_primitive_cell(index, shadowed, body, binding, initial_cell, true)
+}
+
+pub(super) fn transfer_primitive_cell_store(
+    index: &ExecutionIndex,
+    shadowed: &BTreeSet<&'static str>,
+    body: &LocalBody,
+    binding: &Id,
+    current_cell: Values,
+) -> Option<PrimitiveCellTransfer> {
+    transfer_primitive_cell(index, shadowed, body, binding, current_cell, false)
+}
+
+fn transfer_primitive_cell(
+    index: &ExecutionIndex,
+    shadowed: &BTreeSet<&'static str>,
+    body: &LocalBody,
+    binding: &Id,
+    initial_cell: Values,
+    initializer: bool,
+) -> Option<PrimitiveCellTransfer> {
+    let scope = ProviderScopeId::fresh()?;
+    let mut environment = Context::new();
+    environment.insert(binding.clone(), initial_cell);
+
+    // The transfer is for one arbitrary-reachable writer. Its other bindings
+    // are unconstrained, even when the writer belongs to a nested callable or
+    // is reached through callback reentry.
+    let mut inputs = BTreeSet::new();
+    inputs.extend(body.free_reads().iter().cloned());
+    inputs.extend(body.captured_writes().iter().cloned());
+    inputs.extend(body.bindings.keys().cloned());
+    for input in &inputs {
+        if input != binding {
+            environment.insert(
+                input.clone(),
+                Values::from([AbstractValue::Value(Value::Top)]),
+            );
+        }
+    }
+    let mut symbolic_bindings = Context::new();
+    symbolic_bindings.insert(
+        binding.clone(),
+        Values::from([AbstractValue::Value(Value::Top)]),
+    );
+    for input in &inputs {
+        symbolic_bindings.insert(
+            input.clone(),
+            Values::from([AbstractValue::Value(Value::Top)]),
+        );
+    }
+    let local_bindings = body.bindings.keys().cloned().collect();
+    let mut context = ProviderContext {
+        index,
+        calls: &[],
+        scope,
+        bindings: symbolic_bindings,
+        argument_values: Values::new(),
+        closure_captures: BTreeMap::new(),
+        closure_local_reads: BTreeMap::new(),
+        closure_provider_reads: BTreeMap::new(),
+        unsupported_closures: BTreeSet::new(),
+        final_environment: None,
+        class_mode: false,
+        local_bindings,
+        shadowed: shadowed.clone(),
+        native_operations: BTreeSet::new(),
+        native_derivation_rules: BTreeSet::new(),
+        properties: OrdMap::new(),
+        private_properties: OrdMap::new(),
+        arrays: OrdMap::new(),
+        writable_prefix: OrdMap::new(),
+        descriptor_maps: OrdMap::new(),
+        applied_accessors: OrdMap::new(),
+        revision: 0,
+        body_effect_mode: false,
+        cell_transfer_mode: true,
+        cell_transfer_bindings: BTreeSet::from([binding.clone()]),
+        module_cells: BTreeMap::new(),
+        module_cell_accesses: crate::analysis_inputs::ModuleCellAccesses::default(),
+        provider_local_birth_candidate: false,
+        body_effect_bindings: BTreeSet::new(),
+        input_shape: None,
+        parameter_reads: BTreeSet::new(),
+    };
+    let mut frame = LocalFrame::new(environment);
+    let transfer = local_transfer::execute(&mut context, body, &mut frame)?;
+    let cell_values = if initializer {
+        frame.returns.clone()
+    } else {
+        frame.environment.get(binding)?.clone()
+    };
+    let normal_completion = frame
+        .returns
+        .iter()
+        .any(|value| *value != AbstractValue::Value(Value::Unavailable));
+    let possible_throw = frame.thrown.is_some()
+        || frame
+            .returns
+            .contains(&AbstractValue::Value(Value::Unavailable))
+        || cell_values.contains(&AbstractValue::Value(Value::Unavailable));
+    Some(PrimitiveCellTransfer {
+        cell_values,
+        normal_completion,
+        possible_throw,
+        allocation_covered: matches!(
+            &transfer.allocation,
+            AllocationJudgment::CoveredAllocationOnly(dependencies) if dependencies.is_empty()
+        ),
+    })
+}
+
 struct ClosureCaptureProjection {
     local_reads: BTreeMap<u32, BTreeSet<Id>>,
     provider_reads: BTreeMap<u32, BTreeSet<Id>>,
@@ -918,6 +1101,7 @@ fn execute_provider_body<'a>(
     callable: u32,
     shadowed: &BTreeSet<&'static str>,
     input_shape: Option<RecordInputShape>,
+    module_cells: &BTreeMap<Id, (ModuleCellId, PrimitiveCellInvariant)>,
 ) -> Option<ProviderExecution<'a>> {
     let body = index.callables.get(&callable)?;
     let local_body = body.body_facts.ordered_plan();
@@ -949,7 +1133,12 @@ fn execute_provider_body<'a>(
             (conditional_body
                 || body.allocation_candidate_syntax()
                 || body.closure_candidate_syntax())
-                && body.captured_writes().is_empty()
+                && (body.captured_writes().is_empty()
+                    || (conditional_body
+                        && body
+                            .captured_writes()
+                            .iter()
+                            .all(|binding| module_cells.contains_key(binding))))
         });
     let provider_local_birth_syntax_candidate = body_effect_candidate
         // The source census records a member read as a possible getter call.
@@ -1012,9 +1201,10 @@ fn execute_provider_body<'a>(
     }
     let body_effect_mode = body_effect_candidate
         && complete_reads.as_ref().is_some_and(|reads| {
-            reads
-                .iter()
-                .all(|binding| index.initialized_provider_var_capture(binding, callable))
+            reads.iter().all(|binding| {
+                module_cells.contains_key(binding)
+                    || index.initialized_provider_var_capture(binding, callable)
+            })
         });
     let provider_local_birth_candidate = body_effect_mode && provider_local_birth_syntax_candidate;
     if conditional_body && !body_effect_mode {
@@ -1040,14 +1230,17 @@ fn execute_provider_body<'a>(
         // This establishes lexical cell initialization, not value kind, heap
         // locality, immutability or privacy of anything the cell can contain.
         let uncovered = if body_effect_mode {
-            !index.initialized_provider_var_capture(binding, callable)
+            !module_cells.contains_key(binding)
+                && !index.initialized_provider_var_capture(binding, callable)
         } else {
             !index.private_var_binding(binding)
         };
         if uncovered {
             return None;
         }
-        let value = if let Some((kinds, dependencies)) =
+        let value = if let Some((_, invariant)) = module_cells.get(binding) {
+            AbstractValue::Value(Value::Prim(invariant.post_init_kinds))
+        } else if let Some((kinds, dependencies)) =
             index.primitive_provider_capture(binding, callable)
         {
             capture_dependencies.extend(&dependencies);
@@ -1060,6 +1253,12 @@ fn execute_provider_body<'a>(
         };
         bindings.insert(binding.clone(), Values::from([value]));
     }
+    let cell_transfer_bindings: BTreeSet<_> = local_body
+        .into_iter()
+        .flat_map(|body| body.captured_writes())
+        .filter(|binding| module_cells.contains_key(*binding))
+        .cloned()
+        .collect();
     let mut context = ProviderContext {
         input_shape,
         parameter_reads: BTreeSet::new(),
@@ -1092,6 +1291,10 @@ fn execute_provider_body<'a>(
         applied_accessors: OrdMap::new(),
         revision: 0,
         body_effect_mode,
+        cell_transfer_mode: conditional_body && !cell_transfer_bindings.is_empty(),
+        cell_transfer_bindings,
+        module_cells: module_cells.clone(),
+        module_cell_accesses: crate::analysis_inputs::ModuleCellAccesses::default(),
         provider_local_birth_candidate,
         body_effect_bindings: if body_effect_mode {
             local_body?
@@ -1179,15 +1382,21 @@ pub(super) fn derive_conditional_body(
     callable: u32,
     shadowed: &BTreeSet<&'static str>,
     input: RecordInputShape,
+    module_cells: &BTreeMap<Id, (ModuleCellId, PrimitiveCellInvariant)>,
 ) -> Option<crate::facts::abstract_domain::foreign_call::DerivedConditionalBody> {
     let body = index.callables.get(&callable)?;
     if body.params.len() != 1 {
         return None;
     }
-    let execution = execute_provider_body(index, callable, shadowed, Some(input.clone()))?;
+    let execution =
+        execute_provider_body(index, callable, shadowed, Some(input.clone()), module_cells)?;
     // Provider module cells need a qualified footprint, independent of their
     // initialization/value proof. This query only instantiates parameter cells.
-    if !execution.captures.is_empty() {
+    if execution
+        .captures
+        .iter()
+        .any(|binding| !module_cells.contains_key(binding))
+    {
         return None;
     }
     let effects = execution.body_effects?;
@@ -1201,6 +1410,7 @@ pub(super) fn derive_conditional_body(
         crate::facts::abstract_domain::foreign_call::DerivedConditionalBody {
             input,
             reads: execution.context.parameter_reads,
+            module_cells: execution.context.module_cell_accesses,
             native_operations: execution.context.native_operations,
             dependencies,
             effects,
@@ -1221,7 +1431,7 @@ pub(super) fn derive(
         result,
         mut body_effects,
         capture_dependencies,
-    } = execute_provider_body(index, callable, shadowed, None)?;
+    } = execute_provider_body(index, callable, shadowed, None, &BTreeMap::new())?;
     let AllocationJudgment::CoveredAllocationOnly(mut dependencies) = result.judgment else {
         return None;
     };
@@ -1389,6 +1599,10 @@ pub(super) fn derive_class(
         input_shape: None,
         parameter_reads: BTreeSet::new(),
         body_effect_mode: true,
+        cell_transfer_mode: false,
+        cell_transfer_bindings: BTreeSet::new(),
+        module_cells: BTreeMap::new(),
+        module_cell_accesses: crate::analysis_inputs::ModuleCellAccesses::default(),
         provider_local_birth_candidate: false,
         body_effect_bindings: body
             .constructor
@@ -1786,11 +2000,14 @@ mod tests {
                     )
                 })
                 .collect();
-            let execution =
-                execute_provider_body(&prepared.index, *key, &prepared.shadowed, Some(input))
-                    .unwrap_or_else(|| {
-                        panic!("canonical body: {body:#?}; native selections: {native:#?}")
-                    });
+            let execution = execute_provider_body(
+                &prepared.index,
+                *key,
+                &prepared.shadowed,
+                Some(input),
+                &BTreeMap::new(),
+            )
+            .unwrap_or_else(|| panic!("canonical body: {body:#?}; native selections: {native:#?}"));
             assert!(matches!(
                 execution.result.judgment,
                 AllocationJudgment::Opaque

@@ -13,10 +13,10 @@ use std::sync::Arc;
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ArgumentInputRef, CallableSummary, ImportedPrimitiveRead,
     NativeInputKind, NativeIntegrity, NativeOperationInputEvidence, NativeOperationInputRef,
-    NativeOperationSelectorProvenance, NoAccessorInstallRef, PrimitiveExportCell,
-    ResolvedArgumentInput, ResolvedBindingValueInput, ResolvedNativeOperationInput,
-    ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
-    ValueInputEvidence, ValueInputRef,
+    NativeOperationSelectorProvenance, NoAccessorInstallRef, PrimitiveCellInvariant,
+    PrimitiveExportCell, ResolvedArgumentInput, ResolvedBindingValueInput,
+    ResolvedNativeOperationInput, ResolvedNoAccessorInstall, SelectedBindingValueInput,
+    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedImport,
@@ -109,6 +109,10 @@ pub struct ProgramSummary {
     /// Per-chunk local and imported binding addresses. These identify the defining cell
     /// but do not grant value, initialization, or body authority.
     pub module_cells: BTreeMap<String, BTreeMap<Id, ModuleCellId>>,
+    /// Canonical source-only invariant proofs for module-cell post-initialization kinds.
+    pub module_cell_invariants: BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+    /// Module cells source-proven initialized before each importer's execution.
+    pub source_initialized_module_cells: BTreeMap<String, BTreeSet<ModuleCellId>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub native_integrity: Option<NativeIntegrity>,
     /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
@@ -299,6 +303,83 @@ fn resolved_closure_precedes_importer(
         pending.extend(dependencies.targets.get(&module)?.iter().cloned());
     }
     Some(visited)
+}
+
+/// Close noninvoking source initialization from dependency leaves. Cycles and
+/// dependencies outside the complete ordinary ESM graph never become ready.
+/// This proves a source context only; relocation must check the actual output
+/// graph independently before consuming the same body effects.
+fn source_initialized_module_cells(
+    dependencies: &ResolvedStaticDependencies,
+    noninvoking: &BTreeSet<String>,
+    invariants: &BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+    chunks: &source_identity::ChunkTable,
+) -> BTreeMap<String, BTreeSet<ModuleCellId>> {
+    let mut pending = BTreeMap::<&str, usize>::new();
+    let mut dependents = BTreeMap::<&str, Vec<&str>>::new();
+    for module in noninvoking.intersection(&dependencies.complete_modules) {
+        let Some(targets) = dependencies.targets.get(module) else {
+            continue;
+        };
+        pending.insert(module, targets.len());
+        for target in targets {
+            dependents.entry(target).or_default().push(module);
+        }
+    }
+    let mut ready: Vec<_> = pending
+        .iter()
+        .filter_map(|(module, count)| (*count == 0).then_some(*module))
+        .collect();
+    let mut completed = BTreeSet::new();
+    while let Some(module) = ready.pop() {
+        completed.insert(module);
+        for dependent in dependents.get(module).into_iter().flatten() {
+            let Some(count) = pending.get_mut(*dependent) else {
+                continue;
+            };
+            *count -= 1;
+            if *count == 0 {
+                ready.push(*dependent);
+            }
+        }
+    }
+    let mut cells_by_module = BTreeMap::<&str, BTreeSet<ModuleCellId>>::new();
+    for cell in invariants.keys() {
+        if let Some(module) = chunks.try_name(cell.chunk) {
+            cells_by_module.entry(module).or_default().insert(*cell);
+        }
+    }
+    dependencies
+        .ordinary_requests
+        .iter()
+        .filter(|(importer, _)| dependencies.complete_modules.contains(*importer))
+        .map(|(importer, requests)| {
+            let mut cells = BTreeSet::new();
+            for (specifier, provider) in requests {
+                let Some(closure) =
+                    resolved_closure_precedes_importer(importer, provider, specifier, dependencies)
+                else {
+                    continue;
+                };
+                if !closure
+                    .iter()
+                    .all(|module| completed.contains(module.as_str()))
+                {
+                    continue;
+                }
+                for module in closure {
+                    cells.extend(
+                        cells_by_module
+                            .get(module.as_str())
+                            .into_iter()
+                            .flatten()
+                            .copied(),
+                    );
+                }
+            }
+            (importer.clone(), cells)
+        })
+        .collect()
 }
 
 /// Inputs that affect program-summary construction.
@@ -848,6 +929,12 @@ pub fn collect_program_summary(
                 .unwrap_or_default(),
         },
     )?;
+    let source_initialized_module_cells = source_initialized_module_cells(
+        &static_dependencies,
+        &callable_summaries.noninvoking_provider_modules,
+        &callable_summaries.module_cell_invariants,
+        &artifact.chunk_table,
+    );
     Ok(ProgramSummary {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
             &modules,
@@ -901,6 +988,8 @@ pub fn collect_program_summary(
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
         module_cells: callable_summaries.module_cells,
+        module_cell_invariants: callable_summaries.module_cell_invariants,
+        source_initialized_module_cells,
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
         bundle_globals: callable_summaries.bundle_globals,

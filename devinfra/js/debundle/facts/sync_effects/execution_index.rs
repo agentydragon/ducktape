@@ -11,15 +11,16 @@ use super::local_operations::{
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::value_model::{
-    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
-    LexicalClassHeritage, MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax,
-    OwnPropertyShape, ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
-    static_property_name,
+    AbstractValue, ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts,
+    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
+    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, Values, infer_namespace_aliases,
+    object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
-    InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
-    NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef, ProgramPremiseKey,
+    AnalysisInputs, BindingCellDeclarationIdentity, BindingCellStoreEvidence, BindingStoreKind,
+    BundleGlobalNames, HostBehaviorKey, InferredSetConstruction, InferredSetOperation,
+    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, NativeIntrinsic,
+    NativeOperationInputEvidence, NoAccessorInstallRef, PrimitiveCellInvariant, ProgramPremiseKey,
     ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
@@ -40,7 +41,9 @@ use crate::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
 };
 use crate::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
-use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
+use crate::facts::item_views::{
+    TopLevelItemView, classify_item, collect_declared_names, var_decl_of_item,
+};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
 use crate::facts::semantic_inference::{
@@ -56,6 +59,7 @@ use crate::facts::value_flow::ChunkValueFlow;
 use crate::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
+    StatementKind,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{
@@ -63,7 +67,7 @@ use crate::reports::schema::{
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
 };
 use analysis_model::PrimKinds;
-use source_identity::SourceUnitOrdinal;
+use source_identity::{ModuleCellId, SourceUnitOrdinal};
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -274,6 +278,63 @@ fn primitive_literal(expression: &Expr) -> bool {
         expression.unwrap_parens(),
         Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_))
     )
+}
+
+fn function_has_no_decorators(function: &Function) -> bool {
+    function.decorators.is_empty()
+        && function
+            .params
+            .iter()
+            .all(|parameter| parameter.decorators.is_empty())
+}
+
+fn provider_initialization_source_item_is_noninvoking(
+    item: &ModuleItem,
+    is_string_directive: bool,
+) -> bool {
+    match classify_item(item) {
+        StatementKind::Import => matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))),
+        StatementKind::Export => match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(_) | ModuleDecl::ExportAll(_)) => true,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => {
+                matches!(&export.decl, DefaultDecl::Fn(function)
+                    if function_has_no_decorators(&function.function))
+            }
+            _ => false,
+        },
+        StatementKind::FnDecl => match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => {
+                !function.declare && function_has_no_decorators(&function.function)
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                matches!(&export.decl, Decl::Fn(function)
+                    if !function.declare && function_has_no_decorators(&function.function))
+            }
+            _ => false,
+        },
+        StatementKind::VarDecl => var_decl_of_item(item).is_some_and(|declaration| {
+            !declaration.declare
+                && declaration.decls.len() == 1
+                && matches!(&declaration.decls[0].name, Pat::Ident(_))
+                && declaration.decls[0]
+                    .init
+                    .as_deref()
+                    .is_none_or(|initializer| {
+                        primitive_literal(initializer)
+                            || matches!(initializer.unwrap_parens(), Expr::Fn(function)
+                            if function_has_no_decorators(&function.function))
+                            || matches!(initializer.unwrap_parens(), Expr::Arrow(_))
+                    })
+        }),
+        StatementKind::ClassDecl => false,
+        StatementKind::SideEffect => match item {
+            ModuleItem::Stmt(Stmt::Empty(_)) => true,
+            ModuleItem::Stmt(Stmt::Expr(statement)) if is_string_directive => {
+                matches!(statement.expr.unwrap_parens(), Expr::Lit(Lit::Str(_)))
+            }
+            _ => false,
+        },
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1772,6 +1833,7 @@ struct ReceiverFlowValue {
 #[derive(Debug, Clone)]
 struct BindingDeclarationWrite {
     owner: SourceUnitOrdinal,
+    activation_callable: Option<u32>,
     mutable: bool,
     /// A simple `var` in a callable's scope. Such a binding is initialized to
     /// undefined on entry; this proves no kind or privacy of its stored value.
@@ -1782,6 +1844,7 @@ struct BindingDeclarationWrite {
     binding_span: Span,
     initializer_span: Option<Span>,
     initializer: Option<ValueExpr>,
+    initializer_transfer: BindingInitializerTransfer,
     /// Conditional normal-result kinds collected from the original syntax.
     /// Lowered values may have erased assignment/short-circuit operations.
     primitive_initializer: Option<Box<PrimitiveInitializer>>,
@@ -2011,6 +2074,63 @@ fn native_operation_initializers(
         }
         _ => None,
     }
+}
+
+#[derive(Debug, Clone)]
+enum BindingInitializerTransfer {
+    Uninitialized,
+    Supported(Arc<LocalBody>),
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BindingStoreRefusal {
+    CompoundAssignment,
+    Destructuring,
+    UnsupportedTarget,
+    UnsupportedLowering,
+    MissingSiteContext,
+}
+
+#[derive(Debug, Clone)]
+enum BindingStoreInput {
+    Supported(Arc<LocalBody>),
+    Unsupported(BindingStoreRefusal),
+}
+
+#[derive(Debug, Clone)]
+struct BindingStoreSite {
+    owner: SourceUnitOrdinal,
+    activation_callable: Option<u32>,
+    span: Span,
+    kind: BindingStoreKind,
+    input: BindingStoreInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PrimitiveCellInvariantRefusal {
+    DynamicScope,
+    MissingDeclaration,
+    AmbiguousDeclaration,
+    NotDirectModuleCell,
+    DestructuredDeclaration,
+    ImmutableDeclaration,
+    UnsupportedInitializer,
+    UnsupportedTransfer(BindingCellStoreEvidence),
+    NestedInitializerWrite,
+    InitializerNotNormallyCompleted,
+    NonPrimitiveInitializer,
+    UnsupportedStore(BindingCellStoreEvidence, BindingStoreRefusal),
+    NestedStore(BindingCellStoreEvidence),
+    NonPrimitiveStoreResult(BindingCellStoreEvidence),
+    NoNormalStoreValue(BindingCellStoreEvidence),
+    NonConvergent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PrimitiveCellInvariantQuery {
+    Known(PrimitiveCellInvariant),
+    Unknown(PrimitiveCellInvariantRefusal),
 }
 
 #[derive(Debug, Clone)]
@@ -6094,6 +6214,9 @@ struct ExecutionIndex {
     native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
     native_prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
     source_chunk_id: Option<String>,
+    /// Source grammar admission only; request closure and initialization phase
+    /// are proved separately by the provider candidate.
+    provider_initialization_source_is_noninvoking: bool,
     native_point_effects: BTreeMap<(SourceUnitOrdinal, Option<u32>), NativePointEffects>,
     initial_native_point_effects: NativePointEffects,
     all_native_point_effects: NativePointEffects,
@@ -6110,6 +6233,7 @@ struct ExecutionIndex {
     lexical_cell_origins: BTreeMap<Id, u32>,
     native_write_census: NativeWriteCensus,
     binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
+    binding_store_sites: BTreeMap<Id, Vec<BindingStoreSite>>,
     namespace_wrapper_candidates: BTreeMap<u32, NamespaceWrapperCandidate>,
     /// Reference bounds suffice to reject any use outside a candidate body.
     /// Binding declarations are handled by `visit_binding_ident` separately.
@@ -6123,8 +6247,6 @@ struct ExecutionIndex {
     /// single canonical AST walk is complete.
     direct_primitive_const_bindings: BTreeSet<Id>,
     reassigned_bindings: BTreeSet<Id>,
-    /// Complete target-walker writes for primitive Set operand certification.
-    binding_target_writes: BTreeSet<Id>,
     ordinary_input_refs: BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
     value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     resolved_value_inputs: Vec<ResolvedBindingValueInput>,
@@ -6144,6 +6266,8 @@ struct ExecutionIndex {
     /// Visiting an assignment target: its identifiers are assigned, not
     /// declared.
     assignment_target: bool,
+    /// Metadata for the target-walker callback currently recording one store.
+    active_binding_store: Option<BindingStoreSite>,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
@@ -6310,6 +6434,7 @@ impl Default for ExecutionIndex {
             native_integrity_witnesses: Arc::default(),
             native_prototype_mutations: Arc::default(),
             source_chunk_id: None,
+            provider_initialization_source_is_noninvoking: true,
             native_point_effects: BTreeMap::new(),
             initial_native_point_effects: NativePointEffects::default(),
             all_native_point_effects: NativePointEffects::default(),
@@ -6326,6 +6451,7 @@ impl Default for ExecutionIndex {
             lexical_cell_origins: BTreeMap::new(),
             native_write_census: NativeWriteCensus::default(),
             binding_declaration_writes: BTreeMap::new(),
+            binding_store_sites: BTreeMap::new(),
             namespace_wrapper_candidates: BTreeMap::new(),
             binding_use_bounds: BTreeMap::new(),
             top_const_declarations: BTreeSet::new(),
@@ -6334,7 +6460,6 @@ impl Default for ExecutionIndex {
             variable_kind: None,
             direct_primitive_const_bindings: BTreeSet::new(),
             reassigned_bindings: BTreeSet::new(),
-            binding_target_writes: BTreeSet::new(),
             ordinary_input_refs: BTreeMap::new(),
             value_input_evidence: BTreeMap::new(),
             resolved_value_inputs: Vec::new(),
@@ -6350,6 +6475,7 @@ impl Default for ExecutionIndex {
             never_written_overrode: false,
             destructuring_source: None,
             assignment_target: false,
+            active_binding_store: None,
             destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
             hoisted_nested_functions: BTreeSet::new(),
@@ -7179,7 +7305,7 @@ impl ExecutionIndex {
             .is_some_and(|aliases| {
                 aliases.iter().all(|binding| {
                     !self.reassigned_bindings.contains(binding)
-                        && !self.binding_target_writes.contains(binding)
+                        && !self.binding_store_sites.contains_key(binding)
                         && matches!(
                             self.binding_declaration_writes.get(binding).map(Vec::as_slice),
                             Some([source]) if source.direct_top_level
@@ -9489,8 +9615,19 @@ impl ExecutionIndex {
         };
         let mut fresh_steps = Vec::with_capacity(body.len());
         let mut max_source_position = 0u32;
+        let mut directive_prologue_open = true;
         for item in body {
-            max_source_position = max_source_position.max(item.as_module_item().span().hi.0);
+            let module_item = item.as_module_item();
+            let is_string_directive = directive_prologue_open
+                && matches!(module_item, ModuleItem::Stmt(Stmt::Expr(statement))
+                    if matches!(statement.expr.unwrap_parens(), Expr::Lit(Lit::Str(_))));
+            index.provider_initialization_source_is_noninvoking &=
+                provider_initialization_source_item_is_noninvoking(
+                    module_item,
+                    is_string_directive,
+                );
+            directive_prologue_open &= is_string_directive;
+            max_source_position = max_source_position.max(module_item.span().hi.0);
             // Seed all candidate roots before visiting any item, including imports
             // textually after a use. Other imported aliases remain an author audit.
             if (!hints.assumptions.namespace_independent_members.is_empty()
@@ -11765,7 +11902,20 @@ impl ExecutionIndex {
 
 impl binding_targets::TargetAccessRecorder for ExecutionIndex {
     fn record_binding_write(&mut self, id: &Id) {
-        self.binding_target_writes.insert(id.clone());
+        let site = self
+            .active_binding_store
+            .clone()
+            .unwrap_or(BindingStoreSite {
+                owner: self.owner,
+                activation_callable: self.current,
+                span: DUMMY_SP,
+                kind: BindingStoreKind::Assignment,
+                input: BindingStoreInput::Unsupported(BindingStoreRefusal::MissingSiteContext),
+            });
+        self.binding_store_sites
+            .entry(id.clone())
+            .or_default()
+            .push(site);
         if !self.past_await
             && let Some(callable) = self.current.and_then(|key| self.callables.get(&key))
             && !callable.created_after_parent_await
@@ -12990,6 +13140,14 @@ impl Visit for ExecutionIndex {
             .init
             .as_ref()
             .map(|value| ValueExpr::from_expr(value));
+        let initializer_transfer = match (&declarator.name, &declarator.init) {
+            (Pat::Ident(_), None) => BindingInitializerTransfer::Uninitialized,
+            (Pat::Ident(_), Some(expression)) => LocalBody::from_initializer(expression)
+                .map(Arc::new)
+                .map(BindingInitializerTransfer::Supported)
+                .unwrap_or(BindingInitializerTransfer::Unsupported),
+            _ => BindingInitializerTransfer::Unsupported,
+        };
         let direct_top_level = self.direct_top_level_var_declaration && self.current.is_none();
         if let Pat::Ident(binding) = &declarator.name {
             if self.direct_top_level_const_declaration && direct_top_level {
@@ -13007,6 +13165,7 @@ impl Visit for ExecutionIndex {
                 .or_insert_with(|| Vec::with_capacity(1))
                 .push(BindingDeclarationWrite {
                     owner: self.owner,
+                    activation_callable: self.current,
                     mutable: matches!(
                         self.variable_kind,
                         Some(VarDeclKind::Var | VarDeclKind::Let)
@@ -13028,6 +13187,7 @@ impl Visit for ExecutionIndex {
                     binding_span: binding.id.span,
                     initializer_span: declarator.init.as_ref().map(|value| value.span()),
                     initializer: initializer.clone(),
+                    initializer_transfer: initializer_transfer.clone(),
                     primitive_initializer: (self.variable_kind == Some(VarDeclKind::Var))
                         .then(|| {
                             declarator
@@ -13109,6 +13269,7 @@ impl Visit for ExecutionIndex {
                     .or_insert_with(|| Vec::with_capacity(1))
                     .push(BindingDeclarationWrite {
                         owner: self.owner,
+                        activation_callable: self.current,
                         mutable: matches!(
                             self.variable_kind,
                             Some(VarDeclKind::Var | VarDeclKind::Let)
@@ -13118,6 +13279,7 @@ impl Visit for ExecutionIndex {
                         binding_span: declarator.name.span(),
                         initializer_span: declarator.init.as_ref().map(|value| value.span()),
                         initializer: initializer.clone(),
+                        initializer_transfer: BindingInitializerTransfer::Unsupported,
                         primitive_initializer: None,
                         direct_top_level,
                         simple_identifier: false,
@@ -13281,6 +13443,13 @@ impl Visit for ExecutionIndex {
 
     fn visit_for_head(&mut self, head: &ForHead) {
         let mut assignments = Vec::new();
+        let previous_store = self.active_binding_store.replace(BindingStoreSite {
+            owner: self.owner,
+            activation_callable: self.current,
+            span: head.span(),
+            kind: BindingStoreKind::LoopBinding,
+            input: BindingStoreInput::Unsupported(BindingStoreRefusal::UnsupportedTarget),
+        });
         match head {
             ForHead::Pat(pattern) => {
                 binding_targets::record_pat_write(pattern, self);
@@ -13298,6 +13467,7 @@ impl Visit for ExecutionIndex {
             }
             _ => {}
         }
+        self.active_binding_store = previous_store;
         // Declaration heads also receive a value on every iteration.
         self.reassigned_bindings
             .extend(assignments.iter().map(|(binding, _)| binding.clone()));
@@ -13327,7 +13497,42 @@ impl Visit for ExecutionIndex {
         // Record before visiting operands: an await inside a target or RHS
         // can only make this conservative. Reuse the complete target walker
         // used by raw facts, including patterns and parenthesized targets.
+        let (kind, input) = match &assignment.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(_))
+                if assignment.op == AssignOp::Assign =>
+            {
+                (
+                    BindingStoreKind::Assignment,
+                    LocalBody::from_assignment_expression_statement(assignment)
+                        .map(Arc::new)
+                        .map(BindingStoreInput::Supported)
+                        .unwrap_or(BindingStoreInput::Unsupported(
+                            BindingStoreRefusal::UnsupportedLowering,
+                        )),
+                )
+            }
+            AssignTarget::Simple(SimpleAssignTarget::Ident(_)) => (
+                BindingStoreKind::Assignment,
+                BindingStoreInput::Unsupported(BindingStoreRefusal::CompoundAssignment),
+            ),
+            AssignTarget::Pat(_) => (
+                BindingStoreKind::DestructuringAssignment,
+                BindingStoreInput::Unsupported(BindingStoreRefusal::Destructuring),
+            ),
+            _ => (
+                BindingStoreKind::Assignment,
+                BindingStoreInput::Unsupported(BindingStoreRefusal::UnsupportedTarget),
+            ),
+        };
+        let previous_store = self.active_binding_store.replace(BindingStoreSite {
+            owner: self.owner,
+            activation_callable: self.current,
+            span: assignment.span,
+            kind,
+            input,
+        });
         binding_targets::record_assign_target(&assignment.left, self);
+        self.active_binding_store = previous_store;
         let mut assigned = Vec::new();
         match &assignment.left {
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
@@ -13576,7 +13781,21 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
+        let input = LocalBody::from_update_expression_statement(expression)
+            .map(Arc::new)
+            .map(BindingStoreInput::Supported)
+            .unwrap_or(BindingStoreInput::Unsupported(
+                BindingStoreRefusal::UnsupportedTarget,
+            ));
+        let previous_store = self.active_binding_store.replace(BindingStoreSite {
+            owner: self.owner,
+            activation_callable: self.current,
+            span: expression.span,
+            kind: BindingStoreKind::Update,
+            input,
+        });
         binding_targets::record_update_target(&expression.arg, self);
+        self.active_binding_store = previous_store;
         if let Expr::Ident(ident) = expression.arg.unwrap_parens() {
             self.reassigned_bindings.insert(ident.to_id());
             self.property_key_assignments
@@ -14401,6 +14620,19 @@ impl PreparedCallableCapabilities {
         matches.next().is_none().then_some(binding)
     }
 
+    /// Checked post-initialization primitive kinds for one canonical local
+    /// binding. Every syntactic target write is included; an unsupported site
+    /// or incomplete binding census returns an explicit refusal.
+    pub(crate) fn primitive_cell_invariant(&self, binding: &Id) -> PrimitiveCellInvariantQuery {
+        compute_primitive_cell_invariant(&self.index, &self.shadowed, binding)
+    }
+
+    /// Whether every top-level item has the non-invoking provider source form.
+    /// Import request mode, graph order, and initialization phase are separate.
+    pub(crate) fn provider_initialization_source_is_noninvoking(&self) -> bool {
+        self.index.provider_initialization_source_is_noninvoking
+    }
+
     /// Demand layouts from the canonical call census. No argument expression
     /// executes here; the consuming call must prove its actual current layout.
     pub(crate) fn imported_record_inputs(
@@ -14437,6 +14669,7 @@ impl PreparedCallableCapabilities {
         &mut self,
         local: &str,
         shape: crate::analysis_inputs::RecordInputShape,
+        module_cells: &BTreeMap<Id, ModuleCellId>,
         integrity: &NativeIntegrity,
     ) -> Option<(
         u32,
@@ -14452,9 +14685,47 @@ impl PreparedCallableCapabilities {
         if self.index.reassigned_bindings.contains(binding) {
             return None;
         }
+        let body = self.index.callables.get(key)?;
+        let local_body = body.body_facts.ordered_plan()?;
+        let captured_writes: BTreeSet<_> = local_body.captured_writes().iter().cloned().collect();
+        let mut selected_cells: BTreeMap<Id, (ModuleCellId, PrimitiveCellInvariant)> =
+            BTreeMap::new();
+        let candidates: BTreeSet<_> = local_body
+            .free_reads()
+            .iter()
+            .chain(local_body.captured_writes())
+            .cloned()
+            .collect();
+        for candidate in candidates {
+            let Some(cell) = module_cells.get(&candidate) else {
+                if captured_writes.contains(&candidate) {
+                    return None;
+                }
+                continue;
+            };
+            let PrimitiveCellInvariantQuery::Known(invariant) =
+                self.primitive_cell_invariant(&candidate)
+            else {
+                return None;
+            };
+            if invariant.declaration.binding_span.lo.0 != cell.declaration_origin
+                || selected_cells
+                    .values()
+                    .any(|(existing, _)| existing == cell)
+            {
+                return None;
+            }
+            selected_cells.insert(candidate, (*cell, invariant));
+        }
         Some((
             *key,
-            strict_provider::derive_conditional_body(&self.index, *key, &self.shadowed, shape)?,
+            strict_provider::derive_conditional_body(
+                &self.index,
+                *key,
+                &self.shadowed,
+                shape,
+                &selected_cells,
+            )?,
         ))
     }
 
@@ -14770,6 +15041,213 @@ impl PreparedCallableCapabilities {
         .filter_map(|(local, call)| Some((local, (call.declaration_start, arguments(&call)?))))
         .collect()
     }
+}
+
+fn binding_store_evidence(site: &BindingStoreSite) -> BindingCellStoreEvidence {
+    BindingCellStoreEvidence {
+        owner: site.owner,
+        activation_callable: site.activation_callable,
+        span: site.span,
+        kind: site.kind,
+    }
+}
+
+fn span_contains(outer: Span, inner: Span) -> bool {
+    inner.lo.0 >= outer.lo.0 && inner.hi.0 <= outer.hi.0
+}
+
+fn has_nested_binding_store(index: &ExecutionIndex, outer: &BindingStoreSite) -> bool {
+    index
+        .binding_store_sites
+        .values()
+        .flatten()
+        .any(|candidate| {
+            !std::ptr::eq(candidate, outer)
+                && candidate.owner == outer.owner
+                && candidate.activation_callable == outer.activation_callable
+                && span_contains(outer.span, candidate.span)
+        })
+}
+
+fn has_nested_member_write(index: &ExecutionIndex, span: Span) -> bool {
+    index
+        .member_write_sites
+        .iter()
+        .any(|site| span_contains(span, site.source_span()))
+}
+
+fn has_initializer_write(index: &ExecutionIndex, declaration: &BindingDeclarationWrite) -> bool {
+    let Some(span) = declaration.initializer_span else {
+        return false;
+    };
+    index.binding_store_sites.values().flatten().any(|site| {
+        site.owner == declaration.owner
+            && site.activation_callable == declaration.activation_callable
+            && span_contains(span, site.span)
+    }) || has_nested_member_write(index, span)
+}
+
+fn primitive_kinds(values: &Values) -> Option<PrimKinds> {
+    let mut kinds = PrimKinds::NONE;
+    for value in values {
+        match value {
+            AbstractValue::Value(Value::Prim(value_kinds)) => {
+                kinds = kinds.union(*value_kinds);
+            }
+            // The shared execution kernel carries known abrupt alternatives
+            // separately from normal primitive values. Callers join the
+            // pre-operation cell state when this marker is present.
+            AbstractValue::Value(Value::Unavailable) => {}
+            _ => return None,
+        }
+    }
+    Some(kinds)
+}
+
+fn compute_primitive_cell_invariant(
+    index: &ExecutionIndex,
+    shadowed: &BTreeSet<&'static str>,
+    binding: &Id,
+) -> PrimitiveCellInvariantQuery {
+    use PrimitiveCellInvariantQuery::{Known, Unknown};
+
+    if !index.dynamic_scope_owners.is_empty() {
+        return Unknown(PrimitiveCellInvariantRefusal::DynamicScope);
+    }
+    let Some(declarations) = index.binding_declaration_writes.get(binding) else {
+        return Unknown(PrimitiveCellInvariantRefusal::MissingDeclaration);
+    };
+    let [declaration] = declarations.as_slice() else {
+        return Unknown(PrimitiveCellInvariantRefusal::AmbiguousDeclaration);
+    };
+    if !declaration.direct_top_level || declaration.activation_callable.is_some() {
+        return Unknown(PrimitiveCellInvariantRefusal::NotDirectModuleCell);
+    }
+    if !declaration.simple_identifier {
+        return Unknown(PrimitiveCellInvariantRefusal::DestructuredDeclaration);
+    }
+    if !declaration.mutable {
+        return Unknown(PrimitiveCellInvariantRefusal::ImmutableDeclaration);
+    }
+    if has_initializer_write(index, declaration) {
+        return Unknown(PrimitiveCellInvariantRefusal::NestedInitializerWrite);
+    }
+
+    let declaration_identity = BindingCellDeclarationIdentity {
+        owner: declaration.owner,
+        activation_callable: declaration.activation_callable,
+        binding_span: declaration.binding_span,
+        initializer_span: declaration.initializer_span,
+    };
+    let initial_kinds = match &declaration.initializer_transfer {
+        BindingInitializerTransfer::Uninitialized => PrimKinds::UNDEFINED,
+        BindingInitializerTransfer::Unsupported => {
+            return Unknown(PrimitiveCellInvariantRefusal::UnsupportedInitializer);
+        }
+        BindingInitializerTransfer::Supported(body) => {
+            let initial_cell =
+                if declaration.initialized_var_scope == Some(InitializedVarScope::Module) {
+                    Values::from([AbstractValue::UNDEFINED])
+                } else {
+                    Values::from([AbstractValue::Value(Value::Unavailable)])
+                };
+            let Some(transfer) = strict_provider::transfer_primitive_cell_initializer(
+                index,
+                shadowed,
+                body,
+                binding,
+                initial_cell,
+            ) else {
+                return Unknown(PrimitiveCellInvariantRefusal::InitializerNotNormallyCompleted);
+            };
+            if !transfer.normal_completion
+                || transfer.possible_throw
+                || !transfer.allocation_covered
+            {
+                return Unknown(PrimitiveCellInvariantRefusal::InitializerNotNormallyCompleted);
+            }
+            match primitive_kinds(&transfer.cell_values) {
+                Some(kinds) if !kinds.is_empty() => kinds,
+                Some(_) | None => {
+                    return Unknown(PrimitiveCellInvariantRefusal::NonPrimitiveInitializer);
+                }
+            }
+        }
+    };
+
+    let store_sites = index
+        .binding_store_sites
+        .get(binding)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let stores: Vec<_> = store_sites.iter().map(binding_store_evidence).collect();
+    for site in store_sites {
+        let evidence = binding_store_evidence(site);
+        if let BindingStoreInput::Unsupported(refusal) = &site.input {
+            return Unknown(PrimitiveCellInvariantRefusal::UnsupportedStore(
+                evidence, *refusal,
+            ));
+        }
+        if has_nested_binding_store(index, site) || has_nested_member_write(index, site.span) {
+            return Unknown(PrimitiveCellInvariantRefusal::NestedStore(evidence));
+        }
+    }
+
+    // Each primitive mask is a subset of seven bits. Every strict iteration
+    // adds at least one bit, so eight passes suffice to reach the least
+    // post-fixed point or report a refusal from a store transfer.
+    let mut gamma = initial_kinds;
+    for _ in 0..8 {
+        let previous = gamma;
+        for (site, evidence) in store_sites.iter().zip(&stores) {
+            let BindingStoreInput::Supported(body) = &site.input else {
+                unreachable!("unsupported store was refused before fixpoint")
+            };
+            let Some(transfer) = strict_provider::transfer_primitive_cell_store(
+                index,
+                shadowed,
+                body,
+                binding,
+                Values::from([AbstractValue::Value(Value::Prim(gamma))]),
+            ) else {
+                return Unknown(PrimitiveCellInvariantRefusal::UnsupportedTransfer(
+                    *evidence,
+                ));
+            };
+            if !transfer.normal_completion && !transfer.possible_throw {
+                return Unknown(PrimitiveCellInvariantRefusal::NoNormalStoreValue(*evidence));
+            }
+            if !transfer.allocation_covered {
+                return Unknown(PrimitiveCellInvariantRefusal::UnsupportedTransfer(
+                    *evidence,
+                ));
+            }
+            let Some(mut store_kinds) = primitive_kinds(&transfer.cell_values) else {
+                return Unknown(PrimitiveCellInvariantRefusal::NonPrimitiveStoreResult(
+                    *evidence,
+                ));
+            };
+            if transfer.possible_throw {
+                // Only a fully covered, source-only transfer reaches this
+                // branch. Its throw may precede the store, or follow earlier
+                // mutations, so join old Γ with every visible primitive
+                // post-store value and preserve writes before the abrupt
+                // frontier.
+                store_kinds = store_kinds.union(gamma);
+            } else if store_kinds.is_empty() {
+                return Unknown(PrimitiveCellInvariantRefusal::NoNormalStoreValue(*evidence));
+            }
+            gamma = gamma.union(store_kinds);
+        }
+        if gamma == previous {
+            return Known(PrimitiveCellInvariant {
+                declaration: declaration_identity,
+                post_init_kinds: gamma,
+                stores,
+            });
+        }
+    }
+    Unknown(PrimitiveCellInvariantRefusal::NonConvergent)
 }
 
 pub(crate) fn prepare_callable_capabilities(

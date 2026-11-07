@@ -50,7 +50,8 @@ use super::{
     object_own_data_read_property,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, ForeignInvocation, ImportedPrimitiveRead, NativeInputKind, ProofDependencies,
+    AnalysisInputs, ForeignInvocation, ImportedPrimitiveRead, NativeInputKind,
+    PrimitiveCellInvariant, ProofDependencies,
 };
 use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::{
@@ -105,7 +106,7 @@ use crate::reports::schema::{
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
-use source_identity::SourceUnitOrdinal;
+use source_identity::{ModuleCellId, SourceUnitOrdinal};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -301,6 +302,9 @@ impl Outcome {
         self.effects
             .heap_contents
             .extend(&std::mem::take(&mut nested.heap_contents));
+        self.effects
+            .required_initialized_module_cells
+            .append(&mut nested.required_initialized_module_cells);
         if let Some(receipts) = std::mem::take(&mut nested.operation_support_receipts) {
             for receipt in receipts.into_vec() {
                 self.effects.record_operation_support(receipt);
@@ -814,6 +818,8 @@ pub(super) struct ExecutionInputs<'source> {
     shadowed: &'source BTreeSet<&'static str>,
     imported_values: &'source BTreeMap<String, Value>,
     imported_primitive_reads: &'source BTreeMap<String, ImportedPrimitiveRead>,
+    module_cell_invariants: &'source BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+    source_initialized_module_cells: &'source BTreeSet<ModuleCellId>,
     /// First-order pre-await body cells of each callable.
     callable_heap_contents: &'source BTreeMap<u32, HeapContentCells>,
     /// Hashed: effect promotion tests every lazy read of every promoted
@@ -8623,7 +8629,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .imported_callable_summaries
             .get(binding)?
             .conditional_bodies;
-        (!bodies.is_empty()).then_some(bodies.as_slice())
+        bodies
+            .iter()
+            .any(|body| self.conditional_foreign_body_is_usable(body))
+            .then_some(bodies.as_slice())
+    }
+
+    fn conditional_foreign_body_is_usable(
+        &self,
+        body: &crate::analysis_inputs::ConditionalForeignBody,
+    ) -> bool {
+        let mut accessed_cells = body.module_cells.reads.clone();
+        accessed_cells.extend(body.module_cells.writes.iter().copied());
+        let invariant_cells: BTreeSet<_> = body.module_cells.invariants.keys().copied().collect();
+        if accessed_cells != invariant_cells {
+            return false;
+        }
+        if !accessed_cells.is_empty() && body.replacement_package.is_some() {
+            return false;
+        }
+        accessed_cells.iter().all(|cell| {
+            body.module_cells.invariants.get(cell) == self.inputs.module_cell_invariants.get(cell)
+                && self.inputs.source_initialized_module_cells.contains(cell)
+        })
     }
 
     fn ordered_foreign_call(&self, kind: CallKind, callee: &ValueExpr) -> bool {
@@ -8662,7 +8690,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let Some(body) = bodies
             .iter()
-            .find(|body| body.input.matches_projection(projection))
+            .find(|body| {
+                self.conditional_foreign_body_is_usable(body)
+                    && body.input.matches_projection(projection)
+            })
             .cloned()
         else {
             return;
@@ -8682,6 +8713,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             };
             heap.reads.insert(cell);
         }
+        heap.reads.extend(
+            body.module_cells
+                .reads
+                .iter()
+                .copied()
+                .map(EffectCell::ModuleCell),
+        );
+        heap.writes.extend(
+            body.module_cells
+                .writes
+                .iter()
+                .copied()
+                .map(EffectCell::ModuleCell),
+        );
         let mut dependencies = body.dependencies.clone();
         dependencies.extend(&input.dependencies);
         let mut body_effects = body.effects.clone();
@@ -8715,6 +8760,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome
             .effects
             .record_heap_contents(&heap, self.state.assumption.is_none());
+        outcome
+            .effects
+            .required_initialized_module_cells
+            .extend(body.module_cells.invariants.keys().copied());
         for operation in &body.native_operations {
             self.evaluation_effects.record(
                 call.owner,
@@ -16263,6 +16312,8 @@ pub(crate) fn annotate_synchronous_calls(
         shadowed,
         imported_values: &hints.imported_values,
         imported_primitive_reads: &hints.imported_primitive_reads,
+        module_cell_invariants: &hints.module_cell_invariants,
+        source_initialized_module_cells: &hints.source_initialized_module_cells,
         callable_heap_contents: proofs.callable_heap_contents,
         top_bindings,
         binding_owner: facts

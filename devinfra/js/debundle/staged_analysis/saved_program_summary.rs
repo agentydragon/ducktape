@@ -9,11 +9,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use analysis::analysis_inputs::saved::{SavedCallableSummary, SavedNativeIntegrity};
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ImportedPrimitiveRead, InferredSetConstruction, InferredSetOperation,
-    NativeOperationInputEvidence, ResolvedArgumentInput, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, StableSetIterableUse, ValueInputEvidence,
+    NativeOperationInputEvidence, PrimitiveCellInvariant, ResolvedArgumentInput,
+    ResolvedBindingValueInput, ResolvedNativeOperationInput, StableSetIterableUse,
+    ValueInputEvidence,
 };
 use analysis::facts::abstract_domain::value::Value;
-use analysis_codec::{ContextOrdinals, SavedBinding, SavedModuleCell};
+use analysis_codec::{ContextOrdinals, SavedBinding, SavedChunk, SavedModuleCell};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -34,6 +35,8 @@ pub(super) struct SavedProgramSummary<'a> {
     constructors: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     imported_callables: BTreeMap<String, BTreeMap<String, SavedCallableSummary<'a>>>,
     module_cells: BTreeMap<String, Vec<SavedModuleCellEntry>>,
+    module_cell_invariants: Vec<SavedModuleCellInvariant>,
+    source_initialized_module_cells: BTreeMap<String, Vec<SavedModuleCell>>,
     /// Required field, nullable value: missing must differ from explicit None.
     #[serde(deserialize_with = "Deserialize::deserialize")]
     native_integrity: Option<SavedNativeIntegrity<'a>>,
@@ -60,6 +63,12 @@ pub(super) struct SavedProgramSummary<'a> {
 struct SavedModuleCellEntry {
     binding: SavedBinding,
     cell: SavedModuleCell,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedModuleCellInvariant {
+    cell: SavedModuleCell,
+    invariant: PrimitiveCellInvariant,
 }
 
 impl<'a> SavedProgramSummary<'a> {
@@ -98,21 +107,25 @@ impl<'a> SavedProgramSummary<'a> {
             .imported_callables
             .iter()
             .map(|(chunk, callables)| {
-                (
+                Ok((
                     chunk.clone(),
                     callables
                         .iter()
                         .map(|(name, callable)| {
-                            (name.clone(), SavedCallableSummary::snapshot(callable))
+                            Ok((
+                                name.clone(),
+                                SavedCallableSummary::snapshot(callable, ordinals)?,
+                            ))
                         })
-                        .collect(),
-                )
+                        .collect::<Result<_>>()?,
+                ))
             })
-            .collect();
+            .collect::<Result<_>>()?;
         let module_cells = summary
             .module_cells
             .iter()
             .map(|(chunk, cells)| {
+                ordinals.restore_chunk(SavedChunk(chunk.clone()))?;
                 Ok((
                     chunk.clone(),
                     cells
@@ -123,6 +136,32 @@ impl<'a> SavedProgramSummary<'a> {
                                 cell: ordinals.snapshot_module_cell(*cell)?,
                             })
                         })
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let module_cell_invariants = summary
+            .module_cell_invariants
+            .iter()
+            .map(|(cell, invariant)| {
+                Ok(SavedModuleCellInvariant {
+                    cell: ordinals.snapshot_module_cell(*cell)?,
+                    invariant: invariant.clone(),
+                })
+            })
+            .collect::<Result<_>>()?;
+        let source_initialized_module_cells = summary
+            .source_initialized_module_cells
+            .iter()
+            .map(|(importer, cells)| {
+                ordinals
+                    .restore_chunk(SavedChunk(importer.clone()))
+                    .map(|_| ())?;
+                Ok((
+                    importer.clone(),
+                    cells
+                        .iter()
+                        .map(|cell| ordinals.snapshot_module_cell(*cell))
                         .collect::<Result<_>>()?,
                 ))
             })
@@ -199,6 +238,8 @@ impl<'a> SavedProgramSummary<'a> {
             constructors: Cow::Borrowed(&summary.constructors),
             imported_callables,
             module_cells,
+            module_cell_invariants,
+            source_initialized_module_cells,
             native_integrity: summary
                 .native_integrity
                 .as_ref()
@@ -262,7 +303,7 @@ impl<'a> SavedProgramSummary<'a> {
                     chunk,
                     callables
                         .into_iter()
-                        .map(|(name, callable)| Ok((name, callable.restore()?)))
+                        .map(|(name, callable)| Ok((name, callable.restore(ordinals)?)))
                         .collect::<Result<_>>()?,
                 ))
             })
@@ -271,6 +312,7 @@ impl<'a> SavedProgramSummary<'a> {
             .module_cells
             .into_iter()
             .map(|(chunk, entries)| {
+                ordinals.restore_chunk(SavedChunk(chunk.clone()))?;
                 let mut cells = BTreeMap::new();
                 for entry in entries {
                     let binding = ordinals.restore_binding(entry.binding)?;
@@ -280,6 +322,33 @@ impl<'a> SavedProgramSummary<'a> {
                     }
                 }
                 Ok((chunk, cells))
+            })
+            .collect::<Result<_>>()?;
+        let mut module_cell_invariants = BTreeMap::new();
+        for entry in self.module_cell_invariants {
+            let cell = ordinals.restore_module_cell(entry.cell)?;
+            if module_cell_invariants
+                .insert(cell, entry.invariant)
+                .is_some()
+            {
+                bail!("duplicate saved module-cell invariant for {cell:?}");
+            }
+        }
+        let source_initialized_module_cells = self
+            .source_initialized_module_cells
+            .into_iter()
+            .map(|(importer, saved_cells)| {
+                ordinals.restore_chunk(SavedChunk(importer.clone()))?;
+                let mut cells = BTreeSet::new();
+                for saved_cell in saved_cells {
+                    let cell = ordinals.restore_module_cell(saved_cell)?;
+                    if !cells.insert(cell) {
+                        bail!(
+                            "duplicate saved source-initialized module cell {cell:?} for importer {importer}"
+                        );
+                    }
+                }
+                Ok((importer, cells))
             })
             .collect::<Result<_>>()?;
         let native_operation_inputs = self
@@ -344,6 +413,8 @@ impl<'a> SavedProgramSummary<'a> {
             constructors: self.constructors.into_owned(),
             imported_callables,
             module_cells,
+            module_cell_invariants,
+            source_initialized_module_cells,
             native_integrity: self
                 .native_integrity
                 .map(SavedNativeIntegrity::restore)
@@ -578,8 +649,8 @@ impl SavedInferredSetOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use source_identity::{ChunkTable, ModuleCellId};
-    use swc_common::SyntaxContext;
+    use source_identity::{ChunkTable, ModuleCellId, SourceUnitOrdinal};
+    use swc_common::{DUMMY_SP, SyntaxContext};
 
     #[test]
     fn required_saved_summary_fields_cannot_be_omitted() {
@@ -603,17 +674,35 @@ mod tests {
         let binding: swc_ecma_ast::Id = ("effect".into(), SyntaxContext::empty());
         let mut writer_chunks = ChunkTable::default();
         let writer_provider = writer_chunks.intern("provider".to_owned());
+        writer_chunks.intern("app".to_owned());
         writer_chunks.intern("other".to_owned());
-        let module_cells = BTreeMap::from([(
-            "app".to_string(),
-            BTreeMap::from([(
-                binding.clone(),
-                ModuleCellId {
-                    chunk: writer_provider,
-                    declaration_origin: 41,
-                },
-            )]),
-        )]);
+        let cell = ModuleCellId {
+            chunk: writer_provider,
+            declaration_origin: 41,
+        };
+        let owner = serde_json::to_value(SourceUnitOrdinal(3)).expect("owner serializes");
+        let span = serde_json::to_value(DUMMY_SP).expect("span serializes");
+        let invariant: PrimitiveCellInvariant = serde_json::from_value(serde_json::json!({
+            "declaration": {
+                "owner": owner.clone(),
+                "activation_callable": null,
+                "binding_span": span.clone(),
+                "initializer_span": span.clone(),
+            },
+            "post_init_kinds": serde_json::to_value(analysis_model::PrimKinds::STRING)
+                .expect("primitive kinds serialize"),
+            "stores": [{
+                "owner": owner,
+                "activation_callable": 7,
+                "span": span,
+                "kind": "assignment",
+            }],
+        }))
+        .expect("public primitive cell proof deserializes");
+        let module_cells =
+            BTreeMap::from([("app".to_string(), BTreeMap::from([(binding.clone(), cell)]))]);
+        let source_initialized_module_cells =
+            BTreeMap::from([("app".to_string(), BTreeSet::from([cell]))]);
         let summary = ProgramSummary {
             bindings: BTreeMap::new(),
             values: BTreeMap::new(),
@@ -623,6 +712,8 @@ mod tests {
             constructors: BTreeMap::new(),
             imported_callables: BTreeMap::new(),
             module_cells,
+            module_cell_invariants: BTreeMap::from([(cell, invariant.clone())]),
+            source_initialized_module_cells,
             native_integrity: None,
             bundle_globals: Default::default(),
             value_inputs: BTreeMap::new(),
@@ -657,7 +748,13 @@ mod tests {
             "provider"
         );
 
-        for field in ["native_integrity", "primitive_reads", "module_cells"] {
+        for field in [
+            "native_integrity",
+            "primitive_reads",
+            "module_cells",
+            "module_cell_invariants",
+            "source_initialized_module_cells",
+        ] {
             let mut missing_field = saved_json.clone();
             missing_field
                 .as_object_mut()
@@ -669,14 +766,15 @@ mod tests {
             );
         }
 
-        let decoded: SavedProgramSummary<'static> =
-            serde_json::from_value(saved_json).expect("explicit None native census decodes");
+        let decoded: SavedProgramSummary<'static> = serde_json::from_value(saved_json.clone())
+            .expect("explicit None native census decodes");
         let restored_purities = PuritySnapshot::default()
             .finish()
             .restore()
             .expect("empty purity graph restores");
         let mut reader_chunks = ChunkTable::default();
         reader_chunks.intern("other".to_owned());
+        reader_chunks.intern("app".to_owned());
         let reader_provider = reader_chunks.intern("provider".to_owned());
         assert_ne!(writer_provider, reader_provider);
         let reader_ordinals =
@@ -686,6 +784,26 @@ mod tests {
             .expect("absent native census restores");
         assert!(restored.native_integrity.is_none());
         assert_eq!(restored.primitive_reads, primitive_reads);
+        assert_eq!(
+            restored.source_initialized_module_cells,
+            BTreeMap::from([(
+                "app".to_string(),
+                BTreeSet::from([ModuleCellId {
+                    chunk: reader_provider,
+                    declaration_origin: 41,
+                }]),
+            )]),
+        );
+        assert_eq!(
+            restored.module_cell_invariants,
+            BTreeMap::from([(
+                ModuleCellId {
+                    chunk: reader_provider,
+                    declaration_origin: 41,
+                },
+                invariant.clone(),
+            )]),
+        );
         assert_eq!(
             restored.module_cells,
             BTreeMap::from([(
@@ -698,6 +816,42 @@ mod tests {
                     },
                 )]),
             )]),
+        );
+
+        let mut duplicate_proof = saved_json.clone();
+        let proofs = duplicate_proof["module_cell_invariants"]
+            .as_array_mut()
+            .expect("module-cell invariants are a sequence");
+        let duplicate_entry = proofs[0].clone();
+        proofs.push(duplicate_entry);
+        let decoded: SavedProgramSummary<'static> = serde_json::from_value(duplicate_proof)
+            .expect("duplicate proof cell decodes structurally");
+        assert!(
+            decoded
+                .restore(&reader_ordinals, &restored_purities)
+                .is_err(),
+            "duplicate module-cell proof keys must refuse restore"
+        );
+
+        let mut unknown_importer = saved_json.clone();
+        let source_initialized = unknown_importer["source_initialized_module_cells"]
+            .as_object_mut()
+            .expect("source initialized cells are a map");
+        let app_cells = source_initialized
+            .remove("app")
+            .expect("app context exists");
+        source_initialized.insert("missing-importer".to_owned(), app_cells);
+        let decoded: SavedProgramSummary<'static> = serde_json::from_value(unknown_importer)
+            .expect("unknown importer decodes structurally");
+        let restored_purities = PuritySnapshot::default()
+            .finish()
+            .restore()
+            .expect("empty purity graph restores");
+        assert!(
+            decoded
+                .restore(&reader_ordinals, &restored_purities)
+                .is_err(),
+            "unknown importer names must refuse source-initialization restore"
         );
     }
 }

@@ -2,10 +2,10 @@
 //! non-purity facts retain the existing codec and borrow their storage on write.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use analysis_codec::{ContextOrdinals, SavedBinding, SavedModuleCell};
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
@@ -540,6 +540,7 @@ struct SavedSynchronousCalls<'a> {
     returned_record_uses: Cow<'a, [super::ReturnedRecordUseFact]>,
     author_host_contract_uses: Vec<SavedReentryFreeOperationUse<'a>>,
     purity_disagreement: Option<SavedPurityDisagreement>,
+    required_initialized_module_cells: Vec<SavedModuleCell>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -628,6 +629,11 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .iter()
                 .map(SavedReentryFreeOperationUse::snapshot)
                 .collect(),
+            required_initialized_module_cells: calls
+                .required_initialized_module_cells
+                .iter()
+                .map(|cell| ordinals.snapshot_module_cell(*cell))
+                .collect::<Result<_>>()?,
             purity_disagreement: calls.purity_disagreement.as_ref().map(|disagreement| {
                 SavedPurityDisagreement {
                     prepared: purities.snapshot_value(&disagreement.prepared),
@@ -642,6 +648,14 @@ impl<'a> SavedSynchronousCalls<'a> {
         ordinals: &ContextOrdinals,
         purities: &RestoredPurities,
     ) -> Result<SynchronousCalls> {
+        let mut required_initialized_module_cells = BTreeSet::new();
+        for saved in self.required_initialized_module_cells {
+            let cell = ordinals.restore_module_cell(saved)?;
+            ensure!(
+                required_initialized_module_cells.insert(cell),
+                "duplicate saved required initialized module cell {cell:?}"
+            );
+        }
         Ok(SynchronousCalls {
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
@@ -718,6 +732,7 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .into_iter()
                 .map(SavedReentryFreeOperationUse::restore)
                 .collect(),
+            required_initialized_module_cells,
         })
     }
 }
@@ -766,7 +781,11 @@ mod tests {
             .remove("operation_support_receipts");
         assert!(serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err());
 
-        for field in ["root_normal_completion", "root_outward_throw"] {
+        for field in [
+            "root_normal_completion",
+            "root_outward_throw",
+            "required_initialized_module_cells",
+        ] {
             let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
                 .expect("control receipt snapshot");
             let mut encoded = serde_json::to_value(saved).expect("saved facts serialize");
@@ -889,6 +908,77 @@ mod tests {
         assert!(
             unknown_name.restore(&reader_ordinals).is_err(),
             "unknown saved chunk names must refuse restore"
+        );
+    }
+
+    #[test]
+    fn saved_required_initialization_cells_use_checked_chunk_names() {
+        let mut writer_chunks = ChunkTable::default();
+        let writer_provider = writer_chunks.intern("static/provider".to_owned());
+        writer_chunks.intern("static/other".to_owned());
+        let writer_ordinals =
+            ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &writer_chunks);
+        let mut calls = SynchronousCalls::default();
+        calls
+            .required_initialized_module_cells
+            .insert(ModuleCellId {
+                chunk: writer_provider,
+                declaration_origin: 23,
+            });
+        let mut purity_snapshot = PuritySnapshot::default();
+        let saved = SavedSynchronousCalls::snapshot(&calls, &writer_ordinals, &mut purity_snapshot)
+            .expect("snapshot required initialization cell");
+        let encoded = serde_json::to_value(saved).expect("serialize required cell");
+        assert_eq!(
+            encoded["required_initialized_module_cells"][0]["chunk"],
+            "static/provider"
+        );
+
+        let mut reader_chunks = ChunkTable::default();
+        reader_chunks.intern("static/other".to_owned());
+        let reader_provider = reader_chunks.intern("static/provider".to_owned());
+        assert_ne!(writer_provider, reader_provider);
+        let reader_ordinals =
+            ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>(), &reader_chunks);
+        let restored_purities = PuritySnapshot::default().finish().restore().unwrap();
+        let decoded: SavedSynchronousCalls<'_> =
+            serde_json::from_value(encoded.clone()).expect("decode required cell");
+        let restored = decoded
+            .restore(&reader_ordinals, &restored_purities)
+            .expect("restore by checked chunk name");
+        assert_eq!(
+            restored.required_initialized_module_cells,
+            BTreeSet::from([ModuleCellId {
+                chunk: reader_provider,
+                declaration_origin: 23,
+            }])
+        );
+
+        let mut duplicate = encoded.clone();
+        let saved_cell = duplicate["required_initialized_module_cells"][0].clone();
+        duplicate["required_initialized_module_cells"]
+            .as_array_mut()
+            .unwrap()
+            .push(saved_cell);
+        let decoded: SavedSynchronousCalls<'_> =
+            serde_json::from_value(duplicate).expect("decode duplicate cells");
+        assert!(
+            decoded
+                .restore(&reader_ordinals, &restored_purities)
+                .is_err(),
+            "duplicate saved required cells must be rejected"
+        );
+
+        let mut unknown = encoded;
+        unknown["required_initialized_module_cells"][0]["chunk"] =
+            serde_json::json!("static/missing");
+        let decoded: SavedSynchronousCalls<'_> =
+            serde_json::from_value(unknown).expect("decode unknown saved name");
+        assert!(
+            decoded
+                .restore(&reader_ordinals, &restored_purities)
+                .is_err(),
+            "unknown saved chunk names must be rejected"
         );
     }
 }

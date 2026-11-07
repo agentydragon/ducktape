@@ -9,6 +9,7 @@ use swc_common::{BytePos, DUMMY_SP, Spanned};
 
 use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
+use super::imports::static_request_for_item;
 use super::scope_names::collect_local_binding_names;
 
 use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
@@ -27,7 +28,7 @@ use crate::visitors::IdentifierRenamer;
 use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::paths::join_module_path;
-use artifact::reports::SelectedModuleLowering;
+use artifact::reports::{SelectedModuleLowering, StaticModuleRequest};
 use artifact::{FileMetadata, FileRole, JsFile, JsFileBody};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::AssignmentAnalysis;
@@ -86,17 +87,27 @@ pub(super) struct LoweredModuleOutput {
     pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
-/// An exact module body and import list prepared from the candidate placement.
-/// Rendering consumes this value without repeating reference or import planning.
+/// An exact module body, import list, and ordered static-request sequence
+/// prepared from the candidate placement. Rendering consumes this value
+/// without repeating reference or import planning.
 pub(super) struct PreparedModuleEmission<'a> {
     plan: &'a ModulePlan,
     body: Vec<ModuleItem>,
+    static_requests: Vec<StaticModuleRequest>,
     explicit_renames: BTreeMap<String, String>,
     output_context: ModuleOutputContext<'a>,
     vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
 impl PreparedModuleEmission<'_> {
+    pub(super) fn output_file_layout(&self) -> (&str, &str) {
+        (&self.plan.target_file, self.output_context.source_path)
+    }
+
+    pub(super) fn static_request_inventory(&self) -> (&str, &[StaticModuleRequest]) {
+        (&self.plan.target_file, &self.static_requests)
+    }
+
     pub(super) fn emit(self) -> LoweredModuleOutput {
         let (file, record, lowering) = build_module_output(
             self.plan,
@@ -142,6 +153,14 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
         explicit_renames,
         facts: body_facts,
     } = naturalized;
+    let mut static_requests_by_item = body_facts.static_requests().to_vec();
+    let body_leading_static_import_requests = body_facts.leading_static_import_requests();
+    debug_assert!(
+        static_requests_by_item
+            .windows(2)
+            .all(|pair| pair[0].item_index < pair[1].item_index),
+        "naturalized static requests must be in body-item order",
+    );
     let ModuleReferenceNeeds {
         cross_module_imports_by_provider,
         residual_entry_imports,
@@ -274,7 +293,8 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
             .expect("source_import_cache poisoned");
         // Imports peeled with their atomic group still use source-chunk URLs.
         // Rebase those before adding imports already emitted for this target.
-        for item in &mut body {
+        let mut static_request_index = 0;
+        for (item_index, item) in body.iter_mut().enumerate() {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
                 let source = source_chunk_import_for_target(
                     &mut cache,
@@ -285,7 +305,15 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
                 )?;
                 set_str_value(&mut import.src, source);
             }
+            if let Some(indexed_request) = static_requests_by_item.get_mut(static_request_index)
+                && indexed_request.item_index == item_index
+            {
+                indexed_request.request = static_request_for_item(item)
+                    .expect("a request-bearing item keeps its static ESM request");
+                static_request_index += 1;
+            }
         }
+        debug_assert_eq!(static_request_index, static_requests_by_item.len());
         source_chunk_imports_for_moved_body(
             &mut cache,
             chunk_id,
@@ -316,12 +344,31 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
     assignment_analysis
         .import_order()
         .sort_module_imports(&mut intra_chunk_imports);
-    let mut combined: Vec<ModuleItem> = intra_chunk_imports
-        .into_iter()
-        .map(|(_, item)| item)
-        .collect();
-    combined.append(&mut runtime_reimports);
+    let mut combined =
+        Vec::with_capacity(intra_chunk_imports.len() + runtime_reimports.len() + body.len());
+    let mut static_requests = Vec::with_capacity(
+        intra_chunk_imports.len() + runtime_reimports.len() + static_requests_by_item.len(),
+    );
+    for (_, item) in intra_chunk_imports {
+        if let Some(request) = static_request_for_item(&item) {
+            static_requests.push(request);
+        }
+        combined.push(item);
+    }
+    for item in runtime_reimports {
+        if let Some(request) = static_request_for_item(&item) {
+            static_requests.push(request);
+        }
+        combined.push(item);
+    }
+    let mut leading_static_import_requests =
+        static_requests.len() + body_leading_static_import_requests;
     combined.append(&mut body);
+    static_requests.extend(
+        static_requests_by_item
+            .into_iter()
+            .map(|indexed_request| indexed_request.request),
+    );
     body = combined;
     // Apply chunk_renames to the assembled module body so that
     // import-specifier aliases and references in the moved code
@@ -367,10 +414,21 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
             .iter()
             .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
             .count();
+        let vendor_static_requests = vendor_external_imports
+            .iter()
+            .filter_map(static_request_for_item)
+            .collect::<Vec<_>>();
         let tail = body.split_off(import_count);
         body.extend(vendor_external_imports);
         body.extend(tail);
+        let inserted_request_count = vendor_static_requests.len();
+        static_requests.splice(
+            leading_static_import_requests..leading_static_import_requests,
+            vendor_static_requests,
+        );
+        leading_static_import_requests += inserted_request_count;
     }
+    debug_assert!(leading_static_import_requests <= static_requests.len());
     let resource_destinations = source_import_cache
         .lock()
         .expect("source import cache")
@@ -446,10 +504,21 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
             import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
         }
         let reexport_imports = group_specifiers_into_import_decls(pairs);
+        let reexport_static_requests: Vec<StaticModuleRequest> = reexport_imports
+            .iter()
+            .filter_map(static_request_for_item)
+            .collect();
         let tail = body.split_off(import_count);
         body.extend(reexport_imports);
         body.extend(tail);
+        let inserted_request_count = reexport_static_requests.len();
+        static_requests.splice(
+            leading_static_import_requests..leading_static_import_requests,
+            reexport_static_requests,
+        );
+        leading_static_import_requests += inserted_request_count;
     }
+    debug_assert!(leading_static_import_requests <= static_requests.len());
     if let Some(exports) = selected_exports {
         // Export locals remap through the explicit map only: heuristic
         // renames never rename the top-level declaration an export
@@ -484,6 +553,7 @@ pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
     Ok(PreparedModuleEmission {
         plan,
         body,
+        static_requests,
         explicit_renames,
         output_context,
         vendor_reference_rewrites,

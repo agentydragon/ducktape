@@ -35,6 +35,7 @@ mod imports;
 mod io;
 mod lower;
 mod materialize;
+mod module_initialization;
 mod module_output;
 mod naturalize;
 pub mod ownership_subset;
@@ -380,6 +381,23 @@ pub fn materialize_logical_modules(
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
+    let materialized_chunk_ids = selected_chunk_ids
+        .iter()
+        .map(|chunk| {
+            artifact
+                .chunk_table
+                .get(chunk)
+                .with_context(|| format!("unknown materialized chunk {chunk}"))
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
+    let vendor_unchanged = !vendor_plan.has_boundary_renames()
+        && !vendor_plan.has_partial_swaps()
+        && !vendor_plan.has_bundled_partial_swaps()
+        && vendor_plan.full_swap_chunk_ids().is_empty()
+        && artifact
+            .chunks
+            .iter()
+            .all(|chunk| !vendor_plan.is_suppressed(chunk.chunk_id));
     // Program-level pass over the selected chunks' retained static-import
     // closure: cross-module purity verdicts for each chunk's imported
     // function bindings, consumed per chunk via
@@ -502,6 +520,8 @@ pub fn materialize_logical_modules(
                                     ownership_subset: options.ownership_subset.as_ref(),
                                     artifact: artifact_ref,
                                     artifact_indexes: &artifact_indexes,
+                                    materialized_chunks: &materialized_chunk_ids,
+                                    vendor_unchanged,
                                     chunk_id,
                                     target_dir: &target_dir,
                                     keep_going: options.keep_going,

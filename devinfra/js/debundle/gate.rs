@@ -20,9 +20,10 @@ mod validation;
 pub use assignment_analysis::{
     ApplicationAssessmentError, ApplicationRelocationAssessmentReport, AssignmentAnalysis,
     AssignmentAnalysisBuildError, AtomicGroupPlacementClass, AtomicGroupPlacementObligation,
-    CandidateEvaluation, CandidatePreflight, CandidateRelocationAssessment,
-    CandidateRelocationAssessmentReport, CandidateRelocationStatus,
-    CrossDestinationRebindObligation, RejectedAssignment, SemanticOrderSccObligation,
+    CandidateEvaluation, CandidateModuleInitializationEvidence, CandidatePreflight,
+    CandidateRelocationAssessment, CandidateRelocationAssessmentReport, CandidateRelocationStatus,
+    CrossDestinationRebindObligation, ModuleCellAddress, ModuleInitializationAssessment,
+    ModuleInitializationRefusal, RejectedAssignment, SemanticOrderSccObligation,
     StructuralPlacementAssessment, StructuralPlacementCoverage, StructuralPlacementStatus,
     ValidatedAssignment,
 };

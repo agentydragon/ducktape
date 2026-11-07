@@ -267,11 +267,21 @@ typed projection violations in the candidate report and the same projection
 refusal in normal emission. Request planning still uses the shared destructuring
 owner classifier for fixed-point pulls when exactly one owner is explicit;
 split claims remain intact for this final check.
+`module_initialization` independently lists fact-required cells, the subset
+preserved by prepared-output evidence, and their unproved difference. Each
+address carries a scoped `chunk` ID and `declaration_origin`; `refusal` is a
+typed snake-case reason when the guard could not establish preservation.
+Imports alone never count as preserved initialization; an otherwise empty
+required-cell set remains complete even when a refusal is reported. Current
+refusal values are `prepared_emission_unavailable`,
+`unsupported_candidate_graph`, `provider_closure_changed`,
+`foreign_initialization_changed`, and `provider_incomplete_at_consumer`.
 The top-level candidate `status` distinguishes `blocked_by_effect`,
 `blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
-means the effect decision or one of the required placement domains remains
-unproved. `accepted_within_checked_scope` means the effect component accepted
-and all four placement checks completed without a known structural blocker,
+means the effect decision, a required placement domain, or required module-cell
+initialization remains unproved. `accepted_within_checked_scope` means the
+effect component accepted, all four placement checks completed without a known
+structural blocker, and module initialization has no unproved required cells,
 with `placement.emission_mappable: true`. This joint verdict authorizes
 relocation lowering; vendor replacement, final export and reconstruction checks
 still apply. `legacy_gate_ordering_veto` identifies semantic-order SCCs rejected

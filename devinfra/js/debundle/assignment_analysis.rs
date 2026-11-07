@@ -1,5 +1,5 @@
 use analysis_model::DepKind;
-use source_identity::ChunkId;
+use source_identity::{ChunkId, ModuleCellId};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 
@@ -166,10 +166,12 @@ impl<'a> CandidatePreflight<'a> {
     }
 
     /// Complete the same translation and effect sweeps using the retained
-    /// validation, import order, and structural placement.
+    /// validation, import order, and structural placement, then join prepared
+    /// module-initialization evidence against the facts' required cells.
     pub fn evaluate<E>(
         self,
         facts: &[analysis::facts::StatementFacts],
+        module_initialization_evidence: CandidateModuleInitializationEvidence,
         translation_validation_visitor: Option<
             &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
         >,
@@ -185,6 +187,7 @@ impl<'a> CandidatePreflight<'a> {
             &translation_validation,
             &self.emitted_order,
             self.placement,
+            module_initialization_evidence,
             effect_visitor,
         )?;
         Ok(CandidateEvaluation {
@@ -309,13 +312,103 @@ pub struct SemanticOrderSccObligation {
     pub dependency_edges: Vec<usize>,
 }
 
+/// Prepared-output guard evidence that declarative module-cell initialization
+/// remains available before dependent source bodies can execute. Callers must
+/// not infer these preserved cells from source imports.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct CandidateModuleInitializationEvidence {
+    /// Cells the prepared-output guard proved remain initialized for this candidate.
+    pub preserved_cells: BTreeSet<ModuleCellId>,
+    /// Why the guard could not establish preservation for part of its scope.
+    pub refusal: Option<ModuleInitializationRefusal>,
+}
+
+/// A typed reason the prepared-output guard could not establish preservation
+/// for some required module cells.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleInitializationRefusal {
+    /// No prepared emission was available to compare against the candidate.
+    PreparedEmissionUnavailable,
+    /// The candidate graph was outside the guard's supported comparison.
+    UnsupportedCandidateGraph,
+    /// The resolved provider set differed from the prepared-output closure.
+    ProviderClosureChanged,
+    /// A non-provider module's initialization changed relative to prepared output.
+    ForeignInitializationChanged,
+    /// A required provider was not complete at the consumer's evaluation point.
+    ProviderIncompleteAtConsumer,
+}
+
+/// Wire address for a declarative module cell. The chunk identity scopes the
+/// declaration offset, matching the module-cell effect report address.
+#[derive(Debug, Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ModuleCellAddress {
+    /// Run-interned source chunk identity that scopes the declaration offset.
+    pub chunk: ChunkId,
+    /// Canonical source declaration offset for this module binding cell.
+    pub declaration_origin: u32,
+}
+
+/// Final required-versus-preserved module initialization check for a candidate.
+/// A refusal is reported separately; incompleteness is determined by required
+/// cells that the prepared-output evidence did not preserve.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleInitializationAssessment {
+    /// Module cells directly required by analyzed source bodies.
+    pub required_cells: BTreeSet<ModuleCellAddress>,
+    /// Required cells the prepared-output guard proved preserved.
+    pub preserved_cells: BTreeSet<ModuleCellAddress>,
+    /// Required cells absent from the preserved set.
+    pub unproved_cells: BTreeSet<ModuleCellAddress>,
+    /// Guard refusal explaining why part of its preservation scope is unknown.
+    pub refusal: Option<ModuleInitializationRefusal>,
+}
+
+impl ModuleInitializationAssessment {
+    pub fn is_complete(&self) -> bool {
+        self.unproved_cells.is_empty()
+    }
+}
+
+fn module_cell_addresses(cells: &BTreeSet<ModuleCellId>) -> BTreeSet<ModuleCellAddress> {
+    cells
+        .iter()
+        .map(|cell| ModuleCellAddress {
+            chunk: cell.chunk,
+            declaration_origin: cell.declaration_origin,
+        })
+        .collect()
+}
+
+fn assess_module_initialization(
+    required_cells: BTreeSet<ModuleCellId>,
+    evidence: CandidateModuleInitializationEvidence,
+) -> ModuleInitializationAssessment {
+    let preserved_required_cells = required_cells
+        .intersection(&evidence.preserved_cells)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let unproved_cells = required_cells
+        .difference(&evidence.preserved_cells)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    ModuleInitializationAssessment {
+        required_cells: module_cell_addresses(&required_cells),
+        preserved_cells: module_cell_addresses(&preserved_required_cells),
+        unproved_cells: module_cell_addresses(&unproved_cells),
+        refusal: evidence.refusal,
+    }
+}
+
 /// A same-assignment candidate result. The effect assessment and its report
-/// are retained together from one sweep, beside typed structural placement
-/// obligations derived from the validation that admitted this exact analysis.
+/// are retained together from one sweep, beside typed structural placement and
+/// module-initialization obligations derived for this exact candidate.
 #[derive(Debug, Clone)]
 pub struct CandidateRelocationAssessment {
     pub placement: StructuralPlacementAssessment,
     pub effect: EffectTranslationValidationResult,
+    pub module_initialization: ModuleInitializationAssessment,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -328,6 +421,7 @@ pub struct CandidateRelocationAssessmentReport {
     /// independently of the final effect/structural verdict.
     pub legacy_gate_ordering_veto: bool,
     pub placement: StructuralPlacementAssessment,
+    pub module_initialization: ModuleInitializationAssessment,
 }
 
 /// One application verdict with every required materialized chunk's actual
@@ -397,7 +491,8 @@ impl ApplicationRelocationAssessmentReport {
 }
 
 /// Final relocation verdict for the assessed order. Acceptance requires complete
-/// effect and structural obligations and actual emitter placement maps.
+/// effect, structural, and required module-initialization obligations plus
+/// actual emitter placement maps.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateRelocationStatus {
@@ -418,7 +513,12 @@ impl CandidateRelocationAssessment {
             self.effect.assessment.decision,
             crate::realizability::EffectRelocationDecision::Accepted { .. }
         );
-        candidate_relocation_status(effect_blocked, effect_accepted, &self.placement)
+        candidate_relocation_status(
+            effect_blocked,
+            effect_accepted,
+            &self.placement,
+            self.module_initialization.is_complete(),
+        )
     }
 
     pub fn report(&self) -> CandidateRelocationAssessmentReport {
@@ -428,6 +528,7 @@ impl CandidateRelocationAssessment {
             legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&self.placement),
             effect: self.effect.assessment.clone(),
             placement: self.placement.clone(),
+            module_initialization: self.module_initialization.clone(),
         }
     }
 }
@@ -436,6 +537,7 @@ fn candidate_relocation_status(
     effect_blocked: bool,
     effect_accepted: bool,
     placement: &StructuralPlacementAssessment,
+    module_initialization_complete: bool,
 ) -> CandidateRelocationStatus {
     match (
         effect_blocked,
@@ -451,6 +553,7 @@ fn candidate_relocation_status(
         {
             CandidateRelocationStatus::Incomplete
         }
+        (false, false) if !module_initialization_complete => CandidateRelocationStatus::Incomplete,
         (false, false) => CandidateRelocationStatus::AcceptedWithinCheckedScope,
     }
 }
@@ -780,8 +883,15 @@ impl AssignmentAnalysis {
         legacy: &TranslationValidationResult,
         emitted_order: &CandidateEmittedOrder,
         placement: StructuralPlacementAssessment,
+        module_initialization_evidence: CandidateModuleInitializationEvidence,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
+        let required_module_cells = facts
+            .iter()
+            .flat_map(|fact| fact.required_initialized_module_cells())
+            .collect();
+        let module_initialization =
+            assess_module_initialization(required_module_cells, module_initialization_evidence);
         let effect = effect_translation_assess(
             EffectTranslationValidationInputs {
                 graph: self.inputs.dependency_graph(),
@@ -793,7 +903,11 @@ impl AssignmentAnalysis {
             },
             visitor,
         )?;
-        Ok(CandidateRelocationAssessment { placement, effect })
+        Ok(CandidateRelocationAssessment {
+            placement,
+            effect,
+            module_initialization,
+        })
     }
 
     /// High-fidelity node-link view of the fine dependency graph plus
@@ -897,7 +1011,7 @@ mod placement_classification_tests {
 
         assert!(has_legacy_gate_ordering_veto(&placement));
         assert_eq!(
-            candidate_relocation_status(false, false, &placement),
+            candidate_relocation_status(false, false, &placement, true),
             CandidateRelocationStatus::Incomplete,
             "a semantic-order-only legacy veto is not an effect or structural block",
         );
@@ -938,8 +1052,108 @@ mod placement_classification_tests {
 
         assert!(has_legacy_gate_ordering_veto(&placement));
         assert_eq!(
-            candidate_relocation_status(false, true, &placement),
+            candidate_relocation_status(false, true, &placement, true),
             CandidateRelocationStatus::AcceptedWithinCheckedScope,
         );
+    }
+
+    #[test]
+    fn required_module_cells_must_be_preserved_for_candidate_acceptance() {
+        let first = ModuleCellId {
+            chunk: ChunkId(3),
+            declaration_origin: 17,
+        };
+        let second = ModuleCellId {
+            chunk: ChunkId(4),
+            declaration_origin: 23,
+        };
+        let assessment = assess_module_initialization(
+            [first, second].into_iter().collect(),
+            CandidateModuleInitializationEvidence {
+                preserved_cells: [first].into_iter().collect(),
+                refusal: None,
+            },
+        );
+
+        assert_eq!(
+            assessment.required_cells,
+            [
+                ModuleCellAddress {
+                    chunk: ChunkId(3),
+                    declaration_origin: 17,
+                },
+                ModuleCellAddress {
+                    chunk: ChunkId(4),
+                    declaration_origin: 23,
+                },
+            ]
+            .into_iter()
+            .collect()
+        );
+        assert_eq!(
+            assessment.preserved_cells,
+            [ModuleCellAddress {
+                chunk: ChunkId(3),
+                declaration_origin: 17,
+            }]
+            .into_iter()
+            .collect()
+        );
+        assert_eq!(
+            assessment.unproved_cells,
+            [ModuleCellAddress {
+                chunk: ChunkId(4),
+                declaration_origin: 23,
+            }]
+            .into_iter()
+            .collect()
+        );
+        assert!(!assessment.is_complete());
+
+        let placement = StructuralPlacementAssessment {
+            status: StructuralPlacementStatus::NoKnownBlocker,
+            emission_mappable: true,
+            coverage: StructuralPlacementCoverage {
+                unresolved_checks: BTreeSet::new(),
+            },
+            projection_violations: Vec::new(),
+            cross_destination_rebinds: Vec::new(),
+            atomic_group_obligations: Vec::new(),
+            semantic_order_sccs: Vec::new(),
+        };
+        assert_eq!(
+            candidate_relocation_status(false, true, &placement, assessment.is_complete()),
+            CandidateRelocationStatus::Incomplete,
+        );
+        assert_eq!(
+            candidate_relocation_status(true, false, &placement, assessment.is_complete()),
+            CandidateRelocationStatus::BlockedByEffect,
+            "effect blockers retain precedence over missing module-cell proof",
+        );
+        let mut placement_blocked = placement;
+        placement_blocked.status = StructuralPlacementStatus::Blocked;
+        assert_eq!(
+            candidate_relocation_status(false, true, &placement_blocked, assessment.is_complete()),
+            CandidateRelocationStatus::BlockedByPlacement,
+            "placement blockers retain precedence over missing module-cell proof",
+        );
+    }
+
+    #[test]
+    fn module_initialization_refusal_does_not_invent_required_cells() {
+        let assessment = assess_module_initialization(
+            BTreeSet::new(),
+            CandidateModuleInitializationEvidence {
+                preserved_cells: BTreeSet::new(),
+                refusal: Some(ModuleInitializationRefusal::PreparedEmissionUnavailable),
+            },
+        );
+
+        assert!(assessment.required_cells.is_empty());
+        assert_eq!(
+            assessment.refusal,
+            Some(ModuleInitializationRefusal::PreparedEmissionUnavailable)
+        );
+        assert!(assessment.is_complete());
     }
 }

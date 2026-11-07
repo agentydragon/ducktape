@@ -12,6 +12,7 @@ use std::ops::Range;
 pub(crate) struct DerivedConditionalBody {
     pub(crate) input: crate::analysis_inputs::RecordInputShape,
     pub(crate) reads: BTreeSet<crate::analysis_inputs::ParameterHeapRead>,
+    pub(crate) module_cells: crate::analysis_inputs::ModuleCellAccesses,
     pub(crate) native_operations: BTreeSet<ForeignNativeOperation>,
     pub(crate) effects: EffectCoverageFragment,
     pub(crate) dependencies: ProofDependencies,

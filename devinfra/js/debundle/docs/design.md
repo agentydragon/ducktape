@@ -4215,7 +4215,11 @@ post-gate consumers.
 emitted order, and structural placement before effect assessment. Lowering
 projects its mappable placement and prepares candidate bodies from those same
 facts; `CandidatePreflight::evaluate` then runs the existing translation and
-effect sweeps and joins their result with the retained placement.
+effect sweeps and joins their result with the retained placement and typed
+module-initialization evidence from the prepared-output guard. Required module
+cells come from statement facts; imported bindings alone do not establish
+preservation. The final report retains required, preserved and unproved scoped
+cell addresses plus any typed guard refusal.
 `CandidateEvaluation::into_validation` returns a `ValidatedAssignment` only
 when the joint status is `AcceptedWithinCheckedScope`. Candidate body preparation
 uses the same immutable assignment through the preflight; final output emission

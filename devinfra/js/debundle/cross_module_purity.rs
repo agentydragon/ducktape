@@ -35,6 +35,7 @@ use source_identity::{ChunkTable, ModuleCellId};
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::{Id, ModuleItem};
 
+use crate::analysis_inputs::PrimitiveCellInvariant;
 use crate::analysis_inputs::{
     BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
     DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
@@ -44,6 +45,9 @@ use crate::analysis_inputs::{
     SelectedNativeOperationInput,
 };
 use crate::execution_evidence::SourceLocation;
+use crate::facts::sync_effects::execution_index::{
+    PreparedCallableCapabilities, PrimitiveCellInvariantQuery,
+};
 
 use crate::facts::abstract_domain::value::Value;
 use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
@@ -551,6 +555,8 @@ pub fn resolve_imported_purities(
 #[derive(Default)]
 pub struct ResolvedCallableSummaries {
     pub module_cells: BTreeMap<SourceModuleKey, BTreeMap<Id, ModuleCellId>>,
+    pub module_cell_invariants: BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+    pub noninvoking_provider_modules: BTreeSet<SourceModuleKey>,
     pub imported_callables: BTreeMap<SourceModuleKey, BTreeMap<String, CallableSummary>>,
     pub native_integrity: Option<NativeIntegrity>,
     pub value_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedBindingValueInput>>,
@@ -787,6 +793,31 @@ fn qualified_module_cells(
         }
     }
     cells
+}
+
+fn canonical_module_cell_invariants(
+    module_cells: &BTreeMap<SourceModuleKey, BTreeMap<Id, ModuleCellId>>,
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+    chunks: &ChunkTable,
+) -> BTreeMap<ModuleCellId, PrimitiveCellInvariant> {
+    let mut invariants = BTreeMap::new();
+    for (module, capabilities) in prepared {
+        let Some(chunk) = chunks.get(module) else {
+            continue;
+        };
+        for (binding, cell) in module_cells.get(*module).into_iter().flatten() {
+            if cell.chunk != chunk {
+                continue;
+            }
+            if let PrimitiveCellInvariantQuery::Known(invariant) =
+                capabilities.primitive_cell_invariant(binding)
+                && invariant.declaration.binding_span.lo.0 == cell.declaration_origin
+            {
+                invariants.insert(*cell, invariant);
+            }
+        }
+    }
+    invariants
 }
 
 fn exported_module_cell(
@@ -1409,6 +1440,15 @@ pub fn resolve_imported_callable_summaries(
         }
     }
     let module_cells = qualified_module_cells(modules, &prepared, chunk_table);
+    // Freeze complete source-only writer proofs before specializing any body.
+    // Initialization remains a separate obligation at each consuming context.
+    let module_cell_invariants =
+        canonical_module_cell_invariants(&module_cells, &prepared, chunk_table);
+    let noninvoking_provider_modules = prepared
+        .iter()
+        .filter(|(_, capabilities)| capabilities.provider_initialization_source_is_noninvoking())
+        .map(|(module, _)| (*module).clone())
+        .collect();
     // Specialize only layouts demanded by canonical imported call sites. The
     // resulting conditions remain independent of all return capabilities.
     let mut conditional_demands: BTreeMap<
@@ -1440,9 +1480,11 @@ pub fn resolve_imported_callable_summaries(
         let Some(prepared_provider) = prepared.get_mut(&key.module) else {
             continue;
         };
+        let empty_cells = BTreeMap::new();
+        let provider_cells = module_cells.get(&key.module).unwrap_or(&empty_cells);
         for shape in shapes {
             if let Some((callable_key, derived)) =
-                prepared_provider.conditional_body(local, shape, &native_integrity)
+                prepared_provider.conditional_body(local, shape, provider_cells, &native_integrity)
             {
                 conditional_bodies.push((key.clone(), local.clone(), callable_key, derived));
             }
@@ -1550,6 +1592,7 @@ pub fn resolve_imported_callable_summaries(
                 reads: body.reads,
                 native_operations: body.native_operations,
                 effects: body.effects,
+                module_cells: body.module_cells,
                 dependencies: dependencies.clone(),
                 replacement_package: modules[&key.module]
                     .replacement_packages
@@ -1764,6 +1807,8 @@ pub fn resolve_imported_callable_summaries(
         .collect();
     Ok(ResolvedCallableSummaries {
         module_cells,
+        module_cell_invariants,
+        noninvoking_provider_modules,
         bundle_globals,
         imported_callables,
         native_integrity: Some(native_integrity),

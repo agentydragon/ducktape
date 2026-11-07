@@ -15,6 +15,8 @@ use crate::execution_evidence::SourceLocation;
 use crate::purity::Purity;
 use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
+use analysis_model::PrimKinds;
+
 pub mod saved;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -238,8 +240,60 @@ pub(crate) struct ConditionalForeignBody {
     pub(crate) reads: BTreeSet<ParameterHeapRead>,
     pub(crate) native_operations: BTreeSet<ForeignNativeOperation>,
     pub(crate) effects: crate::facts::sync_effects::EffectCoverageFragment,
+    /// Runtime-only lexical module-cell footprint. The saved artifact codec
+    /// transports these addresses and checked invariants explicitly.
+    #[serde(skip)]
+    pub(crate) module_cells: ModuleCellAccesses,
     pub(crate) dependencies: ProofDependencies,
     pub(crate) replacement_package: Option<String>,
+}
+
+/// Qualified lexical cells read or written by one conditional body transfer.
+/// This is runtime proof transport; its addresses are never serialized here.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub(crate) struct ModuleCellAccesses {
+    pub(crate) reads: BTreeSet<ModuleCellId>,
+    pub(crate) writes: BTreeSet<ModuleCellId>,
+    pub(crate) invariants: BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+}
+
+/// Source operation used by the canonical module-cell writer census.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BindingStoreKind {
+    Assignment,
+    Update,
+    LoopBinding,
+    DestructuringAssignment,
+}
+
+/// Canonical source identity of a module-cell declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct BindingCellDeclarationIdentity {
+    pub(crate) owner: SourceUnitOrdinal,
+    pub(crate) activation_callable: Option<u32>,
+    pub(crate) binding_span: Span,
+    pub(crate) initializer_span: Option<Span>,
+}
+
+/// One syntactic binding-store site retained by the canonical writer census.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct BindingCellStoreEvidence {
+    pub(crate) owner: SourceUnitOrdinal,
+    pub(crate) activation_callable: Option<u32>,
+    pub(crate) span: Span,
+    pub(crate) kind: BindingStoreKind,
+}
+
+/// Checked post-initialization primitive-kind invariant for one module cell.
+/// Its fields are crate-private. The canonical analysis constructs the proof;
+/// the provider transfer reads its checked kind set, and consumers compare the
+/// complete proof through `Eq`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitiveCellInvariant {
+    pub(crate) declaration: BindingCellDeclarationIdentity,
+    pub(crate) post_init_kinds: PrimKinds,
+    pub(crate) stores: Vec<BindingCellStoreEvidence>,
 }
 
 /// Capabilities of one bare imported callable, keyed by the importer's local
@@ -1116,6 +1170,10 @@ pub struct AnalysisInputs {
     /// Resolved addresses of local and imported module bindings. This correspondence
     /// carries no authority over the cell's value, initialization, or body.
     pub module_cells: BTreeMap<Id, ModuleCellId>,
+    /// Canonical source-only post-initialization kind proofs for module cells.
+    pub module_cell_invariants: BTreeMap<ModuleCellId, PrimitiveCellInvariant>,
+    /// Module cells initialized before this importer's execution context.
+    pub source_initialized_module_cells: BTreeSet<ModuleCellId>,
     /// Source-proved imported primitive values admitted to ordinary candidate
     /// execution, keyed by local binding name. The program-summary adapter
     /// supplies one only alongside a matching `imported_primitive_reads`
