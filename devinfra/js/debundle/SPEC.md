@@ -784,6 +784,9 @@ ordinary writable-slot path because truncation has distinct semantics.
 Ordinary-object accessors, sparse or unknown arrays, unsettled or reused
 allocations, and retained queries without their own current prefix remain
 conservative.
+The property cell shares a uniquely eager array's birth proof against older
+opaque heap operations. An intervening opaque operation or a repeated
+allocation site retains the conservative frontier.
 When the same exact root has both a lexical operation receipt and complete
 global/heap/host coverage, its represented effects discharge the relocation
 projection's `opaque_at_init_call` and unattributed `member_write_or_alias`
@@ -3324,7 +3327,8 @@ Strict arithmetic, relational and loose-equality expressions retain their
 operator and evaluate their operands once, from left to right. The shared
 primitive result and throw rules apply only after both completing operand
 values are known to be primitive. Unproved object coercions retain conservative
-callback effects; Symbol conversion, mixed numeric kinds and potentially
+callback effects, consuming the already evaluated operands without replay;
+Symbol conversion, mixed numeric kinds and potentially
 throwing BigInt operations cannot obtain a complete normal-effect receipt.
 The canonical lowering retains complete
 source coverage before value lowering can erase syntax. This narrow
@@ -3383,8 +3387,8 @@ the flat call pass and later value projection do not repeat those operations.
 Calls within the initializer retain their effects and can mutate the prefix
 after an earlier operand has selected its value. Unsupported runtime paths
 summarize the remainder without retrying. Unproved collection construction,
-split declarations, applied accessors, unsupported operators, numeric array
-element reads and missing/inherited fields retain their existing conservative
+split declarations, applied accessors, unsupported operators, unproved array
+slots and missing/inherited fields retain their existing conservative
 paths.
 Root present-slot reads remain opaque allocation judgments and confer no
 whole-owner effect-coverage certificate. The operation records an `own_property` heap cell identified
@@ -3392,23 +3396,6 @@ by allocation origin and static property. This cell includes every runtime
 generation of that source allocation; it proves neither a strong update nor
 privacy. Opaque heap barriers and uncovered effect domains remain authoritative.
 
-At a root initializer's current prefix, an exact static `length` read may
-consume the own `length` data slot of one settled, first-generation dense
-array literal. This read yields the static numeric kind and records the exact
-`OwnProperty` cell, so ordering it against a later native `push` observes the
-same length slot that `push` writes. The proof requires the array literal's
-single settled dense-allocation witness and an existing own data value; pooled
-or reused allocation sites, holes, unknown or multiple receivers, unsettled
-descriptors, and accessors remain conservative. This is a root-initializer
-read only: it does not admit callable/provider/retained queries or new array
-mutation behavior. A canonical literal index key can read an in-range
-element under the same witness, using the stored heap value and recording its
-exact `OwnProperty(origin, index)` cell. Dynamic keys, holes, out-of-range
-indices, mutations and pooled sites retain fallback; the slot proof grants no
-write or prototype-read capability.
-Length and checked index cells share a uniquely eager array's existing birth
-proof against older opaque heap operations. An intervening opaque operation
-or a repeated allocation site retains the conservative frontier.
 A provider query starts
 with scoped opaque parameters and an empty private heap. Parameters,
 instantiated locals and checked private `var` captures can supply binding
@@ -3568,17 +3555,6 @@ invocation cannot short-circuit. Nullish, mixed and unknown targets truncate
 before arguments and retain conservative fallback; they acquire no invocation
 receipt. This does not supply skipped-call coverage or extend assertions scoped
 to ordinary call syntax.
-
-Eager binary expressions in ordered bodies evaluate their left
-and right operands once, in source order. When both results are known
-primitives, the shared primitive transfer supplies the result kind and records
-a no-effect operation fragment only when the operation cannot throw for those
-kinds. A possible Symbol or BigInt throw leaves effect and completion coverage
-unknown. If either operand is an object or unknown value, the existing
-coercion fallback receives both already evaluated operands, so user coercion
-runs after the right operand and is not replayed. Short-circuit operators,
-`in`, `instanceof`, and strict equality remain outside this transfer. Coverage
-of the operand operations remains a separate requirement.
 
 Guarded dense-array `push` consumes that captured receiver and evaluated
 primitive arguments. An uninterrupted first dense literal allocation without
