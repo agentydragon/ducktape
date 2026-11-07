@@ -15,8 +15,8 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
+from haku.console.identity.agent_management import OperatorAgent
 from haku.console.identity.agent_routes import AgentListResponse, AgentView, router
-from haku.console.identity.enrollment import OperatorAgent
 from haku.console.identity.operator_auth import OperatorSession, operator_session, require_operator_mutation_origin
 
 OPERATOR_ID = UUID("20000000-0000-4000-8000-000000000002")
@@ -27,11 +27,7 @@ NOW = datetime.datetime(2026, 7, 20, 12, 0, tzinfo=datetime.UTC)
 
 def _session() -> OperatorSession:
     return OperatorSession(
-        operator_id=OPERATOR_ID,
-        identity_id=IDENTITY_ID,
-        username="Rai",
-        browser_session_id="browser-session",
-        expires_at=NOW + datetime.timedelta(hours=1),
+        operator_id=OPERATOR_ID, identity_id=IDENTITY_ID, username="Rai", expires_at=NOW + datetime.timedelta(hours=1)
     )
 
 
@@ -70,7 +66,7 @@ class _FakeAgentService:
 def _client(*, authenticated: bool = True) -> tuple[TestClient, _FakeAgentService]:
     app = FastAPI()
     fake = _FakeAgentService()
-    app.state.agent_enrollment_service = fake
+    app.state.agent_management_service = fake
     app.state.settings = SimpleNamespace(public_base_url="https://haku.test")
     app.include_router(router, dependencies=[Depends(require_operator_mutation_origin)])
 
