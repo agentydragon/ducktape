@@ -18,6 +18,7 @@ py_library(
     visibility = ["//airlock:__subpackages__"],
     deps = [
         ":config",
+        "@pypi//authlib",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
