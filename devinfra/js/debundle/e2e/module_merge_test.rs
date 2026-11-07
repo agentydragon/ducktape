@@ -208,13 +208,21 @@ fn single_merge_rejects_untouched_symlink_aliases_without_writes() {
         ("alias.yaml", "target.yaml", "target"),
         ("alias-dir", "nested", "nested/target"),
     ] {
-        let fixture = GraphFixture::acyclic_pair();
+        let fixture = GraphFixture::new_full_tree(
+            "const beta = 1; const alpha = beta + 1; console.log(alpha);",
+            &[
+                ("a.yaml", "members: [{selector: {binding: {name: alpha}}}]"),
+                ("b.yaml", "members: [{selector: {binding: {name: beta}}}]"),
+            ],
+        );
         write_text_file(&fixture.modules.join("target.yaml"), "members: []");
         write_text_file(&fixture.modules.join("nested/target.yaml"), "members: []");
         std::os::unix::fs::symlink(target, fixture.modules.join(alias)).unwrap();
         fixture.refresh_graph();
-        fixture.assert_rejected_unchanged(
+        let analysis = fixture.stage_analysis();
+        fixture.assert_error_unchanged_with_assessment(
             &["modules", "merge", "--target", destination, "a"],
+            &analysis,
             &["does not support symlink entries"],
         );
         assert_eq!(
