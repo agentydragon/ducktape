@@ -1776,6 +1776,106 @@ fn conditional_borrowed_results_survive_direct_and_saved_analysis() {
 }
 
 #[test]
+fn conditional_borrowed_results_keep_provider_target_shadowing_guarded() {
+    const PROVIDER: &str = "export function echo(record) { record.value; return record; }\nexport function select(record) { return record.callback; }\nexport function read(record) { return record.value; }\nexport function primitiveAfterRead(record) { record.marker; return 7; }\n";
+    const APP: &str = "import { echo, select, read, primitiveAfterRead } from './peer.js';\nlet calls = 0;\nconst callback = () => { calls++; return 6; };\nconst nested = { value: 1 };\necho({ nested, value: 0 });\nconst input = { nested, value: 1 };\nconst same = echo(input);\nconst selected = select({ callback });\nconst observed = read({ value: 9 });\nconst primitive = primitiveAfterRead({ marker: true });\nconsole.log(same === input, same.nested === nested, selected === callback, calls, observed, primitive);\nselected();\nconsole.log(calls, nested.value);\n";
+    let expected = "true true true 0 9 7\n1 1\n";
+
+    for (layout, target_dir, shadows_provider) in [("nested", "modules", false), ("flat", "", true)]
+    {
+        let (staged, _fixture) = staged(
+            FixtureOpts::new(
+                APP,
+                vec![logical_module(
+                    "peer",
+                    &[
+                        Member::new("calls"),
+                        Member::new("callback"),
+                        Member::new("nested"),
+                        Member::new("input"),
+                        Member::new("same"),
+                        Member::new("selected"),
+                        Member::new("observed"),
+                        Member::new("primitive"),
+                    ],
+                )],
+            )
+            .with_target_dir(target_dir)
+            .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+        let (direct, saved) =
+            run_conditional_result_direct_and_saved(&staged, &format!("borrowed_target_{layout}"));
+
+        for (mode, invocation) in [("direct", &direct), ("saved", &saved)] {
+            if !shadows_provider {
+                assert_ok(&invocation.result, "nested borrowed-result CLI");
+                assert_node_output(
+                    &invocation.output_root().join("app/static/app/entry.js"),
+                    expected,
+                    "",
+                );
+            }
+            for (imported_local, kind) in [
+                ("echo", "argument"),
+                ("select", "property"),
+                ("read", "property"),
+                ("primitiveAfterRead", "primitive"),
+            ] {
+                assert!(
+                    conditional_result_alternatives(invocation, imported_local)
+                        .iter()
+                        .any(|alternative| alternative["kind"] == kind),
+                    "{layout}/{mode}: guarded {kind} result for {imported_local} must remain in the summary"
+                );
+            }
+
+            let graph: Value = read_gzip_json(
+                &invocation
+                    .output_root()
+                    .join("reports/tree/static/app/dependency_graph.json.gz"),
+            );
+            for binding in ["same", "selected", "observed", "primitive"] {
+                assert!(
+                    conditional_foreign_body_used(&graph, binding),
+                    "{layout}/{mode}: result binding {binding} must retain a guarded graph receipt: {graph:#}"
+                );
+            }
+
+            let report = candidate_relocation_report(invocation, "static/app");
+            let required = provider_targets(&report, "required_targets");
+            let preserved = provider_targets(&report, "preserved_targets");
+            let unproved = provider_targets(&report, "unproved_targets");
+            assert!(!required.is_empty(), "{layout}/{mode}: {report:#}");
+            if shadows_provider {
+                assert!(preserved.is_empty(), "{layout}/{mode}: {report:#}");
+                assert_eq!(unproved, required, "{layout}/{mode}: {report:#}");
+                assert!(
+                    report["provider_targets"]["refusal"].is_string(),
+                    "{layout}/{mode}: {report:#}"
+                );
+                assert_ne!(
+                    report["status"], "accepted_within_checked_scope",
+                    "{layout}/{mode}: {report:#}"
+                );
+            } else {
+                assert_eq!(preserved, required, "{layout}/{mode}: {report:#}");
+                assert!(unproved.is_empty(), "{layout}/{mode}: {report:#}");
+                assert!(
+                    report["provider_targets"]["refusal"].is_null(),
+                    "{layout}/{mode}: {report:#}"
+                );
+                assert_eq!(
+                    report["status"], "accepted_within_checked_scope",
+                    "{layout}/{mode}: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn conditional_borrowed_results_refuse_accessor_mixed_and_captured_values() {
     let cases = [
         (

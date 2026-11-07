@@ -263,8 +263,10 @@ impl ConditionalResultProjection {
     }
 }
 
-/// Conditional body evidence is independent of every returned-value capability.
-/// Its argument layout and parameterized footprint must be instantiated together.
+/// Conditional body evidence is independent of the coarse generic
+/// `ForeignReturn` capability. Its optional result projection is tied to this
+/// body; layout, parameterized reads, effects, and that result are instantiated
+/// together.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct ConditionalForeignBody {
     pub(crate) defining_module: String,
