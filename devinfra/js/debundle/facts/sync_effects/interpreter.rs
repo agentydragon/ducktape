@@ -1579,11 +1579,15 @@ impl OwnDataContext for Executor<'_, '_> {
 
 impl ArrayContext for Executor<'_, '_> {
     fn array_method_selected_from_original_prototype(&self, object: u32, property: &str) -> bool {
-        self.inputs.index.array_elements.contains_key(&object)
-            // Array literals start with the realm's `%Array.prototype%`.
-            // The settled-object witness rejects skipped or opaque writes
-            // that could have replaced that `[[Prototype]]`; argument
-            // evaluation has not begun yet at this point.
+        // Literal ArrayCreate and checked default-species creation both
+        // establish the realm's original prototype. Reuse their completed
+        // creation witness; repeated allocations and unproved mutation lose it.
+        matches!(
+            self.state.writable_prefix.get(&object),
+            Some(allocation_transfer::WritablePrefixState::DenseArray { .. })
+        )
+            // GetValue precedes argument evaluation. Skipped and opaque writes
+            // cannot establish a different prototype or own method here.
             && self.state.object_properties_are_settled(&object)
             && self
                 .state

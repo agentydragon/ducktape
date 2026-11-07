@@ -3821,7 +3821,7 @@ receipt. This does not supply skipped-call coverage or extend assertions scoped
 to ordinary call syntax.
 
 Guarded dense-array `forEach`, `map` and `filter` capture the native method
-before arguments execute only when the literal receiver still has its
+before arguments execute only when the checked array receiver still has its
 original `%Array.prototype%` lookup and no own method override. Receiver
 descriptors and, for result arrays, constructor/species premises are checked
 after the operands. The shared invocation kernel runs each reached callback
