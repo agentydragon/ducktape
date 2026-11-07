@@ -57,8 +57,6 @@ def _time(value: Timestamp) -> str:
 
 
 def _candidate_failure(result: str, reason: int) -> IntegrationError:
-    if result == "unsupported":
-        return IntegrationError("not_supported", 404)
     if result == "rejected":
         if reason == pb.CANDIDATE_REJECTION_REASON_NOT_ACCEPTED:
             return IntegrationError("verification_failed", 400)
@@ -175,7 +173,12 @@ class RemoteIntegration:
     async def check_candidate(self, candidate: bytes, transport=None) -> None:
         try:
             response = await self.client.verify_candidate(candidate, media_type="application/json", format_version="1")
-        except (grpc.aio.AioRpcError, OSError, ValueError) as exc:
+        except grpc.aio.AioRpcError as exc:
+            if exc.code() == grpc.StatusCode.UNIMPLEMENTED:
+                raise IntegrationError("not_supported", 404) from None
+            self._log_unavailable("VerifyCandidate", exc)
+            raise IntegrationError("outcome_unknown", 503) from None
+        except (OSError, ValueError) as exc:
             self._log_unavailable("VerifyCandidate", exc)
             raise IntegrationError("outcome_unknown", 503) from None
         if response.WhichOneof("result") != "verified":

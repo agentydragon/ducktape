@@ -46,6 +46,7 @@ class Provider(rpc.SessionProviderControlServicer):
         self.candidates: list[bytes] = []
         self.probe_calls = 0
         self.abort_import = False
+        self.verify_error: grpc.StatusCode | None = None
         self.import_result = pb.ImportSessionResponse(instance=INSTANCE, installed=pb.SessionInstalled())
         self.verify_result = pb.VerifyCandidateResponse(instance=INSTANCE, verified=pb.CandidateVerified())
         self.snapshot = pb.SessionSnapshot(
@@ -97,6 +98,8 @@ class Provider(rpc.SessionProviderControlServicer):
     async def VerifyCandidate(self, request, context):
         assert request.instance == INSTANCE
         self.candidates.append(request.candidate)
+        if self.verify_error is not None:
+            await context.abort(self.verify_error, "candidate-secret")
         return self.verify_result
 
     @override
@@ -177,11 +180,13 @@ async def test_owner_routes_preserve_metadata_status_and_typed_candidate_outcome
             verified = await client.post("/api/integrations/account/session/verify", headers=headers, json=SESSION)
             assert verified.json() == {"outcome": "success"}
             assert provider.snapshot.last_probe.WhichOneof("result") == "verified"
-            provider.verify_result = pb.VerifyCandidateResponse(
-                instance=INSTANCE, unsupported=pb.CandidateVerificationUnsupported()
-            )
+            provider.verify_error = grpc.StatusCode.UNIMPLEMENTED
             unsupported = await client.post("/api/integrations/account/session/verify", headers=headers, json=SESSION)
             assert (unsupported.status_code, unsupported.json()) == (404, {"error": "not_supported"})
+            provider.verify_error = grpc.StatusCode.DEADLINE_EXCEEDED
+            unknown = await client.post("/api/integrations/account/session/verify", headers=headers, json=SESSION)
+            assert (unknown.status_code, unknown.json()) == (503, {"error": "outcome_unknown"})
+            provider.verify_error = None
 
             provider.import_result = pb.ImportSessionResponse(
                 instance=INSTANCE, rejected=pb.CandidateRejected(reason=pb.CANDIDATE_REJECTION_REASON_NOT_ACCEPTED)
