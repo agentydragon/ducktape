@@ -12,7 +12,6 @@ from platform_sessions.auth import BearerAuth
 from platform_sessions.proxy import _REQUEST_PRIVATE, _RESPONSE_PRIVATE, ProxyInstance, ProxyRequest, _filter_headers
 from platform_sessions.routes import authorize_route
 
-
 RESULT_HEADER = b"x-platform-session-proxy-result"
 RESULT_VERSION = b"1"
 

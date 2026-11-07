@@ -294,7 +294,6 @@ py_test(
         ":routes",
         "//:conftest",
         "@pypi//fastapi",
-        "@pypi//httpx2",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],

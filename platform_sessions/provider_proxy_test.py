@@ -95,6 +95,5 @@ def test_private_endpoint_authenticates_and_enforces_routes():
     assert len(local.requests) == 3
 
 
-
 if __name__ == "__main__":
     pytest_bazel.main()
