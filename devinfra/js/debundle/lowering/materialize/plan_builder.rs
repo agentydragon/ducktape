@@ -1230,10 +1230,11 @@ impl ChunkPlanBuilder {
     }
 
     /// Complete a partially claimed atomic group only for an explicitly
-    /// opted-in authored owner. This runs after rebind folding and ownership
-    /// subset filtering. Groups with zero or multiple current owners, and
-    /// groups whose sole owner is not listed, remain untouched for ordinary
-    /// residual routing and the complete-assignment gate.
+    /// opted-in authored owner. This runs after ownership-subset filtering,
+    /// current derived placement and the residual sweep, before coarse residual
+    /// synthesis. Groups with zero or multiple current owners, and groups whose
+    /// sole owner is not listed, remain untouched for the complete-assignment
+    /// gate.
     pub(super) fn route_partial_atomic_groups_to_named_owners(
         &mut self,
         precomputed: &DependencyGraphAndAtomicGroups,
@@ -1372,9 +1373,10 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// Snapshot which atoms had exactly one opted-in authored owner before an
-    /// ownership subset can remove plans or claims. Completion itself runs
-    /// later, after subset filtering and rebind folds.
+    /// Snapshot which atoms had exactly one opted-in authored owner from the
+    /// complete authored roster before ownership-subset filtering. Completion
+    /// later runs after subset filtering, current derived placement and the
+    /// residual sweep, before coarse residual synthesis.
     pub(super) fn single_authored_owner_atomic_groups(
         &self,
         precomputed: &DependencyGraphAndAtomicGroups,

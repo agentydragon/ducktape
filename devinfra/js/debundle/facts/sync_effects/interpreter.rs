@@ -14468,7 +14468,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 return CallTransfer::EffectsOnly;
             }
             return self.execute_member_read_protocol(call, env, captures, outcome);
-
         }
         if call.kind == CallKind::ObjectSpread {
             let values = self.evaluate(&call.args[0], env, captures);
