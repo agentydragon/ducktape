@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import override
 
@@ -23,6 +25,7 @@ from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_pr
 from platform_sessions.provider_proxy import ProviderProxy
 from platform_sessions.proxy import ProxyInstance, ProxyRequest, ProxyResponse, install_proxy
 from platform_sessions.registry import IntegrationInstance
+from platform_sessions.remote_transport import RemoteSessionTransport
 from platform_sessions.routes import Route
 
 PUBLIC_OWNER = "p" * 32
@@ -151,6 +154,8 @@ async def served(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_binding_preserves_gateway_auth_and_private_identity(tmp_path):
     async with served(tmp_path) as (control, channel, spec):
+        tls_context = ssl.create_default_context()
+        configured_spec = replace(spec, tls_context=tls_context)
         local = LocalSessionTransport()
         private_auth = BearerAuth(
             [
@@ -158,11 +163,13 @@ async def test_binding_preserves_gateway_auth_and_private_identity(tmp_path):
                 Bearer(SecretStr(PRIVATE_ROUTE), routes={"account": (Route("GET", "/orders/*"),)}),
             ]
         )
-        private = ProviderProxy({"account": ProxyInstance(spec.config, local)}, private_auth)
+        private = ProviderProxy({"account": ProxyInstance(configured_spec.config, local)}, private_auth)
         private_requests: list[httpx2.Request] = []
         binding = bind_remote_provider(
-            spec, control_channel=channel, http_transport=_bridge_to_private(private, private_requests)
+            configured_spec, control_channel=channel, http_transport=_bridge_to_private(private, private_requests)
         )
+        assert isinstance(binding.proxy_instance.transport, RemoteSessionTransport)
+        assert binding.proxy_instance.transport.tls_context is tls_context
         public_auth = BearerAuth(
             [
                 Bearer(SecretStr(PUBLIC_OWNER), owner=True),
@@ -210,6 +217,10 @@ async def test_binding_preserves_gateway_auth_and_private_identity(tmp_path):
 @pytest.mark.asyncio
 async def test_binding_lifecycle_and_fail_closed_configuration(tmp_path, monkeypatch):
     async with served(tmp_path) as (control, borrowed_channel, spec):
+        unverified_context = ssl.create_default_context()
+        unverified_context.check_hostname = False
+        with pytest.raises(ValueError, match="verify certificates and hostnames"):
+            bind_remote_provider(replace(spec, tls_context=unverified_context), control_channel=borrowed_channel)
         with pytest.raises(ValueError, match="distinct"):
             bind_remote_provider(
                 RemoteProviderSpec(**{**spec.__dict__, "route_token": SecretStr(PRIVATE_OWNER)}),

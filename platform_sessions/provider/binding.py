@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ssl
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -29,6 +30,7 @@ class RemoteProviderSpec:
     owner_token: SecretStr = field(repr=False)
     route_token: SecretStr = field(repr=False)
     headers: HeaderPolicy = field(default_factory=HeaderPolicy)
+    tls_context: ssl.SSLContext | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,7 @@ def bind_remote_provider(
         provider_base_url=spec.provider_origin,
         owner_token=spec.owner_token,
         route_token=spec.route_token,
+        tls_context=spec.tls_context,
         transport=http_transport,
     )
     return RemoteProviderBinding(
