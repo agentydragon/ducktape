@@ -8,9 +8,10 @@ import (
 	"io"
 	"log/slog"
 	"maps"
-	"math"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -25,7 +26,6 @@ const (
 	projectedTokenHeader = "X-Agentplane-Workload-Token"
 	readinessPath        = "/readyz"
 	maxHeadBytes         = 64 * 1024
-	pipeChunkBytes       = 64 * 1024
 )
 
 type sidecar struct {
@@ -34,7 +34,9 @@ type sidecar struct {
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
+	proxyServer       *http.Server
 	proxyListener     net.Listener
+	proxyTransport    *http.Transport
 	routes            *platformRoutes
 
 	activeMu sync.Mutex
@@ -64,6 +66,7 @@ func (s *sidecar) run(ctx context.Context) error {
 
 func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes *platformRoutes) error {
 	s.proxyListener = proxyListener
+	s.proxyServer = &http.Server{Handler: s.proxyHandler(), MaxHeaderBytes: maxHeadBytes}
 	s.routes = routes
 	s.bindReadiness(readinessListener)
 	var serving sync.WaitGroup
@@ -81,6 +84,9 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 	serve := func(name string, run func() error) {
 		serving.Go(func() {
 			if err := run(); err != nil {
+				if errors.Is(err, http.ErrServerClosed) {
+					return
+				}
 				serveErrors <- fmt.Errorf("%s stopped: %w", name, err)
 			} else {
 				serveErrors <- fmt.Errorf("%s stopped unexpectedly", name)
@@ -92,7 +98,9 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 		serve("platform routes", func() error { return routes.server.Serve(routes.listen) })
 		slog.Info("platform routes listening", "address", routes.listen.Addr(), "route_count", len(s.config.PlatformRoutes.Routes))
 	}
-	serve("HTTP proxy listener", s.acceptLoop)
+	serve("HTTP proxy listener", func() error {
+		return s.proxyServer.Serve(&trackingListener{Listener: proxyListener, sidecar: s})
+	})
 	s.ready.Store(true)
 	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", s.config.Proxy.Address)
 
@@ -148,159 +156,187 @@ func (s *sidecar) stopReadiness() {
 
 func (s *sidecar) stopProxy() {
 	s.ready.Store(false)
+	if s.proxyServer != nil {
+		_ = s.proxyServer.Close()
+	}
+	if s.proxyTransport != nil {
+		s.proxyTransport.CloseIdleConnections()
+	}
 	if s.proxyListener != nil {
 		_ = s.proxyListener.Close()
 	}
 	s.activeMu.Lock()
+	connections := make([]net.Conn, 0, len(s.active))
 	for conn := range s.active {
-		_ = conn.Close()
+		connections = append(connections, conn)
+		delete(s.active, conn)
 	}
 	s.activeMu.Unlock()
-}
-
-func (s *sidecar) acceptLoop() error {
-	for {
-		client, err := s.proxyListener.Accept()
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				return nil
-			}
-			return fmt.Errorf("accept HTTP proxy connection: %w", err)
-		}
-		s.track(client, true)
-		go s.handle(client)
+	for _, conn := range connections {
+		_ = conn.Close()
 	}
 }
 
-// handle serves one workload connection over one central proxy connection of its own. Every
-// request the workload sends on it, pipelined or not, is parsed and re-serialized through
-// rewriteRequest; only a successful CONNECT or a 101 upgrade turns the rest of the connection into
-// opaque bytes.
-func (s *sidecar) handle(client net.Conn) {
-	defer func() {
-		s.track(client, false)
-		_ = client.Close()
-	}()
-	// headLimit bounds each request head, as http.Server's MaxHeaderBytes does; bodies are unbounded.
-	headLimit := &io.LimitedReader{R: client}
-	clientReader := bufio.NewReaderSize(headLimit, pipeChunkBytes)
-	var upstream net.Conn
-	var upstreamReader *bufio.Reader
-	defer func() {
-		if upstream != nil {
-			s.track(upstream, false)
-			_ = upstream.Close()
-		}
-	}()
-	for {
-		headLimit.N = maxHeadBytes
-		request, err := http.ReadRequest(clientReader)
-		headLimit.N = math.MaxInt64
-		if errors.Is(err, io.EOF) {
-			return
-		}
-		if err != nil {
-			slog.Warn("refusing malformed request", "error", err)
-			writeRefusal(client, http.StatusBadRequest, "bad-request")
-			return
-		}
-		tokenFile := s.config.Proxy.Transport.Auth.TokenFile
-		token, err := readToken(tokenFile)
-		if err != nil {
-			slog.Error("central proxy token unavailable", "path", tokenFile, "error", err)
-			writeRefusal(client, http.StatusServiceUnavailable, "token-unavailable")
-			return
-		}
-		rewriteRequest(request, token, s.readProjectedTokens())
-		if upstream == nil {
-			upstream, err = (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", s.config.Proxy.Address)
-			if err != nil {
-				slog.Warn("central proxy unreachable", "address", s.config.Proxy.Address, "error", err)
-				writeRefusal(client, http.StatusBadGateway, "proxy-unreachable")
-				return
-			}
-			s.track(upstream, true)
-			upstreamReader = bufio.NewReaderSize(upstream, pipeChunkBytes)
-		}
-		if !s.exchange(client, clientReader, upstream, upstreamReader, request) {
-			return
-		}
-	}
+type trackingListener struct {
+	net.Listener
+	sidecar *sidecar
 }
 
-// exchange forwards one request and relays its response. It reports whether the connection pair
-// may carry another request.
-func (s *sidecar) exchange(client net.Conn, clientReader *bufio.Reader, upstream net.Conn, upstreamReader *bufio.Reader, request *http.Request) bool {
-	// The body is written concurrently so an interim response (100 Continue) reaches a client that
-	// waits for it before sending the body.
-	written := make(chan error, 1)
-	go func() { written <- request.WriteProxy(upstream) }()
-	abort := func() bool {
-		_ = client.Close()
-		_ = upstream.Close()
-		<-written
-		return false
-	}
-	response, err := readFinalResponse(client, upstreamReader, request)
+func (l *trackingListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
 	if err != nil {
-		slog.Warn("relaying response from central proxy failed", "error", err)
-		return abort()
+		return nil, err
 	}
-	if (request.Method == http.MethodConnect && response.StatusCode/100 == 2) || response.StatusCode == http.StatusSwitchingProtocols {
-		if err := writeResponseHead(client, response); err != nil {
-			return abort()
-		}
-		if err := <-written; err != nil {
-			slog.Warn("writing request to central proxy failed", "error", err)
-			return false
-		}
-		if err := pipeDuplex(client, clientReader, upstream, upstreamReader); err != nil {
-			slog.Warn("relay ended with connection error", "address", s.config.Proxy.Address, "error", err)
-		}
-		return false
-	}
-	if request.Method == http.MethodConnect {
-		// A refused CONNECT ends the connection, as the central proxy ends its side.
-		response.Close = true
-	}
-	if err := response.Write(client); err != nil {
-		slog.Warn("relaying response to client failed", "error", err)
-		return abort()
-	}
-	if response.Close || request.Close {
-		// Closing upstream first stops the writer from waiting on a body nobody will read, and the
-		// client is closed only after its response, so the response is not lost to a reset.
-		_ = upstream.Close()
-		<-written
-		return false
-	}
-	if err := <-written; err != nil {
-		slog.Warn("writing request to central proxy failed", "error", err)
-		return false
-	}
-	return true
+	tracked := &trackedClientConn{Conn: conn, sidecar: l.sidecar}
+	l.sidecar.track(tracked, true)
+	return tracked, nil
 }
 
-// readFinalResponse relays interim 1xx responses to the client and returns the first other one;
-// 101 Switching Protocols is final.
-func readFinalResponse(client io.Writer, upstreamReader *bufio.Reader, request *http.Request) (*http.Response, error) {
-	for {
-		response, err := http.ReadResponse(upstreamReader, request)
+type trackedClientConn struct {
+	net.Conn
+	sidecar *sidecar
+}
+
+func (c *trackedClientConn) Close() error {
+	c.sidecar.track(c, false)
+	return c.Conn.Close()
+}
+
+func (c *trackedClientConn) CloseWrite() error {
+	if closer, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return closer.CloseWrite()
+	}
+	return c.Conn.Close()
+}
+
+func (s *sidecar) proxyHandler() http.Handler {
+	proxyURL := &url.URL{Scheme: "http", Host: s.config.Proxy.Address}
+	dialHop := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if network != "tcp" || address != s.config.Proxy.Address {
+			return nil, errors.New("unexpected central proxy destination")
+		}
+		return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, address)
+	}
+	transport := &http.Transport{
+		Proxy:                 http.ProxyURL(proxyURL),
+		DialContext:           dialHop,
+		IdleConnTimeout:       time.Minute,
+		ExpectContinueTimeout: time.Second,
+	}
+	s.proxyTransport = transport
+	proxy := &httputil.ReverseProxy{
+		Transport: transport,
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.Out.RequestURI = ""
+			token := request.In.Context().Value(proxyTokenKey{}).(string)
+			rewriteRequest(request.Out, token, s.readProjectedTokens())
+		},
+		ErrorHandler: func(writer http.ResponseWriter, _ *http.Request, err error) {
+			slog.Warn("central proxy request failed", "address", s.config.Proxy.Address, "error", err)
+			refuse(writer, http.StatusBadGateway, "proxy-unreachable")
+		},
+	}
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodConnect {
+			s.handleConnect(writer, request)
+			return
+		}
+		if request.URL.Scheme == "" && request.URL.Host == "" && request.Host != "" {
+			// Accept origin-form requests from local clients as requests to their Host.
+			request = request.Clone(request.Context())
+			request.URL.Scheme = "http"
+			request.URL.Host = request.Host
+		} else if request.URL.Scheme != "http" || request.URL.Host == "" {
+			refuse(writer, http.StatusBadRequest, "bad-request")
+			return
+		}
+		token, err := readToken(s.config.Proxy.Transport.Auth.TokenFile)
 		if err != nil {
-			return nil, err
+			slog.Error("central proxy token unavailable", "path", s.config.Proxy.Transport.Auth.TokenFile, "error", err)
+			refuse(writer, http.StatusServiceUnavailable, "token-unavailable")
+			return
 		}
-		if response.StatusCode/100 != 1 || response.StatusCode == http.StatusSwitchingProtocols {
-			return response, nil
+		proxy.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), proxyTokenKey{}, token)))
+	})
+}
+
+type proxyTokenKey struct{}
+
+func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Request) {
+	authority := request.URL.Host
+	if authority == "" {
+		authority = request.Host
+	}
+	if authority == "" {
+		refuse(writer, http.StatusBadRequest, "bad-request")
+		return
+	}
+	token, err := readToken(s.config.Proxy.Transport.Auth.TokenFile)
+	if err != nil {
+		slog.Error("central proxy token unavailable", "path", s.config.Proxy.Transport.Auth.TokenFile, "error", err)
+		refuse(writer, http.StatusServiceUnavailable, "token-unavailable")
+		return
+	}
+	upstream, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(request.Context(), "tcp", s.config.Proxy.Address)
+	if err != nil {
+		slog.Warn("central proxy unreachable", "address", s.config.Proxy.Address, "error", err)
+		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
+		return
+	}
+	s.track(upstream, true)
+	defer func() {
+		s.track(upstream, false)
+		_ = upstream.Close()
+	}()
+
+	upstreamRequest := request.Clone(request.Context())
+	upstreamRequest.RequestURI = ""
+	upstreamRequest.URL = &url.URL{Host: authority}
+	upstreamRequest.Host = authority
+	upstreamRequest.Body = nil
+	rewriteRequest(upstreamRequest, token, s.readProjectedTokens())
+	if err := upstreamRequest.WriteProxy(upstream); err != nil {
+		slog.Warn("writing CONNECT to central proxy failed", "error", err)
+		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
+		return
+	}
+	upstreamReader := bufio.NewReader(upstream)
+	response, err := http.ReadResponse(upstreamReader, upstreamRequest)
+	if err != nil {
+		slog.Warn("reading CONNECT response from central proxy failed", "error", err)
+		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
+		return
+	}
+	if response.StatusCode/100 != 2 {
+		defer response.Body.Close()
+		for name, values := range response.Header {
+			for _, value := range values {
+				writer.Header().Add(name, value)
+			}
 		}
-		if err := response.Write(client); err != nil {
-			return nil, err
+		writer.Header().Set("Connection", "close")
+		writer.WriteHeader(response.StatusCode)
+		if _, err := io.Copy(writer, response.Body); err != nil {
+			slog.Warn("relaying CONNECT refusal from central proxy failed", "error", err)
 		}
+		return
+	}
+	_ = response.Body.Close()
+	client, buffered, err := http.NewResponseController(writer).Hijack()
+	if err != nil {
+		slog.Warn("hijacking CONNECT client failed", "error", err)
+		return
+	}
+	defer client.Close()
+	if err := writeResponseHead(client, response); err != nil {
+		return
+	}
+	if err := pipeDuplex(client, buffered.Reader, upstream, upstreamReader); err != nil {
+		slog.Warn("CONNECT relay ended with connection error", "address", s.config.Proxy.Address, "error", err)
 	}
 }
 
-// rewriteRequest replaces the workload's proxy credentials with the sidecar's own. http.ReadRequest
-// canonicalizes header keys and joins obs-folded lines into the value they continue, so each Del
-// removes every value of that header however the workload spelled, repeated or folded it.
+// rewriteRequest replaces caller-supplied proxy credentials with sidecar-owned credentials.
 func rewriteRequest(request *http.Request, token string, projected map[string]string) {
 	request.Header.Del("Proxy-Connection")
 	request.Header.Del(projectedTokenHeader)
@@ -308,14 +344,17 @@ func rewriteRequest(request *http.Request, token string, projected map[string]st
 	for _, audience := range slices.Sorted(maps.Keys(projected)) {
 		request.Header.Add(projectedTokenHeader, audience+" "+projected[audience])
 	}
-	// Request.Write sends Go's default User-Agent when the key is absent; an empty value sends none.
 	if _, ok := request.Header["User-Agent"]; !ok {
 		request.Header["User-Agent"] = []string{""}
 	}
 }
 
-// writeResponseHead relays the head of a response after which the connection carries tunnel bytes.
-// Response.Write would frame a body that a successful CONNECT or a 101 does not have.
+func refuse(writer http.ResponseWriter, status int, reason string) {
+	writer.Header().Set(refusedHeader, "reason="+reason)
+	writer.WriteHeader(status)
+}
+
+// writeResponseHead relays the response head before an opaque CONNECT tunnel.
 func writeResponseHead(writer io.Writer, response *http.Response) error {
 	if _, err := fmt.Fprintf(writer, "HTTP/%d.%d %s\r\n", response.ProtoMajor, response.ProtoMinor, response.Status); err != nil {
 		return err
@@ -325,16 +364,6 @@ func writeResponseHead(writer io.Writer, response *http.Response) error {
 	}
 	_, err := io.WriteString(writer, "\r\n")
 	return err
-}
-
-func writeRefusal(writer io.Writer, status int, reason string) {
-	_ = (&http.Response{
-		StatusCode: status,
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Header:     http.Header{http.CanonicalHeaderKey(refusedHeader): {"reason=" + reason}},
-		Close:      true,
-	}).Write(writer)
 }
 
 func (s *sidecar) track(conn net.Conn, add bool) {
@@ -362,32 +391,30 @@ func (s *sidecar) readProjectedTokens() map[string]string {
 	return tokens
 }
 
-type copyResult struct{ err error }
-
 func pipeDuplex(client net.Conn, clientReader *bufio.Reader, upstream net.Conn, upstreamReader *bufio.Reader) error {
-	results := make(chan copyResult, 2)
+	results := make(chan error, 2)
 	go func() {
 		_, err := io.Copy(upstream, clientReader)
-		if tcp, okay := upstream.(*net.TCPConn); okay {
-			_ = tcp.CloseWrite()
+		if closer, okay := upstream.(interface{ CloseWrite() error }); okay {
+			_ = closer.CloseWrite()
 		}
-		results <- copyResult{err: err}
+		results <- err
 	}()
 	go func() {
 		_, err := io.Copy(client, upstreamReader)
-		if tcp, okay := client.(*net.TCPConn); okay {
-			_ = tcp.CloseWrite()
+		if closer, okay := client.(interface{ CloseWrite() error }); okay {
+			_ = closer.CloseWrite()
 		}
-		results <- copyResult{err: err}
+		results <- err
 	}()
 	first := <-results
-	if first.err != nil {
+	if first != nil {
 		_ = client.Close()
 		_ = upstream.Close()
 	}
 	second := <-results
-	if first.err != nil {
-		return first.err
+	if first != nil {
+		return first
 	}
-	return second.err
+	return second
 }
