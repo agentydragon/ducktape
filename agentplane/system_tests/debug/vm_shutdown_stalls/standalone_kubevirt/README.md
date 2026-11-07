@@ -18,6 +18,8 @@ After a clean baseline, a separate opt-in arm can add the exact historical debug
 
 An uncached [two-cycle policy-on baseline](https://app.buildbuddy.io/invocation/83effe66-210e-465c-ac90-25c20125a390) passed in one 331.5-second test action. The distinct VMI UIDs were `a275228e-9347-4723-be8b-7168e26278b4` and `db74eceb-61be-4023-bf04-09c07b819f5f`; the corresponding guest ACPI request-marker counts were 3 and 4. Both retained shutdown diagnostics classify `orderly_guest_powerdown`, with ordered guest completion/powerdown markers and VMI-UID-correlated virt-handler `Shutoff reason Shutdown` events; neither has a correlated grace-expiry, launcher-kill, or destroyed-domain marker. The passing test also verifies UID-checked namespace, policy, PVC, and local PV cleanup after each cycle. Two clean cycles bound only this manual harness run; they do not establish a flake rate or explain the historical CI stalls.
 
+A separate [three-cycle debug-argument arm](repeated_debug_args/README.md) used the same policy-on manual harness with the historical console verbosity enabled. Its raw per-cycle evidence is retained separately from the production-like baseline.
+
 ## Policy A/B outcome
 
 The exact target ran three times in each arm, with test-result caching disabled and one allowed attempt. The arm commands were:
