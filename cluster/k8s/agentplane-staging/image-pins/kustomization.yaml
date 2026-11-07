@@ -12,7 +12,7 @@ images:
     newTag: devel-20261106051751-1b91b70 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
-    newTag: devel-20261107063231-0a8170b # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
+    newTag: devel-20261107071356-1ed7d92 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   # CI publishes the first sampler image after merge; Flux selects its devel tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
     newTag: devel-20261106052055-1b91b70 # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
@@ -43,6 +43,6 @@ images:
     newTag: devel-20261107070129-704872b # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261107070048-66987b8 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261107071444-1ed7d92 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
