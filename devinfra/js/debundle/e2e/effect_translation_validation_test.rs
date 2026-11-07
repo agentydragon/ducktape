@@ -1319,7 +1319,7 @@ fn anonymous_root_operations_compose_their_actual_effects() {
 }
 
 #[test]
-fn root_call_admission_retains_argument_effects_and_ambiguous_target_refusal() {
+fn root_call_admission_uses_the_executed_store_and_argument_effects() {
     let statement = "(selected = value => value, result = selected(argument()));";
     let source = format!(
         "let calls = 0;\nfunction argument() {{ calls++; return 42; }}\nlet selected = 0;\nlet result = 0;\n{statement}\nconst later = 1;\nconsole.log(result, calls, later);\n"
@@ -1345,35 +1345,33 @@ fn root_call_admission_retains_argument_effects_and_ambiguous_target_refusal() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "42 1 1\n");
-    let graph = fixture.dependency_graph();
-    let execution = serde_json::to_value(
-        graph
-            .nodes
-            .iter()
-            .find(|node| node.statement_ordinal.0 == 4)
-            .unwrap()
-            .synchronous_execution
-            .as_ref()
-            .unwrap(),
-    )
-    .unwrap();
+    assert_expression_root_receipt(&fixture, 4, 2);
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 0, "{report}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report}");
+    assert_eq!(report["decision"]["scope"], "no_reordering", "{report}");
+}
+
+#[test]
+fn root_call_admission_refuses_genuinely_ambiguous_targets() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "let calls = 0;\nfunction argument() { calls++; return 42; }\nconst selected = globalThis.testFlag ? value => value : value => value + 1;\nconst result = selected(argument());\nconsole.log(result, calls);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "43 1\n");
+    let execution = binding_execution_report(&fixture, "result");
     assert_eq!(
-        execution["binding_effect_authority"]["authority"], "ordered_root_expression_uncovered",
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
         "{execution:#}"
     );
-    assert_eq!(execution["complete"], false, "{execution:#}");
     assert!(
         execution["precision_losses"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|loss| { loss["reason"]["ordered_call_admission_refusal"] == "multiple_targets" }),
-        "the weak module store retains the original noncallable alternative: {execution:#}"
+            .any(|loss| loss["reason"]["ordered_call_admission_refusal"] == "multiple_targets"),
+        "{execution:#}"
     );
-    let report = fixture.effect_translation_validation();
-    assert_eq!(report["swapped_pairs"], 0, "{report}");
-    assert_eq!(report["decision"]["status"], "accepted", "{report}");
-    assert_eq!(report["decision"]["scope"], "no_reordering", "{report}");
 }
 
 #[test]
@@ -3796,11 +3794,13 @@ fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
         )],
     ));
     assert_preserved_entry_output(&fixture, "41 0\n");
+    assert_operation_receipt(&fixture, "result", 2);
+    assert_expression_root_receipt(&fixture, 3, 0);
     let report = fixture.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 2,
-            "only later rebinding and output remain uncovered: {report:#}"
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only output remains uncovered after the checked rebinding: {report:#}"
         );
     }
 }
