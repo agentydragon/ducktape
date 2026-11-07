@@ -702,26 +702,15 @@ func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
 	}
 }
 
-func TestHTTPBearerCredentialIsOptional(t *testing.T) {
-	for _, tc := range []struct {
-		name, credential, wantAuthorization string
-	}{
-		{name: "unset"},
-		{name: "configured", credential: testCredential, wantAuthorization: "Bearer " + testCredential},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-				reply(w, http.StatusOK, `{"subscriptions":[]}`)
-			})
-			env := map[string]string{"AGENTPLANE_NOTIFICATIONS_URL": f.URL}
-			if tc.credential != "" {
-				env["AGENTPLANE_NOTIFICATIONS_CREDENTIAL"] = tc.credential
-			}
-			code, _, stderr := invoke(env, "notifications", "subscriptions", "--json")
-			requests := f.requests(http.MethodGet)
-			if code != 0 || len(requests) != 1 || requests[0].authorization != tc.wantAuthorization {
-				t.Fatalf("exit %d, requests %+v, stderr %q; want one request with Authorization %q", code, requests, stderr, tc.wantAuthorization)
-			}
-		})
+func TestNotificationClientOmitsBearerWhenCredentialIsUnset(t *testing.T) {
+	servicer := answering(pullRequestSubscription(1, false))
+	env := notificationsEnv(serveNotifications(t, servicer))
+	delete(env, "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL")
+	code, _, stderr := invoke(env, "notifications", "subscriptions", "--limit", "1", "--json")
+	if code != 0 {
+		t.Fatalf("subscriptions: exit %d: %s", code, stderr)
+	}
+	if len(servicer.authorization) != 0 {
+		t.Fatalf("authorization = %v; want no bearer when the gRPC credential is unset", servicer.authorization)
 	}
 }
