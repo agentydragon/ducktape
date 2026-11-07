@@ -755,6 +755,10 @@ Coverage still requires an initialized local cell or the existing imported
 primitive-read proof. Mutable imports, globals, uninitialized or TDZ cells, and
 other split initializer forms do not gain this route; their existing
 leaf/value admission and fallback remain unchanged.
+When an ordered root initializer has both normal values and an abrupt
+alternative, only its normal values enter the module binding on the normal
+continuation. Its effects remain incomplete. An initializer with no normal
+result retains its unavailable value and cannot certify a later binding read.
 Deferred function/method/accessor creation, record and array creation, named
 function self scopes, and activation-local declarations have no operation
 receipts in this route; successful allocation does not close their effects.
