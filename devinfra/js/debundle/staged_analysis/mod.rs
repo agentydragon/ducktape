@@ -322,11 +322,12 @@ pub fn analyze_program(
             .collect(),
         chunks,
     };
-    // Facts and context ordinals own everything encoding needs. Release the
-    // parsed program and its indexes before allocating the encoded artifact.
+    // The ordinal codec borrows the artifact's checked chunk namespace through
+    // encoding. The import indexes are no longer needed.
     drop(artifact_indexes);
+    let encoded = analysis_artifact::write_artifact(&header, &body, &ordinals);
     drop(artifact);
-    analysis_artifact::write_artifact(&header, &body, &ordinals)
+    encoded
 }
 
 pub fn export_reentry_reports(
