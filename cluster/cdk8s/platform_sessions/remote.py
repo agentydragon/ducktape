@@ -46,6 +46,7 @@ NAME = "platform-sessions-remote"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 GATEWAY = "platform-sessions-gateway"
+SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
 REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
 BEARER_FILES = ("owner", "aiquota", "quest", "thrive-scraper", "thrive-read", "chatgpt-read", "blueshield-read")
@@ -61,6 +62,12 @@ def _provider_name(instance: str) -> str:
 
 def _provider_dns(instance: str) -> str:
     return f"{_provider_name(instance)}.{NAMESPACE}.svc"
+
+
+def _provider_image(instance: str) -> str:
+    if instance in {"openai", "anthropic", "thrive"}:
+        return SHARED_PROVIDERS_IMAGE
+    return _provider_name(instance)
 
 
 # A separate ConfigMap prevents preparing the new deployment from rolling the live service.
@@ -204,6 +211,21 @@ def _add_provider(chart: Chart, instance: str) -> None:
         dns_names=[_provider_dns(instance)],
     )
 
+    k8s.KubePersistentVolumeClaim(
+        chart,
+        f"{name}-claim",
+        metadata=k8s.ObjectMeta(
+            name=name, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="seaweedfs-ovh-ssd",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
+        ),
+    )
+
+
+def _image_policy(chart: Chart, name: str) -> None:
     # Provider images are built by gaffer-private and use main-* tags.
     repository = ImageRepository(
         chart,
@@ -224,18 +246,9 @@ def _add_provider(chart: Chart, instance: str) -> None:
         ),
     )
 
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        f"{name}-claim",
-        metadata=k8s.ObjectMeta(
-            name=name, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh-ssd",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
-    )
+
+def _provider_workload(chart: Chart, instance: str) -> None:
+    name = _provider_name(instance)
     provider_credentials = k8s.Volume(
         name="provider-credentials",
         projected=k8s.ProjectedVolumeSource(
@@ -253,7 +266,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
         name,
         k8s.Container(
             name="provider",
-            image=f"{REGISTRY}/{name}:unset",
+            image=f"{REGISTRY}/{_provider_image(instance)}:unset",
             args=[
                 "--integration-config",
                 f"/etc/platform-sessions/{instance}-integration.json",
@@ -284,7 +297,8 @@ def _add_provider(chart: Chart, instance: str) -> None:
                 k8s.ContainerPort(name="https", container_port=8443),
                 k8s.ContainerPort(name="grpc", container_port=8444),
                 k8s.ContainerPort(name="metrics", container_port=9091),
-            ],
+            ]
+            + ([k8s.ContainerPort(name="quest-metrics", container_port=9090)] if instance == "quest" else []),
             readiness_probe=provider_health,
             liveness_probe=provider_health,
             resources=_resources(),
@@ -320,13 +334,21 @@ def _add_provider(chart: Chart, instance: str) -> None:
         f"{name}-monitor",
         metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels={"app": name}),
-        pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")],
+        pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
+        + (
+            [PodMonitorSpecPodMetricsEndpoints(port="quest-metrics", path="/metrics", interval="1m")]
+            if instance == "quest"
+            else []
+        ),
     )
 
 
 def add_resources(chart: Chart) -> None:
     for instance in PROVIDERS:
         _add_provider(chart, instance)
+        _provider_workload(chart, instance)
+    for image in sorted({_provider_image(instance) for instance in PROVIDERS}):
+        _image_policy(chart, image)
     Certificate(
         chart,
         f"{GATEWAY}-certificate",

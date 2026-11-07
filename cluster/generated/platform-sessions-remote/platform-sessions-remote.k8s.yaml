@@ -116,31 +116,6 @@ spec:
     name: cluster-internal-ca
   secretName: platform-sessions-openai-tls
 ---
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: platform-sessions-openai
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/platform-sessions-openai
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: platform-sessions-openai
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: platform-sessions-openai
-  policy:
-    alphabetical:
-      order: asc
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -201,7 +176,7 @@ spec:
           env:
             - name: HOME
               value: /tmp
-          image: git.allegedly.works/ducktape-ci/platform-sessions-openai:unset
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
           livenessProbe:
             httpGet:
               path: /healthz
@@ -439,31 +414,6 @@ spec:
     name: cluster-internal-ca
   secretName: platform-sessions-anthropic-tls
 ---
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: platform-sessions-anthropic
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/platform-sessions-anthropic
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: platform-sessions-anthropic
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: platform-sessions-anthropic
-  policy:
-    alphabetical:
-      order: asc
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -524,7 +474,7 @@ spec:
           env:
             - name: HOME
               value: /tmp
-          image: git.allegedly.works/ducktape-ci/platform-sessions-anthropic:unset
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
           livenessProbe:
             httpGet:
               path: /healthz
@@ -761,31 +711,6 @@ spec:
     kind: ClusterIssuer
     name: cluster-internal-ca
   secretName: platform-sessions-chatgpt-tls
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: platform-sessions-chatgpt
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: platform-sessions-chatgpt
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: platform-sessions-chatgpt
-  policy:
-    alphabetical:
-      order: asc
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -1085,31 +1010,6 @@ spec:
     name: cluster-internal-ca
   secretName: platform-sessions-blueshield-tls
 ---
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: platform-sessions-blueshield
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/platform-sessions-blueshield
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: platform-sessions-blueshield
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: platform-sessions-blueshield
-  policy:
-    alphabetical:
-      order: asc
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -1406,31 +1306,6 @@ spec:
     name: cluster-internal-ca
   secretName: platform-sessions-quest-tls
 ---
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: platform-sessions-quest
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/platform-sessions-quest
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: platform-sessions-quest
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: platform-sessions-quest
-  policy:
-    alphabetical:
-      order: asc
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -1505,6 +1380,8 @@ spec:
               name: grpc
             - containerPort: 9091
               name: metrics
+            - containerPort: 9090
+              name: quest-metrics
           readinessProbe:
             httpGet:
               path: /healthz
@@ -1607,6 +1484,9 @@ spec:
     - interval: 1m
       path: /metrics
       port: metrics
+    - interval: 1m
+      path: /metrics
+      port: quest-metrics
   selector:
     matchLabels:
       app: platform-sessions-quest
@@ -1729,31 +1609,6 @@ spec:
     name: cluster-internal-ca
   secretName: platform-sessions-thrive-tls
 ---
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: platform-sessions-thrive
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/platform-sessions-thrive
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: platform-sessions-thrive
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: platform-sessions-thrive
-  policy:
-    alphabetical:
-      order: asc
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -1814,7 +1669,7 @@ spec:
           env:
             - name: HOME
               value: /tmp
-          image: git.allegedly.works/ducktape-ci/platform-sessions-thrive:unset
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
           livenessProbe:
             httpGet:
               path: /healthz
@@ -1933,6 +1788,106 @@ spec:
   selector:
     matchLabels:
       app: platform-sessions-thrive
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-blueshield
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-blueshield
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-blueshield
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-blueshield
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-chatgpt
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-chatgpt
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-chatgpt
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-providers
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-providers
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-providers
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-providers
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-quest
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-quest
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-quest
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-quest
+  policy:
+    alphabetical:
+      order: asc
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
