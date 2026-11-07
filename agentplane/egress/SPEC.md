@@ -14,6 +14,12 @@ its central proxy as `proxy.address` (`host:port`) and chooses
 `token_file`. These settings do not change the bearer protocol or destination-token projection.
 Unknown settings are refused, including the former flat settings.
 
+The sidecar uses Go's `http.Server` parser and `httputil.ReverseProxy` for ordinary HTTP requests.
+Malformed request lines receive the standard `400` response without the sidecar refusal header;
+headers over the configured limit receive `431` or the connection closes before a request reaches
+the handler. These parser outcomes do not use a fallback parser. `CONNECT` remains an opaque tunnel
+after a successful response, and HTTP upgrades are relayed as protocol switches.
+
 ## Identity
 
 - Every CONNECT and every request carries `Proxy-Authorization: Bearer <token>`, the Pod's

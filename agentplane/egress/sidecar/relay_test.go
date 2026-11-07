@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -105,6 +106,11 @@ func (p *testCentralProxy) handle(conn net.Conn) {
 		if err != nil {
 			return
 		}
+		if request.URL.Path == "/continue" && request.Header.Get("Expect") == "100-continue" {
+			if _, err := io.WriteString(conn, "HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\nHTTP/1.1 100 Continue\r\n\r\n"); err != nil {
+				return
+			}
+		}
 		body, err := io.ReadAll(request.Body)
 		if err != nil {
 			return
@@ -122,6 +128,11 @@ func (p *testCentralProxy) handle(conn net.Conn) {
 				return
 			}
 			if _, err := io.WriteString(conn, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
+				return
+			}
+			if strings.HasPrefix(observed.target, "half-close.test:") {
+				_, _ = io.Copy(io.Discard, reader)
+				_, _ = io.WriteString(conn, "response-after-half-close")
 				return
 			}
 			_, _ = io.Copy(conn, reader)
@@ -182,6 +193,11 @@ func readTestHead(reader *bufio.Reader) ([]byte, error) {
 }
 
 func startTestSidecar(t *testing.T, proxyPort int, tokenFile string, audiences map[string]string) string {
+	_, address := startTestSidecarWithState(t, proxyPort, tokenFile, audiences)
+	return address
+}
+
+func startTestSidecarWithState(t *testing.T, proxyPort int, tokenFile string, audiences map[string]string) (*sidecar, string) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -200,20 +216,21 @@ func startTestSidecar(t *testing.T, proxyPort int, tokenFile string, audiences m
 		},
 		proxyListener: listener,
 	}
+	s.proxyServer = &http.Server{Handler: s.proxyHandler(), MaxHeaderBytes: maxHeadBytes}
 	finished := make(chan error, 1)
-	go func() { finished <- s.acceptLoop() }()
+	go func() { finished <- s.proxyServer.Serve(&trackingListener{Listener: listener, sidecar: s}) }()
 	t.Cleanup(func() {
 		s.stopProxy()
 		select {
 		case err := <-finished:
-			if err != nil {
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				t.Errorf("sidecar accept loop: %v", err)
 			}
 		case <-time.After(5 * time.Second):
 			t.Error("sidecar accept loop did not stop")
 		}
 	})
-	return listener.Addr().String()
+	return s, listener.Addr().String()
 }
 
 func writeTestToken(t *testing.T, contents string) string {
@@ -388,6 +405,60 @@ func TestSidecarUnreachableCentralProxyRefuses(t *testing.T) {
 	}
 }
 
+func TestSidecarForwardsInterimResponsesAndExpectContinue(t *testing.T) {
+	central := startTestCentralProxy(t)
+	address, _, _ := audienceSidecar(t, central)
+	conn := dialSidecar(t, address)
+	reader := bufio.NewReader(conn)
+	if _, err := io.WriteString(conn,
+		"POST http://upstream.test/continue HTTP/1.1\r\n"+
+			"Host: upstream.test\r\n"+
+			"Content-Length: 4\r\n"+
+			"Expect: 100-continue\r\n"+
+			"Connection: close\r\n"+
+			forgedCredentials+"\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	var gotEarlyHints, gotContinue bool
+	for !gotContinue {
+		response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch response.StatusCode {
+		case http.StatusEarlyHints:
+			gotEarlyHints = response.Header.Get("Link") == "</style.css>; rel=preload"
+		case http.StatusContinue:
+			gotContinue = true
+		default:
+			t.Fatalf("unexpected interim response: %d %v", response.StatusCode, response.Header)
+		}
+		_ = response.Body.Close()
+	}
+	if !gotEarlyHints {
+		t.Fatal("central proxy's 103 Early Hints was not forwarded")
+	}
+	if _, err := io.WriteString(conn, "body"); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || string(body) != "seen-token=token-1" {
+		t.Fatalf("final response = %d %q", response.StatusCode, body)
+	}
+	seen := central.nextRequest(t)
+	if seen.body != "body" {
+		t.Fatalf("central request body = %q", seen.body)
+	}
+	assertOnlySidecarCredentials(t, seen, "token-1")
+}
+
 func TestSidecarConnectIsAuthenticatedAndPipedBothWays(t *testing.T) {
 	central := startTestCentralProxy(t)
 	address := startTestSidecar(t, central.port(), writeTestToken(t, "token-1"), nil)
@@ -417,6 +488,43 @@ func TestSidecarConnectIsAuthenticatedAndPipedBothWays(t *testing.T) {
 	}
 }
 
+func TestSidecarConnectPropagatesHalfClose(t *testing.T) {
+	central := startTestCentralProxy(t)
+	address := startTestSidecar(t, central.port(), writeTestToken(t, "token-1"), nil)
+	_, conn, reader := connectThroughSidecar(t, address, "half-close.test")
+	defer conn.Close()
+	central.nextRequest(t)
+	if _, err := io.WriteString(conn, "request"); err != nil {
+		t.Fatal(err)
+	}
+	if tcp, okay := conn.(*net.TCPConn); okay {
+		if err := tcp.CloseWrite(); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		t.Fatalf("sidecar test connection has type %T, want *net.TCPConn", conn)
+	}
+	response := make([]byte, len("response-after-half-close"))
+	if _, err := io.ReadFull(reader, response); err != nil {
+		t.Fatal(err)
+	}
+	if string(response) != "response-after-half-close" {
+		t.Fatalf("response after client half-close = %q", response)
+	}
+}
+
+func TestSidecarShutdownClosesActiveTunnel(t *testing.T) {
+	central := startTestCentralProxy(t)
+	s, address := startTestSidecarWithState(t, central.port(), writeTestToken(t, "token-1"), nil)
+	_, conn, reader := connectThroughSidecar(t, address, "tunnel.test")
+	defer conn.Close()
+	central.nextRequest(t)
+	s.stopProxy()
+	if _, err := reader.ReadByte(); err == nil {
+		t.Fatal("tunnel remained open after sidecar shutdown")
+	}
+}
+
 func TestSidecarConnectRefusalIsRelayedAndEndsTheConnection(t *testing.T) {
 	central := startTestCentralProxy(t)
 	address := startTestSidecar(t, central.port(), writeTestToken(t, "token-1"), nil)
@@ -438,7 +546,7 @@ func TestSidecarMalformedRequestIsRefused(t *testing.T) {
 	central := startTestCentralProxy(t)
 	address := startTestSidecar(t, central.port(), writeTestToken(t, "token-1"), nil)
 	responses := exchangeRaw(t, address, "not http at all\r\n\r\n")
-	if len(responses) != 1 || responses[0].status != http.StatusBadRequest || responses[0].refusal != "reason=bad-request" {
+	if len(responses) != 1 || responses[0].status != http.StatusBadRequest || responses[0].refusal != "" {
 		t.Fatalf("malformed request responses = %+v", responses)
 	}
 	if central.connections.Load() != 0 {
@@ -449,10 +557,9 @@ func TestSidecarMalformedRequestIsRefused(t *testing.T) {
 func TestSidecarOversizedHeadIsRefused(t *testing.T) {
 	central := startTestCentralProxy(t)
 	address := startTestSidecar(t, central.port(), writeTestToken(t, "token-1"), nil)
-	// The sidecar stops reading at the limit, so its close may reset the connection before the
-	// refusal is read; either way nothing reaches the central proxy.
+	// net/http may return 431 or close a connection whose oversized write is still in flight.
 	responses := exchangeRaw(t, address, "GET http://upstream.test/ HTTP/1.1\r\nHost: upstream.test\r\nX-Padding: "+strings.Repeat("a", 2*maxHeadBytes)+"\r\n\r\n")
-	if len(responses) > 1 || (len(responses) == 1 && (responses[0].status != http.StatusBadRequest || responses[0].refusal != "reason=bad-request")) {
+	if len(responses) > 1 || (len(responses) == 1 && (responses[0].status != http.StatusRequestHeaderFieldsTooLarge || responses[0].refusal != "")) {
 		t.Fatalf("oversized head responses = %+v", responses)
 	}
 	if central.connections.Load() != 0 {
