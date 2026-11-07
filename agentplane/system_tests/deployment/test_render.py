@@ -460,6 +460,8 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     config_map = _resource(vm_fixture.objects, "ConfigMap", "environment-vm-config")
     config = json.loads(config_map["data"]["environment-runtime.json"])
     assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"] == "http://10.0.2.1:3133"
+    assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_URL"] == "http://10.0.2.1:3134"
+    assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
     assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
     oom_config_map = _resource(vm_fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])

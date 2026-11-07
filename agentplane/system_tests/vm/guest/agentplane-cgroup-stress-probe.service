@@ -1,0 +1,13 @@
+[Unit]
+Description=Opt-in bounded five-pair systemd cgroup controller stress
+ConditionKernelCommandLine=agentplane.cgroup-stress=1
+After=multi-user.target
+
+[Service]
+Type=oneshot
+Environment=AGENTPLANE_CGROUP_MODE=stress
+ExecStart=/usr/sbin/agentplane-cgroup-pilot-probe
+TimeoutStartSec=90s
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0

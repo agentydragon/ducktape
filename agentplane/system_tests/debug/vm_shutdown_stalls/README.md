@@ -37,7 +37,9 @@ run 1 VM 2 did not become Ready. Cleanup sent ACPI, but PID 1 remained in
 the domain was destroyed at the grace limit. The earlier [boot RCU stall in
 `3d2f8852`](https://app.buildbuddy.io/invocation/3d2f8852-9353-456e-9959-418555c97da4)
 had a halted CPU 1 and no timer progress on that CPU. Neither is evidence of
-the late post-ACPI shutdown stall's cause.
+the late post-ACPI shutdown stall's cause. A later [five-run full-suite observer
+batch](full_suite_five_run_boot_rcu_observer.md) passed without reproducing either
+stall; its captures were partial, as described in the report.
 
 The manual direct-VMI test now accepts `AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER=1`.
 Only that opt-in appends `agentplane.boot-rcu-observe=1` to its two-vCPU guest
