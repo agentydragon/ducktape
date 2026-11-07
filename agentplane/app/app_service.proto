@@ -159,8 +159,6 @@ message LangfuseSearchSettings {
 }
 message GetSandboxFormRequest {}
 
-message GetSandboxFormRequest {}
-
 message GetSandboxFormResponse {
   repeated string policy_sets = 1;
   NewSandboxDefaults new_sandbox_defaults = 2;
