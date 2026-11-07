@@ -8,13 +8,17 @@ import inspect
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from platform_sessions.auth import BearerAuth
+from platform_sessions.probe_types import ProbeSource
 from platform_sessions.registry import IntegrationInstance
+
+if TYPE_CHECKING:
+    from platform_sessions.probe_types import ProbeReporter
 
 logger = logging.getLogger(__name__)
 MAX_SESSION_BYTES = 65536
@@ -41,8 +45,9 @@ class Integration(Protocol):
     def metadata(self) -> dict[str, Any]: ...
     def parse(self, body: bytes) -> Any: ...
     async def status(self) -> dict[str, Any]: ...
-    async def refresh(self, transport: Any = None, *, source: str = "verify") -> None: ...
+    async def refresh(self, transport: Any = None, *, source: ProbeSource = ProbeSource.VERIFY) -> None: ...
     async def install(self, candidate: Any, transport: Any = None) -> dict[str, Any]: ...
+    def bind_probe_reporter(self, reporter: ProbeReporter) -> None: ...
 
 
 def _failure(
@@ -169,7 +174,7 @@ async def poll_integrations(integrations: Sequence[Integration], transport: Any 
     async def poll(runtime: Integration) -> None:
         while True:
             try:
-                await runtime.refresh(transport, source="periodic")
+                await runtime.refresh(transport, source=ProbeSource.PERIODIC)
             except Exception:
                 logger.error("Integration poll failed")  # noqa: TRY400 - exceptions may contain session data
             await asyncio.sleep(runtime.config.poll_interval_seconds)
