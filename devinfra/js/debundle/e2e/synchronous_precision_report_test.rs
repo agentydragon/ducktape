@@ -1122,12 +1122,12 @@ fn array_guard_references_a_direct_native_write_without_unknown_alias_widening()
     assert_eq!(witnesses[0]["affected_roots"], serde_json::json!(["array"]));
     assert_eq!(witnesses[0]["through_local_alias"], false);
     let result = execution(&fixture, "result");
-    // Keep the cross-chunk census witness even though the deferred writer
-    // does not execute in this prefix and the callback now completes.
+    // Foreign writes remain conservatively active with their known Array
+    // root. The completed callback introduces no unknown alias widening.
     assert_completed_native_integrity_inference(&result);
     let observed = prefix_observation(&result, "array_intrinsics", None);
     assert!(
-        observed["prior_affected_roots"] == serde_json::json!([])
+        observed["prior_affected_roots"] == serde_json::json!(["array"])
             && observed["uncertain_execution"] == false,
         "{result}"
     );
