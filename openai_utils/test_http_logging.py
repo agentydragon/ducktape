@@ -56,7 +56,7 @@ async def test_logs_masked_request_and_buffered_response(
             "req_url": request_record["url"],
             "req_headers": request_record["headers"],
             "req_body": "request",
-            "resp_headers": {"x-result": "saved"},
+            "resp_headers": dict(response.headers),
             "resp_body": "response caf\u00e9",
         }
         assert "Bearer secret" not in log_path.read_text()
@@ -66,8 +66,9 @@ async def test_logs_masked_request_and_buffered_response(
         assert messages[0].startswith("OpenAI Request: POST https://example.test/v1/responses\nHeaders: ")
         assert messages[0].endswith("\nBody: request")
         assert messages[1].startswith("OpenAI Response: 201 https://example.test/v1/responses\nRequest Headers: ")
+        response_headers = json.dumps(dict(response.headers), ensure_ascii=False)
         assert messages[1].endswith(
-            '\nRequest Body: request\nResponse Headers: {"x-result": "saved"}\nResponse Body: response caf\u00e9'
+            f"\nRequest Body: request\nResponse Headers: {response_headers}\nResponse Body: response caf\u00e9"
         )
         assert all('"authorization": "***"' in message and "Bearer secret" not in message for message in messages)
 
