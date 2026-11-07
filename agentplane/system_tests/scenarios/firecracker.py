@@ -84,6 +84,8 @@ def _probe(*, start: bool) -> str:
         evidence['boot_id'] = pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()
         evidence['pid1'] = pathlib.Path('/proc/1/comm').read_text().strip()
         evidence['projected_sa_token_present'] = pathlib.Path('/var/run/secrets/kubernetes.io/serviceaccount/token').exists()
+        rules = json.loads(subprocess.check_output(['agentplane', '--json', 'egress', 'rules'], text=True))
+        evidence['egress_rules_subject'] = rules['subject']
         evidence['mounts'] = {{line.split()[4]: line.split(' - ')[1].split()[0]
                               for line in pathlib.Path('/proc/self/mountinfo').read_text().splitlines()}}
         print({_REPORT!r} + json.dumps(evidence))
@@ -194,6 +196,10 @@ async def preserves_live_guest(
         assert len(reports) == 1, turn.transcript
         report = json.loads(reports[0])
         assert isinstance(report, dict), report
+        assert report["egress_rules_subject"] == {
+            "namespace": view.execution_account.account.namespace,
+            "name": view.execution_account.account.name,
+        }, report
         return report
 
     before = await probe(1)
