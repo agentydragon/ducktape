@@ -611,6 +611,36 @@ session_go_deps.module(
     sum = "h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=",
     version = "v1.36.12",
 )
+session_go_deps.module(
+    path = "go.yaml.in/yaml/v3",
+    sum = "h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=",
+    version = "v3.0.5",
+)
+session_go_deps.module(
+    path = "golang.org/x/net",
+    sum = "h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=",
+    version = "v0.59.0",
+)
+session_go_deps.module(
+    path = "golang.org/x/sys",
+    sum = "h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=",
+    version = "v0.48.0",
+)
+session_go_deps.module(
+    path = "golang.org/x/text",
+    sum = "h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=",
+    version = "v0.43.0",
+)
+session_go_deps.module(
+    path = "golang.org/x/sync",
+    sum = "h1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=",
+    version = "v0.24.0",
+)
+session_go_deps.module(
+    path = "google.golang.org/genproto/googleapis/rpc",
+    sum = "h1:29LZPNIJg+GEmJwZXruJJRwqy/wnWAYZXDtROToV/aQ=",
+    version = "v0.0.0-20260911204522-f61a6ca850bd",
+)
 use_repo(
     session_go_deps,
     "com_github_grpc_ecosystem_grpc_gateway_v2",
