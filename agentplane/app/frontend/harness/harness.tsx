@@ -18,16 +18,15 @@ import {
 } from "./network";
 import {
   ActionGroupSchema,
+  ActionIdentitySchema,
   ActionRequestSchema,
   ListActionRequestHistoryResponseSchema,
   ActionState,
   ExecutorKind,
-  ExecutionState,
   McpLifecycle,
   McpHealthSchema,
   McpUnavailableReason,
-  PolicyKind,
-  PolicySource,
+  GetActionPolicyResponseSchema,
   Verdict,
   type ActionGroup,
   type ActionRequest,
@@ -44,9 +43,8 @@ import {
   WatchDecisionsResponseSchema,
   type Decision,
 } from "../../../egress/egress_admin_pb";
-import { GetActionPolicyResponseSchema } from "../../../action_service/action_service_pb";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
-import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { DurationSchema, TimestampSchema, ValueSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { ServiceAccountIdentitySchema } from "../../../proto/identity_pb";
 import { OwnerReferenceSchema } from "../../../proto/kubernetes_pb";
 import {
@@ -64,7 +62,6 @@ import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../t
 import "@mantine/core/styles.css";
 
 import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
-import { TimestampSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 

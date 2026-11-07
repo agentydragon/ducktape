@@ -11,9 +11,9 @@ import {
   ActionRequestSchema,
   ActionState,
   Verdict as ProtoVerdict,
+  type ActionRequest,
 } from "../../../action_service/action_service_pb";
 import { DecideActionRequestRequestSchema } from "../../../action_service/operator_action_service_pb";
-import type { ActionRequest } from "../../../action_service/action_service_pb";
 import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../actions/testing/proto_fixtures";
 
 type PushMessage =

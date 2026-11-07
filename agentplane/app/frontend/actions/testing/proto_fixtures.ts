@@ -2,7 +2,7 @@ import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 
 import {
-  ActionState,
+  type ActionState,
   GetActionRequestResponseSchema,
   ListActionGroupsResponseSchema,
   ListActionRequestHistoryResponseSchema,

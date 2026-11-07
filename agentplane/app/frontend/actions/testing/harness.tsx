@@ -7,7 +7,6 @@ import { TimestampSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import { api } from "../../client";
 import {
-  ActionGroupSchema,
   ActionRequestSchema,
   ActionState,
   ActionIdentitySchema,
