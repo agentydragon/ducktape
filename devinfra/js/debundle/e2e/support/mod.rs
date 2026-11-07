@@ -231,7 +231,7 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     }
 }
 
-/// Preserve assessment evidence before an unexpected exit drops its tempdir.
+/// Preserve reports and any emitted app before an unexpected exit drops its tempdir.
 /// Earlier pipeline failures can legitimately precede individual reports.
 fn preserve_failed_fixture_reports(setup: &PreparedFixture, chunk_id: &str) {
     let output = PathBuf::from(
@@ -262,6 +262,42 @@ fn preserve_failed_fixture_reports(setup: &PreparedFixture, chunk_id: &str) {
             });
         }
     }
+
+    let program_graph = setup.report_root.join("program_graph.json.gz");
+    if program_graph.exists() {
+        fs::copy(&program_graph, output.join("program_graph.json.gz")).unwrap_or_else(|error| {
+            panic!(
+                "preserve failed fixture report {}: {error}",
+                program_graph.display()
+            )
+        });
+    }
+
+    let app_root = setup.out_root.join(APP_DIR);
+    if app_root.is_dir() {
+        copy_generated_tree(&app_root, &output.join(APP_DIR)).unwrap_or_else(|error| {
+            panic!(
+                "preserve failed fixture emitted tree {}: {error}",
+                app_root.display()
+            )
+        });
+    }
+}
+
+/// Copy the generated app while retaining module paths, package metadata, and assets.
+fn copy_generated_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_generated_tree(&source_path, &destination_path)?;
+        } else {
+            fs::copy(&source_path, &destination_path)?;
+        }
+    }
+    Ok(())
 }
 
 /// Runs `opts` and asserts the realizability gate rejected it: returns the blocking SCC of
@@ -1120,6 +1156,29 @@ fn current_test_prefix() -> String {
         .collect::<Vec<_>>()
         .join("-");
     format!("debundle-e2e-{compact}-")
+}
+
+/// Failed fixture artifact directories retained by the current test thread.
+pub fn failed_fixture_dirs_for_current_test() -> Vec<PathBuf> {
+    let outputs = PathBuf::from(
+        std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
+            .expect("Bazel undeclared outputs directory is set"),
+    )
+    .join("failed-fixtures");
+    let prefix = current_test_prefix();
+    let Ok(entries) = fs::read_dir(outputs) else {
+        return Vec::new();
+    };
+    let mut directories = entries
+        .map(|entry| entry.expect("read failed fixture output entry"))
+        .filter(|entry| {
+            entry.file_type().is_ok_and(|file_type| file_type.is_dir())
+                && entry.file_name().to_string_lossy().starts_with(&prefix)
+        })
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    directories.sort();
+    directories
 }
 
 pub fn write_text_file(path: &Path, content: &str) {
