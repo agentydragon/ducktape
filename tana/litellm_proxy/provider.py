@@ -237,12 +237,9 @@ class TanaProxyClient:
     ) -> TanaChatResult:
         _reject_unsupported(optional_params)
         id_token = await self._id_token_for_request(http, refresh_token)
-        if _has_tools(optional_params):
-            return await self._tool_chat_completion(http, id_token, model, messages, optional_params)
-        args = _basic_chat_args(self._cfg.user_context, _strip_tana_prefix(model), messages, optional_params, self._cfg)
-        body = {"isStreaming": False, "args": args}
+        url, endpoint, body = self._build_request(model, messages, optional_params, streaming=False)
         response = await http.post(
-            f"{self._cfg.functions_base_url.rstrip('/')}/llmProxy",
+            url,
             json=body,
             headers={
                 "Authorization": f"Bearer {id_token}",
@@ -250,36 +247,7 @@ class TanaProxyClient:
                 "Content-Type": "application/json",
             },
         )
-        _raise_for_status(response, "llmProxy", model)
-        return _parse_tana_response(response)
-
-    async def _tool_chat_completion(
-        self,
-        http: httpx.AsyncClient,
-        id_token: str,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any],
-    ) -> TanaChatResult:
-        body = {
-            "isStreaming": False,
-            "args": {
-                "userContext": self._cfg.tool_user_context,
-                "messages": _normalize_messages(messages),
-                "options": _tana_options(_strip_tana_prefix(model), optional_params, self._cfg),
-            },
-            "dynamicTools": _dynamic_tools(optional_params),
-        }
-        response = await http.post(
-            f"{self._cfg.functions_base_url.rstrip('/')}/llmProxyNext",
-            json=body,
-            headers={
-                "Authorization": f"Bearer {id_token}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-        )
-        _raise_for_status(response, "llmProxyNext", model)
+        _raise_for_status(response, endpoint, model)
         return _parse_tana_response(response)
 
     async def _id_token_for_request(self, http: httpx.AsyncClient, refresh_token: str | None = None) -> str:
@@ -325,7 +293,7 @@ class TanaProxyClient:
     ) -> Iterator[GenericStreamingChunk]:
         _reject_unsupported(optional_params)
         id_token = self._id_token_for_request_sync(http, refresh_token)
-        url, body = self._stream_request(_strip_tana_prefix(model), messages, optional_params)
+        url, endpoint, body = self._build_request(model, messages, optional_params, streaming=True)
         headers = {
             "Authorization": f"Bearer {id_token}",
             "Accept": "text/event-stream, application/json",
@@ -334,7 +302,6 @@ class TanaProxyClient:
         with http.stream("POST", url, json=body, headers=headers) as response:
             if response.status_code >= 400:
                 response.read()
-                endpoint = "llmProxyNext" if _has_tools(optional_params) else "llmProxy"
                 _raise_for_status(response, f"{endpoint} streaming", model)
             yield from _parse_tana_stream_lines(response.iter_lines())
 
@@ -367,7 +334,7 @@ class TanaProxyClient:
     ) -> AsyncIterator[GenericStreamingChunk]:
         _reject_unsupported(optional_params)
         id_token = await self._id_token_for_request(http, refresh_token)
-        url, body = self._stream_request(_strip_tana_prefix(model), messages, optional_params)
+        url, endpoint, body = self._build_request(model, messages, optional_params, streaming=True)
         headers = {
             "Authorization": f"Bearer {id_token}",
             "Accept": "text/event-stream, application/json",
@@ -376,34 +343,34 @@ class TanaProxyClient:
         async with http.stream("POST", url, json=body, headers=headers) as response:
             if response.status_code >= 400:
                 await response.aread()
-                endpoint = "llmProxyNext" if _has_tools(optional_params) else "llmProxy"
                 _raise_for_status(response, f"{endpoint} streaming", model)
             async for chunk in _parse_tana_stream_lines_async(response.aiter_lines()):
                 yield chunk
 
-    def _stream_request(
-        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any]
-    ) -> tuple[str, dict[str, Any]]:
+    def _build_request(
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any], *, streaming: bool
+    ) -> tuple[str, str, dict[str, Any]]:
         if _has_tools(optional_params):
-            return (
-                f"{self._cfg.functions_base_url.rstrip('/')}/llmProxyNext",
-                {
-                    "isStreaming": True,
-                    "args": {
-                        "userContext": self._cfg.tool_user_context,
-                        "messages": _normalize_messages(messages),
-                        "options": _tana_options(model, optional_params, self._cfg),
-                    },
-                    "dynamicTools": _dynamic_tools(optional_params),
+            endpoint = "llmProxyNext"
+            body = {
+                "isStreaming": streaming,
+                "args": {
+                    "userContext": self._cfg.tool_user_context,
+                    "messages": _normalize_messages(messages),
+                    "options": _tana_options(_strip_tana_prefix(model), optional_params, self._cfg),
                 },
-            )
-        return (
-            f"{self._cfg.functions_base_url.rstrip('/')}/llmProxy",
-            {
-                "isStreaming": True,
-                "args": _basic_chat_args(self._cfg.user_context, model, messages, optional_params, self._cfg),
-            },
-        )
+                "dynamicTools": _dynamic_tools(optional_params),
+            }
+        else:
+            endpoint = "llmProxy"
+            body = {
+                "isStreaming": streaming,
+                "args": _basic_chat_args(
+                    self._cfg.user_context, _strip_tana_prefix(model), messages, optional_params, self._cfg
+                ),
+            }
+        url = f"{self._cfg.functions_base_url.rstrip('/')}/{endpoint}"
+        return url, endpoint, body
 
     def _id_token_for_request_sync(self, http: httpx.Client, refresh_token: str | None = None) -> str:
         cache_key = refresh_token or self._refresh_token
