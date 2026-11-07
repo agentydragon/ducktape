@@ -6,7 +6,7 @@ import pytest_bazel
 import tiktoken.load
 
 from mcp_infra.testing.naming import build_mcp_function
-from openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
+from openai_utils.model import FunctionToolParam, Model, ResponsesRequest, WireRequest
 from openai_utils.types import ReasoningEffort
 from x.inop.config import (
     DebugConfig,
@@ -36,7 +36,7 @@ from x.inop.io.jsonl_logger import JSONLLogger
 from x.inop.runners.base import AgentRunner
 
 
-class FakeModelLayer(OpenAIModelProto):
+class FakeModelLayer(Model):
     """Protocol-level fake model used via DI factory (make_model)."""
 
     model = "fake-model"
@@ -45,7 +45,8 @@ class FakeModelLayer(OpenAIModelProto):
         self.context_window_tokens = 200000
         self._responses_factory = responses_factory
 
-    async def responses_create(self, req: ResponsesRequest):
+    async def sample(self, req: WireRequest):
+        assert isinstance(req, ResponsesRequest)
         # Access typed fields directly (no getattr duck-typing)
         tool_choice = req.tool_choice
         tools = req.tools or []

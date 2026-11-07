@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any, cast
 
 from openai import AsyncOpenAI
@@ -33,7 +31,7 @@ from openai_utils.model import (
     InputItem,
     InputTextPart,
     InputTokensDetails,
-    OpenAIModelProto,
+    Model,
     OutputText,
     OutputTextPart,
     OutputTokensDetails,
@@ -47,89 +45,14 @@ from openai_utils.model import (
     ToolChoice,
     ToolChoiceFunction,
     UserMessage,
+    WireRequest,
 )
 from openai_utils.requests import create_chat_completion
-from openai_utils.types import ReasoningParams
-
-type AgentWireBody = ResponsesRequest | CompletionCreateParamsNonStreaming
 
 _CHAT_COMPLETIONS_KICKOFF_MESSAGE = "Begin the task using the available tools."
 
 
-@dataclass(frozen=True)
-class AgentModelRequest:
-    input: list[InputItem] | str
-    instructions: str | None = None
-    tools: list[FunctionToolParam] | None = None
-    tool_choice: ToolChoice | None = None
-    parallel_tool_calls: bool | None = None
-    stream: bool = False
-    store: bool | None = None
-    reasoning: ReasoningParams | None = None
-    max_output_tokens: int | None = None
-
-    def to_responses_request(self) -> ResponsesRequest:
-        return ResponsesRequest(
-            input=self.input,
-            instructions=self.instructions,
-            tools=self.tools,
-            tool_choice=self.tool_choice,
-            parallel_tool_calls=self.parallel_tool_calls,
-            stream=self.stream,
-            store=self.store,
-            reasoning=self.reasoning,
-            max_output_tokens=self.max_output_tokens,
-        )
-
-
-@dataclass(frozen=True)
-class PreparedAgentModelRequest:
-    api_shape: LLMApiShape
-    request: AgentModelRequest
-    wire_body: AgentWireBody
-
-
-@dataclass(frozen=True)
-class AgentModelResult:
-    id: str
-    usage: ResponseUsage | None
-    output: list[ResponseOutItem]
-
-
-class AgentModelProto(ABC):
-    api_shape: LLMApiShape
-
-    @property
-    @abstractmethod
-    def model(self) -> str: ...
-
-    @abstractmethod
-    def prepare(self, request: AgentModelRequest) -> PreparedAgentModelRequest: ...
-
-    @abstractmethod
-    async def sample(self, request: PreparedAgentModelRequest) -> AgentModelResult: ...
-
-
-@dataclass
-class ResponsesAgentModel(AgentModelProto):
-    base: OpenAIModelProto
-    api_shape: LLMApiShape = LLMApiShape.RESPONSES
-
-    @property
-    def model(self) -> str:
-        return self.base.model
-
-    def prepare(self, request: AgentModelRequest) -> PreparedAgentModelRequest:
-        responses_request = request.to_responses_request()
-        wire_body = responses_request.model_copy(update={"model": self.model})
-        return PreparedAgentModelRequest(api_shape=self.api_shape, request=request, wire_body=wire_body)
-
-    async def sample(self, request: PreparedAgentModelRequest) -> AgentModelResult:
-        result = await self.base.responses_create(request.request.to_responses_request())
-        return _agent_result_from_responses(result)
-
-
-class ChatCompletionsAgentModel(AgentModelProto):
+class ChatCompletionsAgentModel(Model):
     api_shape = LLMApiShape.CHAT_COMPLETIONS
 
     def __init__(self, *, client: AsyncOpenAI, model: str) -> None:
@@ -140,7 +63,7 @@ class ChatCompletionsAgentModel(AgentModelProto):
     def model(self) -> str:
         return self._model
 
-    def prepare(self, request: AgentModelRequest) -> PreparedAgentModelRequest:
+    def prepare(self, request: ResponsesRequest) -> CompletionCreateParamsNonStreaming:
         body: CompletionCreateParamsNonStreaming = {
             "model": self.model,
             "messages": _input_to_chat_messages(request.input, request.instructions),
@@ -154,12 +77,12 @@ class ChatCompletionsAgentModel(AgentModelProto):
             body["parallel_tool_calls"] = request.parallel_tool_calls
         if request.max_output_tokens is not None:
             body["max_completion_tokens"] = request.max_output_tokens
-        return PreparedAgentModelRequest(api_shape=self.api_shape, request=request, wire_body=body)
+        return body
 
-    async def sample(self, request: PreparedAgentModelRequest) -> AgentModelResult:
-        response = await create_chat_completion(
-            self._client, cast(CompletionCreateParamsNonStreaming, request.wire_body)
-        )
+    async def sample(self, request: WireRequest) -> ResponsesResult:
+        if not isinstance(request, dict):
+            raise TypeError("ChatCompletionsAgentModel expects a prepared chat request")
+        response = await create_chat_completion(self._client, request)
         choice = response.choices[0]
         message = choice.message
         output: list[ResponseOutItem] = []
@@ -184,11 +107,7 @@ class ChatCompletionsAgentModel(AgentModelProto):
                 )
             )
 
-        return AgentModelResult(id=response.id, usage=_chat_usage_to_response_usage(response.usage), output=output)
-
-
-def _agent_result_from_responses(result: ResponsesResult) -> AgentModelResult:
-    return AgentModelResult(id=result.id, usage=result.usage, output=result.output)
+        return ResponsesResult(id=response.id, usage=_chat_usage_to_response_usage(response.usage), output=output)
 
 
 def _content_text(content: Sequence[InputTextPart | OutputTextPart | OutputText] | None) -> str:

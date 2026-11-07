@@ -379,12 +379,16 @@ async def test_validator_matches_openai_reality(
     client = build_client(live_openai_model)
     openai_error = None
     try:
-        result = await client.responses_create(
-            ResponsesRequest(
-                input=[UserMessage.text("Test")],
-                tools=[
-                    FunctionToolParam(name="test_function", description="Test function", parameters=schema, strict=True)
-                ],
+        result = await client.sample(
+            client.prepare(
+                ResponsesRequest(
+                    input=[UserMessage.text("Test")],
+                    tools=[
+                        FunctionToolParam(
+                            name="test_function", description="Test function", parameters=schema, strict=True
+                        )
+                    ],
+                )
             )
         )
         assert result is not None

@@ -15,7 +15,7 @@ async def test_non_context_length_bad_request_propagates() -> None:
     client = mock_openai_client(error_transport("invalid_request_error", "invalid request"))
 
     with pytest.raises(BadRequestError):
-        await client.responses_create(ResponsesRequest(input="hi", max_output_tokens=16))
+        await client.sample(client.prepare(ResponsesRequest(input="hi", max_output_tokens=16)))
 
 
 if __name__ == "__main__":

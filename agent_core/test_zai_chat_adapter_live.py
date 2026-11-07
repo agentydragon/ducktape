@@ -8,9 +8,9 @@ import pytest_bazel
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
-from agent_core.model import AgentModelRequest, ChatCompletionsAgentModel
+from agent_core.model import ChatCompletionsAgentModel
 from openai_utils.api_shape import LLMApiShape
-from openai_utils.model import FunctionCallItem, FunctionToolParam, UserMessage
+from openai_utils.model import FunctionCallItem, FunctionToolParam, ResponsesRequest, UserMessage
 
 _ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
 # z.ai also exposes an Anthropic Messages-shaped endpoint; the SDK posts to {base_url}/v1/messages.
@@ -28,7 +28,7 @@ async def _sample_tool_call_arguments(*, parameters: dict, strict: bool, user_te
 
     client = AsyncOpenAI(base_url=_ZAI_BASE_URL, api_key=api_key)
     model = ChatCompletionsAgentModel(client=client, model=os.environ.get("ZAI_MODEL", "glm-4.6"))
-    request = AgentModelRequest(
+    request = ResponsesRequest(
         input=[UserMessage.text(user_text)],
         instructions="Use start_critic. Do not answer in prose.",
         tools=[
@@ -43,7 +43,7 @@ async def _sample_tool_call_arguments(*, parameters: dict, strict: bool, user_te
         max_output_tokens=512,
     )
     prepared = model.prepare(request)
-    assert prepared.api_shape == LLMApiShape.CHAT_COMPLETIONS
+    assert model.api_shape == LLMApiShape.CHAT_COMPLETIONS
     try:
         result = await model.sample(prepared)
     finally:
@@ -241,7 +241,7 @@ async def test_zai_chat_adapter_tool_call_live() -> None:
 
     client = AsyncOpenAI(base_url="https://api.z.ai/api/coding/paas/v4", api_key=api_key)
     model = ChatCompletionsAgentModel(client=client, model=os.environ.get("ZAI_MODEL", "glm-4.6"))
-    request = AgentModelRequest(
+    request = ResponsesRequest(
         input=[UserMessage.text('Call record_result with exactly {"answer": "ok"}.')],
         instructions="Use record_result. Do not answer in prose.",
         tools=[
@@ -262,7 +262,7 @@ async def test_zai_chat_adapter_tool_call_live() -> None:
     )
 
     prepared = model.prepare(request)
-    assert prepared.api_shape == LLMApiShape.CHAT_COMPLETIONS
+    assert model.api_shape == LLMApiShape.CHAT_COMPLETIONS
 
     try:
         result = await model.sample(prepared)

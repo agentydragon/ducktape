@@ -11,16 +11,17 @@ from agent_core.loop_control import RequireAnyTool
 from openai_utils.model import (
     AssistantMessage,
     AssistantMessageOut,
-    OpenAIModelProto,
+    Model,
     OutputText,
     ResponsesRequest,
     ResponsesResult,
     SystemMessage,
     UserMessage,
+    WireRequest,
 )
 
 
-class SummarizingClient(OpenAIModelProto):
+class SummarizingClient(Model):
     """Test client that returns a configurable summary response."""
 
     model = "gpt-4o-mini-test"
@@ -29,7 +30,8 @@ class SummarizingClient(OpenAIModelProto):
         self.summary_text = summary_text
         self.call_count = 0
 
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+    async def sample(self, req: WireRequest) -> ResponsesResult:
+        assert isinstance(req, ResponsesRequest)
         self.call_count += 1
         return ResponsesResult(
             id="test-response-id",

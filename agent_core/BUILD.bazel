@@ -25,7 +25,6 @@ py_library(
         ":tool_provider",
         "//openai_utils:api_shape",
         "//openai_utils:model",
-        "@pypi//openai",
         "@pypi//pydantic",
     ],
 )
@@ -49,7 +48,6 @@ py_library(
         "//openai_utils:api_shape",
         "//openai_utils:model",
         "//openai_utils:requests",
-        "//openai_utils:types",
         "@pypi//openai",
         "@pypi//pydantic",
     ],
@@ -64,7 +62,6 @@ py_library(
         ":events",
         ":handler",
         ":loop_control",
-        ":model",
         ":tool_provider",
         "//openai_utils:model",
         "//openai_utils:pydantic_strict_mode",
