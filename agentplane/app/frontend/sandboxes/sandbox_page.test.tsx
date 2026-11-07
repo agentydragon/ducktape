@@ -239,22 +239,24 @@ async function render(
     if (path === "/upstream/app-config/v1/frontend-config") {
       return Promise.resolve(
         Response.json({
-          traceSearch: traceSearchSettings
-            ? {
-                grafanaBaseUrl: traceSearchSettings.grafana_base_url,
-                tempoDatasourceUid: traceSearchSettings.tempo_datasource_uid,
-                deploymentEnvironment: traceSearchSettings.deployment_environment,
-              }
-            : null,
-          langfuseSearch: langfuseSearchSettings
-            ? {
-                baseUrl: langfuseSearchSettings.base_url,
-                projectId: langfuseSearchSettings.project_id,
-                sessionMetadataKey: langfuseSearchSettings.session_metadata_key,
-                sandboxNamespaceMetadataKey: langfuseSearchSettings.sandbox_namespace_metadata_key,
-                sandboxServiceAccountMetadataKey: langfuseSearchSettings.sandbox_service_account_metadata_key,
-              }
-            : null,
+          frontendConfig: {
+            traceSearch: traceSearchSettings
+              ? {
+                  grafanaBaseUrl: traceSearchSettings.grafana_base_url,
+                  tempoDatasourceUid: traceSearchSettings.tempo_datasource_uid,
+                  deploymentEnvironment: traceSearchSettings.deployment_environment,
+                }
+              : null,
+            langfuseSearch: langfuseSearchSettings
+              ? {
+                  baseUrl: langfuseSearchSettings.base_url,
+                  projectId: langfuseSearchSettings.project_id,
+                  sessionMetadataKey: langfuseSearchSettings.session_metadata_key,
+                  sandboxNamespaceMetadataKey: langfuseSearchSettings.sandbox_namespace_metadata_key,
+                  sandboxServiceAccountMetadataKey: langfuseSearchSettings.sandbox_service_account_metadata_key,
+                }
+              : null,
+          },
         })
       );
     }

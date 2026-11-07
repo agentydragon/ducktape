@@ -191,10 +191,10 @@ beforeEach(() => {
   dispatchWatches = stubWatchFetch().served;
   threadRows = null;
   noticeInboxes = [];
-  vi.spyOn(appConfigClient, "getFrontendConfig").mockResolvedValue({
+  vi.spyOn(appConfigClient, "getFrontendConfig").mockImplementation(async () => ({
     trace_search: traceSearchSettings,
     langfuse_search: langfuseSearchSettings,
-  });
+  }));
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],

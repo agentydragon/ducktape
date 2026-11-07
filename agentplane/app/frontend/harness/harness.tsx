@@ -2645,17 +2645,19 @@ routes.push(
     "GET",
     /^\/upstream\/app-config\/v1\/frontend-config$/,
     () => ({
-      traceSearch: {
-        grafanaBaseUrl: "https://grafana.test.invalid",
-        tempoDatasourceUid: "tempo-test",
-        deploymentEnvironment: "agentplane-visual-test",
-      },
-      langfuseSearch: {
-        baseUrl: "https://langfuse.test.invalid",
-        projectId: "langfuse-visual-test",
-        sessionMetadataKey: "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
-        sandboxNamespaceMetadataKey: "attributes.agentplane.namespace",
-        sandboxServiceAccountMetadataKey: "attributes.agentplane.service_account",
+      frontendConfig: {
+        traceSearch: {
+          grafanaBaseUrl: "https://grafana.test.invalid",
+          tempoDatasourceUid: "tempo-test",
+          deploymentEnvironment: "agentplane-visual-test",
+        },
+        langfuseSearch: {
+          baseUrl: "https://langfuse.test.invalid",
+          projectId: "langfuse-visual-test",
+          sessionMetadataKey: "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
+          sandboxNamespaceMetadataKey: "attributes.agentplane.namespace",
+          sandboxServiceAccountMetadataKey: "attributes.agentplane.service_account",
+        },
       },
     }),
   ],
