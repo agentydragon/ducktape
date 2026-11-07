@@ -247,7 +247,8 @@ async def test_system_status_uses_generated_appservice_facade(http: httpx.AsyncC
     status = await http.get("/upstream/app/v1/system/status")
     assert status.status_code == 200, status.text
     components = status.json().get("components")
-    assert isinstance(components, list) and components
+    assert isinstance(components, list)
+    assert components
     assert all(
         component["state"] in {"SYSTEM_COMPONENT_STATE_OK", "SYSTEM_COMPONENT_STATE_DOWN"}
         and isinstance(component.get("checkedAt"), str)
