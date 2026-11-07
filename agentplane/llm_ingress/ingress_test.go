@@ -27,9 +27,13 @@ import (
 
 	"go.opentelemetry.io/otel/baggage"
 
+	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 )
@@ -896,7 +900,14 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcAddress := grpcListener.Addr().String()
+	grpcPort := grpcListener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
+	_ = grpcListener.Close()
 
 	var logs bytes.Buffer
 	command := exec.Command(binary)
@@ -906,7 +917,7 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
 		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",
 		"AGENTPLANE_LLM_INGRESS_PORT=" + strconv.Itoa(port),
-		"AGENTPLANE_LLM_INGRESS_GRPC_PORT=0",
+		"AGENTPLANE_LLM_INGRESS_GRPC_PORT=" + strconv.Itoa(grpcPort),
 		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=test-environment-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
@@ -964,6 +975,19 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 
+	conn, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	lookupCtx, cancelLookup := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelLookup()
+	lookupCtx = metadata.AppendToOutgoingContext(lookupCtx, "authorization", "Bearer "+tokenA)
+	modelResponse, err := modelconfigpb.NewModelConfigServiceClient(conn).GetModelConfig(lookupCtx, &modelconfigpb.GetModelConfigRequest{Model: "configured/model"})
+	if err != nil || modelResponse.TotalContextBudgetTokens == nil || modelResponse.GetTotalContextBudgetTokens() != 8192 {
+		t.Fatalf("binary gRPC model response: %v, %v", modelResponse, err)
+	}
+
 	for range 2 {
 		messageResponse, messageBody := request(t, client, http.MethodPost, baseURL+"/v1/messages",
 			`{"messages":[]}`, bearer(tokenA))
@@ -972,7 +996,7 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		}
 	}
 	if got := reviews.Load(); got != 1 {
-		t.Fatalf("TokenReview calls = %d, want one shared by both requests", got)
+		t.Fatalf("TokenReview calls = %d, want one shared by the gRPC and HTTP requests", got)
 	}
 	backendMu.Lock()
 	gotBackendRequests := backendRequests
