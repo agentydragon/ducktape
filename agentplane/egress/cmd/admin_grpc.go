@@ -10,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
-	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/rules"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
@@ -47,16 +46,15 @@ func (c *config) adminGRPCCallers() ([]auth.Account, error) {
 	return callers, nil
 }
 
-// adminServer is the admin listener's gRPC server: the standard health service, and the EgressAdmin API
-// beside it when service is set.
+// adminServer serves rules and standard health, plus EgressAdmin when configured.
 type adminServer struct {
 	*grpc.Server
 	service *admin.Service
 }
 
-// newAdminServer serves the EgressAdmin API when c configures the admin gRPC API, admitting the
-// callers and the audience from c. options holds what the services read.
-func newAdminServer(c config, reviews auth.TokenReviews, options admin.ServiceOptions, resolver *auth.Resolver, verifier *identity.Verifier, index *policy.Index) (adminServer, error) {
+// newAdminServer applies each service's own authorization on the shared listener. options holds
+// what the services read; the rules resolver admits sandbox workloads and admin uses its allowlist.
+func newAdminServer(c config, reviews auth.TokenReviews, options admin.ServiceOptions, resolver *auth.Resolver, index *policy.Index) (adminServer, error) {
 	methods := auth.HealthMethods()
 	var service *admin.Service
 	if c.adminGRPCEnabled() {
@@ -80,7 +78,7 @@ func newAdminServer(c config, reviews auth.TokenReviews, options admin.ServiceOp
 	methods[egressrulespb.EgressRules_GetRules_FullMethodName] = auth.AnyAccount(resolver)
 	grpcServer := grpc.NewServer(append(methods.ServerOptions(0), observability.GRPCServerOption())...)
 	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index))
-	egressrulespb.RegisterEgressRulesServer(grpcServer, rules.NewService(verifier, index))
+	egressrulespb.RegisterEgressRulesServer(grpcServer, rules.NewService(index))
 	if service != nil {
 		egressadminpb.RegisterEgressAdminServer(grpcServer, service)
 	}

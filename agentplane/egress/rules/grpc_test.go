@@ -27,9 +27,13 @@ import (
 // reviews, and returns a client for it.
 func serveGRPC(t *testing.T, reviews auth.TokenReviews, index *policy.Index) egressrulespb.EgressRulesClient {
 	t.Helper()
-	service := serviceOver(t, reviews, index)
+	resolver, err := auth.NewResolver(reviews, hopAudience, []string{namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(index)
 	listener := bufconn.Listen(1 << 20)
-	server := grpc.NewServer()
+	server := grpc.NewServer(auth.Methods{egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnyAccount(resolver)}.ServerOptions(0)...)
 	egressrulespb.RegisterEgressRulesServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)

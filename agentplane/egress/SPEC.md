@@ -119,39 +119,17 @@ Unknown settings are refused, including the former flat settings.
 
 ## Upstream address
 
-- The rules API publishes `/llms.txt` and linked Markdown guides under `/docs/agents/` for
-  credential presentation and refusal recovery, and the OpenAPI document of `/v1/rules` at
-  `/openapi.json`. They contain no credentials or caller-specific rules;
-  effective access still comes from the authenticated `/v1/rules` view.
-- **A sandbox can read the rules that apply to it**, at
-  `http://egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
-  existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the
-  subject it is of and the egress policies an active binding grants it: each rule's
-  hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written
-  `description`, and every target — which is what a client needs to build the value and to know whose
-  credential it is spending, since a header name and a placeholder leave open both whether the value
-  reads `Bearer <placeholder>` or the placeholder bare, and what the token behind it can do. Never
-  the Secret, its key,
-  or its value — the projection is built from its own field list, so a field added to a resource
-  does not appear here until someone writes it in.
-  The caller sends the published inert `agentplane-credential-agentplane-workload` placeholder
-  in ordinary `Authorization: Bearer` through the configured proxy. An active ordinary
-  `basic` egress policy/binding authorizes exact substitution using `agentplane-workload`.
-  Missing or forged destination auth and unbound placeholders fail closed.
-  The destination independently authenticates its Authorization bearer with TokenReview and live
-  Pod resolution, without relying on proxy-hop identity or the caller's source address. The answer
-  is of the subject that bearer proves, projected from the answering replica's enforcement index;
-  this informational snapshot need not come from the replica that admitted the API request.
-  Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
-  API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
-  Operator admin endpoints are not available through this route. The separate admin gRPC listener
-  also serves `EgressRules.GetRules`, authorizing a workload bearer independently of the admin
-  allowlist. The Sandbox calls it through the sidecar's local gRPC route, which replaces the inert
-  bearer with its own projected workload token; a VM guest uses its launcher relay for the same route.
-  `GET /v1/rules` is the generated HTTP/JSON form of the gRPC `EgressRules.GetRules`
-  (<egress_rules.proto>), served to the facade on a loopback listener: proto-JSON answers, and a
-  bearer that proves no workload fails `401` as a `google.rpc.Status` body (`503` when it could not
-  be reviewed), with the same subject and redaction either way.
+- **A sandbox can read its effective egress rules** with `agentplane egress rules`. The CLI calls
+  `EgressRules.GetRules` through the local sidecar gRPC route (the launcher relay for VM guests).
+  The sidecar replaces the inert bearer with its own Pod-bound workload token. The shared gRPC
+  listener authorizes this method independently of the operator-only admin methods and returns
+  only the ServiceAccount that token proves and its redacted rules: hosts, methods, paths, credential
+  descriptions, placeholders and presentation targets, never Secret names, keys or values. No
+  request field selects another subject. A missing or invalid bearer fails closed. The response is
+  an informational snapshot of the answering replica's enforcement index.
+- `agentplane egress guide` and `agentplane egress guide credentials` print the bundled Markdown
+  workflow guides without requiring a service connection. Effective access comes from the live
+  authenticated rules response.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;

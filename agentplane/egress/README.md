@@ -6,10 +6,8 @@ caller's Pod-bound token, decides the request from the `egress` rules of `Policy
 one decision is in <../docs/egress_composition.md>. Transport choices and rejected alternatives are in
 <docs/design.md>.
 
-The rules API serves [`/llms.txt`](docs/agents/llms.txt), its linked credential/refusal guide under
-`/docs/agents/` and the OpenAPI document of `/v1/rules` at `/openapi.json`. The document is generated from
-[`egress_rules.proto`](egress_rules.proto), so a field is described once, in the proto. Update the
-guide when credential presentation or refusal behavior changes.
+The CLI bundles the [egress guide](docs/agents/llms.txt) and its credential and refusal guide.
+Run `agentplane egress guide` or `agentplane egress guide credentials` inside a Sandbox.
 
 ```sh
 bbr test //agentplane/egress/...
@@ -37,9 +35,7 @@ One Go package per concern:
   the PolicySets and PolicyBindings, keeps the `EgressReady` condition on each binding, and bounds
   watch periods for every kind; this package adds EgressCredentials and Secrets through
   Kubernetes-generated clients and shared informers from `client/`.
-- `rules`: the agent-facing `egress.agentplane-staging.svc.cluster.local/v1/rules` API, on its own
-  independently authenticated listener: the generated HTTP/JSON facade of the gRPC `EgressRules` service,
-  beside the agent documentation.
+- `rules`: the `EgressRules` gRPC service, which projects the authenticated workload's effective rules.
 - `decision` and `history`: admission records, and their bounded best-effort write to the shared
   PostgreSQL history; `admin` serves that history, a change stream, readiness and liveness, and
   those reads again as the gRPC `EgressAdmin` and standard health services.
@@ -172,28 +168,11 @@ both appends the key to the local outgoing gRPC context and retains it in the ne
 
 ## Rules API
 
-Agents send an ordinary proxied HTTP `GET` to
-`http://egress.agentplane-staging.svc.cluster.local/v1/rules` with
-`Authorization: Bearer agentplane-credential-agentplane-workload`. The placeholder is inert and
-published in nonsecret runner instructions. The default `basic` egress policy binds this exact
-host, method, and path to the `agentplane-workload` credential's `schemeToken` target.
-Central applies normal exact-placeholder substitution using the authenticated sidecar workload
-context; no rules-specific proxy dispatch or credential injection mode is involved.
-
-Service port `80` targets the separate HTTP API listener on `8082`; port `8888` remains the forward
-proxy. Central resolves and dials the API like any other destination admitted by an egress policy.
-The endpoint validates ordinary `Authorization` through the same `workload_auth` resolver,
-reviewing the bearer itself rather than inheriting the tunnel's verdict: one proxied read is two
-reviews, deliberately, each reused for 30 s. The API sees central's
-source address, not the caller's Pod address; proxy-hop identity and caller metadata are not API
-identity authorities. Missing or forged destination auth fails closed.
-
-The API shares the central process's current enforcement `Index`, which projects the subject the
-bearer proved and returns only the redacted field allowlist. Operator
-Operator decision and health reads are on the separate admin listener ([Admin gRPC API](#admin-grpc-api)), not the rules API.
-Network policy admits the agent API from central egress only. Service target-port separation prevents recursion.
-The Service may select a different replica from the one that admitted the request. The answer is
-an informational snapshot of the answering replica, not a global acknowledgement or admission promise.
+`agentplane egress rules` calls `EgressRules.GetRules` through the Sandbox sidecar's local gRPC
+route. VM guests call the same route on their launcher relay. The relay replaces the CLI's inert
+placeholder with the Sandbox Pod's projected workload token. The shared listener authenticates it
+independently of the operator-only `EgressAdmin` methods, then returns the redacted rules for the
+proven ServiceAccount from that replica's enforcement index.
 
 ## Admin gRPC API
 
@@ -211,8 +190,7 @@ sends no bearer; `GetHealth` does not. `Watch` is not served.
 The admin listener also hosts `EgressRules.GetRules`, authenticating the caller with the forward
 listener workload audience independently of the admin allowlist. Staging network policy currently
 admits the app and the Sandbox sidecar to that listener. The sidecar offers a local gRPC route
-whose token identifies the Sandbox; the CLI dials that route for rules. The HTTP facade remains available
-for clients on the previous configuration until the rollout is complete.
+whose token identifies the Sandbox; the CLI dials that route for rules.
 
 The admin listener serves gRPC alone. On shutdown it ends the open watches, then stops gracefully: the
 other calls in flight finish within the drain deadline.
@@ -228,16 +206,10 @@ The health service is always mounted. `EgressAdmin` is mounted only when `admin_
 
 ## Rules gRPC API
 
-`EgressRules` (<egress_rules.proto>) serves `GetRules` on the admin gRPC listener as well as a
-loopback listener for the agent HTTP facade. `GET /v1/rules` on the agent API listener is its gRPC-Gateway facade
-(<../grpc/facade/facade.go>), which forwards to that listener so the servicer authenticates every request. The answer is the redacted
-view of the ServiceAccount the bearer proves and nothing else: the bearer is read from `authorization`
-metadata, which the facade fills from the `Authorization` header, and reviewed by the verifier using the hop audience.
-
-**Deviation** from <../docs/grpc_services.md>: callers are the sandbox workloads themselves, so there is no
-allow-list and no `auth.Resolver` of its own; every bearer is `Unauthenticated` (`401`) alike, and one that
-could not be reviewed is `Unavailable` (`503`). The documentation routes (`/llms.txt`, `/docs/agents/`, `/openapi.json`)
-stay hand-written HTTP. It is mounted unconditionally, because it has no setting.
+`EgressRules.GetRules` (<egress_rules.proto>) is mounted on the shared gRPC listener. Its
+method-specific authorization admits workloads with the configured hop audience and namespace;
+the handler reads the admitted identity and returns only its redacted rules. Missing or invalid
+bearers fail closed. No field in the request can select another account.
 
 ## ServiceAccount permissions
 
@@ -316,7 +288,7 @@ Revocation is eventually observed independently by each watch, not globally line
 
 SIGTERM/SIGINT marks the index draining, so readiness fails and the listener closes at once.
 Admitted requests (HTTP responses, WebSockets, gRPC streams) drain for up to 20 seconds, then
-the remaining tunnels are closed; idle tunnels close immediately. The rules and admin servers shut down
+the remaining tunnels are closed; idle tunnels close immediately. The shared gRPC server shuts down
 within the same bound and the decision queue is flushed for at most five seconds.
 Deployment termination grace must cover those budgets.
 There is no transparent TCP/HTTP2 migration, request replay, or promise to finish an unbounded stream.

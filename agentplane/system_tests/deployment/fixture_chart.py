@@ -92,7 +92,6 @@ from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 from cluster.cdk8s.secret_ref import SecretRef
-from cluster.cdk8s.service_ref import Port, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K
 
 RUNNER_GATEWAY = "runner-gateway"
@@ -410,7 +409,6 @@ def build_chart(
         registry_secret_name=None,
         memory_limit=None,
     )
-    agent_api = ServiceRef(name=egress.NAME, port=Port(name="http", number=8082), pods=egress.agent_api(NAMESPACE).pods)
     database_env = {"PGSSLMODE": EnvValue.from_value("disable")}
     egress.Egress(
         chart,
@@ -419,7 +417,6 @@ def build_chart(
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
-        agent_api_service=agent_api,
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
@@ -518,7 +515,6 @@ def build_chart(
         env,
         name=POD_TEMPLATE,
         image=ENVIRONMENT_TOOLS_IMAGE,
-        egress_api_service=agent_api,
         storage_class="local-path",
         vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
         environment_runtime_resources=k8s.ResourceRequirements(
@@ -643,7 +639,7 @@ def build_chart(
         metadata=ApiObjectMetadata(name=runtime_grant.POLICY_SET, namespace=NAMESPACE),
         rules=[
             Rule.egress(
-                hosts=[egress.agent_api(NAMESPACE).fqdn],
+                hosts=[session_dispatcher.service(NAMESPACE).fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/test-runtime-grant"],

@@ -201,7 +201,6 @@ proto_library(
     srcs = ["egress_rules.proto"],
     deps = [
         "//agentplane/proto:identity_proto",
-        "@googleapis//google/api:annotations_proto",
     ],
 )
 
@@ -227,13 +226,11 @@ go_proto_library(
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb",
     proto = ":egress_rules_proto",
     deps = [
         "//agentplane/proto:identity_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 
@@ -245,7 +242,6 @@ ts_proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
     ],
 )
 

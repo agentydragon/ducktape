@@ -19,7 +19,7 @@ const settingPrefix = "AGENTPLANE_EGRESS_"
 // AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
 // settings. Lists and maps are file-only. Viper loads the settings.
 //
-// The admin listener serves the gRPC health service, and the admin API beside it when
+// The gRPC listener serves rules and health, and the admin API beside them when
 // admin_grpc_audience, the audience of the bearer its callers send, and admin_grpc_callers, the
 // ServiceAccounts it admits as `namespace/name`, are set.
 type config struct {
@@ -30,7 +30,6 @@ type config struct {
 	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
 	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
 	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
-	AgentAPIListenAddress           string            `mapstructure:"agent_api_listen_address"`
 	CACert                          string            `mapstructure:"ca_cert"`
 	CAKey                           string            `mapstructure:"ca_key"`
 	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
@@ -48,7 +47,7 @@ type config struct {
 func defaultConfig() config {
 	return config{
 		Forward: listener.Config{ListenAddress: "0.0.0.0:8888"}, AdminListenAddress: "0.0.0.0:8081",
-		AgentAPIListenAddress: "0.0.0.0:8082", DecisionHistorySize: 200,
+		DecisionHistorySize:   200,
 		DecisionRetentionDays: 7, DecisionQueueSize: 2000, DecisionBatchSize: 100,
 	}
 }
@@ -62,7 +61,6 @@ func loadConfig() (config, error) {
 		"credentials_namespace",
 		"admin_listen_address",
 		"admin_grpc_audience",
-		"agent_api_listen_address",
 		"ca_cert",
 		"ca_key",
 		"upstream_ca_file",
