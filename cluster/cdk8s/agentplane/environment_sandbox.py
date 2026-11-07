@@ -393,6 +393,10 @@ class EnvironmentSandboxTemplate(Construct):
                 ),
             ),
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
+            model_config_service=Endpoint(
+                target=platform_routes.model_config(self.env.namespace).local_target,
+                bearer=platform_routes.ROUTE_BEARER,
+            ),
             platform_instructions=platform_instructions(self.env, session_runtime=SessionRuntime.NATIVE_HARNESS),
             harness_environment=configuration.EnvironmentVariables(
                 inherit=tuple(dict.fromkeys((*self.env.harness_inherited_env, *harness_env))),

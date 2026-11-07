@@ -84,7 +84,7 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "pid1", PodPID1: true, InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}
+	config := Config{StateDir: root, Launch: launch, Supervision: "pid1", PodPID1: true, InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, ModelConfigClient: fixtureModelConfig{endpoint: endpoint}}
 	return runtimeTestConfig{Config: config}
 }
 

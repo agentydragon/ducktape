@@ -125,6 +125,10 @@ class EnvironmentVmTemplate(Construct):
                 target=_guest_address(platform_routes.ingress(namespace).listen_port),
                 bearer=platform_routes.ROUTE_BEARER,
             ),
+            model_config_service=Endpoint(
+                target=_guest_address(platform_routes.model_config(namespace).listen_port),
+                bearer=platform_routes.ROUTE_BEARER,
+            ),
             platform_instructions=platform_instructions,
             environment_runtime_environment=configuration.EnvironmentVariables(values=network),
             harness_environment=configuration.EnvironmentVariables(

@@ -12,6 +12,7 @@ from agentplane.env.config import Endpoint, EnvironmentRuntimeControl
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
+from agentplane.env.e2e.testing.model_config import model_config
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container, wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
@@ -54,6 +55,15 @@ class RunningRunner:
             raise
 
     async def start(self) -> None:
+        self.model_config_context = model_config()
+        model_endpoint = await self.model_config_context.__aenter__()
+        try:
+            await self._start(model_endpoint)
+        except BaseException:
+            await self.model_config_context.__aexit__(None, None, None)
+            raise
+
+    async def _start(self, model_endpoint: Endpoint) -> None:
         if self.observe_control:
             await self.gateway.control.disconnect()
         environment = dict(self.config.harness_environment)
@@ -66,7 +76,12 @@ class RunningRunner:
             environment["ANTHROPIC_AUTH_TOKEN"] = self.config.claude.token
         if self.config.codex is not None:
             environment["OPENAI_API_KEY"] = self.config.codex.token
-        command = launches.command(self.config, control=self.control_endpoint, ingress=self.ingress_endpoint)
+        command = launches.command(
+            self.config,
+            control=self.control_endpoint,
+            ingress=self.ingress_endpoint,
+            model_config_service=model_endpoint,
+        )
         container = await asyncio.to_thread(pid1_container, command, self.state_dir.parent, environment)
         await asyncio.to_thread(container.__enter__)
         self.process = RunnerProcess(container)
@@ -82,7 +97,10 @@ class RunningRunner:
                 raise RuntimeError(f"Go runner exited with {exited.result()}; see container logs")
             await connected
         except BaseException:
-            await self.stop()
+            try:
+                await self.process.stop()
+            finally:
+                await self.process.close()
             raise
         finally:
             connected.cancel()
@@ -93,7 +111,10 @@ class RunningRunner:
         try:
             await self.process.stop()
         finally:
-            await self.process.close()
+            try:
+                await self.process.close()
+            finally:
+                await self.model_config_context.__aexit__(None, None, None)
         if self.observe_control:
             await self.gateway.control.disconnect()
 

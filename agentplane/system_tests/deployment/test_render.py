@@ -267,6 +267,13 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         _resource(docs, "ConfigMap", f"{fixture_chart.POD_TEMPLATE}-egress-sidecar")["data"]["settings.yaml"]
     )
     telemetry_route = sidecar_settings["platform_routes"]["telemetry"]
+    routes = sidecar_settings["platform_routes"]
+    addresses = [route["listen_address"] for route in routes.values()]
+    assert len(addresses) == len(set(addresses)), "platform routes must not compete for a listener"
+    runner_config = json.loads(
+        _resource(docs, "ConfigMap", f"{fixture_chart.POD_TEMPLATE}-config")["data"]["environment-runtime.json"]
+    )
+    assert runner_config["model_config_service"]["target"] == routes["model-config"]["listen_address"]
     runtime = next(
         container
         for container in template["spec"]["pod"]["spec"]["containers"]
@@ -459,6 +466,11 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
     config_map = _resource(vm_fixture.objects, "ConfigMap", "environment-vm-config")
     config = json.loads(config_map["data"]["environment-runtime.json"])
+    relay = yaml.safe_load(
+        _resource(vm_fixture.objects, "ConfigMap", "launcher-relay-egress-sidecar")["data"]["settings.yaml"]
+    )
+    relay_address = relay["platform_routes"]["model-config"]["listen_address"]
+    assert config["model_config_service"]["target"].rsplit(":", 1)[1] == relay_address.rsplit(":", 1)[1]
     assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"] == "http://10.0.2.1:3133"
     assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_URL"] == "http://10.0.2.1:3134"
     assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"

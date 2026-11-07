@@ -62,8 +62,8 @@ mounted into a runner or harness container.
 The native `agentplane.llm_ingress.v1.ModelConfigService.GetModelConfig` gRPC method exposes the
 same configuration to authenticated workloads. The response omits `total_context_budget_tokens`
 for an unknown model; a configured budget is positive. It uses the same Pod-bound TokenReview
-audience and namespace policy as the HTTP listener. The runner currently uses the HTTP endpoint
-below; its gRPC cutover is separate.
+audience and namespace policy as the HTTP listener. Environment Runtime uses this method for
+Claude model budgets. The HTTP endpoint below remains available to older runner images.
 
 The authenticated `GET /agentplane/model-config?model=...` endpoint returns a
 `ModelConfig` record for an exposed route, or JSON `null` (status 200) for a route
