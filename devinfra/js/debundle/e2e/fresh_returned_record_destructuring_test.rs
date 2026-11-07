@@ -228,20 +228,11 @@ fn rebound_factory_selects_the_executed_replacement() {
     let source = declarations(
         "function factory() { return { selected: () => 1 }; }\nfactory = () => ({ selected: () => 2 });",
     ).replace("console.log(typeof first, typeof middle, typeof last);", "console.log(first(), middle(), last());");
-    // The replacement must initialize before its consumers enter another module.
-    run_rejection_fixture(split(&source));
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![
-            logical_module_with_anon(
-                "factory",
-                &[Member::new("factory")],
-                &["factory = () => ({ selected: () => 2 });"],
-            ),
-            logical_module("outer", &[Member::new("first"), Member::new("last")]),
-            logical_module("inner", &[Member::new("middle")]),
-        ],
-    ));
+    // Entry imports run before its reassignment; imported consumers would
+    // capture the original callbacks. A catchall module runs the replacement
+    // before its consumers and does not exercise this unsafe layout.
+    run_rejection_fixture(split(&source).with_unassigned_mode(unassigned_mode_inline()));
+    let fixture = run_fixture(split(&source));
     assert_preserved_entry_output(&fixture, "2 2 2\n");
     for binding in ["first", "middle", "last"] {
         assert_object_binding_receipt(&fixture, binding, &[("selected", binding)]);
