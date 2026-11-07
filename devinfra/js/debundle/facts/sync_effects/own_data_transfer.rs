@@ -1,7 +1,8 @@
 //! Present ordinary own-data slots at one settled execution prefix.
 
 use super::value_model::{
-    AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values, canonical_array_index,
+    AbstractValue, InstanceOrigin, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
+    canonical_array_index,
 };
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::EffectCell;
@@ -12,6 +13,7 @@ use std::collections::BTreeSet;
 pub(super) trait OwnDataContext {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape>;
     fn object_properties_are_settled(&self, allocation: u32) -> bool;
+    fn instance_properties_are_settled(&self, class: u32) -> bool;
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values>;
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool;
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool;
@@ -49,6 +51,7 @@ pub(super) struct OwnDataRead {
 /// can keep those restrictions without rejecting proved array slots.
 pub(super) enum PresentOwnDataSlot {
     OrdinaryRecord(OwnDataSlot),
+    InstanceField(OwnDataSlot),
     ArrayIndex(OwnDataSlot),
     /// Read-only view of the native own `length` data property. This variant
     /// is available only while the array-literal prefix proves its value;
@@ -59,17 +62,19 @@ pub(super) enum PresentOwnDataSlot {
 impl PresentOwnDataSlot {
     pub(super) fn object(&self) -> u32 {
         match self {
-            Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => {
-                slot.object
-            }
+            Self::OrdinaryRecord(slot)
+            | Self::InstanceField(slot)
+            | Self::ArrayIndex(slot)
+            | Self::ArrayLength(slot) => slot.object,
         }
     }
 
     pub(super) fn property(&self) -> &str {
         match self {
-            Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => {
-                &slot.property
-            }
+            Self::OrdinaryRecord(slot)
+            | Self::InstanceField(slot)
+            | Self::ArrayIndex(slot)
+            | Self::ArrayLength(slot) => &slot.property,
         }
     }
 
@@ -77,9 +82,15 @@ impl PresentOwnDataSlot {
         matches!(self, Self::ArrayIndex(_) | Self::ArrayLength(_))
     }
 
+    pub(super) fn is_instance_field(&self) -> bool {
+        matches!(self, Self::InstanceField(_))
+    }
+
     pub(super) fn read(self, context: &impl OwnDataContext) -> OwnDataRead {
         match self {
-            Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) => slot.read(context),
+            Self::OrdinaryRecord(slot) | Self::InstanceField(slot) | Self::ArrayIndex(slot) => {
+                slot.read(context)
+            }
             Self::ArrayLength(slot) => OwnDataRead {
                 values: Values::from([AbstractValue::Value(Value::Prim(PrimKinds::NUMBER))]),
                 cell: slot.cell(),
@@ -119,6 +130,31 @@ pub(super) fn resolve_present_read(
 ) -> Result<PresentOwnDataSlot, OrderedFieldReadRefusal> {
     if receivers.len() != 1 {
         return Err(OrderedFieldReadRefusal::ReceiverNotSingleton);
+    }
+    if let Some(AbstractValue::Instance(class, _, InstanceOrigin::Constructed { own_data })) =
+        receivers.first()
+    {
+        // A class key is a pooled heap origin, not an allocation identity.
+        // Never grant fresh-local ownership or a write from this read receipt.
+        if !matches!(ownership, OwnDataOwnership::CurrentPrefix) {
+            return Err(OrderedFieldReadRefusal::AllocationNotFresh);
+        }
+        if !own_data.contains(property) {
+            return Err(OrderedFieldReadRefusal::MissingField);
+        }
+        if !context.instance_properties_are_settled(*class) {
+            return Err(OrderedFieldReadRefusal::UnsettledReceiver);
+        }
+        if context.property_is_accessor(*class, property) {
+            return Err(OrderedFieldReadRefusal::NonDataField);
+        }
+        if context.property_values(*class, property).is_none() {
+            return Err(OrderedFieldReadRefusal::MissingHeapValue);
+        }
+        return Ok(PresentOwnDataSlot::InstanceField(OwnDataSlot {
+            object: *class,
+            property: property.to_owned(),
+        }));
     }
     let Some(AbstractValue::Value(Value::Alloc(kind, object))) = receivers.first() else {
         return Err(OrderedFieldReadRefusal::ReceiverNotObject);

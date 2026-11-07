@@ -1512,6 +1512,11 @@ impl OwnDataContext for Executor<'_, '_> {
         self.state.object_properties_are_settled(&allocation)
     }
 
+    fn instance_properties_are_settled(&self, class: u32) -> bool {
+        self.state.object_properties_are_settled(&class)
+            && !self.class_may_run_on_borrowed_receiver(class)
+    }
+
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
         self.state
             .prefix_object_properties
@@ -1632,6 +1637,10 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 
     fn object_properties_are_settled(&self, allocation: u32) -> bool {
         self.executor.object_properties_are_settled(allocation)
+    }
+
+    fn instance_properties_are_settled(&self, class: u32) -> bool {
+        self.executor.instance_properties_are_settled(class)
     }
 
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
@@ -5525,7 +5534,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     | AbstractValue::Closure(key, _) => !self.state.tainted_functions.contains(key),
-                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
+                    AbstractValue::Instance(key, _, InstanceOrigin::Constructed { .. }) => {
                         !self.class_may_run_on_borrowed_receiver(*key)
                     }
                     value => value.is_primitive(),
@@ -5906,7 +5915,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if current_object == source && slots == dense.slots)
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if !self.state.object_properties_are_settled(object)))
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)))
-                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Instance(key, _, InstanceOrigin::Constructed) if self.class_may_run_on_borrowed_receiver(*key)));
+                && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Instance(key, _, InstanceOrigin::Constructed { .. }) if self.class_may_run_on_borrowed_receiver(*key)));
             let valid = valid
                 && (row.result != IterationResult::Mapped
                     || returned.iter().all(|value| {
@@ -9021,7 +9030,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                     }
                     AbstractValue::Instance(key, captured, _) => {
-                        self.state.tainted_classes.insert(key);
+                        if self.state.tainted_classes.insert(key) {
+                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                        }
                         self.taint_objects(&captured.values);
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
@@ -9479,6 +9490,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     changed |= self.state.unsettled_objects.insert(*object);
                     self.invalidate_writable_object(*object);
                 }
+                AbstractValue::Instance(class, _, _) => {
+                    changed |= self.state.tainted_classes.insert(*class);
+                }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
                     if let Some(callable) = self.inputs.index.callables.get(key) {
@@ -9509,6 +9523,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn taint_objects(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
+        let mut changed = false;
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
                 continue;
@@ -9538,6 +9553,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::OwnDescriptorMap(site) => {
                     self.invalidate_own_descriptor_map(*site);
                 }
+                AbstractValue::Instance(class, _, _) => {
+                    changed |= self.state.tainted_classes.insert(*class);
+                }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                     self.state.tainted_functions.insert(*key);
                 }
@@ -9553,6 +9571,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     pending.push(reference.clone());
                 });
             }
+        }
+        if changed {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
     }
 
@@ -9755,19 +9776,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         ) || !self.inputs.index.callables[site].meta_property
                     })
             });
-        let mut outcome = if let Some(body) = canonical_body {
+        let (mut outcome, own_data) = if let Some(body) = canonical_body {
             self.execute_local_constructor(body, arguments.to_vec())
         } else {
             // Unsupported canonical lowering is selected before any operation.
             // Keep its established conservative route; never replay a partially
             // executed constructor through the compatibility interpreter.
-            constructor.key.map_or_else(
+            let outcome = constructor.key.map_or_else(
                 || Outcome {
                     complete: true,
                     ..Outcome::default()
                 },
                 |constructor_key| self.invoke(constructor_key, args.clone(), None, true),
-            )
+            );
+            (outcome, BTreeSet::new())
         };
         self.state.checked_constructor_inputs = previous_inputs;
         let mut values: Values = args.iter().flatten().cloned().collect();
@@ -9780,7 +9802,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let instance = AbstractValue::Instance(
             key,
             self.intern_callback_set(values),
-            InstanceOrigin::Constructed,
+            InstanceOrigin::Constructed { own_data },
         );
         let abrupt = outcome
             .returns
@@ -9809,7 +9831,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         body: &ClassConstructorBody,
         arguments: Vec<SelectedValue>,
-    ) -> Outcome {
+    ) -> (Outcome, BTreeSet<String>) {
         let class = body.class;
         let owner = self.inputs.flow.callable_source_unit[&Value::Alloc(Kind::Class, class)];
         let active = ActiveInvocation {
@@ -9846,7 +9868,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 diagnostics: BoundedInvocationFallbackDiagnostics::default(),
             });
             self.promote_class_members(class, &mut outcome);
-            return outcome;
+            return (outcome, BTreeSet::new());
         }
         self.state.active.insert(active);
         self.state.invocation_depth += 1;
@@ -9885,6 +9907,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             arguments,
             &mut frame,
         );
+        let mut own_data = BTreeSet::new();
         if let Some(coverage) = coverage {
             outcome.effect_coverage = coverage.effects;
             let expected = body
@@ -9899,6 +9922,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .has_call_inventory(&LocalBodyIdentity::Construction { class, owner }, &expected)
             {
                 outcome.effect_coverage.uncertain_completion();
+            }
+            if outcome.complete
+                && !outcome.unknown_call
+                && frame.thrown.is_none()
+                && outcome
+                    .effect_coverage
+                    .closed_effect_dependencies()
+                    .is_some()
+            {
+                own_data = frame.constructed_own_data();
             }
         } else {
             // A failed kernel has already performed its prefix. Preserve its
@@ -9942,7 +9975,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.state.active_construction = previous_construction;
         self.state.active.remove(&active);
         self.state.invocation_depth -= 1;
-        outcome
+        (outcome, own_data)
     }
 
     /// The foreign wrapper can invoke its captured callbacks and any values
@@ -11637,6 +11670,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         )
         .ok()?;
         if (!slot.is_array_specific()
+            && !slot.is_instance_field()
             && !self
                 .inputs
                 .index
@@ -13113,7 +13147,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                         |properties| properties.contains_key(&property),
                                     )
                             }
-                            AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
+                            AbstractValue::Instance(key, _, InstanceOrigin::Constructed { .. }) => {
                                 self.class_may_run_on_borrowed_receiver(*key)
                                     || !self.known_local_instance_member(*key, property.as_deref())
                             }

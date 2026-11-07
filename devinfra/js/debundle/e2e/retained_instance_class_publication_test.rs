@@ -17,6 +17,30 @@ const again = create({ value: 8 });
 console.log(selected[0](), again.callback());
 "#;
 
+const DIRECT_FIELD_READ_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const selected = first.callback;
+const again = create({ value: 8 });
+console.log(selected(), again.callback());
+"#;
+
+const ESCAPED_FIELD_READ_SOURCE: &str = r#"import { retain } from "./opaque.js";
+class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+retain(first);
+const selected = first.callback;
+const again = create({ value: 8 });
+console.log(typeof selected, again.callback());
+"#;
+
 const LOCAL_SOURCE: &str = r#"class Box {
   callback = () => this.record.value;
   constructor(record) { this.record = record; }
@@ -328,6 +352,48 @@ fn mapping_a_retained_instance_does_not_publish_class_members() {
     assert!(selected.precision_losses.is_empty(), "{selected:#?}");
 
     assert_factory_complete(&graph, "again");
+}
+
+#[test]
+fn checked_instance_own_field_read_keeps_later_construction_private() {
+    let fixture = run_fixture(FixtureOpts::new(
+        DIRECT_FIELD_READ_SOURCE,
+        modules(&["Box", "create", "first", "selected", "again"]),
+    ));
+    assert_preserved_entry_output(&fixture, "7 8\n");
+
+    let graph = fixture.dependency_graph();
+    assert_factory_complete(&graph, "first");
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("field read execution report");
+    assert!(selected.complete, "{selected:#?}");
+    assert!(selected.precision_losses.is_empty(), "{selected:#?}");
+    assert_factory_complete(&graph, "again");
+}
+
+#[test]
+fn escaped_instance_cannot_supply_a_later_own_field_read() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            ESCAPED_FIELD_READ_SOURCE,
+            vec![module(
+                &["Box", "create", "first", "selected", "again"],
+                &["retain(first);"],
+            )],
+        )
+        .with_extra_chunks(&[("static/opaque", OPAQUE_CHUNK)]),
+    );
+    assert_preserved_entry_output(&fixture, "function 8\n");
+
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("field read execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    assert_class_members_escape_refusal(&graph, "again");
 }
 
 #[test]
