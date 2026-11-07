@@ -250,6 +250,14 @@ grpcUi.timers[0]();
 await settle();
 await settle();
 assert.equal(grpcUi.nodes.integrations.children[0].children[3].children[7].textContent, "storage error");
+grpcUi.replies.set(
+  "/api/v1/instances/account/session",
+  response({ snapshot: { state: "SESSION_STATE_UNVERIFIED", lastProbe: { outcome: 999 } } })
+);
+grpcUi.timers[0]();
+await settle();
+await settle();
+assert.equal(grpcUi.nodes.integrations.children[0].children[3].children[7].textContent, "Check outcome unknown");
 grpcUi.nodes.session.value = exportedSession("alpha", { cookie: "synthetic" });
 grpcUi.replies.set("/api/v1/instances/account:importSession", response({ outcome: "IMPORT_OUTCOME_INSTALLED" }));
 await grpcUi.nodes["session-form"].listeners.submit(event);
