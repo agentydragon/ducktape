@@ -107,7 +107,7 @@ func (testActionService) ListActionRequestEvents(context.Context, *actionpb.List
 type running struct {
 	notifications notificationspb.NotificationsClient
 	health        healthpb.HealthClient
-	// url is the base URL of the service's HTTP routes.
+	// url is the service's HTTP listener base URL, used for the signed GitHub webhook.
 	url string
 	db  *sql.DB
 	// actionsToken is the Action Service token file.
@@ -334,7 +334,7 @@ func postWebhook(t *testing.T, service running, signature string) int {
 	return response.StatusCode
 }
 
-func TestTheWebhookIsServedBesideGRPCOnlyWhenGitHubIsConfigured(t *testing.T) {
+func TestOnlyConfiguredGitHubServesTheSignedWebhookBesideGRPC(t *testing.T) {
 	service := webhookServer(t)
 	if got := postWebhook(t, service, ""); got != http.StatusAccepted {
 		t.Errorf("a signed ping = %d, want 202", got)
@@ -344,6 +344,16 @@ func TestTheWebhookIsServedBesideGRPCOnlyWhenGitHubIsConfigured(t *testing.T) {
 	}
 	if got, err := checkHealth(t, service.health, ""); err != nil || got != healthpb.HealthCheckResponse_SERVING {
 		t.Errorf("gRPC beside the webhook: %v, %v", got, err)
+	}
+	for _, path := range []string{"/v1/subscriptions", "/openapi.json", "/llms.txt"} {
+		response, err := http.Get(service.url + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, response.StatusCode)
+		}
 	}
 	if got := postWebhook(t, start(t, nil), ""); got != http.StatusNotFound {
 		t.Errorf("a ping without GitHub configured = %d, want 404", got)

@@ -174,19 +174,20 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
     assert BASIC_POLICY in defaults, defaults
 
 
-def test_notifications_use_their_own_projected_audience(staging_manifests: list[dict[str, Any]]) -> None:
+def test_sandboxes_no_longer_have_an_http_egress_credential_for_notifications(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
     policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
-    notification_rule = one(
-        rule
-        for rule in policy["spec"]["rules"]
-        if notifications.service(staging.ENV.namespace).fqdn in rule.get("hosts", [])
+    notification_host = notifications.service(staging.ENV.namespace).fqdn
+    assert all(notification_host not in rule.get("hosts", []) for rule in policy["spec"]["rules"])
+    assert all(
+        manifest.get("metadata", {}).get("name") != "agentplane-notifications-workload"
+        for manifest in staging_manifests
+        if manifest.get("kind") == "EgressCredential"
     )
-    assert notification_rule["credentialRef"] == {"name": notifications.WORKLOAD_CREDENTIAL}
-    credential = _by_name(staging_manifests, "EgressCredential", notifications.WORKLOAD_CREDENTIAL)
-    assert credential["spec"]["source"]["projectedWorkloadToken"]["audience"] == notifications.TOKEN_AUDIENCE
     settings = _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    proxy_settings = yaml.safe_load(settings)
-    assert notifications.TOKEN_AUDIENCE in proxy_settings["projected_token_audiences"]
+    # The direct sidecar gRPC route projects its own token and bypasses the central proxy.
+    assert notifications.TOKEN_AUDIENCE not in yaml.safe_load(settings)["projected_token_audiences"]
     notification_settings = yaml.safe_load(
         _by_name(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
     )

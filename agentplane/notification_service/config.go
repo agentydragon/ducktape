@@ -50,7 +50,7 @@ type config struct {
 	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
 	MessageBodyLimitBytes int    `mapstructure:"message_body_limit_bytes"`
 	Host                  string `mapstructure:"host"`
-	// Port is the gRPC listener's, and HTTPPort the HTTP listener's: the facade, its documentation and the webhook.
+	// Port is the gRPC listener's, and HTTPPort the HTTP listener's for the signed GitHub webhook.
 	Port     int `mapstructure:"port"`
 	HTTPPort int `mapstructure:"http_port"`
 }

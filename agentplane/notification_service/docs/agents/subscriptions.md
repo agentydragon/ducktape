@@ -1,7 +1,6 @@
 # Subscribe, wait, and clean up
 
-Commands are `agentplane notifications …`; routes and request bodies are in
-[OpenAPI](/openapi.json).
+Use `agentplane notifications …` for these operations. The App browser facade is separate from the workload CLI.
 
 ## Follow an Action
 
@@ -19,9 +18,6 @@ The file contains a protobuf JSON `CreateSubscriptionRequest` with an `actions` 
   "source": { "actions": { "requestId": "YOUR_ACTION_REQUEST_ID", "afterSequence": 0 } }
 }
 ```
-
-On an older image without `subscribe create`, send the same JSON body with `POST /v1/subscriptions`
-through the Notifications HTTP service and its workload Bearer placeholder.
 
 Use the supplied Session ID (`AGENTPLANE_SESSION_ID`) and the real returned Action ID. Start
 `afterSequence` at zero or the last Action event sequence you actually recorded; it is not an inbox
@@ -56,7 +52,7 @@ use a bounded status check or explain the limitation; do not claim monitoring is
 A notice to a suspended Sandbox waits until the Sandbox runs again unless the Sandbox has wake on message turned on.
 
 Subscriptions expire unless renewed: `agentplane notifications renew ID --lifetime-days N`
-(OpenAPI has the limits). Exit `4` means the subscription was cancelled or changed since `renew` read
+(the API contract documents the limits). Exit `4` means the subscription was cancelled or changed since `renew` read
 it: read it again. Cancel with `agentplane notifications cancel ID` when the purpose is
 complete. This does not cancel an Action or erase accepted notifications. Do not retire the entire
 Session inbox to clean up one task.

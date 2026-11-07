@@ -43,7 +43,6 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name, validate_settings_fragment
 
 NAME = "notifications"
-WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 # The health service whose verdict is "the process answers"; the empty name is readiness. Keep equal to
@@ -61,8 +60,8 @@ def service(namespace: str) -> ServiceRef:
     )
 
 
-def http_service(namespace: str) -> ServiceRef:
-    """The HTTP listener: the facade sandboxes call, its documentation and the GitHub webhook."""
+def webhook_service(namespace: str) -> ServiceRef:
+    """The HTTP listener, used only for the signed GitHub webhook."""
     return ServiceRef(
         name=NAME, port=Port(name="http", number=8081), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
     )
@@ -85,25 +84,22 @@ class Notifications(Construct):
         dispatcher: ServiceRef,
         dispatcher_audience: str,
         callers: list[Pods],
-        http_callers: list[Pods],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
-        """Any ServiceAccount in the namespace may call with its workload token, a Sandbox's through the
-        egress proxy, so `callers` (gRPC) and `http_callers` (HTTP) are the Pods the requests come from,
-        not accounts."""
+        """Workload RPCs authenticate the caller's ServiceAccount. `callers` names Pods admitted by the
+        service network policy; it does not grant an account authority."""
         super().__init__(scope, id)
         self.env = env
         self.callers = callers
-        self.http_callers = http_callers
         self.actions = actions
         self.gateway = gateway
         self.history = history
         self.dispatcher = dispatcher
         endpoint = service(env.namespace)
-        http = http_service(env.namespace)
+        http = webhook_service(env.namespace)
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
@@ -219,16 +215,12 @@ class Notifications(Construct):
         """Add fleet Cilium network admission."""
         env = self.env
         endpoint = service(env.namespace)
-        http = http_service(env.namespace)
         NetworkPolicy(
             self,
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=_LABELS,
-            ingress=[
-                *(pods.admit(endpoint.pod_port) for pods in self.callers),
-                *(pods.admit(http.pod_port) for pods in self.http_callers),
-            ],
+            ingress=[*(pods.admit(endpoint.pod_port) for pods in self.callers)],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_fqdns("api.github.com"),

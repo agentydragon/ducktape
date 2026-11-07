@@ -4,7 +4,6 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
@@ -108,12 +107,6 @@ go_proto_library(
     proto = ":storage_proto",
 )
 
-# The agent-facing reference, which the service serves at `/openapi.json`.
-proto_openapi(
-    name = "notifications_openapi",
-    proto = ":notifications_proto",
-)
-
 go_library(
     name = "main_lib",
     srcs = [
@@ -126,12 +119,10 @@ go_library(
         ":notifications_go_proto",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/bearer",
-        "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service/actions",
         "//agentplane/notification_service/api",
-        "//agentplane/notification_service/docs",
         "//agentplane/notification_service/github",
         "//agentplane/notification_service/github/client",
         "//agentplane/notification_service/github/settings",
@@ -193,7 +184,6 @@ go_test(
     ],
     embed = [":main_lib"],
     deps = [
-        "//agentplane/testing/agentdocs",
         "//agentplane/testing/configtest",
     ],
 )
@@ -245,6 +235,8 @@ go_test(
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

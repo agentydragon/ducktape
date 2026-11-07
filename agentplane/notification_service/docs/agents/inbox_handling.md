@@ -8,7 +8,7 @@ wake on message turned on.
 
 Use `agentplane notifications inbox read` and `agentplane notifications inbox ack`; the commands use
 the configured Notification gRPC URL and credential. `--json` on `read` prints the full response, including
-provider payloads. If the CLI is unavailable, use the equivalent HTTP routes below the command examples.
+provider payloads.
 
 ## Retrieve and account for entries
 
@@ -19,8 +19,7 @@ Acknowledgement may already have advanced and entries newer than the coverage sn
 1. Read a page with `agentplane notifications inbox read SESSION_ID --after CURSOR --limit 128 --json`,
    starting from `acknowledged_at_preparation` or a later acknowledgement already verified from the
    inbox. `--after` is exclusive; 0 reads from the start. The command is non-destructive and returns a
-   bounded page. Continue with the last returned entry's cursor until caught up. For HTTP, use
-   `GET /v1/sessions/{session_id}/inbox/entries?afterCursor={cursor}&limit=128`.
+   bounded page. Continue with the last returned entry's cursor until caught up.
 2. Inspect the response's `inbox.acknowledged` and `inbox.expiredThrough` (strings). Skip entries
    already acknowledged. If `expiredThrough` exceeds your cursor, explicitly account for the retention
    gap and recover current state from the sources; do not claim to have processed expired payloads.
@@ -49,15 +48,8 @@ Acknowledgement may already have advanced and entries newer than the coverage sn
 ## Acknowledge only handled entries
 
 Run `agentplane notifications inbox ack SESSION_ID --through CURSOR` after handling the contiguous prefix.
-The command requires an explicit `--through` cursor and prints the updated inbox. For HTTP, use
-`PUT /v1/sessions/{session_id}/inbox/acknowledgement` with:
-
-```json
-{ "throughCursor": 42 }
-```
-
-Replace `42` with the last cursor of the contiguous prefix you actually handled (a number or a
-string). A cursor beyond the inbox's last entry is refused with `OUT_OF_RANGE`. This acknowledges
+The command requires an explicit `--through` cursor and prints the updated inbox. Replace `CURSOR` with
+the last cursor of the contiguous prefix you actually handled. A cursor beyond the inbox's last entry is refused with `OUT_OF_RANGE`. This acknowledges
 **every** entry through it, including entries for other Actions or subscriptions; do not skip
 unhandled entries. Reads and runner delivery receipts never acknowledge. Handling and acknowledging
 a progress event does not mean the task finished or stop future updates.
