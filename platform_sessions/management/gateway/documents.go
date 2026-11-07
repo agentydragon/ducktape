@@ -2,13 +2,10 @@ package gateway
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -42,18 +39,11 @@ func providerDocument(ctx context.Context, provider Provider, httpConfig Provide
 		return nil, errors.New("invalid provider document request")
 	}
 	request.Header.Set("Authorization", "Bearer "+httpConfig.OwnerToken)
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-	if httpConfig.CAFile != "" {
-		pem, err := os.ReadFile(httpConfig.CAFile)
-		pool := x509.NewCertPool()
-		if err != nil || !pool.AppendCertsFromPEM(pem) {
-			return nil, errors.New("invalid provider CA")
-		}
-		tlsConfig.RootCAs = pool
+	client, err := providerHTTPClient(httpConfig.CAFile)
+	if err != nil {
+		return nil, err
 	}
-	transport := &http.Transport{TLSClientConfig: tlsConfig, DisableKeepAlives: true, DisableCompression: true}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	defer client.CloseIdleConnections()
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, errors.New("provider document unavailable")

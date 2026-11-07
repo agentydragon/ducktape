@@ -198,19 +198,12 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		token = provider.OwnerToken
 	}
 	upstream.Header.Set("Authorization", "Bearer "+token)
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-	if provider.CAFile != "" {
-		pem, err := os.ReadFile(provider.CAFile)
-		pool := x509.NewCertPool()
-		if err != nil || !pool.AppendCertsFromPEM(pem) {
-			proxyError(w, 502, "upstream_unavailable")
-			return
-		}
-		tlsConfig.RootCAs = pool
+	client, err := providerHTTPClient(provider.CAFile)
+	if err != nil {
+		proxyError(w, 502, "upstream_unavailable")
+		return
 	}
-	transport := &http.Transport{TLSClientConfig: tlsConfig, DisableKeepAlives: true, DisableCompression: true}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	defer client.CloseIdleConnections()
 	response, err := client.Do(upstream)
 	if err != nil {
 		proxyError(w, 502, "upstream_unavailable")
@@ -261,4 +254,19 @@ func rewriteLocation(location, instance string) (string, error) {
 	}
 	result := &url.URL{Path: "/proxy/" + instance + "/" + strings.Join(path, "/"), RawPath: "/proxy/" + instance + escaped(path), RawQuery: target.RawQuery, Fragment: target.Fragment}
 	return result.String(), nil
+}
+
+// providerHTTPClient sends each request once and never follows redirects.
+func providerHTTPClient(caFile string) (*http.Client, error) {
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if caFile != "" {
+		pem, err := os.ReadFile(caFile)
+		pool := x509.NewCertPool()
+		if err != nil || !pool.AppendCertsFromPEM(pem) {
+			return nil, errors.New("invalid provider CA")
+		}
+		tlsConfig.RootCAs = pool
+	}
+	transport := &http.Transport{TLSClientConfig: tlsConfig, DisableKeepAlives: true, DisableCompression: true}
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, nil
 }
