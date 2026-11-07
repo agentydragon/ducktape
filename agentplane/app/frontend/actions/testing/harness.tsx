@@ -18,7 +18,7 @@ import {
   type ActionRequest,
   type ListActionRequestHistoryResponse,
 } from "../../../../action_service/action_service_pb";
-import type { McpLinkageView } from "../../mcp_linkage_client";
+import type { McpServerLinkage } from "../../../../action_service/operator_action_service_pb";
 import {
   actionGroupUpsertProtoJson,
   actionGroupsSnapshotCompleteProtoJson,
@@ -181,7 +181,7 @@ function actionResponse(path: string, value: unknown): unknown {
     return startMcpLinkageProtoJson(value.authorization_url);
   }
   if (path.endsWith("/linkage/disconnect")) {
-    if (!isMcpLinkageView(value.linkage)) throw new Error("Expected an MCP linkage fixture.");
+    if (!isMcpServerLinkage(value.linkage)) throw new Error("Expected an MCP linkage fixture.");
     return disconnectMcpLinkageProtoJson(value.linkage);
   }
   return value;
@@ -213,12 +213,12 @@ function isActionGroup(value: unknown): value is ActionGroup {
   );
 }
 
-function isMcpLinkageView(value: unknown): value is McpLinkageView {
+function isMcpServerLinkage(value: unknown): value is McpServerLinkage {
   return (
     isRecord(value) &&
-    typeof value.server_id === "string" &&
-    typeof value.server_url === "string" &&
-    typeof value.status === "string" &&
+    typeof value.serverId === "string" &&
+    typeof value.serverUrl === "string" &&
+    typeof value.status === "number" &&
     Array.isArray(value.scopes)
   );
 }
@@ -233,7 +233,7 @@ function isListActionRequestHistoryResponse(
   );
 }
 
-type ActionFixture = ActionRequest | ActionGroup | McpLinkageView;
+type ActionFixture = ActionRequest | ActionGroup | McpServerLinkage;
 
 /** A browser fetch stream that records the facade's NDJSON watch replay. */
 export class TestNdjsonWatch {
@@ -302,7 +302,7 @@ export class TestNdjsonWatch {
     );
   }
 
-  sendMcpLinkages(value: readonly McpLinkageView[]): void {
+  sendMcpLinkages(value: readonly McpServerLinkage[]): void {
     if (this.controller === undefined) return;
     this.controller.enqueue(
       this.encoder.encode(
@@ -421,7 +421,7 @@ export async function send(value: string | readonly ActionFixture[], url?: strin
         watch.sendActionGroups(groups);
       } else if (watchUrl === MCP_LINKAGE_WATCH) {
         const linkages = value.map((item) => {
-          if (!isMcpLinkageView(item)) throw new Error("Expected McpLinkageView fixtures.");
+          if (!isMcpServerLinkage(item)) throw new Error("Expected McpServerLinkage fixtures.");
           return item;
         });
         watch.sendMcpLinkages(linkages);
@@ -468,7 +468,7 @@ export async function sendUpserts(values: readonly ActionFixture[], url: string)
     }
     if (watchUrl === MCP_LINKAGE_WATCH) {
       const linkages = values.map((value) => {
-        if (!isMcpLinkageView(value)) throw new Error("Expected McpLinkageView upserts.");
+        if (!isMcpServerLinkage(value)) throw new Error("Expected McpServerLinkage upserts.");
         return mcpLinkageUpsertProtoJson(value);
       });
       watch.sendLinkageUpsertFrames(linkages);

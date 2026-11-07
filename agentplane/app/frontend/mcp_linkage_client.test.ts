@@ -9,6 +9,12 @@ import {
   type McpLinkageWatchFrame,
 } from "./mcp_linkage_client";
 import { type ServedWatch, stubWatchFetch } from "./testing/watch";
+import {
+  McpLinkageStatus,
+  McpRefreshAction,
+  McpServerLinkageSchema,
+} from "../../action_service/operator_action_service_pb";
+import { create } from "@bufbuild/protobuf";
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;
 let frames: McpLinkageWatchFrame[];
@@ -66,7 +72,7 @@ it("preserves the Action facade's raw HTTP error body", async () => {
   });
 });
 
-it("decodes disconnect's ProtoJSON linkage without the old OpenAPI model", async () => {
+it("returns disconnect's generated linkage", async () => {
   const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
     Response.json({
       linkage: {
@@ -83,20 +89,22 @@ it("decodes disconnect's ProtoJSON linkage without the old OpenAPI model", async
     })
   );
 
-  await expect(disconnectMcpLinkage("example", fetcher)).resolves.toEqual({
-    server_id: "example",
-    server_url: "https://mcp.example.test",
-    status: "degraded",
-    scopes: ["openid"],
-    refresh_failure: { action: "reconnect", error: "invalid_grant", attempts: 1, retry_at: null },
-  });
+  await expect(disconnectMcpLinkage("example", fetcher)).resolves.toEqual(
+    create(McpServerLinkageSchema, {
+      serverId: "example",
+      serverUrl: "https://mcp.example.test",
+      status: McpLinkageStatus.DEGRADED,
+      scopes: ["openid"],
+      refreshFailure: { action: McpRefreshAction.RECONNECT, error: "invalid_grant", attempts: 1 },
+    })
+  );
   const [input, init] = fetcher.mock.calls[0] ?? [];
   expect(input).toBe("/upstream/actions/v1/operator/mcp-servers/example/linkage/disconnect");
   expect(init?.method).toBe("POST");
   expect(init?.body).toBeUndefined();
 });
 
-it("replays linkage snapshots and decodes upserts from the generated watch frames", async () => {
+it("replays generated linkage snapshots and upserts", async () => {
   let opens = 0;
   stop = followMcpLinkages({
     onOpen: () => opens++,
@@ -140,39 +148,49 @@ it("replays linkage snapshots and decodes upserts from the generated watch frame
     {
       kind: "snapshot",
       linkages: [
-        {
-          server_id: "example",
-          server_url: "https://mcp.example.test",
-          status: "linked",
+        create(McpServerLinkageSchema, {
+          serverId: "example",
+          serverUrl: "https://mcp.example.test",
+          status: McpLinkageStatus.LINKED,
           scopes: ["openid"],
-          refresh_failure: null,
-        },
+        }),
       ],
     },
     {
       kind: "snapshot",
       linkages: [
-        {
-          server_id: "second",
-          server_url: "https://second.example.test",
-          status: "unlinked",
-          scopes: [],
-          refresh_failure: null,
-        },
+        create(McpServerLinkageSchema, {
+          serverId: "second",
+          serverUrl: "https://second.example.test",
+          status: McpLinkageStatus.UNLINKED,
+        }),
       ],
     },
     { kind: "snapshot_complete" },
     {
       kind: "upsert",
-      linkage: {
-        server_id: "example",
-        server_url: "https://mcp.example.test",
-        status: "expired",
+      linkage: create(McpServerLinkageSchema, {
+        serverId: "example",
+        serverUrl: "https://mcp.example.test",
+        status: McpLinkageStatus.EXPIRED,
         scopes: ["openid"],
-        refresh_failure: null,
-      },
+      }),
     },
   ]);
   expect(opens).toBe(1);
   expect(connections.map(({ phase }) => phase)).toEqual(["connecting", "live"]);
+});
+
+it("rejects an unknown linkage enum value", async () => {
+  const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+    Response.json({ linkage: { serverId: "example", serverUrl: "https://mcp.example.test", status: 91 } })
+  );
+
+  await expect(disconnectMcpLinkage("example", fetcher)).rejects.toThrow("unknown MCP linkage status (91)");
+});
+
+it("rejects a missing disconnect linkage", async () => {
+  const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({}));
+
+  await expect(disconnectMcpLinkage("example", fetcher)).rejects.toThrow("omitted disconnected MCP linkage");
 });
