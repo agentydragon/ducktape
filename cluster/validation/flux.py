@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
+import durationpy
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -108,22 +108,14 @@ class Inventory(BaseModel):
     entries: list[InventoryEntry] = []
 
 
-# Go time.Duration string components (1h30m45.5s, 940.5ms, 7µs, etc.).
-_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)")
-_DURATION_UNIT_S = {"ns": 1e-9, "us": 1e-6, "µs": 1e-6, "ms": 1e-3, "s": 1.0, "m": 60.0, "h": 3600.0}
-
-
 def parse_go_duration(s: str | None) -> float:
-    """Parse a Go time.Duration string ("7.9s", "10m1.219s", "940.5ms") to
-    seconds. Returns 0.0 for empty / unparseable input."""
-    if not s:
+    """Convert a Flux Go duration to seconds; a missing duration is zero.
+
+    durationpy uses timedelta, so the result has microsecond precision.
+    """
+    if s is None:
         return 0.0
-    total = 0.0
-    matched = False
-    for value, unit in _DURATION_RE.findall(s):
-        matched = True
-        total += float(value) * _DURATION_UNIT_S[unit]
-    return total if matched else 0.0
+    return durationpy.from_str(s).total_seconds()
 
 
 class _HistoryMetadata(BaseModel):

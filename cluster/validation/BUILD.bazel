@@ -65,6 +65,7 @@ py_library(
     deps = [
         ":k8s",
         "//cluster/cdk8s:manifest_roots",
+        "@pypi//durationpy",
         "@pypi//pydantic",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
@@ -213,6 +214,8 @@ py_test(
     deps = [
         ":flux",
         ":flux_bootstrap_auth",
+        "@pypi//durationpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
