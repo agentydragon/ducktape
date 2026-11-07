@@ -6,6 +6,8 @@ Deployments. Every Deployment has zero replicas and the gateway Service has no p
 route. The running `platform-sessions` service still owns every real session. Each
 provider has its own internal TLS identity, credentials, PVC, and metrics scrape.
 The Go gateway does not yet expose gateway-wide Prometheus metrics.
+OpenAI Platform, Anthropic, and Thrive run the same private image with separate
+configuration and processes; the other providers have their own images.
 
 The provider PVCs use `seaweedfs-ovh-ssd` and stay unbound until a pod consumes them.
 The remote Kustomization does not wait for resource health for this reason; its readiness
