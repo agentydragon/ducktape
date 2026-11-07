@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { getFrontendConfig, listModels, listSandboxPresets } from "./app_config_client";
+import { getFrontendConfig, getSandboxForm, listModels, listSandboxPresets } from "./app_config_client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -40,6 +40,12 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
               sandboxServiceAccountMetadataKey: "account",
             },
           },
+        });
+      }
+      if (path.endsWith("/sandbox-form")) {
+        return Response.json({
+          policySets: ["alpha", "zeta"],
+          newSandboxDefaults: { wakeOnSend: true, idleSuspendAfterSeconds: "900" },
         });
       }
       return Response.json({
@@ -101,10 +107,15 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
       bootstrap: "mkdir -p /workspace",
     },
   ]);
+  await expect(getSandboxForm()).resolves.toEqual({
+    policy_sets: ["alpha", "zeta"],
+    new_sandbox_defaults: { wake_on_send: true, idle_suspend_after_seconds: 900 },
+  });
   expect(paths).toEqual([
     "/upstream/app-config/v1/models",
     "/upstream/app-config/v1/frontend-config",
     "/upstream/app-config/v1/presets",
+    "/upstream/app-config/v1/sandbox-form",
   ]);
 });
 

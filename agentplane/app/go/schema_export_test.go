@@ -10,7 +10,6 @@ import (
 
 func TestHTTPServerServesHumaOpenAPIDocument(t *testing.T) {
 	server := NewHTTPServer(nil)
-	RegisterPolicyRoutes(server, Config{}, nil)
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest("GET", "/openapi.json", nil))
 	if recorder.Code != 200 {
@@ -33,46 +32,6 @@ func TestExportOpenAPIExcludesMigratedSystemStatusRoute(t *testing.T) {
 	}
 }
 
-func TestExportOpenAPISandboxFormSchema(t *testing.T) {
-	var output bytes.Buffer
-	if err := exportOpenAPI(&output); err != nil {
-		t.Fatal(err)
-	}
-	document := assertSaneOpenAPI(t, output.Bytes())
-	for schemaName, fields := range map[string][]string{
-		"SandboxFormOutputBody": {"policy_sets"},
-	} {
-		schema := document.Components.Schemas[schemaName]
-		if schema == nil {
-			t.Fatalf("OpenAPI document omits %s", schemaName)
-		}
-		properties, ok := schema["properties"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s.properties = %T, want object", schemaName, schema["properties"])
-		}
-		for _, field := range fields {
-			property, ok := properties[field].(map[string]any)
-			if !ok || property["type"] != "array" {
-				t.Errorf("%s.%s = %v, want a non-null array", schemaName, field, properties[field])
-			}
-		}
-	}
-	form := document.Components.Schemas["SandboxFormOutputBody"]
-	formProperties, ok := form["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("SandboxFormOutputBody.properties = %T, want object", form["properties"])
-	}
-	defaults, ok := formProperties["new_sandbox_defaults"].(map[string]any)
-	if !ok || defaults["$ref"] != "#/components/schemas/NewSandboxDefaults" {
-		t.Fatalf("SandboxFormOutputBody.new_sandbox_defaults = %v, want NewSandboxDefaults reference", formProperties["new_sandbox_defaults"])
-	}
-	defaultsSchema := document.Components.Schemas["NewSandboxDefaults"]
-	defaultsProperties, ok := defaultsSchema["properties"].(map[string]any)
-	if !ok || defaultsProperties["wake_on_send"] == nil || defaultsProperties["idle_suspend_after_seconds"] == nil {
-		t.Fatalf("NewSandboxDefaults.properties = %v, want wake and idle defaults", defaultsSchema["properties"])
-	}
-}
-
 func TestPolicyMutationsArePublishedByGeneratedPolicyFacade(t *testing.T) {
 	var output bytes.Buffer
 	if err := exportOpenAPI(&output); err != nil {
@@ -84,8 +43,11 @@ func TestPolicyMutationsArePublishedByGeneratedPolicyFacade(t *testing.T) {
 			t.Errorf("OpenAPI document still publishes handwritten PolicyBinding mutation route %s", path)
 		}
 	}
-	if _, ok := document.Paths["/sandboxes/form"]["get"]; !ok {
-		t.Fatal("OpenAPI document omits the remaining Sandbox form route")
+	if _, ok := document.Paths["/sandboxes/form"]; ok {
+		t.Fatal("OpenAPI document still publishes the migrated Huma Sandbox form route")
+	}
+	if _, ok := document.Components.Schemas["SandboxFormOutputBody"]; ok {
+		t.Fatal("OpenAPI document still publishes the migrated Huma Sandbox form schema")
 	}
 }
 

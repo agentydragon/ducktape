@@ -595,10 +595,11 @@ to.
 
 A Sandbox takes `policy_sets` alone. The shared inventory validates the app's configured default sets
 with the submitted policy sets; Action policy sets and Kubernetes grants are not create inputs.
-`GET /sandboxes/form` lists the namespace's `PolicySet`s, which the form offers; a preset names
-`PolicySet`s only. It also serves the app-level `new_sandbox_defaults`, the wake-on-message and
-idle-suspend values the form starts with whatever the preset; the EnvironmentService create request stores only what the
-caller sends, so an API caller that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and the create request writes the submitted
+`AppService.GetSandboxForm` returns a sorted snapshot of the PolicySet names visible to the app and
+the app-level `new_sandbox_defaults`; it does not expose policy rules. A preset names `PolicySet`s
+only. The wake-on-message and idle-suspend values are the form's initial values regardless of the
+preset; the EnvironmentService create request stores only what the caller sends, so an API caller
+that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and the create request writes the submitted
 ones as the Sandbox's initial `spec.inboxTags`: editing a preset changes only later launches.
 
 Before creating a Session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
@@ -645,7 +646,7 @@ the set states it. A binding is the grant, so nothing here depends on the Action
 
 Revoke requests deletion of an operator's grant; the Policy Controller refuses bindings from git or
 the Sandbox's own, since each would be applied again. **Grant policy sets** requests a binding naming
-the exact Sandbox UID and is, with revocation and the launch pick (drawn from `GET /sandboxes/form`,
+the exact Sandbox UID and is, with revocation and the launch pick (drawn from `AppService.GetSandboxForm`,
 the namespace's PolicySet names), the only write the tab makes. The app sends those mutations through
 the operator-authenticated generated PolicyService facade; the Policy Controller validates ownership
 and performs the Kubernetes writes.

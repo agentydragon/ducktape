@@ -26,12 +26,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historywatch"
 	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
-	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/status"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -40,23 +38,18 @@ import (
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const systemStatusTimeout = 5 * time.Second
@@ -102,19 +95,6 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("create Kubernetes API clients: %w", err)
 	}
-	scheme := runtime.NewScheme()
-	for _, addToScheme := range []func(*runtime.Scheme) error{
-		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, v1alpha1.AddToScheme, egressapi.AddToScheme,
-	} {
-		if err := addToScheme(scheme); err != nil {
-			return fmt.Errorf("register generated Kubernetes API types: %w", err)
-		}
-	}
-	objects, err := client.New(kubeConfig, client.Options{Scheme: scheme})
-	if err != nil {
-		return fmt.Errorf("create typed Kubernetes client: %w", err)
-	}
-
 	baseClient := &http.Client{Timeout: 10 * time.Second, Transport: observability.HTTPTransport(http.DefaultTransport)}
 	connectionTarget, err := grpcTargetFromHTTPURL(config.ConnectionServiceURL)
 	if err != nil {
@@ -148,7 +128,6 @@ func run(ctx context.Context, config Config) error {
 		return err
 	}
 	threadStore := threads.NewStore(db)
-	policies := policyaccess.New(config.SandboxNamespace, objects)
 	runner, err := bridge.NewGatewayRunnerProxy(bridge.RunnerConfig{
 		Namespace: config.SandboxNamespace, TokenFile: config.RunnerGatewayTokenFile,
 		Timeout:        time.Duration(config.RunnerGatewayRequestTimeoutSeconds * float64(time.Second)),
@@ -178,6 +157,12 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Runner bridge: %w", err)
 	}
+	policyConnection, err := bearer.Dial(config.PolicyServiceTarget, config.PolicyServiceTokenFile, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("configure Policy Service client: %w", err)
+	}
+	defer policyConnection.Close()
+	policySetNames := policypb.NewPolicyServiceClient(policyConnection)
 
 	oidc, err := auth.LoadOIDCFromEnv()
 	if err != nil {
@@ -317,14 +302,13 @@ func run(ctx context.Context, config Config) error {
 
 	server := NewHTTPServer(appAuth)
 	app := &appService{
-		config: config, systemStatus: serviceStatus, environments: environments, bridge: appBridge, runnerStatus: appBridge,
+		config: config, systemStatus: serviceStatus, policySetNames: policySetNames, environments: environments, bridge: appBridge, runnerStatus: appBridge,
 		threadWriter: threadStore, threadReader: threadStore, threadHistory: history, threadRuntime: runner,
 		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
 	}
 	if err := RegisterAppConfigRoutes(server, app); err != nil {
 		return fmt.Errorf("register app configuration facade: %w", err)
 	}
-	RegisterPolicyRoutes(server, config, policies)
 	if err := RegisterSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session facade: %w", err)
 	}

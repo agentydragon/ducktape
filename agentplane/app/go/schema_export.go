@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/agentydragon/ducktape/agentplane/app/go/policyaccess"
 )
 
 // exportOpenAPI registers the application's typed routes and writes the OpenAPI document
@@ -14,8 +13,6 @@ import (
 func exportOpenAPI(writer io.Writer) error {
 	server := NewHTTPServer(nil)
 	defer server.Close()
-	config := Config{}
-	RegisterPolicyRoutes(server, config, (*policyaccess.Access)(nil))
 	RegisterOperatorRoutes(server, nil)
 	RegisterStatusRoutes(server, nil)
 
