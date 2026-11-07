@@ -865,7 +865,10 @@ Expression statements discard their value after executing their child operations
 they create no artificial binding. These roots use the same property, call
 and operator transfers, completion and dependency checks, and call-edge
 connectivity proof. Supported global-store expressions also use the ordered root
-plan. An unproved global store retains incomplete execution, an uncovered root
+plan. Eligible source plans select call targets after evaluating their callee
+and arguments in source order. A refused call retains the prefix's effects and
+summarizes its remainder without replaying operands or gaining a root receipt.
+An unproved global store retains incomplete execution, an uncovered root
 authority and conservative fallback; global lookup effects remain independent.
 Initial name lists cannot
 close their independent descriptor and host effects. Validated whole-expression

@@ -1319,6 +1319,64 @@ fn anonymous_root_operations_compose_their_actual_effects() {
 }
 
 #[test]
+fn root_call_admission_retains_argument_effects_and_ambiguous_target_refusal() {
+    let statement = "(selected = value => value, result = selected(argument()));";
+    let source = format!(
+        "let calls = 0;\nfunction argument() {{ calls++; return 42; }}\nlet selected = 0;\nlet result = 0;\nconst readLater = () => later;\n{statement}\nconst later = 1;\nconsole.log(result, calls, readLater());\n"
+    );
+    let baseline = run_fixture(
+        FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "42 1 1\n");
+    let fixture = run_inspection_fixture(FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon(
+                "work",
+                &[
+                    Member::new("calls"),
+                    Member::new("argument"),
+                    Member::new("selected"),
+                    Member::new("result"),
+                    Member::new("readLater"),
+                ],
+                &[statement],
+            ),
+            logical_module("value", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "42 1 1\n");
+    let graph = fixture.dependency_graph();
+    let execution = serde_json::to_value(
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == 5)
+            .unwrap()
+            .synchronous_execution
+            .as_ref()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_expression_uncovered",
+        "{execution:#}"
+    );
+    assert_eq!(execution["complete"], false, "{execution:#}");
+    assert!(
+        execution["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| { loss["reason"]["ordered_call_admission_refusal"] == "multiple_targets" }),
+        "the weak module store retains the original noncallable alternative: {execution:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
+    assert_eq!(report["decision"]["status"], "incomplete", "{report}");
+}
+
+#[test]
 fn anonymous_write_receipts_preserve_receiver_initialization_order() {
     let source = "const record = { value: 0 };\nrecord.value = 1;\nconst observed = record.value;\nconsole.log(observed);\n";
     let baseline = run_fixture(FixtureOpts::new(source, vec![]));

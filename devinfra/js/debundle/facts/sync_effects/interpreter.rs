@@ -11530,68 +11530,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
-    fn ordered_root_calls_have_transfer(&self, calls: &[Call]) -> bool {
-        calls
-            .iter()
-            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
-            .all(|call| {
-                if self.ordered_native_callee_selection(call).is_some()
-                    || self.ordered_native_constructor_selection(call).is_some()
-                {
-                    return true;
-                }
-                if !call.has_spread && self.ordered_foreign_call(call.kind, &call.callee) {
-                    return true;
-                }
-                if call.kind == CallKind::New {
-                    return self.ordered_local_construction(call);
-                }
-                let (targets, member) = match &call.callee {
-                    ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
-                        Some(Values::from([AbstractValue::Value(Value::Alloc(
-                            Kind::Function,
-                            *key,
-                        ))])),
-                        false,
-                    ),
-                    ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => {
-                        (self.state.prefix_values.get(binding).cloned(), false)
-                    }
-                    ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
-                        let ValueExpr::Binding(receiver) = receiver.as_ref() else {
-                            return false;
-                        };
-                        if !self.initialized_local_binding(receiver) {
-                            return false;
-                        }
-                        let receivers = self.state.prefix_values.get(receiver);
-                        if !call.has_spread
-                            && receivers.is_some_and(|values| {
-                                array_transfer::select_push(self, values, property).is_some()
-                            })
-                        {
-                            return true;
-                        }
-                        let targets = receivers.and_then(|values| {
-                            self.present_own_data_read(values, property)
-                                .map(|read| read.values)
-                        });
-                        (targets, true)
-                    }
-                    _ => return false,
-                };
-                let Some(targets) = targets else {
-                    return false;
-                };
-                let Some((key, callable)) = self.local_call_target(&targets) else {
-                    return false;
-                };
-                !callable.generator
-                    && !self.inputs.index.async_callables.contains(&key)
-                    && (!member || self.method_receiver_is_unused(&targets))
-            })
-    }
-
     fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
         if self.inputs.index.callback_factory_imports.contains(id) {
             return Values::from([AbstractValue::CallbackFactory]);
@@ -16184,7 +16122,6 @@ impl Executor<'_, '_> {
             .filter(|root| {
                 let body = &root.body;
                 body.captured_writes().is_empty()
-                    && self.ordered_root_calls_have_transfer(calls)
                     && (ordered_scalar_initializer
                         || ordered_foreign_initializer
                         || ordered_native_initializer
@@ -16252,7 +16189,6 @@ impl Executor<'_, '_> {
                     matches!(root.identity.source, RootEffectSource::ExpressionStatement { expression_span }
                         if root.body.root_expression_span() == Some(expression_span))
                         && root.body.captured_writes().iter().all(|binding| inputs.top_bindings.contains(binding))
-                        && self.ordered_root_calls_have_transfer(calls)
                 })
         });
         let ordered_expression = ordered_root.is_some_and(|root| {
@@ -16316,6 +16252,9 @@ impl Executor<'_, '_> {
         // Operands and calls execute once in the same canonical root plan.
         // Binding initializers and class declarations publish their selected
         // result below; expression statements discard it.
+        // Call admission consumes the operands at their execution prefix.
+        // A refused call stops this plan through the shared fallback; do not
+        // preclassify targets or retry its already executed prefix below.
         let mut ordered_root_result = if let Some(root) = ordered_root {
             outcome = self.execute_local_body(
                 &root.body,
