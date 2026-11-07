@@ -2117,7 +2117,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
         (
             "function make() { return seed; class Unused {} }",
             "number",
-            2,
+            1,
         ),
         ("function make() { return seed; }", "number", 1),
     ] {
@@ -2136,11 +2136,15 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
             )],
         ));
         assert_preserved_entry_output(&fixture, &format!("{result_kind}\n"));
-        if helper == "function make() { return seed; let unused; }" {
+        if matches!(
+            helper,
+            "function make() { return seed; let unused; }"
+                | "function make() { return seed; class Unused {} }"
+        ) {
             let execution = binding_execution_report(&fixture, "result");
             assert_eq!(
                 execution["binding_effect_authority"]["authority"], "operation_receipt",
-                "unreached private let still creates a local cell without exterior effects: {execution:#}"
+                "an unreached lexical declaration still creates a private cell without exterior effects: {execution:#}"
             );
         }
         let report = fixture.effect_translation_validation();
