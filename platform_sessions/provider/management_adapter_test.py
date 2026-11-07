@@ -196,7 +196,7 @@ async def test_owner_routes_preserve_metadata_status_and_typed_candidate_outcome
             provider.import_result = pb.ImportSessionResponse(instance=INSTANCE, installed=pb.SessionInstalled())
             imported = await client.post("/api/integrations/account/session", headers=headers, json=SESSION)
             assert imported.json() == {"configured": True}
-            assert len(provider.candidates) == 4
+            assert len(provider.candidates) == 5
             assert all(json.loads(candidate) == SESSION for candidate in provider.candidates)
 
             probed = await client.post("/api/integrations/account/verify", headers=headers)
