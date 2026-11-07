@@ -868,6 +868,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
+        ":telemetry",
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
