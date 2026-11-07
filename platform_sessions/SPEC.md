@@ -11,6 +11,10 @@ provider control messages directly. A listed instance without `info` has an unav
 service; it is still a configured instance. A failed status RPC is not evidence that no session
 exists.
 
+Completed import, verification and probe results carry an outcome enum. Unknown future values
+must be handled conservatively. An explicitly unknown outcome includes rotation diagnostics;
+neither an unrecognized outcome nor a lost response permits automatic retry.
+
 The gateway runs as one Go process. Its HTTP/JSON handlers are generated from the protobuf
 contract and call the management service in-process. An optional TLS gRPC listener exposes the
 same service using a dedicated owner bearer. HTTP management requires an owner session or owner
