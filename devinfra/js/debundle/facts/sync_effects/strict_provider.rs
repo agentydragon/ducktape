@@ -953,7 +953,7 @@ fn execute_provider_body<'a>(
         });
     let provider_local_birth_syntax_candidate = body_effect_candidate
         && body.calls.is_empty()
-        && local_body.is_some_and(LocalBody::provider_local_birth_candidate);
+        && local_body.is_some_and(|body| body.provider_local_birth_candidate());
     let closure_projection = if closure_mode {
         Some(closure_capture_projection(index, local_body?)?)
     } else {
