@@ -1,13 +1,17 @@
 """Gateway client for one remotely owned platform session.
 
-The caller owns the gRPC channel and must disable channel-level retries. A lost
-RPC response is not evidence that an import or probe did not run upstream.
+The caller owns the gRPC channel. Use ``dial_provider_control`` for a TLS
+channel without automatic retries; any other channel constructor must likewise
+disable gRPC retries. A lost RPC response is not evidence that an import or
+probe did not run upstream.
 """
 
 from __future__ import annotations
 
 import asyncio
+import math
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 import grpc
@@ -41,6 +45,26 @@ class ProviderProtocolError(ValueError):
     """A completed RPC response violates the provider control contract."""
 
 
+def dial_provider_control(
+    target: str, *, credentials: grpc.ChannelCredentials | None = None, options: Sequence[tuple[str, int | str]] = ()
+) -> grpc.aio.Channel:
+    """Create a caller-owned TLS channel with gRPC retries disabled.
+
+    Supply custom TLS credentials for a private CA or mutual TLS. Callers must
+    close the returned channel. A separately constructed channel must also set
+    ``grpc.enable_retries=0``: a lost import or probe response cannot be replayed.
+    """
+    if not target:
+        raise ValueError("Provider control target is required")
+    if any(name == "grpc.enable_retries" for name, _ in options):
+        raise ValueError("Provider control retry option cannot be overridden")
+    return grpc.aio.secure_channel(
+        target,
+        credentials if credentials is not None else grpc.ssl_channel_credentials(),
+        options=(("grpc.enable_retries", 0), *options),
+    )
+
+
 class ProviderControlClient:
     """Call one provider instance without owning or closing its channel.
 
@@ -54,7 +78,7 @@ class ProviderControlClient:
     ) -> None:
         if not _ID.fullmatch(provider_id) or not _ID.fullmatch(instance_id):
             raise ValueError("Invalid provider or instance ID")
-        if timeout_s <= 0:
+        if not math.isfinite(timeout_s) or timeout_s <= 0:
             raise ValueError("RPC timeout must be positive")
         self.instance = pb.InstanceRef(provider_id=provider_id, instance_id=instance_id)
         self.token_file = token_file
@@ -64,8 +88,8 @@ class ProviderControlClient:
     async def _metadata(self) -> tuple[tuple[str, str], ...]:
         # This happens before dispatch. Never include the token in an error.
         token = (await asyncio.to_thread(self.token_file.read_text)).strip()
-        if not token:
-            raise ValueError("Provider control bearer is empty")
+        if len(token) < 32 or any(not 33 <= ord(char) <= 126 for char in token):
+            raise ValueError("Provider control bearer is invalid")
         return (("authorization", f"Bearer {token}"),)
 
     def _check_instance(self, returned: pb.InstanceRef) -> None:
@@ -94,7 +118,6 @@ class ProviderControlClient:
         if not response.HasField("provider") or response.provider.provider_id != self.instance.provider_id:
             raise ProviderProtocolError("Provider info has the wrong provider identity")
         seen_instances: set[str] = set()
-        seen_operations: set[str] = set()
         for info in response.provider.instances:
             if not _ID.fullmatch(info.instance_id) or info.instance_id in seen_instances:
                 raise ProviderProtocolError("Provider info has an invalid instance identity")
@@ -104,6 +127,7 @@ class ProviderControlClient:
                     _segments(info.openapi_document_path)
                 except ValueError as exc:
                     raise ProviderProtocolError("Provider info has an invalid OpenAPI path") from exc
+            seen_operations: set[str] = set()
             for route in info.routes:
                 if (
                     not _ID.fullmatch(route.operation_id)
