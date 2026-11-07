@@ -55,6 +55,10 @@ def test_proof_success_requires_a_complete_console_receipt(tmp_path: Path, monke
     with console.open("ab") as stream:
         stream.write(b"\n")
     assert systemd_supervision_passed("selected")
+    console.write_bytes(
+        b"2026-10-28T21:41:13Z stdout F " + SUPERVISION_PASSED + b"[   13.327261] systemd[1]: Starting service\n"
+    )
+    assert not systemd_supervision_passed("selected")
     assert not systemd_supervision_passed("another-vm")
 
 
@@ -110,7 +114,8 @@ def test_retains_unlinked_logs_and_new_incarnations(tmp_path: Path) -> None:
 def test_requires_shutdown_for_each_launcher(tmp_path: Path) -> None:
     logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
     traced_echo = MARKER.replace("stdout F ", "stdout F + echo ")
-    for uid, content in [("one", MARKER), ("two", traced_echo)]:
+    interleaved_printk = MARKER.rstrip("\n") + "[   13.327261] systemd[1]: Starting service\n"
+    for uid, content in [("one", MARKER), ("two", traced_echo), ("three", interleaved_printk)]:
         source = logs / f"systest_virt-launcher-test_uid-{uid}" / "guest-console-log" / "0.log"
         source.parent.mkdir(parents=True)
         source.write_text(content)
@@ -257,6 +262,76 @@ def test_session_failures_disable_validation_at_teardown(tmp_path: Path) -> None
         # pytest reports failed cases without throwing their exception into the session fixture.
         failures += 1
     assert [path.read_text() for path in outputs.rglob("*.log")] == ["FAILED_GUEST\n"]
+
+
+def test_boot_readiness_accepts_interleaved_kernel_printk(tmp_path: Path) -> None:
+    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+    source = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log" / "0.log"
+    source.parent.mkdir(parents=True)
+    evidence = BOOT_EVIDENCE.replace(
+        "2026-10-27T21:41:13Z stdout F AGENTPLANE_UDEV_MONITOR_READY\n",
+        "2026-10-27T21:41:13Z stdout F AGENTPLANE_UDEV_MONITOR_READY"
+        "[   13.327261] systemd[1]: Starting systemd-remount-fs.service...\n",
+    )
+    source.write_text(evidence + MARKER)
+
+    with capture(
+        log_root=logs,
+        pod_root=tmp_path / "kubelet-pods",
+        storage_root=tmp_path / "storage",
+        namespace="systest",
+        kubevirt_namespace="kubevirt",
+        destination=outputs,
+        validate_shutdown=lambda: True,
+        require_boot_evidence=True,
+    ):
+        pass
+
+
+@pytest.mark.parametrize(
+    ("cri_fields", "payload", "terminated"),
+    [
+        ("stdout F", "AGENTPLANE_UDEV_MONITOR_READY_NOT_A_RECEIPT", True),
+        ("stdout F", "AGENTPLANE_UDEV_MONITOR_READY arbitrary suffix", True),
+        ("stdout F", "AGENTPLANE_UDEV_MONITOR_READY[   13.327261]", True),
+        ("stdout F", "AGENTPLANE_UDEV_MONITOR_READY[   13.32726] systemd[1]", True),
+        ("stdout F", "AGENTPLANE_UDEV_MONITOR_READY[   x.327261] systemd[1]", True),
+        ("stdout P", "AGENTPLANE_UDEV_MONITOR_READY[   13.327261] systemd[1]", True),
+        ("stderr F", "AGENTPLANE_UDEV_MONITOR_READY[   13.327261] systemd[1]", True),
+        ("stdout F", "+ echo AGENTPLANE_UDEV_MONITOR_READY[   13.327261] systemd[1]", True),
+        ("stdout F", "AGENTPLANE_UDEV_MONITOR_READY[   13.327261] systemd[1]", False),
+    ],
+)
+def test_boot_readiness_rejects_non_receipts_and_malformed_printk_frames(
+    tmp_path: Path, cri_fields: str, payload: str, terminated: bool
+) -> None:
+    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+    source = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log" / "0.log"
+    source.parent.mkdir(parents=True)
+    normal_ready = "2026-10-27T21:41:13Z stdout F AGENTPLANE_UDEV_MONITOR_READY\n"
+    readiness_record = f"2026-10-27T21:41:13Z {cri_fields} {payload}"
+    if terminated:
+        evidence = BOOT_EVIDENCE.replace(normal_ready, readiness_record + "\n")
+        source.write_text(evidence + MARKER)
+    else:
+        # Keep the truncated record separate from the complete boot evidence and shutdown receipt.
+        source.write_text(BOOT_EVIDENCE.replace(normal_ready, "") + MARKER)
+        (source.parent / "truncated.cri.log").write_bytes(readiness_record.encode())
+
+    with (
+        pytest.raises(GuestBootEvidenceError, match="did not report readiness"),
+        capture(
+            log_root=logs,
+            pod_root=tmp_path / "kubelet-pods",
+            storage_root=tmp_path / "storage",
+            namespace="systest",
+            kubevirt_namespace="kubevirt",
+            destination=outputs,
+            validate_shutdown=lambda: True,
+            require_boot_evidence=True,
+        ),
+    ):
+        pass
 
 
 def test_successful_teardown_requires_complete_evidence_from_selected_guest(tmp_path: Path) -> None:
