@@ -1,0 +1,38 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# gazelle:resolve py platform_sessions.provider.v1.session_provider_pb2 //platform_sessions/provider/v1:session_provider_pb2
+# gazelle:resolve py platform_sessions.management.v1.management_pb2 //platform_sessions/management/v1:management_pb2
+# gazelle:resolve py platform_sessions.management.v1.management_pb2_grpc //platform_sessions/management/v1:management_pb2_grpc
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    deps = [
+        "//platform_sessions:limits",
+        "//platform_sessions/management/v1:management_pb2",
+        "//platform_sessions/management/v1:management_pb2_grpc",
+        "//platform_sessions/provider:control_client",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "service_test",
+    srcs = ["service_test.py"],
+    deps = [
+        ":service",
+        "//:conftest",
+        "//platform_sessions/management/v1:management_pb2",
+        "//platform_sessions/management/v1:management_pb2_grpc",
+        "//platform_sessions/provider:control_client",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

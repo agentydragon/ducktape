@@ -7,7 +7,10 @@ go_library(
         "facade.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/grpc/facade",
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//platform_sessions:__subpackages__",
+    ],
     deps = [
         "//agentplane/observability",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
