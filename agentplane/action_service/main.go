@@ -32,6 +32,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
@@ -503,6 +504,8 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	})
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
+	// The callback is public: its single-use state, not a bearer, authorizes completion.
+	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server sharing it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish

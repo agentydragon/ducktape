@@ -1,0 +1,32 @@
+// Public OAuth protocol operations owned by the Action Service. HTTP boundaries may present these to browsers and
+// authorization servers, but the Action Service itself can be called over gRPC.
+syntax = "proto3";
+
+package agentplane.action_service;
+
+import "agentplane/action_service/operator_action_service.proto";
+
+service LinkageService {
+  // Completes a single-use OAuth flow. The unguessable state is the capability authorizing the callback; neither an
+  // operator bearer nor a workload identity is required. Invalid, expired or already consumed state fails
+  // FAILED_PRECONDITION. An unconfigured server fails NOT_FOUND; an unavailable token endpoint fails UNAVAILABLE.
+  rpc CompleteCallback(CompleteCallbackRequest) returns (CompleteCallbackResponse);
+
+  // Returns the public Client ID Metadata Document, or NOT_FOUND when no server uses the shared client.
+  rpc GetClientMetadata(GetClientMetadataRequest) returns (GetClientMetadataResponse);
+}
+
+message CompleteCallbackRequest {
+  string state = 1;
+  string code = 2;
+}
+
+message CompleteCallbackResponse {
+  McpServerLinkage linkage = 1;
+}
+
+message GetClientMetadataRequest {}
+
+message GetClientMetadataResponse {
+  bytes json_document = 1;
+}

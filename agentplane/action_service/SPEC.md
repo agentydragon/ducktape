@@ -12,6 +12,10 @@ surfaces do not require caller admission.
 The shared guide assets also supply MCP Edge's read-only `get_guide` tool. Documentation describes
 workflows; live Action schemas, policy and backend admission determine current capabilities and access.
 
+The public `LinkageService` gRPC API completes MCP OAuth callbacks and returns the shared Client ID Metadata
+Document. It requires no bearer: callback state is a single-use, expiring capability and the metadata is public.
+The existing HTTP callback and document are also served during the transport migration.
+
 ## Durable storage
 
 The service owns the `actions` database. Action identity and lookup fields use SQL columns;

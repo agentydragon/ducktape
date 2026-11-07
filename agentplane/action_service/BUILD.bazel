@@ -247,6 +247,23 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "linkage_service_proto",
+    srcs = ["linkage_service.proto"],
+    deps = [":operator_action_service_proto"],
+)
+
+go_proto_library(
+    name = "linkage_service_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb",
+    proto = ":linkage_service_proto",
+    deps = [":operator_action_service_go_proto"],
+)
+
 go_proto_library(
     name = "web_push_service_go_proto",
     compilers = [
@@ -270,6 +287,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service",
     deps = [
         ":action_service_go_proto",
+        ":linkage_service_go_proto",
         ":operator_action_service_go_proto",
         ":web_push_service_go_proto",
         "//agentplane/action_service/api",
@@ -396,6 +414,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         ":action_service_go_proto",
+        ":linkage_service_go_proto",
         ":operator_action_service_go_proto",
         ":web_push_service_go_proto",
         "//agentplane/action_service/catalog",
