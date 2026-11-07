@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
+	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
@@ -62,7 +62,8 @@ type Config struct {
 	CodexAppServerReadiness     codexappserver.Readiness
 	WorkspaceRoot               string
 	DebugCheckpoint             *session.DebugCheckpointConfig
-	HTTPClient                  *http.Client
+	ModelConfigService          *configuration.Endpoint
+	ModelConfigClient           modelconfigpb.ModelConfigServiceClient
 	HistoryIngress              configuration.Endpoint
 }
 
