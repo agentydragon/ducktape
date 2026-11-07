@@ -32,6 +32,7 @@ def _proto_openapi_impl(ctx):
         if source.owner.workspace_name != ctx.label.workspace_name:
             continue
         import_path = source.dirname.removeprefix(repo_prefix)
+
         # The direct input uses its exec-root path; imports inside that input use
         # paths relative to the owning repository. Map both spellings.
         go_import_paths.append("M{}={}".format(source.path, import_path))

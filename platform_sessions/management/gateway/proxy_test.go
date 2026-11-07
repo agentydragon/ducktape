@@ -91,6 +91,7 @@ func TestSegmentsRejectAmbiguousPaths(t *testing.T) {
 		t.Fatalf("single segment wildcard: %v", err)
 	}
 }
+
 func TestRedirectStaysInsideConfiguredOriginAndPrefix(t *testing.T) {
 	for _, location := range []string{"https://evil.invalid/api/a", "https://upstream.invalid/outside", "//evil.invalid/api/a", "/api/%2fescape"} {
 		if _, err := rewriteLocation(location, "https://upstream.invalid/api", "id", []string{"a"}, ""); err == nil {
@@ -102,6 +103,7 @@ func TestRedirectStaysInsideConfiguredOriginAndPrefix(t *testing.T) {
 		t.Fatalf("relative redirect: %q %v", got, err)
 	}
 }
+
 func TestConnectionNominatedHeadersAreRemoved(t *testing.T) {
 	headers := http.Header{"Connection": []string{"X-Custom, keep-alive"}, "X-Custom": []string{"secret"}, "X-Visible": []string{"ok"}, "Cookie": []string{"secret"}}
 	filtered := filterHeaders(headers, requestPrivate, nil)
