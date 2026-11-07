@@ -247,6 +247,28 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
   or child ID
 - `bbapi target` also auto-resolves workflow invocations to their children
 
+For a wider failure census, target history is an index, not all PR, manual, and CI
+executions. Enumerate the relevant invocations as well, inspect the child target
+outcomes, and keep the populations and cache exposure separate. To join a saved
+`bbapi --json invocation list` response, match each child's `parentRunId` to a
+runner's `runId` (not its `invocationId`):
+
+```bash
+jq -r '
+  ([.invocation[] | select(.runId != null) |
+    {key: .runId, value: {id: .invocationId, command: .command}}] | from_entries) as $runners |
+  .invocation[] | select(.command == "test" and .parentRunId != null) |
+  [.invocationId, .parentRunId, ($runners[.parentRunId].id // ""),
+   ($runners[.parentRunId].command // "")] | @tsv
+' "$out/invocations.json"
+```
+
+A filtered list may omit the runner (for example, a failed-children-only list can
+exclude a differently classified parent); an unmatched child is unknown, not unrelated.
+Even when joined, query the child's target results: the runner's command is a search
+lead, not proof that a test ran. Deduplicate physical executions and inspect failed
+attempts before estimating rates.
+
 ### Artifact Name Matching
 
 `bbapi artifact {cat,download}` and `bbapi target log` match against `"label/name"`:
@@ -260,6 +282,12 @@ match if `-` and `_` were alike. Names are what the test wrote, not what you wou
 a target or a scenario (visual captures use `test.outputs/<capture_name>.png`, with
 pytest case IDs or an explicit checkpoint name), so `bbapi artifact list`
 first beats guessing.
+
+For old artifacts, a 404 from `bbapi blob cat <uri> --invocation <runner-id>`
+does not establish that the file is gone. The legacy fallback needs the **child**
+invocation ID. `bbapi artifact cat <runner-id> <name>` resolves the child before
+fetching, or pass that child ID to `bbapi blob cat --invocation` directly. Treat
+a failed fallback as unavailable evidence, not proof of an absent artifact.
 
 ### Sharded, repeated and retried tests
 
