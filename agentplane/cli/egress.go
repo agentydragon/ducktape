@@ -1,18 +1,17 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/docs"
-
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func (a *app) egressCommand() *cobra.Command {
 	return group("egress", "Read this account's effective egress rules",
-		"Calls the Egress rules API (AGENTPLANE_EGRESS_URL, AGENTPLANE_EGRESS_CREDENTIAL).",
+		"Calls the Egress rules API (AGENTPLANE_EGRESS_GRPC_URL, AGENTPLANE_EGRESS_GRPC_CREDENTIAL).",
 		&cobra.Command{
 			Use:   "guide [credentials]",
 			Short: "Read the egress workflow guide",
@@ -36,17 +35,28 @@ func (a *app) egressCommand() *cobra.Command {
 		&cobra.Command{
 			Use:   "rules",
 			Short: "Show the egress rules that apply to this account",
-			Long: `GET /v1/rules: the ServiceAccount the credential proves (subject), and the hosts, methods and paths its
+			Long: `EgressRules.GetRules: the ServiceAccount the credential proves (subject), and the hosts, methods and paths its
 egress policies allow. A rule with a credential also says where to send its placeholder, which you must
 do yourself: the proxy swaps in the real value only where the placeholder is presented. Select a rule from
 the output, for example with jq; the proxy alone decides what matches a call.`,
 			Args: cobra.NoArgs,
-			RunE: a.command("EGRESS", func(ctx context.Context, svc *service, _ []string) error {
-				body, err := svc.do(ctx, request{method: http.MethodGet, path: "/v1/rules"})
+			RunE: func(_ *cobra.Command, _ []string) error {
+				connection, err := a.connectGRPC("EGRESS_GRPC")
 				if err != nil {
 					return err
 				}
+				defer connection.Close()
+				ctx, cancel := a.deadline()
+				defer cancel()
+				response, err := egressrulespb.NewEgressRulesClient(connection).GetRules(ctx, &egressrulespb.GetRulesRequest{})
+				if err != nil {
+					return grpcFailure(ctx, err)
+				}
+				body, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(response)
+				if err != nil {
+					return invalidResponse("%v", err)
+				}
 				return a.showOne(body, rulesText)
-			}),
+			},
 		})
 }

@@ -23,6 +23,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/egress:egress_rules_go_proto",
         "//agentplane/egress/docs",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/history_service:history_service_go_proto",
@@ -80,6 +81,7 @@ go_test(
     embed = [":cli"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/egress:egress_rules_go_proto",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/facade",
         "//agentplane/history_service:history_service_go_proto",

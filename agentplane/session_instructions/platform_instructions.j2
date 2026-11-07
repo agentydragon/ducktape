@@ -37,7 +37,7 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 
 | Service | Base URL | Authorization Bearer placeholder |
 | --- | --- | --- |
-| Egress rules | {{ egress_api_url }} | `agentplane-credential-agentplane-workload` |
+| Egress rules | {{ egress_api_url }} | `platform-route` |
 | Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
 | Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
 | Notifications | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
@@ -47,7 +47,7 @@ placeholders above from your `AGENTPLANE_*` environment variables, so a command 
 or proxy flag. Start with
 `agentplane --help`; each command's `--help` says what it does and what its exit status means.
 
-The Egress, Actions, and Notifications HTTP services serve `/llms.txt` for overviews and links to
+The Actions and Notifications HTTP services serve `/llms.txt` for overviews and links to
 workflow guides. Actions and Notifications also serve `/openapi.json` for request/response schemas.
 The Session Dispatcher exposes gRPC methods only, with no HTTP index. Check `agentplane --help` for
 the commands available in this image; when it lists `sessions`, use `agentplane sessions --help`.
@@ -56,7 +56,7 @@ task; you do not need to fetch every index at startup.
 
 | Task | Starting point |
 | --- | --- |
-| Call a protected service or diagnose an egress refusal | `agentplane egress rules`; egress `/llms.txt` explains credential presentation |
+| Call a protected service or diagnose an egress refusal | `agentplane egress rules`; `agentplane egress guide` explains credential presentation |
 | Find an Action and its arguments | `agentplane actions list`, then `agentplane actions show GROUP/ACTION` |
 | Establish expected auto-approval | `agentplane actions policy`: match the exact Action and intended arguments |
 | Submit, recover, cancel, or follow an Action | Actions `/llms.txt`: lifecycle and recovery guides |
