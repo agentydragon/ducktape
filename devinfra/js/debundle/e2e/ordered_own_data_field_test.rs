@@ -398,23 +398,21 @@ fn assert_push_preserves_root_length_read(
             edge.edge_kind == DepKind::Sequenced
                 && edge.source == source
                 && edge.target == target
-                && serde_json::to_value(&edge.sequenced_cause).unwrap()["rule"] == "cell_order"
-                && serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
-                    .as_array()
-                    .is_some_and(|conflicts| {
-                        let has_array_content_read = conflicts.iter().any(|conflict| {
-                            conflict["kind"] == "write_after_read"
-                                && conflict["cell"]["kind"] == "array_contents"
-                                && conflict["cell"]["origin"] == read_origin
-                        });
-                        let has_length_frontier = conflicts.iter().any(|conflict| {
-                            conflict["kind"] == "frontier_after_cell"
-                                && conflict["cell"]["kind"] == "own_property"
-                                && conflict["cell"]["property"] == "length"
-                                && conflict["cell"]["origin"] == read_origin
-                        });
-                        has_array_content_read && has_length_frontier
-                    })
+                && matches!(
+                    &edge.sequenced_cause,
+                    Some(SequencedCause::CellOrder { conflicts, .. })
+                        if conflicts.iter().any(|conflict| matches!(
+                            conflict,
+                            CellConflict::WriteAfterRead {
+                                cell: EffectCellReport::ArrayContents { origin }
+                            } if *origin == read_origin
+                        )) && conflicts.iter().any(|conflict| matches!(
+                            conflict,
+                            CellConflict::WriteAfterRead {
+                                cell: EffectCellReport::OwnProperty { origin, property }
+                            } if *origin == read_origin && property == "length"
+                        ))
+                )
         }),
         "push {later_binding} must preserve root length read {earlier_binding}: {:#?}",
         graph.edges,
@@ -920,24 +918,25 @@ fn push_cannot_be_forced_before_a_root_array_length_read() {
         "0 1\n",
         "",
     );
-    assert_gate_rejected_banner(&rejected.entry_path(), &rejected.report_path("cycles.json"));
-    // The forced cyclic layout reaches append's lexical binding before its
-    // initializer, while the original evaluates normally.
+    assert_gate_rejected_banner(
+        &rejected.entry_path(),
+        &rejected.report_path("candidate_relocation_assessment.json"),
+    );
+    // The rejected output reaches an uninitialized lexical binding, while
+    // the original evaluates normally.
     assert_node_error(&rejected.entry_path(), "ReferenceError");
 
     let graph = rejected.dependency_graph();
     let length_origin = assert_non_assumed_length_read(&graph, "gamma");
     assert_push_preserves_root_length_read(&graph, "alpha", "gamma", length_origin);
-    let cycles = rejected.cycles();
+    let assessment = rejected.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
     assert!(
-        cycles.iter().any(|cycle| {
-            cycle["rejection"] == "mutual_constraining_cycle"
-                && cycle["modules"].as_array().is_some_and(|modules| {
-                    modules.iter().any(|module| module.as_str() == Some("read"))
-                        && modules.iter().any(|module| module.as_str() == Some("push"))
-                })
-        }),
-        "the forced module inversion must be refused as a read/push cycle: {cycles:#?}"
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the rejected layout must invert executable source units: {assessment:#}"
     );
 }
 
