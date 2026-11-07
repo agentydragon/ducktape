@@ -4,6 +4,6 @@ ConditionKernelCommandLine=agentplane.cgroup-stress=1
 
 [Service]
 Type=simple
-Slice=pilot.slice
+Slice=stress.slice
 ExecStart=/usr/bin/busybox sleep 120
 TimeoutStartSec=15s
