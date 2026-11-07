@@ -7613,6 +7613,20 @@ fn provider_local_birth_support_requires_a_private_complete_body() {
             "1\n",
         ),
         (
+            "provider-local-birth-borrowed-publication",
+            "import { publish } from './peer.js';\nconst sink = { record: null };\nconst publishedResult = publish(sink);\nconsole.log(publishedResult.value, sink.record === publishedResult);\n",
+            "export function publish(sink) { const record = { value: 0 }; sink.record = record; record.value = 1; return record; }\n",
+            "publishedResult",
+            "1 true\n",
+        ),
+        (
+            "provider-local-birth-omitted-suffix",
+            "import { make } from './peer.js';\nconst result = make();\nconsole.log(result.value);\n",
+            "export function make() { const record = { value: 0 }; record.value = 1; return record; record.value = 2; }\n",
+            "result",
+            "1\n",
+        ),
+        (
             "provider-local-birth-native",
             "import { native } from './peer.js';\nconst nativeResult = native();\nconsole.log(nativeResult.value);\n",
             "export function native() { const record = { native: new Map(), value: 0 }; record.value = 1; return record; }\n",
@@ -7646,7 +7660,7 @@ fn provider_local_birth_support_requires_a_private_complete_body() {
         {
             assert_ne!(
                 execution["binding_effect_authority"]["authority"], "operation_receipt",
-                "{case} must not turn cached/published/unknown/native/closure operations into private-birth authority: {execution:#}"
+                "{case} lacks the complete private-body proof required for operation authority: {execution:#}"
             );
         }
     }
