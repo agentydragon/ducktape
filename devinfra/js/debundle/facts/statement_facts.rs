@@ -215,6 +215,10 @@ pub(crate) struct SynchronousCalls {
     /// fence. This is independent of effect-domain closure.
     pub(crate) root_normal_completion:
         Option<super::sync_effects::noninvoking_initialization::RootNormalCompletion>,
+    /// Exact root-level outward known throw, distinct from potential
+    /// suppression inferred from missing normal-completion evidence.
+    pub(crate) root_outward_throw:
+        Option<super::sync_effects::noninvoking_initialization::RootOutwardThrow>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
     pub(crate) initialization_coverage_refusal:

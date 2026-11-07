@@ -2861,6 +2861,65 @@ console.log(result, state, independent);\n";
 }
 
 #[test]
+fn outward_throw_control_refusal_survives_saved_analysis() {
+    let source = "console.log('prefix');\n\
+function fail() { throw 'sentinel'; }\n\
+const result = fail();\n\
+const suffix = (console.log('suffix'), 1);\n\
+export { result, suffix };\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("suffix", &[Member::new("suffix")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let args = ["--emit-on-rejection", "--effect-conflicts-jsonl"];
+    let direct = staged.run(&args);
+    assert_eq!(
+        direct.result.status.code(),
+        Some(3),
+        "{}",
+        direct.result.stderr
+    );
+    let rows = read_jsonl(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/effect_conflicts.jsonl"),
+    );
+    assert!(
+        rows.iter().any(|row| {
+            row["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| {
+                    cell["cell"]["kind"] == "execution_progress"
+                        && cell["observed_conflict"] == true
+                })
+            })
+        }),
+        "the exact outward throw retains observed control evidence: {rows:#?}"
+    );
+
+    let artifact = path(&staged.artifact).to_owned();
+    let mut saved_args = args.to_vec();
+    saved_args.extend(["--analysis", artifact.as_str()]);
+    let restored = staged.run(&saved_args);
+    assert_eq!(
+        restored.result.status.code(),
+        Some(3),
+        "{}",
+        restored.result.stderr
+    );
+    assert_same_invocation_trees(&direct, &restored);
+    for invocation in [&direct, &restored] {
+        assert_node_error_with_stdout(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "sentinel",
+            "suffix\nprefix\n",
+        );
+    }
+}
+
+#[test]
 fn own_data_descriptor_support_report_matches_direct_and_saved_analysis() {
     let source = "const target = { value: 7 };\nconst descriptors = Object.getOwnPropertyDescriptors({ value: 42 });\nconst observed = target.value;\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(observed, applied.value);\n";
     let (staged, _fixture) = staged(

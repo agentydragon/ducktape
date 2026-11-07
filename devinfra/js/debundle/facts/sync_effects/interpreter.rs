@@ -23,6 +23,7 @@ use super::super::local_transfer::{
 use super::super::noninvoking_initialization::{
     CompletedInitialization, NativeConstructorCandidate, NativeConstructorForm,
     NativeConstructorKind, NativeConstructorTransfer, OriginalInitializer, RootNormalCompletion,
+    RootOutwardThrow,
 };
 use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::super::value_model::{
@@ -17470,29 +17471,47 @@ impl Executor<'_, '_> {
         // shared root transfer's normal-completion dependencies. Unknown,
         // abrupt or incomplete roots remain suppressing.
         if outcome.complete
+            && outcome.thrown.is_none()
             && !outcome.unknown_call
             && outcome.effects.precision_losses.is_empty()
             && outcome.effects.uninitialized_reads.is_empty()
             && outcome.effects.fallback_only.reads.is_empty()
             && outcome.effects.fallback_only.rebinds.is_empty()
             && outcome.effects.fallback_only.uninitialized_reads.is_empty()
-            && let Some(source) = &effect_root_identity
         {
             let normal_dependencies = outcome
                 .effects
                 .completed_initialization
                 .as_ref()
                 .filter(|proof| proof.covers(owner))
-                .map(|proof| proof.dependencies().clone())
-                .or_else(|| outcome.effect_coverage.normal_dependencies());
-            if let Some(dependencies) = normal_dependencies {
-                outcome.effects.root_normal_completion = RootNormalCompletion::from_root(
+                .and_then(|proof| {
+                    RootNormalCompletion::from_completed_initialization(owner, proof)
+                });
+            outcome.effects.root_normal_completion = normal_dependencies.or_else(|| {
+                let source = effect_root_identity.as_ref()?;
+                let dependencies = outcome.effect_coverage.normal_dependencies()?;
+                RootNormalCompletion::from_root(
                     source,
                     owner,
                     &self.state.initialized_bindings,
                     dependencies,
-                );
-            }
+                )
+            });
+        }
+        // A potential or unknown suppression remains a conservative fence
+        // write, but only an exact outward known throw is marked observed for
+        // pair-premise contradiction accounting.
+        if outcome.complete
+            && outcome.thrown.is_some()
+            && !outcome.unknown_call
+            && outcome.effects.precision_losses.is_empty()
+            && let (Some(source), Some(dependencies)) = (
+                effect_root_identity.as_ref(),
+                outcome.effect_coverage.known_abrupt_dependencies(),
+            )
+        {
+            outcome.effects.root_outward_throw =
+                RootOutwardThrow::from_root(source, owner, dependencies);
         }
         if let Some(identity) = outcome.root_effect_identity.take() {
             let expected_root_calls: BTreeSet<_> = calls

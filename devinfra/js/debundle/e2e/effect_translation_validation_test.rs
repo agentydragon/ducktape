@@ -3121,6 +3121,23 @@ fn a_pair_premise_does_not_hide_another_reader() {
         assert_eq!(pair["disposition"], disposition, "{pair:#}");
         assert!(pair["cells"].as_array().unwrap().iter().any(|cell| cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "state"), "{pair:#}");
     }
+    let premise_pair = examples(&report)
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 4 && pair["runs_later"]["unit"] == 2)
+        .expect("the third reader and first initializer retain their pair row");
+    let progress = premise_pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| cell["cell"]["kind"] == "execution_progress")
+        .expect("potential suppression remains represented by the shared progress cell");
+    assert_eq!(progress["observed_conflict"], false, "{progress:#}");
+    assert!(
+        ["first_write", "later_write"]
+            .iter()
+            .any(|field| { progress[*field]["kind"] == "potential_suppression" }),
+        "missing normality is a conservative but non-observed write: {progress:#}"
+    );
 }
 
 #[test]

@@ -502,9 +502,12 @@ struct SavedSynchronousCalls<'a> {
         Cow<'a, Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>>,
     completed_initialization:
         Cow<'a, Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>>,
-    #[serde(default)]
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     root_normal_completion:
         Cow<'a, Option<super::sync_effects::noninvoking_initialization::RootNormalCompletion>>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    root_outward_throw:
+        Cow<'a, Option<super::sync_effects::noninvoking_initialization::RootOutwardThrow>>,
     initialization_coverage_refusal:
         Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
     evaluation_effects: Cow<'a, super::evaluation_effects::EvaluationEffects>,
@@ -552,6 +555,7 @@ impl<'a> SavedSynchronousCalls<'a> {
             initializer_binding_effects: Cow::Borrowed(&calls.initializer_binding_effects),
             completed_initialization: Cow::Borrowed(&calls.completed_initialization),
             root_normal_completion: Cow::Borrowed(&calls.root_normal_completion),
+            root_outward_throw: Cow::Borrowed(&calls.root_outward_throw),
             initialization_coverage_refusal: Cow::Borrowed(&calls.initialization_coverage_refusal),
             evaluation_effects: Cow::Borrowed(&calls.evaluation_effects),
             local_record_factory_uses: calls
@@ -639,6 +643,7 @@ impl<'a> SavedSynchronousCalls<'a> {
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
             root_normal_completion: self.root_normal_completion.into_owned(),
+            root_outward_throw: self.root_outward_throw.into_owned(),
             initialization_coverage_refusal: self.initialization_coverage_refusal.into_owned(),
             evaluation_effects: self.evaluation_effects.into_owned(),
             purity_disagreement: self
@@ -754,6 +759,20 @@ mod tests {
             .expect("saved synchronous facts are a struct")
             .remove("operation_support_receipts");
         assert!(serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err());
+
+        for field in ["root_normal_completion", "root_outward_throw"] {
+            let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
+                .expect("control receipt snapshot");
+            let mut encoded = serde_json::to_value(saved).expect("saved facts serialize");
+            encoded
+                .as_object_mut()
+                .expect("saved synchronous facts are a struct")
+                .remove(field);
+            assert!(
+                serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err(),
+                "missing {field} must not silently erase control evidence"
+            );
+        }
     }
 
     // A disagreement denotes a classifier invariant failure, so a normal

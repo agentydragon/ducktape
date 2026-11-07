@@ -518,6 +518,11 @@ Unknown or abrupt completion remains suppressing. A known caught throw or
 callable return does not write the outer fence by itself. An empty
 source-prefix ledger is not an inert certificate: skipping the read requires
 both exact normal completion and an otherwise empty semantic footprint.
+Missing normal-completion evidence creates a conservative potential-suppression
+write, not an observed event that contradicts an authored pair premise. Only
+an exact root-level outward known throw with covered abrupt-effect
+dependencies is marked as an observed progress write; absent or incomplete
+abrupt proof remains potential suppression.
 Existing completed-initializer evidence may prove a lazy function's creation
 normal even while its deferred parameters or body have unknown effect domains;
 that normality evidence does not close those effect domains. This bounded
