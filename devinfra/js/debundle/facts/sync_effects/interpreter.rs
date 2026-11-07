@@ -5556,7 +5556,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.invalidate_writable_object(selection.result);
         self.state.tainted_objects.insert(selection.result);
         outcome.unsupported(ExecutionOperation::ArrayIteration, call.owner, call.span);
-        outcome.effect_coverage = EffectCoverageFragment::default();
+        outcome
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
         // Keep completed callback returns reachable by the caller's remainder.
         // It summarizes the unsupported suffix without restarting this operation.
         CallTransfer::Values(Values::from([
@@ -9802,7 +9804,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let instance = AbstractValue::Instance(
             key,
             self.intern_callback_set(values),
-            InstanceOrigin::Constructed { own_data },
+            InstanceOrigin::Constructed {
+                own_data: Arc::new(own_data),
+            },
         );
         let abrupt = outcome
             .returns
