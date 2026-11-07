@@ -59,6 +59,12 @@ mounted into a runner or harness container.
 
 ## Per-model client configuration
 
+The native `agentplane.llm_ingress.v1.ModelConfigService.GetModelConfig` gRPC method exposes the
+same configuration to authenticated workloads. The response omits `total_context_budget_tokens`
+for an unknown model; a configured budget is positive. It uses the same Pod-bound TokenReview
+audience and namespace policy as the HTTP listener. The runner currently uses the HTTP endpoint
+below; its gRPC cutover is separate.
+
 The authenticated `GET /agentplane/model-config?model=...` endpoint returns a
 `ModelConfig` record for an exposed route, or JSON `null` (status 200) for a route
 with no configuration, on which the runner uses harness defaults. The ingress retains
