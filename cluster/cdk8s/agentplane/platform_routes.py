@@ -18,7 +18,7 @@ from constructs import Construct
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import egress, history_service, sandbox_pod, telemetry
+from cluster.cdk8s.agentplane import egress, history_service, notifications, sandbox_pod, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -48,13 +48,17 @@ def egress_rules(namespace: str) -> Route:
     return Route("egress-rules", egress.admin(namespace), WORKLOAD_TOKEN_AUDIENCE, 3133)
 
 
+def notifications_grpc(namespace: str) -> Route:
+    return Route("notifications", notifications.service(namespace), notifications.TOKEN_AUDIENCE, 3134)
+
+
 def telemetry_route() -> Route:
     """The runner's local, unauthenticated gRPC hop to Alloy; the runner never dials Alloy directly."""
     return Route("telemetry", telemetry.ALLOY_OTLP_GRPC, None, 3132)
 
 
 def routes(namespace: str) -> tuple[Route, ...]:
-    return ingress(namespace), telemetry_route(), egress_rules(namespace)
+    return ingress(namespace), telemetry_route(), egress_rules(namespace), notifications_grpc(namespace)
 
 
 def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> dict[str, PlatformRoute]:
