@@ -240,6 +240,26 @@ class ProviderControlClient:
         )
         self._check_instance(response.instance)
         self._check_candidate_result(response.WhichOneof("result"), response.rejected.reason)
+        if response.WhichOneof("result") == "failure":
+            failure = response.failure
+            if failure.reason not in (
+                pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE,
+                pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
+                pb.IMPORT_FAILURE_REASON_STORAGE_ERROR,
+            ) or (
+                failure.HasField("upstream_http_status")
+                and (
+                    failure.reason != pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR
+                    or not 100 <= failure.upstream_http_status <= 599
+                )
+            ):
+                raise ProviderProtocolError("Provider returned an invalid import failure")
+        if response.WhichOneof("result") == "outcome_unknown" and response.outcome_unknown.reason not in (
+            pb.UNKNOWN_OUTCOME_REASON_UNSPECIFIED,
+            pb.UNKNOWN_OUTCOME_REASON_TIMEOUT,
+            pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE,
+        ):
+            raise ProviderProtocolError("Provider returned an invalid unknown-outcome reason")
         return response
 
     async def verify_candidate(

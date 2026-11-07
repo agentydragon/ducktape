@@ -111,6 +111,7 @@ for (const [error, status, message] of [
   ["verification_timeout", 504, /timed out.*may have completed/],
   ["upstream_unavailable", 502, /Could not connect.*may have completed/],
   ["invalid_response", 502, /unexpected response.*Check the session status/],
+  ["storage_error", 503, /session storage.*Check the session status/],
   ["upstream_http_429", 502, /HTTP 429.*Check the session status/],
 ]) {
   ui.nodes.session.value = beta;
