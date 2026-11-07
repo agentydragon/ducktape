@@ -8,9 +8,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -187,108 +185,4 @@ func usageFailure(format string, args ...any) *failure {
 
 func invalidResponse(format string, args ...any) *failure {
 	return clientFailure(exitRefused, "INTERNAL", "unusable response: "+format, args...)
-}
-
-// httpFailure classifies a non-2xx response once, from its status and the refusal headers. conflict
-// is the gRPC code a 409 carries for the request that was made.
-func httpFailure(status int, header http.Header, body []byte, conflict string) *failure {
-	f := &failure{sent: true, apiError: apiError{Source: sourceService, HTTPStatus: &status, Message: serviceMessage(body)}}
-	for _, refusal := range []struct{ header, source string }{{sidecarHeader, sourceSidecar}, {egressHeader, sourceEgress}} {
-		value := header.Get(refusal.header)
-		if value == "" {
-			continue
-		}
-		f.Source = refusal.source
-		if match := reasonPattern.FindStringSubmatch(value); match != nil {
-			f.Reason = &match[1]
-		}
-		if f.Message == "" {
-			f.Message = value
-		}
-		break
-	}
-	if f.Message == "" {
-		f.Message = http.StatusText(status)
-	}
-	f.RetryAfterSeconds = retryAfter(header.Get("Retry-After"))
-	switch status {
-	case http.StatusBadRequest, http.StatusUnprocessableEntity:
-		f.Code, f.exit = "INVALID_ARGUMENT", exitRefused
-	case http.StatusUnauthorized:
-		f.Code, f.exit = "UNAUTHENTICATED", exitRefused
-	case http.StatusForbidden:
-		f.Code, f.exit = "PERMISSION_DENIED", exitRefused
-	case http.StatusNotFound:
-		f.Code, f.exit = "NOT_FOUND", exitNotFound
-	case http.StatusConflict:
-		f.Code, f.exit = conflict, exitConflict
-	case http.StatusTooManyRequests:
-		f.Code, f.exit = "RESOURCE_EXHAUSTED", exitTransient
-	case http.StatusBadGateway, http.StatusServiceUnavailable:
-		f.Code, f.exit = "UNAVAILABLE", exitTransient
-	case http.StatusGatewayTimeout:
-		f.Code, f.exit = "DEADLINE_EXCEEDED", exitTransient
-	case http.StatusInternalServerError:
-		f.Code, f.exit = "INTERNAL", exitRefused
-	default:
-		f.Code, f.exit = "UNKNOWN", exitRefused
-	}
-	// A gRPC-Gateway facade names the gRPC code itself, and a rate limit's delay in RetryInfo.
-	if gateway, ok := parseGatewayError(body); ok && f.Source == sourceService {
-		f.Code, f.exit = gateway.code, gateway.exit
-		if gateway.retryAfter != nil {
-			f.RetryAfterSeconds = gateway.retryAfter
-		}
-	}
-	return f
-}
-
-// serviceMessage is the text a service put in its error body: FastAPI's `detail` (a string, or the
-// list of validation errors) or a `google.rpc.Status` `message`. It is empty for a body with neither.
-func serviceMessage(body []byte) string {
-	var parsed struct {
-		Detail  json.RawMessage `json:"detail"`
-		Message string          `json:"message"`
-	}
-	if json.Unmarshal(body, &parsed) == nil {
-		if parsed.Message != "" {
-			return parsed.Message
-		}
-		var text string
-		if json.Unmarshal(parsed.Detail, &text) == nil && text != "" {
-			return text
-		}
-		var problems []struct {
-			Location []any  `json:"loc"`
-			Message  string `json:"msg"`
-		}
-		if json.Unmarshal(parsed.Detail, &problems) == nil && len(problems) > 0 {
-			lines := make([]string, len(problems))
-			for i, problem := range problems {
-				location := make([]string, len(problem.Location))
-				for j, part := range problem.Location {
-					location[j] = fmt.Sprint(part)
-				}
-				lines[i] = strings.Join(location, ".") + ": " + problem.Message
-			}
-			return strings.Join(lines, "; ")
-		}
-		return ""
-	}
-	text := strings.Join(strings.Fields(string(body)), " ")
-	if len(text) > 200 {
-		text = text[:200] + "..."
-	}
-	return text
-}
-
-func retryAfter(value string) *int {
-	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
-		return &seconds
-	}
-	if at, err := http.ParseTime(value); err == nil {
-		seconds := max(0, int(math.Ceil(time.Until(at).Seconds())))
-		return &seconds
-	}
-	return nil
 }

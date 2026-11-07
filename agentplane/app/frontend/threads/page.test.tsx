@@ -23,7 +23,7 @@ import {
 } from "../../../environments/v1/environment_service_pb";
 
 import { clone, create, toJson } from "@bufbuild/protobuf";
-import type { LangfuseSearchSettings, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, TraceSearchSettings } from "../app_config_client";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
@@ -38,7 +38,7 @@ import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_
 import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
-import { api } from "../client";
+import * as appConfigClient from "../app_config_client";
 import {
   type CommandSubmission,
   type CommandTarget,
@@ -191,11 +191,10 @@ beforeEach(() => {
   dispatchWatches = stubWatchFetch().served;
   threadRows = null;
   noticeInboxes = [];
-  vi.spyOn(api, "GET").mockImplementation((async (path: string) => {
-    const data =
-      path === "/frontend-config" ? { trace_search: traceSearchSettings, langfuse_search: langfuseSearchSettings } : {};
-    return { data, response: Response.json(data) };
-  }) as never);
+  vi.spyOn(appConfigClient, "getFrontendConfig").mockImplementation(async () => ({
+    trace_search: traceSearchSettings,
+    langfuse_search: langfuseSearchSettings,
+  }));
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],

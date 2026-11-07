@@ -6,12 +6,12 @@ Use `agentplane notifications inbox read SESSION_ID --after CURSOR --limit 128 -
 bounded page and `agentplane notifications inbox ack SESSION_ID --through CURSOR` to acknowledge the
 handled prefix. Reads do not acknowledge; acknowledgement covers every entry through the cursor,
 across all subscriptions in that inbox. The CLI reads the configured Notifications URL and credential
-from `AGENTPLANE_NOTIFICATIONS_URL` and `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`. For raw HTTP calls,
+from `AGENTPLANE_NOTIFICATIONS_GRPC_URL` and `AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL`. For raw HTTP calls,
 use the Notifications URL and Bearer placeholder from your platform instructions through the egress
 proxy. No call lists enabled providers: a service without the GitHub App refuses a GitHub subscription
 with `PERMISSION_DENIED`. JSON from the service uses camelCase field names and writes 64-bit integers
-(cursors, versions) as strings. Requests accept either spelling and ignore fields they do not know, so
-check that the response echoes what you sent.
+(cursors, versions) as strings. Requests accept either protobuf or camelCase field spelling and reject
+unknown fields; check that the response echoes what you sent.
 
 Subscriptions use the explicitly supplied `session_id`. `agentplane notifications --help`
 lists the commands for subscriptions, inboxes and messages. Authentication establishes your
@@ -27,11 +27,11 @@ Sandbox has wake on message turned on.
 
 ## Workflows
 
-- [Subscriptions](/docs/agents/subscriptions.md): Read before following an Action or creating, renewing, cancelling, or recovering monitoring.
-- [Inbox handling](/docs/agents/inbox_handling.md): Read when a notice arrives; retrieve entries, handle the contiguous prefix, and acknowledge it explicitly.
-- [GitHub](/docs/agents/github.md): Read before following a PR, issue, branch, commit, or CI activity.
-- [Messages](/docs/agents/messages.md): Read before sending another agent's Session a message or checking whether it was acknowledged.
+- `agentplane notifications guide subscriptions` ([HTTP guide](/docs/agents/subscriptions.md)): Read before following an Action or creating, renewing, cancelling, or recovering monitoring.
+- `agentplane notifications guide inbox` ([HTTP guide](/docs/agents/inbox_handling.md)): Read when a notice arrives; retrieve entries, handle the contiguous prefix, and acknowledge it explicitly.
+- `agentplane notifications guide github` ([HTTP guide](/docs/agents/github.md)): Read before following a PR, issue, branch, commit, or CI activity.
+- `agentplane notifications guide messages` ([HTTP guide](/docs/agents/messages.md)): Read before sending another agent's Session a message or checking whether it was acknowledged.
 
 ## Reference
 
-- [OpenAPI](/openapi.json): Routes, request and response schemas, limits and errors, for a harness without the command and for the routes it lacks.
+- HTTP `/openapi.json`: Routes and schemas for calls the CLI does not yet support.

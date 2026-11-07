@@ -27,3 +27,6 @@ class Settings(BaseSettings):
     reader_accounts: Set[str] = Field(
         default_factory=frozenset, description="Accounts allowed to read all policy resources."
     )
+    writer_accounts: Set[str] = Field(
+        default_factory=frozenset, description="Accounts allowed to create and revoke operator PolicyBindings."
+    )

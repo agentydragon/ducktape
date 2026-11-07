@@ -50,7 +50,7 @@ class LangfuseSearchSettings(BaseModel):
 
 
 class FrontendConfig(BaseModel):
-    """Browser-safe settings exposed by `GET /frontend-config`."""
+    """Browser-safe settings exposed by the generated AppService frontend-config route."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -96,7 +96,8 @@ class AppSettingsConfig(YamlFileSettings):
     )
     action_federation: ActionFederationSettings
     frontend_config: FrontendConfig = Field(
-        default_factory=FrontendConfig, description="Browser-safe settings exposed by `GET /frontend-config`."
+        default_factory=FrontendConfig,
+        description="Browser-safe settings exposed by `GET /upstream/app-config/v1/frontend-config`.",
     )
 
 

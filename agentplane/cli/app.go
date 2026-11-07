@@ -125,8 +125,8 @@ func (s *seconds) String() string { return s.d.String() }
 func (s *seconds) Type() string { return "seconds" }
 
 const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions get, read-turns,
-and observe-input. The Notification Service uses HTTP through the egress proxy; egress rules use gRPC
-through a local sidecar route. The environments group reads the co-hosted Runner Gateway discovery
+and observe-input. Notifications and egress rules use gRPC through local sidecar routes.
+The environments group reads the co-hosted Runner Gateway discovery
 API. It adds no authority and keeps no state. Each group reads its AGENTPLANE_*_URL and AGENTPLANE_*_CREDENTIAL pair
 (the placeholder bearer) and fails alone with exit 2 when they are missing; environments uses AGENTPLANE_SESSIONS_URL
 and AGENTPLANE_SESSIONS_CREDENTIAL.
@@ -182,21 +182,4 @@ func group(use, short, long string, children ...*cobra.Command) *cobra.Command {
 	command := &cobra.Command{Use: use, Short: short, Long: long, Args: cobra.NoArgs, RunE: requireSubcommand}
 	command.AddCommand(children...)
 	return command
-}
-
-// call is the body of a command: the connected service and the positional arguments, under the
-// call's deadline.
-type call func(ctx context.Context, svc *service, args []string) error
-
-// command connects the group, applies --timeout and runs fn.
-func (a *app) command(groupName string, fn call) func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, args []string) error {
-		svc, err := a.connect(groupName)
-		if err != nil {
-			return err
-		}
-		ctx, cancel := a.deadline()
-		defer cancel()
-		return fn(ctx, svc, args)
-	}
 }

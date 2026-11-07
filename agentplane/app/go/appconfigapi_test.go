@@ -31,6 +31,16 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 				"HARNESS_CLAUDE": {},
 			},
 		},
+		FrontendConfig: FrontendConfig{
+			TraceSearch: &TraceSearchSettings{
+				GrafanaBaseURL: "https://grafana.example.test/", TempoDatasourceUID: "fixture-tempo", DeploymentEnvironment: "fixture",
+			},
+			LangfuseSearch: &LangfuseSearchSettings{
+				BaseURL: "https://langfuse.example.test/", ProjectID: "fixture-project",
+				SessionMetadataKey: "session", SandboxNamespaceMetadataKey: "namespace",
+				SandboxServiceAccountMetadataKey: "account",
+			},
+		},
 		ThreadPresets: map[string]ThreadPreset{
 			"default": {Harness: "HARNESS_CODEX", Model: "model-a", CWD: "/workspace", Instructions: "", SetupScript: ""},
 		},
@@ -45,7 +55,9 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 	}
 	handler := server.Handler(authentication)
 
-	for _, path := range []string{"/upstream/app-config/v1/models", "/upstream/app-config/v1/presets"} {
+	for _, path := range []string{
+		"/upstream/app-config/v1/models", "/upstream/app-config/v1/presets", "/upstream/app-config/v1/frontend-config",
+	} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusUnauthorized {
@@ -64,6 +76,10 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		{
 			path: "/upstream/app-config/v1/presets",
 			want: `{"presets":[{"name":"work","title":"Work","template":"linux","policySets":[],"inboxTags":["team"],"sessionDefaults":{"harness":"HARNESS_CODEX","model":"model-a","cwd":"/workspace","instructions":"","setupScript":""},"bootstrap":""}]}`,
+		},
+		{
+			path: "/upstream/app-config/v1/frontend-config",
+			want: `{"frontendConfig":{"traceSearch":{"grafanaBaseUrl":"https://grafana.example.test/","tempoDatasourceUid":"fixture-tempo","deploymentEnvironment":"fixture"},"langfuseSearch":{"baseUrl":"https://langfuse.example.test/","projectId":"fixture-project","sessionMetadataKey":"session","sandboxNamespaceMetadataKey":"namespace","sandboxServiceAccountMetadataKey":"account"}}}`,
 		},
 	} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)

@@ -39,6 +39,21 @@ recreates it.
   appears. It touches only native bindings carrying its label and its own policy namespace, so
   several Agentplane instances' controllers share a cluster.
 
+`PolicyService.GrantSandboxPolicyBinding` and `RevokeSandboxPolicyBinding` are the operator write
+boundary. Their Pod-bound writer allowlist is configured independently from the workload read/watch
+resolver; an empty `writer_accounts` list denies both methods. Grant requires the exact live Sandbox
+UID, its controller-owned ServiceAccount, and existing unique PolicySet names. It stores the Sandbox
+UID in a non-controller owner reference. Revoke requires the caller's Sandbox UID and observed
+PolicyBinding UID, refuses Flux and Sandbox-controller ownership, and deletes with both Kubernetes
+UID and resourceVersion preconditions.
+
+Kubernetes does not transact a Sandbox read with a PolicyBinding create. Grant checks the exact
+Sandbox and ServiceAccount before and after creation, and attempts UID/resourceVersion-guarded
+cleanup if either identity changed. A replacement between those checks can still see a transient
+name-based ServiceAccount grant before cleanup or owner-reference garbage collection; the owner UID
+prevents that binding from belonging to a later Sandbox incarnation. Revoke's resourceVersion
+precondition prevents deleting a binding edited or replaced after its read.
+
 ## Revocation timing
 
 Expiry takes effect when the controller deletes the `PolicyBinding`, and deletion when it deletes the
@@ -58,11 +73,13 @@ not exist. It is checked once the subject resolves and holds even when applying 
 ## Policy resource watches
 
 `PolicyService` serves the policy namespace on every controller replica. `WatchPolicyBindings`
-observes bindings for one ServiceAccount; `WatchPolicySets` observes PolicySets. A directly
-configured reader may select another subject and see every set; other authenticated ServiceAccounts
-may read their own bindings and only sets named by those bindings. Losing a binding removes a set
-from that caller's view when no other binding names it. The server reviews the PolicyService-audience
-bearer at admission, before writes, and while idle; a changed or refused identity ends the stream.
+observes bindings for one ServiceAccount; `WatchPolicySets` observes PolicySets; and
+`ListPolicySetNames` returns one sorted snapshot of the PolicySet names visible to the caller. A
+directly configured reader may select another subject and see every set; other authenticated
+ServiceAccounts may read their own bindings and only sets named by those bindings. Losing a binding
+removes a set from that caller's view when no other binding names it. The server reviews the
+PolicyService-audience bearer at admission, before writes, and while idle; a changed or refused
+identity ends the stream.
 
 Each stream sends snapshot chunks, `snapshot_complete`, then coalesced resource upserts and
 UID-fenced removals. It opens Kubernetes watches before reading the snapshot, so an intervening

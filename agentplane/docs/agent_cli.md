@@ -1,8 +1,8 @@
 # Agent CLI
 
 `agentplane` ([`cli/`](../cli/)) is a Go command an agent runs from its shell to call the generated
-Action Service, Session Dispatcher, Environment Discovery/Lifecycle, History Service and Egress rules
-gRPC APIs, and the Notification Service HTTP API through the egress proxy. It adds no authority or state and no backend logic. What it takes off each agent
+Action Service, Session Dispatcher, Environment Discovery/Lifecycle, History Service, Notification Service
+and Egress rules gRPC APIs. It adds no authority or state and no backend logic. What it takes off each agent
 is the part `curl` leaves to every model turn: JSON quoting, the idempotency and recovery protocol, long
 waits, telling an egress refusal from a service refusal, and exit status. `agentplane --help` is what an
 agent reads first; each command's `--help` says what it wraps and the exit codes that matter.
@@ -57,15 +57,17 @@ group, so another service joins as one more group under them.
 | `environments list [--limit N] [--after TOKEN]`                                                                                                      | `EnvironmentService.ListEnvironments`                                   |
 | `environments get NAMESPACE NAME UID`                                                                                                                | `EnvironmentService.GetEnvironment`                                     |
 | `environments resume NAMESPACE NAME UID --resume-token TOKEN`                                                                                        | `EnvironmentService.ResumeEnvironment`                                  |
-| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--session ID]`             | `POST /v1/subscriptions`                                                |
-| `notifications inbox read SESSION_ID [--after CURSOR] [--limit N]`                                                                                   | `GET /v1/sessions/{session_id}/inbox/entries`, one page                 |
-| `notifications inbox ack SESSION_ID --through CURSOR`                                                                                                | `PUT /v1/sessions/{session_id}/inbox/acknowledgement`                   |
-| `notifications subscriptions`                                                                                                                        | `GET /v1/subscriptions`, paged                                          |
-| `notifications subscription ID`                                                                                                                      | `GET /v1/subscriptions/{id}`                                            |
-| `notifications renew ID [--lifetime-days N]`                                                                                                         | `GET`, then `PATCH` with the read `version`                             |
-| `notifications cancel ID`                                                                                                                            | `DELETE /v1/subscriptions/{id}`                                         |
-| `notifications send SESSION_ID {--body TEXT \| --body-file FILE\|-} [--from-session ID] [--key KEY]`                                                 | `POST /v1/messages`                                                     |
-| `notifications message ID`                                                                                                                           | `GET /v1/messages/{id}`                                                 |
+| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--session ID]`             | `Notifications.CreateSubscription`                                      |
+| `notifications subscribe create --request-file FILE\|-`                                                                                              | `Notifications.CreateSubscription` from protobuf JSON                   |
+| `notifications guide [subscriptions\|inbox\|github\|messages]`                                                                                       | bundled workflow guide                                                  |
+| `notifications inbox read SESSION_ID [--after CURSOR] [--limit N]`                                                                                   | `Notifications.ReadInbox`, one page                                     |
+| `notifications inbox ack SESSION_ID --through CURSOR`                                                                                                | `Notifications.AcknowledgeInbox`                                        |
+| `notifications subscriptions`                                                                                                                        | `Notifications.ListSubscriptions`, paged                                |
+| `notifications subscription ID`                                                                                                                      | `Notifications.GetSubscription`                                         |
+| `notifications renew ID [--lifetime-days N]`                                                                                                         | `GetSubscription`, then `RenewSubscription` with its version            |
+| `notifications cancel ID`                                                                                                                            | `Notifications.CancelSubscription`                                      |
+| `notifications send SESSION_ID {--body TEXT \| --body-file FILE\|-} [--from-session ID] [--key KEY]`                                                 | `Notifications.SendMessage`                                             |
+| `notifications message ID`                                                                                                                           | `Notifications.GetMessage`                                              |
 | `egress rules`                                                                                                                                       | `EgressRules.GetRules`                                                  |
 
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
@@ -165,7 +167,7 @@ Left out on purpose:
   as decimal strings, matching protobuf JSON for `uint64`; this corrects the prior numeric JSON shape.
   Action JSON is therefore a deliberate format change from the previous HTTP client's snake_case fields
   and lowercase state names; update scripts that read `--json` before using this CLI version.
-- Notifications keep their service JSON objects. Egress rules emit ProtoJSON. A gRPC-Gateway response wraps each answer in
+- Notifications and Egress emit ProtoJSON. A Notification RPC response wraps each answer in
   a named field (`{"subscription": {...}}`, `{"subscriptions": [...]}`); the `notifications` commands
   generally print that field's value. `notifications inbox read --json` prints the full response with its
   `inbox`, `entries` and optional `notice`; `notifications inbox ack --json` prints the updated inbox.
@@ -196,14 +198,13 @@ Left out on purpose:
 
 The CLI reads the environment of the harness and of every command it runs. There are no config files and
 no discovery calls, so no command depends on a service it does not talk to. Actions and Sessions use
-generated gRPC over HTTP/2, as does Egress; Notifications use HTTP.
+generated gRPC over HTTP/2, as do Egress and Notifications.
 
-| Variable                                                                                                                                                                       | Value                                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`, `AGENTPLANE_EGRESS_GRPC_URL`                                                                    | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
-| `AGENTPLANE_NOTIFICATIONS_URL`                                                                                                                                                 | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
-| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_GRPC_CREDENTIAL` | the inert placeholder substituted by the egress proxy or direct sidecar route                                    |
-| `AGENTPLANE_SESSION_ID`                                                                                                                                                        | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
+| Variable                                                                                                                                                                            | Value                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`, `AGENTPLANE_EGRESS_GRPC_URL`, `AGENTPLANE_NOTIFICATIONS_GRPC_URL`                                    | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
+| `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL`, `AGENTPLANE_EGRESS_GRPC_CREDENTIAL` | the inert placeholder substituted by the egress proxy or direct sidecar route                                    |
+| `AGENTPLANE_SESSION_ID`                                                                                                                                                             | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
 
 Managed Pod and VM environments supply the Session Dispatcher URL and inert credential placeholder
 through their shared CLI environment. The egress path holds and substitutes the audience-specific
@@ -217,19 +218,18 @@ destination and refer to `AGENTPLANE_DESTINATION`. The CLI has no compatibility 
 variable. Pass `--session ID` to notification subscription commands in such a Session, or open a new
 Session to receive the current prompt and environment. Stored prompts and History are not rewritten.
 
-The HTTP clients use `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` from the harness. The
-Action and Session gRPC clients use `HTTPS_PROXY` for proxy resolution even when their configured service URL is
+The Action and Session gRPC clients use `HTTPS_PROXY` for proxy resolution even when their configured service URL is
 `http`; they open an HTTP CONNECT tunnel, carrying h2c to the egress proxy. `NO_PROXY` excludes targets
-from both clients. Egress rules use a local sidecar gRPC route, bypassing the forward proxy. `subscribe` also accepts `--session ID`, which wins over the metadata variable.
+from proxying. Egress rules and Notifications use local sidecar gRPC routes, bypassing the forward proxy. `subscribe` also accepts `--session ID`, which wins over the metadata variable.
 Only that Session ID is sent to the subscription API; the service resolves its exact native placement.
 The CLI reads a raw Session ID; it has no Sandbox identity or destination envelope.
 
 Credential scope:
 
-- The CLI holds only a placeholder. Actions, Sessions and Egress send it as `authorization: Bearer <placeholder>` gRPC
-  metadata on each RPC; Notifications send it as an HTTP `Authorization` header. It never
+- The CLI holds only a placeholder. Actions, Sessions, Egress and Notifications send it as `authorization: Bearer <placeholder>` gRPC
+  metadata on each RPC. It never
   prints the value and has no flag to supply another credential, bypass the proxy, or skip certificate
-  verification. The HTTP clients follow no redirect.
+  verification.
 - Authority is the Sandbox's ServiceAccount, substituted by the egress proxy or the direct sidecar route,
   as appropriate ([workload authentication](workload_authentication.md)). `actions policy` names
   that account in `subject`.
@@ -239,11 +239,10 @@ Credential scope:
 
 ## Errors and exit codes
 
-Action, Session and Egress RPC failures use the returned gRPC status code and message. HTTP API failures use the HTTP status,
-refusal headers, and, for a gRPC-Gateway service, the response body. The central proxy sets
+Action, Session, Notification and Egress RPC failures use the returned gRPC status code and message. The central proxy sets
 `x-agentplane-egress` (`denied; reason=...`) and the Pod sidecar sets `x-agentplane-egress-sidecar`
 (`reason=...`) on their HTTP refusals ([egress spec](../egress/SPEC.md)). Error envelopes use the same
-gRPC status vocabulary across both transports; only HTTP API failures carry `http_status`. They appear
+gRPC status vocabulary; gRPC calls leave `http_status` null. They appear
 as one line of JSON on stderr under `--json`:
 
 ```json
@@ -261,29 +260,9 @@ as one line of JSON on stderr under `--json`:
 
 `source` is `service`, `egress`, `sidecar` or `client` (the CLI itself: usage, configuration, or a lost
 connection). `reason` is the `reason=` token of an HTTP refusal header when there is one. In text mode
-the same fields print as one line. `retry_after_seconds` is the `google.rpc.RetryInfo` delay on a gRPC
-status or gateway body, else the HTTP `Retry-After` header. The mapping:
-
-| HTTP                                              | gRPC code                           | Exit |
-| ------------------------------------------------- | ----------------------------------- | ---- |
-| `400`, `422`                                      | `INVALID_ARGUMENT`                  | `1`  |
-| `401`                                             | `UNAUTHENTICATED`                   | `1`  |
-| `403` (service or egress)                         | `PERMISSION_DENIED`                 | `1`  |
-| `404`                                             | `NOT_FOUND`                         | `5`  |
-| `409`                                             | `ALREADY_EXISTS` / `ABORTED`        | `4`  |
-| `429`                                             | `RESOURCE_EXHAUSTED`                | `3`  |
-| `502`, `503`, `504`, connection failure, deadline | `UNAVAILABLE` / `DEADLINE_EXCEEDED` | `3`  |
-| any other status                                  | `INTERNAL` (`500`) / `UNKNOWN`      | `1`  |
-
-A `409` is `ALREADY_EXISTS` for `submit` and `send` (a repeated key) and `ABORTED` elsewhere (a stale
-`version`).
-
-**Deviation:** a gRPC-Gateway service answers an error with a `google.rpc.Status` body, whose numeric
-`code` names the gRPC code and replaces the guess above, because the HTTP status only approximates it
-(`FAILED_PRECONDITION` and `OUT_OF_RANGE` arrive as `400`, `ALREADY_EXISTS` and `ABORTED` as `409`).
-`NOT_FOUND` exits `5`; `ALREADY_EXISTS` and `ABORTED` `4`; `RESOURCE_EXHAUSTED`, `UNAVAILABLE` and
-`DEADLINE_EXCEEDED` `3`; every other code `1`. Today that is the `notifications` group. A refusal
-carrying a platform header keeps its own source and code whatever the body says.
+the same fields print as one line. `retry_after_seconds` is the `google.rpc.RetryInfo` delay.
+`NOT_FOUND` exits `5`; `ALREADY_EXISTS` and `ABORTED` exit `4`; `RESOURCE_EXHAUSTED`,
+`UNAVAILABLE` and `DEADLINE_EXCEEDED` exit `3`; other service errors exit `1`.
 
 Exit codes say what the caller should do next. `0` and `128 + signal` follow shell convention; no code
 is `126` or `127`.

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import type { TraceSearchSettings } from "./schema";
+import type { TraceSearchSettings } from "./app_config_client";
 import { traceSearchUrl } from "./trace_search";
 
 const settings: TraceSearchSettings = {

@@ -248,6 +248,10 @@ async def the_model_call_itself_goes_through_the_proxy(
         "namespace": view.execution_account.account.namespace,
         "name": view.execution_account.account.name,
     }, rules_turn.transcript
+    notifications_turn = await agent.run_shell(
+        model, "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK"
+    )
+    assert "NOTIFICATIONS_GRPC_OK" in notifications_turn.tool_outputs[-1], notifications_turn.transcript
 
     served = await _decision_for(
         cluster, client, view.target.name, view.target.uid, f"llm-ingress.{cluster.namespace}.svc.cluster.local"

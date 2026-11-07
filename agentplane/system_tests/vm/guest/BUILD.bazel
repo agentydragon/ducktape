@@ -204,6 +204,7 @@ pkg_files(
         "environment-runtime-guest.conf",
         "journal-state.conf",
         "pilot.slice",
+        "stress.slice",
     ],
     attributes = pkg_attributes(mode = "0644"),
     renames = {

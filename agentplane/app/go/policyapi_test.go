@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
@@ -16,67 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
-
-func TestFrontendConfigServesOnlyBrowserSettings(t *testing.T) {
-	authentication, err := auth.New(auth.Config{
-		TokenReviews: policyTestTokenReviewer{}, TokenAudience: "agentplane",
-		TokenSubjects: []string{"system:serviceaccount:tools:runner"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, test := range []struct {
-		name   string
-		config FrontendConfig
-		want   string
-	}{
-		{name: "omitted", want: `{"trace_search":null,"langfuse_search":null}`},
-		{
-			name: "configured",
-			config: FrontendConfig{
-				TraceSearch: &TraceSearchSettings{
-					GrafanaBaseURL: "https://grafana.example.test/", TempoDatasourceUID: "fixture-tempo", DeploymentEnvironment: "fixture",
-				},
-				LangfuseSearch: &LangfuseSearchSettings{
-					BaseURL: "https://langfuse.example.test/", ProjectID: "fixture-project",
-					SessionMetadataKey:          "session",
-					SandboxNamespaceMetadataKey: "namespace", SandboxServiceAccountMetadataKey: "account",
-				},
-			},
-			want: `{"trace_search":{"grafana_base_url":"https://grafana.example.test/","tempo_datasource_uid":"fixture-tempo","deployment_environment":"fixture"},"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"fixture-project","session_metadata_key":"session","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			server := NewHTTPServer(authentication)
-			if err := RegisterCoreRoutes(server, Config{FrontendConfig: test.config, DatabaseURL: "private-database"}); err != nil {
-				t.Fatal(err)
-			}
-			handler := server.Handler(authentication)
-			request := httptest.NewRequest(http.MethodGet, "/frontend-config", nil)
-			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, request)
-			if response.Code != http.StatusUnauthorized {
-				t.Fatalf("unauthenticated config status = %d", response.Code)
-			}
-			request.Header.Set("Authorization", "Bearer accepted")
-			response = httptest.NewRecorder()
-			handler.ServeHTTP(response, request)
-			if response.Code != http.StatusOK {
-				t.Fatalf("config status = %d; body: %s", response.Code, response.Body.String())
-			}
-			var got, want map[string]any
-			if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-				t.Fatal(err)
-			}
-			if err := json.Unmarshal([]byte(test.want), &want); err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("frontend config = %v, want %v", got, want)
-			}
-		})
-	}
-}
 
 type policyTestTokenReviewer struct{}
 

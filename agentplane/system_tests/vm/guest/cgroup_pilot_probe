@@ -8,17 +8,19 @@ pilot)
 	marker=AGENTPLANE_CGROUP_PILOT
 	pairs=2
 	unit=agentplane-cgroup-pilot-resident.service
+	slice_unit=pilot.slice
 	;;
 stress)
 	mode=stress
 	marker=AGENTPLANE_CGROUP_STRESS
 	pairs=5
 	unit=agentplane-cgroup-stress-resident.service
+	slice_unit=stress.slice
 	;;
 *) exit 2 ;;
 esac
 probe_start_uptime=$("$busybox" awk '{print int($1)}' /proc/uptime)
-slice=/sys/fs/cgroup/pilot.slice
+slice=/sys/fs/cgroup/$slice_unit
 tracefs=/sys/kernel/tracing
 scratch=$("$busybox" mktemp -d /run/agentplane-cgroup-pilot.XXXXXX)
 "$busybox" chmod 0700 "$scratch"
@@ -238,7 +240,57 @@ change_property() {
 	else
 		property_status=$?
 	fi
-	"$busybox" sleep 1
+	actual_property=unavailable
+	if [ "$mode" = stress ]; then
+		if [ "$property_status" -ne 0 ]; then
+			emit "UNEXERCISED step=$step reason=property_command_failed property_status=$property_status"
+			exit 1
+		fi
+		if actual_property=$("$busybox" timeout -s TERM 3 /usr/bin/systemctl show -P IOAccounting "$unit" 2>/dev/null); then
+			if [ "$actual_property" != "$value" ]; then
+				emit "UNEXERCISED step=$step reason=property_state_mismatch requested=$value observed=$actual_property"
+				exit 1
+			fi
+		else
+			emit "UNEXERCISED step=$step reason=property_state_unavailable"
+			exit 1
+		fi
+		wait_start=$(
+			"$busybox" awk '{print $1}' /proc/uptime
+		)
+		wait_count=0
+		while :; do
+			root_mask=$(mask /sys/fs/cgroup/cgroup.subtree_control)
+			slice_mask=$(mask "$slice/cgroup.subtree_control")
+			if resident_alive; then resident=yes; else resident=no; fi
+			uptime=$("$busybox" awk '{print $1}' /proc/uptime)
+			root_io=$(has_io "$root_mask")
+			slice_io=$(has_io "$slice_mask")
+			active_elapsed=$("$busybox" awk -v start="$probe_start_uptime" -v now="$uptime" 'BEGIN {print int(now - start)}')
+			wait_elapsed=$("$busybox" awk -v start="$wait_start" -v now="$uptime" 'BEGIN {print int(now - start)}')
+			emit "MASK_WAIT step=$step sample=$wait_count uptime=$uptime wait_seconds=$wait_elapsed active_seconds=$active_elapsed property=$actual_property root=$root_mask slice=$slice_mask resident=$resident pid=$resident_pid"
+			if [ "$resident" != yes ]; then
+				emit "UNEXERCISED step=$step reason=resident_exited_during_mask_wait sample=$wait_count"
+				exit 1
+			fi
+			if [ "$root_io" = "$value" ] && [ "$slice_io" = "$value" ]; then
+				emit "MASK_CONVERGED step=$step sample=$wait_count uptime=$uptime property=$actual_property root=$root_mask slice=$slice_mask resident=$resident"
+				break
+			fi
+			if [ "$active_elapsed" -ge 75 ]; then
+				emit "UNEXERCISED step=$step reason=active_budget_during_mask_wait elapsed=$active_elapsed limit=75"
+				exit 1
+			fi
+			if [ "$wait_elapsed" -ge 6 ]; then
+				emit "UNEXERCISED step=$step reason=no_mask_transition wait_seconds=$wait_elapsed property=$actual_property root_io=$root_io slice_io=$slice_io expected=$value"
+				exit 1
+			fi
+			wait_count=$((wait_count + 1))
+			"$busybox" sleep 1
+		done
+	else
+		"$busybox" sleep 1
+	fi
 	trace_hits=unavailable
 	trace_lock=unavailable
 	trace_rcu=unavailable
@@ -270,7 +322,7 @@ change_property() {
 		trace_hits_total=$((trace_hits_total + trace_hits))
 	fi
 	snapshot "${step}_after"
-	emit "RESULT step=$step value=$value property_status=$property_status trace=$trace_reason update_hits=$trace_hits lock_hits=$trace_lock rcu_hits=$trace_rcu"
+	emit "RESULT step=$step value=$value property_status=$property_status observed_property=$actual_property trace=$trace_reason update_hits=$trace_hits lock_hits=$trace_lock rcu_hits=$trace_rcu"
 	io_enabled=$(has_io "$slice_mask")
 	if [ "$property_status" -ne 0 ] || [ "$resident" != yes ] || [ "$io_enabled" != "$value" ]; then
 		emit "UNEXERCISED step=$step property_status=$property_status resident=$resident io_enabled=$io_enabled expected=$value"

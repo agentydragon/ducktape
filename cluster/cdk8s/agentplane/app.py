@@ -170,7 +170,7 @@ class App(Construct):
                     ],
                     verbs=["get", "list", "watch"],
                 ),
-                # The operator's grants from the sandbox page, created and revoked by the app itself.
+                # Keep until every app Pod runs the PolicyService client and its old-image rollback window has ended.
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings")], verbs=["create", "delete"]),
             ],
         )

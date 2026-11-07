@@ -8,23 +8,60 @@ import "agentplane/proto/identity.proto";
 import "agentplane/proto/kubernetes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
 
 // PolicyService exposes observed PolicyBindings and PolicySets. A watch starts with a snapshot,
 // then reports resource changes; reconnecting starts a new snapshot.
 service PolicyService {
+  // Creates an operator grant for one exact live Sandbox incarnation. The controller owns the
+  // binding and verifies that the Sandbox still runs as its controller-owned ServiceAccount.
+  rpc GrantSandboxPolicyBinding(GrantSandboxPolicyBindingRequest) returns (GrantSandboxPolicyBindingResponse) {
+    option (google.api.http) = {
+      post: "/v1/sandboxes/{sandbox_namespace}/{sandbox_name}/policy-bindings"
+      body: "*"
+    };
+  }
+  // Deletes one operator grant after rechecking its binding and Sandbox identities.
+  rpc RevokeSandboxPolicyBinding(RevokeSandboxPolicyBindingRequest) returns (RevokeSandboxPolicyBindingResponse) {
+    option (google.api.http) = {
+      delete: "/v1/sandboxes/{sandbox_namespace}/{sandbox_name}/policy-bindings/{binding_name}"
+    };
+  }
   rpc WatchPolicyBindings(WatchPolicyBindingsRequest) returns (stream WatchPolicyBindingsResponse) {
     option (google.api.http) = {get: "/v1/policy-bindings:watch"};
   }
   rpc WatchPolicySets(WatchPolicySetsRequest) returns (stream WatchPolicySetsResponse) {
     option (google.api.http) = {get: "/v1/policy-sets:watch"};
   }
+  rpc ListPolicySetNames(ListPolicySetNamesRequest) returns (ListPolicySetNamesResponse) {
+    option (google.api.http) = {get: "/v1/policy-set-names"};
+  }
 }
+
+message GrantSandboxPolicyBindingRequest {
+  string sandbox_namespace = 1;
+  string sandbox_name = 2;
+  string sandbox_uid = 3;
+  repeated string policy_sets = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+message RevokeSandboxPolicyBindingRequest {
+  string sandbox_namespace = 1;
+  string sandbox_name = 2;
+  string binding_name = 3;
+  string sandbox_uid = 4;
+  string binding_uid = 5;
+}
+message GrantSandboxPolicyBindingResponse { PolicyBinding binding = 1; }
+message RevokeSandboxPolicyBindingResponse {}
 
 message WatchPolicyBindingsRequest {
   // Absent selects the authenticated caller. Broad readers may select another subject.
   agentplane.proto.ServiceAccount subject = 1;
 }
 message WatchPolicySetsRequest {}
+message ListPolicySetNamesRequest {}
+message ListPolicySetNamesResponse { repeated string names = 1; }
 
 message PolicyResourceIdentity {
   string namespace = 1;

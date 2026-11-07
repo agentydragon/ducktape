@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -22,14 +20,32 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 )
 
 const subscriptionID = "00000000-0000-0000-0000-0000000000b1"
 
+func TestNotificationsGuideIsAvailableWithoutServiceConfiguration(t *testing.T) {
+	code, stdout, stderr := invoke(nil, "notifications", "guide", "inbox")
+	if code != 0 || !strings.Contains(stdout, "acknowledge") {
+		t.Fatalf("guide: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
+
+func TestSubscribeCreateAcceptsActionSourceAsProtoJSON(t *testing.T) {
+	server := answering(pullRequestSubscription(1, false))
+	cli := newCLI(notificationsEnv(serveNotifications(t, server)), `{"sessionId":"session-1","idempotencyKey":"follow-1","source":{"actions":{"requestId":"action-1","afterSequence":7}}}`)
+	if code := cli.run("notifications", "subscribe", "create", "--request-file", "-"); code != 0 {
+		t.Fatalf("create: exit %d: %s", code, cli.stderr.String())
+	}
+	requests := received[*notificationspb.CreateSubscriptionRequest](server)
+	if len(requests) != 1 || requests[0].GetSessionId() != "session-1" || requests[0].GetIdempotencyKey() != "follow-1" || requests[0].GetSource().GetActions().GetRequestId() != "action-1" || requests[0].GetSource().GetActions().GetAfterSequence() != 7 {
+		t.Fatalf("create requests: %v", requests)
+	}
+}
+
 // notificationsServer is the Notification Service's gRPC API with canned answers. Every CLI call reaches it
-// through the real gRPC-Gateway facade, so the routes, JSON and error bodies are the service's own.
+// directly over gRPC, preserving the service's typed requests and status codes.
 type notificationsServer struct {
 	notificationspb.UnimplementedNotificationsServer
 
@@ -137,7 +153,7 @@ func TestInboxCommandsAddressTheSession(t *testing.T) {
 	}
 }
 
-// serveNotifications runs the servicer behind the gateway and returns the facade's base URL.
+// serveNotifications runs the Notification gRPC servicer.
 func serveNotifications(t *testing.T, servicer *notificationsServer) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -148,15 +164,7 @@ func serveNotifications(t *testing.T, servicer *notificationsServer) string {
 	notificationspb.RegisterNotificationsServer(server, servicer)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	handler, err := facade.NewHandler(ctx, listener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
-	if err != nil {
-		t.Fatal(err)
-	}
-	facadeServer := httptest.NewServer(handler)
-	t.Cleanup(facadeServer.Close)
-	return facadeServer.URL
+	return "http://" + listener.Addr().String()
 }
 
 func pullRequestSubscription(version int64, cancelled bool) *notificationspb.Subscription {
@@ -362,7 +370,7 @@ func TestSubscribeToARetiredInboxExitsRefusedNamingTheCode(t *testing.T) {
 	servicer := failing(status.Error(codes.FailedPrecondition, "inbox is retired"))
 	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), append(subscribeArgs(), "--json")...)
 	got := errorOf(t, stderr)
-	if code != 1 || stdout != "" || got.Code != "FAILED_PRECONDITION" || got.HTTPStatus == nil || *got.HTTPStatus != http.StatusBadRequest || got.Message != "inbox is retired" {
+	if code != 1 || stdout != "" || got.Code != "FAILED_PRECONDITION" || got.HTTPStatus != nil || got.Message != "inbox is retired" {
 		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 1 naming FAILED_PRECONDITION, not the 400 it arrives as", code, stdout, got)
 	}
 }
