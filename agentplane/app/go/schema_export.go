@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-
 )
 
 // exportOpenAPI registers the application's typed routes and writes the OpenAPI document

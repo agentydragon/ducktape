@@ -20,6 +20,7 @@ func (policyTestTokenReviewer) Create(_ context.Context, _ *authenticationv1.Tok
 		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:tools:runner"},
 	}}, nil
 }
+
 func TestPolicyRoutesArePublishedAndCallerProtected(t *testing.T) {
 	authentication, err := auth.New(auth.Config{})
 	if err != nil {
