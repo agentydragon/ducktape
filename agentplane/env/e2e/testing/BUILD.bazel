@@ -17,7 +17,6 @@ py_library(
     name = "model_config",
     srcs = ["model_config.py"],
     deps = [
-        "//agentplane/env:config",
         "//agentplane/grpc:serving",
         "//agentplane/llm_ingress/v1:model_config_pb2",
         "//agentplane/llm_ingress/v1:model_config_pb2_grpc",

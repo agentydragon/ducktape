@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -27,8 +26,8 @@ func (s *modelConfigTestServer) GetModelConfig(ctx context.Context, req *modelco
 		return &modelconfigpb.GetModelConfigResponse{}, nil
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	if got := md.Get("authorization"); len(got) != 1 || got[0] != "Bearer test-token" {
-		return nil, status.Error(codes.Unauthenticated, "missing bearer")
+	if got := md.Get("authorization"); len(got) != 0 {
+		return nil, status.Error(codes.Unauthenticated, "Runtime sent an Authorization header to its local sidecar route")
 	}
 	budget := int64(32768)
 	return &modelconfigpb.GetModelConfigResponse{TotalContextBudgetTokens: &budget}, nil
@@ -44,9 +43,10 @@ func TestResolveModelConfigUsesGRPCForClaude(t *testing.T) {
 	modelconfigpb.RegisterModelConfigServiceServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
+	target := listener.Addr().String()
 	config := Config{
 		Claude: &harness.LaunchConfig{Binary: "claude"}, Codex: &harness.LaunchConfig{Binary: "codex"},
-		ModelConfigService: &configuration.Endpoint{Target: listener.Addr().String(), Bearer: "test-token"},
+		ModelConfigTarget: &target,
 	}
 	budget, err := config.ResolveModelConfig(context.Background(), sessionpb.Harness_HARNESS_CODEX, "configured-route")
 	if err != nil || budget != nil || service.lookups.Load() != 0 {

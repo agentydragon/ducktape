@@ -62,7 +62,7 @@ type Config struct {
 	CodexAppServerReadiness     codexappserver.Readiness
 	WorkspaceRoot               string
 	DebugCheckpoint             *session.DebugCheckpointConfig
-	ModelConfigService          *configuration.Endpoint
+	ModelConfigTarget           *string
 	ModelConfigClient           modelconfigpb.ModelConfigServiceClient
 	HistoryIngress              configuration.Endpoint
 }

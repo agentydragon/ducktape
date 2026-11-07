@@ -282,7 +282,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     runner_config = json.loads(
         _resource(docs, "ConfigMap", f"{fixture_chart.POD_TEMPLATE}-config")["data"]["environment-runtime.json"]
     )
-    assert _host_port(runner_config["model_config_service"]["target"]) == pod_listener
+    assert _host_port(runner_config["model_config_target"]) == pod_listener
     assert _host_port(runner_config["ingress"]["target"]) == pod_listener
     runtime = next(
         container
@@ -482,7 +482,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     vm_listener = _host_port(relay["platform_routes"]["listen_address"])
     assert vm_listener[0] == "0.0.0.0"
     guest_listener = ("10.0.2.1", vm_listener[1])
-    assert _host_port(config["model_config_service"]["target"]) == guest_listener
+    assert _host_port(config["model_config_target"]) == guest_listener
     assert _host_port(config["ingress"]["target"]) == guest_listener
     assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"]) == guest_listener
     assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == guest_listener

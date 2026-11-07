@@ -63,10 +63,10 @@ func TestConfigurationRequiresExplicitControlSecurity(t *testing.T) {
 	}
 }
 
-func TestConfigurationAcceptsModelConfigService(t *testing.T) {
+func TestConfigurationAcceptsModelConfigTarget(t *testing.T) {
 	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
 	value, path, launch := configurationFixture(t)
-	value["model_config_service"] = map[string]string{"target": "127.0.0.1:3130", "bearer": "platform-route"}
+	value["model_config_target"] = "127.0.0.1:3130"
 	writeJSONFixture(t, path, value)
 	if _, _, _, err := load(path, launch); err != nil {
 		t.Fatal(err)
@@ -171,11 +171,9 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"bad endpoint", func(v map[string]any) {
 			v["ingress"] = map[string]string{"target": "host:notaport", "bearer": "placeholder"}
 		}},
-		{"bad model config endpoint", func(v map[string]any) {
-			v["model_config_service"] = map[string]string{"target": "host:notaport", "bearer": "placeholder"}
-		}},
-		{"missing model config bearer", func(v map[string]any) {
-			v["model_config_service"] = map[string]string{"target": "host:3130"}
+		{"bad model config target", func(v map[string]any) { v["model_config_target"] = "host:notaport" }},
+		{"old model config service field", func(v map[string]any) {
+			v["model_config_service"] = map[string]string{"target": "host:3130", "bearer": "platform-route"}
 		}},
 		{"partial provider", func(v map[string]any) { v["codex"] = map[string]string{"binary": "/opt/codex"} }},
 		{"missing provider token", func(v map[string]any) { v["codex"].(map[string]string)["token_env"] = "ABSENT_PROVIDER_TOKEN" }},

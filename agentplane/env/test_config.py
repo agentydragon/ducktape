@@ -87,10 +87,10 @@ def test_runner_control_accepts_explicit_insecure_mode_without_tls_files() -> No
     assert serialized["control"] == {"listen_address": "127.0.0.1:8090", "security": {"mode": "insecure"}}
 
 
-def test_runner_accepts_model_config_service() -> None:
-    endpoint = {"target": "127.0.0.1:3130", "bearer": "platform-route"}
-    config = Configuration.model_validate(_configuration() | {"model_config_service": endpoint})
-    assert json.loads(config.model_dump_json(exclude_none=True))["model_config_service"] == endpoint
+def test_runner_accepts_model_config_target() -> None:
+    target = "127.0.0.1:3130"
+    config = Configuration.model_validate(_configuration() | {"model_config_target": target})
+    assert json.loads(config.model_dump_json(exclude_none=True))["model_config_target"] == target
 
 
 @pytest.mark.parametrize(
@@ -99,8 +99,8 @@ def test_runner_accepts_model_config_service() -> None:
         {"version": 1},
         {"session_reconcile_concurrency": 0},
         {"session_reconcile_concurrency": -1},
-        {"model_config_service": {"target": "host:notaport", "bearer": "placeholder"}},
-        {"model_config_service": {"target": "host:3130", "bearer": ""}},
+        {"model_config_target": "host:notaport"},
+        {"model_config_service": {"target": "host:3130", "bearer": "platform-route"}},
         {"state_dir": "relative"},
         {"workspace_root": ""},
         {"harness_environment": {"inherit": ["NAME=value"]}},

@@ -12,7 +12,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 )
 
 func (c *Config) resolveSessionReconcileConcurrency() error {
@@ -40,16 +39,15 @@ func (c Config) ResolveModelConfig(ctx context.Context, harness sessionpb.Harnes
 	}
 	client := c.ModelConfigClient
 	if client == nil {
-		if c.ModelConfigService == nil {
+		if c.ModelConfigTarget == nil {
 			return nil, errors.New("model configuration service is not configured")
 		}
-		conn, err := grpc.NewClient(c.ModelConfigService.Target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), observability.GRPCClientOption())
+		conn, err := grpc.NewClient(*c.ModelConfigTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), observability.GRPCClientOption())
 		if err != nil {
 			return nil, fmt.Errorf("configure model configuration service: %w", err)
 		}
 		defer conn.Close()
 		client = modelconfigpb.NewModelConfigServiceClient(conn)
-		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.ModelConfigService.Bearer)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
