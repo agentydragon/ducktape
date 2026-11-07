@@ -2606,26 +2606,31 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 self.refuse_activation_value(frame);
                 return None;
             }
-            body.lexical_this
-                .then(|| frame.this_values.clone())
-                .flatten()
-                .map(|values| {
+            if body.lexical_this {
+                let Some(values) = frame.this_values.clone() else {
+                    self.refuse_activation_value(frame);
+                    return None;
+                };
+                Some({
                     if let LocalExecutionScope::Construction(class) = self.scope {
-                        // The constructor's actual receiver is a class instance.
-                        // Retain weak heap references and input capabilities, but
-                        // never export its activation-local descriptor/brand proof.
+                        // Construction may still be in progress. Retain class,
+                        // weak heap and input capabilities without a completed
+                        // instance receipt or activation-local descriptor proof.
                         let mut retained = frame.inputs.clone();
                         retained.extend(values);
                         let retained = self.executor.intern_callback_set(retained);
                         Values::from([AbstractValue::Instance(
                             class,
                             retained,
-                            InstanceOrigin::Constructed,
+                            InstanceOrigin::Projected,
                         )])
                     } else {
                         values
                     }
                 })
+            } else {
+                None
+            }
         } else {
             None
         };
