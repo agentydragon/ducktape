@@ -1913,8 +1913,11 @@ condition requires a directly selected, singleton ordinary source function,
 excluding opaque, async and generator bodies, and a child value transfer. Child
 effects, escapes, precision losses and incomplete execution remain; partial
 returns are widened to include unknown normal and abrupt completion, and no
-effect coverage is issued. Root initializers, nonterminal calls, operand
-failures, unknown targets and missing-result transfers retain ordinary fallback.
+effect coverage is issued. A selected callee with neither a source return nor
+a fall-through path retains only its abrupt result; this terminal fallback
+cannot reintroduce a normal value that the invocation boundary excluded.
+Nonterminal calls, operand failures, unknown targets and missing-result
+transfers retain ordinary fallback.
 Calls, member reads, computed writes, branches, unknown free bindings, dynamic
 scope and unsupported syntax retain the conservative execution path. This
 coverage does not certify initializer effects or an imported provider summary.
