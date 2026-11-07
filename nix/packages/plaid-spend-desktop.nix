@@ -17,9 +17,11 @@ python314Packages.buildPythonApplication {
 
   propagatedBuildInputs = with python314Packages; [
     aiohttp
+    authlib
     babel
     dbus-next
     httpx
+    httpx2
     pydantic
     pyyaml
     networkMonitor
