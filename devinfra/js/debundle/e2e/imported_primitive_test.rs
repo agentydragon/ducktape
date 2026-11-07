@@ -1,5 +1,6 @@
 //! Stable imported primitives cannot execute ToPrimitive callbacks, and a
 //! coercion of operands whose types cannot throw is pure.
+use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
@@ -96,6 +97,43 @@ fn assert_root_read_receipt(fixture: &Fixture, binding: &str) {
     assert!(receipt.initializer_span.is_some(), "{receipt:#?}");
 }
 
+fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &str) {
+    let graph = fixture.dependency_graph();
+    let owner = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, binding))
+        .unwrap();
+    let execution = owner.synchronous_execution.as_ref().unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("{binding} lacks an operation receipt: {execution:#?}");
+    };
+    assert_eq!(receipt.binding, binding, "{receipt:#?}");
+    assert_eq!(receipt.owner, owner.statement_ordinal, "{receipt:#?}");
+    assert_eq!(receipt.calls.len(), 1, "{receipt:#?}");
+    let call = &receipt.calls[0];
+    assert_eq!(
+        receipt.initializer_span,
+        Some(call.call_span),
+        "{receipt:#?}"
+    );
+    let target = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, callee))
+        .expect("called function source unit");
+    assert!(
+        matches!(
+            &call.target,
+            LexicalBindingEffectBody::Callable { owner, .. } if *owner == target.statement_ordinal
+        ),
+        "{receipt:#?}"
+    );
+}
+
 #[test]
 fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
     let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return bytes; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
@@ -143,6 +181,57 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
     assert_root_read_receipt(&fixture, "computed");
 }
 
+#[test]
+fn called_primitive_binary_return_has_a_receipt_for_an_actual_inversion() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  const before = 0;\n\
+                  function add() { return bytes + 256; }\n\
+                  const computed = add();\n\
+                  const after = 1;\n\
+                  console.log(before, computed, after);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("compute", &[Member::new("add"), Member::new("computed")]),
+                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "0 258 1\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the called primitive operation must participate in an actual inversion: {assessment:#}"
+    );
+    let graph = fixture.dependency_graph();
+    let position = |binding| {
+        let ordinal = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == source_unit_for_binding(&graph, binding))
+            .unwrap()
+            .statement_ordinal
+            .0;
+        assessment["emitted_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|row| row.as_u64() == Some(ordinal as u64))
+            .unwrap()
+    };
+    assert!(
+        position("computed") < position("before") || position("after") < position("computed"),
+        "the call result must cross an executable anchor: {assessment:#}"
+    );
+    assert_called_operation_receipt(&fixture, "computed", "add");
+}
+
 fn assert_uncovered_root_read(fixture: &Fixture, binding: &str) {
     let graph = fixture.dependency_graph();
     let node = graph
@@ -164,6 +253,67 @@ fn assert_uncovered_root_read(fixture: &Fixture, binding: &str) {
         ),
         "{binding} must retain the selected root's uncovered authority: {execution:#?}"
     );
+}
+
+#[test]
+fn object_binary_coercion_fallback_keeps_right_operand_before_value_of() {
+    let source = "let trace = '';\n\
+                  const value = { valueOf() { trace = trace + 'coerce'; return 2; } };\n\
+                  function right() { trace = trace + 'right'; return 1; }\n\
+                  function add() { return value + right(); }\n\
+                  const computed = add();\n\
+                  console.log(trace, computed);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("trace"),
+                Member::new("value"),
+                Member::new("right"),
+                Member::new("add"),
+                Member::new("computed"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "rightcoerce 3\n");
+    assert_uncovered_root_read(&fixture, "computed");
+}
+
+#[test]
+fn possible_bigint_division_throw_does_not_seal_callable_operation_coverage() {
+    let source = "import { divisor } from './peer.js';\n\
+                  function divide() { return 4n / divisor; }\n\
+                  const computed = divide();\n\
+                  console.log(computed);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "all",
+                &[Member::new("divide"), Member::new("computed")],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", "export const divisor = 2n;\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "2n\n");
+    // The imported value's BigInt kind does not prove it is nonzero. The
+    // operation may complete here but must retain possible-abrupt coverage.
+    assert_uncovered_root_read(&fixture, "computed");
+}
+
+#[test]
+fn symbol_coercion_throw_happens_after_the_right_operand() {
+    let source = "import { token } from './peer.js';\n\
+                  let calls = 0;\n\
+                  function right() { calls = calls + 1; return 1; }\n\
+                  function add() { return token + right(); }\n\
+                  try { add(); } catch (error) { console.log(calls, error.name); }\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&[("static/peer", "export const token = Symbol.for('token');\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "1 TypeError\n");
 }
 
 #[test]

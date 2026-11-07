@@ -3078,7 +3078,7 @@ outside this ordered grammar.
 Eager binary expressions in these ordered callable bodies evaluate their left
 and right operands once, in source order. When both results are known
 primitives, the shared primitive transfer supplies the result kind and records
-a no-effect operation receipt only when the operation cannot throw for those
+a no-effect operation fragment only when the operation cannot throw for those
 kinds. A possible Symbol or BigInt throw leaves effect and completion coverage
 unknown. If either operand is an object or unknown value, the existing
 coercion fallback receives both already evaluated operands, so user coercion
