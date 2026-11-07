@@ -18,6 +18,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -231,39 +232,43 @@ func (c *Client) refresh(ctx context.Context, refreshToken string) (*auth.LoginT
 	if err != nil {
 		return nil, false, err
 	}
-	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	config := oauth2.Config{
+		ClientID: c.clientID, ClientSecret: c.clientSecret,
+		Endpoint: oauth2.Endpoint{TokenURL: tokenURL, AuthStyle: oauth2.AuthStyleInHeader},
+	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.httpClient)
+	refreshed, err := config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
+		var retrieveErr *oauth2.RetrieveError
+		if errors.As(err, &retrieveErr) {
+			status := retrieveErr.Response.StatusCode
+			if (status == http.StatusBadRequest || status == http.StatusUnauthorized) && retrieveErr.ErrorCode != "" {
+				return nil, true, nil
+			}
+			if status < 200 || status >= 300 {
+				req, _ := http.NewRequest(http.MethodPost, tokenURL, nil)
+				return nil, false, upstreamError(req, status, "HTTPStatusError")
+			}
+			return nil, false, federationError("operator_federation_exchange_failed", http.StatusBadGateway)
+		}
+		var requestErr *url.Error
+		if errors.As(err, &requestErr) {
+			req, _ := http.NewRequest(http.MethodPost, tokenURL, nil)
+			return nil, false, upstreamError(req, 0, errorType(err))
+		}
 		return nil, false, federationError("operator_federation_exchange_failed", http.StatusBadGateway)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	req.SetBasicAuth(c.clientID, c.clientSecret)
-	response, err := c.httpClient.Do(req)
+	// Preserve the application's absolute-expiry support and strict lifetime validation.
+	body, err := json.Marshal(map[string]any{
+		"access_token": refreshed.AccessToken, "refresh_token": refreshed.RefreshToken,
+		"expires_at": refreshed.Extra("expires_at"), "expires_in": refreshed.Extra("expires_in"),
+	})
 	if err != nil {
-		return nil, false, upstreamError(req, 0, errorType(err))
-	}
-	defer response.Body.Close()
-	body, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if readErr != nil {
-		return nil, false, upstreamError(req, 0, errorType(readErr))
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		var oauthErr struct {
-			Error string `json:"error"`
-		}
-		if (response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusUnauthorized) &&
-			json.Unmarshal(body, &oauthErr) == nil && oauthErr.Error != "" {
-			return nil, true, nil
-		}
-		return nil, false, upstreamError(req, response.StatusCode, "HTTPStatusError")
+		return nil, false, federationError("operator_federation_exchange_failed", http.StatusBadGateway)
 	}
 	token, err := parseTokenResponse(body, c.now())
 	if err != nil || !token.ExpiresAt.After(c.now()) {
 		return nil, false, federationError("operator_federation_exchange_failed", http.StatusBadGateway)
-	}
-	if token.RefreshToken == "" {
-		token.RefreshToken = refreshToken
 	}
 	return token, false, nil
 }
