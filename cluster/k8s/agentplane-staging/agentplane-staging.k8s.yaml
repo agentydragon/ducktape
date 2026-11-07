@@ -5468,10 +5468,79 @@ spec:
                 - key: "{{ element.command[0] || '' }}"
                   operator: Equals
                   value: /usr/libexec/virtiofsd
-                - key: "{{ contains(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]), element.name) }}"
+                - key: "{{ contains(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]), element.name) && contains(vmi.spec.domain.devices.filesystems[?virtiofs != null].join('', ['virtiofs-', name]), element.name) }}"
                   operator: Equals
                   value: true
       name: keep-virtiofs-through-guest-shutdown
+    - context:
+        - name: vmiOwner
+          variable:
+            default: {}
+            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
+          name: vmi
+        - name: vmOwner
+          variable:
+            default: {}
+            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
+          name: vm
+        - name: sandbox
+          variable:
+            default: {}
+            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
+          name: account
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-staging
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      name: require-native-virtiofs-daemons
+      validate:
+        foreach:
+          - context:
+              - name: daemonName
+                variable:
+                  jmesPath: join('', ['virtiofs-', element.name])
+              - name: ordinaryDaemons
+                variable:
+                  jmesPath: request.object.spec.containers[?name=='{{ daemonName }}']
+              - name: nativeDaemons
+                variable:
+                  jmesPath: request.object.spec.initContainers[?name=='{{ daemonName }}']
+            deny:
+              conditions:
+                any:
+                  - key: "{{ length(ordinaryDaemons || `[]`) }}"
+                    operator: NotEquals
+                    value: 0
+                  - key: "{{ length(nativeDaemons || `[]`) }}"
+                    operator: NotEquals
+                    value: 1
+                  - key: "{{ length(nativeDaemons[?restartPolicy=='Always'] || `[]`) }}"
+                    operator: NotEquals
+                    value: 1
+                  - key: "{{ nativeDaemons[0].command[0] || '' }}"
+                    operator: NotEquals
+                    value: /usr/libexec/virtiofsd
+            list: vmi.spec.volumes[?persistentVolumeClaim || secret || configMap]
+            preconditions:
+              all:
+                - key: "{{ contains((vmi.spec.domain.devices.filesystems[?virtiofs != null].name || `[]`), element.name) }}"
+                  operator: Equals
+                  value: true
+        message: Every PVC-, Secret-, or ConfigMap-backed VMI virtiofs daemon must be one native sidecar.
     - context:
         - name: vmiOwner
           variable:
