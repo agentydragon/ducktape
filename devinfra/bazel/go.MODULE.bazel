@@ -44,6 +44,14 @@ go_deps.module(
     version = "v0.2.4",
 )
 
+# grpc-gateway ships BUILD files that load @googleapis, which the isolated go_deps
+# repository cannot see; regenerate them from the checked-in .pb.go files.
+go_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = ["gazelle:proto disable"],
+    path = "github.com/grpc-ecosystem/grpc-gateway/v2",
+)
+
 # The upstream stats proto go_package omits /v3. Use the shipped Go bindings
 # rather than generating a second package at that obsolete import path.
 go_deps.gazelle_override(
@@ -602,13 +610,6 @@ session_go_deps.module(
     path = "google.golang.org/protobuf",
     sum = "h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=",
     version = "v1.36.12",
-)
-
-# grpc-gateway's upstream BUILD files require @googleapis; regenerate them.
-session_go_deps.gazelle_override(
-    build_file_generation = "clean",
-    directives = ["gazelle:proto disable"],
-    path = "github.com/grpc-ecosystem/grpc-gateway/v2",
 )
 use_repo(
     session_go_deps,
