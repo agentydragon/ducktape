@@ -33,7 +33,11 @@ launcher's Pod UID, deletion timestamp, and allowlisted compute/virtiofs contain
 status, including restartable virtiofs initContainers, their initContainerStatuses,
 restartPolicy, and running or terminated timestamps. Pod name and UID must match the serial
 artifact before container details are recorded; environment variables and other containers are
-omitted. Each sample has a ten-second budget;
+omitted. Delayed samples also retain host virtiofsd process and thread `comm`, `status`,
+`wchan`, `syscall`, and kernel `stack` for the exact launcher Pod UID cgroup. This `/proc`
+scan omits command lines, limits matching processes and threads, and has a 0.75-second deadline
+while reserving seven seconds for the existing QEMU/QMP probes. It marks missing daemons,
+unreadable process data, and incomplete scans separately. Each sample has a ten-second budget;
 the second starts at least two seconds after the first completes. QMP queries can wake QEMU's main
 loop or vCPUs and may change what a later sample observes. The monitor stops with the VM artifact
 capture.
