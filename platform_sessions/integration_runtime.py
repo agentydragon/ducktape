@@ -82,7 +82,7 @@ class IntegrationRuntime[T](ABC):
             ],
         }
 
-    def metadata(self):
+    async def metadata(self):
         return {
             "id": self.config.id,
             "type": self.config.type,
