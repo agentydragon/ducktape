@@ -3032,8 +3032,12 @@ same length slot that `push` writes. The proof requires the array literal's
 single settled dense-allocation witness and an existing own data value; pooled
 or reused allocation sites, holes, unknown or multiple receivers, unsettled
 descriptors, and accessors remain conservative. This is a root-initializer
-read only: it does not admit numeric element reads, callable/provider/retained
-queries, or new array mutation behavior.
+read only: it does not admit callable/provider/retained queries or new array
+mutation behavior. A canonical literal index key can read an in-range
+element under the same witness, using the stored heap value and recording its
+exact `OwnProperty(origin, index)` cell. Dynamic keys, holes, out-of-range
+indices, mutations and pooled sites retain fallback; the slot proof grants no
+write or prototype-read capability.
 The length cell shares a uniquely eager array's existing birth proof against
 older opaque heap operations. An intervening opaque operation or a repeated
 allocation site retains the conservative frontier.

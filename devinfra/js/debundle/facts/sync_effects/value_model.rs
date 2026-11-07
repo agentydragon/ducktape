@@ -600,6 +600,13 @@ impl MemberKey {
     pub(super) fn is_static(&self) -> bool {
         *self == Self::Static
     }
+
+    /// A literal index needs no key evaluation. Computed identifiers and
+    /// other dynamic keys cannot use the present own-data read proof.
+    pub(super) fn supports_own_data_read(&self, property: &str) -> bool {
+        matches!(self, Self::Static)
+            || (matches!(self, Self::Computed(None)) && canonical_array_index(property).is_some())
+    }
 }
 
 // Lowered syntax is immutable. Cloned facts share recursive children while

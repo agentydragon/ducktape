@@ -71,6 +71,62 @@ fn assert_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str) 
         })
 }
 
+fn assert_non_assumed_index_read(graph: &DependencyGraphReport, binding: &str) -> u32 {
+    let source = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("missing {binding} source unit: {graph:#?}"));
+    let execution = source
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} execution evidence: {source:#?}"));
+    let heap = execution
+        .heap_frontier
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} heap frontier: {execution:#?}"));
+    let reads = &heap.non_assumed_heap_accesses.reads;
+    assert_eq!(reads.count, reads.sample.len(), "{reads:#?}");
+    reads
+        .sample
+        .iter()
+        .find_map(|cell| match cell {
+            EffectCellReport::OwnProperty { origin, property } if property == "0" => Some(*origin),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{binding} lacks an exact index read: {reads:#?}"))
+}
+
+fn assert_no_non_assumed_index_read(graph: &DependencyGraphReport, binding: &str) {
+    let source = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("missing {binding} source unit: {graph:#?}"));
+    let execution = source
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} execution evidence: {source:#?}"));
+    if let Some(heap) = &execution.heap_frontier {
+        let reads = &heap.non_assumed_heap_accesses.reads;
+        assert!(
+            !reads.sample.iter().any(|cell| matches!(
+                cell,
+                EffectCellReport::OwnProperty { property, .. } if property == "0"
+            )),
+            "unsupported {binding} acquired an exact index read: {reads:#?}"
+        );
+    }
+}
+
 fn assert_no_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str, case: &str) {
     let source = graph
         .nodes
@@ -555,6 +611,66 @@ fn a_root_dense_array_length_read_orders_against_push_and_preserves_output() {
     let graph = fixture.dependency_graph();
     let length_origin = assert_non_assumed_length_read(&graph, "gamma");
     assert_push_preserves_root_length_read(&graph, "alpha", "gamma", length_origin);
+}
+
+#[test]
+fn root_array_index_read_records_its_exact_slot_and_stays_before_a_write() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const values = [7];\nconst before = values[0];\nvalues[0] = 42;\nconst after = values[0];\nconsole.log(before, after);\n",
+            vec![
+                logical_module("values", &[Member::new("values")]),
+                logical_module("before", &[Member::new("before").with_initializer_purity()]),
+                logical_module_with_anon("write", &[], &["values[0] = 42;"]),
+                logical_module("after", &[Member::new("after")]),
+                logical_module_with_anon("observe", &[], &["console.log(before, after);"]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "7 42\n");
+    let graph = fixture.dependency_graph();
+    assert_non_assumed_index_read(&graph, "before");
+    assert_no_non_assumed_index_read(&graph, "after");
+    assert_sequenced_order(&graph, 2, 1);
+}
+
+#[test]
+fn root_array_index_read_refuses_absent_or_unsettled_slots() {
+    for (source, output) in [
+        (
+            "const values = [7];\nconst key = 0;\nconst read = values[key];\nconsole.log(read);\n",
+            "7\n",
+        ),
+        (
+            "const values = [, 1];\nconst read = values[0];\nconsole.log(read);\n",
+            "undefined\n",
+        ),
+        (
+            "const seed = [7];\nconst values = [...seed];\nconst read = values[0];\nconsole.log(read);\n",
+            "7\n",
+        ),
+        (
+            "const values = [7];\nconst read = values[1];\nconsole.log(read);\n",
+            "undefined\n",
+        ),
+        (
+            "function make() { return [7]; }\nconst first = make();\nconst values = make();\nconst read = values[0];\nconsole.log(read);\n",
+            "7\n",
+        ),
+        (
+            "const values = [7];\nvalues[0] = 42;\nconst read = values[0];\nconsole.log(read);\n",
+            "42\n",
+        ),
+        (
+            "const values = [7];\nObject.defineProperty(values, '0', { get() { return 42; } });\nconst read = values[0];\nconsole.log(read);\n",
+            "42\n",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, output);
+        assert_no_non_assumed_index_read(&fixture.dependency_graph(), "read");
+    }
 }
 
 #[test]
