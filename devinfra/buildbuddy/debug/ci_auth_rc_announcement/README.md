@@ -10,8 +10,7 @@ that file, the checked-out `.bazelrc`, and `devinfra/bazel/rbe.bazelrc` as rc
 sources. The CI workflow invokes `bazel_ci.py` with `--config=ci`; the workspace
 configuration had `common:ci --announce_rc`, which caused Bazel to print options
 from the generated runner rc. The generated authentication source is outside
-this repository; the repository fix removes the automatic announcement from
-CI.
+this repository; the repository now explicitly sets `common:ci --noannounce_rc`.
 
 The raw Build Event Protocol stream for that invocation contained both
 `OptionsParsed` and structured `CommandLine` events (159 events total). An
@@ -23,8 +22,9 @@ surface redacts credentials.
 Validation used a synthetic header value in an extra rc file, never the
 credential. From this clean checkout, `bazelisk --nosystem_rc --nohome_rc
 --bazelrc=<synthetic-rc> info --config=ci` exited successfully and did not
-announce the canary. The same command with explicit `--announce_rc` did announce
-it, confirming the check detects the old behavior. The probe removed
+announce the canary under the explicit `common:ci --noannounce_rc` policy. The
+same command with explicit `--announce_rc` did announce it, confirming the
+canary check detects enabled announcements. The probe removed
 `BUILDBUDDY_API_KEY` from its environment and created no BuildBuddy invocation.
 The diff leaves CI config selection and the RBE/auth configuration unchanged.
 
