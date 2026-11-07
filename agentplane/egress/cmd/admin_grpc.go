@@ -9,6 +9,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
+	"github.com/agentydragon/ducktape/agentplane/egress/identity"
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/egress/rules"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -52,7 +56,7 @@ type adminServer struct {
 
 // newAdminServer serves the EgressAdmin API when c configures the admin gRPC API, admitting the
 // callers and the audience from c. options holds what the services read.
-func newAdminServer(c config, reviews auth.TokenReviews, options admin.ServiceOptions) (adminServer, error) {
+func newAdminServer(c config, reviews auth.TokenReviews, options admin.ServiceOptions, resolver *auth.Resolver, verifier *identity.Verifier, index *policy.Index) (adminServer, error) {
 	methods := auth.HealthMethods()
 	var service *admin.Service
 	if c.adminGRPCEnabled() {
@@ -73,8 +77,10 @@ func newAdminServer(c config, reviews auth.TokenReviews, options admin.ServiceOp
 		maps.Copy(methods, admin.Methods(resolver, callers))
 		service = admin.NewService(options)
 	}
+	methods[egressrulespb.EgressRules_GetRules_FullMethodName] = auth.AnyAccount(resolver)
 	grpcServer := grpc.NewServer(append(methods.ServerOptions(0), observability.GRPCServerOption())...)
 	healthpb.RegisterHealthServer(grpcServer, admin.NewProbes(options.Index))
+	egressrulespb.RegisterEgressRulesServer(grpcServer, rules.NewService(verifier, index))
 	if service != nil {
 		egressadminpb.RegisterEgressAdminServer(grpcServer, service)
 	}

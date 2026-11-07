@@ -208,6 +208,10 @@ the empty service is readiness and the service `livez` liveness, which stays `SE
 answers so a recoverable watch outage never restarts it. It admits every caller, because the kubelet
 sends no bearer; `GetHealth` does not. `Watch` is not served.
 
+The admin listener also hosts `EgressRules.GetRules`, authenticating the caller with the forward
+listener workload audience independently of the admin allowlist. Staging network policy currently
+only admits the app to that listener; the sandbox still uses the HTTP rules facade.
+
 The admin listener serves gRPC alone. On shutdown it ends the open watches, then stops gracefully: the
 other calls in flight finish within the drain deadline.
 
@@ -218,17 +222,15 @@ for 30 s), before anything is read
 reconnecting callers are admitted afresh.
 
 The health service is always mounted. `EgressAdmin` is mounted only when `admin_grpc_audience` and
-`admin_grpc_callers` (`namespace/name` entries) are both set; without them the admin listener serves
-health alone.
+`admin_grpc_callers` (`namespace/name` entries) are both set; without them the listener still serves health and rules.
 
 ## Rules gRPC API
 
-`EgressRules` (<egress_rules.proto>) serves `GetRules` on a loopback listener of the process's own; nothing
-outside the process calls it. `GET /v1/rules` on the agent API listener is its gRPC-Gateway facade
+`EgressRules` (<egress_rules.proto>) serves `GetRules` on the admin gRPC listener as well as a
+loopback listener for the agent HTTP facade. `GET /v1/rules` on the agent API listener is its gRPC-Gateway facade
 (<../grpc/facade/facade.go>), which forwards to that listener so the servicer authenticates every request. The answer is the redacted
 view of the ServiceAccount the bearer proves and nothing else: the bearer is read from `authorization`
-metadata, which the facade fills from the `Authorization` header, and reviewed by the verifier, so the hop
-token and the projected tokens it accepts are accepted on both.
+metadata, which the facade fills from the `Authorization` header, and reviewed by the verifier using the hop audience.
 
 **Deviation** from <../docs/grpc_services.md>: callers are the sandbox workloads themselves, so there is no
 allow-list and no `auth.Resolver` of its own; every bearer is `Unauthenticated` (`401`) alike, and one that
