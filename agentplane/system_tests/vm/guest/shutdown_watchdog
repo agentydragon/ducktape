@@ -11,21 +11,7 @@ read -r request <&3
 case " $(/usr/bin/busybox cat /proc/cmdline) " in
 *" agentplane.shutdown-sysrq=1 "*)
 	if /usr/bin/busybox mkdir /run/agentplane-shutdown-sysrq; then
-		(
-			echo "AGENTPLANE_SYSRQ_ARMED delay_seconds=12"
-			/usr/bin/busybox sleep 12
-			if [ -e /run/agentplane-shutdown-sysrq/proof ]; then
-				echo "AGENTPLANE_SYSRQ_SKIPPED reason=proof"
-			else
-				echo "AGENTPLANE_SYSRQ_BEGIN command=w"
-				/usr/bin/busybox cat /proc/uptime /proc/sys/kernel/sysrq
-				if echo w > /proc/sysrq-trigger; then
-					echo "AGENTPLANE_SYSRQ_END command=w status=0"
-				else
-					echo "AGENTPLANE_SYSRQ_END command=w status=error"
-				fi
-			fi
-		) &
+		/usr/sbin/agentplane-shutdown-sysrq /run/agentplane-shutdown-sysrq/proof /proc/sysrq-trigger 12 &
 	else
 		echo "AGENTPLANE_SYSRQ_UNAVAILABLE reason=arm_directory"
 	fi

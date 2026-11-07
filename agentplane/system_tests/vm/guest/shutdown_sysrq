@@ -1,0 +1,20 @@
+#!/usr/bin/busybox sh
+# One best-effort dump, independent of the watchdog sampling loop.
+set -u
+busybox=${AGENTPLANE_SYSRQ_BUSYBOX:-/usr/bin/busybox}
+proof=$1
+trigger=$2
+delay=$3
+echo "AGENTPLANE_SYSRQ_ARMED delay_seconds=$delay"
+"$busybox" sleep "$delay"
+if [ -e "$proof" ]; then
+	echo "AGENTPLANE_SYSRQ_SKIPPED reason=proof"
+else
+	echo "AGENTPLANE_SYSRQ_BEGIN command=w"
+	"$busybox" cat /proc/uptime /proc/sys/kernel/sysrq
+	if echo w > "$trigger"; then
+		echo "AGENTPLANE_SYSRQ_END command=w status=0"
+	else
+		echo "AGENTPLANE_SYSRQ_END command=w status=error"
+	fi
+fi
