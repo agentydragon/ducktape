@@ -11,7 +11,7 @@ read -r request <&3
 case " $(/usr/bin/busybox cat /proc/cmdline) " in
 *" agentplane.shutdown-sysrq=1 "*)
 	if /usr/bin/busybox mkdir /run/agentplane-shutdown-sysrq; then
-		/usr/sbin/agentplane-shutdown-sysrq /run/agentplane-shutdown-sysrq/proof /proc/sysrq-trigger 12 &
+		/usr/sbin/agentplane-shutdown-sysrq /run/agentplane-shutdown-sysrq/proof /proc/sysrq-trigger 18 &
 	else
 		echo "AGENTPLANE_SYSRQ_UNAVAILABLE reason=arm_directory"
 	fi
