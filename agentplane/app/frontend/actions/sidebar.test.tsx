@@ -5,11 +5,10 @@ import { Link, MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 
-import { ActionIdentitySchema, ActionState } from "../../../action_service/action_service_pb";
+import { ActionIdentitySchema, ActionState, type ActionRequest } from "../../../action_service/action_service_pb";
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { mount, request, send, unmountLast } from "./testing/harness";
-import type { ActionRequest } from "../../../action_service/action_service_pb";
 
 function CurrentPath(): JSX.Element {
   const location = useLocation();
