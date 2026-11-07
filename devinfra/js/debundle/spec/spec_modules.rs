@@ -124,6 +124,24 @@ pub fn collect_module_files(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// Writing through one alias can change an untouched module's claims, and
+/// deleting a source can strand another alias.
+pub fn ensure_unaliased_module_tree(root: &Path) -> Result<()> {
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        anyhow::ensure!(
+            !kind.is_symlink(),
+            "module tree does not support symlink entries: {}",
+            entry.path().display()
+        );
+        if kind.is_dir() {
+            ensure_unaliased_module_tree(&entry.path())?;
+        }
+    }
+    Ok(())
+}
+
 fn collect_module_files_into(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
         let path = entry

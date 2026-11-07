@@ -490,7 +490,7 @@ fn merge_path_identity(path: &Path) -> Result<PathBuf> {
 
 fn resolve_merge_batch(root: &Path, requests: Vec<MergeRequest>) -> Result<Vec<MergeRequest>> {
     anyhow::ensure!(!requests.is_empty(), "merge batch is empty");
-    reject_merge_batch_symlinks(root)?;
+    spec_modules::ensure_unaliased_module_tree(root)?;
     let mut targets = BTreeMap::new();
     let mut sources = BTreeMap::new();
     let mut resolved = Vec::new();
@@ -580,24 +580,6 @@ fn resolve_merge_batch(root: &Path, requests: Vec<MergeRequest>) -> Result<Vec<M
         }
     }
     Ok(resolved)
-}
-
-/// Writing through one alias can change an untouched module's claims, and
-/// deleting a source can strand another alias. Keep that boundary explicit.
-fn reject_merge_batch_symlinks(root: &Path) -> Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        let kind = entry.file_type()?;
-        anyhow::ensure!(
-            !kind.is_symlink(),
-            "merge batch does not support symlink entries: {}",
-            entry.path().display()
-        );
-        if kind.is_dir() {
-            reject_merge_batch_symlinks(&entry.path())?;
-        }
-    }
-    Ok(())
 }
 
 fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<MergePlan> {

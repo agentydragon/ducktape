@@ -64,8 +64,8 @@ use serde::Serialize;
 use source_identity::SourceUnitId;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
-    ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,
-    module_path_from_file, read_module_claims,
+    ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, is_module_yaml,
+    module_claims, module_path_from_file, read_module_claims,
 };
 use spec_tree::ModuleTreeScope;
 
@@ -843,6 +843,7 @@ fn gate_post_edit_assignment_with_expected(
     post_spec: &PostEditSpec,
     expected: ExpectedPostEditClaims<'_>,
 ) -> Result<()> {
+    ensure_unaliased_module_tree(modules_root)?;
     let dependency_graph_report = input.report();
     let dependency_graph = input.graph();
 
