@@ -506,6 +506,7 @@ fn value_contains_keyed_collection_new(value: &ValueExpr) -> bool {
         ValueExpr::ObjectLiteral(_, properties) => properties
             .iter()
             .any(|(_, value)| value_contains_keyed_collection_new(value)),
+        ValueExpr::ObjectSpreadLiteral(_, source) => value_contains_keyed_collection_new(source),
         ValueExpr::StrictEquality(left, right) | ValueExpr::Binary(_, left, right) => {
             value_contains_keyed_collection_new(left) || value_contains_keyed_collection_new(right)
         }
@@ -606,6 +607,7 @@ fn unconditional_value(value: &ValueExpr) -> bool {
         ValueExpr::Binding(_) | ValueExpr::NonCallable(_) | ValueExpr::Undefined => true,
         ValueExpr::Alloc(Kind::RegExp, _) => true,
         ValueExpr::New(..) if is_keyed_collection_new(value) => true,
+        ValueExpr::ObjectSpreadLiteral(_, source) => unconditional_value(source),
         ValueExpr::ObjectLiteral(_, properties) => properties
             .iter()
             .all(|(_, value)| unconditional_value(value)),
@@ -642,6 +644,13 @@ impl LocalExpression {
             Expr::Lit(Lit::Bool(_)) => Some(Self::PrimitiveLiteral(PrimKinds::BOOLEAN)),
             Expr::Lit(Lit::Null(_)) => Some(Self::PrimitiveLiteral(PrimKinds::NULL)),
             Expr::Lit(Lit::BigInt(_)) => Some(Self::PrimitiveLiteral(PrimKinds::BIGINT)),
+            Expr::Object(object)
+                if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) =>
+            {
+                let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
+                (covered && matches!(value, ValueExpr::ObjectSpreadLiteral(..)))
+                    .then_some(Self::Value(value))
+            }
             Expr::Object(object) => {
                 let properties = object
                     .props

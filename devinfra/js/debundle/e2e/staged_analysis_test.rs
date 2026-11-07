@@ -6159,6 +6159,223 @@ fn inferred_and_selected_set_spread_bindings_keep_opaque_crossing_rejected() {
 }
 
 #[test]
+fn ordinary_data_spread_copy_receipt_and_key_order_survive_saved_analysis() {
+    const SOURCE: &str = "let invocations = 0;\nconst retained = () => { invocations++; return 'called'; };\nconst __proto__ = 'own';\nconst source = { 10: 'ten', 2: 'two', alpha: 'a', run: retained, __proto__ };\nconst anchor = 0;\nconst copied = { ...source };\nconst names = Object.keys(copied);\nconsole.log(names[0], names[1], names[2], names[3], names[4], copied.__proto__, invocations, copied.run === retained, anchor);\nconst before = invocations;\nconst result = copied.run();\nconsole.log(before, invocations, result);\n";
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        SOURCE,
+        vec![
+            logical_module(
+                "source",
+                &[
+                    Member::new("invocations"),
+                    Member::new("retained"),
+                    Member::new("__proto__"),
+                    Member::new("source"),
+                ],
+            ),
+            logical_module("copy", &[Member::new("copied")]),
+            logical_module("anchor", &[Member::new("anchor")]),
+        ],
+    ));
+    let direct = staged.run(&[]);
+    save_relocation_reports(
+        &direct.output_root().join("reports/tree"),
+        "static/app",
+        "ordinary-object-spread-direct",
+    );
+    assert_ok(&direct.result, "direct ordinary object spread");
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    save_relocation_reports(
+        &saved.output_root().join("reports/tree"),
+        "static/app",
+        "ordinary-object-spread-saved",
+    );
+    assert_ok(&saved.result, "ordinary object spread from saved analysis");
+    assert_same_invocation_trees(&direct, &saved);
+
+    let expected = "2 10 alpha run __proto__ own 0 true 0\n0 1 called\n";
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            expected,
+            "",
+        );
+        let candidate: Value = read_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/candidate_relocation_assessment.json"),
+        );
+        assert_eq!(
+            candidate["status"], "accepted_within_checked_scope",
+            "{candidate:#}"
+        );
+        assert_eq!(candidate["decision"]["status"], "accepted", "{candidate:#}");
+        assert!(
+            candidate["swapped_pairs"].as_u64().unwrap() > 0,
+            "{candidate:#}"
+        );
+
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        let execution = &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
+        assert!(execution["complete"].as_bool().unwrap(), "{execution:#}");
+        let receipts = execution["operation_support_receipts"]
+            .as_array()
+            .expect("copy has a source-support receipt");
+        assert!(
+            receipts.iter().any(|receipt| {
+                receipt["operation"] == "object_spread_copy"
+                    && receipt["support"]["kind"] == "pooled_object_shape"
+                    && !receipt["support"]["origin"].is_null()
+            }),
+            "{execution:#}"
+        );
+    }
+}
+
+#[test]
+fn getter_and_inherited_setter_spread_controls_refuse_without_replay() {
+    const SOURCE: &str = "let gets = 0;\nlet setters = 0;\nObject.defineProperty(Object.prototype, 'own', { configurable: true, set() { setters++; } });\nconst source = { get value() { gets++; return 7; }, own: 3 };\nconst anchor = 0;\nconst copied = { ...source };\ndelete Object.prototype.own;\nconsole.log(gets, copied.value, setters, copied.own, anchor);\n";
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        SOURCE,
+        vec![
+            logical_module(
+                "source",
+                &[
+                    Member::new("gets"),
+                    Member::new("setters"),
+                    Member::new("source"),
+                ],
+            ),
+            logical_module("copy", &[Member::new("copied")]),
+            logical_module("anchor", &[Member::new("anchor")]),
+        ],
+    ));
+    let direct = staged.run(&["--emit-on-rejection"]);
+    save_relocation_reports(
+        &direct.output_root().join("reports/tree"),
+        "static/app",
+        "ordinary-object-spread-getter-direct",
+    );
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    save_relocation_reports(
+        &saved.output_root().join("reports/tree"),
+        "static/app",
+        "ordinary-object-spread-getter-saved",
+    );
+    assert!(!direct.result.status.success(), "{}", direct.result.stderr);
+    assert_eq!(direct.result.status.code(), saved.result.status.code());
+    assert_same_invocation_trees(&direct, &saved);
+    assert_node_output(
+        &staged.root().join("snapshot/static/app.js"),
+        "1 7 0 3 0\n",
+        "",
+    );
+
+    for invocation in [&direct, &saved] {
+        let candidate: Value = read_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/candidate_relocation_assessment.json"),
+        );
+        assert_ne!(
+            candidate["status"], "accepted_within_checked_scope",
+            "{candidate:#}"
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        let execution = &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
+        assert_eq!(execution["complete"], false, "{execution:#}");
+        assert!(
+            execution["operation_support_receipts"]
+                .as_array()
+                .is_none_or(|receipts| receipts
+                    .iter()
+                    .all(|receipt| { receipt["operation"] != "object_spread_copy" })),
+            "{execution:#}"
+        );
+        assert!(
+            execution["precision_losses"]
+                .as_array()
+                .is_some_and(|losses| {
+                    losses.iter().any(|loss| {
+                        loss["reason"]["code"] == "unsupported_operation"
+                            && loss["reason"]["operation"] == "object_spread"
+                    })
+                }),
+            "{execution:#}"
+        );
+    }
+}
+
+#[test]
+fn non_enumerable_descriptor_spread_refuses_without_copy_receipt() {
+    const SOURCE: &str = "const source = { hidden: 'no', visible: 'yes' };\nObject.defineProperties(source, { hidden: { enumerable: false } });\nconst anchor = 0;\nconst copied = { ...source };\nconsole.log(copied.hidden, copied.visible, anchor);\n";
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        SOURCE,
+        vec![
+            logical_module("source", &[Member::new("source")]),
+            logical_module("copy", &[Member::new("copied")]),
+            logical_module("anchor", &[Member::new("anchor")]),
+        ],
+    ));
+    let direct = staged.run(&["--emit-on-rejection"]);
+    save_relocation_reports(
+        &direct.output_root().join("reports/tree"),
+        "static/app",
+        "ordinary-object-spread-nonenumerable-direct",
+    );
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    save_relocation_reports(
+        &saved.output_root().join("reports/tree"),
+        "static/app",
+        "ordinary-object-spread-nonenumerable-saved",
+    );
+    assert!(!direct.result.status.success(), "{}", direct.result.stderr);
+    assert_eq!(direct.result.status.code(), saved.result.status.code());
+    assert_same_invocation_trees(&direct, &saved);
+    assert_node_output(
+        &staged.root().join("snapshot/static/app.js"),
+        "undefined yes 0\n",
+        "",
+    );
+
+    for invocation in [&direct, &saved] {
+        let candidate: Value = read_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/candidate_relocation_assessment.json"),
+        );
+        assert_ne!(
+            candidate["status"], "accepted_within_checked_scope",
+            "{candidate:#}"
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        let execution = &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
+        assert_eq!(execution["complete"], false, "{execution:#}");
+        assert!(
+            execution["operation_support_receipts"]
+                .as_array()
+                .is_none_or(|receipts| receipts
+                    .iter()
+                    .all(|receipt| { receipt["operation"] != "object_spread_copy" })),
+            "{execution:#}"
+        );
+    }
+}
+
+#[test]
 fn set_spread_operation_receipts_survive_saved_relocation() {
     assert_set_spread_saved_replay(
         "0;\nvar seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);\nconsole.log('after', copied.size);\nexport {};\n",

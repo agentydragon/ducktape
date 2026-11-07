@@ -4,9 +4,10 @@
 //! Lowered values alone can have erased calls, writes or coercions.
 
 use super::effect_coverage::EffectCoverageFragment;
+use super::own_data_transfer::{self, OwnDataContext, OwnDataCopySource};
 use super::value_model::{
-    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PrivateFieldId,
-    PropertyDefinition, ProviderScopeId, ValueExpr, Values,
+    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, OwnPropertyDescriptorSyntax,
+    OwnPropertyShape, PrivateFieldId, PropertyDefinition, ProviderScopeId, ValueExpr, Values,
 };
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{
@@ -77,7 +78,7 @@ pub(super) enum ArrayElement<'a, E> {
     Spread(&'a E, Span),
 }
 
-pub(super) trait AllocationContext {
+pub(super) trait AllocationContext: OwnDataContext {
     /// Source coverage is necessary because ValueExpr may erase syntax.
     fn source_covered(&self) -> bool;
     /// No effect receipt exists for this executed value operation yet. The
@@ -124,6 +125,34 @@ pub(super) trait AllocationContext {
     /// Allocation-only consumers have no whole-body effect channel.
     fn operation_effects(&mut self, _effects: EffectCoverageFragment) {
         self.unmodeled_effect_operation();
+    }
+    /// The prepared index confirms this exact single-spread literal shape.
+    /// This is syntax coverage only; the shared transfer still proves the
+    /// source's settled own-data descriptors and complete key set.
+    fn exact_object_spread_copy(&self, _allocation: u32) -> bool {
+        false
+    }
+    /// Record source property/shape support for this copy. Local execution
+    /// emits receipts; allocation-only adapters remain opaque by default.
+    fn object_spread_copy_support(
+        &mut self,
+        _source: &OwnDataCopySource,
+        _dependencies: &ProofDependencies,
+    ) -> bool {
+        self.unmodeled_effect_operation();
+        false
+    }
+    /// Conservative handling after the source operand has already run once.
+    /// Adapters that cannot carry the unknown protocol must refuse.
+    fn refused_object_spread(&mut self, site: CallSite, _source: &Values) -> AllocationValue {
+        self.unmodeled_effect_operation();
+        AllocationValue::opaque(Values::from([
+            AbstractValue::Value(Value::Alloc(Kind::Object, site.allocation_id())),
+            AbstractValue::Value(Value::Unavailable),
+        ]))
+    }
+    fn object_spread_dependencies(&self) -> ProofDependencies {
+        ProofDependencies::default()
     }
 }
 
@@ -321,6 +350,8 @@ pub(super) struct LiteralHeap<'a> {
     pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
     pub(super) revision: &'a mut u64,
     pub(super) writable_prefix: Option<&'a mut OrdMap<u32, WritablePrefixState>>,
+    pub(super) spread_copies: Option<&'a mut BTreeSet<u32>>,
+    pub(super) spread_shapes: Option<&'a mut OrdMap<u32, Option<OwnPropertyShape>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -379,6 +410,88 @@ impl LiteralHeap<'_> {
         };
         if writable_prefix.get(&allocation) == Some(&WritablePrefixState::InProgress) {
             writable_prefix.insert(allocation, WritablePrefixState::Proven(writable_properties));
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// Commit one checked CopyDataProperties result using the same pooled
+    /// allocation store as ordinary record literals. Repeated executions join
+    /// missing properties with `undefined`; a changing key set loses the
+    /// dynamic shape witness permanently.
+    pub(super) fn record_spread_copy(&mut self, allocation: u32, properties: &[(String, Values)]) {
+        let previously_evaluated = self
+            .spread_copies
+            .as_deref()
+            .is_some_and(|copies| copies.contains(&allocation));
+        let next: BTreeMap<_, _> = properties
+            .iter()
+            .map(|(name, values)| (Some(name.clone()), values.clone()))
+            .collect();
+        let current = self.properties.entry(allocation).or_default();
+        let mut changed = false;
+        if previously_evaluated {
+            for (property, values) in current.iter_mut() {
+                if !next.contains_key(property) {
+                    changed |= values.insert(AbstractValue::UNDEFINED);
+                }
+            }
+        }
+        for (property, values) in &next {
+            let new_property = !current.contains_key(property);
+            let slot = current.entry(property.clone()).or_default();
+            let before = slot.len();
+            if previously_evaluated && new_property {
+                slot.insert(AbstractValue::UNDEFINED);
+            }
+            slot.extend(values.iter().cloned());
+            changed |= slot.len() != before;
+        }
+
+        let names: Vec<_> = properties.iter().map(|(name, _)| name.clone()).collect();
+        let shape = OwnPropertyShape {
+            properties: names
+                .iter()
+                .cloned()
+                .map(|name| (name, OwnPropertyDescriptorSyntax::Data))
+                .collect(),
+            creation_order: names,
+        };
+        if let Some(shapes) = self.spread_shapes.as_deref_mut() {
+            match shapes.get(&allocation) {
+                Some(Some(existing)) if existing != &shape => {
+                    shapes.insert(allocation, None);
+                    changed = true;
+                }
+                Some(_) => {}
+                None => {
+                    shapes.insert(allocation, Some(shape));
+                    changed = true;
+                }
+            }
+        }
+        if let Some(copies) = self.spread_copies.as_deref_mut() {
+            changed |= copies.insert(allocation);
+        }
+        if changed {
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// Keep an unsupported execution sticky at this pooled destination site.
+    /// A later successful invocation cannot recover one exact shape after an
+    /// earlier generation may have copied different keys or values.
+    pub(super) fn invalidate_spread_copy(&mut self, allocation: u32) {
+        let mut changed = false;
+        if let Some(copies) = self.spread_copies.as_deref_mut() {
+            changed |= copies.insert(allocation);
+        }
+        if let Some(shapes) = self.spread_shapes.as_deref_mut()
+            && !matches!(shapes.get(&allocation), Some(None))
+        {
+            shapes.insert(allocation, None);
+            changed = true;
+        }
+        if changed {
             *self.revision = self.revision.wrapping_add(1);
         }
     }
@@ -693,6 +806,51 @@ pub(super) fn transfer(
                 _ => return None,
             }
         }
+        ValueExpr::ObjectSpreadLiteral(site, source_expression) => {
+            let allocation = site.allocation_id();
+            context.heap().begin_literal(allocation);
+            let source = context.child(source_expression)?;
+            let mut normal_source = source.values.clone();
+            let may_throw = normal_source.remove(&AbstractValue::Value(Value::Unavailable));
+            if normal_source.is_empty() {
+                let values = Values::from([AbstractValue::Value(Value::Unavailable)]);
+                if may_throw {
+                    context.unmodeled_effect_operation();
+                }
+                return Some(AllocationValue::opaque(values));
+            }
+            let copy = context
+                .exact_object_spread_copy(allocation)
+                .then(|| own_data_transfer::copy_source(context, &normal_source))
+                .flatten();
+            let dependencies = context.object_spread_dependencies();
+            if let Some(copy) = copy
+                && context.object_spread_copy_support(&copy, &dependencies)
+            {
+                let mut judgment = AllocationJudgment::CoveredAllocationOnly(dependencies);
+                judgment.compose(&source.judgment);
+                let mut writable = BTreeSet::new();
+                for (name, _) in &copy.properties {
+                    writable.insert(name.clone());
+                }
+                {
+                    let mut heap = context.heap();
+                    heap.record_spread_copy(allocation, &copy.properties);
+                    heap.complete_record(allocation, writable);
+                }
+                let mut values =
+                    Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, allocation))]);
+                if may_throw {
+                    judgment = AllocationJudgment::Opaque;
+                    values.insert(AbstractValue::Value(Value::Unavailable));
+                }
+                return Some(AllocationValue { values, judgment });
+            }
+            context.heap().invalidate_spread_copy(allocation);
+            let mut refused = context.refused_object_spread(*site, &source.values);
+            refused.judgment.compose(&source.judgment);
+            Some(refused)
+        }
         _ => {
             context.unmodeled_effect_operation();
             return None;
@@ -862,7 +1020,11 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
                 && definition
                     .name()
                     .is_some_and(|name| match definition.kind() {
-                        LiteralPropertyKind::Data => name != "__proto__",
+                        // Own-data syntax such as shorthand `{ __proto__ }`
+                        // creates an own property. Legacy colon-form
+                        // `__proto__: value` is lowered without a data name
+                        // and marks the source expression uncovered.
+                        LiteralPropertyKind::Data => true,
                         // Static definitions install fresh own descriptors; their
                         // callable child proves creation without running its body.
                         LiteralPropertyKind::Method
@@ -1108,6 +1270,8 @@ mod tests {
                 arrays: &mut arrays,
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),
+                spread_copies: None,
+                spread_shapes: None,
             };
             heap.begin_literal(allocation);
             assert_eq!(
@@ -1132,6 +1296,8 @@ mod tests {
                 arrays: &mut arrays,
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),
+                spread_copies: None,
+                spread_shapes: None,
             };
             heap.begin_literal(allocation);
             assert_eq!(

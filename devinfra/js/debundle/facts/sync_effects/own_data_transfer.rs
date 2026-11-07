@@ -2,17 +2,24 @@
 
 use super::value_model::{
     AbstractValue, InstanceOrigin, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
-    canonical_array_index,
+    canonical_array_index, ordered_own_property_names,
 };
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::EffectCell;
 use crate::facts::abstract_domain::value::Value;
 use analysis_model::PrimKinds;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) trait OwnDataContext {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape>;
+    fn own_properties(&self, allocation: u32) -> Option<&BTreeMap<Option<String>, Values>>;
     fn object_properties_are_settled(&self, allocation: u32) -> bool;
+    /// The execution heap does not generally retain enumerable attributes.
+    /// CopyDataProperties requires them, so contexts must opt in only when
+    /// that descriptor premise is known for this object.
+    fn copy_data_properties_are_exact(&self, _allocation: u32) -> bool {
+        false
+    }
     fn instance_properties_are_settled(&self, class: u32) -> bool;
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values>;
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool;
@@ -24,6 +31,63 @@ pub(super) trait OwnDataContext {
     fn first_generation_dense_array_length(&self, _allocation: u32) -> Option<u32> {
         None
     }
+}
+
+/// The source snapshot for one CopyDataProperties operation. Names and values
+/// are paired in ECMAScript own-key order, while property storage remains in
+/// the ordinary heap.
+pub(super) struct OwnDataCopySource {
+    pub(super) origin: u32,
+    pub(super) properties: Vec<(String, Values)>,
+}
+
+/// Resolve only a settled ordinary object whose complete own-key set and
+/// descriptors match its prepared static shape. This models source Get and
+/// own-key/descriptor support; the caller still performs destination
+/// CreateDataProperty through the shared allocation heap.
+pub(super) fn copy_source(
+    context: &impl OwnDataContext,
+    receivers: &Values,
+) -> Option<OwnDataCopySource> {
+    let [AbstractValue::Value(Value::Alloc(analysis_kind, object))] =
+        receivers.iter().collect::<Vec<_>>().as_slice()
+    else {
+        return None;
+    };
+    if *analysis_kind != crate::facts::abstract_domain::value::Kind::Object
+        || !context.object_properties_are_settled(*object)
+        || !context.copy_data_properties_are_exact(*object)
+    {
+        return None;
+    }
+    let shape = context.ordinary_record_shape(*object)?;
+    let own = context.own_properties(*object)?;
+    let names = ordered_own_property_names(&shape.creation_order);
+    if names.len() != shape.properties.len()
+        || own.len() != names.len()
+        || shape.properties.iter().any(|(name, descriptor)| {
+            !matches!(descriptor, OwnPropertyDescriptorSyntax::Data)
+                || context.property_is_accessor(*object, name)
+        })
+        || names.iter().any(|name| {
+            !shape.properties.contains_key(name)
+                || !own.contains_key(&Some(name.clone()))
+                || own.get(&Some(name.clone())).is_none_or(Values::is_empty)
+        })
+    {
+        return None;
+    }
+    let properties = names
+        .into_iter()
+        .map(|name| {
+            let values = context.property_values(*object, &name)?.clone();
+            (!values.is_empty()).then_some((name, values))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(OwnDataCopySource {
+        origin: *object,
+        properties,
+    })
 }
 
 /// Ordered local mutation needs stronger ownership than a read from an

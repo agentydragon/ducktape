@@ -3543,6 +3543,18 @@ fn evaluate_receiver_value(
                 result.fact.opaque = true;
             }
         }
+        ValueExpr::ObjectSpreadLiteral(_, source) => {
+            let source = evaluate_receiver_value(source, context, rules);
+            result.pending = source.pending;
+            result.fact.complete = source.fact.complete;
+            result.fact.callable_dependencies = source.fact.callable_dependencies;
+            result.fact.capture_dependencies = source.fact.capture_dependencies;
+            result.fact.opaque = true;
+            result.fact.roots = source.fact.roots;
+            result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
+                NativeIntrinsic::UnknownGlobalValue,
+            ));
+        }
         ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
             result.fact.safe = true;
             result.fact.complete = true;
@@ -7038,6 +7050,9 @@ impl ExecutionIndex {
                 for (_, value) in properties.iter() {
                     self.global_property_reads(value, context, reads);
                 }
+            }
+            ValueExpr::ObjectSpreadLiteral(_, source) => {
+                self.global_property_reads(source, context, reads);
             }
             ValueExpr::ArrayIteratorPrototype(inner) | ValueExpr::SetIteratorPrototype(inner) => {
                 self.global_property_reads(inner, context, reads);
@@ -12099,7 +12114,8 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
-        if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
+        let single_spread = matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]);
+        if single_spread {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
         use super::value_model::LiteralPropertyKind;
@@ -12195,7 +12211,10 @@ impl Visit for ExecutionIndex {
                     descriptor_shape.insert(name, OwnPropertyDescriptorSyntax::Data);
                     true
                 }
-                Prop::Shorthand(ident) if ident.sym != "__proto__" => {
+                // Shorthand always defines an own data property, including
+                // the spelling `__proto__`; only the colon-form literal has
+                // legacy prototype-setter behavior.
+                Prop::Shorthand(ident) => {
                     let name = ident.sym.to_string();
                     if descriptor_shape.contains_key(&name) {
                         return false;
@@ -12362,19 +12381,21 @@ impl Visit for ExecutionIndex {
             match property {
                 PropOrSpread::Spread(spread) => {
                     spread.expr.visit_with(self);
-                    self.record_call(Call {
-                        kind: CallKind::ObjectSpread,
-                        callee: ValueExpr::Unknown,
-                        args: vec![ValueExpr::from_expr(&spread.expr)],
-                        span: spread.expr.span(),
-                        caller: self.current,
-                        owner: self.owner,
-                        plain_object_sources: false,
-                        no_sync_arguments: false,
-                        no_reentry_candidate: false,
-                        no_reentry_record_candidate: false,
-                        has_spread: false,
-                    });
+                    if !single_spread {
+                        self.record_call(Call {
+                            kind: CallKind::ObjectSpread,
+                            callee: ValueExpr::Unknown,
+                            args: vec![ValueExpr::from_expr(&spread.expr)],
+                            span: spread.expr.span(),
+                            caller: self.current,
+                            owner: self.owner,
+                            plain_object_sources: false,
+                            no_sync_arguments: false,
+                            no_reentry_candidate: false,
+                            no_reentry_record_candidate: false,
+                            has_spread: false,
+                        });
+                    }
                 }
                 PropOrSpread::Prop(property)
                     if let Prop::KeyValue(pair) = property.as_ref()

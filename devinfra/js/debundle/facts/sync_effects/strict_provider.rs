@@ -158,6 +158,8 @@ impl AllocationContext for ProviderContext<'_> {
             arrays: &mut self.arrays,
             revision: &mut self.revision,
             writable_prefix: self.body_effect_mode.then_some(&mut self.writable_prefix),
+            spread_copies: None,
+            spread_shapes: None,
         }
     }
     fn keyed_collection_new(
@@ -275,6 +277,9 @@ impl OwnDataContext for ProviderContext<'_> {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
         self.index.ordinary_record_shape(allocation)
     }
+    fn own_properties(&self, allocation: u32) -> Option<&BTreeMap<Option<String>, Values>> {
+        self.properties.get(&allocation)
+    }
     fn object_properties_are_settled(&self, _allocation: u32) -> bool {
         // This isolated query refuses external mutation and publication.
         true
@@ -314,9 +319,6 @@ impl OwnDataContext for ProviderContext<'_> {
 impl DescriptorContext for ProviderContext<'_> {
     fn heap_epoch(&self) -> u64 {
         self.revision
-    }
-    fn own_properties(&self, object: u32) -> Option<&BTreeMap<Option<String>, Values>> {
-        self.properties.get(&object)
     }
     fn descriptor_map(&self, site: CallSite) -> Option<&OwnDescriptorMapState> {
         self.descriptor_maps.get(&site)

@@ -33,7 +33,6 @@ pub(super) struct AppliedAccessor {
 }
 
 pub(super) trait DescriptorContext: OwnDataContext {
-    fn own_properties(&self, object: u32) -> Option<&BTreeMap<Option<String>, Values>>;
     fn descriptor_map(&self, site: CallSite) -> Option<&OwnDescriptorMapState>;
     fn has_applied_accessors(&self, object: u32) -> bool;
     fn target_is_extensible(&self, object: u32) -> bool;

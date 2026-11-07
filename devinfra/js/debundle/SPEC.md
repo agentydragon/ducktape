@@ -4955,6 +4955,33 @@ traces distinguish dependencies of stripped exports from dependent items absorbe
 into the package island. These explain the stripper's conservative classification;
 they do not assert that every reported dependency executes synchronously.
 
+## Checked ordinary object spread
+
+The shared allocation kernel handles the canonical literal `{ ...source }`
+when `source` is a settled ordinary object with a complete, known set of own
+data properties. It evaluates the source operand once, checks the own-key
+shape, enumerable data descriptors, and values at that prefix, then creates
+the destination's own data properties in ECMAScript key order. Integer-index
+keys sort first in ascending order; other string keys keep their creation
+order. Copying a function value retains its identity without calling it.
+Destination writes use `CreateDataProperty`, so a copied own key named
+`__proto__` is data and does not invoke the legacy prototype setter. Since the
+ordinary heap does not retain every descriptor attribute, a descriptor-map
+mutation invalidates the spread-specific enumerability witness and makes a
+later copy conservative; ordinary own-property reads keep their separate
+proofs.
+
+The operation receipt carries the source shape and own-property reads. A
+repeated source site joins its pooled destination properties and invalidates
+the exact shape when later executions may have different keys. Accessors,
+proxies, unknown or escaped sources, unsettled descriptors, and unsupported
+literal syntax take the conservative ObjectSpread path. That path preserves
+the already evaluated source's effects, possible throw, and reachable callable
+capabilities; it never evaluates the operand again. Application and local
+execution use the same copy transfer. A summary adapter without the same
+source and descriptor evidence refuses the operation rather than supplying a
+separate copy rule.
+
 ## Native collection callback effects
 
 Direct native calls and constructions the interpreter can summarize without

@@ -16,6 +16,7 @@ use super::local_operations::{
     LocalExpression, LocalInvocation, LocalOperation, LocalRegion, ObjectBindingPattern,
     ObjectBindingProperty,
 };
+use super::own_data_transfer::OwnDataCopySource;
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::property_inference::DescriptorAttributes;
 use super::value_model::{
@@ -342,6 +343,31 @@ pub(super) trait LocalContext: OwnDataContext {
         span: Span,
     ) -> Option<LocalValueResult>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
+    fn exact_object_spread_copy(&self, _allocation: u32) -> bool {
+        false
+    }
+    fn object_spread_copy_support(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _source: &OwnDataCopySource,
+        _dependencies: &ProofDependencies,
+    ) -> bool {
+        false
+    }
+    fn refused_object_spread(
+        &mut self,
+        _frame: &mut LocalFrame,
+        site: CallSite,
+        _source: &Values,
+    ) -> AllocationValue {
+        AllocationValue::opaque(Values::from([
+            AbstractValue::Value(Value::Alloc(Kind::Object, site.allocation_id())),
+            AbstractValue::Value(Value::Unavailable),
+        ]))
+    }
+    fn object_spread_dependencies(&self) -> ProofDependencies {
+        ProofDependencies::default()
+    }
     fn literal_property_kind(
         &self,
         allocation: u32,
@@ -515,6 +541,23 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     fn literal_layout(&self, allocation: u32) -> LiteralLayout {
         self.context.literal_layout(allocation)
     }
+    fn exact_object_spread_copy(&self, allocation: u32) -> bool {
+        self.context.exact_object_spread_copy(allocation)
+    }
+    fn object_spread_copy_support(
+        &mut self,
+        source: &OwnDataCopySource,
+        dependencies: &ProofDependencies,
+    ) -> bool {
+        self.context
+            .object_spread_copy_support(self.frame, source, dependencies)
+    }
+    fn refused_object_spread(&mut self, site: CallSite, source: &Values) -> AllocationValue {
+        self.context.refused_object_spread(self.frame, site, source)
+    }
+    fn object_spread_dependencies(&self) -> ProofDependencies {
+        self.context.object_spread_dependencies()
+    }
     fn literal_property_kind(
         &self,
         allocation: u32,
@@ -536,6 +579,39 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     }
 }
 
+impl<C: LocalContext> OwnDataContext for LocalValueContext<'_, C> {
+    fn ordinary_record_shape(
+        &self,
+        allocation: u32,
+    ) -> Option<&super::value_model::OwnPropertyShape> {
+        self.context.ordinary_record_shape(allocation)
+    }
+    fn own_properties(&self, allocation: u32) -> Option<&BTreeMap<Option<String>, Values>> {
+        self.context.own_properties(allocation)
+    }
+    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+        self.context.object_properties_are_settled(allocation)
+    }
+    fn copy_data_properties_are_exact(&self, allocation: u32) -> bool {
+        self.context.copy_data_properties_are_exact(allocation)
+    }
+    fn instance_properties_are_settled(&self, class: u32) -> bool {
+        self.context.instance_properties_are_settled(class)
+    }
+    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
+        self.context.property_values(allocation, property)
+    }
+    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+        self.context.property_is_accessor(allocation, property)
+    }
+    fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
+        self.context.property_is_writable(allocation, property)
+    }
+    fn first_generation_dense_array_length(&self, allocation: u32) -> Option<u32> {
+        self.context.first_generation_dense_array_length(allocation)
+    }
+}
+
 fn value(
     context: &mut impl LocalContext,
     expression: &ValueExpr,
@@ -548,12 +624,28 @@ fn value(
             !context.heap().properties.contains_key(object)
                 && !frame.borrowed_records.contains(object)
         }
+        ValueExpr::ObjectSpreadLiteral(site, _) => {
+            !context
+                .heap()
+                .properties
+                .contains_key(&site.allocation_id())
+                && !frame.borrowed_records.contains(&site.allocation_id())
+        }
         _ => false,
     };
     let result =
         allocation_transfer::transfer(&mut LocalValueContext { context, frame }, expression)?;
     if let ValueExpr::ObjectLiteral(object, _) = expression {
         mark_fresh_record(context, frame, *object, new_record, &result.values);
+    }
+    if let ValueExpr::ObjectSpreadLiteral(site, _) = expression {
+        mark_fresh_record(
+            context,
+            frame,
+            site.allocation_id(),
+            new_record,
+            &result.values,
+        );
     }
     Some(result)
 }

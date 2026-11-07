@@ -635,6 +635,10 @@ pub(super) enum ValueExpr {
     /// imply ordinary own properties, prototype methods, or protocol behavior.
     Alloc(Kind, u32),
     ObjectLiteral(u32, Arc<[(Option<String>, Self)]>),
+    /// One object literal containing only an object-spread definition. Keep
+    /// the spread operand distinct from an opaque/computed property so the
+    /// shared allocation transfer can consume it exactly once.
+    ObjectSpreadLiteral(CallSite, Arc<Self>),
     Undefined,
     /// A primitive of the given types: a literal, a template, or a value
     /// known only to be primitive.
@@ -874,6 +878,17 @@ impl ValueExpr {
             Expr::Fn(function) => Self::Alloc(Kind::Function, function.function.span.lo.0),
             Expr::Arrow(arrow) => Self::Alloc(Kind::Function, arrow.span.lo.0),
             Expr::Class(class) => Self::Alloc(Kind::Class, class.class.span.lo.0),
+            Expr::Object(object)
+                if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) =>
+            {
+                let [PropOrSpread::Spread(spread)] = object.props.as_slice() else {
+                    unreachable!("guarded single object spread")
+                };
+                Self::ObjectSpreadLiteral(
+                    object.span.into(),
+                    Arc::new(Self::lower(&spread.expr, covered)),
+                )
+            }
             Expr::Object(object) => Self::ObjectLiteral(
                 object.span.lo.0,
                 object
@@ -1173,6 +1188,7 @@ impl ValueExpr {
                     operand.bindings(result);
                 }
             }
+            Self::ObjectSpreadLiteral(_, source) => source.bindings(result),
             Self::ObjectLiteral(_, properties) => {
                 for (_, value) in properties.iter() {
                     value.bindings(result);
@@ -1192,6 +1208,7 @@ impl ValueExpr {
             Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
                 expression.carries_namespace(id, aliases)
             }
+            Self::ObjectSpreadLiteral(_, source) => source.carries_namespace(id, aliases),
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
@@ -1264,7 +1281,9 @@ impl ValueExpr {
         visiting: &mut BTreeSet<Id>,
     ) -> bool {
         match self {
-            Self::ObjectLiteral(_, _) | Self::Alloc(Kind::Function, _) => false,
+            Self::ObjectLiteral(_, _)
+            | Self::ObjectSpreadLiteral(..)
+            | Self::Alloc(Kind::Function, _) => false,
             // Class metadata may contain a namespace path, including a
             // self-referential static initializer. Keep the existing
             // conservative class-surface fallback.
@@ -1330,6 +1349,13 @@ impl ValueExpr {
             | Self::StrictEquality(..)
             | Self::LogicalNot(_)
             | Self::Void(_) => false,
+            Self::ObjectSpreadLiteral(_, source) => source.may_publish_namespace_inner(
+                id,
+                aliases,
+                facts,
+                visiting_bindings,
+                visiting_classes,
+            ),
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
                 value.may_publish_namespace_inner(
                     id,
@@ -1490,6 +1516,7 @@ impl ValueExpr {
             | Self::StrictEquality(..)
             | Self::LogicalNot(_)
             | Self::Void(_) => false,
+            Self::ObjectSpreadLiteral(_, source) => source.carries_namespace(id, aliases),
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
@@ -1561,6 +1588,9 @@ impl ValueExpr {
                 !direct_member_value
                     && value.may_publish_namespace_in_factory_result(id, aliases, facts)
             }),
+            Self::ObjectSpreadLiteral(_, source) => {
+                source.may_publish_namespace(id, aliases, facts)
+            }
             _ => self.may_publish_namespace(id, aliases, facts),
         }
     }

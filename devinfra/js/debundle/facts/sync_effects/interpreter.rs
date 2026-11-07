@@ -10,7 +10,8 @@ use super::super::descriptor_transfer::{
 };
 use super::super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
-    NativeCalleeSelection, RootEffectIdentity, RootEffectSource, SkippedCallReceipt,
+    NativeCalleeSelection, OperationSupportOperation, RootEffectIdentity, RootEffectSource,
+    SkippedCallReceipt,
 };
 use super::super::local_operations::{
     ClassConstructorBody, ConstructorPhase, DeferredCallableCreation, LocalBinding, LocalBody,
@@ -1093,6 +1094,13 @@ pub(super) struct ExecutionState {
     /// `reduce` results by call site allocation id.
     accumulated_values: OrdMap<u32, Values>,
     ordinary_spread_copies: BTreeSet<u32>,
+    /// Data descriptor values are tracked, but the heap does not retain the
+    /// enumerable flag. Once a descriptor map mutates an object, refuse
+    /// CopyDataProperties for that source without weakening ordinary Get.
+    copy_enumerability_unknown: BTreeSet<u32>,
+    /// Runtime own-data shape produced by a checked object-spread copy. None
+    /// is sticky invalidation when one pooled site observes different keys.
+    spread_shapes: OrdMap<u32, Option<OwnPropertyShape>>,
     descriptor_copy_results: BTreeSet<u32>,
     array_iteration_depth: usize,
     array_iteration_protected_objects: BTreeSet<u32>,
@@ -1426,6 +1434,41 @@ struct ApplicationAllocationContext<'a, 'source, 'rule> {
     captures: &'a Context,
 }
 
+impl OwnDataContext for ApplicationAllocationContext<'_, '_, '_> {
+    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        self.executor.ordinary_record_shape(allocation)
+    }
+    fn own_properties(&self, allocation: u32) -> Option<&BTreeMap<Option<String>, Values>> {
+        self.executor.own_properties(allocation)
+    }
+    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+        self.executor.object_properties_are_settled(allocation)
+    }
+    fn copy_data_properties_are_exact(&self, allocation: u32) -> bool {
+        !self
+            .executor
+            .state
+            .copy_enumerability_unknown
+            .contains(&allocation)
+    }
+    fn instance_properties_are_settled(&self, class: u32) -> bool {
+        self.executor.instance_properties_are_settled(class)
+    }
+    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
+        self.executor.property_values(allocation, property)
+    }
+    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+        self.executor.property_is_accessor(allocation, property)
+    }
+    fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
+        self.executor.property_is_writable(allocation, property)
+    }
+    fn first_generation_dense_array_length(&self, allocation: u32) -> Option<u32> {
+        self.executor
+            .first_generation_dense_array_length(allocation)
+    }
+}
+
 impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
     fn array_created(&mut self, allocation: u32, sparse: bool) {
         if sparse {
@@ -1479,6 +1522,93 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
     fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
         self.executor.literal_heap()
     }
+
+    fn exact_object_spread_copy(&self, allocation: u32) -> bool {
+        self.executor
+            .inputs
+            .index
+            .exact_object_spread_copies
+            .contains(&allocation)
+    }
+
+    fn object_spread_copy_support(
+        &mut self,
+        _source: &super::super::own_data_transfer::OwnDataCopySource,
+        _dependencies: &ProofDependencies,
+    ) -> bool {
+        // This value projection shares the checked copy semantics, but has no
+        // ordered effect/support receipt channel. Keep it out of acceptance.
+        self.executor.mark_allocation_opaque();
+        true
+    }
+
+    fn refused_object_spread(
+        &mut self,
+        site: CallSite,
+        source: &Values,
+    ) -> super::super::allocation_transfer::AllocationValue {
+        let owner = self
+            .executor
+            .state
+            .current_top_owner
+            .expect("object spread executes under a source owner");
+        if self.executor.state.array_iteration_depth > 0 {
+            self.executor.state.array_iteration_unsupported = true;
+        }
+        self.executor.note_unknown_execution(owner);
+        let span = site.source_span();
+        let mut outcome = std::mem::take(&mut self.executor.state.fallback_outcome);
+        let rebinds_before = outcome.effects.rebinds.len();
+        outcome.unsupported(ExecutionOperation::ObjectSpread, owner, span);
+        outcome.unknown_call = true;
+        outcome.executed_owners.insert(owner);
+        self.executor
+            .promote_escaped_callbacks(source, &mut outcome);
+        self.executor.invoke_possible_callbacks_at(
+            &[source.clone()],
+            false,
+            Some(span),
+            &mut outcome,
+        );
+        let mut reentrant = std::mem::take(&mut self.executor.state.fallback_outcome);
+        outcome.absorb_call_effects(
+            &mut reentrant.effects,
+            self.executor.state.assumption.as_ref(),
+        );
+        outcome.effect_coverage.compose(&reentrant.effect_coverage);
+        outcome
+            .executed_owners
+            .append(&mut reentrant.executed_owners);
+        outcome.unknown_call |= reentrant.unknown_call;
+        outcome.inherit_completeness(
+            reentrant.complete,
+            std::mem::take(&mut reentrant.effects.precision_losses),
+        );
+        if outcome.effects.rebinds.len() != rebinds_before {
+            self.executor.apply_rebind_effects(&outcome);
+        }
+        self.executor.state.fallback_outcome = outcome;
+        self.executor.mark_allocation_opaque();
+        self.executor.taint_objects(source);
+        self.executor
+            .state
+            .tainted_objects
+            .insert(site.allocation_id());
+        let callbacks = self.executor.callback_values(source);
+        self.executor
+            .state
+            .global_escaped_callbacks
+            .extend(callbacks);
+        self.executor.widen_native_effects();
+        super::super::allocation_transfer::AllocationValue::opaque(Values::from([
+            AbstractValue::Value(Value::Alloc(Kind::Object, site.allocation_id())),
+            AbstractValue::Value(Value::Unavailable),
+        ]))
+    }
+
+    fn object_spread_dependencies(&self) -> ProofDependencies {
+        self.executor.settled_prefix_dependencies()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1519,11 +1649,27 @@ struct LocalExecutionContext<'a, 'source, 'rule> {
 
 impl OwnDataContext for Executor<'_, '_> {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
-        self.inputs.index.ordinary_record_shape(allocation)
+        self.state
+            .spread_shapes
+            .get(&allocation)
+            .and_then(Option::as_ref)
+            .or_else(|| {
+                (!self.state.spread_shapes.contains_key(&allocation))
+                    .then(|| self.inputs.index.ordinary_record_shape(allocation))
+                    .flatten()
+            })
+    }
+
+    fn own_properties(&self, allocation: u32) -> Option<&BTreeMap<Option<String>, Values>> {
+        self.state.prefix_object_properties.get(&allocation)
     }
 
     fn object_properties_are_settled(&self, allocation: u32) -> bool {
         self.state.object_properties_are_settled(&allocation)
+    }
+
+    fn copy_data_properties_are_exact(&self, allocation: u32) -> bool {
+        !self.state.copy_enumerability_unknown.contains(&allocation)
     }
 
     fn instance_properties_are_settled(&self, class: u32) -> bool {
@@ -1625,9 +1771,6 @@ impl DescriptorContext for Executor<'_, '_> {
     fn heap_epoch(&self) -> u64 {
         self.state.prefix_revision
     }
-    fn own_properties(&self, object: u32) -> Option<&BTreeMap<Option<String>, Values>> {
-        self.state.prefix_object_properties.get(&object)
-    }
     fn descriptor_map(&self, site: CallSite) -> Option<&OwnDescriptorMapState> {
         self.state.own_descriptor_maps.get(&site)
     }
@@ -1649,8 +1792,20 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
         self.executor.ordinary_record_shape(allocation)
     }
 
+    fn own_properties(&self, allocation: u32) -> Option<&BTreeMap<Option<String>, Values>> {
+        self.executor.own_properties(allocation)
+    }
+
     fn object_properties_are_settled(&self, allocation: u32) -> bool {
         self.executor.object_properties_are_settled(allocation)
+    }
+
+    fn copy_data_properties_are_exact(&self, allocation: u32) -> bool {
+        !self
+            .executor
+            .state
+            .copy_enumerability_unknown
+            .contains(&allocation)
     }
 
     fn instance_properties_are_settled(&self, class: u32) -> bool {
@@ -3449,6 +3604,74 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
         self.executor.inputs.index.allocation_layout(allocation)
     }
+    fn exact_object_spread_copy(&self, allocation: u32) -> bool {
+        self.retained_query.is_none()
+            && self
+                .executor
+                .inputs
+                .index
+                .exact_object_spread_copies
+                .contains(&allocation)
+    }
+    fn object_spread_copy_support(
+        &mut self,
+        frame: &mut LocalFrame,
+        source: &super::super::own_data_transfer::OwnDataCopySource,
+        dependencies: &ProofDependencies,
+    ) -> bool {
+        if self.retained_query.is_some() {
+            return false;
+        }
+        let Some(receipt) = self.operation_support_receipt(
+            frame,
+            OperationSupportOperation::ObjectSpreadCopy,
+            source.origin,
+            dependencies,
+        ) else {
+            return false;
+        };
+        self.record_property_read(crate::facts::EffectCell::ObjectShape(source.origin));
+        for (property, _) in &source.properties {
+            self.record_property_read(crate::facts::EffectCell::OwnProperty {
+                origin: source.origin,
+                property: property.clone(),
+            });
+        }
+        let mut effects = EffectCoverageFragment::modeled_own_data_access();
+        effects.depend_on(dependencies);
+        effects.operation_support(receipt.clone());
+        self.record_operation_support(receipt);
+        frame.effect_coverage.compose(&effects);
+        true
+    }
+    fn refused_object_spread(
+        &mut self,
+        frame: &mut LocalFrame,
+        site: CallSite,
+        source: &Values,
+    ) -> super::super::allocation_transfer::AllocationValue {
+        self.fallback(
+            frame,
+            source.clone(),
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::ObjectSpread,
+                ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
+            },
+            site.source_span(),
+        );
+        self.executor
+            .state
+            .tainted_objects
+            .insert(site.allocation_id());
+        super::super::allocation_transfer::AllocationValue::opaque(Values::from([
+            AbstractValue::Value(Value::Alloc(Kind::Object, site.allocation_id())),
+            AbstractValue::Value(Value::Unavailable),
+        ]))
+    }
+    fn object_spread_dependencies(&self) -> ProofDependencies {
+        self.executor.settled_prefix_dependencies()
+    }
     fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
         self.executor.literal_heap()
     }
@@ -4443,7 +4666,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         };
         self.invalidate_writable_object(*target);
-        self.descriptor_heap().apply(*target, *site);
+        if self.descriptor_heap().apply(*target, *site) {
+            self.state.copy_enumerability_unknown.insert(*target);
+        }
     }
 
     /// Return a builtin row only after proving the source-level intrinsic
@@ -5629,6 +5854,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             arrays: &mut state.dense_arrays,
             revision: &mut state.prefix_revision,
             writable_prefix: Some(&mut state.writable_prefix),
+            spread_copies: Some(&mut state.ordinary_spread_copies),
+            spread_shapes: Some(&mut state.spread_shapes),
         }
     }
 
@@ -12424,46 +12651,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Alloc(kind, site) => {
                 Values::from([AbstractValue::Value(Value::Alloc(*kind, *site))])
             }
+            ValueExpr::ObjectSpreadLiteral(..) => {
+                unreachable!("the shared transfer returns after one source evaluation")
+            }
             ValueExpr::ObjectLiteral(key, properties) => {
-                if self.inputs.index.exact_object_spread_copies.contains(key)
-                    && let [(None, source)] = properties.as_ref()
-                {
-                    let source = self.evaluate(source, env, captures);
-                    if let Some(properties) = self.ordinary_data_properties(&source) {
-                        let previously_evaluated = self.state.ordinary_spread_copies.contains(key);
-                        let current = self.state.prefix_object_properties.entry(*key).or_default();
-                        let mut changed = false;
-                        if previously_evaluated {
-                            for (property, values) in current.iter_mut() {
-                                if !properties.contains_key(property) {
-                                    changed |= values.insert(AbstractValue::UNDEFINED);
-                                }
-                            }
-                        }
-                        for (property, values) in properties {
-                            let new_property = !current.contains_key(&property);
-                            let slot = current.entry(property).or_default();
-                            let before = slot.len();
-                            if previously_evaluated && new_property {
-                                slot.insert(AbstractValue::UNDEFINED);
-                            }
-                            slot.extend(values);
-                            changed |= slot.len() != before;
-                        }
-                        if changed {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-                        }
-                        self.state.ordinary_spread_copies.insert(*key);
-                        return Values::from([AbstractValue::Value(Value::Alloc(
-                            Kind::Object,
-                            *key,
-                        ))]);
-                    }
-                    self.state.tainted_objects.insert(*key);
-                    if self.state.array_iteration_depth > 0 {
-                        self.state.array_iteration_unsupported = true;
-                    }
-                }
                 if self.inputs.index.array_elements.contains_key(key) {
                     return self.evaluate_array(*key, env, captures);
                 }
@@ -14471,9 +14662,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if call.kind == CallKind::ObjectSpread {
             let values = self.evaluate(&call.args[0], env, captures);
-            if self.ordinary_data_properties(&values).is_some() {
-                return CallTransfer::EffectsOnly;
-            }
             if self.state.array_iteration_depth > 0 {
                 self.state.array_iteration_unsupported = true;
             }
@@ -16404,6 +16592,8 @@ pub(crate) fn annotate_synchronous_calls(
         primitive_arrays: OrdMap::new(),
         accumulated_values: OrdMap::new(),
         ordinary_spread_copies: BTreeSet::new(),
+        copy_enumerability_unknown: BTreeSet::new(),
+        spread_shapes: OrdMap::new(),
         descriptor_copy_results: BTreeSet::new(),
         array_iteration_depth: 0,
         array_iteration_protected_objects: BTreeSet::new(),

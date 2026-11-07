@@ -815,6 +815,7 @@ pub(crate) enum OperationSupportLocation {
 pub(crate) enum OperationSupportOperation {
     OwnDataRead,
     WritableOwnDataStore,
+    ObjectSpreadCopy,
 }
 
 /// Evidence that a selected present own-data operation consumed descriptor
