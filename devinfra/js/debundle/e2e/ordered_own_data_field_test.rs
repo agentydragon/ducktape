@@ -1,4 +1,6 @@
-use analysis::{DependencyGraphReport, reports::schema::BindingEffectAuthorityReport};
+use analysis::{
+    DependencyGraphReport, EffectCellReport, reports::schema::BindingEffectAuthorityReport,
+};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
@@ -59,9 +61,7 @@ fn assert_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str) 
         .sample
         .iter()
         .find_map(|cell| match cell {
-            analysis::reports::schema::EffectCellReport::OwnProperty { origin, property }
-                if property == "length" =>
-            {
+            EffectCellReport::OwnProperty { origin, property } if property == "length" => {
                 Some(*origin)
             }
             _ => None,
@@ -102,7 +102,7 @@ fn assert_no_non_assumed_length_read(graph: &DependencyGraphReport, binding: &st
         assert!(
             !reads.sample.iter().any(|cell| matches!(
                 cell,
-                analysis::reports::schema::EffectCellReport::OwnProperty {
+                EffectCellReport::OwnProperty {
                     property,
                     ..
                 } if property == "length"
