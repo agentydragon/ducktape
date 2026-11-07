@@ -2650,6 +2650,47 @@ fn full_effect_stream_matches_between_direct_and_staged_runs() {
     );
 }
 
+#[test]
+fn root_normal_completion_control_survives_saved_analysis() {
+    let source = "let state = 0;\n\
+function initialize() {\n\
+  state = 1;\n\
+  try { throw 'caught'; state = 99; } catch (error) { state = state + 1; }\n\
+  return state;\n\
+}\n\
+const result = initialize();\n\
+const independent = 2;\n\
+console.log(result, state, independent);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("independent", &[Member::new("independent")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct root-normal control run");
+    let report: Value = read_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/effect_translation_validation.json"),
+    );
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+
+    let artifact = path(&staged.artifact).to_owned();
+    let restored = staged.run(&["--analysis", artifact.as_str()]);
+    assert_ok(&restored.result, "saved root-normal control run");
+    assert_same_invocation_trees(&direct, &restored);
+    for invocation in [&direct, &restored] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "2 2 2\n",
+            "",
+        );
+    }
+}
+
 fn candidate_relocation_report(invocation: &StagedInvocation, chunk: &str) -> Value {
     read_json(&invocation.output_root().join(format!(
         "reports/tree/{chunk}/candidate_relocation_assessment.json"

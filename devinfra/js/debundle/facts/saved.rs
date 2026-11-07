@@ -103,6 +103,7 @@ enum SavedEffectCell {
         instance: LexicalCellId,
     },
     GlobalProp(String),
+    ExecutionProgress,
     ArrayContents(u32),
     SetContents(u32),
     GlobalSymbolRegistry,
@@ -128,6 +129,7 @@ impl SavedEffectCell {
                 instance: *instance,
             },
             EffectCell::GlobalProp(property) => Self::GlobalProp(property.clone()),
+            EffectCell::ExecutionProgress => Self::ExecutionProgress,
             EffectCell::ArrayContents(origin) => Self::ArrayContents(*origin),
             EffectCell::SetContents(origin) => Self::SetContents(*origin),
             EffectCell::GlobalSymbolRegistry => Self::GlobalSymbolRegistry,
@@ -154,6 +156,7 @@ impl SavedEffectCell {
             Self::Binding(binding) => EffectCell::Binding(ordinals.restore_binding(binding)?),
             Self::LexicalCell { origin, instance } => EffectCell::LexicalCell { origin, instance },
             Self::GlobalProp(property) => EffectCell::GlobalProp(property),
+            Self::ExecutionProgress => EffectCell::ExecutionProgress,
             Self::ArrayContents(origin) => EffectCell::ArrayContents(origin),
             Self::SetContents(origin) => EffectCell::SetContents(origin),
             Self::GlobalSymbolRegistry => EffectCell::GlobalSymbolRegistry,
@@ -496,6 +499,9 @@ struct SavedSynchronousCalls<'a> {
         Cow<'a, Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>>,
     completed_initialization:
         Cow<'a, Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>>,
+    #[serde(default)]
+    root_normal_completion:
+        Cow<'a, Option<super::sync_effects::noninvoking_initialization::RootNormalCompletion>>,
     initialization_coverage_refusal:
         Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
     evaluation_effects: Cow<'a, super::evaluation_effects::EvaluationEffects>,
@@ -541,6 +547,7 @@ impl<'a> SavedSynchronousCalls<'a> {
         Ok(Self {
             initializer_binding_effects: Cow::Borrowed(&calls.initializer_binding_effects),
             completed_initialization: Cow::Borrowed(&calls.completed_initialization),
+            root_normal_completion: Cow::Borrowed(&calls.root_normal_completion),
             initialization_coverage_refusal: Cow::Borrowed(&calls.initialization_coverage_refusal),
             evaluation_effects: Cow::Borrowed(&calls.evaluation_effects),
             local_record_factory_uses: calls
@@ -626,6 +633,7 @@ impl<'a> SavedSynchronousCalls<'a> {
         Ok(SynchronousCalls {
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
+            root_normal_completion: self.root_normal_completion.into_owned(),
             initialization_coverage_refusal: self.initialization_coverage_refusal.into_owned(),
             evaluation_effects: self.evaluation_effects.into_owned(),
             purity_disagreement: self

@@ -498,6 +498,21 @@ and edge-TV verdicts are diagnostic comparisons. Unknown global/property/host
 coverage remains conservative Havoc independently of purity or synchronous
 completeness. Counts include every conflicting swapped pair and existing
 pair-premise disposition; observed contradictions block acceptance.
+The same sweep projects one shared `execution_progress` cell for synchronous
+initialization across every logical module in the exact chunk candidate. Each
+evaluated non-inert owner reads it; an owner without exact whole-root
+normal-completion evidence writes it because it may suppress later execution.
+Unknown or abrupt completion remains suppressing. A known caught throw or
+callable return does not write the outer fence by itself. An empty
+source-prefix ledger is not an inert certificate: skipping the read requires
+both exact normal completion and an otherwise empty semantic footprint.
+Existing completed-initializer evidence may prove a lazy function's creation
+normal even while its deferred parameters or body have unknown effect domains;
+that normality evidence does not close those effect domains. This bounded
+interference check does not change design assumption A6 or claim general
+uncaught-error equivalence; an outward-throw/unreached-suffix crossing remains
+refused unless the existing modeled effects and control projection prove it
+safe.
 Local export lists (`export { value }`, including aliases) link live bindings
 without evaluating their values or initializing a binding. Their initialization
 effect footprint is empty. Dependency-bearing re-exports (`export ... from`)

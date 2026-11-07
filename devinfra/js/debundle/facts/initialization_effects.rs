@@ -116,6 +116,9 @@ pub struct InitializationEffects<'a> {
     /// Conditions of the exact owner's whole-evaluation coverage proof. An
     /// import or direct function declaration executes no body and needs none.
     pub coverage_dependencies: Option<Cow<'a, ProofDependencies>>,
+    /// Exact root dependencies used by the shared initialization progress
+    /// projection, independent of ordinary may-effect domain closure.
+    pub control_dependencies: Option<Cow<'a, ProofDependencies>>,
     /// Missing semantic domains; independent of legacy timing opacity.
     pub unknown_coverage: BTreeSet<UnknownEffectCoverage>,
     /// Diagnostic count input before operation coverage discharges a cause.
@@ -194,6 +197,7 @@ impl StatementFacts {
             writes: BTreeMap::new(),
             allocates: self.heap_contents.allocations.clone(),
             coverage_dependencies: None,
+            control_dependencies: None,
             unknown_coverage: BTreeSet::new(),
             legacy_dataflow_opaque: false,
             dataflow_opacity: self.dataflow_opacity(),
@@ -374,6 +378,25 @@ impl StatementFacts {
                 reason,
                 source_location: self.source_location.clone(),
             });
+        }
+        let normal_completion = self.synchronous_calls.as_ref().and_then(|calls| {
+            calls
+                .root_normal_completion
+                .as_ref()
+                .filter(|proof| proof.covers(self.ordinal))
+        });
+        effects.control_dependencies =
+            normal_completion.map(|proof| Cow::Borrowed(proof.dependencies()));
+        // Empty source-prefix effects are not an inert certificate. Only an
+        // exact whole-owner normal receipt can establish inertness; all other
+        // evaluated owners read the shared progress cell, and owners without
+        // normal completion proof may suppress every later unit.
+        let inert = normal_completion.is_some() && effects.is_empty();
+        if !inert {
+            record(&mut effects.reads, EffectCell::ExecutionProgress, None);
+        }
+        if normal_completion.is_none() {
+            record(&mut effects.writes, EffectCell::ExecutionProgress, None);
         }
         effects
     }

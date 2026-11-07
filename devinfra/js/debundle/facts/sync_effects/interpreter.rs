@@ -22,7 +22,7 @@ use super::super::local_transfer::{
 };
 use super::super::noninvoking_initialization::{
     CompletedInitialization, NativeConstructorCandidate, NativeConstructorForm,
-    NativeConstructorKind, NativeConstructorTransfer, OriginalInitializer,
+    NativeConstructorKind, NativeConstructorTransfer, OriginalInitializer, RootNormalCompletion,
 };
 use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::super::value_model::{
@@ -17380,6 +17380,37 @@ impl Executor<'_, '_> {
                 });
             }
             outcome.effects.initialization_coverage_refusal = initialization_coverage_refusal;
+        }
+        // The shared control fence needs a completion fact, not a claim that
+        // ordinary effect domains are closed. Prefer the existing exact
+        // non-invoking initializer theorem (which proves function creation
+        // without inspecting lazy parameters/body); otherwise require the
+        // shared root transfer's normal-completion dependencies. Unknown,
+        // abrupt or incomplete roots remain suppressing.
+        if outcome.complete
+            && !outcome.unknown_call
+            && outcome.effects.precision_losses.is_empty()
+            && outcome.effects.uninitialized_reads.is_empty()
+            && outcome.effects.fallback_only.reads.is_empty()
+            && outcome.effects.fallback_only.rebinds.is_empty()
+            && outcome.effects.fallback_only.uninitialized_reads.is_empty()
+            && let Some(source) = &effect_root_identity
+        {
+            let normal_dependencies = outcome
+                .effects
+                .completed_initialization
+                .as_ref()
+                .filter(|proof| proof.covers(owner))
+                .map(|proof| proof.dependencies().clone())
+                .or_else(|| outcome.effect_coverage.normal_dependencies());
+            if let Some(dependencies) = normal_dependencies {
+                outcome.effects.root_normal_completion = RootNormalCompletion::from_root(
+                    source,
+                    owner,
+                    &self.state.initialized_bindings,
+                    dependencies,
+                );
+            }
         }
         if let Some(identity) = outcome.root_effect_identity.take() {
             let expected_root_calls: BTreeSet<_> = calls

@@ -211,6 +211,10 @@ pub(crate) struct SynchronousCalls {
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
     pub(crate) completed_initialization:
         Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
+    /// Exact-owner normal-completion evidence for the initialization control
+    /// fence. This is independent of effect-domain closure.
+    pub(crate) root_normal_completion:
+        Option<super::sync_effects::noninvoking_initialization::RootNormalCompletion>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
     pub(crate) initialization_coverage_refusal:
@@ -481,6 +485,9 @@ pub enum EffectCell {
         instance: LexicalCellId,
     },
     GlobalProp(String),
+    /// Shared synchronous module-initialization progress across all logical
+    /// modules in one exact per-chunk relocation sweep.
+    ExecutionProgress,
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
     ArrayContents(u32),
@@ -514,7 +521,7 @@ pub enum EffectCell {
 impl EffectCell {
     pub(crate) fn is_heap_content(&self) -> bool {
         match self {
-            Self::Binding(_) | Self::GlobalProp(_) => false,
+            Self::Binding(_) | Self::GlobalProp(_) | Self::ExecutionProgress => false,
             Self::ArrayContents(_)
             | Self::LexicalCell { .. }
             | Self::SetContents(_)
