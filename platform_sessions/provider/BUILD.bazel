@@ -1,0 +1,35 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# gazelle:resolve py platform_sessions.provider.v1.session_provider_pb2 //platform_sessions/provider/v1:session_provider_pb2
+# gazelle:resolve py platform_sessions.provider.v1.session_provider_pb2_grpc //platform_sessions/provider/v1:session_provider_pb2_grpc
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "control_client",
+    srcs = ["control_client.py"],
+    deps = [
+        "//platform_sessions:limits",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "//platform_sessions/provider/v1:session_provider_pb2_grpc",
+        "//platform_sessions/provider/v1:validation",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "control_client_test",
+    srcs = ["control_client_test.py"],
+    deps = [
+        ":control_client",
+        "//:conftest",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "//platform_sessions/provider/v1:session_provider_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
