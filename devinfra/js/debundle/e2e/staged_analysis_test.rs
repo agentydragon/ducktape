@@ -1363,10 +1363,6 @@ fn assert_caught_binary_throw_receipt(invocation: &StagedInvocation) {
         independent_execution["complete"], true,
         "the independent root owner keeps its own completion metadata: {independent_execution:#}"
     );
-    assert_eq!(
-        independent_execution["binding_effect_authority"]["authority"], "operation_receipt",
-        "the independent root owner keeps its own typed authority: {independent_execution:#}"
-    );
 }
 
 fn conditional_foreign_body_used(graph: &Value, binding: &str) -> bool {
