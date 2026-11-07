@@ -63,7 +63,7 @@ class RunningRunner:
             await self.model_config_context.__aexit__(None, None, None)
             raise
 
-    async def _start(self, model_endpoint: Endpoint) -> None:
+    async def _start(self, model_endpoint: str) -> None:
         if self.observe_control:
             await self.gateway.control.disconnect()
         environment = dict(self.config.harness_environment)
@@ -80,7 +80,7 @@ class RunningRunner:
             self.config,
             control=self.control_endpoint,
             ingress=self.ingress_endpoint,
-            model_config_service=model_endpoint,
+            model_config_target=model_endpoint,
         )
         container = await asyncio.to_thread(pid1_container, command, self.state_dir.parent, environment)
         await asyncio.to_thread(container.__enter__)

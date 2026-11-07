@@ -118,8 +118,8 @@ func runService(ctx context.Context, args []string) error {
 		CodexExecServer: settings.CodexExecServer, CodexBinary: codexBinary,
 		HarnessEnvironment: settings.HarnessEnvironment, InitializationCwd: settings.InitializationCwd,
 		HistoryIngress: ingress, SessionReconcileConcurrency: settings.SessionReconcileConcurrency,
-		ModelConfigService: settings.ModelConfigService,
-		Claude:             settings.Claude, Codex: settings.Codex,
+		ModelConfigTarget: settings.ModelConfigTarget,
+		Claude:            settings.Claude, Codex: settings.Codex,
 		CodexAppServerReadiness: settings.CodexAppServerReadiness,
 		WorkspaceRoot:           settings.WorkspaceRoot, DebugCheckpoint: settings.DebugCheckpoint,
 	})

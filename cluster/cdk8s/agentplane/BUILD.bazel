@@ -1103,6 +1103,7 @@ py_test(
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane/env:config",
+        "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:pod_policy",
         "@pypi//cdk8s",

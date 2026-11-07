@@ -6,7 +6,6 @@ from typing import override
 
 import grpc
 
-from agentplane.env.config import Endpoint
 from agentplane.grpc.serving import serving
 from agentplane.llm_ingress.v1 import model_config_pb2, model_config_pb2_grpc
 
@@ -22,8 +21,8 @@ class _ModelConfig(model_config_pb2_grpc.ModelConfigServiceServicer):
 
 
 @asynccontextmanager
-async def model_config() -> AsyncIterator[Endpoint]:
+async def model_config() -> AsyncIterator[str]:
     server = grpc.aio.server()
     model_config_pb2_grpc.add_ModelConfigServiceServicer_to_server(_ModelConfig(), server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        yield Endpoint(target=f"127.0.0.1:{port}", bearer="test-token")
+        yield f"127.0.0.1:{port}"

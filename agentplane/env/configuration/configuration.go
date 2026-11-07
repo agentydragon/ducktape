@@ -31,7 +31,7 @@ type Configuration struct {
 	InitializationCwd             string                                 `json:"initialization_cwd"`
 	Control                       EnvironmentRuntimeControlConfiguration `json:"control"`
 	Ingress                       Endpoint                               `json:"ingress"`
-	ModelConfigService            *Endpoint                              `json:"model_config_service"`
+	ModelConfigTarget             *string                                `json:"model_config_target"`
 	PlatformInstructions          string                                 `json:"platform_instructions"`
 	EnvironmentRuntimeEnvironment EnvironmentVariables                   `json:"environment_runtime_environment"`
 	HarnessEnvironment            *EnvironmentVariables                  `json:"harness_environment"`
@@ -346,15 +346,12 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if f.Ingress.Target == "" || f.Ingress.Bearer == "" {
 		return Resolved{}, nil, errors.New("invalid ingress endpoint")
 	}
-	endpoints := map[string]Endpoint{"ingress": f.Ingress}
-	if f.ModelConfigService != nil {
-		if f.ModelConfigService.Bearer == "" {
-			return Resolved{}, nil, errors.New("invalid model_config_service endpoint")
-		}
-		endpoints["model_config_service"] = *f.ModelConfigService
+	endpoints := map[string]string{"ingress": f.Ingress.Target}
+	if f.ModelConfigTarget != nil {
+		endpoints["model_config_target"] = *f.ModelConfigTarget
 	}
-	for name, endpoint := range endpoints {
-		host, port, err := net.SplitHostPort(endpoint.Target)
+	for name, target := range endpoints {
+		host, port, err := net.SplitHostPort(target)
 		number, numberErr := strconv.Atoi(port)
 		if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 {
 			return Resolved{}, nil, fmt.Errorf("invalid %s endpoint", name)
@@ -421,7 +418,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		InitializationCwd:           f.InitializationCwd,
 		Launch:                      launch,
 		HarnessEnvironment:          child,
-		ModelConfigService:          f.ModelConfigService,
+		ModelConfigTarget:           f.ModelConfigTarget,
 		Claude:                      claude,
 		Codex:                       codex,
 		VMProcessLauncher:           launcher,

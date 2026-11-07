@@ -16,6 +16,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
@@ -363,15 +364,16 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     model_config_route = routes["model-config"]
     assert model_config_route["service_prefixes"] == ["/agentplane.llm_ingress.v1.ModelConfigService/"]
     assert model_config_route["upstream"] == "llm-ingress.agentplane-staging.svc.cluster.local:8081"
+    assert model_config_route["token_file"] == sandbox_pod.audience_token_file(WORKLOAD_TOKEN_AUDIENCE)
     notifications_route = routes["notifications"]
     assert notifications_route["service_prefixes"] == ["/agentplane.notification_service.Notifications/"]
     assert notifications_route["upstream"] == "notifications.agentplane-staging.svc.cluster.local:8080"
     assert notifications_route["token_file"] == f"{token_mount['mountPath']}/notifications-token"
     assert _host_port(env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == runner_listener
     assert env["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
-    assert (
-        _host_port(_runner_configuration(staging_manifests, pod)["model_config_service"]["target"]) == runner_listener
-    )
+    runner_configuration = _runner_configuration(staging_manifests, pod)
+    assert _host_port(runner_configuration["model_config_target"]) == runner_listener
+    assert "model_config_service" not in runner_configuration
     assert _host_port(env["OTEL_EXPORTER_OTLP_ENDPOINT"]) == runner_listener
     telemetry_prefixes = routes["telemetry"]["service_prefixes"]
     assert "token_file" not in routes["telemetry"]

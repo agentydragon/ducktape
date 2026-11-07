@@ -204,7 +204,7 @@ async def start_runner(
                 state_dir=tmp_path / "state",
                 control=gateway.endpoint,
                 ingress=ingress,
-                model_config_service=model_endpoint,
+                model_config_target=model_endpoint,
                 test_debug_checkpoint=test_debug_checkpoint,
                 bootstrap=bootstrap,
                 codex_binary=codex_binary,
