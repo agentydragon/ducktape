@@ -144,9 +144,11 @@ Unknown settings are refused, including the former flat settings.
   this informational snapshot need not come from the replica that admitted the API request.
   Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
   API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
-  Operator admin endpoints are not available through this route.
+  Operator admin endpoints are not available through this route. The separate admin gRPC listener
+  also serves `EgressRules.GetRules`, authorizing a workload bearer independently of the admin
+  allowlist; staging sandbox network policy does not yet admit this listener.
   `GET /v1/rules` is the generated HTTP/JSON form of the gRPC `EgressRules.GetRules`
-  (<egress_rules.proto>), served in-process on a loopback listener only: proto-JSON answers, and a
+  (<egress_rules.proto>), served to the facade on a loopback listener: proto-JSON answers, and a
   bearer that proves no workload fails `401` as a `google.rpc.Status` body (`503` when it could not
   be reviewed), with the same subject and redaction either way.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that

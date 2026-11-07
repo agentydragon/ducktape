@@ -12,7 +12,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/agentydragon/ducktape/agentplane/egress/identity"
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -78,11 +81,21 @@ type idleHistory struct{}
 
 func (idleHistory) Health() history.Health { return history.Health{} }
 
+func testRulesAuth(t *testing.T) (*auth.Resolver, *identity.Verifier, *policy.Index) {
+	t.Helper()
+	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{"test-ns"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolver, identity.NewVerifier(resolver, nil), policy.NewIndex()
+}
+
 func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	c := config{AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"}}
+	resolver, verifier, index := testRulesAuth(t)
 	server, err := newAdminServer(c, api.TokenReviews(), admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
-	})
+	}, resolver, verifier, index)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +119,22 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	health, err := egressadminpb.NewEgressAdminClient(connection).GetHealth(admitted, &egressadminpb.GetHealthRequest{})
 	if err != nil || !health.GetReady() {
 		t.Fatalf("GetHealth: %v, %v", health, err)
+	}
+	// The same listener serves workload rules without granting the workload admin access.
+	workloadToken, err := api.WorkloadToken(context.Background(), auth.Account{Namespace: "test-ns", Name: "test-sandbox"}, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workload := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+workloadToken)
+	rules, err := egressrulespb.NewEgressRulesClient(connection).GetRules(workload, &egressrulespb.GetRulesRequest{})
+	if err != nil || rules.GetSubject().GetNamespace() != "test-ns" || rules.GetSubject().GetName() != "test-sandbox" {
+		t.Fatalf("workload rules: %v, %v", rules, err)
+	}
+	if _, err := egressadminpb.NewEgressAdminClient(connection).GetHealth(workload, &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("workload admin access: %v, want PermissionDenied", err)
+	}
+	if _, err := egressrulespb.NewEgressRulesClient(connection).GetRules(context.Background(), &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("anonymous rules access: %v, want Unauthenticated", err)
 	}
 	stream, err := egressadminpb.NewEgressAdminClient(connection).WatchDecisions(
 		admitted,
@@ -136,7 +165,8 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 // Kubernetes' native grpc probes send no bearer, so health is served whether or not the EgressAdmin
 // API is configured.
 func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
-	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}})
+	resolver, verifier, index := testRulesAuth(t)
+	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}}, resolver, verifier, index)
 	if err != nil {
 		t.Fatal(err)
 	}

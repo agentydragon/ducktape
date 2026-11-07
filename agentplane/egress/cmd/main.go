@@ -118,18 +118,18 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 
 // workloadIdentity reviews the hop bearer for the proxy's own audience and each projected token for
 // its audience, accepting only ServiceAccounts of the allowed namespaces.
-func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
+func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, *auth.Resolver, error) {
 	hop, err := auth.NewResolver(reviews, c.Forward.BearerAudience(), c.AllowedServiceAccountNamespaces)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
 	for _, audience := range c.ProjectedTokenAudiences {
 		if projected[audience], err = auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return identity.NewVerifier(hop, projected), nil
+	return identity.NewVerifier(hop, projected), hop, nil
 }
 
 // upstreamRoots is the bundle destinations are verified against: the file when given, else the
@@ -197,7 +197,7 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	if err != nil {
 		return err
 	}
-	verifier, err := workloadIdentity(reviews.TokenReviews(), c)
+	verifier, rulesResolver, err := workloadIdentity(reviews.TokenReviews(), c)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	}
 	adminServer, err := newAdminServer(c, reviews.TokenReviews(), admin.ServiceOptions{
 		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health, Credentials: index,
-	})
+	}, rulesResolver, verifier, index)
 	if err != nil {
 		return err
 	}
