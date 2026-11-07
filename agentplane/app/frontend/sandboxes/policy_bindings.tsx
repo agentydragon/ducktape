@@ -1,9 +1,10 @@
 import { Button, Group, MultiSelect, Select, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
+import type { PolicyBinding } from "../../../policy/v1/policy_service_pb";
 import type { PolicyResources } from "../policy/watch";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
-import { api, displayableError } from "../client";
+import { api, displayableError, fetchWithLogin } from "../client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
@@ -15,6 +16,21 @@ const GRANT_DURATIONS = [
   { value: "168", label: "7 days" },
   { value: "forever", label: "Until revoked" },
 ];
+
+async function mutatePolicy(method: "POST" | "DELETE", path: string, body?: unknown): Promise<string | null> {
+  const response = await fetchWithLogin(`/upstream/policy/v1${path}`, {
+    method,
+    ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  });
+  if (response.ok) return null;
+  let failure: unknown;
+  try {
+    failure = await response.json();
+  } catch {
+    failure = `Policy Service returned HTTP ${response.status}`;
+  }
+  return displayableError(failure);
+}
 
 /** Grants to a sandbox that is already running; each grant is its own binding, revoked on its own. */
 function GrantPolicySets({
@@ -83,28 +99,40 @@ export function PolicyBindingsSection({
 
   // What the API server now holds, granted or revoked, arrives on the page's stream; nothing to
   // re-read here.
-  async function revoke(binding: string): Promise<void> {
-    const { error: failure } = await api.DELETE("/policy-bindings/{name}", {
-      params: { path: { name: binding } },
-    });
-    setError(failure ? displayableError(failure) : null);
+  async function revoke(binding: PolicyBinding): Promise<void> {
+    const name = binding.identity?.name;
+    const uid = binding.identity?.uid;
+    if (!name || !uid) {
+      setError("PolicyBinding identity is unavailable; refresh the Sandbox policy view");
+      return;
+    }
+    const path = `/sandboxes/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.name)}/policy-bindings/${encodeURIComponent(name)}`;
+    const query = new URLSearchParams({ sandboxUid: target.uid, bindingUid: uid });
+    try {
+      setError(await mutatePolicy("DELETE", `${path}?${query}`));
+    } catch (failure) {
+      setError(displayableError(failure));
+    }
   }
 
   async function grant(): Promise<void> {
-    const { error: failure } = await api.POST("/sandboxes/{name}/policy-bindings", {
-      params: { path: { name: target.name } },
-      body: {
-        uid: target.uid,
-        policy_sets: picked,
-        ...(duration === "forever"
-          ? {}
-          : { expires_at: new Date(Date.now() + Number(duration) * 3_600_000).toISOString() }),
-      },
-    });
-    setError(failure ? displayableError(failure) : null);
-    if (!failure) {
-      setPicked([]);
-      setGranting(false);
+    const path = `/sandboxes/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.name)}/policy-bindings`;
+    const body = {
+      sandboxUid: target.uid,
+      policySets: picked,
+      ...(duration === "forever"
+        ? {}
+        : { expiresAt: new Date(Date.now() + Number(duration) * 3_600_000).toISOString() }),
+    };
+    try {
+      const failure = await mutatePolicy("POST", path, body);
+      setError(failure);
+      if (!failure) {
+        setPicked([]);
+        setGranting(false);
+      }
+    } catch (failure) {
+      setError(displayableError(failure));
     }
   }
 
