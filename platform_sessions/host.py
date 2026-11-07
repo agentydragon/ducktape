@@ -56,6 +56,28 @@ def _failure(
     return JSONResponse({"error": code}, status_code=status)
 
 
+def owner_authorizer(require_owner: Callable[..., Any], auth: BearerAuth) -> Callable[..., Awaitable[None]]:
+    async def authorize(request: Request) -> None:
+        if request.headers.getlist("authorization"):
+            principal = auth.authenticate(request)
+            if principal is None or not principal.owner:
+                raise HTTPException(status_code=403, detail="Owner access required")
+            return
+        result = require_owner(request)
+        if inspect.isawaitable(result):
+            await result
+
+    return authorize
+
+
+def same_origin(request: Request, public_base_url: str, auth: BearerAuth) -> bool:
+    origin = request.headers.get("origin")
+    principal = auth.authenticate(request)
+    return request.headers.get("sec-fetch-site") in {None, "same-origin", "none"} and (
+        origin == public_base_url.rstrip("/") or (origin is None and principal is not None and principal.owner)
+    )
+
+
 def create_management_router(
     integrations: Sequence[Integration],
     public_base_url: str,
@@ -70,30 +92,13 @@ def create_management_router(
     if len(by_id) != len(integrations):
         raise ValueError("Duplicate integration ID")
 
-    async def require_management_owner(request: Request) -> None:
-        if request.headers.getlist("authorization"):
-            principal = auth.authenticate(request)
-            if principal is None or not principal.owner:
-                raise HTTPException(status_code=403, detail="Owner access required")
-            return
-        result = require_owner(request)
-        if inspect.isawaitable(result):
-            await result
-
-    router = APIRouter(prefix="/api/integrations", dependencies=[Depends(require_management_owner)])
-
-    def same_origin(request: Request) -> bool:
-        origin = request.headers.get("origin")
-        principal = auth.authenticate(request)
-        return request.headers.get("sec-fetch-site") in {None, "same-origin", "none"} and (
-            origin == public_base_url.rstrip("/") or (origin is None and principal is not None and principal.owner)
-        )
+    router = APIRouter(prefix="/api/integrations", dependencies=[Depends(owner_authorizer(require_owner, auth))])
 
     async def candidate_request(id: str, request: Request) -> tuple[Integration | None, Any, JSONResponse | None]:
         runtime = by_id.get(id)
         if runtime is None:
             return None, None, JSONResponse({"error": "not_found"}, status_code=404)
-        if not same_origin(request):
+        if not same_origin(request, public_base_url, auth):
             return None, None, JSONResponse({"error": "invalid_origin"}, status_code=403)
         if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
             return None, None, JSONResponse({"error": "invalid_session"}, status_code=400)
@@ -126,7 +131,7 @@ def create_management_router(
         runtime = by_id.get(id)
         if runtime is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
-        if not same_origin(request):
+        if not same_origin(request, public_base_url, auth):
             return JSONResponse({"error": "invalid_origin"}, status_code=403)
         try:
             await runtime.refresh(transport)
@@ -210,7 +215,7 @@ def create_app(
             if stop is not None:
                 await stop()
 
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app = create_shell(lifespan=lifespan)
     app.include_router(
         create_management_router(
             integrations,
@@ -221,6 +226,12 @@ def create_app(
             classify_error=classify_error,
         )
     )
+    return app
+
+
+def create_shell(*, lifespan=None, grpc_management: bool = False) -> FastAPI:
+    """Create the shared owner UI without selecting a session backend."""
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
     @app.middleware("http")
     async def disable_caching(request: Request, call_next):
@@ -231,10 +242,10 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     async def index():
-        return HTMLResponse(
-            (_FRONTEND / "status.html").read_text(encoding="utf-8"),
-            headers={"Referrer-Policy": "no-referrer", "Content-Security-Policy": _CSP},
-        )
+        html = (_FRONTEND / "status.html").read_text(encoding="utf-8")
+        if grpc_management:
+            html = html.replace("<body>", '<body data-management="grpc">', 1)
+        return HTMLResponse(html, headers={"Referrer-Policy": "no-referrer", "Content-Security-Policy": _CSP})
 
     @app.get("/status.css")
     async def stylesheet():
