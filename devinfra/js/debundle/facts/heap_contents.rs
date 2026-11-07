@@ -363,6 +363,15 @@ impl ArrayContentCollector<'_> {
 
     fn record_member_read(&mut self, member: &MemberExpr) {
         if let Some((proof, evidence, _)) = self.native_reads.native_own_data_read(member.span) {
+            if self.native_reads.primitive_class_key_read(member.span) {
+                if let Some(cells) = self.cells() {
+                    cells.opaque = true;
+                    cells.observes_external_heap = true;
+                }
+                // Seed pre-existing storage before any source allocation,
+                // including a possible observation in a deferred body.
+                self.eager.observes_external_heap = true;
+            }
             self.native_read_inferences.insert(member.span.lo.0, proof);
             if let Some(evidence) = evidence {
                 self.native_read_inputs.insert(

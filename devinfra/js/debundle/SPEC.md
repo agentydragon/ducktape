@@ -2523,6 +2523,7 @@ the facts came from a saved artifact.
 | `set_from_set_spread`                | `new Set([...seed, primitive literals])` in the same declaration as a selected `set_from_primitive_array` seed and every declarator between; all stay in one output module | Those slots and `%SetIteratorPrototype%`                                    |
 | `object_own_data_function_read`      | Top-level simple binding initialized by `Object.<name>`, a function-valued data property in the builtin summary table                                                      | `%Object%`, `%Object.<name>%`                                               |
 | `symbol_well_known_class_keys`       | Top-level simple class-variable initializer with direct `Symbol.asyncIterator`, `Symbol.asyncDispose` or `Symbol.dispose` computed ordinary method keys                    | `%Symbol%` and the exact `%Symbol.<name>%` at each selected read            |
+| `symbol_primitive_class_keys`        | The same direct class-key shape, allowing primitive own-data values installed by checked guarded fills                                                                     | Exact data reads yielding unknown primitives; no original-value identity    |
 | `array_spread_from_primitive_arrays` | Last declarator of a `const` whose earlier declarators are dense primitive arrays and whose initializer holds primitives and spreads of them                               | `%Array.prototype%`, `%ArrayIteratorPrototype%`                             |
 | `callee: object_freeze`              | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                                                           | `%Object%`, `%Object.freeze%` at that call                                  |
 | `callee: set_empty_private_field`    | Stable top-level class with an implicit constructor and one private field initialized by zero-argument `new Set`                                                           | `%Set%` at that constructor                                                 |
@@ -2533,6 +2534,8 @@ slot anywhere in the analyzed program (alias, reflective, deferred,
 cross-chunk, restored) reject the input. Opaque receiver or key writes remain
 census witnesses covered by the assertion: a write to an apparently unrelated
 property can still run a setter or Proxy trap.
+The separate `symbol_primitive_class_keys` capability has the narrowly checked
+guarded-fill exception below and does not assert original native slots.
 
 A validated `symbol` site has an additional pure-initializer consequence only
 for direct `Symbol()` or `Symbol('literal')`; `symbol_for` requires exactly one
@@ -2659,6 +2662,50 @@ callback timing and heap ordering at that read. Instance field initializers,
 method bodies and static field initializers retain their ordinary analysis.
 The input establishes no whole-class purity, class result shape, heap locality,
 future method behavior or integrity at another Symbol read.
+
+`symbol_primitive_class_keys` uses the same class shape and three supported
+property names, but asserts a different read contract: at every selected key
+read in every admitted initialization schedule, the unshadowed global `Symbol`
+read resolves through a data binding and the selected own data property yields
+a primitive. The primitive may vary with preceding writes. Native Symbols and
+Symbol-valued polyfills qualify; no original well-known value or particular
+primitive type is certified. The parser-input digest remains required.
+
+This capability is separate from `IntrinsicIntact` and authorizes neither
+original native identity nor any other read or call. Its abstract result is an
+unknown primitive. Getter invocation and `ToPropertyKey` callbacks are ruled
+out only at the selected reads. Each read retains separate evidence and proof
+dependencies, including after saved-analysis restoration.
+
+Global `Symbol` replacements and other positively identified selected-slot
+writes in any analyzed chunk reject this input. The sole eligible selected-slot
+write is a direct top-level statement of this exact AST shape (either `!=` or
+`!==` is accepted), for one of the three supported property names:
+
+```js
+if (typeof Symbol.asyncDispose != "symbol")
+  try {
+    Symbol.asyncDispose = Symbol.for("Symbol.asyncDispose");
+  } catch {}
+```
+
+The receiver must be bare and unshadowed; the probe, assignment key and string
+argument must agree. There may be no alternate, additional guarded work, catch
+binding, nonempty catch, finally block or wrapper expressions. Recognition
+makes the write eligible under the author's final-read contract; it proves
+neither that installation succeeds nor that `Symbol.for` is original. The
+guard read, call, assignment/setter and catch retain their ordinary effects,
+and the raw native write census remains intact.
+
+The selected reads retain opaque external-heap observations and ordinary heap
+ordering with preceding and following writes. External storage has no unique
+source-allocation birth: its observation seeds the chunk's heap timeline before
+any source allocation, including conservative deferred observations. The
+required saved heap fact retains this obligation, and initializer completion
+cannot discharge it. Static initializers and deferred instance code remain
+ordinary; the capability grants no whole-class purity, class shape or heap
+locality. It may remove callback constraints while heap ordering still requires
+co-location.
 
 ### Bundle-owned globals
 

@@ -1881,6 +1881,11 @@ Native integrity inputs).
 ordinary method keys of one checked class-variable initializer. Each read
 requires the existing own-data proof and retains its own evidence; static
 field initializers keep ordinary effects.
+`symbol_primitive_class_keys` uses the same selected keys with a separate
+primitive own-data read premise, allowing checked guarded fills. It supplies no
+original native identity and retains opaque external-heap ordering, including
+before source allocations. Guard/call/setter effects remain ordinary; see
+[the exact contract](../SPEC.md#native-integrity-inputs).
 For `set_from_primitive_array`, a dense array may contain primitive literals
 and earlier direct top-level primitive-literal `var`/`let`/`const` bindings
 whose canonical identities have no other declaration or write. The exact

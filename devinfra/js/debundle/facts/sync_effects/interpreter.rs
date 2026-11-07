@@ -10208,6 +10208,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 unreachable!("the shared transfer evaluates primitive values")
             }
             ValueExpr::Member(object, property, is_static_identifier, site) => {
+                if let Some(premise) = self
+                    .inputs
+                    .index
+                    .primitive_class_key_read_premise(site.source_span())
+                {
+                    self.record_proof_dependencies(
+                        NativeIntegrityGuard::NativeCallIdentity,
+                        &premise.dependencies,
+                    );
+                    self.state
+                        .inference_uses
+                        .borrow_mut()
+                        .insert(premise.inference_use);
+                    return Values::from([AbstractValue::PRIMITIVE]);
+                }
                 if let Some(read) = self.root_own_data_read(expr) {
                     return read.values;
                 }
@@ -11620,6 +11635,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return CallTransfer::EffectsOnly;
         }
         if call.kind == CallKind::LocalMemberRead {
+            if let Some(premise) = self
+                .inputs
+                .index
+                .primitive_class_key_read_premise(call.span)
+            {
+                self.record_proof_dependencies(
+                    NativeIntegrityGuard::NativeCallIdentity,
+                    &premise.dependencies,
+                );
+                self.state
+                    .inference_uses
+                    .borrow_mut()
+                    .insert(premise.inference_use);
+                // Data and primitive do not imply a constant property value.
+                // Keep its external heap observation on the ordinary timeline.
+                outcome.effects.heap_contents.opaque = true;
+                outcome.effects.heap_contents.observes_external_heap = true;
+                return CallTransfer::EffectsOnly;
+            }
             if self.native_member_lookup_is_data(&call.callee, Some(call.span.lo.0)) {
                 return CallTransfer::EffectsOnly;
             }
@@ -12807,6 +12841,10 @@ impl PreparedSynchronousCallIndex {
             })
             .collect();
         FreshRecordFreezeHeapProof { sites }
+    }
+
+    pub(crate) fn primitive_class_key_read(&self, span: Span) -> bool {
+        self.index.primitive_class_key_read_premise(span).is_some()
     }
 
     pub(crate) fn native_own_data_read(

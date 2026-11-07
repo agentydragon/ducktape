@@ -67,6 +67,17 @@ instance code retain ordinary analysis; this supplies no whole-class purity,
 class shape or heap-locality contract. See
 [native integrity inputs](../../SPEC.md#native-integrity-inputs).
 
+Use the separate `symbol_primitive_class_keys` input when those same exact
+reads yield primitive own-data values that may be filled Symbols. Audit the
+global data read and final own-data primitive result at every selected site in
+every admitted schedule. Only exact top-level typeof-guarded matching
+`Symbol.for("Symbol.<name>")` fills with empty catch are eligible known writes;
+other known selected-slot writes or global Symbol replacement reject it.
+The fill and its guard/call/setter effects remain ordinary. This grants no
+original-value identity or Symbol.for capability. Reads retain opaque external
+heap ordering, so removing callback constraints need not permit a smaller
+extraction. See the exact shape and ordering contract in the linked SPEC.
+
 ### Exact empty native construction
 
 Use `native_operation_inputs` with `operation: map_empty`,
