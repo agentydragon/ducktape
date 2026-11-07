@@ -513,6 +513,9 @@ pub(crate) struct HeapContentCells {
     pub reads: BTreeSet<EffectCell>,
     pub writes: BTreeSet<EffectCell>,
     pub opaque: bool,
+    /// An observation of pre-existing external storage, with no unique source
+    /// allocation birth. Its heap ordering cannot be discharged by completion.
+    pub observes_external_heap: bool,
 }
 
 impl HeapContentCells {
@@ -521,6 +524,7 @@ impl HeapContentCells {
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
         self.opaque |= other.opaque;
+        self.observes_external_heap |= other.observes_external_heap;
     }
 }
 

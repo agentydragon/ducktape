@@ -1795,6 +1795,81 @@ fn symbol_class_key_property(property: &str) -> Option<&'static str> {
         .map(|data| data.name)
 }
 
+/// Eligibility under the primitive-read premise, not a proof that the guard,
+/// call or assignment is silent or that the fill successfully installs data.
+fn symbol_guarded_fill(statement: &IfStmt) -> Option<(Id, &'static str, Span)> {
+    if statement.alt.is_some() {
+        return None;
+    }
+    let Expr::Bin(test) = statement.test.as_ref() else {
+        return None;
+    };
+    if !matches!(test.op, BinaryOp::NotEq | BinaryOp::NotEqEq) {
+        return None;
+    }
+    let Expr::Unary(probe) = test.left.as_ref() else {
+        return None;
+    };
+    if probe.op != UnaryOp::TypeOf
+        || !matches!(test.right.as_ref(), Expr::Lit(Lit::Str(value)) if value.value.to_string_lossy() == "symbol")
+    {
+        return None;
+    }
+    let Expr::Member(read) = probe.arg.as_ref() else {
+        return None;
+    };
+    let Expr::Ident(symbol) = read.obj.as_ref() else {
+        return None;
+    };
+    let MemberProp::Ident(key) = &read.prop else {
+        return None;
+    };
+    if symbol.sym != "Symbol" {
+        return None;
+    }
+    let property = symbol_class_key_property(key.sym.as_ref())?;
+    let Stmt::Try(body) = statement.cons.as_ref() else {
+        return None;
+    };
+    let handler = body.handler.as_ref()?;
+    if body.finalizer.is_some() || handler.param.is_some() || !handler.body.stmts.is_empty() {
+        return None;
+    }
+    let [Stmt::Expr(expression)] = body.block.stmts.as_slice() else {
+        return None;
+    };
+    let Expr::Assign(assignment) = expression.expr.as_ref() else {
+        return None;
+    };
+    let AssignTarget::Simple(SimpleAssignTarget::Member(target)) = &assignment.left else {
+        return None;
+    };
+    if assignment.op != AssignOp::Assign
+        || !matches!(target.obj.as_ref(), Expr::Ident(receiver) if receiver.to_id() == symbol.to_id())
+        || !matches!(&target.prop, MemberProp::Ident(key) if key.sym.as_ref() == property)
+    {
+        return None;
+    }
+    let Expr::Call(call) = assignment.right.as_ref() else {
+        return None;
+    };
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Member(callee) = callee.as_ref() else {
+        return None;
+    };
+    let [argument] = call.args.as_slice() else {
+        return None;
+    };
+    (matches!(callee.obj.as_ref(), Expr::Ident(receiver) if receiver.to_id() == symbol.to_id())
+        && matches!(&callee.prop, MemberProp::Ident(key) if key.sym == "for")
+        && argument.spread.is_none()
+        && matches!(argument.expr.as_ref(), Expr::Lit(Lit::Str(value))
+            if value.value.to_string_lossy() == format!("Symbol.{property}")))
+    .then(|| (symbol.to_id(), property, target.span))
+}
+
 fn symbol_class_key_sites(expression: &Expr) -> Option<Vec<Span>> {
     let Expr::Class(expression) = expression else {
         return None;
@@ -5983,6 +6058,7 @@ struct ExecutionIndex {
     value_input_errors: Vec<String>,
     resolved_native_operation_inputs: Vec<ResolvedNativeOperationInput>,
     native_operation_input_evidence: BTreeMap<CallSite, NativeOperationInputEvidence>,
+    symbol_guarded_fill_sites: BTreeMap<CallSite, (Id, &'static str)>,
     native_operation_input_errors: Vec<String>,
     primitive_native_symbol_calls: BTreeSet<CallSite>,
     native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
@@ -6183,6 +6259,7 @@ impl Default for ExecutionIndex {
             value_input_errors: Vec::new(),
             resolved_native_operation_inputs: Vec::new(),
             native_operation_input_evidence: BTreeMap::new(),
+            symbol_guarded_fill_sites: BTreeMap::new(),
             native_operation_input_errors: Vec::new(),
             primitive_native_symbol_calls: BTreeSet::new(),
             native_integrity_value_input_refs: BTreeSet::new(),
@@ -7240,6 +7317,8 @@ impl ExecutionIndex {
                             vec![Global(Symbol), Static(Symbol, property)],
                         )
                     }
+                    // A primitive own-data read supplies no original native identity.
+                    NativeInputKind::Operation(Operation::SymbolPrimitiveClassKeys) => return None,
                     // The spread of the co-located primitive-array interval.
                     NativeInputKind::Operation(Operation::ArraySpreadFromPrimitiveArrays) => (
                         input.initializer_span,
@@ -7670,9 +7749,13 @@ impl ExecutionIndex {
                 self.validate_selected_object_read(input);
                 continue;
             }
-            if input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolWellKnownClassKeys)
-            {
+            if matches!(
+                input.evidence.operation,
+                NativeInputKind::Operation(
+                    spec::NativeOperationKind::SymbolWellKnownClassKeys
+                        | spec::NativeOperationKind::SymbolPrimitiveClassKeys
+                )
+            ) {
                 match self.resolve_symbol_class_keys(input) {
                     Ok(inputs) => {
                         for input in inputs {
@@ -8028,9 +8111,13 @@ impl ExecutionIndex {
                 self.validate_resolved_object_read(input);
                 continue;
             }
-            if input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolWellKnownClassKeys)
-            {
+            if matches!(
+                input.evidence.operation,
+                NativeInputKind::Operation(
+                    spec::NativeOperationKind::SymbolWellKnownClassKeys
+                        | spec::NativeOperationKind::SymbolPrimitiveClassKeys
+                )
+            ) {
                 let selected = SelectedNativeOperationInput {
                     evidence: input.evidence.clone(),
                     selected_binding: input.evidence.selected_binding.clone(),
@@ -8297,6 +8384,7 @@ impl ExecutionIndex {
                         NativeInputKind::Operation(
                             spec::NativeOperationKind::MapEmpty
                                 | spec::NativeOperationKind::SymbolWellKnownClassKeys
+                                | spec::NativeOperationKind::SymbolPrimitiveClassKeys
                         )
                     ) && previous.evidence.operation == input.evidence.operation
                         && previous.binding == input.binding
@@ -8374,7 +8462,13 @@ impl ExecutionIndex {
         sites.iter().map(|span| {
             let property = self.symbol_class_key_read_property(declaration, *span)
                 .ok_or_else(|| format!("{request} requires exact unshadowed bare-global Symbol class-key reads"))?;
-            if let Some(owner) = self.known_native_read_contradiction(NativeIntrinsic::Symbol, property) {
+            let contradiction = if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolPrimitiveClassKeys) {
+                self.known_primitive_symbol_read_contradiction(property)
+            } else {
+                self.known_native_read_contradiction(NativeIntrinsic::Symbol, property)
+            };
+            if let Some(owner) = contradiction {
                 return Err(format!("{request} is contradicted by a known Symbol binding or Symbol.{property} write in source unit {}", owner.0));
             }
             let mut evidence = input.evidence.clone();
@@ -8733,6 +8827,52 @@ impl ExecutionIndex {
             },
         ] {
             if let NativeSlotOverlap::Known(owner) = self.source_slot_overlap(&slot) {
+                return Some(owner);
+            }
+        }
+        None
+    }
+
+    /// Check this chunk's original source witnesses. Whole-program admission
+    /// applies this same check to every analyzed chunk with its own AST sites.
+    /// The raw census remains unchanged, including every eligible fill.
+    fn known_primitive_symbol_read_contradiction(
+        &self,
+        property: &str,
+    ) -> Option<SourceUnitOrdinal> {
+        for slot in [
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String("Symbol".to_owned()),
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Symbol),
+                key: NativePropertyKey::String(property.to_owned()),
+            },
+        ] {
+            let witnesses = self
+                .native_write_census
+                .witnesses
+                .iter()
+                .chain(
+                    self.native_write_census
+                        .conditional
+                        .iter()
+                        .map(|write| &write.witness),
+                )
+                .filter(|witness| {
+                    let allowed = slot.receiver
+                        == NativeReceiverPath::Constructor(NativeIntrinsic::Symbol)
+                        && witness.operation == NativeMutationOperation::PropertyAssignment
+                        && self
+                            .symbol_guarded_fill_sites
+                            .get(&CallSite::from(witness.span))
+                            .is_some_and(|(symbol, key)| {
+                                *key == property && !self.declared_bindings().contains(symbol)
+                            });
+                    !allowed
+                });
+            if let NativeSlotOverlap::Known(owner) = source_slot_overlap(witnesses, &slot) {
                 return Some(owner);
             }
         }
@@ -10709,11 +10849,49 @@ impl ExecutionIndex {
         self.all_native_point_effects = all;
     }
 
-    /// The exact native binding and own-data slot, intact or asserted at this
-    /// read. Dynamic name resolution cannot establish the receiver identity.
+    /// A separate exact-read capability; this never supplies original native
+    /// slot integrity or a known Symbol identity/type.
+    fn primitive_class_key_read_premise(&self, span: Span) -> Option<NativePremise> {
+        if !self.dynamic_scope_owners.is_empty() {
+            return None;
+        }
+        self.native_own_data_reads.get(&span.lo.0)?;
+        let evidence = self
+            .native_operation_input_evidence
+            .get(&CallSite::from(span))?;
+        if evidence.operation
+            != NativeInputKind::Operation(spec::NativeOperationKind::SymbolPrimitiveClassKeys)
+        {
+            return None;
+        }
+        let dependencies = ProofDependencies {
+            native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
+            ..Default::default()
+        };
+        Some(NativePremise {
+            inference_use: crate::analysis_provenance::InferenceUse {
+                conclusion: crate::analysis_provenance::InferenceRule::NativeOwnDataRead,
+                derivation_rules: BTreeSet::from([
+                    crate::analysis_provenance::InferenceRule::NativeOwnDataRead,
+                ]),
+                value_input_refs: BTreeSet::new(),
+                descriptor_copy_author_refs: BTreeSet::new(),
+                argument_input_refs: BTreeSet::new(),
+                native_operation_input_refs: dependencies.native_operation_inputs.clone(),
+            },
+            dependencies,
+            census: false,
+        })
+    }
+
+    /// The exact own-data read capability or native slot proof. A primitive
+    /// capability says nothing about the slot's original value or stability.
     fn native_own_data_read_premise(&self, span: Span) -> Option<NativePremise> {
         if !self.dynamic_scope_owners.is_empty() {
             return None;
+        }
+        if let Some(premise) = self.primitive_class_key_read_premise(span) {
+            return Some(premise);
         }
         let slots = self.native_own_data_reads.get(&span.lo.0)?;
         native_premise(
@@ -11891,6 +12069,13 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_if_stmt(&mut self, statement: &IfStmt) {
+        if self.current.is_none()
+            && self.original_statement_spans.get(self.owner.0) == Some(&statement.span)
+            && let Some((symbol, property, target)) = symbol_guarded_fill(statement)
+        {
+            self.symbol_guarded_fill_sites
+                .insert(target.into(), (symbol, property));
+        }
         statement.test.visit_with(self);
         let after_test = self.past_await;
         self.conditional_depth += 1;
@@ -13915,9 +14100,17 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn known_native_read_contradiction_owner(
         &self,
+        operation: NativeInputKind,
         family: NativeIntrinsic,
         property: &str,
     ) -> Option<SourceUnitOrdinal> {
+        if operation
+            == NativeInputKind::Operation(spec::NativeOperationKind::SymbolPrimitiveClassKeys)
+        {
+            return self
+                .index
+                .known_primitive_symbol_read_contradiction(property);
+        }
         self.index.known_native_read_contradiction(family, property)
     }
 
@@ -13941,7 +14134,10 @@ impl PreparedCallableCapabilities {
                     })?;
                 Some((NativeIntrinsic::Object, property))
             }
-            NativeInputKind::Operation(spec::NativeOperationKind::SymbolWellKnownClassKeys) => {
+            NativeInputKind::Operation(
+                spec::NativeOperationKind::SymbolWellKnownClassKeys
+                | spec::NativeOperationKind::SymbolPrimitiveClassKeys,
+            ) => {
                 let property = self
                     .index
                     .symbol_class_key_read_property(declaration, input.call_span)?;

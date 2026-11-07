@@ -137,6 +137,7 @@ struct SavedHeapContentCells {
     reads: BTreeSet<SavedEffectCell>,
     writes: BTreeSet<SavedEffectCell>,
     opaque: bool,
+    observes_external_heap: bool,
 }
 
 impl SavedHeapContentCells {
@@ -146,6 +147,7 @@ impl SavedHeapContentCells {
             reads: snapshot_effect_cells(&cells.reads, ordinals)?,
             writes: snapshot_effect_cells(&cells.writes, ordinals)?,
             opaque: cells.opaque,
+            observes_external_heap: cells.observes_external_heap,
         })
     }
 
@@ -155,6 +157,7 @@ impl SavedHeapContentCells {
             reads: restore_effect_cells(self.reads, ordinals)?,
             writes: restore_effect_cells(self.writes, ordinals)?,
             opaque: self.opaque,
+            observes_external_heap: self.observes_external_heap,
         })
     }
 }

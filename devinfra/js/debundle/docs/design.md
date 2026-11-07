@@ -186,6 +186,27 @@ contradiction checks, including writes in other chunks. The existing member
 read consumers use the canonical read span for the site axiom and evidence.
 Static field initializers and deferred instance code keep ordinary analysis;
 neither class result shape nor whole-class purity is inferred from this input.
+The additive `symbol_primitive_class_keys` capability shares that source shape
+and exact-site resolution but promises only data reads yielding unknown
+primitives. It supports native and filled property values without asserting
+original-value integrity. It never enters `IntrinsicIntact`, supplies no known
+Symbol identity/type and grants no later call capability. Each source chunk's
+canonical visitor recognizes only direct top-level typeof-guarded fills with a
+matching `Symbol.for("Symbol.<name>")` assignment and empty catch; whole-program
+admission applies the same known-write check to every analyzed chunk. Global
+Symbol replacement and every other known selected-slot write reject it.
+The guard, call, assignment/setter and catch keep ordinary effects.
+
+Primitive own-data reads remain observations of mutable external storage.
+Their getter/coercion callbacks are excluded while heap collection and the
+executor retain an opaque read. `HeapContentCells.observes_external_heap`
+propagates through composition and saved facts and seeds the existing heap
+timeline from chunk entry, including deferred observations. This storage has
+no unique source birth, so an earlier guarded fill cannot be skipped merely
+because the chunk has allocated no tracked array yet. Completion certificates
+cannot discharge this observed obligation. The interpreter records dependencies
+and inference uses; heap collection remains the producer of exact-read input
+use evidence. Ordinary heap constraints can still require expanded ownership.
 For a primitive array spread, the premise covers only the Array iterator and
 iterator `next` identities at the selected initializer; the source shape, not
 the author, proves the declarator interval has no producer.

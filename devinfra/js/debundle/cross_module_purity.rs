@@ -1088,6 +1088,7 @@ pub fn resolve_imported_callable_summaries(
                 NativeInputKind::Operation(
                     spec::NativeOperationKind::ObjectOwnDataFunctionRead
                         | spec::NativeOperationKind::SymbolWellKnownClassKeys
+                        | spec::NativeOperationKind::SymbolPrimitiveClassKeys
                 )
             ) {
                 continue;
@@ -1102,7 +1103,11 @@ pub fn resolve_imported_callable_summaries(
                 })?;
             if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
                 facts
-                    .known_native_read_contradiction_owner(family, property)
+                    .known_native_read_contradiction_owner(
+                        input.evidence.operation,
+                        family,
+                        property,
+                    )
                     .map(|owner| (module, owner))
             }) {
                 bail!(
