@@ -1,15 +1,27 @@
 // Runtime validators and static argument types derived from the exact schemas advertised by
 // the in-process FastMCP servers. They cover JSON-Schema-expressible structure; execution-only
 // Python cross-field validators may be stricter. The producer-owned JSON catalog and its generated
-// declarations describe the same contract; this is the only boundary where the experimental
-// z.fromJSONSchema API is used.
+// declarations describe the same contract. Ajv validates the published JSON Schema, including
+// recursive references; a Zod adapter preserves the preview API and generated static types.
 
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import { z } from "zod";
 
 import type { McpToolArguments } from "../mcp/tool_arguments";
 import mcpToolArgumentsSchema from "../mcp/tool_arguments.schema.json";
 
-export type JsonSchema = Parameters<typeof z.fromJSONSchema>[0];
+export type JsonSchema = boolean | Record<string, unknown>;
+
+const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: true });
+addFormats(ajv);
+
+function compileValidator(schema: JsonSchema, definitions: JsonSchema | undefined): z.ZodType {
+  // Keep Ajv's default no-mutation behavior: validation must not coerce inputs, insert defaults,
+  // or remove unknown properties before a preview decides whether to show trusted content.
+  const validate = ajv.compile(typeof schema === "boolean" ? schema : { ...schema, $defs: definitions });
+  return z.custom((value) => validate(value));
+}
 type ObjectSchema = Exclude<JsonSchema, boolean> & {
   properties?: Record<string, JsonSchema>;
 };
@@ -41,12 +53,13 @@ function objectProperties(schema: JsonSchema, context: string): Record<string, J
 
 export function compileToolSchemaCatalog(schema: JsonSchema, policy: ToolSchemaCatalogPolicy): CompiledToolSchema[] {
   const servers = objectProperties(schema, policy.catalogContext);
+  const definitions = typeof schema === "boolean" ? undefined : (schema.$defs as JsonSchema | undefined);
   const compiled: CompiledToolSchema[] = [];
   for (const [serverId, serverSchema] of Object.entries(servers)) {
     const tools = objectProperties(serverSchema, policy.serverContext(serverId));
     for (const [toolName, toolSchema] of Object.entries(tools)) {
       try {
-        compiled.push({ serverId, toolName, schema: z.fromJSONSchema(toolSchema) });
+        compiled.push({ serverId, toolName, schema: compileValidator(toolSchema, definitions) });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         throw new Error(policy.compilationError(serverId, toolName, detail), { cause: error });
@@ -61,7 +74,7 @@ export function compileToolSchemaCatalog(schema: JsonSchema, policy: ToolSchemaC
 // The generated JSON module's inferred type can exceed what TS considers structurally
 // overlapping with JsonSchema, though its value is valid JSON Schema.
 // Eagerly compile the complete catalog, not just tools that currently have custom previews, so a
-// newly advertised schema that Zod cannot represent fails tests and application startup instead of
+// newly advertised schema that Ajv cannot compile fails tests and application startup instead of
 // quietly weakening validation for whichever preview eventually consumes it.
 export const mcpToolSchemas: readonly CompiledToolSchema[] = Object.freeze(
   compileToolSchemaCatalog(mcpToolArgumentsSchema as unknown as JsonSchema, {

@@ -3,8 +3,7 @@
 // typed batch-tool results. Only tools with a structured output schema have an entry, so this is a
 // subset of the argument catalog; renderer-specific projections may narrow permissive
 // `extra="allow"` Grocy rows further. The producer-owned JSON catalog and its generated declarations
-// describe the same contract; like the argument side, this is the only boundary where the experimental
-// z.fromJSONSchema API is used.
+// describe the same contract; Ajv validates recursive references through the shared adapter.
 
 import type { z } from "zod";
 
@@ -17,7 +16,7 @@ export type McpToolResultName<S extends McpToolResultServerId> = Extract<keyof M
 export type McpToolResultFor<S extends McpToolResultServerId, T extends McpToolResultName<S>> = McpToolResults[S][T];
 
 // Eagerly compile the whole catalog, not just tools that currently have result widgets, so a newly
-// advertised output schema that Zod cannot represent fails tests and startup rather than quietly
+// advertised output schema that Ajv cannot compile fails tests and startup rather than quietly
 // weakening a result preview.
 export const mcpToolResultSchemas: readonly CompiledToolSchema[] = Object.freeze(
   compileToolSchemaCatalog(mcpToolResultsSchema as unknown as JsonSchema, {
