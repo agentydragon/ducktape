@@ -14,12 +14,23 @@ import {
 import { type JSX, useEffect, useState } from "react";
 
 import { displayableError } from "../client";
-import { serviceAccountKey } from "./models";
+import { Verdict } from "../../../action_service/action_service_pb";
+import { GrantStatus } from "../../../mcp_edge/connection_service_pb";
+import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
+import { toJson } from "@bufbuild/protobuf";
+import { serviceAccountKey } from "./service_accounts";
 import { TimeAgo } from "../time_ago";
 import { decideConsent, previewConsent, type ConsentDecision, type ConsentPreview } from "./connection_service_client";
 
 function continueAuthorization(url: string): void {
   window.location.assign(url);
+}
+
+function timestampText(value: Timestamp | undefined): string {
+  if (value === undefined) throw new Error("ConnectionService response omitted enrollment expiry");
+  const jsonValue = toJson(TimestampSchema, value);
+  if (typeof jsonValue !== "string") throw new Error("ConnectionService returned an invalid enrollment expiry");
+  return jsonValue;
 }
 
 /** Only the authenticated BFF can supply the continuation; client metadata is display-only. */
@@ -45,7 +56,7 @@ export function ConnectionConsent({
       (value) => {
         if (!active) return;
         setPreview(value);
-        setName(value.enrollment.client_name ?? "");
+        setName(value.enrollment.clientName ?? "");
       },
       (failure: unknown) => {
         if (active) setError(displayableError(failure));
@@ -61,8 +72,9 @@ export function ConnectionConsent({
     setError(null);
     try {
       const result = await decideConsent(handle, decision);
-      setCompleted(result.verdict);
-      if (result.verdict === "allow" && result.redirect_url !== null) navigate(result.redirect_url);
+      const verdict = result.verdict === Verdict.ALLOW ? "allow" : "deny";
+      setCompleted(verdict);
+      if (verdict === "allow" && result.redirectUrl !== undefined) navigate(result.redirectUrl);
     } catch (failure) {
       setError(displayableError(failure));
     } finally {
@@ -83,7 +95,7 @@ export function ConnectionConsent({
     );
   }
 
-  const accounts = preview?.service_accounts ?? [];
+  const accounts = preview?.serviceAccounts ?? [];
   const selectedAccount = accounts.find((candidate) => serviceAccountKey(candidate) === account);
   const existing = preview?.connections.find((connection) => connection.id === connectionId);
   return (
@@ -106,13 +118,13 @@ export function ConnectionConsent({
             <Text>This client is requesting access to the Actions service.</Text>
             <Stack gap={4}>
               <Text fw={600}>Registered client (client-supplied name)</Text>
-              <Text style={{ overflowWrap: "anywhere" }}>{preview.enrollment.client_name ?? "Unnamed client"}</Text>
+              <Text style={{ overflowWrap: "anywhere" }}>{preview.enrollment.clientName ?? "Unnamed client"}</Text>
               <Text size="sm">Client ID</Text>
-              <Code style={{ overflowWrap: "anywhere" }}>{preview.enrollment.client_id}</Code>
+              <Code style={{ overflowWrap: "anywhere" }}>{preview.enrollment.clientId}</Code>
               <Text size="sm">Validated OAuth redirect</Text>
-              <Code style={{ overflowWrap: "anywhere" }}>{preview.enrollment.redirect_uri}</Code>
+              <Code style={{ overflowWrap: "anywhere" }}>{preview.enrollment.redirectUri}</Code>
               <Text size="xs" c="dimmed">
-                Expires <TimeAgo value={preview.enrollment.expires_at} />
+                Expires <TimeAgo value={timestampText(preview.enrollment.expiresAt)} />
               </Text>
             </Stack>
             <NativeSelect
@@ -122,7 +134,7 @@ export function ConnectionConsent({
                 { value: "new", label: "Create a new Connection" },
                 ...preview.connections.map((connection) => ({
                   value: connection.id,
-                  label: `${connection.display_name} · ${connection.id}`,
+                  label: `${connection.displayName} · ${connection.id}`,
                 })),
               ]}
               value={connectionId}
@@ -144,17 +156,17 @@ export function ConnectionConsent({
               existing && (
                 <Alert
                   color="orange"
-                  title={`Replace authorization for ${existing.display_name}?`}
+                  title={`Replace authorization for ${existing.displayName}?`}
                   data-reconnect-review
                 >
                   <Stack gap="xs">
                     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-                      Connection {existing.id} · reviewed version {existing.version}
+                      Connection {existing.id} · reviewed version {existing.version.toString()}
                     </Text>
                     {existing.grants.map((grant) => (
                       <Text key={grant.id} size="sm" style={{ overflowWrap: "anywhere" }}>
-                        Acts as {serviceAccountKey(grant.caller)} · {grant.status} · client {grant.client_id} · issuer{" "}
-                        {grant.issuer}
+                        Acts as {serviceAccountKey(grant.caller!)} · {grantStatusLabel(grant.status)} · client{" "}
+                        {grant.clientId} · issuer {grant.issuer}
                       </Text>
                     ))}
                     <Text size="sm">
@@ -203,7 +215,7 @@ export function ConnectionConsent({
                 color="red"
                 variant="light"
                 disabled={submitting}
-                onClick={() => void decide({ verdict: "deny", expected_version: preview.enrollment.version })}
+                onClick={() => void decide({ verdict: "deny", expectedVersion: preview.enrollment.version })}
               >
                 Deny
               </Button>
@@ -215,16 +227,16 @@ export function ConnectionConsent({
                   if (!selectedAccount) return;
                   void decide({
                     verdict: "allow",
-                    expected_version: preview.enrollment.version,
+                    expectedVersion: preview.enrollment.version,
                     connection: existing
                       ? {
                           kind: "reconnect",
-                          connection_id: existing.id,
-                          expected_version: existing.version,
-                          authority_change_confirmed: true,
+                          connectionId: existing.id,
+                          expectedVersion: existing.version,
+                          authorityChangeConfirmed: true,
                         }
-                      : { kind: "new", display_name: name.trim() },
-                    service_account: { namespace: selectedAccount.namespace, name: selectedAccount.name },
+                      : { kind: "new", displayName: name.trim() },
+                    serviceAccount: selectedAccount,
                   });
                 }}
               >
@@ -236,4 +248,18 @@ export function ConnectionConsent({
       </Stack>
     </Paper>
   );
+}
+
+function grantStatusLabel(status: GrantStatus): string {
+  switch (status) {
+    case GrantStatus.PENDING:
+      return "pending";
+    case GrantStatus.ACTIVE:
+      return "active";
+    case GrantStatus.REVOKED:
+      return "revoked";
+    case GrantStatus.UNSPECIFIED:
+    default:
+      throw new Error(`Unknown grant status ${status}`);
+  }
 }

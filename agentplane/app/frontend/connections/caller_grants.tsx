@@ -4,11 +4,12 @@ import type { JSX } from "react";
 import { ActionPolicyWatch } from "../actions/policy";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
 import { usePolicyResources } from "../policy/watch";
-import { type CallerServiceAccount, serviceAccountKey } from "./models";
+import { serviceAccountKey } from "./service_accounts";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
+import type { ServiceAccount } from "../../../proto/identity_pb";
 
 /** Observe the policy resources naming this ServiceAccount. */
-export function CallerGrants({ account }: { account: CallerServiceAccount }): JSX.Element {
+export function CallerGrants({ account }: { account: ServiceAccount }): JSX.Element {
   const policy = usePolicyResources(account, undefined);
   return (
     <Stack component="section" aria-label={`Grants for ${serviceAccountKey(account)}`} gap="sm" py="sm">

@@ -21,10 +21,11 @@ from cdk8s_plus_34 import (
     Secret,
     Service,
     Volume,
+    k8s,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -38,6 +39,8 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 HOSTNAME = "ai-session-backups.allegedly.works"
 _DATA_CLAIM = "session-backup-data"
 _STORAGE_CLASS = "piraeus-ssd-2-autodiskful"
+_HDD_CLAIM = "session-backup-data-hdd"
+_COPY_LABELS = {"app.kubernetes.io/name": "session-backup-hdd-copy"}
 REST_SERVER_AUTH_SECRET = "session-backup-rest-server-auth"
 IMPORTER_CREDENTIALS_SECRET = "session-backup-importer-credentials"
 IMPORTER_CREDENTIALS_SOURCE = "session-backup.sops.yaml"
@@ -65,12 +68,95 @@ def chart(app: App) -> Chart:
         storage=Size.gibibytes(100),
     )
 
+    # Keep the old claim and serving Deployment intact while the new claim is
+    # populated and verified. A consumer is required for WaitForFirstConsumer.
+    PersistentVolumeClaim(
+        chart,
+        "hdd-data-claim",
+        metadata=ApiObjectMetadata(
+            name=_HDD_CLAIM, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
+        storage_class_name="piraeus-hdd-2",
+        storage=Size.gibibytes(100),
+    )
+    copier = k8s.KubeDeployment(
+        chart,
+        "hdd-copy",
+        metadata=k8s.ObjectMeta(name="session-backup-hdd-copy", namespace=NAMESPACE, labels=_COPY_LABELS),
+        spec=k8s.DeploymentSpec(
+            replicas=1,
+            strategy=k8s.DeploymentStrategy(type="Recreate"),
+            selector=k8s.LabelSelector(match_labels=_COPY_LABELS),
+            template=k8s.PodTemplateSpec(
+                metadata=k8s.ObjectMeta(labels=_COPY_LABELS),
+                spec=k8s.PodSpec(
+                    automount_service_account_token=False,
+                    security_context=k8s.PodSecurityContext(
+                        run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
+                    ),
+                    affinity=k8s.Affinity(
+                        pod_affinity=k8s.PodAffinity(
+                            required_during_scheduling_ignored_during_execution=[
+                                k8s.PodAffinityTerm(
+                                    label_selector=k8s.LabelSelector(match_labels=_LABELS),
+                                    topology_key="kubernetes.io/hostname",
+                                )
+                            ]
+                        )
+                    ),
+                    containers=[
+                        k8s.Container(
+                            name="copy",
+                            image="docker.io/chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59",
+                            image_pull_policy="IfNotPresent",
+                            command=["sleep", "infinity"],
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("64Mi"),
+                                },
+                                limits={"memory": k8s.Quantity.from_string("256Mi")},
+                            ),
+                            security_context=k8s.SecurityContext(read_only_root_filesystem=True),
+                            volume_mounts=[
+                                k8s.VolumeMount(name="source", mount_path="/source", read_only=True),
+                                k8s.VolumeMount(name="destination", mount_path="/destination"),
+                            ],
+                        )
+                    ],
+                    volumes=[
+                        k8s.Volume(
+                            name="source",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
+                                claim_name=_DATA_CLAIM, read_only=True
+                            ),
+                        ),
+                        k8s.Volume(
+                            name="destination",
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_HDD_CLAIM),
+                        ),
+                    ],
+                ),
+            ),
+        ),
+    )
+    pod_policy.harden(copier)
+    NetworkPolicy(
+        chart,
+        "hdd-copy-network-policy",
+        metadata=ApiObjectMetadata(name="session-backup-hdd-copy", namespace=NAMESPACE),
+        endpoint_selector=_COPY_LABELS,
+        egress_deny=deny_all_egress(),
+    )
+
     deployment = Deployment(
         chart,
         "rest-server-deployment",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
         pod_metadata=ApiObjectMetadata(labels=_LABELS),
-        replicas=1,
+        # Pause writes while the existing Restic repositories are copied to HDD.
+        replicas=0,
         strategy=DeploymentStrategy.recreate(),
         automount_service_account_token=False,
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),

@@ -2192,12 +2192,14 @@ loss. The Gateway error now reports local connection availability unless Lease o
 
 If the system-test failure recurs, capture the Sandbox UID, runner incarnation and boot ID, Gateway
 replica, Lease epoch and holder, EndpointSlice route, and local connection state at the failed poll.
-A bounded retry for the test's read-only `ListSessions` poll is tracked separately; its landing is
-not assumed here. Do not retry mutations with uncertain outcomes. Keep this investigation separate
-from the replica-ownership decision below.
-**Exit:** either capture evidence that distinguishes the remaining failure boundary, or close the
-incident follow-up after the separately tracked bounded read-only poll retry is complete. Preserve
-UID/incarnation and epoch fencing and stale-call denial.
+PR #14851 adds a bounded retry for transient `UNAVAILABLE` in the test's read-only `ListSessions`
+poll. This handles the test poll only; it does not establish that the publication race caused the
+original same-name-replacement failure or prove the underlying failure is fixed. Do not retry
+mutations with uncertain outcomes. Keep this investigation separate from the replica-ownership
+decision below.
+**Exit:** either capture evidence that distinguishes the remaining failure boundary if the failure
+recurs, or close the incident follow-up if ordinary use shows no recurrence. Preserve UID/incarnation
+and epoch fencing and stale-call denial.
 
 ### `RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` — reconsider per-runner Gateway ownership
 
