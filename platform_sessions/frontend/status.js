@@ -164,13 +164,17 @@ function protobufStatus(data) {
   const probe = snapshot.lastProbe;
   let outcome = snapshot.state === "SESSION_STATE_NO_SESSION" ? "uninitialized" : "not_checked";
   if (probe) {
-    if (Object.hasOwn(probe, "verified")) outcome = "success";
-    else if (Object.hasOwn(probe, "noSession")) outcome = "uninitialized";
-    else if (Object.hasOwn(probe, "reauthenticationRequired")) outcome = "reauth_required";
-    else if (Object.hasOwn(probe, "challengeRequired")) outcome = "security_challenge";
-    else if (Object.hasOwn(probe, "upstreamUnavailable")) outcome = "network_error";
-    else if (Object.hasOwn(probe, "outcomeUnknown")) outcome = "outcome_unknown";
-    else if (probe.failure?.reason) outcome = probe.failure.reason.replace("PROBE_FAILURE_REASON_", "").toLowerCase();
+    const outcomes = {
+      PROBE_OUTCOME_VERIFIED: "success",
+      PROBE_OUTCOME_NO_SESSION: "uninitialized",
+      PROBE_OUTCOME_REAUTHENTICATION_REQUIRED: "reauth_required",
+      PROBE_OUTCOME_CHALLENGE_REQUIRED: "security_challenge",
+      PROBE_OUTCOME_UPSTREAM_UNAVAILABLE: "network_error",
+      PROBE_OUTCOME_UNKNOWN: "outcome_unknown",
+    };
+    outcome = outcomes[probe.outcome] ?? "outcome_unknown";
+    if (probe.outcome === "PROBE_OUTCOME_FAILURE" && probe.failure?.reason)
+      outcome = probe.failure.reason.replace("PROBE_FAILURE_REASON_", "").toLowerCase();
   }
   const imported = snapshot.importedAt;
   const checked = probe?.completedAt;
@@ -190,16 +194,16 @@ function protobufStatus(data) {
 }
 
 function protobufImportError(data) {
-  if (data.rejected) return "invalid_session";
-  if (data.reauthenticationRequired) return "reauth_required";
-  if (data.challengeRequired) return "security_challenge";
-  if (data.upstreamUnavailable) return "upstream_unavailable";
-  const failure = data.failure;
+  if (data.outcome === "IMPORT_OUTCOME_REJECTED") return "invalid_session";
+  if (data.outcome === "IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED") return "reauth_required";
+  if (data.outcome === "IMPORT_OUTCOME_CHALLENGE_REQUIRED") return "security_challenge";
+  if (data.outcome === "IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE") return "upstream_unavailable";
+  const failure = data.outcome === "IMPORT_OUTCOME_FAILURE" ? data.failure : null;
   if (failure?.reason === "IMPORT_FAILURE_REASON_INVALID_RESPONSE") return "invalid_response";
   if (failure?.reason === "IMPORT_FAILURE_REASON_STORAGE_ERROR") return "storage_error";
   if (failure?.reason === "IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR")
     return failure.upstreamHttpStatus ? `upstream_http_${failure.upstreamHttpStatus}` : "upstream_unavailable";
-  const unknown = data.outcomeUnknown;
+  const unknown = data.outcome === "IMPORT_OUTCOME_UNKNOWN" ? data.outcomeUnknown : null;
   if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_TIMEOUT") return "verification_timeout";
   if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE") return "upstream_unavailable";
   if (unknown?.reason === "UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE") return "outcome_unknown_invalid_response";
@@ -350,7 +354,7 @@ document.getElementById("session-form").addEventListener("submit", async (event)
     );
     if (signedOut(response)) return;
     const data = await response.json();
-    if (response.ok && (!grpcManagement || Object.hasOwn(data, "installed"))) {
+    if (response.ok && (!grpcManagement || data.outcome === "IMPORT_OUTCOME_INSTALLED")) {
       sessionInput.value = "";
       updateSelection();
       importResult.textContent = `${selected.id} session imported.`;

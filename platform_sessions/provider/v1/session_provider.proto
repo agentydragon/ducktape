@@ -97,7 +97,7 @@ message GetSessionResponse {
 // Snapshot of durable, locally known state. It is not a lease, fencing token, or promise that a
 // remote session remains valid beyond the time of the last successful verification.
 message SessionSnapshot {
-  // Providers must return a known state; UNSPECIFIED is a protocol error.
+  // UNSPECIFIED is invalid; callers must treat unknown future states conservatively.
   SessionState state = 1;
   // Time at which the provider last changed this locally known state. May be absent for
   // STORAGE_ERROR when the provider cannot read the state or its transition time.
@@ -149,16 +149,25 @@ message ImportSessionRequest {
 
 message ImportSessionResponse {
   InstanceRef instance = 1;
-  // Every completed import returns exactly one typed result. An unset result is a protocol error.
-  oneof result {
-    SessionInstalled installed = 10;
-    CandidateRejected rejected = 11;
-    ReauthenticationRequired reauthentication_required = 12;
-    ChallengeRequired challenge_required = 13;
-    UpstreamUnavailable upstream_unavailable = 14;
-    OperationOutcomeUnknown outcome_unknown = 15;
-    ImportFailure failure = 16;
-  }
+  // A nonzero outcome is required. Unknown future values must not be treated as success.
+  ImportOutcome outcome = 3;
+  CandidateRejected rejected = 11;
+  UpstreamUnavailable upstream_unavailable = 14;
+  OperationOutcomeUnknown outcome_unknown = 15;
+  ImportFailure failure = 16;
+  reserved 10, 12, 13;
+  reserved "installed", "reauthentication_required", "challenge_required";
+}
+
+enum ImportOutcome {
+  IMPORT_OUTCOME_UNSPECIFIED = 0;
+  IMPORT_OUTCOME_INSTALLED = 1;
+  IMPORT_OUTCOME_REJECTED = 2;
+  IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED = 3;
+  IMPORT_OUTCOME_CHALLENGE_REQUIRED = 4;
+  IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE = 5;
+  IMPORT_OUTCOME_UNKNOWN = 6;
+  IMPORT_OUTCOME_FAILURE = 7;
 }
 
 // A definite import failure. An operation with unresolved credential rotation must instead
@@ -175,10 +184,6 @@ enum ImportFailureReason {
   IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR = 2;
   IMPORT_FAILURE_REASON_STORAGE_ERROR = 3;
 }
-
-// Indicates that candidate handling and any required credential exchange were durably committed.
-// It does not mean that the upstream session was verified; use Probe for that.
-message SessionInstalled {}
 
 message CandidateRejected {
   CandidateRejectionReason reason = 1;
@@ -223,42 +228,47 @@ message VerifyCandidateResponse {
   InstanceRef instance = 1;
   reserved 16;
   reserved "unsupported";
-  // This result belongs to the submitted candidate and never updates the installed session's
-  // SessionSnapshot or its last_probe field. Every completed call sets exactly one result.
-  oneof result {
-    CandidateVerified verified = 10;
-    CandidateRejected rejected = 11;
-    ReauthenticationRequired reauthentication_required = 12;
-    ChallengeRequired challenge_required = 13;
-    UpstreamUnavailable upstream_unavailable = 14;
-    OperationOutcomeUnknown outcome_unknown = 15;
-  }
+  // This result concerns only the candidate; it does not change installed-session state.
+  VerifyOutcome outcome = 3;
+  CandidateRejected rejected = 11;
+  UpstreamUnavailable upstream_unavailable = 14;
+  OperationOutcomeUnknown outcome_unknown = 15;
+  reserved 10, 12, 13;
+  reserved "verified", "reauthentication_required", "challenge_required";
 }
 
-message CandidateVerified {}
+enum VerifyOutcome {
+  VERIFY_OUTCOME_UNSPECIFIED = 0;
+  VERIFY_OUTCOME_VERIFIED = 1;
+  VERIFY_OUTCOME_REJECTED = 2;
+  VERIFY_OUTCOME_REAUTHENTICATION_REQUIRED = 3;
+  VERIFY_OUTCOME_CHALLENGE_REQUIRED = 4;
+  VERIFY_OUTCOME_UPSTREAM_UNAVAILABLE = 5;
+  VERIFY_OUTCOME_UNKNOWN = 6;
+}
 
 message ProbeResult {
   google.protobuf.Timestamp completed_at = 1;
   ProbeSource source = 2;
-  // Every completed probe returns exactly one typed result. An unset result is a protocol error.
-  // A gRPC transport/status error means no completed ProbeResult was received; it must not be
-  // translated to UPSTREAM_UNAVAILABLE or replayed automatically after an ambiguous dispatch.
-  oneof result {
-    ProbeVerified verified = 10;
-    ReauthenticationRequired reauthentication_required = 11;
-    ChallengeRequired challenge_required = 12;
-    UpstreamUnavailable upstream_unavailable = 13;
-    OperationOutcomeUnknown outcome_unknown = 14;
-    ProbeNoSession no_session = 15;
-    ProbeFailure failure = 16;
-  }
+  // A transport error is not a completed probe and must never trigger automatic replay.
+  ProbeOutcome outcome = 3;
+  UpstreamUnavailable upstream_unavailable = 13;
+  OperationOutcomeUnknown outcome_unknown = 14;
+  ProbeFailure failure = 16;
+  reserved 10, 11, 12, 15;
+  reserved "verified", "reauthentication_required", "challenge_required", "no_session";
 }
 
-message ProbeVerified {}
-
-// A completed probe found no installed session. This is not a failed upstream check or a
-// reauthentication response; it commonly describes an uninitialized provider instance.
-message ProbeNoSession {}
+enum ProbeOutcome {
+  PROBE_OUTCOME_UNSPECIFIED = 0;
+  PROBE_OUTCOME_VERIFIED = 1;
+  PROBE_OUTCOME_REAUTHENTICATION_REQUIRED = 2;
+  PROBE_OUTCOME_CHALLENGE_REQUIRED = 3;
+  PROBE_OUTCOME_UPSTREAM_UNAVAILABLE = 4;
+  PROBE_OUTCOME_UNKNOWN = 5;
+  PROBE_OUTCOME_NO_SESSION = 6;
+  PROBE_OUTCOME_FAILURE = 7;
+}
 
 message ProbeFailure {
   ProbeFailureReason reason = 1;
@@ -275,10 +285,6 @@ enum ProbeFailureReason {
   PROBE_FAILURE_REASON_SUPERSEDED = 4;
   PROBE_FAILURE_REASON_PROVIDER_INTERNAL = 5;
 }
-
-message ReauthenticationRequired {}
-
-message ChallengeRequired {}
 
 message UpstreamUnavailable {
   // Providers may return this only when no credential-changing effect is unresolved. If the

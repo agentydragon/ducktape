@@ -14,60 +14,52 @@ var validID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 func timestampValid(t *timestamppb.Timestamp) bool { return t == nil || t.CheckValid() == nil }
 func probeValid(p *providerpb.ProbeResult) bool {
-	if p == nil || p.GetCompletedAt() == nil || !timestampValid(p.GetCompletedAt()) || (p.GetSource() != providerpb.ProbeSource_PROBE_SOURCE_MANUAL && p.GetSource() != providerpb.ProbeSource_PROBE_SOURCE_SCHEDULED) || p.GetResult() == nil {
+	if p == nil || p.GetCompletedAt() == nil || !timestampValid(p.GetCompletedAt()) ||
+		(p.GetSource() != providerpb.ProbeSource_PROBE_SOURCE_MANUAL && p.GetSource() != providerpb.ProbeSource_PROBE_SOURCE_SCHEDULED) ||
+		p.GetOutcome() == providerpb.ProbeOutcome_PROBE_OUTCOME_UNSPECIFIED {
 		return false
 	}
-	if f := p.GetFailure(); f != nil {
-		_, ok := providerpb.ProbeFailureReason_name[int32(f.GetReason())]
-		return ok && f.GetReason() != providerpb.ProbeFailureReason_PROBE_FAILURE_REASON_UNSPECIFIED
+	if p.GetOutcome() == providerpb.ProbeOutcome_PROBE_OUTCOME_UNKNOWN {
+		return p.GetOutcomeUnknown() != nil
 	}
-	return unknownValid(p.GetOutcomeUnknown())
-}
-
-func snapshotValid(s *providerpb.SessionSnapshot) bool {
-	if s == nil {
-		return false
-	}
-	state := s.GetState()
-	_, ok := providerpb.SessionState_name[int32(state)]
-	if !ok || state == providerpb.SessionState_SESSION_STATE_UNSPECIFIED || (state != providerpb.SessionState_SESSION_STATE_STORAGE_ERROR && s.GetStateChangedAt() == nil) {
-		return false
-	}
-	return timestampValid(s.GetStateChangedAt()) && timestampValid(s.GetLastVerifiedAt()) && timestampValid(s.GetImportedAt()) && (s.GetLastProbe() == nil || probeValid(s.GetLastProbe()))
-}
-
-func unknownValid(value *providerpb.OperationOutcomeUnknown) bool {
-	if value == nil {
-		return true
-	}
-	_, ok := providerpb.UnknownOutcomeReason_name[int32(value.GetReason())]
-	if !ok {
-		return false
-	}
-	return value.UpstreamHttpStatus == nil || (value.GetReason() == providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR && value.GetUpstreamHttpStatus() >= 100 && value.GetUpstreamHttpStatus() <= 599)
-}
-
-func importFailureValid(value *providerpb.ImportFailure) bool {
-	if value == nil {
-		return true
-	}
-	reason := value.GetReason()
-	_, ok := providerpb.ImportFailureReason_name[int32(reason)]
-	if !ok || reason == providerpb.ImportFailureReason_IMPORT_FAILURE_REASON_UNSPECIFIED {
-		return false
-	}
-	if value.UpstreamHttpStatus != nil && (reason != providerpb.ImportFailureReason_IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR || value.GetUpstreamHttpStatus() < 100 || value.GetUpstreamHttpStatus() > 599) {
-		return false
+	if p.GetOutcome() == providerpb.ProbeOutcome_PROBE_OUTCOME_FAILURE {
+		return p.GetFailure() != nil && p.GetFailure().GetReason() != providerpb.ProbeFailureReason_PROBE_FAILURE_REASON_UNSPECIFIED
 	}
 	return true
 }
 
-func rejectedValid(r *providerpb.CandidateRejected) bool {
-	if r == nil {
+func snapshotValid(s *providerpb.SessionSnapshot) bool {
+	return s != nil && s.GetState() != providerpb.SessionState_SESSION_STATE_UNSPECIFIED &&
+		timestampValid(s.GetStateChangedAt()) && timestampValid(s.GetLastVerifiedAt()) && timestampValid(s.GetImportedAt()) &&
+		(s.GetLastProbe() == nil || probeValid(s.GetLastProbe()))
+}
+
+func importValid(r *providerpb.ImportSessionResponse) bool {
+	switch r.GetOutcome() {
+	case providerpb.ImportOutcome_IMPORT_OUTCOME_UNSPECIFIED:
+		return false
+	case providerpb.ImportOutcome_IMPORT_OUTCOME_UNKNOWN:
+		return r.GetOutcomeUnknown() != nil
+	case providerpb.ImportOutcome_IMPORT_OUTCOME_REJECTED:
+		return r.GetRejected() != nil && r.GetRejected().GetReason() != providerpb.CandidateRejectionReason_CANDIDATE_REJECTION_REASON_UNSPECIFIED
+	case providerpb.ImportOutcome_IMPORT_OUTCOME_FAILURE:
+		return r.GetFailure() != nil && r.GetFailure().GetReason() != providerpb.ImportFailureReason_IMPORT_FAILURE_REASON_UNSPECIFIED
+	default:
 		return true
 	}
-	_, ok := providerpb.CandidateRejectionReason_name[int32(r.GetReason())]
-	return ok && r.GetReason() != providerpb.CandidateRejectionReason_CANDIDATE_REJECTION_REASON_UNSPECIFIED
+}
+
+func verifyValid(r *providerpb.VerifyCandidateResponse) bool {
+	switch r.GetOutcome() {
+	case providerpb.VerifyOutcome_VERIFY_OUTCOME_UNSPECIFIED:
+		return false
+	case providerpb.VerifyOutcome_VERIFY_OUTCOME_UNKNOWN:
+		return r.GetOutcomeUnknown() != nil
+	case providerpb.VerifyOutcome_VERIFY_OUTCOME_REJECTED:
+		return r.GetRejected() != nil && r.GetRejected().GetReason() != providerpb.CandidateRejectionReason_CANDIDATE_REJECTION_REASON_UNSPECIFIED
+	default:
+		return true
+	}
 }
 
 func providerInfoValid(p *providerpb.ProviderInfo) bool {

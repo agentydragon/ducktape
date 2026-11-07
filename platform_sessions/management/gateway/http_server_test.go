@@ -89,7 +89,7 @@ func TestHTTPImportReachesProviderOnce(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer "+ownerToken)
 	result := httptest.NewRecorder()
 	handler.ServeHTTP(result, request)
-	if result.Code != 200 || fake.calls != 1 || !strings.Contains(result.Body.String(), "installed") {
+	if result.Code != 200 || fake.calls != 1 || !strings.Contains(result.Body.String(), "IMPORT_OUTCOME_INSTALLED") {
 		t.Fatalf("import: status=%d body=%s calls=%d", result.Code, result.Body, fake.calls)
 	}
 }

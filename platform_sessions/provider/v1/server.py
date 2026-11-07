@@ -29,7 +29,7 @@ class ProviderBackend(ABC):
     """Local provider operations used by the control-plane adapter.
 
     The backend owns provider-specific persistence, upstream calls, and any cookie or token
-    rotation. It returns a protobuf result with its outcome oneof set. The service supplies the
+    rotation. It returns a protobuf result with its outcome enum set. The service supplies the
     response instance and probe source and completion time. If an upstream call may have
     rotated credentials but its result is ambiguous, return OperationOutcomeUnknown and persist
     that uncertainty in the local session snapshot. Do not raise an exception for that known case.
@@ -127,6 +127,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             response = pb.ImportSessionResponse(
                 instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id)
             )
+            response.outcome = pb.IMPORT_OUTCOME_REJECTED
             response.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
             return response
 
@@ -196,6 +197,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
         if not self._supports_candidate_verification[instance_id]:
             await self._abort(context, grpc.StatusCode.UNIMPLEMENTED, "Candidate verification is not supported")
         if (request.media_type, request.format_version) not in self._accepted_formats[instance_id]:
+            response.outcome = pb.VERIFY_OUTCOME_REJECTED
             response.rejected.reason = pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT
             return response
 
