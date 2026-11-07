@@ -1,0 +1,17 @@
+# Helpers for delegated_cgroup_stress. Keep cgroup.procs inspection in the
+# current shell: a subprocess would appear as an extra member of the cgroup.
+cgroup_has_only_pid() {
+	cgroup_procs_path=$1
+	expected_cgroup_pid=$2
+	exec 3<"$cgroup_procs_path" || return 1
+	if ! IFS= read -r cgroup_first_pid <&3; then
+		exec 3<&-
+		return 1
+	fi
+	if IFS= read -r cgroup_extra_pid <&3; then
+		exec 3<&-
+		return 1
+	fi
+	exec 3<&-
+	[ "$cgroup_first_pid" = "$expected_cgroup_pid" ]
+}

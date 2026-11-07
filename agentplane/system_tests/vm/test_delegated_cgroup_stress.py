@@ -34,6 +34,30 @@ def test_probe_has_valid_guest_busybox_shell_syntax(tmp_path: Path) -> None:
     subprocess.run([str(_busybox(tmp_path)), "sh", "-n", str(script)], check=True)
 
 
+def test_cgroup_procs_check_uses_current_shell_and_rejects_extra_pids(tmp_path: Path) -> None:
+    helper = _runfile("DELEGATED_CGROUP_STRESS_HELPERS_RLOCATION")
+    proc_file = tmp_path / "cgroup.procs"
+    shell = """
+. "$1"
+procs=$2
+printf '%s\\n' "$$" >"$procs"
+cgroup_has_only_pid "$procs" "$$"
+printf '%s\\n' 987654 >>"$procs"
+if cgroup_has_only_pid "$procs" "$$"; then
+    exit 1
+fi
+printf '%s\\n' "$$" >"$procs"
+if cgroup_has_only_pid "$procs" 987654; then
+    exit 1
+fi
+: >"$procs"
+if cgroup_has_only_pid "$procs" "$$"; then
+    exit 1
+fi
+"""
+    subprocess.run([str(_busybox(tmp_path)), "sh", "-c", shell, "sh", str(helper), str(proc_file)], check=True)
+
+
 def test_unit_uses_an_opt_in_systemd_delegation_boundary() -> None:
     service = _runfile("DELEGATED_CGROUP_STRESS_SERVICE_RLOCATION").read_text().splitlines()
     timer = _runfile("DELEGATED_CGROUP_STRESS_TIMER_RLOCATION").read_text().splitlines()
