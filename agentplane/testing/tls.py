@@ -126,17 +126,26 @@ def environment_runtime_identity_uri(namespace: str, sandbox_uid: str, credentia
 
 
 def issue_workload_leaf(
-    ca: CertificateAuthority, uri: str, directory: Path, *, dns_name: str = RUNNER_GATEWAY_TEST_DNS
+    ca: CertificateAuthority,
+    uri: str,
+    directory: Path,
+    *,
+    dns_name: str = RUNNER_GATEWAY_TEST_DNS,
+    valid_for: datetime.timedelta | None = None,
 ) -> tuple[Path, Path]:
     """Issue an mTLS leaf with one URI identity and the supplied test DNS name.
 
     Runner Gateway test servers need both SANs: Python clients verify the DNS
     name as part of TLS, while the Go Gateway authenticates Runner identities
     from the URI SAN. Both clientAuth and serverAuth EKUs permit either
-    transport direction in the same fixture.
+    transport direction in the same fixture. `valid_for` makes expiry checks
+    deterministic in tests that keep a connection open across NotAfter.
     """
     key = ec.generate_private_key(ec.SECP256R1())
-    not_before, not_after = _validity()
+    not_before, default_not_after = _validity()
+    if valid_for is not None and valid_for <= datetime.timedelta(0):
+        raise ValueError("valid_for must be positive")
+    not_after = default_not_after if valid_for is None else datetime.datetime.now(datetime.UTC) + valid_for
     cert = (
         x509.CertificateBuilder()
         # URI SAN is the workload identity; SPIFFE URIs commonly exceed the 64-byte CN limit.

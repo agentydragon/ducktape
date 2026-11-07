@@ -152,6 +152,7 @@ py_test(
         "//agentplane/system_tests/vm:sandboxes",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s/agentplane:central_sampler",
+        "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:runner_gateway",

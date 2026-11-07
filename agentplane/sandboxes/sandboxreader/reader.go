@@ -82,6 +82,88 @@ func (r *Reader) Incarnation(ctx context.Context, destination *identitypb.Sandbo
 	return view, nil
 }
 
+// FindRunnerCredential reads the live Sandbox list and returns the exact
+// incarnation that currently accepts credentialID. Deletion and stop status
+// alone do not revoke an accepted credential: the controller may need the
+// runner to remain authenticated while it quiesces and seals Sessions. Reader
+// must use an uncached API reader so clearing or replacing the accepted
+// credential, or removing the Sandbox, takes effect immediately.
+func (r *Reader) FindRunnerCredential(ctx context.Context, sandboxUID, credentialID string) (View, bool, error) {
+	if sandboxUID == "" || credentialID == "" {
+		return View{}, false, fmt.Errorf("Sandbox UID and runner credential ID are required")
+	}
+	var sandboxes sandboxapi.SandboxList
+	if err := r.objects.List(ctx, &sandboxes, client.InNamespace(r.namespace)); err != nil {
+		return View{}, false, fmt.Errorf("list live Sandboxes: %w", err)
+	}
+	var found *sandboxapi.Sandbox
+	for i := range sandboxes.Items {
+		candidate := &sandboxes.Items[i]
+		if string(candidate.UID) != sandboxUID {
+			continue
+		}
+		if found != nil {
+			return View{}, false, fmt.Errorf("multiple Sandboxes have UID %q", sandboxUID)
+		}
+		found = candidate
+	}
+	if found == nil || found.Namespace != r.namespace || found.UID == "" || found.Name == "" {
+		return View{}, false, nil
+	}
+	credential := found.Status.RunnerCredential
+	if credential == nil || credential.ID != credentialID || credential.AcceptedID != credentialID || runnerPodUID(found) == "" {
+		return View{}, false, nil
+	}
+	return View{
+		Identity: &Identity{Namespace: found.Namespace, Name: found.Name, Uid: string(found.UID)},
+		Resource: found,
+	}, true, nil
+}
+
+// RunnerPodUID returns the Pod bound to the Sandbox's accepted credential.
+// KubeVirt credentials bind to status.incarnation (the virt-launcher Pod);
+// Pod and Firecracker credentials bind to runnerCredential.podUid.
+func (v View) RunnerPodUID() (string, bool) {
+	_, uid, ok := v.RunnerPod()
+	return uid, ok
+}
+
+// RunnerPod returns the name and UID of the Pod currently bound to the accepted
+// credential. It uses the Sandbox's status incarnation for both backends;
+// Pod and Firecracker credentials must agree with runnerCredential.podUid.
+func (v View) RunnerPod() (name, uid string, ok bool) {
+	if v.Resource == nil || v.Resource.Status.RunnerCredential == nil {
+		return "", "", false
+	}
+	credential := v.Resource.Status.RunnerCredential
+	incarnation := v.Resource.Status.Incarnation
+	if incarnation == nil || incarnation.Name == "" || incarnation.UID == "" {
+		return "", "", false
+	}
+	switch credential.Kind {
+	case sandboxapi.RunnerCredentialKindPod:
+		if credential.PodUID == "" || credential.PodUID != incarnation.UID {
+			return "", "", false
+		}
+	case sandboxapi.RunnerCredentialKindVM:
+		if credential.LastVMIUID == "" {
+			return "", "", false
+		}
+	default:
+		return "", "", false
+	}
+	return incarnation.Name, incarnation.UID, true
+}
+
+func runnerPodUID(sandbox *sandboxapi.Sandbox) string {
+	view := View{Resource: sandbox}
+	_, uid, ok := view.RunnerPod()
+	if !ok {
+		return ""
+	}
+	return uid
+}
+
 // ExecutionAccount reads the live controller-owned ServiceAccount for an exact Sandbox
 // incarnation. Reader must be backed by an uncached API reader for this authorization check.
 // Missing or replaced Sandboxes/accounts return found=false; API errors fail closed.

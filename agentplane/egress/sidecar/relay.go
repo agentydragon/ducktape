@@ -29,8 +29,9 @@ const (
 )
 
 type sidecar struct {
-	config config
-	ready  atomic.Bool
+	config   config
+	proxyHop *proxyHop
+	ready    atomic.Bool
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
@@ -210,18 +211,27 @@ func (c *trackedClientConn) CloseWrite() error {
 }
 
 func (s *sidecar) proxyHandler() http.Handler {
-	proxyURL := &url.URL{Scheme: "http", Host: s.config.Proxy.Address}
+	proxyScheme := "http"
+	if _, usesTLS := s.proxyHop.transport.(tlsProxyTransport); usesTLS {
+		proxyScheme = "https"
+	}
+	proxyURL := &url.URL{Scheme: proxyScheme, Host: s.proxyHop.address}
 	dialHop := func(ctx context.Context, network, address string) (net.Conn, error) {
-		if network != "tcp" || address != s.config.Proxy.Address {
+		if network != "tcp" || address != s.proxyHop.address {
 			return nil, errors.New("unexpected central proxy destination")
 		}
-		return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, address)
+		return s.proxyHop.transport.dial(ctx, address)
 	}
 	transport := &http.Transport{
 		Proxy:                 http.ProxyURL(proxyURL),
 		DialContext:           dialHop,
 		IdleConnTimeout:       time.Minute,
 		ExpectContinueTimeout: time.Second,
+	}
+	if proxyScheme == "https" {
+		// DialTLSContext returns an already-handshaken connection so the SVID expiry
+		// watcher and the transport use the same authenticated hop as CONNECT routes.
+		transport.DialTLSContext = dialHop
 	}
 	s.proxyTransport = transport
 	proxy := &httputil.ReverseProxy{
@@ -250,9 +260,9 @@ func (s *sidecar) proxyHandler() http.Handler {
 			refuse(writer, http.StatusBadRequest, "bad-request")
 			return
 		}
-		token, err := readToken(s.config.Proxy.Transport.Auth.TokenFile)
+		token, err := s.proxyHop.auth.requestToken()
 		if err != nil {
-			slog.Error("central proxy token unavailable", "path", s.config.Proxy.Transport.Auth.TokenFile, "error", err)
+			slog.Error("central proxy credential unavailable", "address", s.proxyHop.address, "error", err)
 			refuse(writer, http.StatusServiceUnavailable, "token-unavailable")
 			return
 		}
@@ -271,15 +281,15 @@ func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Reques
 		refuse(writer, http.StatusBadRequest, "bad-request")
 		return
 	}
-	token, err := readToken(s.config.Proxy.Transport.Auth.TokenFile)
+	token, err := s.proxyHop.auth.requestToken()
 	if err != nil {
-		slog.Error("central proxy token unavailable", "path", s.config.Proxy.Transport.Auth.TokenFile, "error", err)
+		slog.Error("central proxy credential unavailable", "address", s.proxyHop.address, "error", err)
 		refuse(writer, http.StatusServiceUnavailable, "token-unavailable")
 		return
 	}
-	upstream, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(request.Context(), "tcp", s.config.Proxy.Address)
+	upstream, err := s.proxyHop.transport.dial(request.Context(), s.proxyHop.address)
 	if err != nil {
-		slog.Warn("central proxy unreachable", "address", s.config.Proxy.Address, "error", err)
+		slog.Warn("central proxy unreachable", "address", s.proxyHop.address, "error", err)
 		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
 		return
 	}
@@ -340,7 +350,10 @@ func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Reques
 func rewriteRequest(request *http.Request, token string, projected map[string]string) {
 	request.Header.Del("Proxy-Connection")
 	request.Header.Del(projectedTokenHeader)
-	request.Header.Set("Proxy-Authorization", "Bearer "+token)
+	request.Header.Del("Proxy-Authorization")
+	if token != "" {
+		request.Header.Set("Proxy-Authorization", "Bearer "+token)
+	}
 	for _, audience := range slices.Sorted(maps.Keys(projected)) {
 		request.Header.Add(projectedTokenHeader, audience+" "+projected[audience])
 	}

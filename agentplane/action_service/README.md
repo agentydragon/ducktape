@@ -465,8 +465,9 @@ selects an MCP destination.
 Sandbox calls use ordinary `Authorization: Bearer <workload token>` at this service. The runner does
 not hold that token: it presents the public
 `agentplane-credential-agentplane-workload` placeholder to the existing pod-local/central egress
-path, whose generic `authenticatedWorkloadToken` source substitutes the already-authenticated
-`agentplane-egress` bearer for the exact first-party destination rule.
+path, whose `projectedWorkloadToken` source names the `agentplane-egress` audience and substitutes
+the sidecar-projected token for the exact first-party destination rule. The Action Service still
+validates that bearer itself and applies its own authorization and lifecycle rules.
 
 At the destination, the [workload resolver](../workload_auth/auth/) performs the TokenReview. Actions
 uses its explicit ServiceAccount-only resolution: the configured audience, allowed namespace and

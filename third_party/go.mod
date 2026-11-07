@@ -70,6 +70,9 @@ require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 // Direct dependencies for Agentplane YAML consumers
 require gopkg.in/yaml.v3 v3.0.1
 
+// Direct dependency for the egress Rules listener's TLS/plaintext gRPC multiplexing
+require github.com/soheilhy/cmux v0.1.5
+
 // Direct dependencies for agentplane/egress/go
 require (
 	code.dny.dev/ssrf v0.3.0

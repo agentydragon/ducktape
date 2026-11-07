@@ -20,7 +20,7 @@ import (
 )
 
 func TestBindPlatformRoutesWithoutRoutesDoesNotOpenListener(t *testing.T) {
-	routes, err := bindPlatformRoutesWithKeepalive(platformRoutesConfig{}, keepalive.ClientParameters{})
+	routes, err := (&sidecar{}).bindPlatformRoutesWithKeepalive(platformRoutesConfig{}, keepalive.ClientParameters{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,11 +33,11 @@ func TestPlatformRouteRecoversAfterSilentUpstreamBlackhole(t *testing.T) {
 	original := startRouteTestBackend(t, "original")
 	replacement := startRouteTestBackend(t, "replacement")
 	proxy := startRouteTestProxy(t, original)
-	routes, err := bindPlatformRoutesWithKeepalive(
+	routes, err := (&sidecar{}).bindPlatformRoutesWithKeepalive(
 		platformRoutesConfig{
 			ListenAddress: "127.0.0.1:0",
 			Routes: map[string]platformRouteConfig{
-				"control": {ServicePrefixes: []string{"/route.test.Service/"}, Upstream: proxy.listener.Addr().String()},
+				"control": {ServicePrefixes: []string{"/route.test.Service/"}, Upstream: proxy.listener.Addr().String(), Transport: plaintextRouteTransportConfig{}},
 			},
 		},
 		keepalive.ClientParameters{Time: 10 * time.Second, Timeout: time.Second},
@@ -302,11 +302,11 @@ func TestPlatformRoutesDispatchAndIsolateRoutes(t *testing.T) {
 
 	alphaToken := writeSharedPlatformTestToken(t, "alpha-token")
 	betaToken := writeSharedPlatformTestToken(t, "beta-token")
-	shared, err := bindPlatformRoutesWithKeepalive(platformRoutesConfig{ListenAddress: "127.0.0.1:0", Routes: map[string]platformRouteConfig{
-		"alpha":       {ServicePrefixes: []string{"/route.alpha.Service/"}, Upstream: alpha.address, TokenFile: alphaToken},
-		"beta":        {ServicePrefixes: []string{"/route.beta.Service/"}, Upstream: beta.address, TokenFile: betaToken},
-		"telemetry":   {ServicePrefixes: []string{"/route.telemetry.Service/"}, Upstream: telemetry.address},
-		"unavailable": {ServicePrefixes: []string{"/route.unavailable.Service/"}, Upstream: deadAddress},
+	shared, err := (&sidecar{}).bindPlatformRoutesWithKeepalive(platformRoutesConfig{ListenAddress: "127.0.0.1:0", Routes: map[string]platformRouteConfig{
+		"alpha":       {ServicePrefixes: []string{"/route.alpha.Service/"}, Upstream: alpha.address, Transport: plaintextRouteTransportConfig{TokenFile: alphaToken}},
+		"beta":        {ServicePrefixes: []string{"/route.beta.Service/"}, Upstream: beta.address, Transport: plaintextRouteTransportConfig{TokenFile: betaToken}},
+		"telemetry":   {ServicePrefixes: []string{"/route.telemetry.Service/"}, Upstream: telemetry.address, Transport: plaintextRouteTransportConfig{}},
+		"unavailable": {ServicePrefixes: []string{"/route.unavailable.Service/"}, Upstream: deadAddress, Transport: plaintextRouteTransportConfig{}},
 	}}, keepalive.ClientParameters{})
 	if err != nil {
 		t.Fatal(err)

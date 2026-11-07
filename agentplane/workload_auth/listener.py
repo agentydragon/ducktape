@@ -1,8 +1,35 @@
-"""Authentication allowlist settings for one service listener."""
+"""Authentication allowlist and transport settings for a service listener."""
 
-from typing import Literal, Self
+from pathlib import Path
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class TLS(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cert_file: Path
+    key_file: Path
+
+    @model_validator(mode="after")
+    def absolute_paths(self) -> Self:
+        if not self.cert_file.is_absolute() or not self.key_file.is_absolute():
+            raise ValueError("tls requires absolute cert_file and key_file paths")
+        return self
+
+
+class SPIFFEAuth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["spiffe"] = "spiffe"
+    ca_file: Path
+
+    @model_validator(mode="after")
+    def absolute_path(self) -> Self:
+        if not self.ca_file.is_absolute():
+            raise ValueError("spiffe requires an absolute ca_file")
+        return self
 
 
 class KubernetesBearerAuth(BaseModel):
@@ -12,13 +39,14 @@ class KubernetesBearerAuth(BaseModel):
     audience: str = Field(min_length=1)
 
 
-type Authentication = KubernetesBearerAuth
+type Authentication = Annotated[SPIFFEAuth | KubernetesBearerAuth, Field(discriminator="mode")]
 
 
 class Listener(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     listen_address: str = Field(min_length=1)
+    tls: TLS | None = None
     auth: list[Authentication] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -26,4 +54,6 @@ class Listener(BaseModel):
         modes = [method.mode for method in self.auth]
         if len(set(modes)) != len(modes):
             raise ValueError("duplicate authentication mode")
+        if "spiffe" in modes and self.tls is None:
+            raise ValueError("spiffe requires tls")
         return self

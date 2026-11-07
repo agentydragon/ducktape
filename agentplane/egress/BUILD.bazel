@@ -53,6 +53,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":platform_routes",
         ":resources",
         ":settings",
         ":sidecar_config",
@@ -60,6 +61,8 @@ py_test(
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
+        "//agentplane/egress:egress_rules_pb2",
+        "//agentplane/egress:egress_rules_pb2_grpc",
         "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/testing:kubernetes",
@@ -68,15 +71,19 @@ py_test(
         "//agentplane/workload_auth:listener",
         "//util:net",
         "@pypi//aiohttp",
+        "@pypi//cryptography",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
@@ -109,6 +116,20 @@ py_library(
     deps = [
         ":platform_routes",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_sidecar_config",
+    srcs = ["test_sidecar_config.py"],
+    deps = [
+        ":conftest",
+        ":platform_routes",
+        ":sidecar_config",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -203,6 +224,18 @@ proto_library(
     deps = [
         "//agentplane/proto:identity_proto",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "egress_rules_pb2",
+    deps = [":egress_rules_proto"],
+)
+
+py_grpc_service_library(
+    name = "egress_rules_pb2_grpc",
+    async_only = True,
+    proto = ":egress_rules_proto",
+    py_proto = ":egress_rules_pb2",
 )
 
 go_proto_library(

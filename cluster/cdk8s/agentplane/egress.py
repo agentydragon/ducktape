@@ -5,6 +5,8 @@ EgressCredential resources and egress PolicySets it reads.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
@@ -34,6 +36,11 @@ from cdk8s_plus_34 import (
     TaintEffect,
     Volume,
 )
+from cert_manager_crds.io.cert_manager import (
+    CertificateSpecIssuerRef,
+    CertificateSpecPrivateKeyRotationPolicy,
+    CertificateSpecUsages,
+)
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecSources,
@@ -54,14 +61,15 @@ from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener
+from agentplane.workload_auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, llm_ingress, session_dispatcher
+from cluster.cdk8s.agentplane import actions, database, llm_ingress, runner_gateway, session_dispatcher
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE as CLUSTER_CA_BUNDLE, BUNDLE_KEY as CLUSTER_CA_BUNDLE_KEY
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
@@ -73,6 +81,7 @@ from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -84,6 +93,7 @@ NAME = "egress"
 _PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-proxy"
 _LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
+PROXY_MTLS_SECRET = "agentplane-egress-proxy-tls"
 # The health service whose verdict is "the process answers", whatever the index says; keep equal to
 # `LivenessService` in agentplane/egress/admin/grpc_health.go.
 _LIVENESS_HEALTH_SERVICE = "livez"
@@ -222,10 +232,11 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         metadata=ApiObjectMetadata(name="agentplane-workload", namespace=namespace),
         description=(
             "The calling Sandbox Pod's short-lived, Pod-bound workload identity for first-party "
-            "Agentplane destinations. It conveys no LiteLLM credential or operator, Agent, or "
+            "Agentplane destinations, minted for the configured workload audience. It conveys "
+            "no LiteLLM credential or operator, Agent, or "
             "Thread authority."
         ),
-        source=Source.authenticated_workload_token(),
+        source=Source.projected_workload_token(audience=WORKLOAD_TOKEN_AUDIENCE),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -632,6 +643,7 @@ class Egress(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        enable_svid_auth: bool = False,
     ) -> None:
         """`runners` are the runner Pods, which the proxy admits."""
         super().__init__(scope, id)
@@ -644,9 +656,10 @@ class Egress(Construct):
         self.registry_secret_name = registry_secret_name
         self.container_env = container_env or {}
         self.memory_limit = memory_limit
+        self.enable_svid_auth = enable_svid_auth
 
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-        content = {
+        content: dict[str, Any] = {
             "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
             "admin_grpc_audience": ADMIN_GRPC_AUDIENCE,
             "admin_grpc_callers": [
@@ -654,6 +667,7 @@ class Egress(Construct):
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
             "projected_token_audiences": [
+                WORKLOAD_TOKEN_AUDIENCE,
                 KUBERNETES_AUDIENCE,
                 RUNNER_INGRESS_AUDIENCE,
                 session_dispatcher.TOKEN_AUDIENCE,
@@ -661,8 +675,21 @@ class Egress(Construct):
             "forward": Listener(
                 listen_address=f"0.0.0.0:{self.proxy.pod_port}",
                 auth=[KubernetesBearerAuth(audience=WORKLOAD_TOKEN_AUDIENCE)],
-            ).model_dump(mode="json"),
+            ).model_dump(mode="json", exclude_none=True),
         }
+        if enable_svid_auth:
+            content["tls_passthrough_targets"] = [f"{self.admin.fqdn}:{self.admin.pod_port}"]
+            content["forward"] = Listener(
+                listen_address=f"0.0.0.0:{self.proxy.pod_port}",
+                tls=TLS(
+                    cert_file=Path("/etc/agentplane-egress/svid/tls.crt"),
+                    key_file=Path("/etc/agentplane-egress/svid/tls.key"),
+                ),
+                auth=[
+                    SPIFFEAuth(ca_file=Path(f"/etc/agentplane-egress/svid-ca/{CLUSTER_CA_BUNDLE_KEY}")),
+                    KubernetesBearerAuth(audience=WORKLOAD_TOKEN_AUDIENCE),
+                ],
+            ).model_dump(mode="json", exclude_none=True)
         settings = SettingsFile(
             self,
             "settings",
@@ -690,6 +717,20 @@ class Egress(Construct):
             litellm_cluster_internal=litellm_cluster_internal,
         )
 
+        if self.enable_svid_auth:
+            Certificate(
+                self,
+                "svid-listener-certificate",
+                metadata=ApiObjectMetadata(name="agentplane-egress-proxy", namespace=self.env.namespace),
+                secret_name=PROXY_MTLS_SECRET,
+                uris=["spiffe://agentplane/egress-proxy"],
+                duration="24h",
+                renew_before="8h",
+                private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+                usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
+                issuer_ref=CertificateSpecIssuerRef(name=runner_gateway.RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
+            )
+
     def add_platform_resources(self) -> None:
         """Add fleet CA issuance, trust bundle, and Cilium network admission."""
         self._add_certificate_and_bundle()
@@ -711,20 +752,27 @@ class Egress(Construct):
         # No Pods (TokenReview already names the subject) and no Secrets (an
         # EgressCredential names one, but the values live in a separate namespace
         # this Role doesn't grant). Its one write is its own EgressReady condition.
+        role_rules = [
+            RolePolicyRule(
+                resources=[
+                    custom_resource(GROUP, resource)
+                    for resource in ["egresscredentials", "policysets", "policybindings"]
+                ],
+                verbs=["get", "list", "watch"],
+            ),
+            RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
+        ]
+        if self.enable_svid_auth:
+            # Resolve only live Sandbox status. The proxy does not read runner Pods
+            # or ServiceAccounts, and external workload namespaces are not Sandboxes.
+            role_rules.append(
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"])
+            )
         Role(
             self,
             "role",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
-            rules=[
-                RolePolicyRule(
-                    resources=[
-                        custom_resource(GROUP, resource)
-                        for resource in ["egresscredentials", "policysets", "policybindings"]
-                    ],
-                    verbs=["get", "list", "watch"],
-                ),
-                RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
-            ],
+            rules=role_rules,
         )
         RoleBinding(
             self,
@@ -804,6 +852,17 @@ class Egress(Construct):
             ConfigMap.from_config_map_name(self, "upstream-ca-ref", f"{self.env.namespace}-egress-upstream-ca"),
             name="upstream-ca",
         )
+        svid_volume = None
+        svid_ca_volume = None
+        if self.enable_svid_auth:
+            svid_secret = Secret.from_secret_name(self, "svid-secret-ref", PROXY_MTLS_SECRET)
+            svid_volume = Volume.from_secret(self, "svid-volume", svid_secret, name="svid")
+            svid_ca_volume = Volume.from_config_map(
+                self,
+                "svid-ca-volume",
+                ConfigMap.from_config_map_name(self, "svid-ca-ref", CLUSTER_CA_BUNDLE),
+                name="svid-ca",
+            )
 
         values: dict[str, object] = {
             "rules_namespace": self.env.namespace,
@@ -819,6 +878,7 @@ class Egress(Construct):
         }
 
         zones = self.env.egress.zones
+        extra_ports = [self.admin.container_port()]
         workload = add_service_workload(
             self,
             self.env,
@@ -826,7 +886,7 @@ class Egress(Construct):
             container="proxy",
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
             env_variables={**setting_env, env_name(Settings, "database_url"): self.database_url, **self.container_env},
-            extra_ports=[self.admin.container_port()],
+            extra_ports=extra_ports,
             readiness=grpc_probe(port=self.admin.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(
                 port=self.admin.pod_port, service=_LIVENESS_HEALTH_SERVICE, initial_delay_seconds=30, period_seconds=30
@@ -867,6 +927,9 @@ class Egress(Construct):
             )
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
+        if svid_volume is not None and svid_ca_volume is not None:
+            workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
+            workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
         return workload
 
@@ -885,9 +948,15 @@ class Egress(Construct):
                     runners.cilium, cilium.endpoint_labels(namespace, "sandbox"), ports=[self.proxy.pod_port]
                 ),
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.admin.pod_port]),
+                *(
+                    [IngressRule.from_endpoints(self.proxy.pods.cilium, ports=[self.admin.pod_port])]
+                    if self.enable_svid_auth
+                    else []
+                ),
             ],
             egress=[
                 database.egress(namespace),
+                *([self.admin.egress()] if self.enable_svid_auth else []),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),

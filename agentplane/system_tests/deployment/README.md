@@ -172,6 +172,22 @@ VM-only targets omit the Pod runner image:
 their Sandboxes use the runner disk and test guest images. Image volumes need containerd 2.1 or later and the
 `ImageVolume` feature gate, which `stack.py` turns on in the API server and kubelet.
 
+## Egress authentication matrix
+
+The fixture renderer selects egress authentication explicitly, independently of its environment kind.
+`fixture_chart.environment` requires `runner_egress_mtls`; it never derives it from `vm_sandboxes`.
+The optional-SPIFFE layer exercises this subset of the supported matrix:
+
+| Fixture          | Environment   | Egress authentication |
+| ---------------- | ------------- | --------------------- |
+| `local-model`    | Pod           | SPIFFE over TLS       |
+| `local-model-vm` | QEMU/KubeVirt | Kubernetes bearer     |
+| `public-litellm` | Pod           | SPIFFE over TLS       |
+| MCP fixtures     | Pod           | SPIFFE over TLS       |
+
+The VM bearer choice retains end-to-end coverage of that supported hop during migration. The
+service cutover selects SPIFFE explicitly for every fixture; it removes bearer support.
+
 ## RBE executor constraints
 
 Probed 2026-10-21 with `bb execute` under the k3s target's isolation properties: kernel 5.15.0, no `/dev/kvm`

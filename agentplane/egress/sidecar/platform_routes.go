@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
@@ -35,15 +36,15 @@ type platformRouteDispatcher struct {
 	byService map[string]*routeForwarder
 }
 
-func bindPlatformRoutes(config platformRoutesConfig) (*platformRoutes, error) {
-	return bindPlatformRoutesWithKeepalive(config, keepalive.ClientParameters{
+func (s *sidecar) bindPlatformRoutes(config platformRoutesConfig) (*platformRoutes, error) {
+	return s.bindPlatformRoutesWithKeepalive(config, keepalive.ClientParameters{
 		Time:                time.Minute,
 		Timeout:             10 * time.Second,
 		PermitWithoutStream: false,
 	})
 }
 
-func bindPlatformRoutesWithKeepalive(
+func (s *sidecar) bindPlatformRoutesWithKeepalive(
 	config platformRoutesConfig,
 	keepaliveParameters keepalive.ClientParameters,
 ) (*platformRoutes, error) {
@@ -63,18 +64,56 @@ func bindPlatformRoutesWithKeepalive(
 	sort.Strings(names)
 	for _, name := range names {
 		route := config.Routes[name]
-		conn, err := grpc.NewClient(
-			route.Upstream,
+		clientTarget := route.Upstream
+		var tokenFile string
+		var dialOptions []grpc.DialOption
+		transportCredentials := credentials.TransportCredentials(insecure.NewCredentials())
+		switch configured := route.Transport.(type) {
+		case plaintextRouteTransportConfig:
+			tokenFile = configured.TokenFile
+		case tlsConnectRouteTransportConfig:
+			if s.proxyHop == nil {
+				closePlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q TLS CONNECT requires a proxy hop", name)
+			}
+			proxyTransport, okay := s.proxyHop.transport.(tlsProxyTransport)
+			_, spiffeAuth := s.proxyHop.auth.(spiffeProxyAuth)
+			if !okay || !spiffeAuth || proxyTransport.svid == nil {
+				closePlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE proxy transport", name)
+			}
+			serverCredentials, err := proxyTransport.svid.ClientCredentials(configured.ServerURI)
+			if err != nil {
+				closePlatformRoutes(started)
+				return nil, fmt.Errorf("configure platform route %q TLS: %w", name, err)
+			}
+			// Keep the configured authority intact: the central proxy resolves it
+			// after applying its hostname policy and destination TLS identity.
+			clientTarget = "passthrough:///" + route.Upstream
+			transportCredentials = serverCredentials
+			dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
+				if address != route.Upstream {
+					return nil, fmt.Errorf("unexpected platform route destination %q", address)
+				}
+				return s.dialRouteTunnel(ctx, address)
+			}))
+		default:
+			closePlatformRoutes(started)
+			return nil, fmt.Errorf("platform route %q has unsupported transport %T", name, route.Transport)
+		}
+		clientOptions := []grpc.DialOption{
 			observability.GRPCClientOption(),
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithTransportCredentials(transportCredentials),
 			grpc.WithKeepaliveParams(keepaliveParameters),
-		)
+		}
+		clientOptions = append(clientOptions, dialOptions...)
+		conn, err := grpc.NewClient(clientTarget, clientOptions...)
 		if err != nil {
 			closePlatformRoutes(started)
 			return nil, fmt.Errorf("create upstream for platform route %q: %w", name, err)
 		}
 		started.conns = append(started.conns, conn)
-		forwarder := &routeForwarder{conn: conn, tokenFile: route.TokenFile}
+		forwarder := &routeForwarder{conn: conn, tokenFile: tokenFile}
 		for _, prefix := range route.ServicePrefixes {
 			dispatcher.byService[prefix] = forwarder
 		}
@@ -143,7 +182,8 @@ func (f *routeForwarder) forward(_ any, workload grpc.ServerStream) error {
 	incoming, _ := metadata.FromIncomingContext(workload.Context())
 	outgoing := metadata.MD{}
 	for key, values := range incoming {
-		if key == "authorization" || strings.HasPrefix(key, ":") || strings.HasPrefix(key, "grpc-") {
+		if key == "authorization" || key == "proxy-authorization" || key == "x-agentplane-workload-token" ||
+			strings.HasPrefix(key, ":") || strings.HasPrefix(key, "grpc-") {
 			continue
 		}
 		outgoing[key] = append([]string(nil), values...)

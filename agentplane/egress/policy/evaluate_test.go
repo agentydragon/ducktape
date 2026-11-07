@@ -289,6 +289,7 @@ func TestAuthenticatedWorkloadSourceSubstitutesOnlyTheValidatedContextBearer(t *
 	}
 
 	assertDecision(t, scoped.Evaluate(caller, request, nil), Denied{decision.CredentialUnavailable})
+	assertDecision(t, scoped.Evaluate(caller, request, &WorkloadContext{Caller: caller, PodUID: "pod-a-uid"}), Denied{decision.CredentialUnavailable})
 	stale := &WorkloadContext{Bearer: "stale-token", Caller: policyapi.ServiceAccountRef{Namespace: namespace, Name: "someone-else"}}
 	assertDecision(t, scoped.Evaluate(caller, request, stale), Denied{decision.CredentialUnavailable})
 }

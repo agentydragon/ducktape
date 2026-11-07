@@ -19,13 +19,14 @@ harness / runner
         |
         v
 Pod-local egress sidecar
-  Proxy-Authorization: Bearer <sidecar-only Pod-bound token>
+  Runner SVID over TLS, or a sidecar-only Pod-bound hop bearer
+  X-Agentplane-Workload-Token: <audience> <destination token>
         |
         v
 central egress proxy
-  validates TokenReview
+  verifies the SVID against live Sandbox state, or reviews the hop bearer
   an `egress` rule selects exact host/method/path and credentialRef
-  authenticatedWorkloadToken substitutes the already-authenticated bearer
+  projectedWorkloadToken substitutes the reviewed destination-audience bearer
         |
         +-----------------------------+
         v                             v
@@ -34,14 +35,18 @@ Go `auth.Principal`              Go `auth.ServiceAccountPrincipal`
 server-held LiteLLM key         service-owned authorization/lifecycle
 ```
 
-PR #5685 extended `EgressCredential.spec.source` with generic
-`authenticatedWorkloadToken`. The proxy retains the bearer only after successful sidecar-hop
-authentication and exposes it to the existing exact placeholder/target substitution path. It never
-blindly copies a raw `Proxy-Authorization` header, unconditionally appends `Authorization`, mints a
-new token, or introduces an LLM/Action service branch. Missing, stale, mismatched, or unbound context
-fails closed. Existing `secretRef` behavior remains unchanged.
+An `EgressCredential.spec.source` may be a central-held `secretRef` or a
+`projectedWorkloadToken` naming the destination audience. The proxy accepts the projected token
+only after TokenReview binds it to the hop caller’s account and Pod UID. For an SVID hop, the
+live Sandbox supplies that binding. The proxy never copies a raw
+`Proxy-Authorization` header, unconditionally appends `Authorization`, mints a new token, or
+introduces an LLM/Action service branch. Missing, stale, mismatched, or unbound context fails
+closed. Existing `secretRef` behavior remains unchanged.
 
-Destination services construct a Go `workload_auth/auth.Resolver` with their audience and
+The Rules API shares the forward proxy’s configured authentication policy and serving TLS
+material. The SVID sidecar route tunnels TLS through central; the API verifies the peer itself.
+It accepts no forwarded caller assertion. The remaining destination services construct a Go
+`workload_auth/auth.Resolver` with their audience and
 namespace allowlist. Pod-bound `ResolveToken` requires a reviewed ServiceAccount subject, UID, and
 one Pod name/UID claim pair. The API server validates the bound object in TokenReview, so a deleted
 or replaced Pod fails a fresh review; accepted verdicts are reused for up to 30 s

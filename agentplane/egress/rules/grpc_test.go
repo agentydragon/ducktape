@@ -95,7 +95,7 @@ func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 	index.Rules.PutPolicySet(policySet("all-targets", githubRule))
 	index.Rules.PutBinding(binding("sb", "b", "all-targets"))
 	index.PutCredential(resources.Credential{
-		Name: "github-pat", Description: description, Source: resources.AuthenticatedWorkloadToken{},
+		Name: "github-pat", Description: description, Source: resources.SecretKey{Name: "github", Key: "token"},
 		Targets: []resources.Target{
 			resources.WholeValue{Header: "X-Key"},
 			resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"},

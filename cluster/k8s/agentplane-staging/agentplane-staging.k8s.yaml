@@ -1461,6 +1461,7 @@ data:
     admin_grpc_callers:
       - agentplane-staging/app
     projected_token_audiences:
+      - agentplane-egress
       - https://localhost:7445
       - agentplane-runner-ingress
       - session-dispatcher
@@ -1777,9 +1778,10 @@ metadata:
   name: agentplane-workload
   namespace: agentplane-staging
 spec:
-  description: The calling Sandbox Pod's short-lived, Pod-bound workload identity for first-party Agentplane destinations. It conveys no LiteLLM credential or operator, Agent, or Thread authority.
+  description: The calling Sandbox Pod's short-lived, Pod-bound workload identity for first-party Agentplane destinations, minted for the configured workload audience. It conveys no LiteLLM credential or operator, Agent, or Thread authority.
   source:
-    authenticatedWorkloadToken: {}
+    projectedWorkloadToken:
+      audience: agentplane-egress
   targets:
     - header: Authorization
       method: schemeToken
@@ -4705,6 +4707,7 @@ data:
           mode: kubernetes_bearer
           token_file: /var/run/agentplane-egress/token
     audience_token_files:
+      agentplane-egress: /var/run/agentplane-egress/token
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
@@ -4716,28 +4719,38 @@ data:
           service_prefixes:
             - /agentplane.history_service.SessionJournalIngress/
           upstream: history-service.agentplane-staging.svc.cluster.local:8081
-          token_file: /var/run/agentplane-egress/runner-ingress-token
+          transport:
+            mode: plaintext
+            token_file: /var/run/agentplane-egress/runner-ingress-token
         telemetry:
           service_prefixes:
             - /opentelemetry.proto.collector.trace.v1.TraceService/
             - /opentelemetry.proto.collector.metrics.v1.MetricsService/
             - /opentelemetry.proto.collector.logs.v1.LogsService/
           upstream: alloy.monitoring.svc.cluster.local:4317
+          transport:
+            mode: plaintext
         egress-rules:
           service_prefixes:
             - /agentplane.egress.EgressRules/
           upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
-          token_file: /var/run/agentplane-egress/token
+          transport:
+            mode: plaintext
+            token_file: /var/run/agentplane-egress/token
         notifications:
           service_prefixes:
             - /agentplane.notification_service.Notifications/
           upstream: notifications.agentplane-staging.svc.cluster.local:8080
-          token_file: /var/run/agentplane-egress/notifications-token
+          transport:
+            mode: plaintext
+            token_file: /var/run/agentplane-egress/notifications-token
         model-config:
           service_prefixes:
             - /agentplane.llm_ingress.v1.ModelConfigService/
           upstream: llm-ingress.agentplane-staging.svc.cluster.local:8081
-          token_file: /var/run/agentplane-egress/token
+          transport:
+            mode: plaintext
+            token_file: /var/run/agentplane-egress/token
     listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
@@ -5127,6 +5140,7 @@ data:
           mode: kubernetes_bearer
           token_file: /var/run/agentplane-egress/token
     audience_token_files:
+      agentplane-egress: /var/run/agentplane-egress/token
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
@@ -5138,28 +5152,38 @@ data:
           service_prefixes:
             - /agentplane.history_service.SessionJournalIngress/
           upstream: history-service.agentplane-staging.svc.cluster.local:8081
-          token_file: /var/run/agentplane-egress/runner-ingress-token
+          transport:
+            mode: plaintext
+            token_file: /var/run/agentplane-egress/runner-ingress-token
         telemetry:
           service_prefixes:
             - /opentelemetry.proto.collector.trace.v1.TraceService/
             - /opentelemetry.proto.collector.metrics.v1.MetricsService/
             - /opentelemetry.proto.collector.logs.v1.LogsService/
           upstream: alloy.monitoring.svc.cluster.local:4317
+          transport:
+            mode: plaintext
         egress-rules:
           service_prefixes:
             - /agentplane.egress.EgressRules/
           upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
-          token_file: /var/run/agentplane-egress/token
+          transport:
+            mode: plaintext
+            token_file: /var/run/agentplane-egress/token
         notifications:
           service_prefixes:
             - /agentplane.notification_service.Notifications/
           upstream: notifications.agentplane-staging.svc.cluster.local:8080
-          token_file: /var/run/agentplane-egress/notifications-token
+          transport:
+            mode: plaintext
+            token_file: /var/run/agentplane-egress/notifications-token
         model-config:
           service_prefixes:
             - /agentplane.llm_ingress.v1.ModelConfigService/
           upstream: llm-ingress.agentplane-staging.svc.cluster.local:8081
-          token_file: /var/run/agentplane-egress/token
+          transport:
+            mode: plaintext
+            token_file: /var/run/agentplane-egress/token
     listen_address: 0.0.0.0:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
@@ -5184,7 +5208,7 @@ spec:
                 - agentplane-staging
               operations:
                 - UPDATE
-      name: protect-token-on-update
+      name: protect-relay-credentials-on-update
       validate:
         deny:
           conditions:
@@ -5198,7 +5222,7 @@ spec:
               - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
-        message: Only the launcher relay may mount its projected tokens.
+        message: Only the launcher relay may mount projected tokens or runner credentials.
     - context:
         - name: vmiOwner
           variable:
@@ -5250,6 +5274,15 @@ spec:
               - key: "{{ sandbox.uid || '' }}"
                 operator: NotEquals
                 value: "{{account.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0].uid || 'none'}}"
+              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
               - key: "{{ length(vmi.spec.volumes[?serviceAccount] || `[]`) }}"
                 operator: NotEquals
                 value: 0
@@ -5580,12 +5613,15 @@ spec:
               - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
+              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
         message: The launcher must have exactly one native relay init sidecar.
   validationFailureAction: enforce
   webhookConfiguration:
     matchConditions:
-      - expression: "request.namespace == 'agentplane-staging' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == 'egress-token')))"
-        name: launcher-or-token-volume
+      - expression: "request.namespace == 'agentplane-staging' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'egress-token'))))"
+        name: launcher-or-relay-credential-volume
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -8435,6 +8471,7 @@ data:
           mode: kubernetes_bearer
           token_file: /var/run/agentplane-egress/token
     audience_token_files:
+      agentplane-egress: /var/run/agentplane-egress/token
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
