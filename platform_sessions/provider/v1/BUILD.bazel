@@ -1,6 +1,10 @@
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+# gazelle:resolve py platform_sessions.provider.v1.session_provider_pb2 //platform_sessions/provider/v1:session_provider_pb2
+# gazelle:resolve py platform_sessions.provider.v1.session_provider_pb2_grpc //platform_sessions/provider/v1:session_provider_pb2_grpc
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,7 +19,11 @@ proto_library(
 
 py_proto_library_with_mypy_stubs(
     name = "session_provider_pb2",
-    deps = [":session_provider_proto"],
+    deps = [
+        ":session_provider_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+    ],
 )
 
 py_grpc_service_library(
@@ -23,4 +31,35 @@ py_grpc_service_library(
     async_only = True,
     proto = ":session_provider_proto",
     py_proto = ":session_provider_pb2",
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [
+        "//platform_sessions:limits",
+        "//platform_sessions:routes",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "//platform_sessions/provider/v1:session_provider_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "server_test",
+    srcs = ["server_test.py"],
+    deps = [
+        ":server",
+        "//:conftest",
+        "//platform_sessions:limits",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "//platform_sessions/provider/v1:session_provider_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
 )
