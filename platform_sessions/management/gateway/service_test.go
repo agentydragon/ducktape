@@ -69,3 +69,20 @@ func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
 		t.Fatalf("invalid input: %v", err)
 	}
 }
+
+func TestUnknownOutcomeDiagnosticsAreBounded(t *testing.T) {
+	statusCode := uint32(503)
+	value := &providerpb.OperationOutcomeUnknown{Reason: providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR, UpstreamHttpStatus: &statusCode}
+	if !unknownValid(value) {
+		t.Fatal("valid upstream status rejected")
+	}
+	value.Reason = providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_TIMEOUT
+	if unknownValid(value) {
+		t.Fatal("status accepted for timeout")
+	}
+	value.Reason = providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR
+	statusCode = 99
+	if unknownValid(value) {
+		t.Fatal("invalid status accepted")
+	}
+}

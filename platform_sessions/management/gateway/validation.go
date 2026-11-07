@@ -41,7 +41,10 @@ func unknownValid(value *providerpb.OperationOutcomeUnknown) bool {
 		return true
 	}
 	_, ok := providerpb.UnknownOutcomeReason_name[int32(value.GetReason())]
-	return ok
+	if !ok {
+		return false
+	}
+	return value.UpstreamHttpStatus == nil || (value.GetReason() == providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR && value.GetUpstreamHttpStatus() >= 100 && value.GetUpstreamHttpStatus() <= 599)
 }
 
 func importFailureValid(value *providerpb.ImportFailure) bool {
