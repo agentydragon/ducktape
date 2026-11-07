@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from platform_sessions.auth import BearerAuth
 from platform_sessions.limits import MAX_SESSION_BYTES
+from platform_sessions.probe_types import ProbeSource
 from platform_sessions.registry import IntegrationInstance
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class Integration(Protocol):
     def metadata(self) -> dict[str, Any]: ...
     def parse(self, body: bytes) -> Any: ...
     async def status(self) -> dict[str, Any]: ...
-    async def refresh(self, transport: Any = None, *, source: str = "verify") -> None: ...
+    async def refresh(self, transport: Any = None, *, source: ProbeSource = ProbeSource.VERIFY) -> None: ...
     async def install(self, candidate: Any, transport: Any = None) -> dict[str, Any]: ...
 
 
@@ -169,7 +170,7 @@ async def poll_integrations(integrations: Sequence[Integration], transport: Any 
     async def poll(runtime: Integration) -> None:
         while True:
             try:
-                await runtime.refresh(transport, source="periodic")
+                await runtime.refresh(transport, source=ProbeSource.PERIODIC)
             except Exception:
                 logger.error("Integration poll failed")  # noqa: TRY400 - exceptions may contain session data
             await asyncio.sleep(runtime.config.poll_interval_seconds)
