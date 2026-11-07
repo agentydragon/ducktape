@@ -2,6 +2,10 @@
 
 `//agentplane/system_tests/vm:test_tcg_vmi_shutdown` boots one real Agentplane CI guest in an isolated k3s/KubeVirt test cluster and requests normal VMI deletion. It does not start the Agentplane application stack, Sandbox controller, session machinery, or service runtime. The test attaches a disposable workspace disk, a PVC-backed `state` virtiofs volume, and placeholder config/launch/trust disks. It verifies QEMU software emulation from the libvirt domain, QEMU command line, and QMP `query-kvm` response.
 
+The guest shutdown proof markers and bounded proof-helper sampling are described in
+[`proof_progress.md`](proof_progress.md), including the uncached one-guest validation and
+its diagnostic limits.
+
 The VMI is direct, so this is not a full-stack reproduction of the Sandbox controller or production sidecar topology. The default arm installs only the production-derived `keep-virtiofs-through-guest-shutdown` ClusterPolicy rule, scoped to the test namespace and direct VMI. The opt-in policy-off arm skips that rule only for this test. It does not modify cluster-wide KubeVirt settings. The test retains serial, launcher, virtiofs, containerd, lifecycle, QEMU, VMI, policy, and cluster evidence and deletes only its UID-owned namespace and policy.
 
 ## Manual repeated cycles

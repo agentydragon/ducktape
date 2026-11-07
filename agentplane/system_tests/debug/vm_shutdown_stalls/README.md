@@ -5,6 +5,8 @@ For a smaller direct-QEMU software-emulation experiment and its retained logs, s
 [libvirt_monitor/README.md](libvirt_monitor/README.md) describes opt-in per-VM QMP logs.
 The direct-VMI experiment using the real CI guest and a bounded policy A/B is documented in
 [standalone_kubevirt/README.md](standalone_kubevirt/README.md).
+Its direct-TTY shutdown proof markers and bounded proof-helper sampling are documented in
+[standalone_kubevirt/proof_progress.md](standalone_kubevirt/proof_progress.md).
 
 ## Observed failure
 
