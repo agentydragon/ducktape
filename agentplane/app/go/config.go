@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -22,43 +23,49 @@ import (
 
 // Config is the app's complete deployment-authored settings file plus explicit runtime Secret inputs.
 type Config struct {
-	Models                              runtimeconfig.ModelCatalog `mapstructure:"models"`
-	ThreadPresets                       map[string]ThreadPreset    `mapstructure:"thread_presets"`
-	SandboxPresets                      map[string]SandboxPreset   `mapstructure:"sandbox_presets"`
-	NewSandboxDefaults                  NewSandboxDefaults         `mapstructure:"new_sandbox_defaults"`
-	EgressAdminURL                      string                     `mapstructure:"egress_admin_url"`
-	ConnectionServiceURL                string                     `mapstructure:"connection_service_url"`
-	ActionFederation                    ActionFederationConfig     `mapstructure:"action_federation"`
-	OIDCSettings                        *auth.OIDCSettings         `mapstructure:"oidc"`
-	OIDC                                *auth.OIDCConfig           `mapstructure:"-"`
-	FrontendConfig                      FrontendConfig             `mapstructure:"frontend_config"`
-	SandboxNamespace                    string                     `mapstructure:"sandbox_namespace"`
-	RunnerGatewayTarget                 string                     `mapstructure:"runner_gateway_target"`
-	SessionDispatcherTarget             string                     `mapstructure:"session_dispatcher_target"`
-	PolicyServiceTarget                 string                     `mapstructure:"policy_service_target"`
-	PolicyServiceTokenFile              string                     `mapstructure:"policy_service_token_file"`
-	RunnerGatewayControlTarget          string                     `mapstructure:"runner_gateway_control_target"`
-	HistoryServiceTarget                string                     `mapstructure:"history_service_target"`
-	NotificationsURL                    string                     `mapstructure:"notifications_url"`
-	NotificationsTokenFile              string                     `mapstructure:"notifications_token_file"`
-	NotificationsRequestTimeoutSeconds  float64                    `mapstructure:"notifications_request_timeout_s"`
-	RunnerGatewayTokenFile              string                     `mapstructure:"runner_gateway_token_file"`
-	SessionDispatcherTokenFile          string                     `mapstructure:"session_dispatcher_token_file"`
-	SessionDispatcherRequestTimeoutSecs float64                    `mapstructure:"session_dispatcher_request_timeout_s"`
-	HistoryServiceTokenFile             string                     `mapstructure:"history_service_token_file"`
-	HistoryServiceRequestTimeoutSeconds float64                    `mapstructure:"history_service_request_timeout_s"`
-	RunnerGatewayRequestTimeoutSeconds  float64                    `mapstructure:"runner_gateway_request_timeout_s"`
-	RunnerGatewayLifecycleTimeoutSecs   float64                    `mapstructure:"runner_gateway_lifecycle_timeout_s"`
-	LogLevels                           map[string]string          `mapstructure:"log_levels"`
-	ListenAddress                       string                     `mapstructure:"listen_address"`
-	Kubeconfig                          string                     `mapstructure:"kubeconfig"`
-	DatabaseURL                         string                     `mapstructure:"-"`
-	ElectricURL                         string                     `mapstructure:"electric_url"`
-	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
-	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
-	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
-	TokenAudience                       string                     `mapstructure:"token_audience"`
-	TokenSubjects                       []string                   `mapstructure:"token_subjects"`
+	EgressAdminTLS                      *environment_runtime_transport.ClientTLS `mapstructure:"egress_admin_tls"`
+	ActionsTLS                          *environment_runtime_transport.ClientTLS `mapstructure:"actions_tls"`
+	NotificationsTLS                    *environment_runtime_transport.ClientTLS `mapstructure:"notifications_tls"`
+	HistoryServiceTLS                   *environment_runtime_transport.ClientTLS `mapstructure:"history_service_tls"`
+	SessionDispatcherTLS                *environment_runtime_transport.ClientTLS `mapstructure:"session_dispatcher_tls"`
+	RunnerGatewayTLS                    *environment_runtime_transport.ClientTLS `mapstructure:"runner_gateway_tls"`
+	Models                              runtimeconfig.ModelCatalog               `mapstructure:"models"`
+	ThreadPresets                       map[string]ThreadPreset                  `mapstructure:"thread_presets"`
+	SandboxPresets                      map[string]SandboxPreset                 `mapstructure:"sandbox_presets"`
+	NewSandboxDefaults                  NewSandboxDefaults                       `mapstructure:"new_sandbox_defaults"`
+	EgressAdminURL                      string                                   `mapstructure:"egress_admin_url"`
+	ConnectionServiceURL                string                                   `mapstructure:"connection_service_url"`
+	ActionFederation                    ActionFederationConfig                   `mapstructure:"action_federation"`
+	OIDCSettings                        *auth.OIDCSettings                       `mapstructure:"oidc"`
+	OIDC                                *auth.OIDCConfig                         `mapstructure:"-"`
+	FrontendConfig                      FrontendConfig                           `mapstructure:"frontend_config"`
+	SandboxNamespace                    string                                   `mapstructure:"sandbox_namespace"`
+	RunnerGatewayTarget                 string                                   `mapstructure:"runner_gateway_target"`
+	SessionDispatcherTarget             string                                   `mapstructure:"session_dispatcher_target"`
+	PolicyServiceTarget                 string                                   `mapstructure:"policy_service_target"`
+	PolicyServiceTokenFile              string                                   `mapstructure:"policy_service_token_file"`
+	RunnerGatewayControlTarget          string                                   `mapstructure:"runner_gateway_control_target"`
+	HistoryServiceTarget                string                                   `mapstructure:"history_service_target"`
+	NotificationsURL                    string                                   `mapstructure:"notifications_url"`
+	NotificationsTokenFile              string                                   `mapstructure:"notifications_token_file"`
+	NotificationsRequestTimeoutSeconds  float64                                  `mapstructure:"notifications_request_timeout_s"`
+	RunnerGatewayTokenFile              string                                   `mapstructure:"runner_gateway_token_file"`
+	SessionDispatcherTokenFile          string                                   `mapstructure:"session_dispatcher_token_file"`
+	SessionDispatcherRequestTimeoutSecs float64                                  `mapstructure:"session_dispatcher_request_timeout_s"`
+	HistoryServiceTokenFile             string                                   `mapstructure:"history_service_token_file"`
+	HistoryServiceRequestTimeoutSeconds float64                                  `mapstructure:"history_service_request_timeout_s"`
+	RunnerGatewayRequestTimeoutSeconds  float64                                  `mapstructure:"runner_gateway_request_timeout_s"`
+	RunnerGatewayLifecycleTimeoutSecs   float64                                  `mapstructure:"runner_gateway_lifecycle_timeout_s"`
+	LogLevels                           map[string]string                        `mapstructure:"log_levels"`
+	ListenAddress                       string                                   `mapstructure:"listen_address"`
+	Kubeconfig                          string                                   `mapstructure:"kubeconfig"`
+	DatabaseURL                         string                                   `mapstructure:"-"`
+	ElectricURL                         string                                   `mapstructure:"electric_url"`
+	EgressAdminTokenFile                string                                   `mapstructure:"egress_admin_token_file"`
+	EgressAdminTimeoutSeconds           float64                                  `mapstructure:"egress_admin_timeout"`
+	ShutdownTimeoutSeconds              int                                      `mapstructure:"shutdown_timeout"`
+	TokenAudience                       string                                   `mapstructure:"token_audience"`
+	TokenSubjects                       []string                                 `mapstructure:"token_subjects"`
 	sandboxPresetOrder                  []string
 }
 

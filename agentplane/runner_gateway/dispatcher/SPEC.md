@@ -1,12 +1,22 @@
 # Session Dispatcher caller authority
 
-This contract governs the gRPC and generated HTTP/JSON SessionDispatcher methods served by the Runner Gateway.
+This contract governs SessionDispatcher gRPC methods served by the Runner Gateway and the generated
+HTTP/JSON facade served by the App.
 It scopes existing Sessions and existing environments; it does not create environments or select templates.
 
 ## Caller proof
 
-- The Dispatcher TokenReview audience remains the configured Dispatcher audience. Its resolver serves the
-  Runner Gateway namespace and namespaces containing explicitly configured Dispatcher backend accounts.
+- One TLS gRPC listener serves Dispatcher, EnvironmentService, Gateway proxy, Executor and health
+  methods. Its bearer allowlist declares exactly the Dispatcher and Gateway audiences. Dispatcher
+  and EnvironmentService methods use the Dispatcher audience and their explicit caller and
+  backend-account allowlists; Gateway proxy and Executor methods use the Gateway audience and their
+  separate allowlists. Dispatcher and EnvironmentService methods also admit verified Sandbox SVIDs.
+  Delegation remains scoped to its exact configured methods and rechecks the effective caller's
+  current ServiceAccount UID. The resolver selects by presented credentials before method admission,
+  rejects disabled or ambiguous credentials, and never falls back from an invalid presented SVID.
+- Sandbox traffic reaches the shared TLS gRPC listener through central-proxy CONNECT, originating
+  TLS with its Runner SVID. It does not use an HTTP/JSON facade. No Dispatcher-audience token is
+  projected into Sandbox Pods.
 - A normal caller is the ServiceAccount identity returned by TokenReview, including the actual ServiceAccount
   UID. Request fields never assert this identity.
 - The existing configured backend account list remains a privileged compatibility path only when the same
@@ -20,7 +30,7 @@ It scopes existing Sessions and existing environments; it does not create enviro
 - An independent `delegation` setting names the Actions ServiceAccount, the namespaces whose caller identity it may assert,
   and the exact full RPC method names that accept delegated calls. It does not inherit `dispatcher_callers` or
   `wake_callers`; the latter remains a separate trusted automatic-wake broker grant.
-- Shared workload-auth middleware admits the Actions token and rechecks the effective caller's current ServiceAccount UID
+- Shared workload-auth middleware admits the Actions token only on the configured Dispatcher and EnvironmentService methods and rechecks the effective caller's current ServiceAccount UID
   before the handler runs. Direct and delegated calls both use the typed `EffectiveCaller` admission. Missing or replaced
   ServiceAccounts fail closed, and backend lookup failures return `UNAVAILABLE`.
 - Delegated calls always use ordinary Session ownership checks, even when the Actions actor is in `dispatcher_callers` or
@@ -134,13 +144,12 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Transport boundary
 
-This change does not add Runner-to-Dispatcher network reachability or project a Dispatcher token into a Runner
-Pod. Managed Runner Pods retain their existing HTTPS proxy-only egress. A follow-on transport change must use the
-sidecar-only projected-token and inert-placeholder pattern used by the Actions CLI: add the configured
-Dispatcher audience to `cluster/cdk8s/agentplane/sandbox_pod.py`, add an exact Dispatcher destination and
-credential rule to `cluster/cdk8s/agentplane/egress.py`, and connect a concrete MCP/client to that proxy route.
-The actual MCP/client and History provenance propagation are outside this foundation. Until they are implemented,
-this change does not claim a complete end-to-end spawning loop.
+Sandbox Pods retain proxy-only egress. Their credential-holding relay reaches the shared TLS gRPC
+listener through central CONNECT; the listener authenticates the Runner SVID before applying the
+unchanged Dispatcher and EnvironmentService method rules. The configured CLI credential string
+remains inert for compatibility. Backend callers use the same listener with the configured
+Dispatcher audience and allowlists. A concrete MCP/client and History provenance propagation remain
+outside this transport change.
 
 ## Typed delivery observations
 

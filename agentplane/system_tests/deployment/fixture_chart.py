@@ -40,6 +40,7 @@ from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Sett
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
+from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant
@@ -67,6 +68,7 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.chart import (
     RUNNER_CERTIFICATE_ISSUER,
@@ -167,12 +169,7 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
 
 
 def environment(
-    *,
-    vm_sandboxes: bool,
-    runner_egress_mtls: bool,
-    models: Models,
-    app_origin: str = APP_ORIGIN,
-    central_sampler: bool = False,
+    *, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORIGIN, central_sampler: bool = False
 ) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
     app_login = login_client(app_origin)
@@ -194,8 +191,11 @@ def environment(
             },
             connections={
                 "llm-ingress": ConnectionConfig(
-                    base_url=llm_ingress.proxied_url(NAMESPACE),
+                    base_url=(
+                        f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"
+                    ),
                     auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
+                    tls=workload_tls.client_tls(LLM_INGRESS_URI),
                 )
             },
             max_live_sessions=2,
@@ -300,7 +300,6 @@ def environment(
             hostname=None,
         ),
         vm_sandboxes=vm_sandboxes,
-        runner_egress_mtls=runner_egress_mtls,
         vm_resources=vm_configuration.RESOURCES if vm_sandboxes else None,
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
@@ -362,20 +361,42 @@ def objects(
     cluster_ca: str,
     models: Models,
     vm_sandboxes: bool,
-    runner_egress_mtls: bool,
     central_sampler: bool = False,
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
-    env = environment(
-        vm_sandboxes=vm_sandboxes, runner_egress_mtls=runner_egress_mtls, models=models, central_sampler=central_sampler
-    )
+    env = environment(vm_sandboxes=vm_sandboxes, models=models, central_sampler=central_sampler)
     fixture = build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
-    synthesized = list(Testing.synth(fixture.chart))
+    return synthesize(fixture.chart, vm_sandboxes=vm_sandboxes)
+
+
+def synthesize(chart: Chart, *, vm_sandboxes: bool) -> list[dict[str, Any]]:
+    """Apply the same k3s-only adaptations to every fixture variant."""
+    synthesized = list(Testing.synth(chart))
     if vm_sandboxes:
         _boot_test_guest(synthesized)
-    return synthesized
+    _add_fixture_server_dns_names(synthesized)
+    # Service-owned workload listeners render Cilium admission in production. Bare k3s has no
+    # Cilium CRD or dataplane; network-policy validation remains a rendering/staging boundary.
+    return [doc for doc in synthesized if doc["kind"] != "CiliumNetworkPolicy"]
+
+
+def _add_fixture_server_dns_names(documents: list[dict[str, Any]]) -> None:
+    """Give port-forwarded Python gRPC clients DNS SANs to verify in the k3s-only fixture."""
+    names_by_certificate = {
+        "agentplane-egress-proxy": f"egress-admin.{NAMESPACE}.svc.cluster.local",
+        "runner-gateway-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
+        "history-service-workload": f"history-service.{NAMESPACE}.svc.cluster.local",
+    }
+    certificates = {
+        document["metadata"]["name"]: document["spec"]
+        for document in documents
+        if document.get("kind") == "Certificate"
+    }
+    for certificate_name, dns_name in names_by_certificate.items():
+        certificates[certificate_name]["dnsNames"] = [dns_name]
+    certificates["runner-gateway-workload"]["ipAddresses"] = ["127.0.0.1"]
 
 
 def build_chart(
@@ -438,7 +459,6 @@ def build_chart(
         chart,
         "egress",
         env,
-        enable_svid_auth=env.runner_egress_mtls,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
@@ -448,6 +468,13 @@ def build_chart(
         registry_secret_name=None,
         container_env=database_env,
         memory_limit=None,
+        tls_passthrough_services=[
+            history_service.service(env.namespace),
+            llm_ingress.service(env.namespace),
+            notifications.service(env.namespace),
+            runner_gateway.service(env.namespace),
+            actions.service(NAMESPACE),
+        ],
     )
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {
@@ -606,12 +633,7 @@ def build_chart(
         memory_limit=None,
     )
     command_sandbox.CommandSandbox(
-        chart,
-        "command-sandbox",
-        env,
-        sidecar_resources=sandbox_sidecar_resources,
-        image_pull_secret_name=None,
-        trust_mounts=sandbox_pod.egress_proxy_mounts(),
+        chart, "command-sandbox", env, image_pull_secret_name=None, trust_mounts=sandbox_pod.egress_proxy_mounts()
     )
     # The app and the Actions MCP client read their normal Secret names.
     add_secret(
@@ -629,11 +651,21 @@ def build_chart(
         {"client-id": _MCP_LINKAGE.id, "client-secret": "test-k3s-actions-client-secret"},
     )
     add_secret(chart, _EGRESS_CA, {"tls.crt": ca_cert, "tls.key": ca_key, "ca.crt": ca_cert}, kind="kubernetes.io/tls")
-    ConfigMap(
+    Bundle(
         chart,
-        "fixture-egress-ca",
-        metadata=ApiObjectMetadata(name=_EGRESS_CA, namespace=NAMESPACE),
-        data={"ca-certificates.crt": system_roots + ca_cert},
+        "fixture-egress-trust",
+        metadata=ApiObjectMetadata(name=_EGRESS_CA),
+        # The fixture's SVID root is independent of its Kubernetes API CA.
+        sources=[
+            BundleSpecSources(in_line=system_roots + ca_cert + cluster_ca),
+            BundleSpecSources(secret=BundleSpecSourcesSecret(name="test-runner-root", key="ca.crt")),
+        ],
+        target=BundleSpecTarget(
+            config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt"),
+            namespace_selector=BundleSpecTargetNamespaceSelector(
+                match_labels={"kubernetes.io/metadata.name": NAMESPACE}
+            ),
+        ),
     )
     ConfigMap(
         chart,
@@ -655,14 +687,19 @@ def build_chart(
         metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=NAMESPACE),
         rules=access.rules_for_grants([tool_config_grant]),
     )
-    # A request `basic` refuses: GET on a path it does not name, on a host it does.
+    # Keep this policy probe off service-owned SVID routes, whose receivers authorize their
+    # requests after opaque CONNECT. The app origin is an ordinary intercepted destination.
     PolicySet(
         chart,
         f"policy-set-{runtime_grant.POLICY_SET}",
-        metadata=ApiObjectMetadata(name=runtime_grant.POLICY_SET, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(
+            name=runtime_grant.POLICY_SET,
+            namespace=NAMESPACE,
+            annotations={runtime_grant.PORT_ANNOTATION: str(APP_SERVICE.port.number)},
+        ),
         rules=[
             Rule.egress(
-                hosts=[session_dispatcher.service(NAMESPACE).fqdn],
+                hosts=[APP_SERVICE.fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/test-runtime-grant"],

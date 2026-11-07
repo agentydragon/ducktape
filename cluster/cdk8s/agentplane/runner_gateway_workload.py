@@ -31,9 +31,10 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.environment_runtime_transport.config import MTLS, TLS
+from agentplane.environment_runtime_transport.config import MTLS, SESSION_DISPATCHER_URI, TLS
 from agentplane.runner_gateway.settings import CentralSamplerTarget, Settings
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth import listener as workload_listener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
@@ -46,6 +47,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     sandbox_controller,
     session_dispatcher,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -53,7 +55,7 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE as TRUST_BUNDLE_NAME, BUNDLE_KEY as TRUST_BUNDLE_KEY
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.probes import grpc_probe
+from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -116,7 +118,7 @@ def add_stable_services(scope: Construct, env: Environment) -> None:
 
 
 class RunnerGateway(Construct):
-    """One workload with public gRPC, dispatcher HTTP and an mTLS client for runner Pods."""
+    """One TLS gRPC listener with per-method bearer or SVID auth, plus runner mTLS."""
 
     def __init__(
         self,
@@ -161,7 +163,6 @@ class RunnerGateway(Construct):
             field: checked_value(Settings, field, value)
             for field, value in {
                 "sandbox_namespace": namespace,
-                "listen_address": f"0.0.0.0:{_GRPC_PORT}",
                 "runner_token_file": _RUNNER_TOKEN_FILE,
                 "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
                 "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
@@ -186,7 +187,65 @@ class RunnerGateway(Construct):
             if env.central_sampler is not None
             else {}
         )
+        workload = add_service_workload(
+            self,
+            env,
+            serves=[proxy],
+            container="runner-gateway",
+            image=image,
+            env_variables={
+                **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
+                env_name(Settings, "dispatcher_database_url"): database_url,
+                env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
+                **(container_env or {}),
+            },
+            readiness=tls_grpc_probe(
+                port=proxy.pod_port,
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                server_uri=SESSION_DISPATCHER_URI,
+                initial_delay_seconds=3,
+                period_seconds=10,
+            ),
+            liveness=tls_grpc_probe(
+                port=proxy.pod_port,
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                server_uri=SESSION_DISPATCHER_URI,
+                initial_delay_seconds=20,
+                period_seconds=30,
+            ),
+            startup=tls_grpc_probe(
+                port=proxy.pod_port,
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                server_uri=SESSION_DISPATCHER_URI,
+                initial_delay_seconds=0,
+                period_seconds=5,
+                failure_threshold=60,
+            ),
+            resources=ContainerResources(
+                cpu=CpuResources(request=Cpu.millis(100)),
+                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
+            ),
+            termination_grace=Duration.seconds(60),
+            # A Recreate drops delivery and every runner connection, so the Gateway rolls
+            # (a surged replica is Ready before the old one goes) even where the environment recreates.
+            replica_profile=replace(
+                env.replicas,
+                strategy=DeploymentStrategy.rolling_update(
+                    max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+                ),
+            ),
+            create_service=False,
+            telemetry_enabled=True,
+            registry_secret_name=registry_secret_name,
+            placement=placement,
+        )
         # Lists are file-only settings.
+        serving_tls = workload_tls.serving_certificate(
+            self, env, container=workload.container, name=runner_gateway.NAME, uri=SESSION_DISPATCHER_URI
+        )
+        assert serving_tls.cert_file is not None
+        assert serving_tls.key_file is not None
+        assert serving_tls.ca_file is not None
         content = {
             "dispatcher_callers": dispatcher_accounts,
             "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
@@ -196,6 +255,17 @@ class RunnerGateway(Construct):
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
                 tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
+            ).model_dump(mode="json"),
+            "gateway_tls": workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            "rpc": workload_listener.Listener(
+                listen_address=f"0.0.0.0:{proxy.pod_port}",
+                tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+                auth=[
+                    workload_listener.KubernetesBearerAuth(
+                        audiences=frozenset({session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE})
+                    ),
+                    workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
+                ],
             ).model_dump(mode="json"),
             **central_sampler_settings,
             **(
@@ -233,39 +303,6 @@ class RunnerGateway(Construct):
             metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
             content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
-        )
-        workload = add_service_workload(
-            self,
-            env,
-            serves=[proxy],
-            container="runner-gateway",
-            image=image,
-            env_variables={
-                **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
-                env_name(Settings, "dispatcher_database_url"): database_url,
-                env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
-                **(container_env or {}),
-            },
-            readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
-            liveness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=20, period_seconds=30),
-            startup=grpc_probe(port=proxy.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60),
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(100)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
-            ),
-            termination_grace=Duration.seconds(60),
-            # A Recreate drops delivery and every runner connection, so the Gateway rolls
-            # (a surged replica is Ready before the old one goes) even where the environment recreates.
-            replica_profile=replace(
-                env.replicas,
-                strategy=DeploymentStrategy.rolling_update(
-                    max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
-                ),
-            ),
-            create_service=False,
-            telemetry_enabled=True,
-            registry_secret_name=registry_secret_name,
-            placement=placement,
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)
         trust_projection = k8s.ProjectedVolumeSource(

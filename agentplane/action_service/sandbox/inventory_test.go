@@ -40,7 +40,7 @@ func TestABoxRunsAsItsCallerAndGoesWithItsAccount(t *testing.T) {
 	}
 }
 
-func TestATemplateThatLetsTheWorkloadEscapeTheEgressPathIsRefused(t *testing.T) {
+func TestTemplatesKeepCredentialsOutOfTheWorkloadWithOrWithoutASidecar(t *testing.T) {
 	tokenMountedIn := func(container int) func(*corev1.PodSpec) {
 		return func(spec *corev1.PodSpec) {
 			spec.Volumes = []corev1.Volume{{Name: "test-token", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
@@ -54,7 +54,11 @@ func TestATemplateThatLetsTheWorkloadEscapeTheEgressPathIsRefused(t *testing.T) 
 		edit    func(*corev1.PodSpec)
 		refused bool
 	}{
-		{"without the egress sidecar", func(spec *corev1.PodSpec) { spec.Containers = spec.Containers[:1] }, true},
+		{"offline without the egress sidecar", func(spec *corev1.PodSpec) { spec.Containers = spec.Containers[:1] }, false},
+		{"offline workload mounting a token", func(spec *corev1.PodSpec) {
+			spec.Containers = spec.Containers[:1]
+			tokenMountedIn(0)(spec)
+		}, true},
 		{"automounting a token", func(spec *corev1.PodSpec) { spec.AutomountServiceAccountToken = nil }, true},
 		{"mounting a token in the workload", tokenMountedIn(0), true},
 		// The egress path itself mounts the Pod's tokens; this keeps the refusals from passing vacuously.

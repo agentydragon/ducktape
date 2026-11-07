@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -33,6 +34,13 @@ const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:
 const requiredFile = `dispatcher_callers: [agentplane/app, agentplane/notifications]
 gateway_callers: [agentplane/runner-gateway]
 runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
+gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}
+rpc:
+  listen_address: ':8080'
+  tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}
+  auth:
+    - {mode: spiffe, ca_file: /tmp/workload-ca}
+    - {mode: kubernetes_bearer, audiences: [session-dispatcher, runner-gateway]}
 `
 
 type configTestTokenReviews struct{}
@@ -89,6 +97,34 @@ func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t 
 			"/agentplane.environments.v1.EnvironmentService/GetEnvironment",
 		}) {
 		t.Fatalf("policy boundaries were merged: %+v", c)
+	}
+}
+
+func TestSharedListenerDeclaresMethodBearerAudiences(t *testing.T) {
+	path := configtest.WriteSettings(t, requiredFile)
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.RPC.Has(listener.SPIFFE) || !c.RPC.Has(listener.KubernetesBearer) ||
+		!c.RPC.AllowsBearerAudience(c.DispatcherAudience) || !c.RPC.AllowsBearerAudience(c.GatewayAudience) ||
+		c.RPC.AllowsBearerAudience("unexpected") {
+		t.Fatalf("rpc auth = %+v", c.RPC.Auth)
+	}
+}
+
+func TestSharedListenerRequiresSVIDTLSAndBothBearerAudiences(t *testing.T) {
+	for name, contents := range map[string]string{
+		"SVID without TLS":            strings.Replace(requiredFile, "  tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}\n", "", 1),
+		"missing Dispatcher audience": strings.Replace(requiredFile, "audiences: [session-dispatcher, runner-gateway]", "audiences: [runner-gateway]", 1),
+		"missing Gateway audience":    strings.Replace(requiredFile, "audiences: [session-dispatcher, runner-gateway]", "audiences: [session-dispatcher]", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := configtest.WriteSettings(t, contents)
+			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+				t.Fatal("invalid listener settings were accepted")
+			}
+		})
 	}
 }
 
@@ -209,7 +245,7 @@ func TestEmptyWakeCallerListIsAccepted(t *testing.T) {
 
 func TestHostProcessTargetsAreAcceptedAndTheAdvertisedPortIsBounded(t *testing.T) {
 	host := []string{
-		settingPrefix + "LISTEN_ADDRESS=127.0.0.1:41001", settingPrefix + "PROXY_PORT=42000",
+		settingPrefix + "RPC_LISTEN_ADDRESS=127.0.0.1:41001", settingPrefix + "PROXY_PORT=42000",
 		settingPrefix + "RUNNER_CONTROL_TARGET_TEMPLATE=127.0.0.1:41001", settingPrefix + "KUBECONFIG=/tmp/fake-kubeconfig",
 	}
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, host...)); err != nil {
@@ -305,7 +341,12 @@ func TestRunnerSecurityMustBeExplicitAndConsistent(t *testing.T) {
 		{name: "insecure with credentials", security: "{mode: insecure, tls: {cert_file: /a, key_file: /b, ca_file: /c}}"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			contents := "dispatcher_callers: [agentplane/app]\ngateway_callers: [agentplane/runner-gateway]\nrunner_security: " + test.security + "\n"
+			contents := strings.Replace(
+				requiredFile,
+				"runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}",
+				"runner_security: "+test.security,
+				1,
+			)
 			_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents)))
 			if (err == nil) != test.valid {
 				t.Fatalf("loadConfig error = %v, valid = %t", err, test.valid)

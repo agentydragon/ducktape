@@ -1555,9 +1555,12 @@ runner ingress) need a replacement the destination verifies itself, never a prox
 design that before removing the projected tokens. Consequence for `AGENT_PRINCIPAL_MODEL_DESIGN`:
 the Pod's ServiceAccount stops being what authenticates an agent, and no agent is provisioned one by
 default. Costs that stand: a second authentication scheme in each agent-facing service during the
-migration, and the projected-token path kept for non-SVID workloads the proxy fronts (the public
-coder's OpenClaw). **Exit:** `SVID_EGRESS_HOP` and `SVID_PLATFORM_ROUTES` in
-[section 14](#14-identity-and-kubernetes-accounts-cutover); the Gateway path is already covered.
+migration. The Sandbox SVID hop and service boundaries are implemented and exercised in k3s;
+the Sandbox's own ServiceAccount remains the policy subject.
+`WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` and `WORKLOAD_AUTH_CUTOVER` in
+[section 14](#14-identity-and-kubernetes-accounts-cutover) own the shared identity/SVID solution.
+Action boxes and Haku retain explicit bearer authentication until that cutover. Stopped OpenClaw instances require
+no compatibility surface and do not block this flip. The Gateway path is already covered.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -3013,24 +3016,25 @@ old paths.
 ## 14. Identity and Kubernetes accounts cutover
 
 The implementation of [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md)
-under the 2026-11-05 decisions. Everything but the last node lands as code that is off in staging
-and exercised in the k3s system tests, so each PR stays small; `IDENTITY_CUTOVER` is the one change
-with downtime, per [`AGENTS.md`](../AGENTS.md) § Changes that can break staging. Stage edges are
-technical prerequisites; the fan-in to the system tests is a sequencing hold, not a permission to
-start them early.
+under the 2026-11-05 decisions, amended 2026-11-08. The first SVID slice preserves Sandbox
+ServiceAccount subjects. Sandbox sidecars use SVIDs; existing non-Sandbox callers retain explicit
+Pod-bound bearer authentication over the same verified TLS listener. Recreate existing Sandbox
+Pods to load the mTLS sidecar configuration. The shared identity/SVID lifecycle and the later
+bearer removal are separate work below; neither blocks this mixed-auth rollout. The later
+Identity/account changes remain separately gated and are exercised in k3s. Stage edges are technical
+prerequisites; the fan-in to system tests is a sequencing hold, not permission to start them early.
 
 ```mermaid
 flowchart LR
-    SVID_EGRESS_HOP[In flight: SVID on the egress hop]
     IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
-    SVID_EGRESS_HOP --> SVID_PLATFORM_ROUTES[Blocked: services verify SVIDs]
-    SVID_PLATFORM_ROUTES --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
-    POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS
+    HAKU_ACTION_NATIVE_CLIENT[Ready: migrate existing Haku Action HTTP client]
+    WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
+    POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS
@@ -3049,38 +3053,42 @@ the policy protobuf follow. No reader changes. **Exit:** the CRDs install on the
 admission rejects a Kubernetes rule in a `PolicySet` and a binding with no identity, and existing
 tests of untouched kinds still pass.
 
-### `SVID_EGRESS_HOP` — the sidecar and relay present the SVID to the proxy
+### `HAKU_ACTION_NATIVE_CLIENT` — migrate the existing Haku Action client
 
-**In flight; Codex, 2026-11-06.** The combined enablement PR configures the central proxy's single
-forward listener with an explicit authentication allowlist. Optional SPIFFE verifies client certificates
-with `environment_runtime_transport` against the trust-manager roots. It parses the
-Runtime SPIFFE URI, resolves the UID and credential ID against the live Sandbox and its current
-runner binding, then derives the existing policy subject from that Sandbox's own ServiceAccount
-namespace/name. This first slice does not read `spec.identity`, require an `Identity` kind or
-reference, read a Pod or ServiceAccount object, or trust a caller header. SPIFFE, its certificate,
-trust bundle and Sandbox-read permission are off by default. Both modes use port 8888; no new
-Cilium port is needed. The sidecar shares Runtime's certificate Secret and selects token or TLS
-explicitly. Staging stays in token mode and Pod system tests select TLS. A mixed TLS listener admits
-one certificate or Kubernetes bearer, never both; destination tokens remain separate. The
-KubeVirt relay gets the certificate through its existing injection. Firecracker follows the service
-cutover and carries its own credential-delivery changes. Staging cutover remains held on
-authentication for active non-Sandbox callers, with all five services and the Rules API switching
-together. **Exit:** the egress test harness
-(`test_proxy.py`, real binaries, envtest) admits an SVID-authenticated request under the Sandbox
-ServiceAccount's rules, refuses stale, deleted or replaced Sandbox bindings, rejects a projected
-token bound to another Pod, and refuses a caller-supplied subject header.
+**Ready; independent of the identity/SVID design.** Haku UI's `ActionClient` still calls the
+retired Action HTTP facade. Migrate that client to native Action gRPC through its credential-holding
+sidecar, retaining its existing Pod-bound bearer and method authorization until the shared identity
+cutover. Do not restore the removed facade, expose the token to the UI workload or have the proxy
+assert the caller. Keep idempotent submission, operator approval and result/error behavior.
+**Exit:** Haku's existing tool-call path submits and receives a receipt through the current service
+API, and unauthorized/expired credentials fail before admission. This existing client/API drift is
+separate from the proxy hop migration and does not wait on the shared identity design.
 
-### `SVID_PLATFORM_ROUTES` — first-party services verify SVIDs themselves
+### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
-**Blocked on `SVID_EGRESS_HOP`.** Decided 2026-11-05: the proxy tunnels the TLS connection through
-and each of Notification, Dispatcher, runner ingress, the Action Service and LLM ingress verifies
-the client certificate with the shared transport package and resolves the identity through the
-live Sandbox; the proxy never asserts an identity. Each service drops the egress proxy's
-projected-token credential path for sandbox callers and keeps its own authorization as the whole
-gate. The central sampler's zero-environment
-path stays on delegation with an identity reference (`SERVICES_IDENTITY_PRINCIPAL`). **Exit:** one
-platform route per service authenticates an SVID end to end in the k3s stack, and a forged or
-expired leaf is refused before any handler runs.
+**Design ready; operator direction, 2026-11-08.** Manage identities and SVID issuance independently
+of Sandboxes, so Sandbox workloads, Action command/build boxes, Haku UI/Anki and future external
+callers can use one authentication model. Decide the issuer/enrollment authority, how a workload
+is bound to its policy subject, credential delivery and rotation, revocation, and ownership when a
+Sandbox or another workload disappears. Compare extending the planned Agentplane identity lifecycle
+with a shared issuance authority; do not introduce a second subject model or a Sandbox dependency
+for every caller. Preserve current ServiceAccount subjects until the explicit Identity cutover.
+OpenClaw has no compatibility requirement until a concrete instance needs it. **Exit:** review one
+contract covering Sandbox and non-Sandbox caller lifecycles, with an explicit migration and rollback.
+
+### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
+
+**Blocked on `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN`.** Implement the selected lifecycle and move every
+active workload/proxy caller to it. Until then, keep the proxy's explicit `kubernetes_bearer` mode and the
+non-Sandbox sidecars' Pod-bound projections; Sandbox templates use SVIDs and do not project the
+hop bearer. Keep the shared TLS listener and service-owned verification, without proxy identity
+assertions or insecure transport fallback. Inventory the actual native service clients; `HAKU_ACTION_NATIVE_CLIENT` separately owns Haku's
+existing HTTP-client migration. **Exit:** k3s proves
+Sandbox and non-Sandbox egress and platform calls, rotation/revocation and unchanged subject/rule
+isolation; then remove the proxy bearer configuration, workload projections and unused sidecar token
+transport together. Backend bearer/delegation policies and the sampler's delegated path retain
+their own authorization contracts.
+The staging PR states rollback and verifies callers after image/config convergence.
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
@@ -3157,7 +3165,7 @@ deleted.
 
 ### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
 
-**Blocked on `SVID_PLATFORM_ROUTES`, `POLICY_GRANTS`, `EGRESS_IDENTITY_RULES`,
+**Blocked on `POLICY_GRANTS`, `EGRESS_IDENTITY_RULES`,
 `SERVICES_IDENTITY_PRINCIPAL`, `SANDBOX_IDENTITY_SPEC` and `IDENTITY_CATALOG`.** k3s scenarios for
 the plan's exit checks: an SVID-authenticated egress hop and one platform route; a Sandbox with no
 Kubernetes use rule has no ServiceAccount and `kubectl` fails closed at the proxy; two identities act

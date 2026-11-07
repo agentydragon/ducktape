@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
@@ -38,6 +40,7 @@ type Quiescer interface {
 // GatewayQuiescer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
 // control Service, which names the replica holding its runner connection.
 type GatewayQuiescer struct {
+	TLS *environment_runtime_transport.ClientTLS
 	// Target is a template of `{sandbox}` and `{namespace}`, typically
 	// sandboxapi.ControlServiceTargetTemplate.
 	Target string
@@ -54,7 +57,7 @@ func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbo
 	var response *sessionpb.QuiesceResponse
 	called := false
 	err := environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
-		Target: target, TokenFile: g.TokenFile, Timeout: quiesceTimeout,
+		Target: target, TokenFile: g.TokenFile, TLS: g.TLS, Timeout: quiesceTimeout,
 		SandboxName: sandbox.Name, SandboxUID: string(sandbox.UID), SandboxNamespace: sandbox.Namespace,
 	}, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		called = true

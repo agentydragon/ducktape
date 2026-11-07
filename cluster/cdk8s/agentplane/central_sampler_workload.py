@@ -10,10 +10,18 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, Memor
 from constructs import Construct
 
 from agentplane.central_sampler.settings import Settings
+from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import central_sampler, database, history_service, llm_ingress, runner_gateway
+from cluster.cdk8s.agentplane import (
+    central_sampler,
+    database,
+    history_service,
+    llm_ingress,
+    runner_gateway,
+    workload_tls,
+)
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import platform_instructions
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -53,7 +61,7 @@ class CentralSampler(Construct):
         self.env = env
         self.service = central_sampler.service(namespace)
         self.llm_ingress = llm_ingress.service(namespace)
-        self.history_ingress = history_service.ingress_service(namespace)
+        self.history_ingress = history_service.service(namespace)
         self.runner_gateway = runner_gateway.service(namespace)
 
         token_reviewer_cluster_rbac(
@@ -77,8 +85,10 @@ class CentralSampler(Construct):
             logs=Path(_LOGS_PATH),
             history_target=f"{self.history_ingress.fqdn}:{self.history_ingress.pod_port}",
             history_token_file=_HISTORY_TOKEN_FILE,
+            history_tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
             gateway_target=runner_gateway.control_target(namespace),
             gateway_token_file=_GATEWAY_TOKEN_FILE,
+            gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             max_live_sessions=props.max_live_sessions,
             turn_timeout_seconds=props.turn_timeout_seconds,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
@@ -123,6 +133,7 @@ class CentralSampler(Construct):
         )
         workload.container.mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
         workload.container.mount(_LOGS_PATH, Volume.from_empty_dir(self, "logs-volume", "logs"))
+        workload_tls.mount_trust_bundle(self, workload.container)
         for connection_name, secret_key in props.connection_credentials.items():
             connection = props.connections.get(connection_name)
             if connection is None:
@@ -160,7 +171,7 @@ class CentralSampler(Construct):
             EgressRule.to_entities(Entity.KUBE_APISERVER),
             database.egress(namespace),
             runner_gateway.service(namespace).egress(),
-            history_service.ingress_service(namespace).egress(),
+            history_service.service(namespace).egress(),
             llm_ingress.service(namespace).egress(),
         ]
         anthropic_connection = props.connections.get("anthropic-api")

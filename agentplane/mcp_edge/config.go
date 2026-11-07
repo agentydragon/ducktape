@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -23,9 +25,10 @@ const settingPrefix = "AGENTPLANE_MCP_EDGE_"
 
 // config is the standalone edge's deployment contract. Secret values come from environment variables.
 type config struct {
-	DatabaseURL   string `mapstructure:"database_url" yaml:"database_url"`
-	ActionsTarget string `mapstructure:"actions_target" yaml:"actions_target"`
-	Host          string `mapstructure:"host" yaml:"host"`
+	ActionsTLS    *environment_runtime_transport.ClientTLS `mapstructure:"actions_tls" json:"actions_tls,omitempty"`
+	DatabaseURL   string                                   `mapstructure:"database_url" yaml:"database_url"`
+	ActionsTarget string                                   `mapstructure:"actions_target" yaml:"actions_target"`
+	Host          string                                   `mapstructure:"host" yaml:"host"`
 	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
 	// OAuth and the metrics.
 	Port                           int      `mapstructure:"port" yaml:"port"`

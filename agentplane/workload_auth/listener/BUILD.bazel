@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//agentplane/environment_runtime_transport",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
+        "@org_golang_google_grpc//credentials",
     ],
 )
 

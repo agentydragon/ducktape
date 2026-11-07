@@ -7,12 +7,16 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentplane.environment_runtime_transport.config import ClientTLS
+
 
 class Settings(BaseModel):
     """Static deployment configuration read from the Controller's required YAML file."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
     model_config = ConfigDict(extra="forbid")
+
+    runner_gateway_tls: ClientTLS | None = None
 
     namespace: str = Field(
         min_length=1, description="Namespace where the Sandboxes, their templates, Pods and state PVCs live."

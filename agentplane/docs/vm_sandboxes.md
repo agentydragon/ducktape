@@ -19,7 +19,7 @@ lost.
   The launcher policy sets the account and disables automount instead.
 - The projected tokens are mounted into the relay container and nowhere else in the launcher Pod:
   not `compute`, not the disk helpers. The guest sees only the public config disk, the trust disk and
-  placeholder bearers; real upstream credentials stay at the egress gateway. The guest receives its own runner mTLS
+  upstream egress credential placeholders; real upstream credentials stay at the egress gateway. The guest receives its own runner mTLS
   certificate and private key through the mounted credential Secret.
 - A launcher is admitted only when KubeVirt's controller creates it for a live VMI of a live
   VirtualMachine controlled by one of our Sandboxes, and the same Sandbox controls the ServiceAccount.

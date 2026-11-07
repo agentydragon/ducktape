@@ -20,6 +20,15 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
                 "runner_token_file": "/run/test/token",
                 "dispatcher_audience": "test-dispatcher",
                 "gateway_audience": "test-gateway",
+                "gateway_tls": {"ca_file": "/test/workload-ca", "server_uri": "spiffe://agentplane/session-dispatcher"},
+                "rpc": {
+                    "listen_address": ":8080",
+                    "tls": {"cert_file": "/test/workload-cert", "key_file": "/test/workload-key"},
+                    "auth": [
+                        {"mode": "spiffe", "ca_file": "/test/workload-ca"},
+                        {"mode": "kubernetes_bearer", "audiences": ["test-dispatcher", "test-gateway"]},
+                    ],
+                },
                 "dispatcher_callers": {"test-app/test-dispatcher"},
                 "gateway_callers": {"test-app/test-gateway"},
                 "operator_callers": {"test-app/test-dispatcher"},
@@ -67,6 +76,27 @@ def test_operator_callers_are_an_optional_subset_of_dispatcher_callers() -> None
     source = settings.model_dump()
     source["operator_callers"] = {"test-app/other"}
     with pytest.raises(ValidationError, match="operator_callers must be a subset"):
+        Settings.model_validate(source)
+
+
+def test_shared_listener_bearer_audiences_are_exactly_method_scoped() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["rpc"]["auth"][1]["audiences"] = ["test-dispatcher"]
+    with pytest.raises(ValidationError, match="exactly dispatcher_audience and gateway_audience"):
+        Settings.model_validate(source)
+
+
+def test_shared_listener_svid_requires_tls() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["rpc"]["tls"] = None
+    with pytest.raises(ValidationError, match="spiffe requires tls"):
+        Settings.model_validate(source)
+
+
+def test_control_service_tls_pins_session_dispatcher_identity() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["gateway_tls"]["server_uri"] = "spiffe://agentplane/runner-gateway"
+    with pytest.raises(ValidationError, match=r"gateway_tls\.server_uri must identify the Session Dispatcher service"):
         Settings.model_validate(source)
 
 

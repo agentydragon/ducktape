@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"go.uber.org/zap"
 )
 
@@ -343,8 +344,21 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if err := validateEnvironmentRuntimeControl(f.Control); err != nil {
 		return Resolved{}, nil, err
 	}
-	if f.Ingress.Target == "" || f.Ingress.Bearer == "" {
+	if f.Ingress.Target == "" || (f.Ingress.SVID == nil && f.Ingress.Bearer == "") {
 		return Resolved{}, nil, errors.New("invalid ingress endpoint")
+	}
+	if secured := f.Ingress.SVID; secured != nil {
+		if f.Ingress.Bearer != "" || secured.ServerURI != "spiffe://agentplane/history-ingress" {
+			return Resolved{}, nil, errors.New("SVID ingress requires the History ingress URI and no bearer")
+		}
+		host, port, err := net.SplitHostPort(secured.ProxyAddress)
+		portNumber, portErr := strconv.Atoi(port)
+		if err != nil || host == "" || portErr != nil || portNumber < 1 || portNumber > 65535 {
+			return Resolved{}, nil, errors.New("SVID ingress proxy_address must be host:port")
+		}
+		if f.Control.Security.Mode != environmentruntimetransport.MutualTLS {
+			return Resolved{}, nil, errors.New("SVID ingress requires Runtime mTLS credentials")
+		}
 	}
 	endpoints := map[string]string{"ingress": f.Ingress.Target}
 	if f.ModelConfigTarget != nil {

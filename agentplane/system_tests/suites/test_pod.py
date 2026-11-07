@@ -1,4 +1,4 @@
-"""Thirteen selectable Pod cases sharing one stack and two concurrent case slots."""
+"""Selectable Pod cases sharing one stack and two concurrent case slots."""
 
 from collections.abc import AsyncIterator
 from functools import partial

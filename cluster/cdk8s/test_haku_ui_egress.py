@@ -50,19 +50,15 @@ def test_haku_ui_grants_are_a_subset_of_claude_ais(resources: list[dict[str, Any
     claude_ai = _binding(resources, "claude-ai")
 
     assert haku_ui["spec"]["subject"] == {"namespace": ui_egress.NAMESPACE, "name": ui_egress.SERVICE_ACCOUNT}
-    # haku-ui's own egress policy is new; AnkiWeb is the one deliberate grant claude-ai lacks (haku-anki runs as
-    # this account, and Haku already reaches *.ankiweb.net through haku-egress-proxy; see actions_staging_policies.py).
-    own = set(haku_ui["spec"]["policySets"]) - {ui_egress.POLICY, ANKIWEB_SYNC_POLICY}
+    # AnkiWeb is the one deliberate grant claude-ai lacks; haku-anki shares this account.
+    own = set(haku_ui["spec"]["policySets"]) - {ANKIWEB_SYNC_POLICY}
     assert own <= set(claude_ai["spec"]["policySets"])
 
 
-def test_haku_ui_policy_reaches_only_the_action_request_routes(resources: list[dict[str, Any]]) -> None:
-    policy = one(d for d in resources if d["kind"] == "PolicySet" and d["metadata"]["name"] == ui_egress.POLICY)
-    (rule,) = policy["spec"]["rules"]
-
-    assert rule["methods"] == ["GET", "POST"]
-    assert rule["paths"] == ["/v1/action-requests", "/v1/action-requests/**"]
-    assert rule["credentialRef"] == {"name": "agentplane-workload"}
+def test_haku_ui_has_no_legacy_direct_action_policy(resources: list[dict[str, Any]]) -> None:
+    assert not any(
+        doc["kind"] == "PolicySet" and doc["metadata"]["name"] == ui_egress.SERVICE_ACCOUNT for doc in resources
+    )
 
 
 def _settings(resources: list[dict[str, Any]], config_map: str) -> dict[str, Any]:
@@ -70,11 +66,13 @@ def _settings(resources: list[dict[str, Any]], config_map: str) -> dict[str, Any
     return cast(dict[str, Any], yaml.safe_load(one(data.values())))
 
 
-def test_haku_sandbox_is_an_egress_and_action_caller_namespace(resources: list[dict[str, Any]]) -> None:
+def test_haku_sandbox_retains_explicit_bearer_authentication(resources: list[dict[str, Any]]) -> None:
     egress = _settings(resources, "egress-go-settings")
     actions = _settings(resources, "actions-settings")
 
     assert ui_egress.NAMESPACE in egress["allowed_service_account_namespaces"]
+    assert {method["mode"] for method in egress["forward"]["auth"]} == {"spiffe", "kubernetes_bearer"}
+    assert egress["forward"]["tls"]
     assert ui_egress.NAMESPACE in actions["caller_service_account_namespaces"]
     # Callers are watched in every allowed namespace, but policies and bindings only in the staging one.
     assert actions["policy_namespace"] == "agentplane-staging"

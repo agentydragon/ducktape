@@ -181,7 +181,7 @@ def test_rules_route_wires_workload_identity_without_mounting_the_token_into_ope
     app = one(c for c in pod["containers"] if c["name"] == "openclaw")
     env = {item["name"]: item.get("value") for item in app["env"]}
     assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3130"
-    assert env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
+    assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in env
     assert "agentplane-egress-token" not in {mount["name"] for mount in app["volumeMounts"]}
 
 

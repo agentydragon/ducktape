@@ -16,11 +16,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
-from agentplane.grpc.serving import serving
+from agentplane.environment_runtime_transport.config import SESSION_DISPATCHER_URI, ClientTLS
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.testing.tls import issue_workload_leaf, make_ca
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
 pytest_plugins = ("agentplane.app.integration_fixtures",)
@@ -69,6 +70,7 @@ class Peer:
     service: Dispatcher
     target: str
     token: Path
+    tls: ClientTLS
 
 
 @pytest.fixture
@@ -78,13 +80,27 @@ async def peer(tmp_path: Path) -> AsyncIterator[Peer]:
     session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(service, server)
     token = tmp_path / "dispatcher-token"
     token.write_text("test-dispatcher-token")
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        yield Peer(service, f"127.0.0.1:{port}", token)
+    ca = make_ca("Dispatcher facade test")
+    ca_file = tmp_path / "ca.pem"
+    ca_file.write_bytes(ca.cert_pem)
+    certificate, key = issue_workload_leaf(ca, SESSION_DISPATCHER_URI, tmp_path)
+    port = server.add_secure_port(
+        "127.0.0.1:0", grpc.ssl_server_credentials([(key.read_bytes(), certificate.read_bytes())])
+    )
+    await server.start()
+    try:
+        yield Peer(service, f"127.0.0.1:{port}", token, ClientTLS(ca_file=ca_file, server_uri=SESSION_DISPATCHER_URI))
+    finally:
+        await server.stop(grace=0)
 
 
 @pytest.fixture
 def app_config(peer: Peer) -> dict[str, object]:
-    return {"session_dispatcher_target": peer.target, "session_dispatcher_token_file": str(peer.token)}
+    return {
+        "session_dispatcher_target": peer.target,
+        "session_dispatcher_token_file": str(peer.token),
+        "session_dispatcher_tls": peer.tls.model_dump(mode="json"),
+    }
 
 
 async def test_dispatcher_preserves_filters_reads_rotating_token_and_filters_headers(
@@ -176,7 +192,7 @@ async def test_another_replica_logout_ends_only_its_sessions_stream(
             db_url,
             history_client,
             sandboxes=SandboxesAccess(sandbox.server.kubeconfig, sandbox.namespace),
-            gateway=GatewayAccess(gateway_service.target, app_token_file),
+            gateway=GatewayAccess(gateway_service.target, app_token_file, gateway_service.client_tls),
             config=app_config,
         ) as replica,
         httpx.AsyncClient(base_url=replica.url, headers={"Origin": replica.url}) as other,

@@ -22,6 +22,7 @@ py_library(
     deps = [
         ":oauth_settings",
         "//agentplane/action_service:operator_oidc_settings",
+        "//agentplane/environment_runtime_transport:config",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -89,6 +90,7 @@ go_library(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service:linkage_service_go_proto",
         "//agentplane/action_service/api",
+        "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
         "//agentplane/mcp_edge/authserver",

@@ -20,6 +20,7 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import (
     agent_messaging,
+    dispatcher_workload,
     egress,
     launch_presets,
     runner_credentials,
@@ -103,6 +104,16 @@ async def the_model_call_itself_goes_through_the_proxy(resources: Resources) -> 
                 harness,
                 model,
                 resources.scripted,
+            ),
+        )
+
+
+async def sandbox_cli_reaches_the_dispatcher_with_its_workload_svid(resources: Resources) -> None:
+    async with resources.open() as (client, sandboxes):
+        await run_harness_pair(
+            client,
+            lambda harness, model: dispatcher_workload.sandbox_cli_lists_its_svid_created_session(
+                client, resources.dispatcher, sandboxes, harness, model, resources.scripted
             ),
         )
 
@@ -207,15 +218,23 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
         )
 
 
+async def a_non_sandbox_command_box_keeps_its_bearer_egress(resources: Resources) -> None:
+    async with resources.open() as (_, sandboxes):
+        caller = await sandboxes("systest-bearer-caller")
+        await egress.a_non_sandbox_command_box_keeps_its_bearer_egress(resources.cluster, caller)
+
+
 SCENARIOS = (
     # CaseBatch runs storage exclusively first, then starts this first remaining case.
     pytest.param(
         agent_resumes_an_idle_suspended_pod_with_its_execution_account,
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
     ),
+    pytest.param(a_non_sandbox_command_box_keeps_its_bearer_egress),
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),
     pytest.param(a_policy_granted_after_the_sandbox_is_running_takes_effect, marks=pytest.mark.scripted_model),
     pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),
+    pytest.param(sandbox_cli_reaches_the_dispatcher_with_its_workload_svid, marks=pytest.mark.scripted_model),
     pytest.param(a_preset_launches_an_initialized_editable_codex_thread, marks=pytest.mark.scripted_model),
     pytest.param(cert_manager_reissues_a_deleted_tls_secret),
     pytest.param(

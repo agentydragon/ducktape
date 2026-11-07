@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
@@ -87,20 +88,37 @@ func (s *sidecar) bindPlatformRoutesWithKeepalive(
 				closePlatformRoutes(started)
 				return nil, fmt.Errorf("configure platform route %q TLS: %w", name, err)
 			}
+			transportCredentials = serverCredentials
+		case tlsBearerConnectRouteTransportConfig:
+			proxyTransport, ok := s.config.Proxy.Transport.(tlsProxyTransportConfig)
+			if !ok || s.proxyHop == nil {
+				closePlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q requires a TLS proxy hop", name)
+			}
+			serverCredentials, err := (&environment_runtime_transport.ClientTLS{CAFile: proxyTransport.CAFile, ServerURI: configured.ServerURI}).Credentials()
+			if err != nil {
+				closePlatformRoutes(started)
+				return nil, fmt.Errorf("configure platform route %q TLS: %w", name, err)
+			}
+			transportCredentials = serverCredentials
+			tokenFile = configured.TokenFile
+
+		default:
+			closePlatformRoutes(started)
+			return nil, fmt.Errorf("platform route %q has unsupported transport %T", name, route.Transport)
+		}
+		if route.Transport.mode() != platformRoutePlaintext {
 			// Keep the configured authority intact: the central proxy resolves it
 			// after applying its hostname policy and destination TLS identity.
 			clientTarget = "passthrough:///" + route.Upstream
-			transportCredentials = serverCredentials
 			dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
 				if address != route.Upstream {
 					return nil, fmt.Errorf("unexpected platform route destination %q", address)
 				}
 				return s.dialRouteTunnel(ctx, address)
 			}))
-		default:
-			closePlatformRoutes(started)
-			return nil, fmt.Errorf("platform route %q has unsupported transport %T", name, route.Transport)
 		}
+
 		clientOptions := []grpc.DialOption{
 			observability.GRPCClientOption(),
 			grpc.WithTransportCredentials(transportCredentials),

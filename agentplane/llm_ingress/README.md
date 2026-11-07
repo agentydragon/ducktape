@@ -1,11 +1,14 @@
 # Agentplane LLM workload ingress
 
 This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its runtime is a Go binary; Python models remain for deployment
-authoring and the runner-facing model-config contract. The
-central egress proxy substitutes the caller's already-authenticated Pod-bound workload token into
-an ordinary `Authorization: Bearer` header. This service resolves that bearer with the shared
-Go workload-auth resolver, removes it, and forwards the request to LiteLLM with one
-server-held virtual key.
+authoring and the runner-facing model-config contract. Inference HTTP and native ModelConfig gRPC
+share one TLS HTTP/2 listener for Sandbox and backend callers. Sandbox requests arrive through an exact-origin
+sidecar route over opaque proxy CONNECT; the listener resolves the verified Runtime SVID against the
+live Sandbox and accepted credential before deriving the Sandbox's own ServiceAccount and Pod
+principal. The same listener accepts configured backend TokenReview bearers; clients verify the
+service SPIFFE URI and hold no SVID. Supplying both a certificate and bearer is rejected, and a failed
+credential never enables another mode. Caller identity headers are never trusted.
+Only inference requests forward provider-native traffic to LiteLLM with one server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
 identity is attached through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
@@ -53,18 +56,25 @@ headers are removed before this object is stamped. Request bodies remain provide
 never identity evidence; a caller's body `metadata`, Agent, Thread, Pod, or Sandbox fields cannot
 replace the server-stamped object.
 
-The workload bearer is sent only to Kubernetes TokenReview. The LiteLLM virtual key is sent only on
-the internal LiteLLM hop. Neither credential is logged, placed in errors, returned to callers, or
-mounted into a runner or harness container.
+A backend bearer is sent only to Kubernetes TokenReview. A Sandbox SVID request never attempts
+TokenReview. The LiteLLM virtual key is sent only on the internal LiteLLM
+hop. Neither credential is logged, placed in errors, returned to callers, or mounted into a runner
+or harness container.
+
+The `rpc` setting uses the shared listener schema: `listen_address`, serving `tls`, and `auth`
+with `spiffe` roots and `kubernetes_bearer.audiences`. TLS is required because inference HTTP and
+native gRPC share the listener. Kubernetes exec probes use `/healthprobe` against its verified TLS
+health service.
 
 ## Per-model client configuration
 
 The native `agentplane.llm_ingress.v1.ModelConfigService.GetModelConfig` gRPC method exposes the
 same configuration to authenticated workloads. The response omits `total_context_budget_tokens`
-for an unknown model; a configured budget is positive. It uses the same Pod-bound TokenReview
-audience and namespace policy as the HTTP listener. Environment Runtime uses this method for
-Claude model budgets. For an unconfigured model, the Runtime uses harness defaults.
-Lookups are answered locally and never forwarded to LiteLLM; a gRPC error fails the lookup.
+for an unknown model; a configured budget is positive. The SVID TLS listener authenticates
+Environment Runtime callers from the verified TLS peer and live Sandbox state; the same listener
+retains Pod-bound TokenReview authentication for backend callers. Environment Runtime
+uses the SVID route for Claude model budgets. For an unconfigured model, the Runtime uses harness
+defaults. Lookups are answered locally and never forwarded to LiteLLM; a gRPC error fails the lookup.
 
 Configuration is authored as a list in ingress settings, for example:
 
@@ -127,7 +137,8 @@ These are configured harness overrides, not a catalog of every known model capac
 ## Contract tests
 
 The Go ingress tests exercise request filtering, TokenReview response policy, proxy errors, streaming,
-and cancellation with `httptest` servers. A typed TokenReview fake is used for handler behavior;
+cancellation, and native gRPC authentication on the SVID TLS listener. A typed TokenReview fake is
+used for handler behavior;
 it checks ingress interpretation and does not establish Kubernetes token-validation or Pod-binding
 semantics. One smoke test starts the Bazel-built binary with YAML and environment settings against a
 narrow TokenReview HTTP fixture and fake LiteLLM, covering client-go wiring and the real listener

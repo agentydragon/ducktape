@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -39,6 +38,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
@@ -54,6 +54,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -107,7 +108,7 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	listener, err := net.Listen("tcp", c.RPC.ListenAddress)
 	if err != nil {
 		return err
 	}
@@ -276,7 +277,7 @@ func sessionDelegationExecutors(
 
 // dial connects to p as this service's workload.
 func dial(p peer) (*grpc.ClientConn, error) {
-	return bearer.Dial(p.Target, p.TokenFile, time.Duration(p.RequestTimeoutSeconds*float64(time.Second)), nil)
+	return bearer.Dial(p.Target, p.TokenFile, time.Duration(p.RequestTimeoutSeconds*float64(time.Second)), p.TLS)
 }
 
 // mcpExecutors builds the Executor of each MCP group, which withdraws the group's Actions until its server lists them:
@@ -314,11 +315,17 @@ func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identit
 
 // gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount.
 func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
-	workloads, err := auth.NewResolver(d.Reviews, c.TokenAudience, c.CallerServiceAccountNamespaces)
+	workloads, err := auth.NewResolver(d.Reviews, c.tokenAudience(), c.CallerServiceAccountNamespaces)
 	if err != nil {
 		return nil, err
 	}
 	options := api.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
+	if c.RPC.Has(listener.SPIFFE) {
+		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if c.operatorsEnabled() {
 		if options.Operators, err = api.NewOperatorVerifier(c.OperatorOIDC); err != nil {
 			return nil, err
@@ -395,7 +402,8 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if c.SessionDelegationDispatcher != nil {
 		dispatcherConn, err := workloadgrpc.DialDelegated(
 			c.SessionDelegationDispatcher.Target, c.SessionDelegationDispatcher.TokenFile,
-			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)), nil,
+			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)),
+			c.SessionDelegationDispatcher.TLS,
 		)
 		if err != nil {
 			return fmt.Errorf("dial delegated Environment Service and Session Dispatcher: %w", err)
@@ -403,7 +411,8 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		defer dispatcherConn.Close()
 		historyConn, err := workloadgrpc.DialDelegated(
 			c.SessionDelegationHistory.Target, c.SessionDelegationHistory.TokenFile,
-			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)), nil,
+			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)),
+			c.SessionDelegationHistory.TLS,
 		)
 		if err != nil {
 			return fmt.Errorf("dial delegated History Service: %w", err)
@@ -470,10 +479,18 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	}()
 
 	health := probes.New(db, hub)
-	grpcServer := grpc.NewServer(
+	grpcOptions := []grpc.ServerOption{
 		observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
-	)
+	}
+	transport, err := c.RPC.ServerCredentials(environment_runtime_transport.ActionsURI)
+	if err != nil {
+		return fmt.Errorf("Action Service RPC TLS: %w", err)
+	}
+	if transport != nil {
+		grpcOptions = append(grpcOptions, grpc.Creds(transport))
+	}
+	grpcServer := grpc.NewServer(grpcOptions...)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Health})
 	actionAPI := api.NewService(requests, hub, c.ActionGroups, admission, policy, api.Submissions{
 		Executors: actions, Provider: policies.NewProvider(visibility),

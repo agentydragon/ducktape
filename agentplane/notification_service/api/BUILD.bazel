@@ -21,6 +21,7 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/streaming",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service:notifications_go_proto",
@@ -66,6 +67,7 @@ go_test(
     embed = [":api"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/environment_runtime_transport",
         "//agentplane/notification_service:notifications_go_proto",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/model",

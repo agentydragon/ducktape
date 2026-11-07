@@ -34,6 +34,10 @@ def _command(*args: str) -> str:
     return shlex.join([CLI, "--json", *args])
 
 
+def _text_command(*args: str) -> str:
+    return shlex.join([CLI, *args])
+
+
 def _action_command(group: str, action: str, arguments: dict[str, Any]) -> list[str]:
     return [
         "actions",
@@ -170,12 +174,24 @@ async def test_parent_session_delegates_through_the_action_cli(
     child_answers: dict[str, str] = {}
 
     groups_output = await _run_parent_cli(
-        parent, model, _command("actions", "groups"), child_answers=child_answers, guidance_marker=guidance_marker
+        parent, model, _text_command("actions", "groups"), child_answers=child_answers, guidance_marker=guidance_marker
     )
-    groups = {group["key"]: group for group in _json_lines(groups_output)}
-    assert "environments" in groups
-    assert "sessions" in groups
-    assert {action["name"] for action in groups["sessions"]["actions"]} == _SESSION_ACTIONS
+    group_keys = {line.split(maxsplit=1)[0] for line in groups_output.splitlines() if line.strip()}
+    assert {"environments", "sessions"} <= group_keys
+
+    sessions_output = await _run_parent_cli(
+        parent,
+        model,
+        _text_command("actions", "list", "sessions"),
+        child_answers=child_answers,
+        guidance_marker=guidance_marker,
+    )
+    session_actions = {
+        line.split(maxsplit=1)[0].partition("/")[2]
+        for line in sessions_output.splitlines()
+        if line.startswith("sessions/")
+    }
+    assert session_actions == _SESSION_ACTIONS
 
     show_output = await _run_parent_cli(
         parent,

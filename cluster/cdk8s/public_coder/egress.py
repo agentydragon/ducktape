@@ -20,7 +20,7 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.egress.platform_routes import PlatformRoute, PlatformRoutes
+from agentplane.egress.platform_routes import PlaintextRouteTransport, PlatformRoute, PlatformRoutes
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress, platform_routes
@@ -70,7 +70,9 @@ def add_relay_settings(scope: Construct) -> PodWiring:
                 RULES_ROUTE.name: PlatformRoute(
                     service_prefixes=RULES_ROUTE.service_prefixes,
                     upstream=f"{RULES_ROUTE.service.fqdn}:{RULES_ROUTE.service.pod_port}",
-                    transport=RULES_ROUTE.transport,
+                    # Public Coder remains on its parked bearer route while staging runners use
+                    # the SVID transport in the shared route descriptor.
+                    transport=PlaintextRouteTransport(token_file=Path(_TOKEN_DIR) / "token"),
                 )
             },
         ),

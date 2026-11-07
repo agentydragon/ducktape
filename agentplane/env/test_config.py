@@ -88,9 +88,9 @@ def test_runner_control_accepts_explicit_insecure_mode_without_tls_files() -> No
 
 
 def test_runner_accepts_model_config_target() -> None:
-    target = "127.0.0.1:3130"
-    config = Configuration.model_validate(_configuration() | {"model_config_target": target})
-    assert json.loads(config.model_dump_json(exclude_none=True))["model_config_target"] == target
+    endpoint = "model-config.test:8080"
+    config = Configuration.model_validate(_configuration() | {"model_config_target": endpoint})
+    assert json.loads(config.model_dump_json(exclude_none=True))["model_config_target"] == endpoint
 
 
 @pytest.mark.parametrize(
@@ -100,7 +100,6 @@ def test_runner_accepts_model_config_target() -> None:
         {"session_reconcile_concurrency": 0},
         {"session_reconcile_concurrency": -1},
         {"model_config_target": "host:notaport"},
-        {"model_config_service": {"target": "host:3130", "bearer": "platform-route"}},
         {"state_dir": "relative"},
         {"workspace_root": ""},
         {"harness_environment": {"inherit": ["NAME=value"]}},

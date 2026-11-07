@@ -167,6 +167,34 @@ today, and never adopts one on name alone. No finalizer, for the reason the Poli
 
 ## Workload authentication
 
+**First slice, selected 2026-11-05:** ship SVID authentication independently of the identity and
+Kubernetes-account cutover. Resolve the verified SPIFFE path to the live Sandbox UID and its
+accepted `status.runnerCredential` generation. The subject remains exactly the Sandbox's own
+ServiceAccount; services retain its canonical UID and existing authorization. This slice adds no
+identity reference or new account resource. One runner TLS Secret has two readers: Runtime and the
+sidecar or relay. The workload container never mounts it. Require explicit clientAuth EKU and use
+the shared transport's verified trust-manager roots and rotation behavior.
+
+The shared TLS proxy listener accepts explicit `spiffe` and `kubernetes_bearer` modes. Sandbox
+sidecars select SPIFFE; existing Action command/build boxes and Haku UI/Anki retain Pod-bound
+bearers over verified TLS. Their credential files stay in the sidecar. Per-audience tokens offered
+by an SVID caller must match the bound Pod UID in Sandbox status; a bearer caller's projected
+tokens must match its TokenReview principal. History, Notification, Dispatcher, Action and LLM
+verify callers at their own service boundary, with opaque TLS through the proxy. Workload and
+backend RPCs share one TLS listener per service with method-specific authorization. Backend clients
+verify the service SPIFFE URI and retain their existing bearer or delegation credentials; the
+central sampler holds no SVID. No proxy identity assertion is introduced.
+
+**Amended 2026-11-08:** the mixed-auth rollout is not blocked on a new non-Sandbox design. Keep the
+explicit bearer path until a later shared solution manages identities and SVIDs independently of
+Sandboxes. `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` and `WORKLOAD_AUTH_CUTOVER` in `task_dag.md` own
+that design and migration. OpenClaw compatibility remains deferred until a concrete instance needs
+it. This first slice does not implement Identity/account resources or change the policy subject.
+
+The identity-subject behavior below belongs to the later cutover. Its Sandbox-coupled SVID
+lookup is provisional until the shared lifecycle design selects identity/SVID management
+independently of Sandboxes:
+
 The SVIDs already exist: the Sandbox Controller requests one cert-manager `Certificate` per
 incarnation with URI SAN `spiffe://agentplane/environment-runtime/<ns>/<sandbox-uid>/<credential-id>`
 ([Sandbox Controller SPEC](../sandbox_controller/SPEC.md)), and Environment Runtime presents it on the
@@ -180,9 +208,10 @@ Rules then key on the identity. Everything the egress SPEC says about a subject 
 "ServiceAccount" read as "Identity": a subject no binding names reaches no rule, and the connection
 address is not identity evidence.
 
-Workloads without an SVID, such as the public coder's OpenClaw fronted by the proxy, keep presenting
-a projected SA token; `status.workloadCredentials` maps that account to its identity. The MCP edge
-binds a Connection to an `Identity` instead of a ServiceAccount.
+At the later shared-authentication cutover, active callers without a Sandbox-issued SVID migrate
+from the retained bearer path to the chosen common lifecycle. OpenClaw requires no speculative
+compatibility surface. The MCP edge binds a Connection to an `Identity` instead of a ServiceAccount
+at the later identity cutover.
 
 ## Changing an environment's identity
 
@@ -401,9 +430,8 @@ cannot change in place, and the new launch writes the identity.
    applies on those routes, so each service's own authorization is the whole gate there, and the
    proxy never asserts an identity. The sampler's zero-environment path stays on delegation.
    Still to settle per route: what each service does with the Pod-bound checks it makes today.
-2. **One key, two holders.** Environment Runtime holds the SVID for the control connection; the
-   relay would hold it for the hop. Either both read one Secret, or the controller issues a second
-   certificate under the same Sandbox path for the relay. Agent code that can read Runtime's key can
+2. **One key, two readers: decided 2026-11-05.** Environment Runtime and the sidecar or relay
+   read the same runner TLS Secret, including rotation; no second certificate is issued. Agent code that can read Runtime's key can
    already act as the workload at the Gateway; presenting it at the proxy adds no reach beyond that
    identity's rules, but say so where the SPEC states what the certificate authenticates.
 3. **SVID to identity.** The path carries the Sandbox UID and credential ID, not the identity. A

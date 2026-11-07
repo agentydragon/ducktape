@@ -192,25 +192,25 @@ async def go_history_service(
     """The Go History Service on `database_url`, which the Go migrator has built, authenticating through `api`."""
     with ExitStack() as listeners:
         reader_listener = listeners.enter_context(listen_tcp())
-        ingress_listener = listeners.enter_context(listen_tcp())
         token_file = directory / "history-reader-token"
         token_file.write_text(await api.workload_token(READER, [READER_AUDIENCE]))
         config = directory / "history-service.yaml"
         reader_fd = reader_listener.socket.fileno()
-        ingress_fd = ingress_listener.socket.fileno()
         config.write_text(
             json.dumps(
                 {
                     "reader_accounts": [{"namespace": READER.namespace, "name": READER.name}],
                     "token_audience": READER_AUDIENCE,
                     "request_timeout_s": 10,
-                    "listen_address": f"fd:{reader_fd}",
+                    "rpc": {
+                        "listen_address": f"fd:{reader_fd}",
+                        "auth": [{"mode": "kubernetes_bearer", "audiences": [READER_AUDIENCE, WRITER_AUDIENCE]}],
+                    },
                     "kubeconfig": str(api.kubeconfig),
                     "ingress": {
                         "token_audience": WRITER_AUDIENCE,
                         "writer_namespaces": list(writer_namespaces),
                         "sampler_accounts": [account.model_dump() for account in sampler_accounts],
-                        "listen_address": f"fd:{ingress_fd}",
                         # Tests compare the archive with the runner's journal entry by entry.
                         "settle_deltas": False,
                     },
@@ -226,14 +226,14 @@ async def go_history_service(
             stderr=directory / "history-service.stderr",
             health_port=reader_listener.port,
             grace_s=_GRACE_SECONDS,
-            pass_fds=(reader_fd, ingress_fd),
+            pass_fds=(reader_fd,),
         ) as process:
             listeners.close()
             read_target = f"{reader_listener.host}:{reader_listener.port}"
             service = GoHistoryService(
                 database_url=database_url,
                 read_target=read_target,
-                ingress_target=f"{ingress_listener.host}:{ingress_listener.port}",
+                ingress_target=read_target,
                 reader_token_file=token_file,
                 reader=HistoryServiceClient(read_target, token_file=token_file, request_timeout_s=20),
                 api=api,

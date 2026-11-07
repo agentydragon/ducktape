@@ -55,12 +55,17 @@ follows it; code that differs converges on it.
 
 - Direct callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
+- Sandbox workload listeners authenticate the Runtime SVID with the shared
+  `environment_runtime_transport` server credentials. `workload_auth/auth.SVIDResolver` resolves
+  the verified peer against the live Sandbox and its accepted runner credential, yielding the
+  Sandbox's own ServiceAccount. The sidecar or launcher relay holds the certificate and establishes
+  destination TLS through the central proxy's opaque CONNECT tunnel; the proxy asserts no caller.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
   (`agentplane/workload_auth/auth`): `auth.Methods` maps every served method's full name to a
   `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves,
   `ReviewedServiceAccount` when a handler needs a verified ServiceAccount UID with an optional Pod
   proof, `Public` only for the health service via `auth.HealthMethods`). A method it does not list is
-  refused before its bearer is read, so a new RPC is closed until its Rule is written. The package
+  refused before its credentials are resolved, so a new RPC is closed until its Rule is written. The package
   owning a servicer exports its `Methods`; the handler reads the admitted identity with
   `auth.Caller`, `auth.AdmittedReviewedCaller`, or `auth.EffectiveCaller` as appropriate. Delegation
   is added to exact served methods through `Methods.WithDelegation`; tests iterate the generated
@@ -122,8 +127,9 @@ integration remains separate.
   to the gateway replica holding a Sandbox's runner: the client takes that target and opens and
   closes the channel around the call.
 - The stub is annotated `<Service>AsyncStub` and built as `<Service>Stub(channel)`.
-- Channels are `grpc.aio.insecure_channel`: in-cluster traffic is plaintext and identity comes from
-  the bearer (or, for Sandbox workloads, from the egress proxy that substitutes it). The client's
+- Backend bearer-authenticated channels and workload connections to local sidecar gRPC routes use
+  `grpc.aio.insecure_channel`. The credential-holding sidecar establishes verified TLS to each
+  workload listener; Runtime's direct SVID connections also use verified TLS. The client's
   package says which options its channels need, through a `dial(target)` the composition root
   calls (`agentplane/grpc/calls.py` for the Runner Gateway and History Service clients); a client
   that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc/options.py`).
@@ -153,15 +159,15 @@ Everything that holds a connection is closed by a context manager, never by a ha
 - `grpc.aio.server()`, register servicers, then serve through the shared context manager;
   `stop(grace=5)` on shutdown. A second gRPC listener exists only where a network fence admits different callers to it
   (the runner-facing port).
-- A Go server serves gRPC on its own listener with `grpc.Server.Serve`, never through `ServeHTTP` on an HTTP server,
-  and stops with [`graceful.Stop`](../grpc/graceful/stop.go): calls in flight finish until the shutdown deadline. HTTP
+- A Go server normally serves gRPC with `grpc.Server.Serve`. LLM ingress uses `grpc.Server.ServeHTTP`
+  on its shared TLS HTTP/2 listener alongside provider-native inference HTTP; both protocols retain
+  service-owned authentication. Servers stop with [`graceful.Stop`](../grpc/graceful/stop.go): calls in flight finish until the shutdown deadline. HTTP
   routes beside it (a facade, agent documentation, metrics, callbacks) take a separate HTTP listener and Service port,
-  which stops first, since a facade's calls are gRPC calls. **Deviation:** the Action Service keeps both on one port, so
-  a sandbox reaches it at one address; [`graceful.Shared`](../grpc/graceful/shared.go) sends HTTP/2 connections to
-  the gRPC server and the rest to the HTTP server, each still served and drained natively.
+  which stops first, since a facade's calls are gRPC calls.
 - Health is the standard `grpc.health.v1.Health` service on the service's own gRPC port, which
-  `agentplane.grpc.serving.add_health` registers, probed by Kubernetes' native `grpc` liveness and
-  readiness probes. No separate HTTP health server.
+  `agentplane.grpc.serving.add_health` registers. Plaintext listeners use native Kubernetes gRPC
+  probes; TLS listeners use `/healthprobe`, which verifies the server SVID and calls the same Health RPC.
+  No separate HTTP health server.
 - Tests serve on `127.0.0.1:0` with no grace, through the same context manager, which yields the
   bound port. A test builds a `grpc.aio.server()`, registers the real servicer or a fake subclass,
   and enters it; per-service serving helpers add only what is specific to that service (its

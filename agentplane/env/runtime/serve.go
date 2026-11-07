@@ -123,7 +123,11 @@ func (r *Runtime) startIngress(endpoint configuration.Endpoint) {
 		run := r.deps.runIngress
 		if run == nil {
 			run = func(ctx context.Context, endpoint configuration.Endpoint) error {
-				return r.ingressSupervisor(endpoint, reportFailure).Run(ctx)
+				supervisor, err := r.ingressSupervisor(endpoint, reportFailure)
+				if err != nil {
+					return err
+				}
+				return supervisor.Run(ctx)
 			}
 		}
 		if err := run(ctx, endpoint); err != nil && ctx.Err() == nil {
@@ -153,14 +157,20 @@ func (r *Runtime) stopIngress(ctx context.Context) error {
 	}
 }
 
-func (r *Runtime) ingressSupervisor(endpoint configuration.Endpoint, onWorkerFailure func(error)) *ingress.Supervisor {
-	return ingress.NewSupervisor(ingress.SupervisorConfig{
+func (r *Runtime) ingressSupervisor(endpoint configuration.Endpoint, onWorkerFailure func(error)) (*ingress.Supervisor, error) {
+	config := ingress.SupervisorConfig{
 		Target: endpoint.Target, Bearer: endpoint.Bearer, Store: r.store,
 		InventoryChanges: r.sessions.InventoryChangesSince, Inventory: r.ingressSources, OnWorkerFailure: onWorkerFailure,
-		// Acknowledgements still change Runtime facts and lifecycle observations. Ingress
-		// inventory discovery has its own narrower signal.
 		OnAcknowledgement: func(_ string, _ retained.Acknowledgement) error { r.changed(); return nil },
-	})
+	}
+	if secured := endpoint.SVID; secured != nil {
+		transport, err := r.config.Control.Security.ClientCredentials(secured.ServerURI)
+		if err != nil {
+			return nil, err
+		}
+		config.Transport, config.ProxyAddress = transport, secured.ProxyAddress
+	}
+	return ingress.NewSupervisor(config), nil
 }
 
 func (r *Runtime) ingressSources() []ingress.Source {

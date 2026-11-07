@@ -23,6 +23,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/baggage"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -115,9 +117,7 @@ func (c writeTimeoutConn) Write(data []byte) (int, error) {
 
 func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if request.URL.Path == "/healthz" && request.Method == http.MethodGet {
-		writer.Header().Set("Content-Type", "application/json")
-		writer.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(writer, `{"status":"ok"}`)
+		writeHealth(writer)
 		return
 	}
 	if !allowedMethod(request.Method) {
@@ -129,6 +129,16 @@ func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 	if !okay {
 		return
 	}
+	h.serveAuthenticated(writer, request, principal)
+}
+
+func writeHealth(writer http.ResponseWriter) {
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(writer, `{"status":"ok"}`)
+}
+
+func (h *ingressHandler) serveAuthenticated(writer http.ResponseWriter, request *http.Request, principal auth.Principal) {
 	if request.URL.Path == codexCatalogPath && request.Method == http.MethodGet {
 		if h.codex == nil {
 			writeJSONError(writer, http.StatusNotFound, "Codex model catalog is not configured", "")
@@ -147,20 +157,18 @@ func allowedMethod(method string) bool {
 }
 
 func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.Request) (auth.Principal, bool) {
+	// Preserve the HTTP API's case-insensitive Bearer spelling. Credential
+	// presence still selects one configured mode; malformed or combined
+	// credentials never enable a second authentication attempt.
 	values := request.Header.Values("Authorization")
-	if len(values) != 1 {
-		writeJSONError(writer, http.StatusUnauthorized, "invalid workload bearer", "Bearer")
-		return auth.Principal{}, false
+	if len(values) == 1 {
+		if match := bearerPattern.FindStringSubmatch(values[0]); match != nil {
+			request = request.Clone(request.Context())
+			request.Header.Set("Authorization", "Bearer "+match[1])
+		}
 	}
-	match := bearerPattern.FindStringSubmatch(values[0])
-	if match == nil {
-		writeJSONError(writer, http.StatusUnauthorized, "invalid workload bearer", "Bearer")
-		return auth.Principal{}, false
-	}
-	// Normalize the accepted HTTP bearer syntax before applying the shared
-	// TokenReview policy.
-	principal, err := h.resolver.ResolveAuthorization(request.Context(), []string{"Bearer " + match[1]})
-	if errors.Is(err, auth.ErrInvalidBearer) {
+	principal, err := h.resolver.ResolveRequest(request)
+	if errors.Is(err, auth.ErrInvalidBearer) || status.Code(err) == codes.Unauthenticated {
 		writeJSONError(writer, http.StatusUnauthorized, "invalid workload bearer", "Bearer")
 		return auth.Principal{}, false
 	}

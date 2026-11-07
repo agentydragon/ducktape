@@ -340,20 +340,23 @@ flowchart LR
         WORKLOAD[workload and executor<br/>no Secret mount]
     end
     PROXY[egress proxy forward listener :8888]
-    DEST[policy-approved destination]
+    DEST[policy-approved external destination]
+    PLATFORM[first-party service TLS listener]
     SECRET -->|same projected files| RUNTIME
     SECRET -->|same projected files| SIDECAR
-    SIDECAR -->|TLS ClientAuth SVID<br/>projected bearer as destination context| PROXY
-    PROXY -->|policy and substitution| DEST
+    SIDECAR -->|TLS ClientAuth SVID<br/>Kubernetes bearer as destination context| PROXY
+    RUNTIME -.->|History TLS over CONNECT| PROXY
+    PROXY -->|policy and credential substitution| DEST
+    PROXY -.->|opaque TLS tunnel| PLATFORM
 ```
 
 Runner control stays on the Gateway's direct mTLS connection; its private key and control calls do
 not pass through HTTP interception. Separately, the egress sidecar relays runner HTTP(S) traffic to
 the central proxy. With TLS transport and SPIFFE authentication selected, the sidecar presents the
 same per-incarnation Runner certificate to the proxy's TLS-enabled forward listener under
-`spiffe://agentplane/environment-runtime/...`; it sends the projected workload bearer separately
-as destination context for legacy authenticated-workload credential substitution. The Certificate
-carries server auth for the Runtime's control listener and client auth for this hop.
+`spiffe://agentplane/environment-runtime/...`. The Kubernetes destination retains its projected
+bearer, bound to the Sandbox's recorded Pod; first-party services verify the SVID themselves through
+opaque tunnels. The Certificate carries server auth for Runtime control and client auth for this hop.
 
 For the standard runner Pod, the controller mounts one projected Secret and the cluster trust bundle
 into the Environment Runtime and egress sidecar; workload and executor containers do not mount it.
@@ -367,15 +370,13 @@ fails mutation, so KubeVirt retries after the binding is recorded instead of adm
 a placeholder Secret name. The sidecar verifies the proxy's fixed SPIFFE identity; the proxy
 checks the Runner client identity against current Sandbox/incarnation state.
 
-The sidecar's `proxy` contains an address and a tagged `transport`. Plaintext permits only
-Kubernetes bearer authentication; verified TLS permits either a bearer or a SPIFFE client
-certificate. TLS owns its CA bundle, and its `auth` variant owns either the token path or the
-certificate/key pair. A TLS failure ends the request. Files reload for credential rotation.
+The sidecar's `proxy` contains an address and a tagged `transport`. TLS owns the CA bundle;
+its `auth` variant owns the Runner certificate/key pair. The proxy's configured authentication
+policy admits only SPIFFE. A TLS failure ends the request, and files reload on rotation.
 
-The Rules API shares the proxy's configured authentication policy and serving TLS material on its
-shared native gRPC port. The workload dials the local `EgressRules.GetRules` route on shared platform port 3130.
-For SPIFFE, the sidecar opens destination TLS through an opaque central tunnel; the server verifies
-the actual peer and live Sandbox itself. Until the remaining service cutover,
-their explicit projected audience tokens remain destination credentials, verified against the
-Sandbox's bound Pod. Staging defaults to the legacy plaintext bearer hop until cutover. Callers
-without Sandbox certificates require their separate authentication design before that flip.
+The Rules RPC shares that policy and serving TLS material on the native gRPC port 8081. The
+workload dials its shared local platform gRPC listener on port 3130. The sidecar opens destination TLS through opaque
+central CONNECT for Rules, Notification, Dispatcher, Action
+and LLM routes; each service verifies the actual peer itself. Runtime dials History with its own
+certificate. Kubernetes retains its destination-audience token, bound to the Sandbox's recorded
+Pod. Callers without Sandbox certificates require a separate authentication design.

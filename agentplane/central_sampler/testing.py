@@ -18,6 +18,7 @@ from sqlalchemy.engine import make_url
 
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.testing.go_process import go_process
@@ -110,6 +111,7 @@ def settings(
     *,
     gateway_target: str | None = None,
     gateway_token_file: Path | None = None,
+    gateway_tls: ClientTLS | None = None,
     history_target: str | None = None,
     history_token_file: Path | None = None,
 ) -> Settings:
@@ -148,6 +150,7 @@ def settings(
         history_target=history_target,
         history_token_file=history_token_file,
         gateway_target=gateway_target,
+        gateway_tls=gateway_tls,
         gateway_token_file=gateway_token_file,
         direct_executor_target=executor_target,
         direct_executor_insecure_localtest=executor_target is not None,

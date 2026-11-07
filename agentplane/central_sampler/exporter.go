@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -26,8 +28,8 @@ const (
 	exportRetryMax     = 5 * time.Minute
 )
 
-func ExportSession(ctx context.Context, store *Store, sessionID, target, tokenFile string) error {
-	channel, err := bearer.Dial(target, tokenFile, 30*time.Second, nil)
+func ExportSession(ctx context.Context, store *Store, sessionID, target, tokenFile string, tls *environment_runtime_transport.ClientTLS) error {
+	channel, err := bearer.Dial(target, tokenFile, 30*time.Second, tls)
 	if err != nil {
 		return err
 	}
@@ -244,13 +246,13 @@ func (q *exportQueue) processNext(ctx context.Context) bool {
 	return true
 }
 
-func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hub *wakeups.Hub) error {
+func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hub *wakeups.Hub, tls *environment_runtime_transport.ClientTLS) error {
 	changed, unsubscribe, err := hub.Subscribe(OutboxChannel)
 	if err != nil {
 		return err
 	}
 	defer unsubscribe()
-	channel, err := bearer.Dial(target, tokenFile, 30*time.Second, nil)
+	channel, err := bearer.Dial(target, tokenFile, 30*time.Second, tls)
 	if err != nil {
 		return err
 	}

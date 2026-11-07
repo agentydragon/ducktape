@@ -10,6 +10,7 @@ from pathlib import Path
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
+from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
 
 SERVICE = "session-dispatcher"
@@ -71,6 +72,12 @@ async def native_client(cluster: Cluster, token_file: Path) -> AsyncIterator[Ses
     await asyncio.to_thread(token_file.write_text, caller.token)
     async with (
         forward(cluster) as target,
-        SessionDispatcherClient.connect(target, token_file=token_file, request_timeout_s=30) as client,
+        SessionDispatcherClient.connect(
+            target,
+            token_file=token_file,
+            request_timeout_s=30,
+            channel_credentials=await service_credentials(cluster),
+            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+        ) as client,
     ):
         yield client

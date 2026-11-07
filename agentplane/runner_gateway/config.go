@@ -12,6 +12,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
@@ -26,32 +27,33 @@ const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	RunnerSecurity               environment_runtime_transport.Security `mapstructure:"runner_security"`
-	Namespace                    string                                 `mapstructure:"sandbox_namespace"`
-	DispatcherDatabaseURL        string                                 `mapstructure:"dispatcher_database_url"`
-	PodName                      string                                 `mapstructure:"pod_name"`
-	PodIP                        string                                 `mapstructure:"pod_ip"`
-	RunnerTokenFile              string                                 `mapstructure:"runner_token_file"`
-	Kubeconfig                   string                                 `mapstructure:"kubeconfig"`
-	KubernetesClientQPS          float32                                `mapstructure:"kubernetes_client_qps"`
-	ListenAddress                string                                 `mapstructure:"listen_address"`
-	ProxyPort                    int                                    `mapstructure:"proxy_port"`
-	RunnerControlTargetTemplate  string                                 `mapstructure:"runner_control_target_template"`
-	DispatcherAudience           string                                 `mapstructure:"dispatcher_audience"`
-	GatewayAudience              string                                 `mapstructure:"gateway_audience"`
-	EnvironmentReaders           []auth.Account                         `mapstructure:"environment_readers"`
-	EnvironmentManagers          []auth.Account                         `mapstructure:"environment_managers"`
-	EnvironmentLaunchers         []auth.Account                         `mapstructure:"environment_launchers"`
-	EnvironmentDefaultPolicySets []string                               `mapstructure:"environment_default_policy_sets"`
-	DispatcherCallers            []auth.Account                         `mapstructure:"dispatcher_callers"`
-	Delegation                   *delegationConfig                      `mapstructure:"delegation"`
-	GatewayCallers               []auth.Account                         `mapstructure:"gateway_callers"`
-	WakeCallers                  []auth.Account                         `mapstructure:"wake_callers"`
-	OperatorCallers              []auth.Account                         `mapstructure:"operator_callers"`
-	ControllerAccount            *auth.Account                          `mapstructure:"sandbox_controller_account"`
-	QueueCap                     int                                    `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds            int                                    `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds         int                                    `mapstructure:"runner_request_timeout_seconds"`
+	RunnerSecurity               environment_runtime_transport.Security   `mapstructure:"runner_security"`
+	Namespace                    string                                   `mapstructure:"sandbox_namespace"`
+	DispatcherDatabaseURL        string                                   `mapstructure:"dispatcher_database_url"`
+	PodName                      string                                   `mapstructure:"pod_name"`
+	PodIP                        string                                   `mapstructure:"pod_ip"`
+	RunnerTokenFile              string                                   `mapstructure:"runner_token_file"`
+	Kubeconfig                   string                                   `mapstructure:"kubeconfig"`
+	KubernetesClientQPS          float32                                  `mapstructure:"kubernetes_client_qps"`
+	RPC                          listener.Config                          `mapstructure:"rpc"`
+	GatewayTLS                   *environment_runtime_transport.ClientTLS `mapstructure:"gateway_tls"`
+	ProxyPort                    int                                      `mapstructure:"proxy_port"`
+	RunnerControlTargetTemplate  string                                   `mapstructure:"runner_control_target_template"`
+	DispatcherAudience           string                                   `mapstructure:"dispatcher_audience"`
+	GatewayAudience              string                                   `mapstructure:"gateway_audience"`
+	EnvironmentReaders           []auth.Account                           `mapstructure:"environment_readers"`
+	EnvironmentManagers          []auth.Account                           `mapstructure:"environment_managers"`
+	EnvironmentLaunchers         []auth.Account                           `mapstructure:"environment_launchers"`
+	EnvironmentDefaultPolicySets []string                                 `mapstructure:"environment_default_policy_sets"`
+	DispatcherCallers            []auth.Account                           `mapstructure:"dispatcher_callers"`
+	Delegation                   *delegationConfig                        `mapstructure:"delegation"`
+	GatewayCallers               []auth.Account                           `mapstructure:"gateway_callers"`
+	WakeCallers                  []auth.Account                           `mapstructure:"wake_callers"`
+	OperatorCallers              []auth.Account                           `mapstructure:"operator_callers"`
+	ControllerAccount            *auth.Account                            `mapstructure:"sandbox_controller_account"`
+	QueueCap                     int                                      `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds            int                                      `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds         int                                      `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
 	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`
@@ -68,7 +70,7 @@ type delegationConfig struct {
 
 func defaultConfig() config {
 	return config{
-		ListenAddress: ":8080", ProxyPort: sandboxapi.ControlServicePort,
+		ProxyPort:                   sandboxapi.ControlServicePort,
 		RunnerControlTargetTemplate: sandboxapi.ControlServiceTargetTemplate(),
 		QueueCap:                    1000, WatchLeaseSeconds: 300, RunnerTimeoutSeconds: 10,
 	}
@@ -87,7 +89,11 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read Runner Gateway settings file")
 		}
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	decodeHook := mapstructure.ComposeDecodeHookFunc(
+		mapstructure.TextUnmarshallerHookFunc(),
+		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
+	)
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
 		return config{}, errors.New("invalid Runner Gateway settings")
 	}
 	c.RuntimeCatalog.Models.NormalizeHarnessNames()
@@ -111,7 +117,6 @@ func (c *config) validate() error {
 		{"runner_token_file", c.RunnerTokenFile},
 		{"dispatcher_audience", c.DispatcherAudience},
 		{"gateway_audience", c.GatewayAudience},
-		{"listen_address", c.ListenAddress},
 		{"runner_control_target_template", c.RunnerControlTargetTemplate},
 	} {
 		if required.value == "" {
@@ -120,6 +125,27 @@ func (c *config) validate() error {
 	}
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return fmt.Errorf("runner_security: %w", err)
+	}
+	if err := c.RPC.Validate(); err != nil {
+		return fmt.Errorf("rpc: %w", err)
+	}
+	if !c.RPC.Has(listener.SPIFFE) || !c.RPC.Has(listener.KubernetesBearer) {
+		return errors.New("rpc.auth must include spiffe and kubernetes_bearer")
+	}
+	if c.DispatcherAudience == c.GatewayAudience || !c.RPC.AllowsBearerAudience(c.DispatcherAudience) || !c.RPC.AllowsBearerAudience(c.GatewayAudience) {
+		return errors.New("rpc kubernetes_bearer audiences must include distinct dispatcher_audience and gateway_audience")
+	}
+	if len(c.rpcBearerAudiences()) != 2 {
+		return errors.New("rpc kubernetes_bearer must configure exactly dispatcher_audience and gateway_audience")
+	}
+	if c.GatewayTLS == nil {
+		return errors.New("gateway_tls is required for the Gateway's control-Service calls")
+	}
+	if err := c.GatewayTLS.Validate(); err != nil {
+		return fmt.Errorf("gateway_tls: %w", err)
+	}
+	if c.GatewayTLS.ServerURI != environment_runtime_transport.SessionDispatcherURI {
+		return errors.New("gateway_tls.server_uri must identify the Session Dispatcher service")
 	}
 	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
 		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")
@@ -179,4 +205,32 @@ func (c *config) validate() error {
 	}
 
 	return nil
+}
+
+func (c config) rpcBearerAudiences() []string {
+	for _, method := range c.RPC.Auth {
+		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok && bearer != nil {
+			return bearer.Audiences
+		}
+	}
+	return nil
+}
+
+// rpcForMethodAudience binds a method family to its own audience and caller mode on the shared listener.
+func (c config) rpcForMethodAudience(audience string, allowSVID bool) listener.Config {
+	result := c.RPC
+	result.Auth = nil
+	for _, method := range c.RPC.Auth {
+		switch method := method.(type) {
+		case *listener.SPIFFEAuth:
+			if allowSVID {
+				result.Auth = append(result.Auth, &listener.SPIFFEAuth{CAFile: method.CAFile})
+			}
+		case *listener.KubernetesBearerAuth:
+			if c.RPC.AllowsBearerAudience(audience) {
+				result.Auth = append(result.Auth, &listener.KubernetesBearerAuth{Audiences: []string{audience}})
+			}
+		}
+	}
+	return result
 }

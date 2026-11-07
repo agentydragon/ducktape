@@ -7,7 +7,12 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoutes, TLSConnectRouteTransport
+from agentplane.egress.platform_routes import (
+    PLATFORM_ROUTES_LISTEN_ADDRESS,
+    PlatformRoutes,
+    TLSBearerConnectRouteTransport,
+    TLSConnectRouteTransport,
+)
 
 CONTAINER_NAME = "egress-sidecar"
 READINESS_PATH = "/readyz"
@@ -120,6 +125,15 @@ class Proxy(BaseModel):
         return value
 
 
+class WorkloadRoute(BaseModel):
+    """One HTTP origin whose sidecar presents the Sandbox SVID to its destination."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    upstream: str
+    server_uri: str
+
+
 class Settings(BaseModel):
     """The Go runtime reads the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE` and nothing
     else: no per-setting env variables and no flags."""
@@ -134,6 +148,10 @@ class Settings(BaseModel):
         "central proxy to substitute where a rule names that audience. Destination tokens are independent "
         "of the proxy hop authentication.",
     )
+    workload_routes: dict[str, WorkloadRoute] = Field(
+        default_factory=dict,
+        description="Exact HTTP origin to service-owned SVID TLS through an opaque central CONNECT.",
+    )
     platform_routes: PlatformRoutes = Field(
         default_factory=lambda: PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS),
         description="One local gRPC listener dispatching allowlisted service prefixes to isolated upstream "
@@ -145,13 +163,19 @@ class Settings(BaseModel):
     readiness_listen_address: str = Field(default=READINESS_LISTEN_ADDRESS, description="HTTP address serving /readyz.")
 
     @model_validator(mode="after")
-    def tls_routes_require_spiffe_proxy_auth(self) -> Settings:
-        has_tls_route = any(
+    def validate_route_authentication(self) -> Settings:
+        has_svid_route = bool(self.workload_routes) or any(
             isinstance(route.transport, TLSConnectRouteTransport) for route in self.platform_routes.routes.values()
         )
-        if has_tls_route and not (
+        has_bearer_route = any(
+            isinstance(route.transport, TLSBearerConnectRouteTransport)
+            for route in self.platform_routes.routes.values()
+        )
+        if has_bearer_route and not isinstance(self.proxy.transport, TLSProxyTransport):
+            raise ValueError("TLS bearer routes require TLS proxy transport")
+        if has_svid_route and not (
             isinstance(self.proxy.transport, TLSProxyTransport)
             and isinstance(self.proxy.transport.auth, SpiffeProxyAuth)
         ):
-            raise ValueError("TLS CONNECT platform routes require TLS proxy transport with SPIFFE authentication")
+            raise ValueError("SVID-authenticated routes require TLS proxy transport with SPIFFE authentication")
         return self

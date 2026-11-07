@@ -48,7 +48,7 @@ func TestWatchCredentialsRedactedUpdatesAndHealth(t *testing.T) {
 	if strings.Contains(string(encoded), "private-secret") || strings.Contains(string(encoded), "private-key") {
 		t.Fatalf("source leaked: %s", encoded)
 	}
-	index.PutCredential(resources.Credential{UID: "uid-1", Name: "github", Description: "Updated", Source: resources.AuthenticatedWorkloadToken{}, Targets: []resources.Target{resources.WholeValue{Header: "x-api-key"}}})
+	index.PutCredential(resources.Credential{UID: "uid-1", Name: "github", Description: "Updated", Source: resources.SecretKey{Name: "keys", Key: "token"}, Targets: []resources.Target{resources.WholeValue{Header: "x-api-key"}}})
 	if got := receive().GetUpsert().GetDescription(); got != "Updated" {
 		t.Fatalf("updated description = %q", got)
 	}
@@ -68,7 +68,7 @@ func TestWatchCredentialsChunksInitialSnapshot(t *testing.T) {
 	for i := range 130 {
 		index.PutCredential(resources.Credential{
 			UID: fmt.Sprintf("uid-%03d", i), Name: fmt.Sprintf("name-%03d", i), Description: "access",
-			Source: resources.AuthenticatedWorkloadToken{}, Targets: []resources.Target{resources.WholeValue{Header: "x-api-key"}},
+			Source: resources.SecretKey{Name: "keys", Key: "token"}, Targets: []resources.Target{resources.WholeValue{Header: "x-api-key"}},
 		})
 	}
 	client, _ := serveGRPC(t, ServiceOptions{Credentials: index, Index: index.Health})

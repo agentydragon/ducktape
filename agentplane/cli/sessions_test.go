@@ -13,6 +13,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -22,7 +23,7 @@ func TestObserveInputRequiresItsOwnHistoryConfiguration(t *testing.T) {
 		"AGENTPLANE_SESSIONS_CREDENTIAL": "dispatcher-placeholder",
 	}
 	code, stdout, stderr := invoke(env, "sessions", "observe-input", "58cae82c-453d-4de7-ae5b-17a8f7596077", "--command-id", "c40dd833-326f-4be1-b42a-4bb74c76c49a")
-	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_HISTORY_URL and AGENTPLANE_HISTORY_CREDENTIAL not set") {
+	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_HISTORY_URL not set") {
 		t.Fatalf("exit %d, stdout %q, stderr %q; want independent History configuration error", code, stdout, stderr)
 	}
 }
@@ -133,13 +134,16 @@ func (sessionProjectionFixture) ReadSessionEvents(_ context.Context, request *hi
 	return response, nil
 }
 
-func TestSessionListDiscoversSessionsWithoutHistoryConfiguration(t *testing.T) {
+func TestSessionListOmitsAuthorizationMetadataWithoutBearerConfiguration(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	fixture := &sessionListFixture{requests: make(chan *dispatcherpb.ListSessionsRequest, 1)}
+	fixture := &sessionListFixture{
+		requests:       make(chan *dispatcherpb.ListSessionsRequest, 1),
+		authorizations: make(chan []string, 2),
+	}
 	dispatcherpb.RegisterSessionDispatcherServer(server, fixture)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -147,8 +151,7 @@ func TestSessionListDiscoversSessionsWithoutHistoryConfiguration(t *testing.T) {
 		_ = listener.Close()
 	})
 	env := map[string]string{
-		"AGENTPLANE_SESSIONS_URL":        "http://" + listener.Addr().String(),
-		"AGENTPLANE_SESSIONS_CREDENTIAL": testCredential,
+		"AGENTPLANE_SESSIONS_URL": "http://" + listener.Addr().String(),
 	}
 	for _, asJSON := range []bool{true, false} {
 		args := []string{"sessions", "list", "--limit", "1", "--after", "previous-page"}
@@ -160,6 +163,9 @@ func TestSessionListDiscoversSessionsWithoutHistoryConfiguration(t *testing.T) {
 			t.Fatalf("sessions list: exit %d, stdout %q, stderr %q", code, stdout, stderr)
 		}
 		request := <-fixture.requests
+		if authorization := <-fixture.authorizations; len(authorization) != 0 {
+			t.Fatalf("Authorization metadata = %v; want no bearer when Sessions credential is unset", authorization)
+		}
 		if request.GetLimit() != 1 || request.GetPageToken() != "previous-page" {
 			t.Fatalf("list request: %v", request)
 		}
@@ -179,11 +185,14 @@ func TestSessionListDiscoversSessionsWithoutHistoryConfiguration(t *testing.T) {
 
 type sessionListFixture struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	requests chan *dispatcherpb.ListSessionsRequest
+	requests       chan *dispatcherpb.ListSessionsRequest
+	authorizations chan []string
 }
 
-func (f *sessionListFixture) ListSessions(_ context.Context, request *dispatcherpb.ListSessionsRequest) (*dispatcherpb.ListSessionsResponse, error) {
+func (f *sessionListFixture) ListSessions(ctx context.Context, request *dispatcherpb.ListSessionsRequest) (*dispatcherpb.ListSessionsResponse, error) {
 	f.requests <- request
+	authorization, _ := metadata.FromIncomingContext(ctx)
+	f.authorizations <- authorization.Get("authorization")
 	return &dispatcherpb.ListSessionsResponse{
 		Sessions: []*dispatcherpb.Session{{
 			SessionId: "58cae82c-453d-4de7-ae5b-17a8f7596077", Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "queued-sandbox", Uid: "queued-sandbox-uid"}}}},

@@ -91,6 +91,8 @@ External authentication, Sandbox/incarnation authorization and Gateway epochs re
 `runtime/control`. Direct Session admission uses that authority and Runtime's gate. `CreateSession`
 acknowledges a durable reservation, without promising process readiness. Model lookup occurs outside
 the gate; the reservation rechecks the epoch and accepted revision before its retained write.
+Claude model lookup uses the local gRPC `model_config_target` without a bearer; the egress
+sidecar authenticates the upstream connection with the Sandbox's SVID.
 Accepted setup may finish after new admission closes. Canceling a setup's bootstrap waiter does
 not cancel the bootstrap operation. Public Execution mutations are counted and admitted against the
 live Runtime-owned executor lifetime; backend loss closes admission without waiting for a COSI event.

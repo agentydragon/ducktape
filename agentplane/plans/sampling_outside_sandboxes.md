@@ -21,12 +21,13 @@ pinned nixpkgs harnesses. No new inference or execution-placement probe was run 
   Rollouts, compaction output and harness configuration are files the agent's own tools can read and
   rewrite: the [isolated executor](../env/runtime/execution/docs/codex_executor.md) is a resource boundary, not a
   trust boundary.
-- Sampling already leaves the Sandbox on the wire. The harness calls the
-  [LLM ingress](../llm_ingress/README.md) with a placeholder bearer that the egress proxy substitutes;
-  the ingress passes bodies through and attributes the request to the calling Pod.
-- Every process in a Sandbox can sample. The `basic` egress policy grants the whole LLM ingress with the
-  `agentplane-workload` credential (`cluster/cdk8s/agentplane/egress.py`), and the placeholder is
-  published in runner instructions ([egress](../egress/README.md#rules-api)).
+- Sampling already leaves the Sandbox on the wire. The harness reaches the
+  [LLM ingress](../llm_ingress/README.md) through an exact-origin sidecar route. The sidecar
+  authenticates the destination TLS connection with the Runtime SVID; the proxy authorizes CONNECT
+  for the Sandbox's ServiceAccount, and the ingress independently verifies the SVID before it
+  attributes the request to the calling Pod.
+- Every process in a Sandbox can sample. The SVID route is available without a caller-held API key
+  or a bearer-substitution credential; the ingress presents its own server-held key to LiteLLM.
 - Isolated executor mode already splits Codex in two inside the Sandbox: the app-server in the runner
   container and `codex exec-server` in a companion container, joined by `CODEX_EXEC_SERVER_URL`.
 

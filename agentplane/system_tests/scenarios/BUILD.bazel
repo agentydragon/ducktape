@@ -86,6 +86,7 @@ py_library(
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:tls",
         "//agentplane/system_tests/driver:tracing",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//grpcio",
@@ -250,6 +251,7 @@ py_library(
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tls",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/testing:codex_model",
         "//agentplane/testing:scripted_model",
@@ -347,6 +349,7 @@ py_library(
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tls",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
@@ -354,5 +357,19 @@ py_library(
         "@pypi//pytest",
         "@pypi//pyyaml",
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "dispatcher_workload",
+    srcs = ["dispatcher_workload.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests/driver:agent",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "@pypi//protobuf",
     ],
 )

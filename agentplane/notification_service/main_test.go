@@ -21,7 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -36,7 +38,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -44,6 +45,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -108,8 +110,9 @@ type running struct {
 	notifications notificationspb.NotificationsClient
 	health        healthpb.HealthClient
 	// url is the service's HTTP listener base URL, used for the signed GitHub webhook.
-	url string
-	db  *sql.DB
+	url        string
+	rpcAddress string
+	db         *sql.DB
 	// actionsToken is the Action Service token file.
 	actionsToken string
 	// wait returns what serve returned, once it has; stop asks it to stop first.
@@ -156,6 +159,7 @@ func restart(t *testing.T, tune func(*config)) running {
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
 	c.Namespace, c.TokenAudience = testNamespace, testAudience
+	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}}
 	c.Actions = actionPeer{URL: "http://" + actionAddress, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
 	c.RunnerGateway = runnerGateway{ControlTarget: runnerAddress, TokenFile: tokenFile("gateway"), RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: historyAddress, TokenFile: tokenFile("history"), RequestTimeoutSeconds: 5}
@@ -182,6 +186,12 @@ func restart(t *testing.T, tune func(*config)) running {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if c.RPC.Has(listener.SPIFFE) {
+		deps.Sandboxes, err = client.New(apiConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
 	go func() { served <- serve(ctx, c, deps, grpcListener, httpListener) }()
@@ -202,14 +212,25 @@ func restart(t *testing.T, tune func(*config)) running {
 		return wait()
 	}
 	t.Cleanup(func() { _ = stop() })
-	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	security, err := (*environment_runtime_transport.ClientTLS)(nil).Credentials()
+	if c.RPC.TLS != nil {
+		for _, method := range c.RPC.Auth {
+			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
+				security, err = (&environment_runtime_transport.ClientTLS{CAFile: spiffe.CAFile, ServerURI: environment_runtime_transport.NotificationsURI}).Credentials()
+			}
+		}
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(security))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
 	return running{
 		notifications: notificationspb.NewNotificationsClient(connection), health: healthpb.NewHealthClient(connection),
-		url: "http://" + httpListener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
+		url: "http://" + httpListener.Addr().String(), rpcAddress: grpcListener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
 	}
 }
 

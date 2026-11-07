@@ -22,7 +22,7 @@ from agentplane.history_service.testing.go_service import wait_for_history_sessi
 from agentplane.proto import command_pb2, event_log_pb2, session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -50,6 +50,52 @@ def remote(sandbox_control: SandboxControlClient, runner: RunningRunner) -> Sand
 
 async def inspect(runner: SandboxRunner, session_id: str) -> session_pb2.SessionSummary:
     return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
+
+
+async def test_mixed_workload_listener_accepts_one_svid_or_bearer(
+    gateway_service: GatewayProcess, sandbox: SandboxCluster, tmp_path: Path, app_token_file: Path
+) -> None:
+    credential_id = sandbox.environment_runtime_identity_uri.rsplit("/", maxsplit=1)[1]
+    await sandbox.patch_sandbox_status(
+        {
+            "status": {
+                "runnerCredential": {
+                    "id": credential_id,
+                    "acceptedId": credential_id,
+                    "kind": "Pod",
+                    "podUid": sandbox.pod_uid,
+                }
+            }
+        }
+    )
+    bearer = (await asyncio.to_thread(app_token_file.read_text)).strip()
+    root_certificates = gateway_service.environment_runtime_ca_file.read_bytes()
+
+    async def list_sessions(*, client_certificate: tuple[Path, Path] | None = None, token: str | None = None) -> None:
+        private_key = certificate_chain = None
+        if client_certificate is not None:
+            certificate_chain = client_certificate[0].read_bytes()
+            private_key = client_certificate[1].read_bytes()
+        credentials = grpc.ssl_channel_credentials(
+            root_certificates=root_certificates, private_key=private_key, certificate_chain=certificate_chain
+        )
+        async with grpc.aio.secure_channel(gateway_service.target, credentials) as channel:
+            metadata = (("authorization", f"Bearer {token}"),) if token is not None else ()
+            await session_dispatcher_pb2_grpc.SessionDispatcherStub(channel).ListSessions(
+                session_dispatcher_pb2.ListSessionsRequest(), metadata=metadata, timeout=10
+            )
+
+    await list_sessions(token=bearer)
+    workload_tls = gateway_service.issue_environment_runtime_tls(
+        sandbox.environment_runtime_identity_uri, tmp_path / "mixed-workload-client"
+    )
+    assert workload_tls.cert_file is not None
+    assert workload_tls.key_file is not None
+    client_certificate = (Path(workload_tls.cert_file), Path(workload_tls.key_file))
+    await list_sessions(client_certificate=client_certificate)
+    with pytest.raises(grpc.aio.AioRpcError) as rejected:
+        await list_sessions(client_certificate=client_certificate, token=bearer)
+    assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
 
 def _spec_at_target(spec: session_pb2.SessionSpec, target: SandboxDestination) -> session_pb2.SessionSpec:

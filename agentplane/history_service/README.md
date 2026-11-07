@@ -1,8 +1,8 @@
 # History Service
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
-public Session ID. Every normal caller is authenticated by projected ServiceAccount token
-(TokenReview), and can read only Sessions whose retained execution principal has the same
+public Session ID. Readers authenticate with a projected ServiceAccount token (TokenReview),
+and can read only Sessions whose retained execution principal has the same
 ServiceAccount namespace, name and UID. This read authority does not depend on a live Sandbox.
 Configured backend readers retain their explicit Pod-bound, service-wide read path; a ServiceAccount
 token alone does not grant it. A Session UUID by itself grants nothing. Consumers use `client.py`;
@@ -43,13 +43,19 @@ not call it.
 
 `ingress/` serves `SessionJournalIngress.Push`, the
 [runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
-journal here, one call per Session. `main.go` serves it on its own listener (`ingress.listen_address`), apart
-from the read API, since it takes untrusted input: the network fence admits the egress proxy to that
-port alone. Its settings name the token audience and the namespaces whose ServiceAccounts may push.
-A Sandbox reaches it only through the egress proxy under the `runner-ingress` policy
-(`cluster/cdk8s/agentplane/history_service.py`), which substitutes the Pod's token for the
-`agentplane-runner-ingress` audience.
+journal here, one call per Session. Sandbox Runtime opens end-to-end mTLS through the sidecar
+and central proxy's exact-authority CONNECT passthrough to `rpc.listen_address`.
+History presents `spiffe://agentplane/history-ingress`, verifies the client SVID against the
+trust-manager roots with an explicit clientAuth EKU, and resolves its Sandbox UID and accepted
+credential generation from live Sandbox status. The caller remains that Sandbox's controller-owned
+ServiceAccount, including its canonical UID. A deleted Sandbox, stale credential or missing bound
+Pod is refused before the ingress handler. No header selects the caller and the proxy asserts none.
+The runner-ingress projected-token audience is absent from Sandbox templates and proxy audiences.
 
+`rpc` configures the shared native gRPC listener, its server TLS files and explicit authentication modes.
+With SPIFFE enabled, `Push` admits Sandbox SVIDs and configured sampler bearer accounts; bearer-only
+listeners retain namespace-scoped writer admission. Reads require their existing bearer audience and
+resource authorization. Presenting a certificate together with bearer or delegation metadata is refused.
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
 UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through
 `Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
@@ -234,8 +240,8 @@ share a repeatable-read snapshot and committed-history watermark.
 
 Bazel targets: `:history-service` and `:service_image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`).
-The read API listens on `listen_address`, where `grpc.health.v1.Health` reports process liveness only.
-Both listener settings accept TCP addresses or inherited descriptors as documented by
+The read API and journal ingress share `rpc.listen_address`, where `grpc.health.v1.Health` reports process liveness only.
+The listener accepts TCP addresses or inherited descriptors as documented by
 [`agentplane/net/listener`](../net/listener/README.md).
 
 ## Optional central producers

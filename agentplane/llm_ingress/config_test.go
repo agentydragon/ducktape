@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 )
 
 func TestLoadConfigPrecedence(t *testing.T) {
@@ -13,7 +14,7 @@ token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
 litellm_key: yaml-secret
 log_llm_requests: true
-port: 6060
+rpc: {listen_address: "127.0.0.1:6060", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [yaml-audience, env-audience]}]}
 codex_model_catalog_file: /yaml/codex_models.json
 models:
   - model: test/model
@@ -24,12 +25,11 @@ models:
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
 		"AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=false",
-		"AGENTPLANE_LLM_INGRESS_PORT=7070",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.TokenAudience != "env-audience" || c.Port != 7070 || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
+	if c.TokenAudience != "env-audience" || c.RPC.ListenAddress != "127.0.0.1:6060" || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
 		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
 		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
 		c.CodexModelCatalogFile != "/yaml/codex_models.json" {
@@ -40,6 +40,7 @@ models:
 func TestAttributionConfig(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
+rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
 litellm_url: http://127.0.0.1:8100
 litellm_key: test-secret
 `
@@ -93,7 +94,7 @@ func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 	for _, value := range []string{`"not-a-budget"`, "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {
 			path := configtest.WriteSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
-				"token_audience: test-audience\n"+
+				"token_audience: test-audience\n"+`rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}`+"\n"+
 				"litellm_url: http://127.0.0.1:8100\n"+
 				"litellm_key: never-include-this-secret\n"+
 				"models:\n  - model: test/model\n    total_context_budget_tokens: "+value+"\n")
@@ -108,6 +109,7 @@ func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 func TestLoadConfigRejectsUnknownFileSettingsWithoutEchoingValues(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
+rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
 litellm_url: http://127.0.0.1:8100
 litellm_key: never-include-this-secret
 models: []
@@ -117,5 +119,23 @@ models: []
 	_, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
 	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 		t.Fatalf("got unsafe or missing config error: %v", err)
+	}
+}
+
+func TestSharedListenerRequiresTLS(t *testing.T) {
+	c := config{
+		AllowedServiceAccountNamespaces: []string{"test-namespace"},
+		TokenAudience:                   testAudience,
+		LiteLLMURL:                      "http://127.0.0.1:8100",
+		LiteLLMKey:                      testBackendKey,
+		Attribution:                     defaultAttribution(),
+		RPC:                             listener.Config{ListenAddress: ":8080", Auth: []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}}},
+	}
+	if err := validateConfig(&c); err == nil {
+		t.Fatal("shared HTTP/2 listener accepted plaintext")
+	}
+	c.RPC.TLS = &listener.TLS{CertFile: "/tls/cert", KeyFile: "/tls/key"}
+	if err := validateConfig(&c); err != nil {
+		t.Fatal(err)
 	}
 }

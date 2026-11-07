@@ -23,12 +23,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/nettest"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -98,7 +100,10 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	c := defaultConfig()
 	c.ActionGroups = groups
 	c.DatabaseURL = integrationDatabase.Clone(t)
-	c.TokenAudience = testAudience
+	c.RPC = listener.Config{
+		ListenAddress: "127.0.0.1:0",
+		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}},
+	}
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
 	c.ReaderAccounts = []auth.Account{readerAccount}
 	c.PolicyNamespace = policyNamespace
@@ -115,13 +120,13 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		t.Fatal(err)
 	}
 	t.Cleanup(unsubscribe)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	rpcListener, err := net.Listen("tcp", c.RPC.ListenAddress)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, cluster, listener) }()
+	go func() { served <- serve(ctx, c, cluster, rpcListener) }()
 	var result error
 	var stopped sync.Once
 	stop := func() error {
@@ -136,7 +141,24 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		return result
 	}
 	t.Cleanup(func() { _ = stop() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	clientCredentials := insecure.NewCredentials()
+	if c.RPC.TLS != nil {
+		if !c.RPC.Has(listener.SPIFFE) {
+			t.Fatal("test TLS listener must supply SPIFFE roots for its client")
+		}
+		for _, method := range c.RPC.Auth {
+			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
+				clientCredentials, err = (&environment_runtime_transport.ClientTLS{
+					CAFile: spiffe.CAFile, ServerURI: environment_runtime_transport.ActionsURI,
+				}).Credentials()
+				if err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+		}
+	}
+	connection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(clientCredentials))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +167,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
 		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
 		linkages:  linkage_servicepb.NewLinkageServiceClient(connection),
-		address:   listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
+		address:   rpcListener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
 

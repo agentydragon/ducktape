@@ -1,10 +1,10 @@
 """One agent messages another, which reads and acknowledges it, each from its own Sandbox.
 
-The sender runs `agentplane notifications send` through the local gRPC route, which puts the Pod's workload
-identity on the request; the grant is the fixture's `send_grant`, a `session_inbox_access` rule to an inbox
-tag the recipient carries, as staging's inbox groups are. The recipient learns of the message only from the
-notice the platform delivers, and reads and acknowledges its inbox through the CLI, as the inbox-handling guide
-tells an agent to.
+The sender runs `agentplane notifications send` through the local gRPC route. The sidecar presents the
+Sandbox SVID, and the Notification Service verifies it to identify the caller. The fixture's `send_grant`
+is a `session_inbox_access` rule to an inbox tag the recipient carries, as staging's inbox groups are.
+The recipient learns of the message only from the notice the platform delivers, and reads and
+acknowledges its inbox through the CLI, as the inbox-handling guide tells an agent to.
 
 What is checked is what the Notification Service recorded, never what either agent said: the entry names
 the sender's ServiceAccount, which only the service's own authentication of the caller can put there, and the

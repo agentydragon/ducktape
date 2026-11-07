@@ -22,9 +22,10 @@ func required(t *testing.T, extra ...string) []string {
 		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
 forward:
   listen_address: 0.0.0.0:8888
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
   auth:
-    - mode: kubernetes_bearer
-      audience: hop
+    - mode: spiffe
+      ca_file: /svid/ca.crt
 `), databaseURLEnv,
 	}, extra...)
 }
@@ -35,9 +36,10 @@ projected_token_audiences: [file-audience]
 exempt_networks: [127.0.0.0/8]
 forward:
   listen_address: 127.0.0.1:5555
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
   auth:
-    - mode: kubernetes_bearer
-      audience: file-hop-audience
+    - mode: spiffe
+      ca_file: /svid/ca.crt
 admin_listen_address: 127.0.0.1:1111
 `)
 	c, err := configtest.Load(t, settingPrefix, loadConfig, []string{
@@ -48,7 +50,7 @@ admin_listen_address: 127.0.0.1:1111
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Forward.ListenAddress != "127.0.0.1:5555" || c.Forward.BearerAudience() != "file-hop-audience" ||
+	if c.Forward.ListenAddress != "127.0.0.1:5555" || !c.Forward.Has(listener.SPIFFE) ||
 		c.AdminListenAddress != "127.0.0.1:1111" ||
 		!slices.Equal(c.AllowedServiceAccountNamespaces, []string{"file-namespace"}) ||
 		!slices.Equal(c.ProjectedTokenAudiences, []string{"file-audience"}) ||
@@ -123,9 +125,9 @@ func TestForwardListenerUsesOneExplicitAuthAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Forward.ListenAddress != "0.0.0.0:8888" || c.Forward.TLS != nil || !c.Forward.Has(listener.KubernetesBearer) ||
-		c.Forward.BearerAudience() != "hop" || c.Forward.Has(listener.SPIFFE) {
-		t.Fatalf("unexpected token-only default forward listener: %+v", c.Forward)
+	if c.Forward.ListenAddress != "0.0.0.0:8888" || c.Forward.TLS == nil || c.Forward.Has(listener.KubernetesBearer) ||
+		!c.Forward.Has(listener.SPIFFE) {
+		t.Fatalf("unexpected SPIFFE-only forward listener: %+v", c.Forward)
 	}
 	for name, contents := range map[string]string{
 		"missing forward listener": "allowed_service_account_namespaces: [ns]\n",
@@ -158,7 +160,7 @@ forward:
     - mode: spiffe
       ca_file: /svid/ca.crt
     - mode: kubernetes_bearer
-      audience: hop
+      audiences: [test-non-sandbox]
 `),
 	))
 	if err != nil {
@@ -166,7 +168,7 @@ forward:
 	}
 	if configured.Forward.ListenAddress != "127.0.0.1:8888" || configured.Forward.TLS == nil ||
 		configured.Forward.TLS.CertFile != "/svid/tls.crt" || configured.Forward.TLS.KeyFile != "/svid/tls.key" ||
-		!configured.Forward.Has(listener.SPIFFE) || !configured.Forward.Has(listener.KubernetesBearer) {
+		!configured.Forward.Has(listener.SPIFFE) || !configured.Forward.AllowsBearerAudience("test-non-sandbox") {
 		t.Fatalf("unexpected forward listener settings: %+v", configured.Forward)
 	}
 }
@@ -175,9 +177,10 @@ func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
 	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
 forward:
   listen_address: 0.0.0.0:8888
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
   auth:
-    - mode: kubernetes_bearer
-      audience: hop
+    - mode: spiffe
+      ca_file: /svid/ca.crt
 admin_grpc_audience: file-audience
 admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
 `)

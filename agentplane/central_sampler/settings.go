@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -104,8 +107,34 @@ func (c ModelConfig) Compatible(other ModelConfig) bool {
 }
 
 type ConnectionConfig struct {
-	BaseURL string     `json:"base_url"`
-	Auth    AuthConfig `json:"auth"`
+	TLS     *environment_runtime_transport.ClientTLS `json:"tls,omitempty"`
+	BaseURL string                                   `json:"base_url"`
+	Auth    AuthConfig                               `json:"auth"`
+}
+
+// HTTPClient retains the provider client's policy while verifying the selected
+// service SVID. External providers continue to use the standard HTTPS verifier.
+func (c ConnectionConfig) HTTPClient(client *http.Client) (*http.Client, error) {
+	if c.TLS == nil {
+		return client, nil
+	}
+	config, err := c.TLS.TLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	baseTransport := client.Transport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+	transport, ok := baseTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("service TLS requires a configurable HTTP transport")
+	}
+	transport = transport.Clone()
+	transport.TLSClientConfig = config
+	copy := *client
+	copy.Transport = transport
+	return &copy, nil
 }
 
 type AuthConfig struct {
@@ -123,6 +152,14 @@ func (c ConnectionConfig) Validate() error {
 		port, err := strconv.Atoi(rawPort)
 		if err != nil || port < 1 || port > 65535 {
 			return errors.New("connection base_url must use a valid TCP port")
+		}
+	}
+	if c.TLS != nil {
+		if parsed.Scheme != "https" {
+			return errors.New("connection tls requires an https base_url")
+		}
+		if err := c.TLS.Validate(); err != nil {
+			return err
 		}
 	}
 	if (c.Auth.Credential == "") == (c.Auth.CredentialFile == "") {
@@ -155,31 +192,33 @@ func (a AuthConfig) ReadCredential() (string, error) {
 }
 
 type Settings struct {
-	Models                           map[string]ModelConfig      `json:"models"`
-	Connections                      map[string]ConnectionConfig `json:"connections"`
-	DatabaseURL                      string                      `json:"database_url"`
-	Listen                           string                      `json:"listen"`
-	Audience                         string                      `json:"audience"`
-	AllowedAccounts                  []string                    `json:"allowed_accounts"`
-	PlatformInstructions             *string                     `json:"platform_instructions,omitempty"`
-	CodeModeHost                     string                      `json:"code_mode_host"`
-	ExecutorCodex                    string                      `json:"executor_codex"`
-	Logs                             string                      `json:"logs"`
-	HistoryTarget                    string                      `json:"history_target"`
-	HistoryTokenFile                 string                      `json:"history_token_file"`
-	GatewayTarget                    string                      `json:"gateway_target"`
-	GatewayTokenFile                 string                      `json:"gateway_token_file"`
-	DirectExecutorTarget             string                      `json:"direct_executor_target"`
-	DirectExecutorInsecureLocaltest  bool                        `json:"direct_executor_insecure_localtest"`
-	MaxLiveSessions                  int                         `json:"max_live_sessions"`
-	TurnTimeoutSeconds               int                         `json:"turn_timeout_seconds"`
-	RPCTimeoutSeconds                int                         `json:"rpc_timeout_seconds"`
-	ExecutorInitializeTimeoutSeconds *int                        `json:"executor_initialize_timeout_seconds,omitempty"`
-	ShutdownDrainSeconds             *int                        `json:"shutdown_drain_seconds,omitempty"`
-	ShutdownBudgetSeconds            *int                        `json:"shutdown_budget_seconds,omitempty"`
-	LeaseSeconds                     int                         `json:"lease_seconds"`
-	AutoCompactTokens                *int                        `json:"auto_compact_tokens"`
-	Kubeconfig                       string                      `json:"kubeconfig"`
+	GatewayTLS                       *environment_runtime_transport.ClientTLS `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
+	HistoryTLS                       *environment_runtime_transport.ClientTLS `mapstructure:"history_tls" json:"history_tls,omitempty"`
+	Models                           map[string]ModelConfig                   `json:"models"`
+	Connections                      map[string]ConnectionConfig              `json:"connections"`
+	DatabaseURL                      string                                   `json:"database_url"`
+	Listen                           string                                   `json:"listen"`
+	Audience                         string                                   `json:"audience"`
+	AllowedAccounts                  []string                                 `json:"allowed_accounts"`
+	PlatformInstructions             *string                                  `json:"platform_instructions,omitempty"`
+	CodeModeHost                     string                                   `json:"code_mode_host"`
+	ExecutorCodex                    string                                   `json:"executor_codex"`
+	Logs                             string                                   `json:"logs"`
+	HistoryTarget                    string                                   `json:"history_target"`
+	HistoryTokenFile                 string                                   `json:"history_token_file"`
+	GatewayTarget                    string                                   `json:"gateway_target"`
+	GatewayTokenFile                 string                                   `json:"gateway_token_file"`
+	DirectExecutorTarget             string                                   `json:"direct_executor_target"`
+	DirectExecutorInsecureLocaltest  bool                                     `json:"direct_executor_insecure_localtest"`
+	MaxLiveSessions                  int                                      `json:"max_live_sessions"`
+	TurnTimeoutSeconds               int                                      `json:"turn_timeout_seconds"`
+	RPCTimeoutSeconds                int                                      `json:"rpc_timeout_seconds"`
+	ExecutorInitializeTimeoutSeconds *int                                     `json:"executor_initialize_timeout_seconds,omitempty"`
+	ShutdownDrainSeconds             *int                                     `json:"shutdown_drain_seconds,omitempty"`
+	ShutdownBudgetSeconds            *int                                     `json:"shutdown_budget_seconds,omitempty"`
+	LeaseSeconds                     int                                      `json:"lease_seconds"`
+	AutoCompactTokens                *int                                     `json:"auto_compact_tokens"`
+	Kubeconfig                       string                                   `json:"kubeconfig"`
 }
 
 func LoadSettings(path string) (Settings, error) {

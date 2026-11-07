@@ -50,6 +50,7 @@ py_library(
         ":settings",
         "//agentplane/central_sampler:sampler_pb2",
         "//agentplane/central_sampler:sampler_pb2_grpc",
+        "//agentplane/environment_runtime_transport:config",
         "//agentplane/native/testing:model_endpoint",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
@@ -325,6 +326,7 @@ py_library(
     name = "settings",
     srcs = ["settings.py"],
     deps = [
+        "//agentplane/environment_runtime_transport:config",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
@@ -396,6 +398,7 @@ go_library(
         "//agentplane/central_sampler/responses",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/bearer",
         "//agentplane/history_service:session_ingress_go_proto",
         "//agentplane/postgres",

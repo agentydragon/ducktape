@@ -996,6 +996,13 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
+	client, err = connection.HTTPClient(client)
+	if err != nil {
+		return "", err
+	}
+	if connection.TLS != nil {
+		defer client.CloseIdleConnections()
+	}
 	body, err := adapter.Prepare(conversation, session, state, metadata)
 	if err != nil {
 		return "", err
@@ -1103,7 +1110,12 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 		return err
 	}
 	headers := map[string]string{"x-agentplane-session-id": metadata.SessionID}
-	result, err := adapter.Sample(ctx, &http.Client{}, connection, plan.Body, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
+	client, err := connection.HTTPClient(&http.Client{})
+	if err != nil {
+		return err
+	}
+	defer client.CloseIdleConnections()
+	result, err := adapter.Sample(ctx, client, connection, plan.Body, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
 	if err != nil {
 		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
 	}

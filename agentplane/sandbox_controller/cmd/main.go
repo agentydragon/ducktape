@@ -86,7 +86,7 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	quiescer := sandboxcontroller.GatewayQuiescer{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile}
+	quiescer := sandboxcontroller.GatewayQuiescer{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS}
 	reconciler := &sandboxcontroller.Reconciler{
 		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt,
 		Quiescer: quiescer, Leases: mgr.GetClient(), RunnerCertificateIssuer: c.RunnerCertificateIssuer, Now: time.Now,

@@ -39,6 +39,7 @@ from agentplane.central_sampler.settings import (
     ResponsesConfig,
 )
 from agentplane.env.config import GuestResources, ResourceLimits
+from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
@@ -65,6 +66,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway_workload,
     staging_config,
     staging_grants,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies, coinbase_egress_rules
 from cluster.cdk8s.agentplane.app_settings import runtime_catalog
@@ -461,8 +463,12 @@ ENV = Environment(
         },
         connections={
             "llm-ingress": ConnectionConfig(
-                base_url=llm_ingress.service(STAGING_NAMESPACE).url,
+                base_url=(
+                    f"https://{llm_ingress.service(STAGING_NAMESPACE).fqdn}:"
+                    f"{llm_ingress.service(STAGING_NAMESPACE).port.number}"
+                ),
                 auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
+                tls=workload_tls.client_tls(LLM_INGRESS_URI),
             ),
             "anthropic-api": ConnectionConfig(
                 base_url="https://api.anthropic.com",
@@ -673,6 +679,7 @@ def chart(app: App) -> Chart:
         endpoint_selector=app_component.service(ENV.namespace).pods.selector,
         egress=[_CONNECTION_SERVICE.egress()],
     )
+    haku_ui_egress.add_gateway_resources(chart, namespace=STAGING_NAMESPACE)
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
     # environment-tools template projects `_BUILDBUDDY_KEY` into its workload containers only.
     credential_external_secret(

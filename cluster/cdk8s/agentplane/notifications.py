@@ -19,6 +19,12 @@ from constructs import Construct
 from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
+from agentplane.environment_runtime_transport.config import (
+    ACTIONS_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.notification_service.settings import (
     TOKEN_AUDIENCE,
     ActionsSettings,
@@ -27,15 +33,16 @@ from agentplane.notification_service.settings import (
     SessionDispatcherSettings,
     Settings,
 )
+from agentplane.workload_auth import listener
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database
+from cluster.cdk8s.agentplane import database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import grpc_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -89,8 +96,7 @@ class Notifications(Construct):
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
-        """Workload RPCs authenticate the caller's ServiceAccount. `callers` names Pods admitted by the
-        service network policy; it does not grant an account authority."""
+        """Bearer-authenticated and Sandbox-SVID RPCs share the TLS gRPC listener."""
         super().__init__(scope, id)
         self.env = env
         self.callers = callers
@@ -115,36 +121,47 @@ class Notifications(Construct):
             "operator_reader_account": "app",
             "notice_debounce": env.notifications_debounce,
             "actions": ActionsSettings(
-                url=AnyHttpUrl(f"http://{actions.fqdn}:{actions.port.number}"),
+                url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),
                 token_file=Path("/var/run/secrets/notifications/actions"),
+                tls=workload_tls.client_tls(ACTIONS_URI),
             ),
             "runner_gateway": RunnerGatewaySettings(
-                control_target=gateway_control_target, token_file=Path("/var/run/secrets/notifications/gateway")
+                control_target=gateway_control_target,
+                token_file=Path("/var/run/secrets/notifications/gateway"),
+                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             ),
             "history_service": HistoryServiceSettings(
-                target=f"{history.fqdn}:{history.pod_port}", token_file=Path("/var/run/secrets/notifications/history")
+                target=f"{history.fqdn}:{history.pod_port}",
+                token_file=Path("/var/run/secrets/notifications/history"),
+                tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
             ),
             "session_dispatcher": SessionDispatcherSettings(
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
                 token_file=Path("/var/run/secrets/notifications/dispatcher"),
+                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             ),
             "github": {"app_id": github.app_id} if github is not None else None,
-            "port": endpoint.pod_port,
             "http_port": http.pod_port,
         }
-        settings = SettingsFile(
-            self,
-            "settings",
-            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
-            path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(validate_settings_fragment(Settings, content)),
-        )
-        readiness = grpc_probe(port=endpoint.pod_port, initial_delay_seconds=3, period_seconds=10)
-        liveness = grpc_probe(
-            port=endpoint.pod_port, service=_LIVENESS_HEALTH_SERVICE, initial_delay_seconds=20, period_seconds=30
-        )
-        startup = grpc_probe(
+        readiness = tls_grpc_probe(
             port=endpoint.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=NOTIFICATIONS_URI,
+            initial_delay_seconds=3,
+            period_seconds=10,
+        )
+        liveness = tls_grpc_probe(
+            port=endpoint.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=NOTIFICATIONS_URI,
+            service=_LIVENESS_HEALTH_SERVICE,
+            initial_delay_seconds=20,
+            period_seconds=30,
+        )
+        startup = tls_grpc_probe(
+            port=endpoint.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=NOTIFICATIONS_URI,
             initial_delay_seconds=0,
             period_seconds=5,
             service=_LIVENESS_HEALTH_SERVICE,
@@ -170,6 +187,27 @@ class Notifications(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
+        serving_tls = workload_tls.serving_certificate(
+            self, env, container=workload.container, name=NAME, uri=NOTIFICATIONS_URI
+        )
+        assert serving_tls.cert_file is not None
+        assert serving_tls.key_file is not None
+        assert serving_tls.ca_file is not None
+        content["rpc"] = listener.Listener(
+            listen_address=f"0.0.0.0:{endpoint.pod_port}",
+            tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+            auth=[
+                listener.KubernetesBearerAuth(audiences=frozenset({TOKEN_AUDIENCE})),
+                listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
+            ],
+        )
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
+            path="/etc/agentplane-notifications/settings.yaml",
+            content=yaml_config(validate_settings_fragment(Settings, content)),
+        )
         role_name = NAME.removeprefix("agentplane-")
         Role(
             self,
@@ -177,7 +215,8 @@ class Notifications(Construct):
             metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
             rules=[
                 # Resolving a destination reads its Sandbox, not the Pod.
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
                 # Authorizing a peer send watches the caller's session_inbox_access rules and reports
                 # a set it cannot parse on each binding that names it, as egress and Actions do.
                 RolePolicyRule(
@@ -220,7 +259,10 @@ class Notifications(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=_LABELS,
-            ingress=[*(pods.admit(endpoint.pod_port) for pods in self.callers)],
+            ingress=[
+                *(pods.admit(endpoint.pod_port) for pods in self.callers),
+                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "egress"), ports=[endpoint.pod_port]),
+            ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_fqdns("api.github.com"),
