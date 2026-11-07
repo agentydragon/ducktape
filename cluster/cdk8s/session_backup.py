@@ -155,7 +155,8 @@ def chart(app: App) -> Chart:
         "rest-server-deployment",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
         pod_metadata=ApiObjectMetadata(labels=_LABELS),
-        replicas=1,
+        # Pause writes while the existing Restic repositories are copied to HDD.
+        replicas=0,
         strategy=DeploymentStrategy.recreate(),
         automount_service_account_token=False,
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
