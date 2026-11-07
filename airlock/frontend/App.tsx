@@ -1,7 +1,7 @@
 import { Alert, Anchor, Badge, Box, Button, Container, Group, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { getApiClient } from "./api";
+import { getDeploymentInfo } from "./api";
 import { isAuthenticationFailurePage, isAuthenticationRedirectStarted } from "./auth";
 import type { DeploymentInfo } from "./types";
 import { OAuthProviders } from "./OAuthProviders";
@@ -11,8 +11,7 @@ export default function App(): JSX.Element {
   const signInFailed = isAuthenticationFailurePage();
 
   useEffect(() => {
-    void getApiClient()
-      .getDeploymentInfo()
+    void getDeploymentInfo()
       .then(setDeploymentInfo)
       .catch((error: unknown) => {
         if (!isAuthenticationRedirectStarted() && !isAuthenticationFailurePage()) {

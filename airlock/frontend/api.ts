@@ -16,19 +16,10 @@ async function apiFetch<T>(path: string): Promise<T> {
   return response.json();
 }
 
-export class AirlockApiClient {
-  async listOAuthProviders(): Promise<OAuthProviderStatus[]> {
-    return apiFetch<OAuthProviderStatus[]>("/api/oauth/providers");
-  }
-
-  async getDeploymentInfo(): Promise<DeploymentInfo> {
-    return apiFetch<DeploymentInfo>("/api/info");
-  }
+export function listOAuthProviders(): Promise<OAuthProviderStatus[]> {
+  return apiFetch<OAuthProviderStatus[]>("/api/oauth/providers");
 }
 
-let client: AirlockApiClient | null = null;
-
-export function getApiClient(): AirlockApiClient {
-  client ??= new AirlockApiClient();
-  return client;
+export function getDeploymentInfo(): Promise<DeploymentInfo> {
+  return apiFetch<DeploymentInfo>("/api/info");
 }
