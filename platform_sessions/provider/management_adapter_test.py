@@ -259,6 +259,22 @@ async def test_import_diagnostics_preserve_specific_failures_and_unknown_outcome
         )
         response = await client.post("/api/integrations/account/session", headers=headers, json=SESSION)
         assert (response.status_code, response.json()["error"]) == (504, "verification_timeout")
+        for unknown, error in (
+            (
+                pb.OperationOutcomeUnknown(reason=pb.UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE),
+                "outcome_unknown_invalid_response",
+            ),
+            (pb.OperationOutcomeUnknown(reason=pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR), "outcome_unknown_http"),
+            (
+                pb.OperationOutcomeUnknown(
+                    reason=pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=429
+                ),
+                "outcome_unknown_http_429",
+            ),
+        ):
+            provider.import_result = pb.ImportSessionResponse(instance=INSTANCE, outcome_unknown=unknown)
+            response = await client.post("/api/integrations/account/session", headers=headers, json=SESSION)
+            assert (response.status_code, response.json()["error"]) == (502, error)
 
 
 @pytest.mark.asyncio

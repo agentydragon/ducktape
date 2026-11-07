@@ -197,6 +197,13 @@ async def test_import_rejects_malformed_provider_diagnostics(tmp_path):
             provider.import_result = pb.ImportSessionResponse(instance=INSTANCE, failure=failure)
             with pytest.raises(ProviderProtocolError):
                 await client.import_session(b"opaque-secret", media_type="application/json", format_version="1")
+        for unknown in (
+            pb.OperationOutcomeUnknown(reason=pb.UNKNOWN_OUTCOME_REASON_TIMEOUT, upstream_http_status=429),
+            pb.OperationOutcomeUnknown(reason=pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=999),
+        ):
+            provider.import_result = pb.ImportSessionResponse(instance=INSTANCE, outcome_unknown=unknown)
+            with pytest.raises(ProviderProtocolError):
+                await client.import_session(b"opaque-secret", media_type="application/json", format_version="1")
 
 
 @pytest.mark.asyncio
