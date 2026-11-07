@@ -9349,8 +9349,15 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - sandboxes
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - policybindings
     verbs:
+      - create
       - get
       - list
       - watch
