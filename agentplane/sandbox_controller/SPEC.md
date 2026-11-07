@@ -73,7 +73,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   `runner-<credential-id>` and waits for its generated TLS Secret. The leaf URI SAN is exactly
   `spiffe://agentplane/environment-runtime/<namespace>/<Sandbox UID>/<credential-id>` and has
   digital-signature, server-authentication and client-authentication usages. Server auth serves
-  Runner control; client auth lets the egress sidecar authenticate to the separate mTLS proxy
+  Runner control; client auth lets the egress sidecar authenticate to the central proxy's forward
   listener. The namespace Issuer signs it; cert-manager owns key generation and renewal. Runner TLS
   files mount from that generation's unique Secret, and the shared trust-manager CA bundle supplies
   the root. A Pod template cannot declare or claim the reserved runner TLS volume name or mount path

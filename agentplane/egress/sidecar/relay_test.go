@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -518,6 +519,11 @@ func TestMTLSDoesNotRequireDestinationBearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	serverCertificate, err := tls.LoadX509KeyPair(serverCredentials.CertFile, serverCredentials.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS.Certificates = []tls.Certificate{serverCertificate}
 	clientRequests := make(chan []string, 1)
 	proxy := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		clientRequests <- request.Header.Values("Proxy-Authorization")

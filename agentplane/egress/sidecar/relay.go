@@ -50,7 +50,7 @@ func (s *sidecar) run(ctx context.Context) error {
 		return fmt.Errorf("start readiness listener: %w", err)
 	}
 
-	routes, err := bindPlatformRoutes(s.config.PlatformRoutes)
+	routes, err := s.bindPlatformRoutes(*s.config.PlatformRoutes)
 	if err != nil {
 		_ = readinessListener.Close()
 		return err
