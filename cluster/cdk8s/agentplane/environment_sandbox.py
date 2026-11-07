@@ -231,7 +231,10 @@ class EnvironmentSandbox(Construct):
                     vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
                 ),
                 platform_instructions=platform_instructions(
-                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_api_service=egress_api_service
+                    env,
+                    session_runtime=SessionRuntime.NATIVE_HARNESS,
+                    egress_api_service=egress_api_service,
+                    egress_host=launcher_relay.GUEST_GATEWAY,
                 ),
                 harness_env=agent_cli_environment(
                     service_urls(env, egress_api_service=egress_api_service, egress_host=launcher_relay.GUEST_GATEWAY)

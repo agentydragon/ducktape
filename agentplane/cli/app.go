@@ -125,8 +125,8 @@ func (s *seconds) String() string { return s.d.String() }
 func (s *seconds) Type() string { return "seconds" }
 
 const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions get, read-turns,
-and observe-input, and calls the HTTP APIs a Sandbox already reaches through the egress proxy: the Notification Service
-(notifications) and the Egress rules API (egress). The environments group reads the co-hosted Runner Gateway discovery
+and observe-input. The Notification Service uses HTTP through the egress proxy; egress rules use gRPC
+through a local sidecar route. The environments group reads the co-hosted Runner Gateway discovery
 API. It adds no authority and keeps no state. Each group reads its AGENTPLANE_*_URL and AGENTPLANE_*_CREDENTIAL pair
 (the placeholder bearer) and fails alone with exit 2 when they are missing; environments uses AGENTPLANE_SESSIONS_URL
 and AGENTPLANE_SESSIONS_CREDENTIAL.

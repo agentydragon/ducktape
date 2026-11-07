@@ -81,7 +81,7 @@ func notificationsEnv(baseURL string) map[string]string {
 }
 
 func egressEnv(baseURL string) map[string]string {
-	return map[string]string{"AGENTPLANE_EGRESS_URL": baseURL, "AGENTPLANE_EGRESS_CREDENTIAL": testCredential}
+	return map[string]string{"AGENTPLANE_EGRESS_GRPC_URL": baseURL, "AGENTPLANE_EGRESS_GRPC_CREDENTIAL": testCredential}
 }
 
 // seen is a request a fake service received.

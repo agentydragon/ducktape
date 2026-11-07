@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -632,31 +631,6 @@ func TestMessageShowsWhatTheSenderCanFollow(t *testing.T) {
 	}
 	if strings.Contains(stdout, "covered") {
 		t.Errorf("stdout %q says covered, which this message is not", stdout)
-	}
-}
-
-func TestEgressRulesPassThroughAndProxyRefusalsAreAttributed(t *testing.T) {
-	rules := `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[{"name":"basic","rules":[{"hosts":["api.example.com"],"methods":{"values":["GET"]},"paths":null,"credential":null}]}]}`
-	var refuse atomic.Bool
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-		if refuse.Load() {
-			w.Header().Set(egressHeader, "denied; reason=no-rule")
-			reply(w, 403, "")
-			return
-		}
-		reply(w, 200, rules)
-	})
-	code, stdout, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
-	if code != 0 || strings.TrimSpace(stdout) != rules {
-		t.Errorf("exit %d, stdout %q; want the rules as served", code, stdout)
-	}
-	if code, stdout, _ := invoke(egressEnv(f.URL), "egress", "rules"); code != 0 || !strings.Contains(stdout, "api.example.com") {
-		t.Errorf("text mode: exit %d, stdout %q", code, stdout)
-	}
-	refuse.Store(true)
-	code, _, stderr := invoke(egressEnv(f.URL), "egress", "rules", "--json")
-	if got := errorOf(t, stderr); code != 1 || got.Source != sourceEgress || got.Reason == nil || *got.Reason != "no-rule" {
-		t.Errorf("exit %d, envelope %+v; want exit 1 attributed to the egress proxy", code, got)
 	}
 }
 

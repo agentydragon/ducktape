@@ -42,12 +42,16 @@ def service_urls(
 
 
 def platform_instructions(
-    env: Environment, *, session_runtime: SessionRuntime, egress_api_service: ServiceRef | None = None
+    env: Environment,
+    *,
+    session_runtime: SessionRuntime,
+    egress_api_service: ServiceRef | None = None,
+    egress_host: str = "127.0.0.1",
 ) -> str:
     """Render the full platform guide with this environment's service URLs."""
-    urls = service_urls(env, egress_api_service=egress_api_service)
+    urls = service_urls(env, egress_api_service=egress_api_service, egress_host=egress_host)
     return render_platform_instructions(
-        egress_api_url=urls.egress,
+        egress_api_url=urls.egress_grpc,
         actions_service_url=urls.actions,
         sessions_service_url=urls.sessions,
         notifications_service_url=urls.notifications,
