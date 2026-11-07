@@ -260,6 +260,10 @@ pub(crate) struct SynchronousCalls {
     /// path. This is a subset of `heap_contents` and is used only to check
     /// explicit commuting premises; the conservative heap order uses all cells.
     pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
+    /// Typed descriptor/shape support for admitted own-data reads and stores.
+    /// This is report/read-footprint evidence, not effect-domain authority.
+    pub(crate) operation_support_receipts:
+        Option<Box<Vec<super::sync_effects::OperationSupportReceipt>>>,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
@@ -287,6 +291,26 @@ pub(crate) struct FallbackOnlyEffects {
 }
 
 impl SynchronousCalls {
+    pub(crate) fn record_operation_support(
+        &mut self,
+        receipt: super::sync_effects::OperationSupportReceipt,
+    ) {
+        let receipts = self
+            .operation_support_receipts
+            .get_or_insert_with(|| Box::new(Vec::new()));
+        if !receipts.contains(&receipt) {
+            receipts.push(receipt);
+        }
+    }
+
+    pub(crate) fn operation_support_receipts(
+        &self,
+    ) -> &[super::sync_effects::OperationSupportReceipt] {
+        self.operation_support_receipts
+            .as_deref()
+            .map_or(&[], Vec::as_slice)
+    }
+
     pub(crate) fn record_heap_contents(&mut self, cells: &HeapContentCells, non_assumed: bool) {
         self.heap_contents.extend(cells);
         if non_assumed {

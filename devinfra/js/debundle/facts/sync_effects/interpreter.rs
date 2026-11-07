@@ -298,6 +298,11 @@ impl Outcome {
         self.effects
             .heap_contents
             .extend(&std::mem::take(&mut nested.heap_contents));
+        if let Some(receipts) = std::mem::take(&mut nested.operation_support_receipts) {
+            for receipt in *receipts {
+                self.effects.record_operation_support(receipt);
+            }
+        }
         let assumed = std::mem::take(&mut nested.fallback_only);
         absorb_effects(
             &mut self.effects.reads,
@@ -3442,6 +3447,26 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         self.outcome
             .effects
             .record_heap_read(cell, self.executor.state.assumption.is_none());
+    }
+    fn operation_support_receipt(
+        &self,
+        operation: super::super::effect_coverage::OperationSupportOperation,
+        origin: u32,
+        dependencies: &crate::analysis_inputs::ProofDependencies,
+    ) -> Option<super::super::effect_coverage::OperationSupportReceipt> {
+        Some(
+            super::super::effect_coverage::OperationSupportReceipt::pooled_object_shape(
+                operation,
+                origin,
+                dependencies,
+            ),
+        )
+    }
+    fn record_operation_support(
+        &mut self,
+        receipt: super::super::effect_coverage::OperationSupportReceipt,
+    ) {
+        self.outcome.effects.record_operation_support(receipt);
     }
     fn record_property_write(&mut self, cell: crate::facts::EffectCell) {
         self.outcome
@@ -8545,6 +8570,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operands_may_throw: bool,
     ) -> EffectCoverageFragment {
         let mut effects = proof.effects.clone();
+        if effects.has_uninstantiated_operation_support() {
+            // A reusable summary cannot compare its provider allocation
+            // ordinal with the caller's heap. Keep all operation domains
+            // unknown unless the parameterized support was instantiated.
+            effects.compose(&EffectCoverageFragment::default());
+        }
         let mut dependencies = self.boxed_settled_prefix_dependencies();
         dependencies.extend(proof.dependencies);
         if let Some(package) = proof.replacement_package {
@@ -8649,6 +8680,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let mut dependencies = body.dependencies.clone();
         dependencies.extend(&input.dependencies);
+        let mut body_effects = body.effects.clone();
+        if !body_effects.instantiate_operation_support(&[origin]) {
+            body_effects.compose(&EffectCoverageFragment::default());
+        }
+        for receipt in body_effects.operation_support_receipts() {
+            if let Some(cell) = receipt.projected_cell() {
+                heap.reads.insert(cell);
+            }
+        }
         outcome.effect_coverage = self.imported_body_effects(
             call,
             ImportedBodyProof {
@@ -8659,12 +8699,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     member: None,
                     key: body.callable_key,
                 },
-                effects: &body.effects,
+                effects: &body_effects,
                 dependencies: &dependencies,
                 replacement_package: body.replacement_package.as_deref(),
             },
             operands_may_throw,
         );
+        for receipt in outcome.effect_coverage.operation_support_receipts() {
+            outcome.effects.record_operation_support(receipt.clone());
+        }
         outcome
             .effects
             .record_heap_contents(&heap, self.state.assumption.is_none());

@@ -1102,6 +1102,211 @@ fn native_descriptor_key_enumeration_conflicts_with_added_keys() {
 }
 
 #[test]
+fn own_data_read_support_allows_disjoint_descriptor_relocation() {
+    let source = "const record = { value: 7 };\nconst observed = record.value;\nconst other = { value: 1 };\nconst descriptors = Object.getOwnPropertyDescriptors({ value: 2 });\nconst applied = Object.defineProperties(other, descriptors);\nconsole.log(observed);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "a_mutator",
+                    &[
+                        Member::new("other"),
+                        Member::new("descriptors"),
+                        Member::new("applied"),
+                    ],
+                ),
+                logical_module("m_record", &[Member::new("record")]),
+                logical_module("z_observer", &[Member::new("observed")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+}
+
+#[test]
+fn own_data_read_support_conflicts_with_replaced_descriptor() {
+    let source = "const target = { value: 7 };\nconst descriptors = Object.getOwnPropertyDescriptors({ value: 42 });\nconst observed = target.value;\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(observed, applied.value);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "a_mutator",
+                    &[
+                        Member::new("target"),
+                        Member::new("descriptors"),
+                        Member::new("applied"),
+                    ],
+                ),
+                logical_module("z_observer", &[Member::new("observed")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--emit-on-rejection", "--effect-conflicts-jsonl"],
+        3,
+    );
+    assert_node_output(
+        &fixture.source_root.join(format!("{}.js", fixture.chunk_id)),
+        "7 42\n",
+        "",
+    );
+    assert_node_output(&fixture.entry_path(), "42 42\n", "");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| {
+            pair["cells"].as_array().is_some_and(|cells| {
+                cells.iter().any(|cell| {
+                    cell["cell"]["kind"] == "object_shape"
+                        && cell["later_operation_support_reads"]
+                            .as_array()
+                            .is_some_and(|receipts| {
+                                receipts
+                                    .iter()
+                                    .any(|receipt| receipt["operation"] == "own_data_read")
+                            })
+                })
+            })
+        })
+        .unwrap_or_else(|| panic!("own-data shape support must appear on the conflict: {rows:#?}"));
+    let cell = pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| {
+            cell["cell"]["kind"] == "object_shape"
+                && cell["later_operation_support_reads"]
+                    .as_array()
+                    .is_some_and(|receipts| {
+                        receipts
+                            .iter()
+                            .any(|receipt| receipt["operation"] == "own_data_read")
+                    })
+        })
+        .unwrap();
+    let receipt = cell["later_operation_support_reads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|receipt| receipt["operation"] == "own_data_read")
+        .unwrap();
+    assert_eq!(
+        receipt["support"]["kind"], "pooled_object_shape",
+        "{cell:#}"
+    );
+    assert_eq!(
+        receipt["support"]["origin"], cell["cell"]["origin"],
+        "the report must bind the read receipt to the projected shape cell: {cell:#}"
+    );
+    assert_eq!(cell["observed_conflict"], true, "{cell:#}");
+}
+
+#[test]
+fn writable_own_data_store_support_conflicts_with_readonly_descriptor_relocation() {
+    let source = "const target = { value: 0 };\nconst stored = (target.value = 7);\nconst frozen_source = Object.freeze({ value: 7 });\nconst descriptors = Object.getOwnPropertyDescriptors(frozen_source);\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(stored, target.value);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "a_readonly",
+                    &[
+                        Member::new("target"),
+                        Member::new("frozen_source"),
+                        Member::new("descriptors"),
+                        Member::new("applied"),
+                    ],
+                ),
+                logical_module("z_store", &[Member::new("stored")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--emit-on-rejection", "--effect-conflicts-jsonl"],
+        3,
+    );
+    assert_node_output(
+        &fixture.source_root.join(format!("{}.js", fixture.chunk_id)),
+        "7 7\n",
+        "",
+    );
+    assert_node_error(&fixture.entry_path(), "TypeError");
+
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    let cell = rows
+        .iter()
+        .flat_map(|pair| pair["cells"].as_array().into_iter().flatten())
+        .find(|cell| {
+            cell["cell"]["kind"] == "object_shape"
+                && cell["observed_conflict"] == true
+                && cell["later_operation_support_reads"]
+                    .as_array()
+                    .is_some_and(|receipts| {
+                        receipts
+                            .iter()
+                            .any(|receipt| receipt["operation"] == "writable_own_data_store")
+                    })
+        })
+        .unwrap_or_else(|| {
+            panic!("the readonly descriptor must conflict with the store support read: {rows:#?}")
+        });
+    let receipt = cell["later_operation_support_reads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|receipt| receipt["operation"] == "writable_own_data_store")
+        .unwrap();
+    assert!(!cell["first_write"].is_null(), "{cell:#}");
+    assert!(!cell["later_read"].is_null(), "{cell:#}");
+    assert_eq!(
+        receipt["support"]["kind"], "pooled_object_shape",
+        "{cell:#}"
+    );
+    assert_eq!(
+        receipt["support"]["origin"], cell["cell"]["origin"],
+        "the writable-store receipt must name the exact projected shape conflict: {cell:#}"
+    );
+}
+
+#[test]
+fn writable_own_data_store_stays_conservative_when_freeze_crosses_it() {
+    let source = "const target = { value: 0 };\nconst stored = (target.value = 7);\nconst frozen = Object.freeze(target);\nconsole.log(stored, target.value);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("a_freezer", &[Member::new("target"), Member::new("frozen")]),
+                logical_module("z_store", &[Member::new("stored")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--emit-on-rejection", "--effect-conflicts-jsonl"],
+        3,
+    );
+    assert_node_output(
+        &fixture.source_root.join(format!("{}.js", fixture.chunk_id)),
+        "7 7\n",
+        "",
+    );
+    assert_node_error(&fixture.entry_path(), "TypeError");
+
+    let report = fixture.effect_translation_validation();
+    assert_ne!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    assert!(
+        rows.iter().any(|pair| pair["havoc"] == true),
+        "existing-target Object.freeze remains an overlapping unknown invalidator: {rows:#?}"
+    );
+}
+
+#[test]
 fn native_descriptor_application_keeps_target_and_prototype_throws() {
     for (setup, target) in [
         ("", "Object.freeze({})"),

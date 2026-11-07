@@ -7,7 +7,10 @@ use super::super::allocation_transfer::{
 use super::super::descriptor_transfer::{
     self, AppliedAccessor, DescriptorCall, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
 };
-use super::super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
+use super::super::effect_coverage::{
+    EffectCoverageFragment, NativeCalleeSelection, OperationSupportOperation,
+    OperationSupportReceipt,
+};
 use super::super::local_operations::{DeferredCallableCreation, LocalBinding, LocalCallee};
 use super::super::local_transfer::{
     self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult, SelectedValue,
@@ -335,6 +338,14 @@ impl LocalContext for ProviderContext<'_> {
             argument: 0,
             property: property.to_owned(),
         });
+        self.parameter_reads
+            .insert(ParameterHeapRead::ObjectShape { argument: 0 });
+        let mut effects = EffectCoverageFragment::no_effects();
+        effects.operation_support(OperationSupportReceipt::parameter_object_shape(
+            OperationSupportOperation::OwnDataRead,
+            0,
+            &ProofDependencies::default(),
+        ));
         Some(LocalValueResult {
             allocation: AllocationValue::opaque(Values::from([AbstractValue::SymbolicInput(
                 SymbolicInputId {
@@ -345,7 +356,7 @@ impl LocalContext for ProviderContext<'_> {
                     },
                 },
             )])),
-            effects: EffectCoverageFragment::no_effects(),
+            effects,
             selection: None,
             postcondition: None,
         })
@@ -384,6 +395,21 @@ impl LocalContext for ProviderContext<'_> {
     // retention remains an independent projection.
     fn record_property_read(&mut self, _cell: crate::facts::EffectCell) {}
     fn record_property_write(&mut self, _cell: crate::facts::EffectCell) {}
+    fn operation_support_receipt(
+        &self,
+        operation: OperationSupportOperation,
+        origin: u32,
+        dependencies: &ProofDependencies,
+    ) -> Option<OperationSupportReceipt> {
+        // This ID is only meaningful in the isolated provider heap. Preserve
+        // that unresolved meaning; only the symbolic input path publishes a
+        // parameter cell for caller-side instantiation.
+        Some(OperationSupportReceipt::provider_world_object_shape(
+            operation,
+            origin,
+            dependencies,
+        ))
+    }
     fn declarative_binding_operation(
         &mut self,
         binding: &Id,
@@ -1117,6 +1143,11 @@ pub(super) fn derive_conditional_body(
         return None;
     }
     let effects = execution.body_effects?;
+    // Provider-local shapes have no checked birth/escape correspondence to
+    // the caller, so this conditional body cannot discharge them.
+    if effects.has_unresolved_provider_operation_support() {
+        return None;
+    }
     let dependencies = effects.closed_effect_dependencies()?;
     Some(
         crate::facts::abstract_domain::foreign_call::DerivedConditionalBody {

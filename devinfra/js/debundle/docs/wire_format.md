@@ -39,6 +39,16 @@ report field. `dependency_graph.json.gz` retains the existing
 may now come from a directly invoked callee. Saved analysis from an earlier
 engine must be recomputed before this field can be read.
 
+Saved `SynchronousCalls` facts carry the required `operation_support_receipts`
+list, `[]` when no admitted own-data operation has support evidence. Saved
+`EffectCoverageFragment` facts carry the required `operation_support` field,
+`[]` when empty. Removing either field makes the saved artifact fail to
+decode. Receipts describe an own-data read or writable-own-data store and its
+mutable shape support; they do not grant effect coverage. Provider parameter
+support is substituted with the caller's actual pooled object origin before it
+enters caller effects. An unresolved provider-world origin is never compared
+with a caller ordinal and retains conservative effects.
+
 ## Native input identity in saved analysis
 
 The staged analysis projection stores native operation premises separately from
@@ -337,7 +347,9 @@ it leaves every graph, bounded summary, source input and census scope intact.
 Each JSONL line is one pair in the complete sweep order; summary examples are
 selected from this stream without changing that order. A line includes
 `runs_first`, `runs_later`, every `cells` entry
-with access provenance, exact `cell_count`, `havoc`, typed `disposition`,
+with access provenance and any full `first_operation_support_reads` /
+`later_operation_support_reads` receipts, exact `cell_count`, `havoc`, typed
+`disposition`,
 `premise_locations`, typed `premise_references`, and the report-only
 `legacy_edge_conflict` comparison.
 `first_opacity` and

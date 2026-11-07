@@ -2860,6 +2860,77 @@ console.log(result, state, independent);\n";
     }
 }
 
+#[test]
+fn own_data_descriptor_support_report_matches_direct_and_saved_analysis() {
+    let source = "const target = { value: 7 };\nconst descriptors = Object.getOwnPropertyDescriptors({ value: 42 });\nconst observed = target.value;\nconst applied = Object.defineProperties(target, descriptors);\nconsole.log(observed, applied.value);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "a_mutator",
+                    &[
+                        Member::new("target"),
+                        Member::new("descriptors"),
+                        Member::new("applied"),
+                    ],
+                ),
+                logical_module("z_observer", &[Member::new("observed")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let run_args = ["--emit-on-rejection", "--effect-conflicts-jsonl"];
+    let direct = staged.run(&run_args);
+    assert_eq!(
+        direct.result.status.code(),
+        Some(3),
+        "{}",
+        direct.result.stderr
+    );
+    let assert_support_receipt = |invocation: &StagedInvocation| {
+        let rows = read_jsonl(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/effect_conflicts.jsonl"),
+        );
+        assert!(
+            rows.iter().any(|pair| {
+                pair["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| {
+                        cell["cell"]["kind"] == "object_shape"
+                            && cell["later_operation_support_reads"]
+                                .as_array()
+                                .is_some_and(|receipts| {
+                                    receipts.iter().any(|receipt| {
+                                        receipt["operation"] == "own_data_read"
+                                            && receipt["support"]["kind"] == "pooled_object_shape"
+                                            && receipt["support"]["origin"]
+                                                == cell["cell"]["origin"]
+                                    })
+                                })
+                    })
+                })
+            }),
+            "serialized conflict rows must retain the projected own-data support: {rows:#?}"
+        );
+    };
+    assert_support_receipt(&direct);
+
+    let artifact = path(&staged.artifact).to_owned();
+    let mut saved_args = run_args.to_vec();
+    saved_args.extend(["--analysis", artifact.as_str()]);
+    let saved = staged.run(&saved_args);
+    assert_eq!(
+        saved.result.status.code(),
+        Some(3),
+        "{}",
+        saved.result.stderr
+    );
+    assert_same_invocation_trees(&direct, &saved);
+    assert_support_receipt(&saved);
+}
+
 fn candidate_relocation_report(invocation: &StagedInvocation, chunk: &str) -> Value {
     read_json(&invocation.output_root().join(format!(
         "reports/tree/{chunk}/candidate_relocation_assessment.json"

@@ -521,6 +521,7 @@ struct SavedSynchronousCalls<'a> {
     global_object_aliases: Option<BTreeSet<SavedBinding>>,
     heap_contents: SavedHeapContentCells,
     non_assumed_heap_accesses: SavedHeapContentAccesses,
+    operation_support_receipts: Vec<super::sync_effects::OperationSupportReceipt>,
     precision_losses: Vec<SavedExecutionPrecisionLoss<'a>>,
     native_integrity_checks: Cow<'a, [crate::reports::schema::NativeIntegrityCheck]>,
     native_prototype_property_checks:
@@ -595,6 +596,7 @@ impl<'a> SavedSynchronousCalls<'a> {
                 &calls.non_assumed_heap_accesses,
                 ordinals,
             )?,
+            operation_support_receipts: calls.operation_support_receipts().to_vec(),
             precision_losses: calls
                 .precision_losses
                 .iter()
@@ -684,6 +686,8 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .transpose()?,
             heap_contents: self.heap_contents.restore(ordinals)?,
             non_assumed_heap_accesses: self.non_assumed_heap_accesses.restore(ordinals)?,
+            operation_support_receipts: (!self.operation_support_receipts.is_empty())
+                .then(|| Box::new(self.operation_support_receipts)),
             precision_losses: self
                 .precision_losses
                 .into_iter()
@@ -723,7 +727,14 @@ mod tests {
     fn saved_synchronous_calls_require_binding_effect_authority() {
         let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
         let mut purities = PuritySnapshot::default();
-        let calls = SynchronousCalls::default();
+        let mut calls = SynchronousCalls::default();
+        calls.record_operation_support(
+            super::super::sync_effects::OperationSupportReceipt::pooled_object_shape(
+                super::super::sync_effects::OperationSupportOperation::OwnDataRead,
+                3,
+                &ProofDependencies::default(),
+            ),
+        );
         let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
             .expect("default facts snapshot");
         let mut encoded = serde_json::to_value(saved).expect("saved facts serialize");
@@ -733,6 +744,15 @@ mod tests {
             .as_object_mut()
             .expect("saved synchronous facts are a struct")
             .remove("binding_effect_coverage");
+        assert!(serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err());
+
+        let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
+            .expect("support receipt snapshot");
+        let mut encoded = serde_json::to_value(saved).expect("saved facts serialize");
+        encoded
+            .as_object_mut()
+            .expect("saved synchronous facts are a struct")
+            .remove("operation_support_receipts");
         assert!(serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err());
     }
 

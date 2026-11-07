@@ -2,8 +2,11 @@
 
 use super::local_operations::{ObjectBindingPattern, ObjectBindingProperty};
 use super::value_model::CallSite;
-use crate::analysis_inputs::{NativeIntrinsic, NativeOperationInputEvidence, ProofDependencies};
+use crate::analysis_inputs::{
+    NativeIntrinsic, NativeOperationInputEvidence, ParameterHeapRead, ProofDependencies,
+};
 use crate::execution_evidence::{ExecutionPrecisionLoss, SkippedCallReason};
+use crate::facts::EffectCell;
 use crate::facts::abstract_domain::builtins::Row;
 use crate::facts::semantic_inference::NativePremise;
 use crate::reports::saved::SavedExecutionPrecisionLoss;
@@ -763,6 +766,125 @@ pub(crate) struct EffectCoverageFragment {
     /// Loss sites whose retained suffix was covered through the same kernel.
     /// This is not an execution-completion or returned-value certificate.
     retained_losses: Option<Box<RetainedLossCoverage>>,
+    /// Typed prerequisites for the successful own-data operations in this
+    /// fragment. These receipts never close an effect domain themselves.
+    #[serde(deserialize_with = "deserialize_required_operation_support")]
+    operation_support: Option<Box<Vec<OperationSupportReceipt>>>,
+}
+
+fn deserialize_required_operation_support<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Box<Vec<OperationSupportReceipt>>>, D::Error> {
+    Ok(
+        Option::<Vec<OperationSupportReceipt>>::deserialize(deserializer)?
+            .filter(|receipts| !receipts.is_empty())
+            .map(Box::new),
+    )
+}
+
+/// Which descriptor/shape proof an already admitted own-data operation read.
+/// Provider arguments stay parameterized until the caller instantiates them;
+/// pooled allocation ordinals are never compared across provider worlds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub(crate) enum OperationSupportLocation {
+    PooledObjectShape {
+        origin: u32,
+    },
+    /// Address from an isolated provider-body execution. Birth and escape are
+    /// not established by its ordinal, so callers must keep it unresolved.
+    ProviderWorldObjectShape {
+        origin: u32,
+    },
+    ParameterHeapRead {
+        read: ParameterHeapRead,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OperationSupportOperation {
+    OwnDataRead,
+    WritableOwnDataStore,
+}
+
+/// Evidence that a selected present own-data operation consumed descriptor
+/// or shape state. It is diagnostic and a read-footprint projection only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationSupportReceipt {
+    pub(crate) operation: OperationSupportOperation,
+    pub(crate) support: OperationSupportLocation,
+    pub(crate) dependencies: Box<ProofDependencies>,
+}
+
+impl OperationSupportReceipt {
+    pub(crate) fn pooled_object_shape(
+        operation: OperationSupportOperation,
+        origin: u32,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        Self {
+            operation,
+            support: OperationSupportLocation::PooledObjectShape { origin },
+            dependencies: Box::new(dependencies.clone()),
+        }
+    }
+
+    pub(crate) fn parameter_object_shape(
+        operation: OperationSupportOperation,
+        argument: usize,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        Self {
+            operation,
+            support: OperationSupportLocation::ParameterHeapRead {
+                read: ParameterHeapRead::ObjectShape { argument },
+            },
+            dependencies: Box::new(dependencies.clone()),
+        }
+    }
+
+    pub(crate) fn provider_world_object_shape(
+        operation: OperationSupportOperation,
+        origin: u32,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        Self {
+            operation,
+            support: OperationSupportLocation::ProviderWorldObjectShape { origin },
+            dependencies: Box::new(dependencies.clone()),
+        }
+    }
+
+    pub(crate) fn projected_cell(&self) -> Option<EffectCell> {
+        match &self.support {
+            OperationSupportLocation::PooledObjectShape { origin } => {
+                Some(EffectCell::ObjectShape(*origin))
+            }
+            OperationSupportLocation::ProviderWorldObjectShape { .. }
+            | OperationSupportLocation::ParameterHeapRead { .. } => None,
+        }
+    }
+
+    fn instantiate_parameter(&mut self, arguments: &[u32]) -> bool {
+        if matches!(
+            &self.support,
+            OperationSupportLocation::ProviderWorldObjectShape { .. }
+        ) {
+            return false;
+        }
+        let OperationSupportLocation::ParameterHeapRead { read } = &self.support else {
+            return true;
+        };
+        let ParameterHeapRead::ObjectShape { argument } = read else {
+            return false;
+        };
+        let Some(origin) = arguments.get(*argument) else {
+            return false;
+        };
+        self.support = OperationSupportLocation::PooledObjectShape { origin: *origin };
+        true
+    }
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -777,6 +899,7 @@ pub(crate) struct SavedEffectCoverageFragment<'a> {
     completion: Completion,
     call_observations: Cow<'a, Option<Box<CallObservationCoverage>>>,
     retained_losses: Option<Vec<SavedExecutionPrecisionLoss<'a>>>,
+    operation_support: Vec<OperationSupportReceipt>,
 }
 
 impl<'a> SavedEffectCoverageFragment<'a> {
@@ -793,10 +916,16 @@ impl<'a> SavedEffectCoverageFragment<'a> {
                     .map(SavedExecutionPrecisionLoss::snapshot)
                     .collect()
             }),
+            operation_support: fragment.operation_support_receipts().to_vec(),
         }
     }
 
     pub(crate) fn restore(self) -> EffectCoverageFragment {
+        let operation_support = if self.operation_support.is_empty() {
+            None
+        } else {
+            Some(Box::new(self.operation_support))
+        };
         EffectCoverageFragment {
             initialization: self.initialization.into_owned(),
             lexical: self.lexical.into_owned(),
@@ -810,6 +939,7 @@ impl<'a> SavedEffectCoverageFragment<'a> {
                         .collect(),
                 })
             }),
+            operation_support,
         }
     }
 }
@@ -907,6 +1037,7 @@ impl EffectCoverageFragment {
             completion: Completion::Normal,
             call_observations: None,
             retained_losses: None,
+            operation_support: None,
         }
     }
 
@@ -927,6 +1058,7 @@ impl EffectCoverageFragment {
             completion: Completion::Normal,
             call_observations: None,
             retained_losses: None,
+            operation_support: None,
         }
     }
 
@@ -966,6 +1098,53 @@ impl EffectCoverageFragment {
         Self::no_effects()
     }
 
+    pub(super) fn operation_support(&mut self, receipt: OperationSupportReceipt) {
+        let receipts = self
+            .operation_support
+            .get_or_insert_with(|| Box::new(Vec::new()));
+        if !receipts.contains(&receipt) {
+            receipts.push(receipt);
+        }
+    }
+
+    pub(crate) fn operation_support_receipts(&self) -> &[OperationSupportReceipt] {
+        self.operation_support.as_deref().map_or(&[], Vec::as_slice)
+    }
+
+    pub(crate) fn has_uninstantiated_operation_support(&self) -> bool {
+        self.operation_support_receipts().iter().any(|receipt| {
+            matches!(
+                &receipt.support,
+                OperationSupportLocation::ProviderWorldObjectShape { .. }
+                    | OperationSupportLocation::ParameterHeapRead { .. }
+            )
+        })
+    }
+
+    pub(crate) fn has_unresolved_provider_operation_support(&self) -> bool {
+        self.operation_support_receipts().iter().any(|receipt| {
+            matches!(
+                &receipt.support,
+                OperationSupportLocation::ProviderWorldObjectShape { .. }
+            )
+        })
+    }
+
+    /// Bind provider-parameter support to the caller's actual pooled object
+    /// regions. Any unsupported or unavailable correspondence refuses the
+    /// entire binding rather than comparing provider ordinals to caller ones.
+    pub(crate) fn instantiate_operation_support(&mut self, arguments: &[u32]) -> bool {
+        let mut instantiated = self.operation_support_receipts().to_vec();
+        if instantiated
+            .iter_mut()
+            .any(|receipt| !receipt.instantiate_parameter(arguments))
+        {
+            return false;
+        }
+        self.operation_support = (!instantiated.is_empty()).then(|| Box::new(instantiated));
+        true
+    }
+
     /// Proof prerequisites for a successfully consumed own-data selection.
     /// Unknown lexical coverage never becomes positive through dependencies.
     pub(super) fn lexical_selection_dependencies(&self) -> Option<Box<ProofDependencies>> {
@@ -990,6 +1169,9 @@ impl EffectCoverageFragment {
             for loss in &losses.sites {
                 self.retain_loss(loss.clone());
             }
+        }
+        for receipt in next.operation_support_receipts() {
+            self.operation_support(receipt.clone());
         }
         match (&mut self.initialization, &next.initialization) {
             (Some(current), Some(next)) => {
@@ -1060,6 +1242,9 @@ impl EffectCoverageFragment {
             for call in observations.skipped_calls.values_mut() {
                 call.dependencies.extend(dependencies);
             }
+        }
+        for receipt in self.operation_support.as_deref_mut().into_iter().flatten() {
+            receipt.dependencies.extend(dependencies);
         }
     }
 
@@ -1767,6 +1952,78 @@ mod tests {
         assert!(
             !decoded.has_closed_effects(),
             "artifact transport must not promote unknown domains"
+        );
+    }
+
+    #[test]
+    fn operation_support_survives_unknown_composition_and_saved_roundtrip_without_authority() {
+        let receipt = OperationSupportReceipt::pooled_object_shape(
+            OperationSupportOperation::OwnDataRead,
+            17,
+            &ProofDependencies::default(),
+        );
+        let mut fragment = EffectCoverageFragment::no_effects();
+        fragment.operation_support(receipt.clone());
+        assert!(fragment.normal_dependencies().is_some());
+
+        fragment.compose(&EffectCoverageFragment::default());
+        assert!(fragment.normal_dependencies().is_none());
+        assert_eq!(
+            fragment.operation_support_receipts(),
+            std::slice::from_ref(&receipt)
+        );
+
+        let saved = SavedEffectCoverageFragment::snapshot(&fragment);
+        let bytes = serde_json::to_vec(&saved).unwrap();
+        let saved: SavedEffectCoverageFragment<'_> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(saved.restore(), fragment);
+
+        let mut incomplete_fragment: serde_json::Value =
+            serde_json::from_slice(&serde_json::to_vec(&fragment).unwrap()).unwrap();
+        incomplete_fragment
+            .as_object_mut()
+            .unwrap()
+            .remove("operation_support");
+        assert!(serde_json::from_value::<EffectCoverageFragment>(incomplete_fragment).is_err());
+
+        let mut incomplete: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        incomplete
+            .as_object_mut()
+            .unwrap()
+            .remove("operation_support");
+        assert!(serde_json::from_value::<SavedEffectCoverageFragment<'_>>(incomplete).is_err());
+    }
+
+    #[test]
+    fn parameter_support_instantiates_only_with_its_argument_origin() {
+        let mut parameterized = EffectCoverageFragment::no_effects();
+        parameterized.operation_support(OperationSupportReceipt::parameter_object_shape(
+            OperationSupportOperation::OwnDataRead,
+            0,
+            &ProofDependencies::default(),
+        ));
+        assert!(parameterized.has_uninstantiated_operation_support());
+        assert!(!parameterized.instantiate_operation_support(&[]));
+        assert!(parameterized.instantiate_operation_support(&[91]));
+        assert_eq!(
+            parameterized.operation_support_receipts()[0].projected_cell(),
+            Some(EffectCell::ObjectShape(91))
+        );
+
+        let mut provider_world = EffectCoverageFragment::no_effects();
+        provider_world.operation_support(OperationSupportReceipt::provider_world_object_shape(
+            OperationSupportOperation::OwnDataRead,
+            7,
+            &ProofDependencies::default(),
+        ));
+        assert!(provider_world.has_unresolved_provider_operation_support());
+        assert!(!provider_world.instantiate_operation_support(&[91]));
+        provider_world.compose(&EffectCoverageFragment::default());
+        assert!(provider_world.normal_dependencies().is_none());
+        assert_eq!(
+            provider_world.operation_support_receipts()[0].projected_cell(),
+            None,
+            "provider-world pooled origins never become caller heap cells"
         );
     }
 
