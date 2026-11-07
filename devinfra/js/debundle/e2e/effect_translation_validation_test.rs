@@ -1706,6 +1706,58 @@ fn abrupt_local_declarations_cannot_seal_binding_effects() {
 }
 
 #[test]
+fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
+    for (expression, expected) in [
+        ("void 0", "7 undefined\n"),
+        ("!0n", "7 true\n"),
+        ("0 === 1", "7 false\n"),
+        ("'' !== 'value'", "7 true\n"),
+        ("``", "7 \n"),
+    ] {
+        let source = format!(
+            "function compute() {{ return {expression}; }}\nconst independent = 7;\nvar result = compute();\nconsole.log(independent, result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "compute",
+                &[Member::new("compute"), Member::new("result")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+        assert_inline_operation_receipt(&fixture, "result", 1, expression);
+        let report = fixture.effect_translation_validation();
+        assert_eq!(report["swapped_pairs"], 1, "{expression}: {report:#}");
+        assert_eq!(
+            report["decision"]["status"], "accepted",
+            "{expression}: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn scalar_primitive_result_does_not_cover_a_discarded_call() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "let calls = 0;\nfunction operand() { calls++; return 1; }\nfunction compute() { return void operand(); }\nvar result = compute();\nconsole.log(calls, result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("calls"),
+                Member::new("operand"),
+                Member::new("compute"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "1 undefined\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "{execution:#}"
+    );
+}
+
+#[test]
 fn noncoercing_scalar_results_keep_local_call_receipts() {
     for (seed, expression, expected) in [
         ("41", "void seed", "undefined\n"),
