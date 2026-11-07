@@ -19,6 +19,7 @@ py_library(
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/agentplane:platform_routes",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
@@ -51,6 +52,7 @@ py_library(
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
+        "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
@@ -60,6 +62,7 @@ py_library(
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/agentplane:egress_policies",
+        "//cluster/cdk8s/agentplane:platform_routes",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
@@ -93,6 +96,7 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

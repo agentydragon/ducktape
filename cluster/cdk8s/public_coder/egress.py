@@ -20,9 +20,10 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
+from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, egress
+from cluster.cdk8s.agentplane import actions, egress, platform_routes
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.clickhouse import client
@@ -38,6 +39,7 @@ NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": NAMESPACE}
 SERVICE_ACCOUNT = "openclaw"
 GATEWAY = egress.proxy("agentplane-staging")
+RULES_ROUTE = platform_routes.egress_rules("agentplane-staging")
 CA_BUNDLE_NAME = "agentplane-egress-ca"
 POLICY = "public-coder-openclaw"
 GITHUB_CREDENTIAL = "github-pat"
@@ -61,7 +63,14 @@ def add_relay_settings(scope: Construct) -> PodWiring:
             transport=sidecar_config.PlaintextProxyTransport(
                 auth=sidecar_config.KubernetesBearerProxyAuth(token_file=Path(_TOKEN_DIR) / "token")
             ),
-        )
+        ),
+        platform_routes={
+            RULES_ROUTE.name: PlatformRoute(
+                listen_address=RULES_ROUTE.local_target,
+                upstream=f"{RULES_ROUTE.service.fqdn}:{RULES_ROUTE.service.pod_port}",
+                token_file=Path(_TOKEN_DIR) / "token",
+            )
+        },
     )
     return SettingsFile(
         scope,
@@ -239,7 +248,7 @@ def add_gateway_resources(
                     **LABELS,
                     "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT,
                 },
-                ports=[GATEWAY.pod_port],
+                ports=[GATEWAY.pod_port, RULES_ROUTE.service.pod_port],
             )
         ],
         egress=[client.HTTP.egress()],
