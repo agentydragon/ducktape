@@ -226,7 +226,7 @@ class ProviderControlClient:
         self._check_candidate_result(response.WhichOneof("result"), response.rejected.reason)
         return response
 
-    async def probe(self, *, source: int) -> pb.ProbeResponse:
+    async def probe(self, *, source: pb.ProbeSource) -> pb.ProbeResponse:
         if source not in _PROBE_SOURCES:
             raise ValueError("Invalid probe source")
         response = await self.stub.Probe(
