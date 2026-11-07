@@ -318,7 +318,6 @@ class App(Construct):
                 *self._oidc_egress_rules(),
                 runner_gateway.service(namespace).egress(),
                 session_dispatcher.service(namespace).egress(),
-                session_dispatcher.http_service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 policy_controller.service(namespace).egress(),

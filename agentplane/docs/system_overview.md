@@ -118,6 +118,8 @@ flowchart LR
     guest --> relay --> egress
     sidecar -.->|rules gRPC| egress
     relay -.->|rules gRPC| egress
+    sidecar -.->|notifications gRPC| notif
+    relay -.->|notifications gRPC| notif
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
