@@ -2,12 +2,11 @@
 
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { create, toJson, type JsonObject } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
 import { Verdict } from "../../../action_service/action_service_pb";
 import {
-  ConnectionSchema,
   DecideConnectionEnrollmentResponseSchema,
   ListCallerServiceAccountsResponseSchema,
   ListConnectionsResponseSchema,
@@ -39,10 +38,6 @@ const PREVIEW = `${ROOT}/connection-enrollments/opaque-handle/preview`;
 const DECISION = `${ROOT}/connection-enrollments/opaque-handle/decision`;
 const CALLERS = `${ROOT}/caller-service-accounts`;
 const CONNECTIONS = `${ROOT}/connections`;
-
-function connectionJson(row: ReturnType<typeof sampleConnection>): JsonObject {
-  return toJson(ConnectionSchema, row) as JsonObject;
-}
 
 /** Answers the preview with `previewed` and a decision with `decided`; a `Response` answers as an
  * HTTP failure. */
@@ -90,8 +85,6 @@ async function decide(container: HTMLElement, label: string, sent: Sent[]): Prom
   await act(async () => button(container, label).click());
   await vi.waitFor(() => expect(decisions(sent)).toHaveLength(before + 1));
 }
-
-const refused = (detail: string): Response => Response.json({ detail }, { status: 409 });
 
 function button(container: HTMLElement, label: string): HTMLButtonElement {
   const found = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent === label);
