@@ -3,18 +3,25 @@
 import { type JSX, act } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { create } from "@bufbuild/protobuf";
 
 import { ActionRequestDetail } from "./detail";
-import { ActionRequest } from "../../../action_service/action_service_pb";
+import { ActionIdentitySchema, ActionState, type ActionRequest } from "../../../action_service/action_service_pb";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { answerApi, mount, request, send, unmountLast, type Sent } from "./testing/harness";
 
-const ROW = {
-  ...request("decision_pending", 21),
-  action: { group: "ssh", name: "exec" },
-  arguments: { host: "test-host.example", user: "test-user", command: "echo exact-command" },
-};
+const ROW = request(ActionState.DECISION_PENDING, 21);
+ROW.action = create(ActionIdentitySchema, { group: "ssh", name: "exec" });
+ROW.arguments = { host: "test-host.example", user: "test-user", command: "echo exact-command" };
+
+function decided(state: ActionState): ActionRequest {
+  const row = request(state, 21);
+  row.action = ROW.action;
+  row.arguments = ROW.arguments;
+  row.title = ROW.title;
+  return row;
+}
 /** Answers the detail page's reads: `stored` for the request itself, `decided` for a decision. */
 function serve({ stored, decided }: { stored?: ActionRequest; decided?: ActionRequest | Response }): Sent[] {
   return answerApi(({ method, path }) => {
@@ -88,11 +95,9 @@ it("opens cached stream details without a reload and Back returns to the origina
 });
 
 it("renders an Action's human-facing label on the full details page", async () => {
-  const row = {
-    ...ROW,
-    action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
-    arguments: { namespace: "tofu-controller" },
-  };
+  const row = clone(ActionRequestSchema, ROW);
+  row.action = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" });
+  row.arguments = { namespace: "tofu-controller" };
   serve({ stored: row });
   const container = await mount(<App initialPath={`/actions/${row.id}`} />);
 
@@ -101,13 +106,13 @@ it("renders an Action's human-facing label on the full details page", async () =
 });
 
 it.each([
-  { verdict: "allow" as const, resultState: "allowed" as const, buttonName: "Approve" },
-  { verdict: "deny" as const, resultState: "denied" as const, buttonName: "Deny" },
+  { verdict: "allow" as const, resultState: ActionState.ALLOWED, buttonName: "Approve" },
+  { verdict: "deny" as const, resultState: ActionState.DENIED, buttonName: "Deny" },
 ])(
   "returns to the originating page after a successful $verdict decision",
   async ({ verdict, resultState, buttonName }) => {
     const sent = serve({
-      decided: { ...ROW, ...request(resultState, 21), action: ROW.action, arguments: ROW.arguments, title: ROW.title },
+      decided: decided(resultState),
     });
     const container = await mount(<App initialPath="/threads/example-thread" />);
     await openPendingActionDetails(container);
@@ -150,7 +155,7 @@ it("stays on action details when a decision fails", async () => {
 it("keeps a direct action link on its terminal receipt after a successful decision", async () => {
   serve({
     stored: ROW,
-    decided: { ...request("allowed", 21), action: ROW.action, arguments: ROW.arguments, title: ROW.title },
+    decided: decided(ActionState.ALLOWED),
   });
   const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
   const approve = await vi.waitFor(() => {
@@ -181,13 +186,7 @@ it("loads uncached deep links and falls back to the Actions page on Back", async
 });
 
 it("refreshes the durable receipt when a watch snapshot removes an action that was pending", async () => {
-  const allowed = {
-    ...request("allowed", 21),
-    id: ROW.id,
-    title: ROW.title,
-    action: ROW.action,
-    arguments: ROW.arguments,
-  };
+  const allowed = decided(ActionState.ALLOWED);
   const sent = serve({ stored: allowed });
   const container = await mount(<App initialPath="/threads/example-thread" />);
   await openPendingActionDetails(container);

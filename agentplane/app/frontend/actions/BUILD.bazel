@@ -143,7 +143,9 @@ agentplane_vitest_test(
     srcs = ["requests.test.tsx"],
     deps = [
         ":action_client",
+        ":presentation",
         ":requests",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
@@ -160,6 +162,7 @@ agentplane_vitest_test(
     deps = [
         ":requests",
         ":sidebar",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
@@ -195,10 +198,12 @@ agentplane_vitest_test(
         ":detail",
         ":requests",
         ":sidebar",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
 )

@@ -201,9 +201,12 @@ agentplane_vitest_test(
     srcs = ["index.test.tsx"],
     deps = [
         ":index",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions:call_tool_result",
+        "//agentplane/app/frontend/actions:presentation",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
@@ -213,9 +216,11 @@ agentplane_vitest_test(
     srcs = ["github/index.test.tsx"],
     deps = [
         ":index",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
