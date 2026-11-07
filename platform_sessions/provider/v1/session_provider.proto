@@ -1,0 +1,217 @@
+syntax = "proto3";
+
+package platform_sessions.provider.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// Control-plane operations for a provider process. A process can serve one or more configured
+// instances of one provider. Provider routes themselves use the separate private HTTP data plane.
+service SessionProviderControl {
+  // Returns process identity, all configured instances, their route declarations, and accepted
+  // session-import formats. This reads local configuration and does not contact upstreams.
+  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
+
+  // Returns locally known durable session state. This does not contact the upstream or imply that
+  // the session is currently usable; callers use Probe for a fresh verification.
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+
+  // Installs a provider-specific exported session candidate. Candidate bytes are write-only:
+  // implementations must never echo them in any result, status snapshot, log, or metric.
+  // This operation can exchange or rotate upstream credentials. A caller that loses the response
+  // after dispatch must not replay the request automatically; it must reconnect and inspect the
+  // local snapshot, preserving OUTCOME_UNKNOWN if the provider cannot establish what happened.
+  rpc ImportSession(ImportSessionRequest) returns (ImportSessionResponse);
+
+  // Performs one provider-defined session verification. A successful result means the provider
+  // confirmed authentication, not merely that an HTTP request succeeded. A probe may rotate
+  // credentials, which the provider must persist before returning a completed result.
+  // A caller must not automatically repeat a call whose outcome was lost after dispatch.
+  rpc Probe(ProbeRequest) returns (ProbeResponse);
+}
+
+message InstanceRef {
+  // Stable provider identifier, such as "blueshield".
+  string provider_id = 1;
+  // Stable configured instance identifier within this provider process.
+  string instance_id = 2;
+}
+
+message GetInfoRequest {}
+
+message GetInfoResponse {
+  // Stable process-level identity and the complete set of currently configured instances.
+  ProviderInfo provider = 1;
+}
+
+message ProviderInfo {
+  string provider_id = 1;
+  string display_name = 2;
+  // Build or implementation version, for diagnostics only.
+  string version = 3;
+  repeated ProviderInstanceInfo instances = 4;
+}
+
+message ProviderInstanceInfo {
+  string instance_id = 1;
+  repeated RouteDescription routes = 2;
+  // Origin-relative HTTP data-plane path serving this instance's OpenAPI document, when available.
+  optional string openapi_document_path = 3;
+  repeated SessionImportFormat accepted_session_import_formats = 4;
+}
+
+message RouteDescription {
+  // Stable and unique within this provider, suitable for gateway grant configuration.
+  string operation_id = 1;
+  // Uppercase HTTP method token. The gateway must never infer safety from this field.
+  string method = 2;
+  // Origin-relative upstream path template handled by the provider's private HTTP data plane.
+  // This is descriptive routing metadata, not an arbitrary destination URL.
+  string path_template = 3;
+  // Explicit provider classification. UNSPECIFIED is an invalid descriptor; the gateway must deny
+  // MIXED_OR_UNKNOWN routes unless its policy explicitly grants that class. Neither method nor
+  // path implies an access class.
+  RouteAccessClass access_class = 4;
+  string summary = 5;
+}
+
+enum RouteAccessClass {
+  ROUTE_ACCESS_CLASS_UNSPECIFIED = 0;
+  // The operation only reads upstream state according to the provider's reviewed contract.
+  ROUTE_ACCESS_CLASS_READ_ONLY = 1;
+  // The operation changes upstream state.
+  ROUTE_ACCESS_CLASS_STATE_CHANGING = 2;
+  // The provider cannot make a narrower claim; gateway policy must treat it conservatively.
+  ROUTE_ACCESS_CLASS_MIXED_OR_UNKNOWN = 3;
+}
+
+message SessionImportFormat {
+  // MIME type of the submitted candidate bytes, such as application/json.
+  string media_type = 1;
+  // Provider-defined format version. It is explicit so a format evolution is not guessed.
+  string version = 2;
+}
+
+message GetSessionRequest {
+  InstanceRef instance = 1;
+}
+
+message GetSessionResponse {
+  InstanceRef instance = 1;
+  SessionSnapshot snapshot = 2;
+}
+
+// Snapshot of durable, locally known state. It is not a lease, fencing token, or promise that a
+// remote session remains valid beyond the time of the last successful verification.
+message SessionSnapshot {
+  // Providers must return a known state; UNSPECIFIED is a protocol error.
+  SessionState state = 1;
+  // Time at which the provider last changed this locally known state.
+  google.protobuf.Timestamp state_changed_at = 2;
+  // Absent until this process has completed a probe. A failed RPC transport is not a completed
+  // probe and therefore does not create a ProbeResult.
+  ProbeResult last_probe = 3;
+  // Most recent successful authentication verification, even if a later probe failed.
+  google.protobuf.Timestamp last_verified_at = 4;
+}
+
+enum SessionState {
+  SESSION_STATE_UNSPECIFIED = 0;
+  SESSION_STATE_NO_SESSION = 1;
+  SESSION_STATE_UNVERIFIED = 2;
+  SESSION_STATE_VERIFIED = 3;
+  SESSION_STATE_REAUTHENTICATION_REQUIRED = 4;
+  SESSION_STATE_CHALLENGE_REQUIRED = 5;
+  // Use when an ambiguous upstream interaction may have changed credentials and local state
+  // cannot establish which session is current. Do not infer that retrying is safe.
+  SESSION_STATE_OUTCOME_UNKNOWN = 6;
+}
+
+message ImportSessionRequest {
+  InstanceRef instance = 1;
+  // Must match a format declared by GetInfo. All fields are required. Invalid envelopes use the
+  // INVALID_ARGUMENT gRPC status; a well-formed candidate rejected by the provider uses the typed
+  // CandidateRejected result.
+  string media_type = 2;
+  string format_version = 3;
+  // May contain reusable credentials. Never include this field in logs, errors, or telemetry.
+  bytes candidate = 4;
+}
+
+message ImportSessionResponse {
+  InstanceRef instance = 1;
+  // Every completed import returns exactly one typed result. An unset result is a protocol error.
+  oneof result {
+    SessionInstalled installed = 10;
+    CandidateRejected rejected = 11;
+    ReauthenticationRequired reauthentication_required = 12;
+    ChallengeRequired challenge_required = 13;
+    UpstreamUnavailable upstream_unavailable = 14;
+    OperationOutcomeUnknown outcome_unknown = 15;
+  }
+}
+
+// Indicates that candidate handling and any required credential exchange were durably committed.
+// It does not mean that the upstream session was verified; use Probe for that.
+message SessionInstalled {}
+
+message CandidateRejected {
+  CandidateRejectionReason reason = 1;
+}
+
+enum CandidateRejectionReason {
+  CANDIDATE_REJECTION_REASON_UNSPECIFIED = 0;
+  CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT = 1;
+  CANDIDATE_REJECTION_REASON_MALFORMED = 2;
+  CANDIDATE_REJECTION_REASON_NOT_ACCEPTED = 3;
+}
+
+message ProbeRequest {
+  InstanceRef instance = 1;
+  // Required. PROBE_SOURCE_UNSPECIFIED is invalid.
+  ProbeSource source = 2;
+}
+
+enum ProbeSource {
+  PROBE_SOURCE_UNSPECIFIED = 0;
+  // Started by the provider's configured background schedule.
+  PROBE_SOURCE_SCHEDULED = 1;
+  // Started by an explicit gateway or operator request.
+  PROBE_SOURCE_MANUAL = 2;
+}
+
+message ProbeResponse {
+  InstanceRef instance = 1;
+  ProbeResult result = 2;
+}
+
+message ProbeResult {
+  google.protobuf.Timestamp completed_at = 1;
+  ProbeSource source = 2;
+  // Every completed probe returns exactly one typed result. An unset result is a protocol error.
+  // A gRPC transport/status error means no completed ProbeResult was received; it must not be
+  // translated to UPSTREAM_UNAVAILABLE or replayed automatically after an ambiguous dispatch.
+  oneof result {
+    ProbeVerified verified = 10;
+    ReauthenticationRequired reauthentication_required = 11;
+    ChallengeRequired challenge_required = 12;
+    UpstreamUnavailable upstream_unavailable = 13;
+    OperationOutcomeUnknown outcome_unknown = 14;
+  }
+}
+
+message ProbeVerified {}
+
+message ReauthenticationRequired {}
+
+message ChallengeRequired {}
+
+message UpstreamUnavailable {
+  // Optional guidance from the provider; it does not authorize request replay.
+  google.protobuf.Duration retry_after = 1;
+}
+
+message OperationOutcomeUnknown {
+  // True when an upstream request may have rotated credentials before its outcome was lost.
+  bool credential_rotation_may_have_occurred = 1;
+}
