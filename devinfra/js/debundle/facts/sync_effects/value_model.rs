@@ -358,7 +358,7 @@ pub(super) enum InstanceOrigin {
     /// Present data descriptors established by this completed constructor
     /// activation. The pooled class heap still supplies their possible values.
     Constructed {
-        own_data: BTreeSet<String>,
+        own_data: Arc<BTreeSet<String>>,
     },
     Projected,
 }
