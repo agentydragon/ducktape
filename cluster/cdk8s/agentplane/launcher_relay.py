@@ -19,8 +19,9 @@ after KubeVirt's existing initializers, alongside the filesystem daemons below.
 
 PVC-, Secret- and ConfigMap-backed virtiofs daemons run as native sidecars, after KubeVirt's existing
 initializers. They stay alive until compute exits, allowing the guest to close journals and unmount
-state and credential volumes during shutdown. ContainerPath daemons remain ordinary containers
-because KubeVirt reconciles them there.
+state and credential volumes during shutdown. Only volumes referenced by a VMI virtiofs filesystem
+device qualify; disk-only volumes do not. ContainerPath daemons remain ordinary containers because
+KubeVirt reconciles them there.
 
 Failure scope: the policy registers its own webhook, narrowed by match conditions to this namespace's
 launcher creates and updates of Pods carrying the token volume. With Kyverno down, only VM Sandboxes
@@ -48,6 +49,14 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMutateForeachPreconditions,
     ClusterPolicySpecRulesMutateForeachPreconditionsAll,
     ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator,
+    ClusterPolicySpecRulesValidate,
+    ClusterPolicySpecRulesValidateForeach,
+    ClusterPolicySpecRulesValidateForeachContext,
+    ClusterPolicySpecRulesValidateForeachContextVariable,
+    ClusterPolicySpecRulesValidateForeachDeny,
+    ClusterPolicySpecRulesValidateForeachPreconditions,
+    ClusterPolicySpecRulesValidateForeachPreconditionsAll,
+    ClusterPolicySpecRulesValidateForeachPreconditionsAllOperator,
     ClusterPolicySpecValidationFailureAction,
     ClusterPolicySpecWebhookConfiguration,
     ClusterPolicySpecWebhookConfigurationMatchConditions,
@@ -65,6 +74,14 @@ GUEST_GATEWAY = "10.0.2.1"
 CONTROLLER_USERNAME = "system:serviceaccount:kubevirt:kubevirt-controller"
 _KUBEVIRT_API_VERSION = "kubevirt.io/v1"
 _SANDBOX_API_VERSION = f"{GROUP}/{VERSION}"
+_FILESYSTEM_NAMES = "(vmi.spec.domain.devices.filesystems[?virtiofs != null].name || `[]`)"
+_ELIGIBLE_VOLUMES = "(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap] || `[]`)"
+_ELIGIBLE_DAEMON_NAMES = (
+    "(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]) || `[]`)"
+)
+_FILESYSTEM_DAEMON_NAMES = (
+    "(vmi.spec.domain.devices.filesystems[?virtiofs != null].join('', ['virtiofs-', name]) || `[]`)"
+)
 
 
 def _controller(kind: str, api_version: str) -> str:
@@ -298,8 +315,11 @@ class LauncherRelayPolicy(ClusterPolicy):
                                         ),
                                         ClusterPolicySpecRulesMutateForeachPreconditionsAll(
                                             key=(
-                                                "{{ contains(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap]."
-                                                "join('', ['virtiofs-', name]), element.name) }}"
+                                                "{{ contains("
+                                                + _ELIGIBLE_DAEMON_NAMES
+                                                + ", element.name) && contains("
+                                                + _FILESYSTEM_DAEMON_NAMES
+                                                + ", element.name) }}"
                                             ),
                                             operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
                                             value=True,
@@ -317,6 +337,58 @@ class LauncherRelayPolicy(ClusterPolicy):
                                 ),
                             )
                         ]
+                    ),
+                ),
+                ClusterPolicySpecRules(
+                    name="require-native-virtiofs-daemons",
+                    match=launchers,
+                    context=_context(),
+                    validate=ClusterPolicySpecRulesValidate(
+                        message="Every PVC-, Secret-, or ConfigMap-backed VMI virtiofs daemon must be one native sidecar.",
+                        foreach=[
+                            ClusterPolicySpecRulesValidateForeach(
+                                list=_ELIGIBLE_VOLUMES,
+                                preconditions=ClusterPolicySpecRulesValidateForeachPreconditions(
+                                    all=[
+                                        ClusterPolicySpecRulesValidateForeachPreconditionsAll(
+                                            key="{{ contains(" + _FILESYSTEM_NAMES + ", element.name) }}",
+                                            operator=ClusterPolicySpecRulesValidateForeachPreconditionsAllOperator.EQUALS,
+                                            value=True,
+                                        )
+                                    ]
+                                ),
+                                context=[
+                                    ClusterPolicySpecRulesValidateForeachContext(
+                                        name="daemonName",
+                                        variable=ClusterPolicySpecRulesValidateForeachContextVariable(
+                                            jmes_path="join('', ['virtiofs-', element.name])"
+                                        ),
+                                    ),
+                                    *[
+                                        ClusterPolicySpecRulesValidateForeachContext(
+                                            name=context_name,
+                                            variable=ClusterPolicySpecRulesValidateForeachContextVariable(
+                                                jmes_path=f"request.object.spec.{containers}[?name=='{{{{ daemonName }}}}']"
+                                            ),
+                                        )
+                                        for context_name, containers in [
+                                            ("ordinaryDaemons", "containers"),
+                                            ("nativeDaemons", "initContainers"),
+                                        ]
+                                    ],
+                                ],
+                                deny=ClusterPolicySpecRulesValidateForeachDeny(
+                                    conditions={
+                                        "any": [
+                                            _mismatch("length(ordinaryDaemons || `[]`)", 0),
+                                            _mismatch("length(nativeDaemons || `[]`)", 1),
+                                            _mismatch("length(nativeDaemons[?restartPolicy=='Always'] || `[]`)", 1),
+                                            _mismatch("nativeDaemons[0].command[0] || ''", "/usr/libexec/virtiofsd"),
+                                        ]
+                                    }
+                                ),
+                            )
+                        ],
                     ),
                 ),
                 ClusterPolicySpecRules(
