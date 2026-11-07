@@ -6952,7 +6952,7 @@ spec:
           name: actions
           ports:
             - containerPort: 8080
-              name: http
+              name: grpc
               protocol: TCP
           readinessProbe:
             failureThreshold: 3
@@ -7080,7 +7080,7 @@ metadata:
 spec:
   externalIPs: []
   ports:
-    - name: http
+    - name: grpc
       port: 8080
       protocol: TCP
       targetPort: 8080
@@ -7493,13 +7493,6 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: monitoring
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
             app.kubernetes.io/name: notifications
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -7530,19 +7523,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: actions
-  namespace: agentplane-staging
-spec:
-  endpoints:
-    - path: /metrics
-      port: http
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: actions
 ---
 apiVersion: v1
 kind: ConfigMap

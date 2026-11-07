@@ -1,5 +1,5 @@
 """The Action Service: its Deployment, RBAC, ConfigMaps,
-Service, NetworkPolicy, ServiceMonitor, optional PodDisruptionBudget, and the admission policy on the launcher grants of
+Service, NetworkPolicy, optional PodDisruptionBudget, and the admission policy on the launcher grants of
 an environment with the orchestration_v1 group. Staging's policy sets are added by its chart.
 """
 
@@ -27,7 +27,6 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.orchestration_v1.binding import (
@@ -50,7 +49,6 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -91,7 +89,7 @@ _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 def service(namespace: str) -> ServiceRef:
     """The Action Service in one environment's namespace."""
     return ServiceRef(
-        name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+        name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
     )
 
 
@@ -278,8 +276,8 @@ def mcp_oauth_secret(namespace: str) -> SecretRef:
 
 class Actions(Construct):
     """ServiceAccount, RBAC, ConfigMaps, Deployment, Service,
-    and optional PodDisruptionBudget for the Action Service. The fleet network policy, metrics
-    scrape and public route are added by `add_platform_resources`.
+    and optional PodDisruptionBudget for the Action Service. The fleet network policy is added by
+    `add_platform_resources`.
     """
 
     def __init__(
@@ -374,15 +372,8 @@ class Actions(Construct):
             add_launcher_admission(self, env.namespace)
 
     def add_platform_resources(self) -> None:
-        """Add the Cilium policy and metrics scrape used by fleet environments."""
+        """Add the Cilium policy used by fleet environments."""
         self._add_network_policy()
-        ServiceMonitor(
-            self,
-            "service-monitor",
-            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
-            selector=ServiceMonitorSpecSelector(match_labels=self.service.labels),
-            endpoints=[Endpoint.plain(port=self.service.port.name)],
-        )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
@@ -520,7 +511,7 @@ class Actions(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
             ),
-            # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
+            # 20s execution drain + 5s forced persistence, with room for adapter teardown.
             termination_grace=Duration.seconds(60),
             placement=self.placement,
             telemetry_enabled=True,
@@ -585,7 +576,6 @@ class Actions(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
-                cilium.SCRAPERS.admit(self.service.pod_port),
                 notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),

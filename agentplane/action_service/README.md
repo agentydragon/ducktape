@@ -7,6 +7,8 @@ external harnesses remain clients rather than state owners.
 Agent entry point: `agentplane actions guide` ([source](docs/agents/llms.txt)), with lifecycle,
 recovery and Kubernetes/grant workflows. The service API is defined by its protobuf contracts;
 the integration app exposes its own generated HTTP/JSON facade for browser clients.
+The `/v1/` HTTP examples below describe that facade (mounted under `/upstream/actions` in the app),
+not routes on the Action Service listener.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
@@ -339,7 +341,7 @@ Echo is only an explicitly injected test executor, never a production default.
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
 path aborts startup rather than silently selecting that empty catalog. Missing bindings and unsupported kinds fail
 settings validation without echoing input values. All bindings are validated before any server is
-launched. All MCP groups start unavailable with independent supervisors; HTTP startup does not
+launched. All MCP groups start unavailable with independent supervisors; service startup does not
 await a backend. Connection/initialization and discovery are bounded to 15 seconds; retries use
 exponential jitter (up to 30 seconds), reset after 30 seconds of stable availability. Mounted
 credentials and OAuth linkage recover without restarting the service. Invalid catalogs clear

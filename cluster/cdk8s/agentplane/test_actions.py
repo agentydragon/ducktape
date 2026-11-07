@@ -61,6 +61,16 @@ def test_action_client_metadata_route_targets_mcp_edge(staging_manifests: list[d
     assert backend["port"] == edge.port.number
 
 
+def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]]) -> None:
+    service = one(
+        doc for doc in staging_manifests if doc["kind"] == "Service" and doc["metadata"]["name"] == actions.NAME
+    )
+    assert one(service["spec"]["ports"])["name"] == "grpc"
+    assert not any(
+        doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == actions.NAME for doc in staging_manifests
+    )
+
+
 def _gaffer_approval(manifests: list[dict[str, Any]], action: str) -> dict[str, Any]:
     policy = one(
         doc

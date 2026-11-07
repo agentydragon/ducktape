@@ -1,7 +1,7 @@
 # Same-principal Session Actions
 
-Agent workflow: [Session delegation](../docs/agents/session_delegation.md), served from the Actions
-`/llms.txt` index and through MCP `get_guide(name="session_delegation")`.
+Agent workflow: [Session delegation](../docs/agents/session_delegation.md), available with
+`agentplane actions guide session_delegation` and MCP `get_guide(name="session_delegation")`.
 
 The `session_delegation` executor forwards the ServiceAccount identity retained with an Action
 request to Environment Service, Session Dispatcher and History. These APIs enforce their normal

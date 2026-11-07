@@ -315,7 +315,7 @@ backend's current target policy.
 
 ## Optional MCP backends
 
-Backend availability is independent of Action Service readiness and HTTP/OAuth availability.
+Backend availability is independent of Action Service readiness and public OAuth availability.
 Malformed local bindings fail startup; unavailable peers, runtime credentials, linkage, and
 invalid discovered catalogs affect only their group and recover without a service restart.
 Discovery exposes replica-local, credential-safe lifecycle diagnostics, never stale runnable tools.
