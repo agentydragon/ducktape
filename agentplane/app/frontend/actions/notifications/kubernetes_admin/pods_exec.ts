@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { actionArguments } from "../../presentation";
 
-import type { ActionRequestView } from "../../types";
+import type { ActionRequest } from "../../../../../action_service/action_service_pb";
 import { argvText } from "../../../argv_text";
 import { commandNotificationText } from "../command";
 import type { ActionNotificationParts } from "../types";
@@ -15,8 +16,8 @@ const podsExecNotificationArguments = z.strictObject({
   command: z.array(z.string()),
 });
 
-export function podsExecNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = podsExecNotificationArguments.safeParse(request.arguments);
+export function podsExecNotification(request: ActionRequest): ActionNotificationParts | null {
+  const parsed = podsExecNotificationArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
 
   return {

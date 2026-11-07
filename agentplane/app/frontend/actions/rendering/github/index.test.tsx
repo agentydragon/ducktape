@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
 import { act } from "react";
+import { create } from "@bufbuild/protobuf";
+
+import { ActionIdentitySchema } from "../../../../../action_service/action_service_pb";
 import { describe, expect, it } from "vitest";
 
 import { mount } from "../../testing/harness";
@@ -12,12 +15,12 @@ import {
   renderPaneOpened,
 } from "../index";
 
-const PUSH_FILES = { group: "github", name: "push_files" };
-const DELETE_FILE = { group: "github", name: "delete_file" };
-const UPDATE_PULL_REQUEST = { group: "github", name: "update_pull_request" };
-const CREATE_BRANCH = { group: "github", name: "create_branch" };
-const CREATE_PULL_REQUEST = { group: "github", name: "create_pull_request" };
-const SEARCH_PULL_REQUESTS = { group: "github", name: "search_pull_requests" };
+const PUSH_FILES = create(ActionIdentitySchema, { group: "github", name: "push_files" });
+const DELETE_FILE = create(ActionIdentitySchema, { group: "github", name: "delete_file" });
+const UPDATE_PULL_REQUEST = create(ActionIdentitySchema, { group: "github", name: "update_pull_request" });
+const CREATE_BRANCH = create(ActionIdentitySchema, { group: "github", name: "create_branch" });
+const CREATE_PULL_REQUEST = create(ActionIdentitySchema, { group: "github", name: "create_pull_request" });
+const SEARCH_PULL_REQUESTS = create(ActionIdentitySchema, { group: "github", name: "search_pull_requests" });
 
 const REPOSITORY = { owner: "test-owner", repo: "test-repo" };
 

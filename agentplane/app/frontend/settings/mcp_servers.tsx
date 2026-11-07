@@ -3,15 +3,21 @@ import { type Dispatch, type JSX, type ReactNode, type SetStateAction, useEffect
 import { type StreamConnection } from "../stream_reader";
 
 import { displayableError } from "../client";
-import { followActionGroups, type ActionGroupView, type ActionGroupWatchFrame } from "../actions/client";
+import {
+  ExecutorKind,
+  McpLifecycle,
+  McpUnavailableReason,
+  type ActionGroup,
+} from "../../../action_service/action_service_pb";
+import { followActionGroups, type ActionGroupWatchFrame } from "../actions/client";
+import { mcpLifecycleLabel, mcpUnavailableReasonLabel } from "../actions/presentation";
 import { TimeAgo } from "../time_ago";
 import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage, type McpLinkageView } from "../mcp_linkage_client";
 
-type McpHealth = ActionGroupView["health"];
+type McpHealth = ActionGroup["health"];
 
 type Row =
-  | { kind: "oauth"; linkage: McpLinkageView; group: ActionGroupView | null }
-  | { kind: "health-only"; group: ActionGroupView };
+  { kind: "oauth"; linkage: McpLinkageView; group: ActionGroup | null } | { kind: "health-only"; group: ActionGroup };
 
 function useMcpLinkages(): {
   snapshot: McpLinkageView[] | null;
@@ -67,13 +73,13 @@ function useMcpLinkages(): {
 }
 
 function useActionGroupHealth(): {
-  snapshot: ActionGroupView[] | null;
+  snapshot: ActionGroup[] | null;
   connection: StreamConnection;
 } {
-  const [snapshot, setSnapshot] = useState<ActionGroupView[] | null>(null);
+  const [snapshot, setSnapshot] = useState<ActionGroup[] | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   useEffect(() => {
-    let replay: ActionGroupView[] = [];
+    let replay: ActionGroup[] = [];
     return followActionGroups({
       onOpen: () => {
         replay = [];
@@ -111,12 +117,12 @@ function useActionGroupHealth(): {
 // carries a server_id to have that
 // server_id equal its own key -- so an oauth-linked group's key doubles as the join key, with no
 // separate field needed.
-function mergeRows(groups: ActionGroupView[], linkages: McpLinkageView[]): Row[] {
+function mergeRows(groups: ActionGroup[], linkages: McpLinkageView[]): Row[] {
   const linkageBySid = new Map(linkages.map((linkage) => [linkage.server_id, linkage]));
   const matched = new Set<string>();
   const rows: Row[] = [];
   for (const group of groups) {
-    if (group.executor_kind !== "mcp") continue;
+    if (group.executorKind !== ExecutorKind.MCP) continue;
     const linkage = linkageBySid.get(group.key);
     if (linkage) {
       matched.add(linkage.server_id);
@@ -138,11 +144,11 @@ function rowKey(row: Row): string {
 function lifecycleColor(health: McpHealth): "green" | "orange" | "gray" {
   if (health == null) return "gray";
   switch (health.state) {
-    case "available":
+    case McpLifecycle.AVAILABLE:
       return "green";
-    case "draining":
-    case "stopped":
-      return health.reason === "supervisor_stopped" ? "orange" : "gray";
+    case McpLifecycle.DRAINING:
+    case McpLifecycle.STOPPED:
+      return health.reason === McpUnavailableReason.SUPERVISOR_STOPPED ? "orange" : "gray";
     default:
       return "orange"; // disconnected, connecting, discovering
   }
@@ -166,10 +172,12 @@ function StateLabel({ children }: { children: ReactNode }): JSX.Element {
 }
 
 function ConnectionState({ health }: { health: McpHealth }): JSX.Element {
+  const reason = mcpUnavailableReasonLabel(health?.reason);
+  const state = health == null ? "pending" : mcpLifecycleLabel(health.state);
   return (
     <>
       <StateLabel>Connection</StateLabel>
-      <Badge color={lifecycleColor(health)}>{health == null ? "pending" : (health.reason ?? health.state)}</Badge>
+      <Badge color={lifecycleColor(health)}>{reason ?? state}</Badge>
     </>
   );
 }
@@ -291,9 +299,10 @@ export function McpServers(): JSX.Element {
               {/* A connection waiting on a linkage whose refresh failure is already shown has nothing to add. */}
               {row.group != null &&
                 row.linkage.status !== "unlinked" &&
-                !(row.linkage.refresh_failure != null && row.group.health?.reason === "linkage_unavailable") && (
-                  <HealthDetail health={row.group.health} />
-                )}
+                !(
+                  row.linkage.refresh_failure != null &&
+                  row.group.health?.reason === McpUnavailableReason.LINKAGE_UNAVAILABLE
+                ) && <HealthDetail health={row.group.health} />}
               <Group justify="flex-end" mt="sm">
                 <Button
                   loading={busy?.serverId === row.linkage.server_id && busy.operation === "link"}
@@ -321,7 +330,7 @@ export function McpServers(): JSX.Element {
                 <div>
                   <Text fw={600}>{row.group.key}</Text>
                   <Text size="sm" c="dimmed">
-                    {row.group.executor_description}
+                    {row.group.executorDescription}
                   </Text>
                 </div>
                 <States>

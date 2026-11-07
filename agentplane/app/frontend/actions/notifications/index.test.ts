@@ -1,24 +1,34 @@
 import { describe, expect, it } from "vitest";
 
-import type { ActionRequestView, JsonValue } from "../types";
+import { create, fromJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { TimestampSchema } from "@bufbuild/protobuf/wkt";
+
+import {
+  ActionIdentitySchema,
+  ActionRequestSchema,
+  ActionState,
+  type ActionRequest,
+} from "../../../../action_service/action_service_pb";
 import { formatActionNotification } from "./index";
 
-function actionRequest(
-  fields: Pick<ActionRequestView, "action" | "arguments" | "title" | "description">
-): ActionRequestView {
-  return {
+function actionRequest(fields: {
+  action: { group: string; name: string };
+  arguments: JsonObject;
+  title: string;
+  description?: string | null;
+}): ActionRequest {
+  return create(ActionRequestSchema, {
     id: "00000000-0000-4000-8000-000000000001",
-    idempotency_key: "notification-format-test",
-    ...fields,
+    action: create(ActionIdentitySchema, fields.action),
+    arguments: fields.arguments,
+    title: fields.title,
     caller: { namespace: "test-namespace", name: "test-account" },
-    caller_uid: null,
-    state: "decision_pending",
-    version: 1,
-    created_at: "2026-10-09T12:00:00Z",
-    updated_at: "2026-10-09T12:00:00Z",
-    decision: null,
-    execution: null,
-  };
+    description: fields.description ?? undefined,
+    state: ActionState.DECISION_PENDING,
+    version: 1n,
+    createdAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
+    updatedAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
+  });
 }
 
 // [Action name, arguments, notification's Action title, notification text when it is not the description]

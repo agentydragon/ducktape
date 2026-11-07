@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { actionArguments } from "../../presentation";
 
-import type { ActionRequestView } from "../../types";
+import type { ActionRequest } from "../../../../../action_service/action_service_pb";
 import type { ActionNotificationParts } from "../types";
 
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
@@ -12,8 +13,8 @@ const resourcesGetNotificationArguments = z.strictObject({
   namespace: z.string().min(1).optional(),
 });
 
-export function resourcesGetNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = resourcesGetNotificationArguments.safeParse(request.arguments);
+export function resourcesGetNotification(request: ActionRequest): ActionNotificationParts | null {
+  const parsed = resourcesGetNotificationArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
 
   return {

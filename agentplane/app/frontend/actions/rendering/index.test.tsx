@@ -1,8 +1,11 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
+import { create } from "@bufbuild/protobuf";
 
+import { ActionIdentitySchema, ActionState, type ActionIdentity } from "../../../../action_service/action_service_pb";
 import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
+import { executionResult } from "../presentation";
 import {
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,
@@ -17,16 +20,20 @@ import {
   shouldRenderPaneRequestTitle,
 } from "./index";
 
-const SSH_EXEC = { group: "ssh", name: "exec" };
+function identity(group: string, name: string): ActionIdentity {
+  return create(ActionIdentitySchema, { group, name });
+}
 
-async function drawDetailsResult(action: { group: string; name: string }, result: CallToolResult) {
+const SSH_EXEC = identity("ssh", "exec");
+
+async function drawDetailsResult(action: ActionIdentity, result: CallToolResult) {
   const custom = renderDetailsResult(action, result);
   return mount(custom === undefined ? <CallToolResultView result={result} /> : custom);
 }
 
 /** The CallToolResult stored for an ssh `exec` call whose `ExecResult` has `returned`'s fields. */
 function stored(returned: Record<string, unknown> = {}): CallToolResult {
-  const result = parseCallToolResult(sshExec("succeeded", returned).execution?.result);
+  const result = parseCallToolResult(executionResult(sshExec(ActionState.SUCCEEDED, returned).execution));
   if (result === null) throw new Error("the fixture is not a CallToolResult");
   return result;
 }
@@ -38,12 +45,8 @@ describe("Action presentation slots", () => {
       fieldSelector: "status.phase=Running",
       labelSelector: "app=web",
     };
-    const collapsed = await mount(
-      renderPaneCollapsed({ group: "kubernetes_admin", name: "pods_list_in_namespace" }, args)
-    );
-    const details = await mount(
-      renderDetailsArguments({ group: "kubernetes_admin", name: "pods_list_in_namespace" }, args)
-    );
+    const collapsed = await mount(renderPaneCollapsed(identity("kubernetes_admin", "pods_list_in_namespace"), args));
+    const details = await mount(renderDetailsArguments(identity("kubernetes_admin", "pods_list_in_namespace"), args));
 
     expect(collapsed.textContent).toContain("Matching pods where");
     expect(collapsed.textContent).not.toContain("namespace prod");
@@ -53,7 +56,7 @@ describe("Action presentation slots", () => {
   });
 
   it("uses a human-facing Action label in place of the technical identity", async () => {
-    const action = { group: "kubernetes_admin", name: "pods_list_in_namespace" };
+    const action = identity("kubernetes_admin", "pods_list_in_namespace");
     const args = { namespace: "tofu-controller" };
     const label = await mount(renderActionLabel(action, args));
 
@@ -74,13 +77,13 @@ describe("Action presentation slots", () => {
     ["pods_get", { name: "web-0", namespace: "apps" }, "Get Pod apps/web-0"],
     ["pods_log", { name: "web-0", namespace: "apps" }, "View logs for Pod apps/web-0"],
   ] as const)("uses the concise Kubernetes identity for %s", async (name, args, expected) => {
-    const label = await mount(renderActionLabel({ group: "kubernetes_admin", name }, args));
+    const label = await mount(renderActionLabel(identity("kubernetes_admin", name), args));
     expect(label.textContent).toContain(expected);
     expect(label.textContent).not.toContain("in namespace apps");
   });
 
   it("keeps a Kubernetes target in its heading and shows only additional details below it", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_get" };
+    const action = identity("kubernetes_admin", "resources_get");
     const args = { apiVersion: "apps/v1", kind: "Deployment", name: "web", namespace: "apps" };
     const label = await mount(renderActionLabel(action, args));
     const opened = await mount(renderPaneOpened(action, args));
@@ -94,7 +97,7 @@ describe("Action presentation slots", () => {
   });
 
   it("keeps the target in the label without adding namespace boilerplate", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_get" };
+    const action = identity("kubernetes_admin", "resources_get");
     const args = { apiVersion: "v1", kind: "Pod", name: "web-0" };
     const opened = await mount(renderPaneOpened(action, args));
     const details = await mount(renderDetailsArguments(action, args));
@@ -112,7 +115,7 @@ describe("Action presentation slots", () => {
 
   it("puts list scope in Kubernetes action labels and leaves only filters in the pane", async () => {
     const listArgs = { apiVersion: "v1", kind: "Pod", namespace: "apps", labelSelector: "app=web" };
-    const listAction = { group: "kubernetes_admin", name: "resources_list" };
+    const listAction = identity("kubernetes_admin", "resources_list");
     const listLabel = await mount(renderActionLabel(listAction, listArgs));
     const listCollapsed = await mount(renderPaneCollapsed(listAction, listArgs));
     const listPane = await mount(renderPaneOpened(listAction, listArgs));
@@ -125,7 +128,7 @@ describe("Action presentation slots", () => {
     expect(listPane.textContent).not.toContain("apps");
 
     const eventsArgs = { namespace: "apps", fieldSelector: "type=Warning" };
-    const eventsAction = { group: "kubernetes_admin", name: "events_list" };
+    const eventsAction = identity("kubernetes_admin", "events_list");
     const eventsLabel = await mount(renderActionLabel(eventsAction, eventsArgs));
     const eventsCollapsed = await mount(renderPaneCollapsed(eventsAction, eventsArgs));
     expect(eventsLabel.textContent).toContain("List events in namespace apps");
@@ -136,7 +139,7 @@ describe("Action presentation slots", () => {
   });
 
   it("names a cluster-scoped delete by its kind and name", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_delete" };
+    const action = identity("kubernetes_admin", "resources_delete");
     const args = { apiVersion: "v1", kind: "PersistentVolume", name: "test-volume" };
     expect((await mount(renderActionLabel(action, args))).textContent).toContain("Delete PersistentVolume test-volume");
     expect((await mount(renderPaneOpened(action, args))).textContent).toContain("Use API version v1");
@@ -148,27 +151,31 @@ describe("Action presentation slots", () => {
     [{ previous: true, tail: 60 }, "View logs for Pod apps/web-0, previous run, last 60 lines"],
     [{ previous: false, tail: -1 }, "View logs for Pod apps/web-0, tail -1"],
   ])("puts how a log read is cut into its label: %o", async (options, expected) => {
-    const action = { group: "kubernetes_admin", name: "pods_log" };
+    const action = identity("kubernetes_admin", "pods_log");
     const args = { name: "web-0", namespace: "apps", ...options };
     expect((await mount(renderActionLabel(action, args))).textContent).toContain(expected);
   });
 
   it("shows calendar context and explicit delete grace in the collapsed pane", async () => {
     const calendar = await mount(
-      renderPaneCollapsed(
-        { group: "tana", name: "get_or_create_calendar_node" },
-        { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" }
-      )
+      renderPaneCollapsed(identity("tana", "get_or_create_calendar_node"), {
+        workspaceId: "workspace-123",
+        granularity: "week",
+        date: "2026-10-12",
+      })
     );
     expect(calendar.textContent).toContain("week calendar node");
     expect(calendar.textContent).toContain("2026-10-12");
     expect(calendar.textContent).toContain("workspace-123");
 
     const deletion = await mount(
-      renderPaneCollapsed(
-        { group: "kubernetes_admin", name: "resources_delete" },
-        { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps", gracePeriodSeconds: 0 }
-      )
+      renderPaneCollapsed(identity("kubernetes_admin", "resources_delete"), {
+        apiVersion: "v1",
+        kind: "Pod",
+        name: "web-0",
+        namespace: "apps",
+        gracePeriodSeconds: 0,
+      })
     );
     expect(deletion.textContent).toContain("Request a 0s grace period");
     expect(deletion.textContent).not.toContain("Use API version v1");
@@ -197,7 +204,7 @@ describe("Action presentation slots", () => {
   });
 
   it("renders Gmail drafts from submitted data without repeating their subject", async () => {
-    const action = { group: "gmail", name: "drafts_create" };
+    const action = identity("gmail", "drafts_create");
     const args = {
       to: ["reader@example.com"],
       cc: ["copy@example.com"],
@@ -229,7 +236,7 @@ describe("Action presentation slots", () => {
   });
 
   it("keeps a Gmail draft's request and created draft in one call view", async () => {
-    const action = { group: "gmail", name: "drafts_create" };
+    const action = identity("gmail", "drafts_create");
     const args = {
       to: ["reader@example.com"],
       cc: ["copy@example.com"],
@@ -278,7 +285,7 @@ describe("Action presentation slots", () => {
   });
 
   it("renders Gmail search arguments and results without fetching subjects", async () => {
-    const action = { group: "gmail", name: "threads_list" };
+    const action = identity("gmail", "threads_list");
     const args = { q: "from:alerts@example.com", maxResults: 5, includeSpamTrash: false };
     const label = await mount(renderActionLabel(action, args));
     const collapsed = await mount(renderPaneCollapsed(action, args));
@@ -322,25 +329,23 @@ describe("Action presentation slots", () => {
       ["products_list", { detail: "full" }, "Full Product records"],
       ["quantity_units_list", {}, "Quantity unit names"],
     ] as const) {
-      const action = { group: "grocy_sf", name };
+      const action = identity("grocy_sf", name);
       const opened = await mount(renderPaneOpened(action, args));
       const details = await mount(renderDetailsArguments(action, args));
       expect(opened.textContent).toContain(expected);
       expect(details.textContent).toContain(expected);
     }
 
-    const productsLabel = await mount(
-      renderActionLabel({ group: "grocy_sf", name: "products_list" }, { detail: "full" })
-    );
-    const unitsLabel = await mount(renderActionLabel({ group: "grocy_sf", name: "quantity_units_list" }, {}));
-    const systemInfoLabel = await mount(renderActionLabel({ group: "grocy_sf", name: "get_system_info" }, {}));
+    const productsLabel = await mount(renderActionLabel(identity("grocy_sf", "products_list"), { detail: "full" }));
+    const unitsLabel = await mount(renderActionLabel(identity("grocy_sf", "quantity_units_list"), {}));
+    const systemInfoLabel = await mount(renderActionLabel(identity("grocy_sf", "get_system_info"), {}));
     expect(productsLabel.textContent).toContain("List Grocy products");
     expect(unitsLabel.textContent).toContain("List quantity units");
     expect(systemInfoLabel.textContent).toContain("Show Grocy system information");
   });
 
   it("renders Tana calendar arguments from submitted data without resolving the workspace", async () => {
-    const action = { group: "tana", name: "get_or_create_calendar_node" };
+    const action = identity("tana", "get_or_create_calendar_node");
     const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };
     const collapsed = await mount(renderPaneCollapsed(action, args));
     const details = await mount(renderDetailsArguments(action, args));
@@ -390,7 +395,7 @@ describe("Action presentation slots", () => {
     if (result === null) throw new Error("the fixture is not a CallToolResult");
 
     for (const [group, name] of excluded) {
-      const action = { group, name };
+      const action = identity(group, name);
       expect(renderActionLabel(action, { id: "opaque-id" })).toBeUndefined();
       expect(renderPaneCollapsed(action, { id: "opaque-id" })).toBeUndefined();
       expect(renderPaneOpened(action, { id: "opaque-id" })).toBeUndefined();
@@ -404,10 +409,11 @@ describe("Action presentation slots", () => {
 
   it("summarizes a Gmail draft with its recipient, subject, and body preview", async () => {
     const collapsed = await mount(
-      renderPaneCollapsed(
-        { group: "gmail", name: "drafts_create" },
-        { to: ["user@example.com"], subject: "Deploy", body: "Ready" }
-      )
+      renderPaneCollapsed(identity("gmail", "drafts_create"), {
+        to: ["user@example.com"],
+        subject: "Deploy",
+        body: "Ready",
+      })
     );
     expect(collapsed.textContent).toContain("To user@example.com");
     expect(collapsed.textContent).toContain("Deploy");
@@ -416,14 +422,14 @@ describe("Action presentation slots", () => {
 
   it("leaves unregistered slots to the host and preserves arguments rejected by a strict schema", async () => {
     expect(renderPaneCollapsed(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeUndefined();
-    expect(renderPaneOpened({ group: "test_group", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeUndefined();
+    expect(renderPaneOpened(identity("test_group", "exec"), SSH_EXEC_ARGUMENTS)).toBeUndefined();
     const recorded = await mount(renderDetailsArguments(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true }));
     expect(recorded.textContent).toContain("Details shown as recorded data");
-    expect(renderDetailsArguments({ group: "__proto__", name: "constructor" }, {})).toBeUndefined();
+    expect(renderDetailsArguments(identity("__proto__", "constructor"), {})).toBeUndefined();
   });
 
   it("shows recorded Kubernetes arguments when the strict schema does not accept them", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_get" };
+    const action = identity("kubernetes_admin", "resources_get");
     const args = { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps", futureField: true };
     const label = await mount(renderActionLabel(action, args));
     const details = await mount(renderDetailsArguments(action, args));
@@ -435,7 +441,7 @@ describe("Action presentation slots", () => {
   });
 
   it("keeps pod-delete arguments schema-bound while omitting the empty pretty view", async () => {
-    const action = { group: "kubernetes_admin", name: "pods_delete" };
+    const action = identity("kubernetes_admin", "pods_delete");
     expect(renderDetailsArguments(action, { name: "web-0", namespace: "apps" })).toBeNull();
 
     const recorded = await mount(
@@ -450,7 +456,7 @@ describe("Action presentation slots", () => {
   ] as const)(
     "uses the opened-pane argument widget for %s when optional fields are omitted",
     async (name, args, visible) => {
-      const container = await mount(renderPaneOpened({ group: "kubernetes_admin", name }, args));
+      const container = await mount(renderPaneOpened(identity("kubernetes_admin", name), args));
       for (const value of visible) expect(container.textContent).toContain(value);
     }
   );
@@ -480,13 +486,13 @@ describe("details result rendering", () => {
   });
 
   it("draws an unregistered Action's result as the tool answered", async () => {
-    const container = await drawDetailsResult({ group: "test_group", name: "exec" }, stored());
+    const container = await drawDetailsResult(identity("test_group", "exec"), stored());
     expect(container.textContent).toContain("Structured content");
     expect(container.textContent).not.toContain("Exit 0");
   });
 
   it("formats Kubernetes YAML result text with its structured value only once", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_get" };
+    const action = identity("kubernetes_admin", "resources_get");
     const resource = {
       apiVersion: "v1",
       kind: "ConfigMap",
@@ -513,7 +519,7 @@ describe("details result rendering", () => {
   });
 
   it("formats a single-line YAML apply argument and shows malformed input verbatim", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    const action = identity("kubernetes_admin", "resources_create_or_update");
     const manifest =
       "{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}, data: {mode: safe}}";
     const formatted = await mount(renderDetailsArguments(action, { resource: manifest }));
@@ -527,7 +533,7 @@ describe("details result rendering", () => {
   });
 
   it("names applied resources in the label", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    const action = identity("kubernetes_admin", "resources_create_or_update");
     const label = async (resource: string) => (await mount(renderActionLabel(action, { resource }))).textContent;
 
     expect(await label("{apiVersion: v1, kind: ConfigMap, metadata: {name: settings, namespace: apps}}")).toContain(
@@ -559,7 +565,7 @@ describe("details result rendering", () => {
       "Sets 1 field under data",
     ],
   ])("summarizes what an apply sets: %s", async (_, resource, expected) => {
-    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    const action = identity("kubernetes_admin", "resources_create_or_update");
     const collapsed = await mount(renderPaneCollapsed(action, { resource }));
     expect(collapsed.textContent).toContain(expected);
     expect(collapsed.textContent).not.toContain("settings");
@@ -567,7 +573,7 @@ describe("details result rendering", () => {
   });
 
   it("leaves the collapsed row to the label for several resources or bare identities", () => {
-    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    const action = identity("kubernetes_admin", "resources_create_or_update");
     expect(
       renderPaneCollapsed(action, {
         resource: "apiVersion: v1\nkind: ConfigMap\n---\napiVersion: v1\nkind: Secret\ndata: {a: b}\n",
@@ -580,7 +586,7 @@ describe("details result rendering", () => {
   });
 
   it("renders a returned YAML sequence as separate Kubernetes resources", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_create_or_update" };
+    const action = identity("kubernetes_admin", "resources_create_or_update");
     const result = parseCallToolResult({
       content: [
         {
@@ -610,7 +616,7 @@ describe("details result rendering", () => {
   });
 
   it("shows an exact delete success as an outcome with no fabricated result body", async () => {
-    const action = { group: "kubernetes_admin", name: "resources_delete" };
+    const action = identity("kubernetes_admin", "resources_delete");
     const args = {
       apiVersion: "v1",
       kind: "Pod",
@@ -646,7 +652,7 @@ describe("details result rendering", () => {
   });
 
   it("shows an exact pod-delete success as accepted and preserves non-success envelopes", async () => {
-    const action = { group: "kubernetes_admin", name: "pods_delete" };
+    const action = identity("kubernetes_admin", "pods_delete");
     const success = parseCallToolResult({
       content: [{ type: "text", text: "Pod deleted successfully" }],
       isError: false,
@@ -856,7 +862,7 @@ describe("compact card renderers", () => {
   it.each(cardDecisionButtonCases)(
     "draws all displayed request fields for $group/$name",
     async ({ group, name, args, visible }) => {
-      const action = { group, name };
+      const action = identity(group, name);
       const container = await mount(
         <>
           {renderActionLabel(action, args)}
@@ -879,11 +885,11 @@ describe("compact card renderers", () => {
     ["ssh", "exec", SSH_EXEC_ARGUMENTS, true],
     ["__proto__", "constructor", {}, true],
   ] as const)("%s/%s with %o expands: %s", (group, name, args, expands) => {
-    expect(actionCompactCardExpands({ group, name }, args)).toBe(expands);
+    expect(actionCompactCardExpands(identity(group, name), args)).toBe(expands);
   });
 
   it("shows an explicitly supplied maintainer edit permission in compact and opened PR summaries", async () => {
-    const action = { group: "github", name: "create_pull_request" };
+    const action = identity("github", "create_pull_request");
     const args = {
       owner: "example",
       repo: "repo",
@@ -905,13 +911,13 @@ describe("card decision buttons capability", () => {
   it.each(cardDecisionButtonCases)(
     "validates the whole $group/$name request independently",
     ({ group, name, args }) => {
-      expect(actionOffersCardDecisionButtons({ group, name }, args)).toBe(true);
-      expect(actionOffersCardDecisionButtons({ group, name }, { ...args, invisible: "must review" })).toBe(false);
+      expect(actionOffersCardDecisionButtons(identity(group, name), args)).toBe(true);
+      expect(actionOffersCardDecisionButtons(identity(group, name), { ...args, invisible: "must review" })).toBe(false);
     }
   );
 
   it("withholds card decision buttons from a Gmail search the card cannot fully show", () => {
-    const search = { group: "gmail", name: "threads_list" };
+    const search = identity("gmail", "threads_list");
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox" })).toBe(true);
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(false);
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(false);
@@ -920,20 +926,17 @@ describe("card decision buttons capability", () => {
   it("offers card decisions for complete PR calls and rejects unknown actions", () => {
     const pr = cardDecisionButtonCases.find((candidate) => candidate.name === "create_pull_request");
     if (pr === undefined) throw new Error("missing pull request fixture");
+    expect(actionOffersCardDecisionButtons(identity(pr.group, pr.name), { ...pr.args, body: "important text" })).toBe(
+      true
+    );
+    expect(actionOffersCardDecisionButtons(identity(pr.group, pr.name), { ...pr.args, title: "x".repeat(121) })).toBe(
+      true
+    );
     expect(
-      actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
-    ).toBe(true);
-    expect(
-      actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, title: "x".repeat(121) })
-    ).toBe(true);
-    expect(
-      actionOffersCardDecisionButtons(
-        { group: pr.group, name: pr.name },
-        { ...pr.args, reviewers: Array(5).fill("reviewer") }
-      )
+      actionOffersCardDecisionButtons(identity(pr.group, pr.name), { ...pr.args, reviewers: Array(5).fill("reviewer") })
     ).toBe(true);
     expect(actionOffersCardDecisionButtons(SSH_EXEC, SSH_EXEC_ARGUMENTS)).toBe(false);
-    expect(actionOffersCardDecisionButtons({ group: "__proto__", name: "constructor" }, {})).toBe(false);
+    expect(actionOffersCardDecisionButtons(identity("__proto__", "constructor"), {})).toBe(false);
   });
 
   it("renders a long PR description while offering card decision buttons", async () => {
@@ -941,14 +944,14 @@ describe("card decision buttons capability", () => {
     if (pr === undefined) throw new Error("missing pull request fixture");
     const args = { ...pr.args, body: "important text" };
 
-    expect(actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, args)).toBe(true);
-    const container = await mount(renderPaneOpened({ group: pr.group, name: pr.name }, args));
+    expect(actionOffersCardDecisionButtons(identity(pr.group, pr.name), args)).toBe(true);
+    const container = await mount(renderPaneOpened(identity(pr.group, pr.name), args));
     expect(container.textContent).toContain("important text");
   });
 });
 
 describe("sandbox rendering", () => {
-  const action = (name: string) => ({ group: "sandbox", name });
+  const action = (name: string) => identity("sandbox", name);
   const info = {
     name: "waiting-sandbox",
     template: "python",
@@ -1034,19 +1037,21 @@ describe("sandbox rendering", () => {
 
   it("renders pod argv with safe argument quoting, highlighted as the shell words it is displayed as", async () => {
     const node = await mount(
-      renderPaneCollapsed(
-        { group: "kubernetes_admin", name: "pods_exec" },
-        { name: "pod", command: ["printf", "%s", "$HOME", "a'b", ""] }
-      )
+      renderPaneCollapsed(identity("kubernetes_admin", "pods_exec"), {
+        name: "pod",
+        command: ["printf", "%s", "$HOME", "a'b", ""],
+      })
     );
     expect(node.querySelector(".ui-code-inline")?.textContent).toBe("printf '%s' '$HOME' 'a'\\''b' ''");
     expect(node.querySelector(".ui-tok-string")?.textContent).toBe("'%s'");
 
     const opened = await mount(
-      renderPaneOpened(
-        { group: "kubernetes_admin", name: "pods_exec" },
-        { name: "pod", namespace: "apps", container: "worker", command: ["printf", "%s", "$HOME"] }
-      )
+      renderPaneOpened(identity("kubernetes_admin", "pods_exec"), {
+        name: "pod",
+        namespace: "apps",
+        container: "worker",
+        command: ["printf", "%s", "$HOME"],
+      })
     );
     expect(opened.textContent).not.toContain("Pod apps/pod");
     expect(opened.textContent).toContain("Container worker");
