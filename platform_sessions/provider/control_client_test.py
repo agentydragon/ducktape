@@ -187,6 +187,19 @@ async def test_typed_provider_failures_stay_distinct_from_rpc_failure(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_import_rejects_malformed_provider_diagnostics(tmp_path):
+    async with served(tmp_path) as (provider, client, _, _):
+        for failure in (
+            pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_UNSPECIFIED),
+            pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE, upstream_http_status=429),
+            pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=999),
+        ):
+            provider.import_result = pb.ImportSessionResponse(instance=INSTANCE, failure=failure)
+            with pytest.raises(ProviderProtocolError):
+                await client.import_session(b"opaque-secret", media_type="application/json", format_version="1")
+
+
+@pytest.mark.asyncio
 async def test_protocol_errors_reject_missing_and_mismatched_responses_without_candidate_data(tmp_path):
     async with served(tmp_path) as (provider, client, _, _):
         provider.info.provider.instances.append(

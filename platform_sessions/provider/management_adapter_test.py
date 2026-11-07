@@ -235,6 +235,33 @@ async def test_provider_outage_isolated_and_lost_import_is_not_retried(tmp_path,
 
 
 @pytest.mark.asyncio
+async def test_import_diagnostics_preserve_specific_failures_and_unknown_outcomes(tmp_path):
+    async with (
+        served(tmp_path) as (provider, control, _, _),
+        _http_client(RemoteIntegration(_config("account"), control)) as client,
+    ):
+        headers = {"cookie": "owner=yes", "origin": "https://service.test"}
+        for result, expected in (
+            (pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE), (502, "invalid_response")),
+            (
+                pb.ImportFailure(reason=pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR, upstream_http_status=429),
+                (502, "upstream_http_429"),
+            ),
+        ):
+            provider.import_result = pb.ImportSessionResponse(instance=INSTANCE, failure=result)
+            response = await client.post("/api/integrations/account/session", headers=headers, json=SESSION)
+            assert (response.status_code, response.json()["error"]) == expected
+        provider.import_result = pb.ImportSessionResponse(
+            instance=INSTANCE,
+            outcome_unknown=pb.OperationOutcomeUnknown(
+                credential_rotation_may_have_occurred=True, reason=pb.UNKNOWN_OUTCOME_REASON_TIMEOUT
+            ),
+        )
+        response = await client.post("/api/integrations/account/session", headers=headers, json=SESSION)
+        assert (response.status_code, response.json()["error"]) == (504, "verification_timeout")
+
+
+@pytest.mark.asyncio
 async def test_invalid_envelope_never_reaches_provider(tmp_path):
     async with (
         served(tmp_path) as (provider, control, _, _),

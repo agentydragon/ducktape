@@ -182,7 +182,23 @@ message ImportSessionResponse {
     ChallengeRequired challenge_required = 13;
     UpstreamUnavailable upstream_unavailable = 14;
     OperationOutcomeUnknown outcome_unknown = 15;
+    ImportFailure failure = 16;
   }
+}
+
+// A definite import failure. An operation with unresolved credential rotation must instead
+// return OperationOutcomeUnknown. Never include response bodies or member data.
+message ImportFailure {
+  ImportFailureReason reason = 1;
+  // Present only for UPSTREAM_HTTP_ERROR and restricted to HTTP status codes 100 through 599.
+  optional uint32 upstream_http_status = 2;
+}
+
+enum ImportFailureReason {
+  IMPORT_FAILURE_REASON_UNSPECIFIED = 0;
+  IMPORT_FAILURE_REASON_INVALID_RESPONSE = 1;
+  IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR = 2;
+  IMPORT_FAILURE_REASON_STORAGE_ERROR = 3;
 }
 
 // Indicates that candidate handling and any required credential exchange were durably committed.
@@ -300,4 +316,12 @@ message UpstreamUnavailable {
 message OperationOutcomeUnknown {
   // True when an upstream request may have rotated credentials before its outcome was lost.
   bool credential_rotation_may_have_occurred = 1;
+  // Optional sanitized diagnostic; this does not make retrying safe.
+  UnknownOutcomeReason reason = 2;
+}
+
+enum UnknownOutcomeReason {
+  UNKNOWN_OUTCOME_REASON_UNSPECIFIED = 0;
+  UNKNOWN_OUTCOME_REASON_TIMEOUT = 1;
+  UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE = 2;
 }
