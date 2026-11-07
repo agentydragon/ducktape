@@ -142,18 +142,18 @@ export async function getFrontendConfig(): Promise<FrontendConfig> {
   return {
     trace_search: config?.traceSearch
       ? {
-          grafana_base_url: response.traceSearch.grafanaBaseUrl,
-          tempo_datasource_uid: response.traceSearch.tempoDatasourceUid,
-          deployment_environment: response.traceSearch.deploymentEnvironment,
+          grafana_base_url: config.traceSearch.grafanaBaseUrl,
+          tempo_datasource_uid: config.traceSearch.tempoDatasourceUid,
+          deployment_environment: config.traceSearch.deploymentEnvironment,
         }
       : null,
     langfuse_search: config?.langfuseSearch
       ? {
-          base_url: response.langfuseSearch.baseUrl,
-          project_id: response.langfuseSearch.projectId,
-          session_metadata_key: response.langfuseSearch.sessionMetadataKey,
-          sandbox_namespace_metadata_key: response.langfuseSearch.sandboxNamespaceMetadataKey,
-          sandbox_service_account_metadata_key: response.langfuseSearch.sandboxServiceAccountMetadataKey,
+          base_url: config.langfuseSearch.baseUrl,
+          project_id: config.langfuseSearch.projectId,
+          session_metadata_key: config.langfuseSearch.sessionMetadataKey,
+          sandbox_namespace_metadata_key: config.langfuseSearch.sandboxNamespaceMetadataKey,
+          sandbox_service_account_metadata_key: config.langfuseSearch.sandboxServiceAccountMetadataKey,
         }
       : null,
   };
