@@ -126,8 +126,12 @@ console.log(later);
     ));
     assert_preserved_entry_output(&fixture, "1\n");
     assert_eq!(
-        binding_execution_report(&fixture, "dynamic")["complete"],
+        binding_execution_report(&fixture, "prefix")["complete"],
         false
+    );
+    assert_eq!(
+        binding_execution_report(&fixture, "dynamic")["complete"],
+        true
     );
     assert_eq!(
         binding_execution_report(&fixture, "later")["complete"],

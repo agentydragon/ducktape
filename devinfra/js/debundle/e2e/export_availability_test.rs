@@ -54,7 +54,7 @@ fn assert_unproved_provider_keeps_initializer_order(fixture: &Fixture) {
     let execution = serde_json::to_value(wrapped.synchronous_execution.as_ref().unwrap()).unwrap();
     assert_eq!(execution["complete"], false, "{execution}");
     assert_eq!(
-        execution["binding_effect_authority"]["authority"], "legacy_execution",
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
         "preserving source order does not prove the provider body: {execution}"
     );
 }
