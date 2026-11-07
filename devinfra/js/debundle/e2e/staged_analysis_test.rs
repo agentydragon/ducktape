@@ -1512,18 +1512,23 @@ fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering()
         vec![
             logical_module(
                 "array",
-                &[Member::new("executorCalls"), Member::new("entries")],
+                &[
+                    Member::new("executorCalls"),
+                    Member::new("executor"),
+                    Member::new("record"),
+                    Member::new("entries"),
+                ],
             ),
             logical_module("anchors", &[Member::new("before"), Member::new("after")]),
             logical_module(
                 "booleans",
                 &[
                     Member::new("someCalls"),
-                    Member::new("someTrace"),
                     Member::new("someResult"),
                     Member::new("everyCalls"),
-                    Member::new("everyTrace"),
                     Member::new("everyResult"),
+                    Member::new("deferredExecutor"),
+                    Member::new("beforeDeferredExecutorCalls"),
                     Member::new("deferred"),
                 ],
             ),
