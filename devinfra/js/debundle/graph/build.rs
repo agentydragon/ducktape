@@ -1099,8 +1099,8 @@ fn emit_heap_content_order(
     let unique_eager_allocations = OneShotEagerAllocations::from_facts(facts);
 
     // A hoisted or escaped callable can allocate before its lexical statement.
-    // Own-property cells likewise have no unique eager birth proof: an opaque
-    // barrier before their first recorded read must still constrain that read.
+    // Ordinary own-property cells likewise have no unique eager birth proof.
+    // Array length inherits the array's checked eager birth below.
     let mut has_live_heap_contents = facts.iter().any(|stmt| {
         !stmt.deferred_heap_allocations.is_empty()
             || stmt
@@ -1520,13 +1520,19 @@ fn emit_cell_order_events(
                 }
             }
             // Unknown effects are barriers for subsequent summarized events.
+            // Every array owns length from birth. Its separate property cell
+            // shares only the uniquely eager array's exemption, never a
+            // repeated site's or an ordinary record property's.
             if let Some(barrier) = opaque_barrier
                 && (barrier_mode != CellOrderBarrier::None
-                    || effects
-                        .reads
-                        .iter()
-                        .chain(&effects.writes)
-                        .any(|cell| !born_after_barrier.contains(cell)))
+                    || effects.reads.iter().chain(&effects.writes).any(|cell| {
+                        !born_after_barrier.contains(cell)
+                            && !matches!(cell,
+                                    EffectCell::OwnProperty { origin, property }
+                                        if property == "length"
+                                            && born_after_barrier.contains(
+                                                &EffectCell::ArrayContents(*origin)))
+                    }))
             {
                 depend(&mut targets, barrier, CellConflict::AfterBarrier);
             }

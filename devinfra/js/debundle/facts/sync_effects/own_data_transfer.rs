@@ -4,6 +4,7 @@ use super::value_model::{AbstractValue, OwnPropertyDescriptorSyntax, OwnProperty
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::EffectCell;
 use crate::facts::abstract_domain::value::Value;
+use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 
 pub(super) trait OwnDataContext {
@@ -12,6 +13,12 @@ pub(super) trait OwnDataContext {
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values>;
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool;
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool;
+
+    /// Only an application prefix with the first uninterrupted dense array
+    /// literal execution provides this current length.
+    fn first_generation_dense_array_length(&self, _allocation: u32) -> Option<u32> {
+        None
+    }
 }
 
 /// Ordered local mutation needs stronger ownership than a read from an
@@ -34,6 +41,35 @@ pub(super) struct OwnDataRead {
     pub(super) cell: EffectCell,
 }
 
+/// A checked present own-data read. The variant keeps the array proof separate
+/// so only it can bypass consumers' ordinary-record restriction.
+pub(super) enum PresentOwnDataSlot {
+    OrdinaryRecord(OwnDataSlot),
+    ArrayLength(OwnDataSlot),
+}
+
+impl PresentOwnDataSlot {
+    pub(super) fn object(&self) -> u32 {
+        match self {
+            Self::OrdinaryRecord(slot) | Self::ArrayLength(slot) => slot.object,
+        }
+    }
+
+    pub(super) fn is_array_specific(&self) -> bool {
+        matches!(self, Self::ArrayLength(_))
+    }
+
+    pub(super) fn read(self, context: &impl OwnDataContext) -> OwnDataRead {
+        match self {
+            Self::OrdinaryRecord(slot) => slot.read(context),
+            Self::ArrayLength(slot) => OwnDataRead {
+                values: Values::from([AbstractValue::Value(Value::Prim(PrimKinds::NUMBER))]),
+                cell: slot.cell(),
+            },
+        }
+    }
+}
+
 impl OwnDataSlot {
     pub(super) fn cell(&self) -> EffectCell {
         EffectCell::OwnProperty {
@@ -52,6 +88,56 @@ impl OwnDataSlot {
             cell: self.cell(),
         }
     }
+}
+
+/// Resolve a present read at the current settled prefix. Arrays receive only
+/// the read-only native `length` case; ordinary properties keep the record
+/// descriptor and ownership checks in `resolve_slot`.
+pub(super) fn resolve_present_read(
+    context: &impl OwnDataContext,
+    receivers: &Values,
+    property: &str,
+    ownership: OwnDataOwnership<'_>,
+) -> Result<PresentOwnDataSlot, OrderedFieldReadRefusal> {
+    if receivers.len() != 1 {
+        return Err(OrderedFieldReadRefusal::ReceiverNotSingleton);
+    }
+    let Some(AbstractValue::Value(Value::Alloc(kind, object))) = receivers.first() else {
+        return Err(OrderedFieldReadRefusal::ReceiverNotObject);
+    };
+    if !kind.supports_ordinary_own_data_read_proof() {
+        return Err(OrderedFieldReadRefusal::ReceiverNotObject);
+    }
+    if let OwnDataOwnership::FreshLocal { borrowed, .. } = &ownership
+        && borrowed.contains(object)
+    {
+        return Err(OrderedFieldReadRefusal::BorrowedReceiver);
+    }
+    if !context.object_properties_are_settled(*object) {
+        return Err(OrderedFieldReadRefusal::UnsettledReceiver);
+    }
+    if property == "length"
+        && context
+            .first_generation_dense_array_length(*object)
+            .is_some()
+    {
+        if let OwnDataOwnership::FreshLocal { fresh, .. } = &ownership
+            && !fresh.contains(object)
+        {
+            return Err(OrderedFieldReadRefusal::AllocationNotFresh);
+        }
+        if context.property_is_accessor(*object, property) {
+            return Err(OrderedFieldReadRefusal::NonDataField);
+        }
+        if context.property_values(*object, property).is_none() {
+            return Err(OrderedFieldReadRefusal::MissingHeapValue);
+        }
+        return Ok(PresentOwnDataSlot::ArrayLength(OwnDataSlot {
+            object: *object,
+            property: property.to_owned(),
+        }));
+    }
+    resolve_slot(context, receivers, property, ownership).map(PresentOwnDataSlot::OrdinaryRecord)
 }
 
 pub(super) fn resolve_slot(

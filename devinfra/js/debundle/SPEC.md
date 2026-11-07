@@ -3008,13 +3008,28 @@ the flat call pass and later value projection do not repeat those operations.
 Calls within the initializer retain their effects and can mutate the prefix
 after an earlier operand has selected its value. Unsupported runtime paths
 summarize the remainder without retrying. Keyed-collection construction,
-split declarations, applied accessors, unsupported operators, arrays and
-missing/inherited fields retain their existing conservative paths.
+split declarations, applied accessors, unsupported operators, numeric array
+element reads and missing/inherited fields retain their existing conservative
+paths.
 Root present-slot reads remain opaque allocation judgments and confer no
 whole-owner effect-coverage certificate. The operation records an `own_property` heap cell identified
 by allocation origin and static property. This cell includes every runtime
 generation of that source allocation; it proves neither a strong update nor
 privacy. Opaque heap barriers and uncovered effect domains remain authoritative.
+
+At a root initializer's current prefix, an exact static `length` read may
+consume the own `length` data slot of one settled, first-generation dense
+array literal. This read yields the static numeric kind and records the exact
+`OwnProperty` cell, so ordering it against a later native `push` observes the
+same length slot that `push` writes. The proof requires the array literal's
+single settled dense-allocation witness and an existing own data value; pooled
+or reused allocation sites, holes, unknown or multiple receivers, unsettled
+descriptors, and accessors remain conservative. This is a root-initializer
+read only: it does not admit numeric element reads, callable/provider/retained
+queries, or new array mutation behavior.
+The length cell shares a uniquely eager array's existing birth proof against
+older opaque heap operations. An intervening opaque operation or a repeated
+allocation site retains the conservative frontier.
 A provider query starts
 with scoped opaque parameters and an empty private heap. Parameters,
 instantiated locals and checked private `var` captures can supply binding

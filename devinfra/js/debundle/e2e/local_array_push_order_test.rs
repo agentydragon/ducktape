@@ -243,35 +243,45 @@ fn empty_weak_map_does_not_create_a_heap_barrier_between_local_array_writes() {
 
 #[test]
 fn one_shot_array_born_after_opaque_call_does_not_inherit_old_frontier() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "const old = [1];\nconst opaque = globalThis.makeSchema();\nconst fresh = [2];\nconst observed = fresh[0];\nconst retained = old[0];\n",
-        vec![
-            logical_module("old", &[Member::new("old")]),
-            logical_module("opaque", &[Member::new("opaque")]),
-            logical_module("fresh", &[Member::new("fresh")]),
-            logical_module("observed", &[Member::new("observed")]),
-            logical_module("retained", &[Member::new("retained")]),
-        ],
-    ));
-    let graph = fixture.dependency_graph();
-    assert_sequenced_edge(&graph, 1, 0);
-    assert_no_sequenced_edge(&graph, 3, 1);
-    assert_sequenced_edge(&graph, 4, 1);
+    for member in ["[0]", ".length"] {
+        let source = format!(
+            "const old = [1];\nconst opaque = globalThis.makeSchema();\nconst fresh = [2];\nconst observed = fresh{member};\nconst retained = old{member};\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("old", &[Member::new("old")]),
+                logical_module("opaque", &[Member::new("opaque")]),
+                logical_module("fresh", &[Member::new("fresh")]),
+                logical_module("observed", &[Member::new("observed")]),
+                logical_module("retained", &[Member::new("retained")]),
+            ],
+        ));
+        let graph = fixture.dependency_graph();
+        assert_sequenced_edge(&graph, 1, 0);
+        assert_no_sequenced_edge(&graph, 3, 1);
+        assert_sequenced_edge(&graph, 4, 1);
+    }
 }
 
 #[test]
 fn repeated_callable_allocation_does_not_discharge_old_frontier() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "function make() { return [1]; }\nconst early = make();\nconst opaque = globalThis.makeSchema();\nconst late = make();\nconst read = late[0];\n",
-        vec![
-            logical_module("factory", &[Member::new("make")]),
-            logical_module("early", &[Member::new("early")]),
-            logical_module("opaque", &[Member::new("opaque")]),
-            logical_module("late", &[Member::new("late")]),
-            logical_module("read", &[Member::new("read")]),
-        ],
-    ));
-    assert_sequenced_edge(&fixture.dependency_graph(), 4, 2);
+    for member in ["[0]", ".length"] {
+        let source = format!(
+            "function make() {{ return [1]; }}\nconst early = make();\nconst opaque = globalThis.makeSchema();\nconst late = make();\nconst read = late{member};\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("factory", &[Member::new("make")]),
+                logical_module("early", &[Member::new("early")]),
+                logical_module("opaque", &[Member::new("opaque")]),
+                logical_module("late", &[Member::new("late")]),
+                logical_module("read", &[Member::new("read")]),
+            ],
+        ));
+        assert_sequenced_edge(&fixture.dependency_graph(), 4, 2);
+    }
 }
 
 #[test]
