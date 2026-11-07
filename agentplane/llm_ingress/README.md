@@ -1,13 +1,13 @@
 # Agentplane LLM workload ingress
 
 This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its runtime is a Go binary; Python models remain for deployment
-authoring and the runner-facing model-config contract. It exposes two listeners with separate
-authentication contracts. Sandbox requests use an exact-origin sidecar route through opaque proxy
-CONNECT to the dedicated mTLS listener; that listener resolves the verified Runtime SVID against
-the live Sandbox and accepted credential before deriving the Sandbox's own ServiceAccount and Pod
-principal. It never falls back to a bearer or trusts caller identity headers. The existing HTTP
-listener continues TokenReview authentication for the central sampler's direct requests. Both paths
-forward provider-native requests to LiteLLM with one server-held virtual key.
+authoring and the runner-facing model-config contract. Inference HTTP and native ModelConfig gRPC
+use the dedicated mTLS listener for Sandbox callers. Sandbox requests arrive through an exact-origin
+sidecar route over opaque proxy CONNECT; the listener resolves the verified Runtime SVID against the
+live Sandbox and accepted credential before deriving the Sandbox's own ServiceAccount and Pod
+principal. It never falls back to a bearer or trusts caller identity headers. The legacy HTTP and
+plaintext gRPC listeners continue TokenReview authentication for direct central-sampler requests.
+Only inference requests forward provider-native traffic to LiteLLM with one server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
 identity is attached through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
@@ -64,9 +64,11 @@ or harness container.
 
 The native `agentplane.llm_ingress.v1.ModelConfigService.GetModelConfig` gRPC method exposes the
 same configuration to authenticated workloads. The response omits `total_context_budget_tokens`
-for an unknown model; a configured budget is positive. It uses the same Pod-bound TokenReview
-audience and namespace policy as the HTTP listener. Environment Runtime uses this method for
-Claude model budgets. The HTTP endpoint below remains available to older runner images.
+for an unknown model; a configured budget is positive. The SVID TLS listener authenticates
+Environment Runtime callers from the verified TLS peer and live Sandbox state. The plaintext gRPC
+listener retains Pod-bound TokenReview authentication for the central sampler. Environment Runtime
+uses the SVID route for Claude model budgets. The HTTP endpoint below remains available to older
+runner images.
 
 The authenticated `GET /agentplane/model-config?model=...` endpoint returns a
 `ModelConfig` record for an exposed route, or JSON `null` (status 200) for a route
@@ -136,7 +138,8 @@ These are configured harness overrides, not a catalog of every known model capac
 ## Contract tests
 
 The Go ingress tests exercise request filtering, TokenReview response policy, proxy errors, streaming,
-and cancellation with `httptest` servers. A typed TokenReview fake is used for handler behavior;
+cancellation, and native gRPC authentication on the SVID TLS listener. A typed TokenReview fake is
+used for handler behavior;
 it checks ingress interpretation and does not establish Kubernetes token-validation or Pod-binding
 semantics. One smoke test starts the Bazel-built binary with YAML and environment settings against a
 narrow TokenReview HTTP fixture and fake LiteLLM, covering client-go wiring and the real listener

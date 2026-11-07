@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -66,6 +67,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		return err
 	}
 	defer handler.transport.CloseIdleConnections()
+	modelConfig := &modelConfigService{models: handler.models}
 	address := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -83,7 +85,8 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		return fmt.Errorf("could not listen on configured gRPC address: %w", err)
 	}
 	listeners = append(listeners, grpcListener)
-	grpcServer := newModelConfigServer(resolver, handler.models)
+	grpcServer := newModelConfigServer(resolver, modelConfig)
+	var workloadGRPCServer *grpc.Server
 	servers := []*http.Server{{
 		Handler:           observability.HTTPHandler(handler),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -99,12 +102,14 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("could not configure workload SVID listener: %w", err)
 		}
+		workloadGRPCServer = newModelConfigServer(svidResolver, modelConfig)
 		workloadListener, err := net.Listen("tcp", c.WorkloadListenAddress)
 		if err != nil {
 			return fmt.Errorf("could not listen on workload SVID address: %w", err)
 		}
+		workloadHTTPHandler := workloadListenerHandler(workloadGRPCServer, handler.WorkloadHandler(svidResolver))
 		servers = append(servers, &http.Server{
-			Handler:           observability.HTTPHandler(handler.WorkloadHandler(svidResolver)),
+			Handler:           observability.HTTPHandler(workloadHTTPHandler),
 			ReadHeaderTimeout: 10 * time.Second,
 			TLSConfig:         tlsConfig,
 			ConnState:         environment_runtime_transport.HTTPServerTLSExpiryConnState(nil),
@@ -125,7 +130,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 			serveResult <- server.Serve(httpListener)
 		}(server, httpListener, serveTLS)
 	}
-	go func() { serveResult <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(grpcListener)) }()
+	go func() { serveResult <- grpcServer.Serve(grpcListener) }()
 	logger.Info("forwarding authenticated Sandbox model traffic to LiteLLM", "url", c.LiteLLMURL, "address", address)
 	logger.Info("serving native model configuration gRPC", "address", grpcAddress)
 	if len(servers) > 1 {
@@ -140,6 +145,9 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 				_ = server.Close()
 				shutdownErrors = append(shutdownErrors, err)
 			}
+		}
+		if workloadGRPCServer != nil {
+			graceful.Stop(shutdownContext, workloadGRPCServer)
 		}
 		graceful.Stop(shutdownContext, grpcServer)
 		return errors.Join(shutdownErrors...)
@@ -164,11 +172,21 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	}
 }
 
-func newModelConfigServer(resolver *auth.Resolver, models map[string]modelConfig) *grpc.Server {
+func workloadListenerHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.ProtoMajor == 2 && strings.HasPrefix(request.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(writer, request)
+			return
+		}
+		httpHandler.ServeHTTP(writer, request)
+	})
+}
+
+func newModelConfigServer(resolver auth.PrincipalResolver, service modelconfigpb.ModelConfigServiceServer) *grpc.Server {
 	methods := auth.HealthMethods()
 	methods[modelconfigpb.ModelConfigService_GetModelConfig_FullMethodName] = auth.AnyAccount(resolver)
 	server := grpc.NewServer(append(methods.ServerOptions(10*time.Second), observability.GRPCServerOption())...)
-	modelconfigpb.RegisterModelConfigServiceServer(server, &modelConfigService{models: models})
+	modelconfigpb.RegisterModelConfigServiceServer(server, service)
 	healthpb.RegisterHealthServer(server, health.NewServer())
 	return server
 }
