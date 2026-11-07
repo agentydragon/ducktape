@@ -153,7 +153,8 @@ fn a_slot_query_lists_only_the_witnesses_that_can_name_it() {
 fn precision_loss_limit_applies_per_unit_after_location_filtering() {
     let fixture = GraphFixture::new(
         "Object.freeze = value => value;\n\
-         const values = Object.freeze([\n\
+         const values =\n\
+         Object.freeze([\n\
          firstMissing(),\n\
          secondMissing(),\n\
          thirdMissing(),\n\
@@ -204,15 +205,15 @@ fn precision_loss_limit_applies_per_unit_after_location_filtering() {
         assert_eq!(limited_unit[field], all_unit[field], "{field} changed");
     }
 
-    let at = fixture.json(&["explain-integrity", "--at", "main.js:5", "--limit", "1"]);
+    let at = fixture.json(&["explain-integrity", "--at", "main.js:3", "--limit", "1"]);
     let [at_unit] = at["source_units"].as_array().unwrap().as_slice() else {
-        panic!("one source unit with a loss at line 5: {at}");
+        panic!("one source unit with a loss at line 3: {at}");
     };
     assert_eq!(at_unit["id"], all_unit["id"]);
     assert_eq!(at_unit["precision_losses"].as_array().unwrap().len(), 1);
     assert_eq!(
         at_unit["precision_losses"][0]["source_location"]["start_line"],
-        5
+        3
     );
     assert_eq!(
         at_unit["precision_loss_limit"],

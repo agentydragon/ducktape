@@ -84,6 +84,9 @@ pub(super) enum CallTransfer {
     /// The ordered operand path declined this target. Its source-based
     /// helpers cannot safely replay already evaluated operands.
     UnsupportedOperands(OrderedCallAdmissionRefusal),
+    /// The opaque invocation protocol consumed all evaluated operands. This
+    /// carries no result or coverage proof; a caller remainder still needs fallback.
+    SummarizedOpaque(OrderedCallAdmissionRefusal),
 }
 
 impl CallTransfer {
