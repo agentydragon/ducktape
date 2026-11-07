@@ -2169,18 +2169,21 @@ past the engine's size limit may throw, so only comparisons, equality, bitwise
 hoisted `var` read before its initializer counts as `undefined`. No value is
 folded, and every binding read, import-order and TDZ constraint remains.
 
-Imported primitive types alone do not cover the imported binding's normal
-`GetValue`. A separate read capability requires an analyzed stable primitive
-export, an exact ordinary ESM importer-to-provider request, and a fully
-resolved static dependency closure of the provider that does not reach the
-importer. Unresolved, unsupported, non-entry, or importer-reaching dependencies
-leave the read conservative. The capability retains every local export cell
-that supplied the value through copies and re-exports; aliases do not erase
-that provenance. It authorizes only the reached imported binding read's
-existing module-read effect coverage. It does not certify provider effects or
-initializer completion, and primitive return kinds alone cannot establish a
-normal imported value. The existing imported type facts remain coercion-only
-when this read capability is absent.
+Raw stable export kinds remain available while the program summary resolves
+copies and re-exports, but they do not cover an importer's normal `GetValue`.
+The execution-facing imported-value adapter includes a primitive value only
+when the same local binding has a matching read capability. That capability
+requires an analyzed stable primitive export, an exact ordinary ESM
+importer-to-provider request, and a fully resolved static dependency closure of
+the provider that does not reach the importer. Unresolved, unsupported,
+non-entry, or importer-reaching dependencies leave the imported value
+unavailable to ordinary candidate execution. The capability retains every
+local export cell that supplied the value through copies and re-exports;
+aliases do not erase that provenance. It authorizes only the reached imported
+binding read's existing module-read effect coverage. It does not certify
+provider effects or general ESM completion. Until that completion is modeled,
+raw primitive kinds do not stand in for a normal imported value or its read
+effects.
 
 Guarded native call summaries share one checked projection for call timing
 and successful return values. The summarized operations, the argument counts

@@ -291,7 +291,9 @@ impl<'a> ModulePurityFacts<'a> {
     /// program-wide export verdicts: each local import bound to a *function*
     /// export of an analyzed module gets that export's verdict; anything
     /// unresolved is omitted (stays `unknown_call`).
-    /// Each local import's value under the program-wide export values.
+    /// Raw value projection of each local import under the program-wide
+    /// export facts. This does not prove the consumer's normal imported
+    /// `GetValue`; candidate execution must join it with a read capability.
     pub fn imported_values(
         &self,
         export_values: &BTreeMap<(SourceModuleKey, String), Value>,

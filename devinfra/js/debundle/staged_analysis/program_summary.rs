@@ -87,7 +87,10 @@ pub struct ReparsedEntry {
 pub struct ProgramSummary {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
-    /// Per-chunk imported-binding values (`AnalysisInputs::imported_values`).
+    /// Per-chunk imported values admitted to ordinary candidate execution.
+    /// Each value has a matching `primitive_reads` proof for the same local
+    /// binding and primitive kinds; raw exported primitive facts remain in
+    /// the source analysis and `export_primitives` closure above.
     pub values: BTreeMap<String, BTreeMap<String, Value>>,
     /// Per-chunk imported primitive read capabilities with source-cell
     /// provenance and a resolved provider closure excluding the importer.
@@ -610,6 +613,26 @@ pub fn collect_program_summary(
             (importer.clone(), reads)
         })
         .collect();
+    // Raw stable export kinds are useful while resolving copy and re-export
+    // chains, but they do not prove that an imported binding's GetValue is
+    // available at its consumer. Keep the existing dependency-closure read
+    // capability as the single join at the candidate-input boundary.
+    let values = modules
+        .iter()
+        .map(|(name, module)| {
+            let proved_reads = primitive_reads.get(name);
+            let values = module
+                .imported_values(&export_values)
+                .into_iter()
+                .filter(|(local, value)| {
+                    proved_reads
+                        .and_then(|reads| reads.get(local))
+                        .is_some_and(|read| *value == Value::Prim(read.kinds))
+                })
+                .collect();
+            (name.clone(), values)
+        })
+        .collect();
     validate_analysis_source_sites(
         artifact,
         &projection.source_sites,
@@ -821,10 +844,7 @@ pub fn collect_program_summary(
                 })
                 .collect(),
         ),
-        values: modules
-            .iter()
-            .map(|(name, module)| (name.clone(), module.imported_values(&export_values)))
-            .collect(),
+        values,
         primitive_reads,
         bindings: resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
@@ -1570,12 +1590,26 @@ mod tests {
                     &reparse_unretained_entries(&artifact, None),
                 )
                 .expect("program summary analysis succeeds");
-                assert_eq!(
-                    facts.values["static/app"]["bytes"],
-                    Value::Prim(PrimKinds::NUMBER)
-                );
+                let provider_chunk = artifact
+                    .chunks
+                    .iter()
+                    .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == "static/peer")
+                    .expect("provider source facts");
+                assert!(matches!(
+                    provider_chunk.analysis.runtime_facts.stable_export_values.get("limit"),
+                    Some(StableExportValue::Local { kinds, .. }) if *kinds == PrimKinds::NUMBER
+                ));
+                let imported_value = facts.values["static/app"].get("bytes");
+                assert_eq!(imported_value.is_some(), expected_read, "{provider}");
+                if let Some(imported_value) = imported_value {
+                    assert_eq!(*imported_value, Value::Prim(PrimKinds::NUMBER));
+                }
                 let read = facts.primitive_reads["static/app"].get("bytes");
                 assert_eq!(read.is_some(), expected_read, "{provider}");
+                if !expected_read {
+                    assert!(facts.values["static/app"].is_empty(), "{provider}");
+                    assert!(facts.primitive_reads["static/app"].is_empty(), "{provider}");
+                }
                 if let Some(read) = read {
                     assert_eq!(
                         read.dependency_closure,

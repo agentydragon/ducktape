@@ -1429,6 +1429,84 @@ fn named_and_star_reexports_keep_provider_inputs_in_saved_analysis() {
     }
 }
 
+fn assert_unproved_reexported_primitive_refusal_matches_saved(provider: &str) {
+    let source = "import { limit as bytes } from './bridge.js';\n\
+         let later = 0;\nconst callback = () => later;\n\
+         globalThis.saved = callback;\nconst computed = 4 * bytes + 256;\n\
+         later = 42;\nconsole.log(computed, callback());\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "compute",
+                    &[Member::new("callback"), Member::new("computed")],
+                    &["globalThis.saved = callback;"],
+                ),
+                logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&[
+            ("static/bridge", "export { limit } from './provider.js';\n"),
+            ("static/provider", provider),
+        ]),
+    );
+    let artifact = fs::read(&staged.artifact).unwrap();
+    let direct = staged.run(&[]);
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+
+    for (invocation, label) in [(&direct, "direct"), (&saved, "saved")] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(1),
+            "the {label} run must refuse a re-exported primitive without an imported-read proof:\n{}",
+            invocation.result.stderr
+        );
+        let report_root = invocation.output_root().join("reports/tree/static/app");
+        for report in [
+            "dependency_graph.json.gz",
+            "atomic_group_conflicts.json",
+            "effect_translation_validation.json",
+            "candidate_relocation_assessment.json",
+        ] {
+            assert!(
+                report_root.join(report).is_file(),
+                "the {label} refusal must preserve {report}"
+            );
+        }
+        let conflicts: Vec<Value> = serde_json::from_slice(
+            &fs::read(report_root.join("atomic_group_conflicts.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            conflicts.iter().any(|conflict| {
+                let claims = conflict["claims"].as_array().expect("conflict claims");
+                let causes = conflict["causes"].as_array().expect("conflict causes");
+                ["compute", "later"].iter().all(|module| {
+                    claims
+                        .iter()
+                        .any(|claim| claim["module"].as_str() == Some(module))
+                }) && causes
+                    .iter()
+                    .any(|cause| cause.as_str() == Some("eager_use"))
+            }),
+            "the {label} refusal must preserve the source ownership conflict: {conflicts:#?}"
+        );
+    }
+    assert_same_invocation_trees(&direct, &saved);
+    assert_eq!(fs::read(&staged.artifact).unwrap(), artifact);
+}
+
+#[test]
+fn cyclic_and_unresolved_reexported_primitive_reads_refuse_with_saved_analysis() {
+    for provider in [
+        "import './app.js';\nexport const limit = 2;\n",
+        "import './missing.js';\nexport const limit = 2;\n",
+    ] {
+        assert_unproved_reexported_primitive_refusal_matches_saved(provider);
+    }
+}
+
 #[test]
 fn accepted_split_matches_a_direct_run() {
     assert_staged_run_matches(split_with_pure_import(), &[]);
