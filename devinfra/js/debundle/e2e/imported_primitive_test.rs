@@ -771,9 +771,10 @@ fn mutable_import_copy_cannot_acquire_an_ordered_read_receipt() {
         )
         .with_extra_chunks(&[("static/peer", "export let limit = 2;\n")]),
     );
-    assert_eq!(
-        rejected.candidate_relocation_assessment()["decision"]["status"],
-        "incomplete"
+    assert_potential_suppression_rejection(
+        &rejected.candidate_relocation_assessment(),
+        &rejected.effect_translation_validation(),
+        "blocked_by_effect",
     );
     let graph = rejected.dependency_graph();
     let first = source_unit_for_binding(&graph, "first");

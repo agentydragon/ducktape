@@ -2224,9 +2224,10 @@ fn reexport_dependency_initialization_must_precede_a_moved_observer() {
             }
             FixtureRunOutcome::Rejected(rejected) => {
                 assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
-                assert_eq!(
-                    rejected.candidate_relocation_assessment()["status"],
-                    "incomplete"
+                assert_potential_suppression_rejection(
+                    &rejected.candidate_relocation_assessment(),
+                    &rejected.effect_translation_validation(),
+                    "blocked_by_effect",
                 );
             }
         }
@@ -2412,10 +2413,10 @@ fn linkage_reexports_keep_dependency_evaluation_coverage_open() {
         );
         let report = rejected.effect_translation_validation();
         assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
-        assert_eq!(report["decision"]["status"], "incomplete", "{report}");
-        assert_eq!(
-            rejected.candidate_relocation_assessment()["status"],
-            "incomplete"
+        assert_potential_suppression_rejection(
+            &rejected.candidate_relocation_assessment(),
+            &report,
+            "blocked_by_effect",
         );
     }
 }
@@ -2534,11 +2535,29 @@ fn depth_limited_fixture(
     inspect_rejection: bool,
     call_expression: impl Fn(usize) -> String,
 ) -> Fixture {
+    depth_limited_fixture_with_claim_order(
+        tail,
+        callback_result,
+        inspect_rejection,
+        false,
+        call_expression,
+    )
+}
+
+fn depth_limited_fixture_with_claim_order(
+    tail: &str,
+    callback_result: bool,
+    inspect_rejection: bool,
+    source_order_claims: bool,
+    call_expression: impl Fn(usize) -> String,
+) -> Fixture {
     let mut source = String::from("const seed = 7;\n");
     let mut members = vec![Member::new("seed"), Member::new("result")];
+    let mut source_order_members = vec![Member::new("seed")];
     if callback_result {
         source.push_str("const callback = () => seed;\n");
         members.push(Member::new("callback"));
+        source_order_members.push(Member::new("callback"));
     }
     for index in 0..66 {
         source.push_str(&format!(
@@ -2546,11 +2565,17 @@ fn depth_limited_fixture(
             call_expression(index + 1)
         ));
         members.push(Member::new(format!("step{index}").leak()));
+        source_order_members.push(Member::new(format!("step{index}").leak()));
     }
     source.push_str(&format!(
         "function step66() {{ {tail} }}\nconst marker = 1;\nconst result = step0();\n"
     ));
     members.push(Member::new("step66"));
+    source_order_members.extend([
+        Member::new("step66"),
+        Member::new("marker"),
+        Member::new("result"),
+    ]);
     source.push_str(if callback_result {
         "console.log(result(), marker);\n"
     } else {
@@ -2561,6 +2586,11 @@ fn depth_limited_fixture(
     } else {
         run_fixture
     };
+    let members = if source_order_claims {
+        source_order_members
+    } else {
+        members
+    };
     run(
         FixtureOpts::new(&source, vec![logical_module("all", &members)])
             .with_unassigned_mode(unassigned_mode_inline()),
@@ -2570,7 +2600,7 @@ fn depth_limited_fixture(
 #[test]
 fn retained_depth_suffix_closes_effects_without_claiming_execution_completion() {
     let fixture =
-        depth_limited_fixture("return seed;", false, false, |next| format!("step{next}()"));
+        depth_limited_fixture("return seed;", false, true, |next| format!("step{next}()"));
     assert_preserved_entry_output(&fixture, "7 1\n");
     let execution = binding_execution_report(&fixture, "result");
     assert_eq!(execution["complete"], false, "{execution:#}");
@@ -2615,7 +2645,11 @@ fn retained_depth_suffix_closes_effects_without_claiming_execution_completion() 
         "complete retained effects replace the syntactic closure: {graph:#?}"
     );
     let report = fixture.effect_translation_validation();
-    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_potential_suppression_rejection(
+        &fixture.candidate_relocation_assessment(),
+        &report,
+        "blocked_by_effect",
+    );
     assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(
@@ -2630,6 +2664,33 @@ fn retained_depth_suffix_closes_effects_without_claiming_execution_completion() 
             > 0,
         "raw execution diagnostics survive coverage: {report:#}"
     );
+}
+
+#[test]
+fn retained_depth_suffix_with_no_reordering_keeps_effect_closure_accepted() {
+    let fixture =
+        depth_limited_fixture_with_claim_order("return seed;", false, false, true, |next| {
+            format!("step{next}()")
+        });
+    assert_preserved_entry_output(&fixture, "7 1\n");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_eq!(execution["complete"], false, "{execution:#}");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "retained_effect_closure",
+        "{execution:#}"
+    );
+    assert_eq!(
+        execution["binding_effect_authority"]["receipt"]["calls"]
+            .as_array()
+            .unwrap()
+            .len(),
+        67,
+        "{execution:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
+    assert_eq!(report["swapped_pairs"], 0, "{report:#}");
 }
 
 #[test]
@@ -4204,7 +4265,7 @@ fn private_declarative_operations_and_literals_allow_effect_commutation() {
             (
                 "const marker = console.log('marker');",
                 "marker\n41 undefined\n",
-                "incomplete",
+                "conflict",
                 2,
             ),
         ] {
@@ -4227,10 +4288,18 @@ fn private_declarative_operations_and_literals_allow_effect_commutation() {
             assert_preserved_entry_output(&fixture, output);
             let report = fixture.effect_translation_validation();
             assert_eq!(report["swapped_pairs"], 1, "{helper}: {report:#}");
-            assert_eq!(
-                report["decision"]["status"], decision,
-                "{helper}: {report:#}"
-            );
+            if decision == "conflict" {
+                assert_potential_suppression_rejection(
+                    &fixture.candidate_relocation_assessment(),
+                    &report,
+                    "blocked_by_effect",
+                );
+            } else {
+                assert_eq!(
+                    report["decision"]["status"], decision,
+                    "{helper}: {report:#}"
+                );
+            }
             for domain in ["global_properties", "general_heap", "host_effects"] {
                 assert_eq!(
                     report["coverage"]["unknown_coverage"][domain], unknown,

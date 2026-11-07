@@ -319,7 +319,12 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
                 .graph
                 .with_file_name("candidate_relocation_assessment.json"),
         );
-        assert_eq!(baseline["status"], "incomplete", "{baseline:#}");
+        let effects: serde_json::Value = read_json(
+            &fixture
+                .graph
+                .with_file_name("effect_translation_validation.json"),
+        );
+        assert_potential_suppression_rejection(&baseline, &effects, "blocked_by_effect");
         let sibling = fixture.modules.join("ui/target.yaml.tmp");
         write_text_file(&sibling, "unrelated data\n");
         let paths = [

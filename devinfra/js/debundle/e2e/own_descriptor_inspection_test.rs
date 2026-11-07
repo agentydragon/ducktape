@@ -514,9 +514,11 @@ fn descriptor_capture_keeps_the_assigned_source_in_its_destination() {
     let source = "let record;\nconst descriptors = Object.getOwnPropertyDescriptors(record = { get value() { return later; } });\nconst later = 42;\nconsole.log(descriptors.value.get());\n";
     let rejected = run_rejection_fixture(FixtureOpts::new(source, descriptor_modules()));
     let assessment = rejected.candidate_relocation_assessment();
-    assert_eq!(
-        assessment["status"], "blocked_by_placement",
-        "{assessment:#}"
+    let effects = rejected.effect_translation_validation();
+    assert_potential_suppression_rejection(
+        &assessment,
+        &effects,
+        "blocked_by_effect_and_placement",
     );
     assert!(
         !assessment["placement"]["cross_destination_rebinds"]
