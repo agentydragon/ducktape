@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { getApiClient } from "./api";
+import { listOAuthProviders } from "./api";
 import { isAuthenticationFailurePage, isAuthenticationRedirectStarted } from "./auth";
 import type { OAuthProviderStatus } from "./types";
 
@@ -215,8 +215,7 @@ export function OAuthProviders(): JSX.Element {
 
   useEffect(() => {
     let active = true;
-    void getApiClient()
-      .listOAuthProviders()
+    void listOAuthProviders()
       .then((result) => {
         if (active) setProviders(result);
       })
