@@ -8912,6 +8912,7 @@ impl ExecutionIndex {
                 && let [declarator] = declaration.decls.as_slice()
                 && matches!(declarator.name, Pat::Ident(_))
                 && let Some(expression) = declarator.init.as_deref()
+                && !matches!(expression.unwrap_parens(), Expr::Ident(_))
                 && let Some(body) = LocalBody::from_initializer(expression)
             {
                 debug_assert_eq!(body.initializer_span(), Some(expression.span()));
@@ -8925,6 +8926,31 @@ impl ExecutionIndex {
             }
             match OriginalInitializer::collect(item, owner, source_identity) {
                 Ok(initializer) => {
+                    if matches!(
+                        item,
+                        TopLevelItemView::Owned {
+                            item: ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))),
+                            ..
+                        }
+                    ) && matches!(
+                        initializer.composed_expression(),
+                        Some(ValueExpr::Binding(_))
+                    ) && let Some(declaration) = var_decl_of_item(item.as_module_item())
+                        && !declaration.declare
+                        && let [declarator] = declaration.decls.as_slice()
+                        && let Pat::Ident(binding) = &declarator.name
+                        && let Some(expression) = declarator.init.as_deref()
+                        && let Some(body) = LocalBody::from_initializer(expression)
+                        && body.initializer_span() == Some(expression.span())
+                        && index
+                            .initialization_source_identities
+                            .get(&owner)
+                            .is_some_and(|identity| {
+                                identity.matches(owner, &binding.id.to_id(), expression.span())
+                            })
+                    {
+                        index.ordered_initializers.insert(owner, body);
+                    }
                     index.noninvoking_initializers.insert(owner, initializer);
                 }
                 Err(reason) => index.initialization_coverage_refusals[ordinal] = Some(reason),

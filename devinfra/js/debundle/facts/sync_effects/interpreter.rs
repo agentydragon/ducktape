@@ -13912,7 +13912,21 @@ impl Executor<'_, '_> {
             complete: true,
             ..Outcome::default()
         };
-        let ordered_initializer = (initializer_source.is_none()
+        let checked_split_binding_copy = initializer_source
+            .and_then(|source| source.composed_expression())
+            .is_some_and(|expression| matches!(expression, ValueExpr::Binding(_)))
+            && index.ordered_initializers.get(&owner).is_some_and(|body| {
+                let [(binding, _)] = assignments.as_slice() else {
+                    return false;
+                };
+                body.initializer_span().is_some_and(|span| {
+                    index
+                        .initialization_source_identities
+                        .get(&owner)
+                        .is_some_and(|identity| identity.matches(owner, binding, span))
+                })
+            });
+        let ordered_initializer = ((initializer_source.is_none() || checked_split_binding_copy)
             && matches!(fact.kind, StatementKind::VarDecl)
             && fact.declared.len() == 1
             && matches!(assignments.as_slice(), [(binding, _)]
@@ -13952,6 +13966,7 @@ impl Executor<'_, '_> {
                                 && call.args.is_empty()
                                 && matches!(call.callee, ValueExpr::Binding(_)))
                         })
+                    || checked_split_binding_copy
                     || calls.iter().any(|call| {
                         call.kind == CallKind::LocalMemberRead
                             && call.owner == owner
@@ -14170,7 +14185,25 @@ impl Executor<'_, '_> {
             if !needed.contains(id) && initializer_source.is_none() {
                 continue;
             }
-            let (values, selection) = if let Some(source) = initializer_source {
+            let (values, selection) = if let Some(result) = ordered_initializer_result.take() {
+                let selection = result.selection.filter(|selection| {
+                    selection.matches(&result.values)
+                        && outcome.complete
+                        && !outcome.unknown_call
+                        && outcome.effects.precision_losses.is_empty()
+                        && outcome
+                            .root_binding_effect_identity
+                            .as_ref()
+                            .is_some_and(|identity| {
+                                identity.owner == owner
+                                    && identity.binding == *id
+                                    && ordered_initializer.is_some_and(|body| {
+                                        identity.initializer_span == body.initializer_span()
+                                    })
+                            })
+                });
+                (result.values, selection)
+            } else if let Some(source) = initializer_source {
                 let RuntimeValue::Initializer {
                     values,
                     evaluated,
@@ -14191,24 +14224,6 @@ impl Executor<'_, '_> {
                 }
                 initialization_coverage_refusal = initialization_coverage_refusal.or(refusal);
                 (values, None)
-            } else if let Some(result) = ordered_initializer_result.take() {
-                let selection = result.selection.filter(|selection| {
-                    selection.matches(&result.values)
-                        && outcome.complete
-                        && !outcome.unknown_call
-                        && outcome.effects.precision_losses.is_empty()
-                        && outcome
-                            .root_binding_effect_identity
-                            .as_ref()
-                            .is_some_and(|identity| {
-                                identity.owner == owner
-                                    && identity.binding == *id
-                                    && ordered_initializer.is_some_and(|body| {
-                                        identity.initializer_span == body.initializer_span()
-                                    })
-                            })
-                });
-                (result.values, selection)
             } else {
                 (self.evaluate(expression, &top_env, &top_captures), None)
             };

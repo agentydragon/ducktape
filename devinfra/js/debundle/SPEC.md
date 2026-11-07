@@ -739,6 +739,15 @@ fully covered execution against its exact canonical owner, binding and
 initializer span after its result binding becomes initialized. Parameters,
 actual arguments, captures, local stores, property/native/global operations,
 unsupported transfers and abrupt completion remain uncovered by this route.
+A non-exported comma-split variable declarator may also use this route when its
+checked original initializer composes to one plain binding read. Its canonical
+split view must match the original parent declarator and initializer span, and
+the shared local interpreter's result supplies the binding value before any
+original-initializer projection. The source read therefore executes once.
+Coverage still requires an initialized local cell or the existing imported
+primitive-read proof. Mutable imports, globals, uninitialized or TDZ cells, and
+other split initializer forms do not gain this route; their existing
+leaf/value admission and fallback remain unchanged.
 Deferred function/method/accessor creation, record and array creation, named
 function self scopes, and activation-local declarations have no operation
 receipts in this route; successful allocation does not close their effects.
