@@ -1107,18 +1107,14 @@ fn own_data_read_support_allows_disjoint_descriptor_relocation() {
     let fixture = run_fixture(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module(
-                    "a_mutator",
-                    &[
-                        Member::new("other"),
-                        Member::new("descriptors"),
-                        Member::new("applied"),
-                    ],
-                ),
-                logical_module("m_record", &[Member::new("record")]),
-                logical_module("z_observer", &[Member::new("observed")]),
-            ],
+            vec![logical_module(
+                "a_mutator",
+                &[
+                    Member::new("other"),
+                    Member::new("descriptors"),
+                    Member::new("applied"),
+                ],
+            )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
     );
@@ -1134,17 +1130,14 @@ fn own_data_read_support_conflicts_with_replaced_descriptor() {
     let fixture = run_rejection_fixture_with_args(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module(
-                    "a_mutator",
-                    &[
-                        Member::new("target"),
-                        Member::new("descriptors"),
-                        Member::new("applied"),
-                    ],
-                ),
-                logical_module("z_observer", &[Member::new("observed")]),
-            ],
+            vec![logical_module(
+                "a_mutator",
+                &[
+                    Member::new("target"),
+                    Member::new("descriptors"),
+                    Member::new("applied"),
+                ],
+            )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
         &["--emit-on-rejection", "--effect-conflicts-jsonl"],
@@ -1158,6 +1151,7 @@ fn own_data_read_support_conflicts_with_replaced_descriptor() {
     assert_node_output(&fixture.entry_path(), "42 42\n", "");
     let report = fixture.effect_translation_validation();
     assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
     let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     let pair = rows
         .iter()
@@ -1214,18 +1208,15 @@ fn writable_own_data_store_support_conflicts_with_readonly_descriptor_relocation
     let fixture = run_rejection_fixture_with_args(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module(
-                    "a_readonly",
-                    &[
-                        Member::new("target"),
-                        Member::new("frozen_source"),
-                        Member::new("descriptors"),
-                        Member::new("applied"),
-                    ],
-                ),
-                logical_module("z_store", &[Member::new("stored")]),
-            ],
+            vec![logical_module(
+                "a_readonly",
+                &[
+                    Member::new("target"),
+                    Member::new("frozen_source"),
+                    Member::new("descriptors"),
+                    Member::new("applied"),
+                ],
+            )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
         &["--emit-on-rejection", "--effect-conflicts-jsonl"],
@@ -1237,6 +1228,9 @@ fn writable_own_data_store_support_conflicts_with_readonly_descriptor_relocation
         "",
     );
     assert_node_error(&fixture.entry_path(), "TypeError");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
 
     let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     let cell = rows
@@ -1280,10 +1274,10 @@ fn writable_own_data_store_stays_conservative_when_freeze_crosses_it() {
     let fixture = run_rejection_fixture_with_args(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module("a_freezer", &[Member::new("target"), Member::new("frozen")]),
-                logical_module("z_store", &[Member::new("stored")]),
-            ],
+            vec![logical_module(
+                "a_freezer",
+                &[Member::new("target"), Member::new("frozen")],
+            )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
         &["--emit-on-rejection", "--effect-conflicts-jsonl"],
@@ -1299,6 +1293,7 @@ fn writable_own_data_store_stays_conservative_when_freeze_crosses_it() {
     let report = fixture.effect_translation_validation();
     assert_ne!(report["decision"]["status"], "accepted", "{report:#}");
     assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
     let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     assert!(
         rows.iter().any(|pair| pair["havoc"] == true),

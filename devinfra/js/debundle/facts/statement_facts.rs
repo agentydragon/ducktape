@@ -211,14 +211,17 @@ pub(crate) struct SynchronousCalls {
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
     pub(crate) completed_initialization:
         Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
+    /// Keep proof dependencies off recursive `Outcome`/`SynchronousCalls`
+    /// frames. The box is transparent in saved analysis serialization.
     /// Exact-owner normal-completion evidence for the initialization control
-    /// fence. This is independent of effect-domain closure.
+    /// fence is independent of effect-domain closure.
     pub(crate) root_normal_completion:
-        Option<super::sync_effects::noninvoking_initialization::RootNormalCompletion>,
+        Option<Box<super::sync_effects::noninvoking_initialization::RootNormalCompletion>>,
     /// Exact root-level outward known throw, distinct from potential
     /// suppression inferred from missing normal-completion evidence.
+    /// Boxed so its proof dependencies do not inflate recursive outcome frames.
     pub(crate) root_outward_throw:
-        Option<super::sync_effects::noninvoking_initialization::RootOutwardThrow>,
+        Option<Box<super::sync_effects::noninvoking_initialization::RootOutwardThrow>>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
     pub(crate) initialization_coverage_refusal:
@@ -267,7 +270,7 @@ pub(crate) struct SynchronousCalls {
     /// Typed descriptor/shape support for admitted own-data reads and stores.
     /// This is report/read-footprint evidence, not effect-domain authority.
     pub(crate) operation_support_receipts:
-        Option<Box<Vec<super::sync_effects::OperationSupportReceipt>>>,
+        Option<Box<[super::sync_effects::OperationSupportReceipt]>>,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
@@ -299,20 +302,26 @@ impl SynchronousCalls {
         &mut self,
         receipt: super::sync_effects::OperationSupportReceipt,
     ) {
-        let receipts = self
+        if self
             .operation_support_receipts
-            .get_or_insert_with(|| Box::new(Vec::new()));
-        if !receipts.contains(&receipt) {
-            receipts.push(receipt);
+            .as_deref()
+            .is_some_and(|receipts| receipts.contains(&receipt))
+        {
+            return;
         }
+        let mut receipts = self
+            .operation_support_receipts
+            .take()
+            .map(|receipts| receipts.into_vec())
+            .unwrap_or_default();
+        receipts.push(receipt);
+        self.operation_support_receipts = Some(receipts.into_boxed_slice());
     }
 
     pub(crate) fn operation_support_receipts(
         &self,
     ) -> &[super::sync_effects::OperationSupportReceipt] {
-        self.operation_support_receipts
-            .as_deref()
-            .map_or(&[], Vec::as_slice)
+        self.operation_support_receipts.as_deref().unwrap_or(&[])
     }
 
     pub(crate) fn record_heap_contents(&mut self, cells: &HeapContentCells, non_assumed: bool) {

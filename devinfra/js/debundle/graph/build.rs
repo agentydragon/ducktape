@@ -1509,8 +1509,9 @@ fn emit_cell_order_events(
                 }
             }
             // Unknown effects are barriers for subsequent summarized events.
-            // Checked own array slots share the uniquely eager array's birth,
-            // never a repeated site's or an ordinary record property's.
+            // Checked own array slots and their shape-support reads share the
+            // uniquely eager array's birth. The birth set already excludes
+            // deferred/repeated sites; an ordinary record has no array birth.
             if let Some(barrier) = opaque_barrier
                 && (barrier_mode != CellOrderBarrier::None
                     || effects.reads.iter().chain(&effects.writes).any(|cell| {
@@ -1520,6 +1521,10 @@ fn emit_cell_order_events(
                                         if (property == "length" || is_array_index(property))
                                             && born_after_barrier.contains(
                                                 &EffectCell::ArrayContents(*origin)))
+                            && !matches!(cell,
+                                    EffectCell::ObjectShape(origin)
+                                        if born_after_barrier.contains(
+                                            &EffectCell::ArrayContents(*origin)))
                     }))
             {
                 depend(&mut targets, barrier, CellConflict::AfterBarrier);

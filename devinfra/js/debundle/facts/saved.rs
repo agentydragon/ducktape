@@ -501,10 +501,10 @@ struct SavedSynchronousCalls<'a> {
         Cow<'a, Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>>,
     #[serde(deserialize_with = "Deserialize::deserialize")]
     root_normal_completion:
-        Cow<'a, Option<super::sync_effects::noninvoking_initialization::RootNormalCompletion>>,
+        Cow<'a, Option<Box<super::sync_effects::noninvoking_initialization::RootNormalCompletion>>>,
     #[serde(deserialize_with = "Deserialize::deserialize")]
     root_outward_throw:
-        Cow<'a, Option<super::sync_effects::noninvoking_initialization::RootOutwardThrow>>,
+        Cow<'a, Option<Box<super::sync_effects::noninvoking_initialization::RootOutwardThrow>>>,
     initialization_coverage_refusal:
         Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
     evaluation_effects: Cow<'a, super::evaluation_effects::EvaluationEffects>,
@@ -689,7 +689,7 @@ impl<'a> SavedSynchronousCalls<'a> {
             heap_contents: self.heap_contents.restore(ordinals)?,
             non_assumed_heap_accesses: self.non_assumed_heap_accesses.restore(ordinals)?,
             operation_support_receipts: (!self.operation_support_receipts.is_empty())
-                .then(|| Box::new(self.operation_support_receipts)),
+                .then(|| self.operation_support_receipts.into_boxed_slice()),
             precision_losses: self
                 .precision_losses
                 .into_iter()

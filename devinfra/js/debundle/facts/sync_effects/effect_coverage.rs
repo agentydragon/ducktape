@@ -769,16 +769,16 @@ pub(crate) struct EffectCoverageFragment {
     /// Typed prerequisites for the successful own-data operations in this
     /// fragment. These receipts never close an effect domain themselves.
     #[serde(deserialize_with = "deserialize_required_operation_support")]
-    operation_support: Option<Box<Vec<OperationSupportReceipt>>>,
+    operation_support: Option<Box<[OperationSupportReceipt]>>,
 }
 
 fn deserialize_required_operation_support<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<Box<Vec<OperationSupportReceipt>>>, D::Error> {
+) -> Result<Option<Box<[OperationSupportReceipt]>>, D::Error> {
     Ok(
         Option::<Vec<OperationSupportReceipt>>::deserialize(deserializer)?
             .filter(|receipts| !receipts.is_empty())
-            .map(Box::new),
+            .map(Vec::into_boxed_slice),
     )
 }
 
@@ -924,7 +924,7 @@ impl<'a> SavedEffectCoverageFragment<'a> {
         let operation_support = if self.operation_support.is_empty() {
             None
         } else {
-            Some(Box::new(self.operation_support))
+            Some(self.operation_support.into_boxed_slice())
         };
         EffectCoverageFragment {
             initialization: self.initialization.into_owned(),
@@ -1099,16 +1099,24 @@ impl EffectCoverageFragment {
     }
 
     pub(super) fn operation_support(&mut self, receipt: OperationSupportReceipt) {
-        let receipts = self
+        if self
             .operation_support
-            .get_or_insert_with(|| Box::new(Vec::new()));
-        if !receipts.contains(&receipt) {
-            receipts.push(receipt);
+            .as_deref()
+            .is_some_and(|receipts| receipts.contains(&receipt))
+        {
+            return;
         }
+        let mut receipts = self
+            .operation_support
+            .take()
+            .map(|receipts| receipts.into_vec())
+            .unwrap_or_default();
+        receipts.push(receipt);
+        self.operation_support = Some(receipts.into_boxed_slice());
     }
 
     pub(crate) fn operation_support_receipts(&self) -> &[OperationSupportReceipt] {
-        self.operation_support.as_deref().map_or(&[], Vec::as_slice)
+        self.operation_support.as_deref().unwrap_or(&[])
     }
 
     pub(crate) fn has_uninstantiated_operation_support(&self) -> bool {
@@ -1141,7 +1149,8 @@ impl EffectCoverageFragment {
         {
             return false;
         }
-        self.operation_support = (!instantiated.is_empty()).then(|| Box::new(instantiated));
+        self.operation_support =
+            (!instantiated.is_empty()).then(|| instantiated.into_boxed_slice());
         true
     }
 
