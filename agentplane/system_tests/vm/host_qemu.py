@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -23,6 +24,10 @@ SAMPLE_GAP_SECONDS = 2.0
 MAX_SAMPLES = 2
 SAMPLE_BUDGET_SECONDS = 10.0
 COMMAND_TIMEOUT_SECONDS = 2.0
+VIRTIOFSD_BUDGET_SECONDS = 0.75
+VIRTIOFSD_QEMU_RESERVE_SECONDS = 7.0
+VIRTIOFSD_MAX_PROCESSES = 6
+VIRTIOFSD_MAX_THREADS = 48
 POLL_SECONDS = 0.1
 
 LIBVIRT_URI = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
@@ -85,7 +90,10 @@ def _launcher_pod_uid(launcher: Path, namespace: str) -> str:
 
 def _pod_uid_in_cgroup(cgroup: str, pod_uid: str) -> bool:
     # systemd slice names replace the Pod UID's hyphens with underscores.
-    return any(f"pod{candidate}" in cgroup for candidate in (pod_uid, pod_uid.replace("-", "_")))
+    return any(
+        re.search(rf"(?<![A-Za-z0-9_])pod{re.escape(candidate)}(?=$|[/.])", cgroup)
+        for candidate in (pod_uid, pod_uid.replace("-", "_"))
+    )
 
 
 def _read_proc_field(output: TextIO, path: Path, field: str) -> None:
@@ -138,6 +146,76 @@ def _snapshot_host_qemu(
     if found == 0:
         output.write(f"HOST_QEMU_PROCESS_MATCH_NONE pod_uid={pod_uid}\n")
     output.write("NSpid maps host PIDs/TIDs to nested namespace IDs; QMP thread IDs are recorded separately.\n")
+    output.flush()
+
+
+def _snapshot_host_virtiofsd(
+    output: TextIO, pod_uid: str, stop: threading.Event, deadline: float, *, proc_root: Path = Path("/proc")
+) -> None:
+    found = scanned = threads = 0
+    uncertain = False
+    stopped_reason: str | None = None
+    if stop.is_set() or time.monotonic() >= deadline:
+        output.write("HOST_VIRTIOFSD_SKIPPED budget-or-stop\n")
+        return
+
+    for comm in sorted(proc_root.glob("[0-9]*/comm"), key=lambda path: int(path.parent.name)):
+        if stop.is_set() or time.monotonic() >= deadline:
+            stopped_reason = "budget-or-stop"
+            break
+        if found >= VIRTIOFSD_MAX_PROCESSES:
+            stopped_reason = "process-limit"
+            break
+        process = comm.parent
+        try:
+            if comm.read_text().strip() != "virtiofsd":
+                continue
+            scanned += 1
+            cgroup = (process / "cgroup").read_text()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            uncertain = True
+            output.write(f"HOST_VIRTIOFSD_PROCESS_ERROR pid={process.name} type={type(error).__name__}\n")
+            continue
+        if not _pod_uid_in_cgroup(cgroup, pod_uid):
+            continue
+
+        found += 1
+        output.write(f"HOST_VIRTIOFSD_PID {process.name}\n")
+        for field in ("comm", "status", "wchan", "syscall", "stack"):
+            if stop.is_set() or time.monotonic() >= deadline:
+                stopped_reason = "budget-or-stop"
+                break
+            _read_proc_field(output, process / field, field)
+        if stopped_reason is not None:
+            break
+        for task in (process / "task").glob("[0-9]*"):
+            if stop.is_set() or time.monotonic() >= deadline:
+                stopped_reason = "budget-or-stop"
+                break
+            if threads >= VIRTIOFSD_MAX_THREADS:
+                stopped_reason = "thread-limit"
+                break
+            threads += 1
+            output.write(f"HOST_VIRTIOFSD_HOST_TID {task.name}\n")
+            for field in ("comm", "status", "wchan", "syscall", "stack"):
+                if stop.is_set() or time.monotonic() >= deadline:
+                    stopped_reason = "budget-or-stop"
+                    break
+                _read_proc_field(output, task / field, field)
+            if stopped_reason is not None:
+                break
+        if stopped_reason is not None:
+            break
+
+    output.write(
+        f"HOST_VIRTIOFSD_PROCESS_SCAN scanned={scanned} matching_pod={found} threads={threads} pod_uid={pod_uid}\n"
+    )
+    if stopped_reason is not None:
+        output.write(f"HOST_VIRTIOFSD_SCAN_STOPPED reason={stopped_reason}\n")
+    elif found == 0:
+        output.write(f"HOST_VIRTIOFSD_PROCESS_{'MATCH_UNCERTAIN' if uncertain else 'MATCH_NONE'} pod_uid={pod_uid}\n")
     output.flush()
 
 
@@ -326,6 +404,12 @@ def _snapshot_qemu(
     deadline = time.monotonic() + SAMPLE_BUDGET_SECONDS
     if include_pod_status:
         _snapshot_pod_status(kubectl, namespace, pod, pod_uid, output, stop, deadline)
+        _snapshot_host_virtiofsd(
+            output,
+            pod_uid,
+            stop,
+            min(time.monotonic() + VIRTIOFSD_BUDGET_SECONDS, deadline - VIRTIOFSD_QEMU_RESERVE_SECONDS),
+        )
     _snapshot_host_qemu(output, pod_uid, stop, deadline)
     if _remaining(deadline, stop) is None:
         output.write("VIRSH_SKIPPED host-process-snapshot-used-budget-or-stop\n")

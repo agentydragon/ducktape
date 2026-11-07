@@ -75,6 +75,144 @@ def test_host_qemu_processes_are_matched_by_pod_cgroup_and_keep_nspid(tmp_path: 
     assert "SCHEDSTAT: 10 20 3" in snapshot
 
 
+def _fake_virtiofs_process(proc: Path, pid: int, cgroup: str, *, comm: str = "virtiofsd", tids: int = 1) -> None:
+    process = proc / str(pid)
+    process.mkdir(parents=True)
+    (process / "comm").write_text(comm + "\n")
+    (process / "cgroup").write_text(cgroup + "\n")
+    (process / "cmdline").write_bytes(b"virtiofsd\0--secret=PRIVATE_ARGUMENT\0")
+    for field, value in {
+        "status": f"Name:\t{comm}\nNSpid:\t{pid}\t1\n",
+        "wchan": "request_wait_answer\n",
+        "syscall": "202 0x1\n",
+        "stack": "[<0>] fuse_sync_fs\n",
+    }.items():
+        (process / field).write_text(value)
+    for tid in range(pid, pid + tids):
+        task = process / "task" / str(tid)
+        task.mkdir(parents=True)
+        for field in ("comm", "status", "wchan", "syscall", "stack"):
+            (task / field).write_bytes((process / field).read_bytes())
+
+
+def test_virtiofs_processes_match_exact_pod_uid_and_multiple_daemons(tmp_path: Path) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    other = "ffffffff-1111-2222-3333-444444444444"
+    proc = tmp_path / "proc"
+    _fake_virtiofs_process(proc, 101, f"0::/kubepods/burstable/pod{uid}/container", tids=2)
+    _fake_virtiofs_process(
+        proc, 201, f"0::/kubepods.slice/kubepods-burstable-pod{uid.replace('-', '_')}.slice/container"
+    )
+    _fake_virtiofs_process(proc, 301, f"0::/kubepods/burstable/pod{uid}extra/container")
+    _fake_virtiofs_process(proc, 401, f"0::/kubepods/burstable/pod{other}/container")
+    _fake_virtiofs_process(proc, 501, f"0::/kubepods/burstable/pod{uid}/container", comm="qemu-kvm")
+
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() + 2, proc_root=proc)
+
+    snapshot = output.getvalue()
+    assert "HOST_VIRTIOFSD_PID 101\n" in snapshot
+    assert "HOST_VIRTIOFSD_PID 201\n" in snapshot
+    assert "HOST_VIRTIOFSD_PID 301\n" not in snapshot
+    assert "HOST_VIRTIOFSD_PID 401\n" not in snapshot
+    assert "HOST_VIRTIOFSD_PID 501\n" not in snapshot
+    assert "HOST_VIRTIOFSD_HOST_TID 102\n" in snapshot
+    assert "NSpid:\t101\t1" in snapshot
+    assert "WCHAN: request_wait_answer" in snapshot
+    assert "STACK: [<0>] fuse_sync_fs" in snapshot
+    assert f"scanned=4 matching_pod=2 threads=3 pod_uid={uid}" in snapshot
+    assert "PRIVATE_ARGUMENT" not in snapshot
+
+
+@pytest.mark.parametrize(("limit", "marker"), [("threads", "thread-limit"), ("processes", "process-limit")])
+def test_virtiofs_process_snapshot_enforces_count_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: str, marker: str
+) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    proc = tmp_path / "proc"
+    _fake_virtiofs_process(proc, 101, f"0::/kubepods/pod{uid}/container", tids=3)
+    _fake_virtiofs_process(proc, 201, f"0::/kubepods/pod{uid}/container")
+    if limit == "threads":
+        monkeypatch.setattr(host_qemu, "VIRTIOFSD_MAX_THREADS", 2)
+    else:
+        monkeypatch.setattr(host_qemu, "VIRTIOFSD_MAX_PROCESSES", 1)
+
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() + 2, proc_root=proc)
+
+    snapshot = output.getvalue()
+    assert f"HOST_VIRTIOFSD_SCAN_STOPPED reason={marker}" in snapshot
+    assert "HOST_VIRTIOFSD_PID 201\n" not in snapshot
+    if limit == "threads":
+        assert "HOST_VIRTIOFSD_HOST_TID 103\n" not in snapshot
+
+
+def test_virtiofs_process_snapshot_stops_between_proc_reads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    proc = tmp_path / "proc"
+    _fake_virtiofs_process(proc, 101, f"0::/kubepods/pod{uid}/container")
+    stop = threading.Event()
+    original = host_qemu._read_proc_field
+
+    def stop_after_first_read(output: io.StringIO, path: Path, field: str) -> None:
+        original(output, path, field)
+        stop.set()
+
+    monkeypatch.setattr(host_qemu, "_read_proc_field", stop_after_first_read)
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(output, uid, stop, time.monotonic() + 2, proc_root=proc)
+
+    snapshot = output.getvalue()
+    assert "HOST_VIRTIOFSD_PID 101\n" in snapshot
+    assert "HOST_VIRTIOFSD_SCAN_STOPPED reason=budget-or-stop" in snapshot
+    assert "STATUS:" not in snapshot
+    assert "HOST_VIRTIOFSD_HOST_TID" not in snapshot
+
+
+def test_virtiofs_process_snapshot_distinguishes_absence_permission_and_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    proc = tmp_path / "proc"
+    _fake_virtiofs_process(proc, 101, f"0::/kubepods/pod{uid}/container")
+    read_text = Path.read_text
+    read_bytes = Path.read_bytes
+
+    def restricted_text(path: Path) -> str:
+        if path == proc / "101" / "cgroup":
+            raise PermissionError("cgroup denied")
+        return read_text(path)
+
+    monkeypatch.setattr(Path, "read_text", restricted_text)
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() + 2, proc_root=proc)
+    assert "HOST_VIRTIOFSD_PROCESS_ERROR pid=101 type=PermissionError" in output.getvalue()
+    assert "HOST_VIRTIOFSD_PROCESS_MATCH_UNCERTAIN" in output.getvalue()
+    monkeypatch.setattr(Path, "read_text", read_text)
+
+    def restricted_bytes(path: Path) -> bytes:
+        if path == proc / "101" / "task" / "101" / "stack":
+            raise PermissionError("kernel stack denied")
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", restricted_bytes)
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() + 2, proc_root=proc)
+    assert "HOST_VIRTIOFSD_PID 101\n" in output.getvalue()
+    assert "STACK_ERROR PermissionError" in output.getvalue()
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(
+        output, "different-pod-uid", threading.Event(), time.monotonic() + 2, proc_root=proc
+    )
+    assert "HOST_VIRTIOFSD_PROCESS_MATCH_NONE pod_uid=different-pod-uid" in output.getvalue()
+
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() - 1, proc_root=proc)
+    assert output.getvalue() == "HOST_VIRTIOFSD_SKIPPED budget-or-stop\n"
+
+
 class _FakeK3s:
     def __init__(self, *, fail_list: bool = False, pod_uid: str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") -> None:
         self.fail_list = fail_list
@@ -106,6 +244,31 @@ class _FakeK3s:
             self.release.wait(timeout=timeout)
             return json.dumps({"return": {"status": "running", "running": True}})
         raise AssertionError(f"unexpected virsh call: {args}")
+
+
+def test_virtiofs_snapshot_reserves_existing_qemu_and_qmp_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    deadlines: dict[str, float] = {}
+    monkeypatch.setattr(host_qemu, "_snapshot_pod_status", lambda *args: None)
+
+    def virtiofs(output: io.StringIO, pod_uid: str, stop: threading.Event, deadline: float) -> None:
+        deadlines["virtiofs"] = deadline
+
+    def qemu(output: io.StringIO, pod_uid: str, stop: threading.Event, deadline: float) -> None:
+        deadlines["qemu"] = deadline
+
+    monkeypatch.setattr(host_qemu, "_snapshot_host_virtiofsd", virtiofs)
+    monkeypatch.setattr(host_qemu, "_snapshot_host_qemu", qemu)
+    k3s = _FakeK3s()
+    k3s.release.set()
+    output = io.StringIO()
+
+    host_qemu._snapshot_qemu(
+        k3s.kubectl, "systest", "virt-launcher-vm-pod", k3s.pod_uid, output, threading.Event(), include_pod_status=True
+    )
+
+    assert deadlines["virtiofs"] <= deadlines["qemu"] - host_qemu.VIRTIOFSD_QEMU_RESERVE_SECONDS
+    assert "QEMU_RESULT query-status" in output.getvalue()
+    assert any("qemu-monitor-command" in args for args, _ in k3s.calls)
 
 
 def _shutdown_artifacts(root: Path) -> Path:
