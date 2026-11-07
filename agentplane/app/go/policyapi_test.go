@@ -32,24 +32,19 @@ func TestPolicyRoutesArePublishedAndCallerProtected(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	RegisterPolicyRoutes(server, Config{}, nil, nil)
+	RegisterPolicyRoutes(server, Config{}, nil)
+	RegisterStreamingRoutes(server, StreamingDependencies{})
 	handler := server.Handler(authentication)
 
-	for _, path := range []string{
-		"/sandboxes/form",
-		"/sandboxes/demo/policy-bindings",
-		"/policy-bindings/demo",
+	for _, request := range []struct{ method, path string }{
+		{http.MethodGet, "/sandboxes/form"},
+		{http.MethodPost, "/upstream/policy/v1/sandboxes/policies/demo/policy-bindings"},
+		{http.MethodDelete, "/upstream/policy/v1/sandboxes/policies/demo/policy-bindings/grant?sandboxUid=sandbox-uid&bindingUid=binding-uid"},
 	} {
-		method := http.MethodGet
-		if path == "/sandboxes/demo/policy-bindings" {
-			method = http.MethodPost
-		} else if path == "/policy-bindings/demo" {
-			method = http.MethodDelete
-		}
 		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, httptest.NewRequest(method, path, nil))
+		handler.ServeHTTP(recorder, httptest.NewRequest(request.method, request.path, nil))
 		if recorder.Code != http.StatusUnauthorized {
-			t.Errorf("%s %s status = %d, want 401; body: %s", method, path, recorder.Code, recorder.Body.String())
+			t.Errorf("%s %s status = %d, want 401; body: %s", request.method, request.path, recorder.Code, recorder.Body.String())
 		}
 	}
 
@@ -78,7 +73,7 @@ func TestSandboxFormReturnsConfiguredLifecycleDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	RegisterPolicyRoutes(server, configuration, nil, policies)
+	RegisterPolicyRoutes(server, configuration, policies)
 	request := httptest.NewRequest(http.MethodGet, "/sandboxes/form", nil)
 	request.Header.Set("Authorization", "Bearer accepted")
 	response := httptest.NewRecorder()

@@ -324,7 +324,7 @@ func run(ctx context.Context, config Config) error {
 	if err := RegisterAppConfigRoutes(server, app); err != nil {
 		return fmt.Errorf("register app configuration facade: %w", err)
 	}
-	RegisterPolicyRoutes(server, config, environments, policies)
+	RegisterPolicyRoutes(server, config, policies)
 	if err := RegisterSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session facade: %w", err)
 	}

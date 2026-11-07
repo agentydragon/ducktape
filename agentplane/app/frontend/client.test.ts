@@ -27,16 +27,6 @@ it("throws a non-2xx answer as an HttpError with its status and the complete str
   }
 });
 
-it("accepts an empty created response from a policy grant", async () => {
-  const answer = await api.POST("/sandboxes/{name}/policy-bindings", {
-    params: { path: { name: "sandbox" } },
-    body: { uid: "sandbox-uid", policy_sets: ["example"] },
-    fetch: async () => new Response(null, { status: 201 }),
-  });
-  expect(answer.response.status).toBe(201);
-  expect(answer.error).toBeUndefined();
-});
-
 it("on a 401 sends the browser to log in once and never hands the response back to the page", async () => {
   const replace = vi.fn();
   vi.stubGlobal("location", { pathname: "/", hash: "#/mcp-servers", replace });

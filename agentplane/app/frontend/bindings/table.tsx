@@ -90,7 +90,7 @@ export function BindingsTable({
 }: {
   bindings: PolicyBinding[];
   policySets: PolicySet[];
-  onRevoke: ((name: string) => void) | null;
+  onRevoke: ((binding: PolicyBinding) => void) | null;
 }): JSX.Element {
   const [params, setParams] = useSearchParams();
   const credentials = useCredentialMetadata();
@@ -197,7 +197,7 @@ export function BindingsTable({
               {onRevoke && (
                 <Table.Td>
                   {source === "operator" ? (
-                    <Button size="compact-xs" color="red" variant="light" onClick={() => onRevoke(name)}>
+                    <Button size="compact-xs" color="red" variant="light" onClick={() => onRevoke(binding)}>
                       Revoke
                     </Button>
                   ) : (

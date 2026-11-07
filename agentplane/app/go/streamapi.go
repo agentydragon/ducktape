@@ -80,7 +80,9 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		server.RegisterRawRoute(method+" /upstream/environments/{path...}", http.HandlerFunc(routes.environmentFacade), false)
 	}
-	server.RegisterRawRoute("GET /upstream/policy/{path...}", http.HandlerFunc(routes.policyFacade), true)
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+		server.RegisterRawRoute(method+" /upstream/policy/{path...}", http.HandlerFunc(routes.policyFacade), true)
+	}
 	server.RegisterRawRoute("GET /upstream/egress/{path...}", http.HandlerFunc(routes.egressFacade), true)
 	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
 	server.RegisterRawRoute("GET /upstream/notifications/{path...}", http.HandlerFunc(routes.notificationFacade), true)

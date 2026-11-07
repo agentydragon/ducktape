@@ -204,6 +204,8 @@ ts_library(
         "//agentplane/app/frontend/bindings:table",
         "//agentplane/app/frontend/policy:watch",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/policy/v1:policy_service_pb",
+        "//agentplane/proto:identity_pb",
         "//util/frontend:help_tooltip",
     ],
 )
