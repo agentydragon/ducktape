@@ -66,13 +66,11 @@ authorization still run on every RPC; the app neither replaces that authority no
 session into a backend dependency.
 
 A service does not acquire an HTTP facade merely because it serves gRPC. A facade needs an explicit
-direct HTTP-client contract independent of the browser app. Existing published service HTTP APIs
-remain available to such clients: Notifications has HTTP CLI consumers; Actions and Connections
-also publish direct HTTP APIs. The Actions, Sessions and Egress CLIs use native gRPC.
-Removing a published API requires its own caller/contract review; the app does not consume those
-facades. Agents and automation must remain able to use backend APIs while the app is unavailable.
-Consolidating their HTTP endpoints would require an independent API gateway, not routing them through
-the integration app.
+direct HTTP-client contract independent of the browser app. The Notifications workload API uses gRPC;
+its proto HTTP annotations generate the App browser facade, while `agentplane notifications` calls gRPC.
+Actions and Connections retain their direct HTTP APIs. Agents and automation can use the Notifications CLI
+while the app is unavailable; the app remains a separate browser boundary and does not become a dependency
+for workload access.
 
 Use generated gateway handlers and protobuf messages instead of a handwritten HTTP-to-RPC
 transcoder or duplicate wire models. A language without a generated gateway may use small typed

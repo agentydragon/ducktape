@@ -166,10 +166,7 @@ class Settings(YamlFileSettings):
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535, description="The gRPC listener's port.")
     http_port: int = Field(
-        default=8081,
-        ge=1,
-        le=65535,
-        description="The HTTP listener's port: the facade, its documentation and the webhook.",
+        default=8081, ge=1, le=65535, description="The HTTP listener's port, used only for the signed GitHub webhook."
     )
     github: GitHubSettings | None = Field(
         default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."

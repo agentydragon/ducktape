@@ -1,15 +1,14 @@
 # Notification Service API
 
-The API is defined by [`notifications.proto`](../notifications.proto); its HTTP form is
-served at `/openapi.json`. Setup and configuration belong
-in the [service README](../README.md); internal delivery and storage design is in
-[architecture](architecture.md).
-The HTTP/JSON facade rejects request fields absent from this protobuf contract, including fields
-removed in a cutover.
+The API is defined by [`notifications.proto`](../notifications.proto). Its HTTP annotations generate the App
+browser facade under `/upstream/notifications`; the Notification Service itself serves workload calls over gRPC only.
+The App facade rejects request fields absent from the protobuf contract. Setup and configuration belong in the
+[service README](../README.md); internal delivery and storage design is in [architecture](architecture.md).
 
 ## Agent API
 
-Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
+The route and JSON examples below describe the App browser facade; agents use the `agentplane notifications` CLI,
+which calls gRPC directly. Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
 audience. Owner authority is the verified ServiceAccount namespace, name and UID, shared by its workloads. Subscription creation
 addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
@@ -63,8 +62,8 @@ reusing it after cancellation returns that cancelled subscription rather than cr
 
 Subscription creation and views use a `source` that is a oneof: `actions` or `github`. The common envelope
 owns destination, session, idempotency, and lifetime. Actions owns its request ID and starting sequence.
-The HTTP form of the gRPC-Gateway writes JSON field names in camelCase and 64-bit integers as strings, and
-accepts either spelling in requests ([`notifications.proto`](../notifications.proto) is the contract):
+The App facade maps the annotated `/v1/...` routes under `/upstream/notifications`; it writes JSON field names
+in camelCase and 64-bit integers as strings, and accepts either spelling in requests (`notifications.proto` is the contract):
 
 ```json
 {

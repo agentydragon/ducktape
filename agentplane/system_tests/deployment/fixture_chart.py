@@ -576,7 +576,6 @@ def build_chart(
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         callers=[app_component.service(NAMESPACE).pods],
-        http_callers=[egress.proxy(NAMESPACE).pods],
         placement=None,
         registry_secret_name=None,
         container_env=database_env,

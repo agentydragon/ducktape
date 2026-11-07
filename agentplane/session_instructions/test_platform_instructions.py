@@ -10,7 +10,6 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
         egress_api_url="http://test-egress.invalid",
         actions_service_url="http://test-actions.invalid",
         sessions_service_url="http://test-sessions.invalid",
-        notifications_service_url="http://test-notifications.invalid",
         session_runtime=runtime,
     )
 
@@ -19,7 +18,8 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
     assert "http://test-sessions.invalid" in guide
     assert "agentplane egress rules" in guide
     assert "agentplane actions guide [NAME]" in guide
-    assert "Actions `/llms.txt`" not in guide
+    assert "Notifications HTTP" not in guide
+    assert "Notification Service HTTP listener is reserved for the signed GitHub webhook." in guide
     assert "kubectl --server <host> --token <placeholder>" in guide
     match runtime:
         case SessionRuntime.NATIVE_HARNESS:

@@ -1,7 +1,6 @@
 # Message another Session
 
-Commands are `agentplane notifications send` and `message`; routes and schemas are in
-[OpenAPI](/openapi.json).
+Use `agentplane notifications send` and `message` for these operations. The App browser facade is separate from the workload CLI.
 
 ## Send
 
@@ -13,19 +12,7 @@ agentplane notifications send THEIR_SESSION_ID --body 'The change is ready for r
 ```
 
 `--body-file FILE` takes longer text, `-` from stdin. The command names your own Session from
-`AGENTPLANE_SESSION_ID` as `fromSession`; `--from-session` replaces it. Without the command,
-`POST /v1/messages`:
-
-```json
-{
-  "sessionId": "THEIR_SESSION_ID",
-  "idempotencyKey": "review-request-1",
-  "body": "The change is ready for review.",
-  "fromSession": "YOUR_SESSION_ID"
-}
-```
-
-Use the Session ID you were given; nothing lists other agents' Sessions. The service resolves the
+`AGENTPLANE_SESSION_ID` as `fromSession`; `--from-session` replaces it. Use the Session ID you were given; nothing lists other agents' Sessions. The service resolves the
 Session's current exact Sandbox target through its Dispatcher Session and pins the UID in the answer.
 For `central_sampler_v1` this is its fixed `executor_environment`; Central sampler V1 still requires
 that Sandbox-backed target. The body is plain text, 32 KiB at most unless the
@@ -44,7 +31,7 @@ by default) await acknowledgement: wait for the recipient to catch up rather tha
 
 ## Follow a message
 
-`agentplane notifications message ID` (`GET /v1/messages/{id}`) answers for your own messages, with
+`agentplane notifications message ID` answers for your own messages, with
 independent facts:
 
 - `covered`: a notice named the message to the recipient Session. It says nothing of whether the agent

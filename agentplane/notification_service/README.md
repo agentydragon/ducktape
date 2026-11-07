@@ -35,13 +35,13 @@ destination; a source due earlier is still read. A same-name replacement never r
 old notice. Explicit inbox retirement remains available through the API.
 
 Agent entry point: `agentplane notifications guide` ([source](docs/agents/llms.txt)), with subscription,
-inbox-handling, GitHub and messaging workflows. The service also serves the same guides under `/llms.txt`
-and `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides when those contracts change.
+inbox-handling, GitHub and messaging workflows embedded in the CLI image. The integration app has its own
+generated JSON facade over gRPC; the Notification Service itself serves no HTTP workload API. Update the guides
+when those contracts change.
 
 - [API and caller-visible delivery semantics](docs/api.md)
 - [Storage, worker and delivery architecture](docs/architecture.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
-- `/openapi.json`: the routes and their request and response schemas.
 
 While the History Service is down or rolling, webhooks are still accepted and inbox entries still
 stored, but no notice reaches a Session: a delivery reads the Session's receipts from the History
@@ -114,9 +114,9 @@ when any `github.*` setting is set, so a Secret without `github.app_id`, or the 
 that fails validation stops startup without printing its value.
 
 The gRPC listener (`host`, `port`) serves `Notifications` and `grpc.health.v1`. The HTTP
-listener (`host`, `http_port`) serves the HTTP form of `Notifications` (the routes of [`notifications.proto`](notifications.proto)),
-the agent documentation (`/llms.txt`, `/docs/agents/` and `/openapi.json`, the document generated from that proto,
-which answer without the database) and, when GitHub is on, `POST /v1/webhooks/github`. Health checks take no bearer: service `""` is readiness (the LISTEN
+listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other paths return
+not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials the gRPC listener,
+and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
 process answers). Four workers claim inboxes, and one that returns or fails ends the process, logging the types of
 its error and never its message.
@@ -234,7 +234,7 @@ Staging is enabled and the operator has installed the App; see the
 [live acceptance record](docs/staging_github_acceptance.md). Testing remains disabled.
 For another environment, register a separate App, supply its credentials through encrypted deployment
 configuration and `secretKeyRef`, and expose only `/v1/webhooks/github` through HTTPS ingress with
-matching network policy and TLS. Never expose the workload API publicly. Verify real App delivery
+matching network policy and TLS. The only public path is the signed webhook; never expose the gRPC workload API publicly. Verify real App delivery
 through inbox and harness rather than relying solely on configuration or a successful ingress response.
 
 GitHub issue subscriptions require the App installation to grant Issues read permission; generated

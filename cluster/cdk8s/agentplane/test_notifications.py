@@ -1,4 +1,4 @@
-"""Only the staging GitHub webhook is public; workload APIs stay behind egress auth."""
+"""The service HTTP listener is webhook-only; workload APIs use its gRPC listener."""
 
 from typing import Any
 
@@ -48,7 +48,7 @@ def test_public_notification_routes_are_webhook_only(staging_manifests: list[dic
 
 
 def test_only_staging_notifications_admit_gateway(staging_manifests: list[dict[str, Any]]) -> None:
-    endpoint = notifications.http_service(staging.ENV.namespace)
+    endpoint = notifications.webhook_service(staging.ENV.namespace)
     ingress = [
         rule
         for doc in staging_manifests

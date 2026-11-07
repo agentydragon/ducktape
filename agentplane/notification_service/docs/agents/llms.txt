@@ -10,10 +10,9 @@ inbox. Inbox retirement is explicit and irreversible: it stops future matching, 
 cancels the inbox's subscriptions, but does not cancel Actions or withdraw commands already submitted to
 the runner.
 
-The HTTP/JSON API remains available for existing direct clients and older images. Use the Notifications
-HTTP URL and Bearer placeholder from your platform instructions through the egress proxy only when that
-compatibility path is needed. The browser integration app also exposes its own generated HTTP facade over
-gRPC. No call lists enabled providers: a service without the GitHub App refuses a GitHub subscription with
+The service exposes workload operations over gRPC; its HTTP listener is reserved for the signed GitHub
+webhook. The integration app exposes a separate generated HTTP facade over gRPC. No call lists enabled
+providers: a service without the GitHub App refuses a GitHub subscription with
 `PERMISSION_DENIED`. JSON uses camelCase field names and 64-bit integers (cursors, versions) as strings.
 
 Subscriptions use the explicitly supplied `session_id`. `agentplane notifications --help`
@@ -30,12 +29,11 @@ Sandbox has wake on message turned on.
 
 ## Workflows
 
-- `agentplane notifications guide subscriptions` ([HTTP guide](/docs/agents/subscriptions.md)): Read before following an Action or creating, renewing, cancelling, or recovering monitoring.
-- `agentplane notifications guide inbox` ([HTTP guide](/docs/agents/inbox_handling.md)): Read when a notice arrives; retrieve entries, handle the contiguous prefix, and acknowledge it explicitly.
-- `agentplane notifications guide github` ([HTTP guide](/docs/agents/github.md)): Read before following a PR, issue, branch, commit, or CI activity.
-- `agentplane notifications guide messages` ([HTTP guide](/docs/agents/messages.md)): Read before sending another agent's Session a message or checking whether it was acknowledged.
+- `agentplane notifications guide subscriptions` (see `agentplane notifications guide subscriptions`): Read before following an Action or creating, renewing, cancelling, or recovering monitoring.
+- `agentplane notifications guide inbox` (see `agentplane notifications guide inbox`): Read when a notice arrives; retrieve entries, handle the contiguous prefix, and acknowledge it explicitly.
+- `agentplane notifications guide github` (see `agentplane notifications guide github`): Read before following a PR, issue, branch, commit, or CI activity.
+- `agentplane notifications guide messages` (see `agentplane notifications guide messages`): Read before sending another agent's Session a message or checking whether it was acknowledged.
 
 ## Reference
 
-- HTTP `/openapi.json`: Direct-client compatibility and the three streaming watch RPCs (`WatchInbox`,
-  `WatchInboxEntries`, `WatchSubscriptions`); the CLI has no streaming watch command.
+- The App browser facade maps annotated unary methods to JSON. The CLI currently has no streaming watch command.

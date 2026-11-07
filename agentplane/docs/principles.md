@@ -163,9 +163,9 @@ can query a subfield, pipe results through `jq`, loop, and write scripts against
 spending a model turn per tool call. This is the Agentplane-level counterpart of harness modes
 that let an agent script MCP tools from code.
 
-- Egress rules, Actions, policies and notification inboxes are HTTP APIs with OpenAPI schemas,
-  reached through the egress proxy with the workload placeholder; the platform instructions point
-  agents at them ([`platform_instructions.j2`](../session_instructions/platform_instructions.j2)).
+- Agents script egress rules, Actions, and policies through the egress proxy using documented schemas.
+  Notification workload operations use the gRPC-backed `agentplane notifications` CLI; the App also
+  exposes its generated browser facade ([`platform_instructions.j2`](../session_instructions/platform_instructions.j2)).
 - Kubernetes access is the agent's own `kubectl`, not a wrapper tool.
 - MCP is an additional surface, not the only one: the Action Service also serves its operations as
   MCP tools over OAuth.
