@@ -1,8 +1,22 @@
 //! Export bindings become externally reachable according to their ESM initialization timing.
 
+use analysis::reports::schema::{BindingEffectAuthorityReport, SynchronousExecutionReport};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+
+fn binding_execution(fixture: &Fixture, binding: &str) -> SynchronousExecutionReport {
+    let graph = fixture.dependency_graph();
+    let source_unit = source_unit_for_binding(&graph, binding);
+    graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit)
+        .expect("binding source unit")
+        .synchronous_execution
+        .clone()
+        .expect("binding execution report")
+}
 
 fn has_constraining_callback_edge(
     fixture: &Fixture,
@@ -98,6 +112,47 @@ const later = dynamic;
 console.log(later);
 "#,
     );
+}
+
+#[test]
+fn normal_sequel_reads_the_stored_value_after_an_incomplete_initializer() {
+    let fixture = run_fixture(split_fixture(
+        r#"const prefix = new globalThis.Date();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+console.log(later);
+"#,
+    ));
+    assert_preserved_entry_output(&fixture, "1\n");
+    let initializer = binding_execution(&fixture, "dynamic");
+    let sequel = binding_execution(&fixture, "later");
+    assert!(!initializer.complete, "{initializer:#?}");
+    assert!(sequel.complete, "{sequel:#?}");
+}
+
+#[test]
+fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
+    for initializer in [
+        "(() => { throw new TypeError('stopped'); })()",
+        "(function () { throw new TypeError('stopped'); })()",
+        "(() => { while (false) {} throw new TypeError('stopped'); })()",
+    ] {
+        let source =
+            format!("const dynamic = {initializer}; const later = dynamic; console.log(later);\n");
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_error(&fixture, "TypeError");
+        let sequel = binding_execution(&fixture, "later");
+        assert!(
+            !matches!(
+                sequel.binding_effect_authority.as_ref(),
+                Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+            ),
+            "a throw-only initializer cannot certify its sequel: {sequel:#?}"
+        );
+    }
 }
 
 #[test]
