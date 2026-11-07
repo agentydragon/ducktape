@@ -1,5 +1,131 @@
 //! Builtin iteration preserves real callback effects and retained array values.
+use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+
+fn assert_selected_map_receipt(fixture: &Fixture, binding: &str) {
+    let graph = fixture.dependency_graph();
+    let owner = source_unit_for_binding(&graph, binding);
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == owner)
+        .unwrap()
+        .synchronous_execution
+        .as_ref()
+        .unwrap();
+    assert!(execution.complete, "{execution:#?}");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        &execution.binding_effect_authority
+    else {
+        panic!("selected map must compose its actual operation receipt: {execution:#?}");
+    };
+    assert!(
+        receipt.calls.iter().any(|call| matches!(&call.target,
+        LexicalBindingEffectBody::Native { property: Some(property), .. }
+            if property == "prototype.map")),
+        "{receipt:#?}"
+    );
+}
+
+#[test]
+fn ordered_map_results_have_covered_effects_for_an_actual_relocation() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [1, 2];\nconst before = 0;\nconst mapped = entries.map(value => value + 1);\nconst after = 1;\nconsole.log(before, mapped.join(','), after);\n",
+        vec![
+            logical_module("array", &[Member::new("entries")]),
+            logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+            logical_module("mapped", &[Member::new("mapped")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0 2,3 1\n");
+    assert_selected_map_receipt(&fixture, "mapped");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+}
+
+#[test]
+fn ordered_map_uses_the_receiver_selected_before_its_argument_runs() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "let selections = 0;\nconst alpha = () => 7;\nconst beta = () => 8;\nconst first = [alpha];\nconst second = [beta];\nlet source = first;\nfunction choose() { selections++; source = second; return invoke => invoke(); }\nconst mapped = source.map(choose());\nconsole.log(selections, mapped[0], source[0]());\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "1 7 8\n");
+    assert_selected_map_receipt(&fixture, "mapped");
+    let graph = fixture.dependency_graph();
+    let node = |binding| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.id == source_unit_for_binding(&graph, binding))
+            .unwrap()
+    };
+    let execution = node("mapped").synchronous_execution.as_ref().unwrap();
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        &execution.binding_effect_authority
+    else {
+        unreachable!()
+    };
+    let called_owner = |ordinal| {
+        receipt.calls.iter().any(|call| {
+            matches!(
+        &call.target, LexicalBindingEffectBody::Callable { owner, .. } if *owner == ordinal)
+        })
+    };
+    assert!(
+        called_owner(node("alpha").statement_ordinal),
+        "{receipt:#?}"
+    );
+    assert!(
+        !called_owner(node("beta").statement_ordinal),
+        "{receipt:#?}"
+    );
+}
+
+#[test]
+fn ordered_map_known_throw_stops_before_the_next_index() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "let calls = 0;\nconst entries = [1, 2];\nfunction fail(value) { calls++; throw value; }\nfunction run() { try { entries.map(fail); } catch (error) { return error; } }\nconst observed = run();\nconsole.log(calls, observed);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "1 1\n");
+    assert_selected_map_receipt(&fixture, "observed");
+}
+
+#[test]
+fn argument_time_method_replacement_keeps_the_original_runtime_selection() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "let selections = 0;\nconst entries = [1];\nfunction choose() { selections++; Array.prototype.map = () => ['changed']; return value => value + 1; }\nconst mapped = entries.map(choose());\nconsole.log(selections, mapped.join(','), entries.map(() => 0).join(','));\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "1 2 changed\n");
+    // The closed-write census cannot prove this method slot. Runtime ordering
+    // remains intact, while the analysis must keep its missing identity proof.
+    let graph = fixture.dependency_graph();
+    let owner = source_unit_for_binding(&graph, "mapped");
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == owner)
+        .unwrap()
+        .synchronous_execution
+        .as_ref()
+        .unwrap();
+    assert!(
+        !matches!(
+            execution.binding_effect_authority,
+            Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+        ),
+        "{execution:#?}"
+    );
+}
 
 fn assert_early_iteration_rejected(
     declarations: &str,
@@ -423,6 +549,7 @@ fn empty_builtin_iteration_never_invokes_its_callback() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "0\n");
+    assert_selected_map_receipt(&fixture, "result");
 }
 
 #[test]
