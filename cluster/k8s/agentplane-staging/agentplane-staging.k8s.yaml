@@ -7324,36 +7324,6 @@ spec:
   validationActions:
     - Deny
 ---
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: actions-mcp
-  namespace: agentplane-staging
-spec:
-  hostnames:
-    - agentplane-actions-staging.allegedly.works
-  parentRefs:
-    - name: cluster-gateway
-      namespace: gateway-system
-      sectionName: https-wildcard
-  rules:
-    - backendRefs:
-        - name: actions
-          port: 8080
-      filters:
-        - responseHeaderModifier:
-            set:
-              - name: Strict-Transport-Security
-                value: max-age=31536000
-          type: ResponseHeaderModifier
-      matches:
-        - path:
-            type: Exact
-            value: /oauth/client-metadata.json
-      timeouts:
-        backendRequest: 3600s
-        request: 3600s
----
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -7521,12 +7491,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: actions
   ingress:
-    - fromEntities:
-        - ingress
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: monitoring
@@ -7873,6 +7837,36 @@ spec:
         - path:
             type: Exact
             value: /auth/callback
+      timeouts:
+        backendRequest: 3600s
+        request: 3600s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: actions-mcp
+  namespace: agentplane-staging
+spec:
+  hostnames:
+    - agentplane-actions-staging.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: mcp-edge
+          port: 8081
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: Exact
+            value: /oauth/client-metadata.json
       timeouts:
         backendRequest: 3600s
         request: 3600s

@@ -29,6 +29,7 @@ from cluster.cdk8s.agentplane.mcp_routes import add_public_route
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -181,13 +182,37 @@ class McpEdge(Construct):
         hostname = self.env.mcp_edge.hostname
         if hostname is not None:
             add_public_route(self, endpoint=self.http, hostname=hostname)
+        action_hostname = self.env.actions.hostname
+        client_metadata = self.env.actions.mcp_client_metadata
+        if action_hostname is not None:
+            if client_metadata is None:
+                raise ValueError("Action Service hostname needs client metadata")
+            metadata_url = client_metadata.url
+            if metadata_url.host != action_hostname or metadata_url.port != 443:
+                raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
+            assert metadata_url.path is not None
+            https_route(
+                self,
+                "action-client-metadata-route",
+                metadata=ApiObjectMetadata(name=f"{actions.NAME}-mcp", namespace=namespace),
+                hostnames=[action_hostname],
+                backend=self.http,
+                paths=(metadata_url.path,),
+                timeout="3600s",
+            )
+        elif client_metadata is not None:
+            raise ValueError("mcp_client_metadata needs an Action Service hostname to publish it")
         NetworkPolicy(
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
-                *([IngressRule.from_gateway(self.http.pod_port)] if hostname is not None else []),
+                *(
+                    [IngressRule.from_gateway(self.http.pod_port)]
+                    if hostname is not None or action_hostname is not None
+                    else []
+                ),
                 app_component.service(namespace).pods.admit(endpoint.pod_port),
                 cilium.SCRAPERS.admit(self.http.pod_port),
             ],
