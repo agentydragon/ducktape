@@ -33,7 +33,7 @@ func (m *Manager) publishSessionState(s *Session, demand bool) error {
 	s.mu.Unlock()
 	input.DispatchBlocked = adapter == nil || adapter.BlocksCommandDispatch()
 	// COSI retries this updater on conflict, so each demand increment starts from the current spec.
-	if err := safe.StateModify(m.ctx, m.state, componentResource(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
+	if err := safe.StateModify(m.ctx, m.state, lifecycle.ResourceFor(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]]) error {
 		next := input
 		next.Demand = current.TypedSpec().Demand
 		next.OperationRevision = current.TypedSpec().OperationRevision
@@ -59,7 +59,7 @@ func (s *Session) wake() {
 }
 func (s *Session) requestExecution() { s.deps.publish(s, true) }
 func (s *Session) lifecycleStatus() LifecycleStatus {
-	value, _, err := componentRead[LifecycleStatus](s.deps.ctx, s.deps.state, s.id)
+	value, _, err := lifecycle.Read[LifecycleStatus](s.deps.ctx, s.deps.state, s.id)
 	if err != nil {
 		s.deps.fail(err)
 	}
@@ -87,11 +87,11 @@ func (s *Session) waitSetup(ctx context.Context) error {
 	if !pending {
 		return nil
 	}
-	_, err := safe.StateWatchFor[*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]](
-		ctx, s.deps.state, componentResource(s.id, ReconcileSnapshot{}).Metadata(),
+	_, err := safe.StateWatchFor[*typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]]](
+		ctx, s.deps.state, lifecycle.ResourceFor(s.id, ReconcileSnapshot{}).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
-			input, ok := value.(*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]])
+			input, ok := value.(*typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]])
 			if !ok {
 				return false, fmt.Errorf("unexpected Session reconcile snapshot resource %T", value)
 			}

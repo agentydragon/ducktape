@@ -15,7 +15,7 @@ import (
 // rejected during Running preparation; it never treats the observation as admission.
 type admissionObservation struct{ AcceptedGeneration uint64 }
 
-func (admissionObservation) resourceType() resource.Type      { return lifecycle.AdmissionCountType }
+func (admissionObservation) ResourceType() resource.Type      { return lifecycle.AdmissionCountType }
 func (v admissionObservation) DeepCopy() admissionObservation { return v }
 
 func TestAcceptedGenerationWakesDemandRejectedDuringRunningPreparation(t *testing.T) {
@@ -58,7 +58,7 @@ func TestAcceptedGenerationWakesDemandRejectedDuringRunningPreparation(t *testin
 	}
 	accepting.Store(true)
 	accepted := admissionObservation{AcceptedGeneration: 1}
-	if err := cosi.Publish(ctx, f.store, componentResource(lifecycle.EnvironmentResourceID, accepted), accepted, lifecycle.EnvironmentOwner); err != nil {
+	if err := cosi.Publish(ctx, f.store, lifecycle.ResourceFor(lifecycle.EnvironmentResourceID, accepted), accepted, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	ready := waitCodexStatus(t, f, func(value Status) bool {

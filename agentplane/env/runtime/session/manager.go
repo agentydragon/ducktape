@@ -150,7 +150,7 @@ func (m *Manager) Wait(ctx context.Context, id string) (*Session, error) {
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	events := make(chan state.Event, 1)
-	if err := m.state.Watch(watchCtx, componentResource(id, OwnerStatus{}).Metadata(), events); err != nil {
+	if err := m.state.Watch(watchCtx, lifecycle.ResourceFor(id, OwnerStatus{}).Metadata(), events); err != nil {
 		return nil, err
 	}
 	for {
@@ -175,7 +175,7 @@ func (m *Manager) Wait(ctx context.Context, id string) (*Session, error) {
 			if event.Type != state.Created && event.Type != state.Updated {
 				continue
 			}
-			owner, ok := event.Resource.(*typed.Resource[OwnerStatus, componentExtension[OwnerStatus]])
+			owner, ok := event.Resource.(*typed.Resource[OwnerStatus, lifecycle.Extension[OwnerStatus]])
 			if !ok {
 				return nil, fmt.Errorf("unexpected Session owner status %T", event.Resource)
 			}
@@ -221,7 +221,7 @@ func (m *Manager) RetryFresh(ctx context.Context, id string) error {
 	}
 	delete(m.ownerErrors, id)
 	m.mu.Unlock()
-	if err := safe.StateModify(ctx, m.state, componentResource(id, ownerRetry{}), func(value *typed.Resource[ownerRetry, componentExtension[ownerRetry]]) error {
+	if err := safe.StateModify(ctx, m.state, lifecycle.ResourceFor(id, ownerRetry{}), func(value *typed.Resource[ownerRetry, lifecycle.Extension[ownerRetry]]) error {
 		value.TypedSpec().Revision++
 		return nil
 	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)); err != nil {
@@ -423,7 +423,7 @@ func (m *Manager) ResetDemand() error {
 	m.publishMu.Lock()
 	defer m.publishMu.Unlock()
 	for _, s := range m.Inventory() {
-		if err := safe.StateModify(m.ctx, m.state, componentResource(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) error {
+		if err := safe.StateModify(m.ctx, m.state, lifecycle.ResourceFor(s.id, ReconcileSnapshot{}), func(current *typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]]) error {
 			current.TypedSpec().Demand = 0
 			return nil
 		}, state.WithUpdateOwner(lifecycle.EnvironmentOwner)); err != nil {

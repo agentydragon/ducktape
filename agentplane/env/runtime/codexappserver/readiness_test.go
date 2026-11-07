@@ -31,7 +31,7 @@ type executionHealth struct {
 // The app-server observes its metadata and verifies the live owner separately.
 type executionHealthEvent struct{ Revision uint64 }
 
-func (executionHealthEvent) resourceType() resource.Type {
+func (executionHealthEvent) ResourceType() resource.Type {
 	return lifecycle.ExecutionStatusType
 }
 func (v executionHealthEvent) DeepCopy() executionHealthEvent { return v }
@@ -55,7 +55,7 @@ func (h *executionHealth) set(serving bool, err error) {
 	h.revision++
 	revision := h.revision
 	h.mu.Unlock()
-	if err := cosi.Publish(h.host.ctx, h.host.store, typed.NewResource[executionHealthEvent, componentExtension[executionHealthEvent]](resource.NewMetadata(lifecycle.Namespace, lifecycle.ExecutionStatusType, lifecycle.ExecutionResourceID, resource.VersionUndefined), executionHealthEvent{Revision: revision}), executionHealthEvent{Revision: revision}, "test-execution"); err != nil {
+	if err := cosi.Publish(h.host.ctx, h.host.store, typed.NewResource[executionHealthEvent, lifecycle.Extension[executionHealthEvent]](resource.NewMetadata(lifecycle.Namespace, lifecycle.ExecutionStatusType, lifecycle.ExecutionResourceID, resource.VersionUndefined), executionHealthEvent{Revision: revision}), executionHealthEvent{Revision: revision}, "test-execution"); err != nil {
 		h.t.Fatalf("publish execution status: %v", err)
 	}
 }

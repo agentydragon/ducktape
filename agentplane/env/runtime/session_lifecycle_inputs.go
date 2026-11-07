@@ -13,7 +13,7 @@ import (
 )
 
 func (r *Runtime) admissionCount(ctx context.Context) (int, error) {
-	input, found, err := lifecycleRead[environmentAdmissionCountSpec](ctx, r.lifecycleState, lifecycle.ResourceID)
+	input, found, err := lifecycle.Read[environmentAdmissionCountSpec](ctx, r.lifecycleState, lifecycle.ResourceID)
 	if err != nil {
 		return 0, err
 	}
@@ -40,7 +40,7 @@ func (r *Runtime) changeAdmissionsLocked(delta int) error {
 	}
 	// Count publication is part of the synchronous admission gate. An uncertain
 	// write must close admission even if the backing store committed it.
-	_, err := safe.StateUpdateWithConflicts(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(lifecycle.ResourceID, value).Metadata(), func(current *typed.Resource[environmentAdmissionCountSpec, lifecycleExtension[environmentAdmissionCountSpec]]) error {
+	_, err := safe.StateUpdateWithConflicts(r.lifecycleContext, r.lifecycleState, lifecycle.ResourceFor(lifecycle.ResourceID, value).Metadata(), func(current *typed.Resource[environmentAdmissionCountSpec, lifecycle.Extension[environmentAdmissionCountSpec]]) error {
 		*current.TypedSpec() = value
 		return nil
 	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))
@@ -62,7 +62,7 @@ func (r *Runtime) changeAdmissionsLocked(delta int) error {
 
 func (r *Runtime) initializeSessionLifecycle() error {
 	value := environmentAdmissionCountSpec{}
-	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycleResourceFor(lifecycle.ResourceID, value), value, lifecycle.EnvironmentOwner); err != nil {
+	if err := cosi.Publish(r.lifecycleContext, r.lifecycleState, lifecycle.ResourceFor(lifecycle.ResourceID, value), value, lifecycle.EnvironmentOwner); err != nil {
 		return err
 	}
 	return r.lifecycleEngine.RegisterController(&sessionLifecycleController{runtime: r})

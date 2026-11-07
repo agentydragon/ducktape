@@ -45,8 +45,8 @@ func waitSession(t *testing.T, s *Session, predicate func(LifecycleStatus) bool,
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]](ctx, s.deps.state, componentResource(s.id, LifecycleStatus{}).Metadata(), state.WithEventTypes(state.Created, state.Updated), state.WithCondition(func(value resource.Resource) (bool, error) {
-		current, ok := value.(*typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]])
+	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]](ctx, s.deps.state, lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata(), state.WithEventTypes(state.Created, state.Updated), state.WithCondition(func(value resource.Resource) (bool, error) {
+		current, ok := value.(*typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]])
 		if !ok {
 			return false, fmt.Errorf("unexpected Session lifecycle status %T", value)
 		}
@@ -135,12 +135,12 @@ func setSessionPhase(t *testing.T, s *Session, phase Phase) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	ptr := componentResource(s.id, LifecycleStatus{}).Metadata()
-	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
+	ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
+	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]) error {
+	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
 		value.TypedSpec().Phase = phase
 		value.TypedSpec().ProcessID = s.processID
 		return nil
@@ -345,7 +345,7 @@ func TestPreparationCompletionSchedulesSessionController(t *testing.T) {
 					if err == nil {
 						input.ProcessID = ""
 						input.ProcessRunning = false
-						err = publish(m.ctx, m.state, s.id, input)
+						err = lifecycle.Publish(m.ctx, m.state, s.id, input, lifecycle.EnvironmentOwner)
 					}
 					if err != nil {
 						t.Fatal(err)

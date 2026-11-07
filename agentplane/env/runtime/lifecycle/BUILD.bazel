@@ -6,6 +6,7 @@ go_library(
     name = "lifecycle",
     srcs = [
         "contracts.go",
+        "resources.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle",
     deps = [

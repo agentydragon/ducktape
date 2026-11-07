@@ -428,7 +428,7 @@ func holdJournalBatch(t *testing.T, ctx context.Context, s *session.Session) fun
 // recreate missing authoritative accounting as an idle (zero) count.
 func removeAdmissionState(t *testing.T, r *Runtime) func() {
 	t.Helper()
-	ptr := lifecycleResourceFor(lifecycle.EnvironmentResourceID, environmentAdmissionCountSpec{}).Metadata()
+	ptr := lifecycle.ResourceFor(lifecycle.EnvironmentResourceID, environmentAdmissionCountSpec{}).Metadata()
 	r.mu.Lock()
 	err := r.lifecycleState.Destroy(r.lifecycleContext, ptr, state.WithDestroyOwner(lifecycle.EnvironmentOwner))
 	r.mu.Unlock()
@@ -437,7 +437,7 @@ func removeAdmissionState(t *testing.T, r *Runtime) func() {
 	}
 	return func() {
 		r.mu.Lock()
-		err := r.lifecycleState.Create(r.lifecycleContext, lifecycleResourceFor(lifecycle.EnvironmentResourceID, environmentAdmissionCountSpec{}), state.WithCreateOwner(lifecycle.EnvironmentOwner))
+		err := r.lifecycleState.Create(r.lifecycleContext, lifecycle.ResourceFor(lifecycle.EnvironmentResourceID, environmentAdmissionCountSpec{}), state.WithCreateOwner(lifecycle.EnvironmentOwner))
 		r.mu.Unlock()
 		if err != nil {
 			t.Errorf("restore admission accounting for teardown: %v", err)
@@ -446,14 +446,14 @@ func removeAdmissionState(t *testing.T, r *Runtime) func() {
 }
 
 // The controller creates its output; COSI watches creation and retries version conflicts.
-func modifyLifecycleForTest[T lifecycleSpec[T]](ctx context.Context, r *Runtime, id, owner string, modify func(*T)) error {
+func modifyLifecycleForTest[T lifecycle.Spec[T]](ctx context.Context, r *Runtime, id, owner string, modify func(*T)) error {
 	var zero T
-	ptr := lifecycleResourceFor(id, zero).Metadata()
-	if _, err := safe.StateWatchFor[*typed.Resource[T, lifecycleExtension[T]]](ctx, r.lifecycleState, ptr,
+	ptr := lifecycle.ResourceFor(id, zero).Metadata()
+	if _, err := safe.StateWatchFor[*typed.Resource[T, lifecycle.Extension[T]]](ctx, r.lifecycleState, ptr,
 		state.WithEventTypes(state.Created, state.Updated)); err != nil {
 		return err
 	}
-	_, err := safe.StateUpdateWithConflicts(ctx, r.lifecycleState, ptr, func(value *typed.Resource[T, lifecycleExtension[T]]) error {
+	_, err := safe.StateUpdateWithConflicts(ctx, r.lifecycleState, ptr, func(value *typed.Resource[T, lifecycle.Extension[T]]) error {
 		modify(value.TypedSpec())
 		return nil
 	}, state.WithUpdateOwner(owner))
@@ -710,7 +710,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after admission completion: %v", err)
 	}
-	after, found, err := lifecycleRead[environmentAdmissionCountSpec](ctx, r.lifecycleState, lifecycle.EnvironmentResourceID)
+	after, found, err := lifecycle.Read[environmentAdmissionCountSpec](ctx, r.lifecycleState, lifecycle.EnvironmentResourceID)
 	if err != nil || !found || after.Admissions != 0 {
 		t.Fatalf("Runtime Inputs after admission completion = %+v, found=%v err=%v; want no admissions", after, found, err)
 	}
@@ -797,7 +797,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 	s := r.sessions.Get("session-1")
 	store.dropAdmissionUpdate.Store(true)
 	defer func() {
-		if err := r.lifecycleState.Create(r.lifecycleContext, lifecycleResourceFor(lifecycle.EnvironmentResourceID, environmentAdmissionCountSpec{}), state.WithCreateOwner(lifecycle.EnvironmentOwner)); err != nil {
+		if err := r.lifecycleState.Create(r.lifecycleContext, lifecycle.ResourceFor(lifecycle.EnvironmentResourceID, environmentAdmissionCountSpec{}), state.WithCreateOwner(lifecycle.EnvironmentOwner)); err != nil {
 			t.Errorf("restore admission accounting for teardown: %v", err)
 		}
 	}()

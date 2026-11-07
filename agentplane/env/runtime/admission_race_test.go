@@ -58,7 +58,7 @@ func admissionTestRuntime(t *testing.T, store state.State) *Runtime {
 		t.Fatal(err)
 	}
 	count := environmentAdmissionCountSpec{}
-	if err := cosi.Publish(t.Context(), store, lifecycleResourceFor(lifecycle.ResourceID, count), count, lifecycle.EnvironmentOwner); err != nil {
+	if err := cosi.Publish(t.Context(), store, lifecycle.ResourceFor(lifecycle.ResourceID, count), count, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	return &Runtime{lifecycleContext: t.Context(), lifecycleState: store, desired: desired, admissionOpen: true, startupComplete: true, changes: make(chan struct{}), fatal: make(chan error, 1)}

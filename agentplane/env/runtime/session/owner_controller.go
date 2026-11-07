@@ -52,7 +52,7 @@ func (c *sessionOwnerController) Reconcile(ctx context.Context, _ *zap.Logger, r
 		}
 		failure := fmt.Errorf("recover Session %s: %w", ptr.ID(), err)
 		statusFailed := false
-		if _, publishErr := componentWrite(ctx, r, ptr.ID(), OwnerStatus{Error: failure.Error()}); publishErr != nil {
+		if _, publishErr := lifecycle.Write(ctx, r, ptr.ID(), OwnerStatus{Error: failure.Error()}); publishErr != nil {
 			failure = errors.Join(failure, publishErr)
 			statusFailed = true
 		}
@@ -63,7 +63,7 @@ func (c *sessionOwnerController) Reconcile(ctx context.Context, _ *zap.Logger, r
 		c.manager.ownerFailed(ptr.ID(), failure, !retryable)
 		return nil
 	}
-	_, err := componentWrite(ctx, r, ptr.ID(), OwnerStatus{Ready: true})
+	_, err := lifecycle.Write(ctx, r, ptr.ID(), OwnerStatus{Ready: true})
 	if err != nil {
 		c.manager.ownerFailed(ptr.ID(), fmt.Errorf("publish Session %s owner status: %w", ptr.ID(), err), true)
 		return nil

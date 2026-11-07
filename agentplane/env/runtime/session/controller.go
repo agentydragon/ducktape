@@ -42,12 +42,12 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 	if ptr.Type() == OwnerStatusType || ptr.Type() == retained.IngressAckType {
 		return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, ReconcileSnapshotType, ptr.ID(), resource.VersionUndefined)}, nil
 	}
-	rows, err := safe.ReaderListAll[*typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]](ctx, r)
+	rows, err := safe.ReaderListAll[*typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]]](ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]resource.Pointer, 0, rows.Len())
-	rows.ForEach(func(row *typed.Resource[ReconcileSnapshot, componentExtension[ReconcileSnapshot]]) {
+	rows.ForEach(func(row *typed.Resource[ReconcileSnapshot, lifecycle.Extension[ReconcileSnapshot]]) {
 		if ptr.Type() == codexappserver.StatusType && row.TypedSpec().Harness != sessionpb.Harness_HARNESS_CODEX {
 			return
 		}
@@ -57,7 +57,7 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 }
 
 func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
-	owner, found, err := componentRead[OwnerStatus](ctx, r, ptr.ID())
+	owner, found, err := lifecycle.Read[OwnerStatus](ctx, r, ptr.ID())
 	if err != nil || !found || !owner.Ready {
 		return err
 	}
@@ -65,11 +65,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if s == nil {
 		return nil
 	}
-	input, found, err := componentRead[ReconcileSnapshot](ctx, r, s.id)
+	input, found, err := lifecycle.Read[ReconcileSnapshot](ctx, r, s.id)
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := componentRead[LifecycleStatus](ctx, r, s.id)
+	current, _, err := lifecycle.Read[LifecycleStatus](ctx, r, s.id)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		return err
 	}
 	write := func() error {
-		changed, err := componentWrite(ctx, r, s.id, current)
+		changed, err := lifecycle.Write(ctx, r, s.id, current)
 		if changed {
 			s.deps.changed()
 		}
@@ -142,7 +142,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if op, done := s.takeOperation(&s.preparation); done {
 		// The operation revision can arrive before the worker refreshes the snapshot.
 		// takeOperation refreshes host input synchronously, so read it again here.
-		input, _, err = componentRead[ReconcileSnapshot](ctx, r, s.id)
+		input, _, err = lifecycle.Read[ReconcileSnapshot](ctx, r, s.id)
 		if err != nil {
 			return err
 		}

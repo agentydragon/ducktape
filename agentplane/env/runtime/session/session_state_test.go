@@ -33,7 +33,7 @@ func TestSessionEnvironmentCarriesItsOwnID(t *testing.T) {
 func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session-1", filepath.Join(root, "project"), "setup script")
-	if err := publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Preparing}); err != nil {
+	if err := lifecycle.Publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Preparing}, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Admit(ctx, &commandpb.Command{
@@ -61,7 +61,7 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	if err := s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 0}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Dormant}); err != nil {
+	if err := lifecycle.Publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Dormant}, lifecycle.EnvironmentOwner); err != nil {
 		t.Fatal(err)
 	}
 

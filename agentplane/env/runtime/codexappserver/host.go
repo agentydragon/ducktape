@@ -166,7 +166,7 @@ func NewHost(launch harness.LaunchConfig, deps Dependencies) (*Host, error) {
 
 func (c *Host) Controller() controller.QController { return &LifecycleController{host: c} }
 func (c *Host) Initialize(ctx context.Context) error {
-	return publish(ctx, c.deps.State, ResourceID, LifecycleSignal{})
+	return lifecycle.Publish(ctx, c.deps.State, ResourceID, LifecycleSignal{}, HostOwner)
 }
 
 func (c *Host) ResetDemand(ctx context.Context) error {

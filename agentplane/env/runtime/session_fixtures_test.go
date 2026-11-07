@@ -75,12 +75,12 @@ func sessionAdmissionOpen(r *Runtime) bool {
 	return r.admissionOpen
 }
 
-func watchSessionResource[T lifecycleSpec[T]](ctx context.Context, resources state.State, id string, condition func(T) (bool, error)) error {
+func watchSessionResource[T lifecycle.Spec[T]](ctx context.Context, resources state.State, id string, condition func(T) (bool, error)) error {
 	var zero T
-	_, err := safe.StateWatchFor[*typed.Resource[T, lifecycleExtension[T]]](ctx, resources, lifecycleResourceFor(id, zero).Metadata(),
+	_, err := safe.StateWatchFor[*typed.Resource[T, lifecycle.Extension[T]]](ctx, resources, lifecycle.ResourceFor(id, zero).Metadata(),
 		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(value resource.Resource) (bool, error) {
-			return condition(*value.(*typed.Resource[T, lifecycleExtension[T]]).TypedSpec())
+			return condition(*value.(*typed.Resource[T, lifecycle.Extension[T]]).TypedSpec())
 		}))
 	return err
 }

@@ -52,8 +52,8 @@ func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {
 		s.mu.Lock()
 		s.record.NativeSessionId = &threadID
 		s.mu.Unlock()
-		ptr := componentResource(s.id, LifecycleStatus{}).Metadata()
-		if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]) error {
+		ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
+		if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
 			value.TypedSpec().Resuming = true
 			return nil
 		}, state.WithUpdateOwner(ControllerName)); err != nil {
@@ -820,9 +820,9 @@ func setLifecycleStatusReady(t *testing.T, m *Manager, s *Session) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ptr := componentResource(s.id, LifecycleStatus{}).Metadata()
+	ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
 	if m == nil {
-		if err := s.deps.state.Create(ctx, componentResource(s.id, LifecycleStatus{Phase: Ready, ProcessID: s.processID}), state.WithCreateOwner(ControllerName)); err != nil {
+		if err := s.deps.state.Create(ctx, lifecycle.ResourceFor(s.id, LifecycleStatus{Phase: Ready, ProcessID: s.processID}), state.WithCreateOwner(ControllerName)); err != nil {
 			t.Fatal(err)
 		}
 		s.mu.Lock()
@@ -830,11 +830,11 @@ func setLifecycleStatusReady(t *testing.T, m *Manager, s *Session) {
 		s.mu.Unlock()
 		return
 	}
-	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
+	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, componentExtension[LifecycleStatus]]) error {
+	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
 		value.TypedSpec().Phase = Ready
 		value.TypedSpec().ProcessID = s.processID
 		return nil
