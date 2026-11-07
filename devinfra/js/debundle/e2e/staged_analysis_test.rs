@@ -6171,9 +6171,9 @@ fn ordinary_data_spread_copy_receipt_and_key_order_survive_saved_analysis() {
                     Member::new("retained"),
                     Member::new("__proto__"),
                     Member::new("source"),
+                    Member::new("copied"),
                 ],
             ),
-            logical_module("copy", &[Member::new("copied")]),
             logical_module("anchor", &[Member::new("anchor")]),
         ],
     ));

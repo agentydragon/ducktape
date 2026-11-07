@@ -1328,6 +1328,23 @@ impl LocalBody {
         }
     }
 
+    /// Exact prepared single-spread initializer. This only admits the root to
+    /// ordered execution; the shared transfer still proves source descriptors
+    /// and records support or takes its conservative fallback.
+    pub(super) fn object_spread_copy_root(&self) -> Option<CallSite> {
+        self.root_expression_span?;
+        let [
+            LocalOperation::Return(
+                Some(LocalExpression::Value(ValueExpr::ObjectSpreadLiteral(site, _))),
+                _,
+            ),
+        ] = self.operations.as_ref()
+        else {
+            return None;
+        };
+        Some(*site)
+    }
+
     /// Called by the canonical function collector. Unsupported syntax discards
     /// the entire candidate; the ordinary conservative lanes remain available.
     pub(super) fn lower<'a>(

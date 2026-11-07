@@ -17059,6 +17059,11 @@ impl Executor<'_, '_> {
                             .filter(|call| call.kind == CallKind::Call)
                             .nth(1)
                             .is_some()
+                        || body.object_spread_copy_root().is_some_and(|site| {
+                            index
+                                .exact_object_spread_copies
+                                .contains(&site.allocation_id())
+                        })
                         || (calls.iter().any(|call| call.kind == CallKind::Call)
                             && calls
                                 .iter()
