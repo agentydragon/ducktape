@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { listModels, listSandboxPresets } from "./app_config_client";
+import { getFrontendConfig, listModels, listSandboxPresets } from "./app_config_client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -22,6 +22,24 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
             { harness: "HARNESS_CODEX", models: ["model-a"] },
             { harness: "HARNESS_CLAUDE", models: [] },
           ],
+        });
+      }
+      if (path.endsWith("/frontend-config")) {
+        return Response.json({
+          frontendConfig: {
+            traceSearch: {
+              grafanaBaseUrl: "https://grafana.example.test/",
+              tempoDatasourceUid: "fixture-tempo",
+              deploymentEnvironment: "fixture",
+            },
+            langfuseSearch: {
+              baseUrl: "https://langfuse.example.test/",
+              projectId: "fixture-project",
+              sessionMetadataKey: "session",
+              sandboxNamespaceMetadataKey: "namespace",
+              sandboxServiceAccountMetadataKey: "account",
+            },
+          },
         });
       }
       return Response.json({
@@ -51,6 +69,20 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
     models: [{ model: "model-a", display_name: "Model A", reasoning_efforts: ["low", "high"] }],
     harnesses: { HARNESS_CODEX: ["model-a"], HARNESS_CLAUDE: [] },
   });
+  await expect(getFrontendConfig()).resolves.toEqual({
+    trace_search: {
+      grafana_base_url: "https://grafana.example.test/",
+      tempo_datasource_uid: "fixture-tempo",
+      deployment_environment: "fixture",
+    },
+    langfuse_search: {
+      base_url: "https://langfuse.example.test/",
+      project_id: "fixture-project",
+      session_metadata_key: "session",
+      sandbox_namespace_metadata_key: "namespace",
+      sandbox_service_account_metadata_key: "account",
+    },
+  });
   await expect(listSandboxPresets()).resolves.toEqual([
     {
       name: "work",
@@ -69,5 +101,17 @@ it("decodes the generated AppService ProtoJSON responses into the UI config view
       bootstrap: "mkdir -p /workspace",
     },
   ]);
-  expect(paths).toEqual(["/upstream/app-config/v1/models", "/upstream/app-config/v1/presets"]);
+  expect(paths).toEqual([
+    "/upstream/app-config/v1/models",
+    "/upstream/app-config/v1/frontend-config",
+    "/upstream/app-config/v1/presets",
+  ]);
+});
+
+it("maps unset ProtoJSON message fields to absent optional links", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ frontendConfig: { traceSearch: null, langfuseSearch: null } }))
+  );
+  await expect(getFrontendConfig()).resolves.toEqual({ trace_search: null, langfuse_search: null });
 });

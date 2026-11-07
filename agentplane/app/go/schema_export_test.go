@@ -10,9 +10,7 @@ import (
 
 func TestHTTPServerServesHumaOpenAPIDocument(t *testing.T) {
 	server := NewHTTPServer(nil)
-	if err := RegisterCoreRoutes(server, Config{}); err != nil {
-		t.Fatal(err)
-	}
+	RegisterPolicyRoutes(server, Config{}, nil, nil)
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest("GET", "/openapi.json", nil))
 	if recorder.Code != 200 {
@@ -22,39 +20,6 @@ func TestHTTPServerServesHumaOpenAPIDocument(t *testing.T) {
 		t.Fatalf("GET /openapi.json content type = %q, want application/openapi+json", got)
 	}
 	assertSaneOpenAPI(t, recorder.Body.Bytes())
-}
-
-func TestFrontendConfigOpenAPIDocumentsNullableTargets(t *testing.T) {
-	var output bytes.Buffer
-	if err := exportOpenAPI(&output); err != nil {
-		t.Fatal(err)
-	}
-	document := assertSaneOpenAPI(t, output.Bytes())
-	if _, ok := document.Paths["/frontend-config"]["get"]; !ok {
-		t.Fatal("OpenAPI document omits GET /frontend-config")
-	}
-	config := document.Components.Schemas["FrontendConfig"]
-	properties, ok := config["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("FrontendConfig.properties = %v, want object", config["properties"])
-	}
-	for name, target := range map[string]string{
-		"trace_search": "TraceSearchSettings", "langfuse_search": "LangfuseSearchSettings",
-	} {
-		property, ok := properties[name].(map[string]any)
-		if !ok {
-			t.Fatalf("FrontendConfig.%s = %v, want schema", name, properties[name])
-		}
-		alternatives, ok := property["anyOf"].([]any)
-		if !ok || len(alternatives) != 2 {
-			t.Fatalf("FrontendConfig.%s = %v, want target or null", name, property)
-		}
-		ref, refOK := alternatives[0].(map[string]any)
-		null, nullOK := alternatives[1].(map[string]any)
-		if !refOK || ref["$ref"] != "#/components/schemas/"+target || !nullOK || null["type"] != "null" {
-			t.Errorf("FrontendConfig.%s = %v, want %s or null", name, property, target)
-		}
-	}
 }
 
 func TestExportOpenAPISandboxFormSchema(t *testing.T) {

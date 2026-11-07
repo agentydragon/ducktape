@@ -196,9 +196,11 @@ controls available while the bound Sandbox object remains in the current invento
 
 Thread names are set, changed, or cleared explicitly by operators in the thread view.
 
-The app ConfigMap groups browser-safe links under one optional `frontend_config` key.
-`GET /frontend-config` returns that same typed object directly, with only the explicitly whitelisted
-settings below; when the deployment does not supply the object, both fields are null.
+The app ConfigMap groups browser-safe links under one optional `frontend_config` key. The generated
+`GET /upstream/app-config/v1/frontend-config` response contains only the explicitly whitelisted
+settings below under `frontendConfig`; when the deployment does not supply either setting,
+ProtoJSON returns both nested message fields as `null`, which the browser adapter maps to `null`
+view-model fields.
 
 `frontend_config.trace_search` is null unless the app configures a Grafana base URL, Tempo datasource
 UID, and deployment environment. When configured, Sandbox, Session, and active Thread ellipsis menus
@@ -574,10 +576,11 @@ constructing OIDC callback URLs, so there is no released-port allocation window.
 
 ## Launch presets
 
-The browser reads configured models and Sandbox presets through the generated `AppService`
-ProtoJSON routes `/upstream/app-config/v1/models` and `/upstream/app-config/v1/presets`. These
-in-process handlers share the app's caller authentication boundary; the service and HTTP mapping are
-defined in `app_service.proto`. `POST /upstream/environments/v1/environments` stores the selected preset
+The browser reads configured models, Sandbox presets and browser-safe search settings through the
+generated `AppService` ProtoJSON routes `/upstream/app-config/v1/models`,
+`/upstream/app-config/v1/presets` and `/upstream/app-config/v1/frontend-config`. These in-process
+handlers share the app's caller authentication boundary; the service and HTTP mapping are defined in
+`app_service.proto`. `POST /upstream/environments/v1/environments` stores the selected preset
 label alongside the concrete Sandbox choices; it does not
 store per-Sandbox Session defaults. When creating a new Thread, the app resolves the defaults from its
 configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for

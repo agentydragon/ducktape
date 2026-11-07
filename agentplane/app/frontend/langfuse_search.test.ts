@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import type { LangfuseSearchSettings } from "./schema";
+import type { LangfuseSearchSettings } from "./app_config_client";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "./langfuse_search";
 import { LANGFUSE_SEARCH_SETTINGS } from "./testing/langfuse_search";
 

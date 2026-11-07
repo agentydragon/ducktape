@@ -131,8 +131,7 @@ ts_library(
     srcs = ["frontend_config.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        ":schema",
+        ":app_config_client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -142,17 +141,14 @@ ts_library(
     name = "trace_search",
     srcs = ["trace_search.ts"],
     tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":schema",
-    ],
+    deps = [":app_config_client"],
 )
 
 agentplane_vitest_test(
     name = "trace_search_test",
     srcs = ["trace_search.test.ts"],
     deps = [
-        ":schema",
+        ":app_config_client",
         ":trace_search",
         "//:node_modules/vitest",
     ],
@@ -162,18 +158,15 @@ ts_library(
     name = "langfuse_search",
     srcs = ["langfuse_search.ts"],
     tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":schema",
-    ],
+    deps = [":app_config_client"],
 )
 
 agentplane_vitest_test(
     name = "langfuse_search_test",
     srcs = ["langfuse_search.test.ts"],
     deps = [
+        ":app_config_client",
         ":langfuse_search",
-        ":schema",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:langfuse_search",
     ],
