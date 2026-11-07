@@ -39,7 +39,7 @@ recreates it.
   appears. It touches only native bindings carrying its label and its own policy namespace, so
   several Agentplane instances' controllers share a cluster.
 
-`PolicyService.GrantSandboxPolicyBinding` and `RevokeOperatorPolicyBinding` are the operator write
+`PolicyService.GrantSandboxPolicyBinding` and `RevokeSandboxPolicyBinding` are the operator write
 boundary. Their Pod-bound writer allowlist is configured independently from the workload read/watch
 resolver; an empty `writer_accounts` list denies both methods. Grant requires the exact live Sandbox
 UID, its controller-owned ServiceAccount, and existing unique PolicySet names. It stores the Sandbox

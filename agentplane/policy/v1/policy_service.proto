@@ -22,7 +22,7 @@ service PolicyService {
     };
   }
   // Deletes one operator grant after rechecking its binding and Sandbox identities.
-  rpc RevokeOperatorPolicyBinding(RevokeOperatorPolicyBindingRequest) returns (RevokeOperatorPolicyBindingResponse) {
+  rpc RevokeSandboxPolicyBinding(RevokeSandboxPolicyBindingRequest) returns (RevokeSandboxPolicyBindingResponse) {
     option (google.api.http) = {
       delete: "/v1/sandboxes/{sandbox_namespace}/{sandbox_name}/policy-bindings/{binding_name}"
     };
@@ -45,7 +45,7 @@ message GrantSandboxPolicyBindingRequest {
   repeated string policy_sets = 4;
   google.protobuf.Timestamp expires_at = 5;
 }
-message RevokeOperatorPolicyBindingRequest {
+message RevokeSandboxPolicyBindingRequest {
   string sandbox_namespace = 1;
   string sandbox_name = 2;
   string binding_name = 3;
@@ -53,7 +53,7 @@ message RevokeOperatorPolicyBindingRequest {
   string binding_uid = 5;
 }
 message GrantSandboxPolicyBindingResponse { PolicyBinding binding = 1; }
-message RevokeOperatorPolicyBindingResponse {}
+message RevokeSandboxPolicyBindingResponse {}
 
 message WatchPolicyBindingsRequest {
   // Absent selects the authenticated caller. Broad readers may select another subject.

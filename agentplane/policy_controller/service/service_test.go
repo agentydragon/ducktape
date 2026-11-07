@@ -180,8 +180,8 @@ func TestPolicyWritesAreRestrictedToTheConfiguredWriterAccount(t *testing.T) {
 	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "alice"), grant); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("non-writer grant: %v", err)
 	}
-	revoke := &policypb.RevokeOperatorPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
-	if _, err := api.RevokeOperatorPolicyBinding(tokenContext(t, "alice"), revoke); status.Code(err) != codes.PermissionDenied {
+	revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
+	if _, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "alice"), revoke); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("non-writer revoke: %v", err)
 	}
 }
@@ -195,8 +195,8 @@ func TestEmptyWriterAllowlistDeniesPolicyWrites(t *testing.T) {
 	if _, err := api.GrantSandboxPolicyBinding(tokenContext(t, "app"), grant); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("grant with empty writer allowlist: %v", err)
 	}
-	revoke := &policypb.RevokeOperatorPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
-	if _, err := api.RevokeOperatorPolicyBinding(tokenContext(t, "app"), revoke); status.Code(err) != codes.PermissionDenied {
+	revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
+	if _, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "app"), revoke); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("revoke with empty writer allowlist: %v", err)
 	}
 }
@@ -308,12 +308,12 @@ func operatorBinding(sandboxUID string) *policyapi.PolicyBinding {
 	return operator
 }
 
-func TestRevokeOperatorBindingUsesUIDResourceVersionPreconditions(t *testing.T) {
+func TestRevokeSandboxBindingUsesUIDResourceVersionPreconditions(t *testing.T) {
 	api, kube, _ := fixture(
 		t,
 		testSandbox("worker", "sandbox-uid"), testExecutionAccount("worker", "sandbox-uid", "account-uid"), operatorBinding("sandbox-uid"),
 	)
-	_, err := api.RevokeOperatorPolicyBinding(tokenContext(t, "app"), &policypb.RevokeOperatorPolicyBindingRequest{
+	_, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "app"), &policypb.RevokeSandboxPolicyBindingRequest{
 		SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "operator-grant", BindingUid: "uid-operator-grant",
 	})
 	if err != nil {
@@ -361,7 +361,7 @@ func TestRevokeRejectsStaleOrOwnedBindingsAndResourceVersionConflicts(t *testing
 				testSandbox("worker", "sandbox-uid"), testExecutionAccount("worker", "sandbox-uid", "account-uid"), test.binding(),
 			)
 			kube.forceDeleteConflict = test.conflict
-			_, err := api.RevokeOperatorPolicyBinding(tokenContext(t, "app"), &policypb.RevokeOperatorPolicyBindingRequest{
+			_, err := api.RevokeSandboxPolicyBinding(tokenContext(t, "app"), &policypb.RevokeSandboxPolicyBindingRequest{
 				SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "operator-grant", BindingUid: test.bindingUID,
 			})
 			if status.Code(err) != codes.Aborted {

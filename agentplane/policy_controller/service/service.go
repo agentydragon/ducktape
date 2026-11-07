@@ -68,11 +68,11 @@ func New(namespace string, objects client.WithWatch, readers, writers []auth.Acc
 func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) auth.Methods {
 	rule := auth.ReviewedServiceAccount(readResolver)
 	return auth.Methods{
-		policypb.PolicyService_GrantSandboxPolicyBinding_FullMethodName:   auth.Accounts(writeResolver, s.writers),
-		policypb.PolicyService_RevokeOperatorPolicyBinding_FullMethodName: auth.Accounts(writeResolver, s.writers),
-		policypb.PolicyService_WatchPolicyBindings_FullMethodName:         rule,
-		policypb.PolicyService_WatchPolicySets_FullMethodName:             rule,
-		policypb.PolicyService_ListPolicySetNames_FullMethodName:          rule,
+		policypb.PolicyService_GrantSandboxPolicyBinding_FullMethodName:  auth.Accounts(writeResolver, s.writers),
+		policypb.PolicyService_RevokeSandboxPolicyBinding_FullMethodName: auth.Accounts(writeResolver, s.writers),
+		policypb.PolicyService_WatchPolicyBindings_FullMethodName:        rule,
+		policypb.PolicyService_WatchPolicySets_FullMethodName:            rule,
+		policypb.PolicyService_ListPolicySetNames_FullMethodName:         rule,
 	}
 }
 
@@ -173,7 +173,7 @@ func (s *Service) cleanupCreatedBinding(ctx context.Context, binding *policyapi.
 	}
 }
 
-func (s *Service) RevokeOperatorPolicyBinding(ctx context.Context, request *policypb.RevokeOperatorPolicyBindingRequest) (*policypb.RevokeOperatorPolicyBindingResponse, error) {
+func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *policypb.RevokeSandboxPolicyBindingRequest) (*policypb.RevokeSandboxPolicyBindingResponse, error) {
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "Sandbox namespace, name, and UID are required")
 	}
@@ -233,7 +233,7 @@ func (s *Service) RevokeOperatorPolicyBinding(ctx context.Context, request *poli
 		slog.ErrorContext(ctx, "PolicyService PolicyBinding deletion failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "PolicyBinding could not be deleted")
 	}
-	return &policypb.RevokeOperatorPolicyBindingResponse{}, nil
+	return &policypb.RevokeSandboxPolicyBindingResponse{}, nil
 }
 
 func (s *Service) requestTarget(namespace, name, uid string) (*identitypb.EnvironmentTarget, error) {
