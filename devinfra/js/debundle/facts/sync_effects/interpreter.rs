@@ -2747,9 +2747,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         &mut self,
         frame: &mut LocalFrame,
         binding: &Id,
-        values: &Values,
+        selected: &SelectedValue,
         span: Span,
     ) -> Option<LocalValueResult> {
+        let values = &selected.values;
         if self.executor.inputs.top_bindings.contains(binding)
             && !self
                 .executor
@@ -2758,23 +2759,81 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .imported_bindings
                 .contains(binding)
         {
-            let mutable = self
+            // Module function declarations create initialized mutable cells,
+            // independently of the variable-declaration write census.
+            let mutable = if self
                 .executor
                 .inputs
                 .index
-                .binding_declaration_writes
-                .get(binding)
-                .is_some_and(|declarations| {
-                    !declarations.is_empty()
-                        && declarations.iter().all(|declaration| declaration.mutable)
-                });
+                .hoisted_bindings
+                .contains_key(binding)
+            {
+                Some(true)
+            } else {
+                self.executor
+                    .inputs
+                    .index
+                    .binding_declaration_writes
+                    .get(binding)
+                    .filter(|declarations| !declarations.is_empty())
+                    .and_then(|declarations| {
+                        if declarations.iter().all(|declaration| declaration.mutable) {
+                            Some(true)
+                        } else if declarations.iter().all(|declaration| !declaration.mutable) {
+                            Some(false)
+                        } else {
+                            None
+                        }
+                    })
+            };
             let initialized = self.executor.initialized_local_binding(binding)
                 || self.executor.inputs.var_bindings.contains(binding);
-            if !mutable || !initialized {
+            if mutable == Some(false) {
                 return Some(LocalValueResult {
                     allocation: super::super::allocation_transfer::AllocationValue::opaque(
                         Values::from([AbstractValue::Value(Value::Unavailable)]),
                     ),
+                    effects: EffectCoverageFragment::default(),
+                    selection: None,
+                    postcondition: None,
+                });
+            }
+            if mutable.is_none() || !initialized {
+                // Missing mutability or definite-initialization evidence does
+                // not prove an abrupt write. The RHS has already run; retain
+                // possible normal stores and the conservative callback graph.
+                let reason = ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::OpaqueExecution,
+                    ordered_field_read_refusal: None,
+                    ordered_call_admission_refusal: None,
+                };
+                let owner = self.owner;
+                let outcome = &mut *self.outcome;
+                self.executor.assuming(
+                    AssumedEffectReason::FallbackSummary {
+                        loss: reason.clone(),
+                    },
+                    |executor| {
+                        executor.promote_top_effects(Vec::new(), vec![binding], owner, outcome);
+                    },
+                );
+                self.fallback(frame, values.clone(), reason, span);
+                self.executor
+                    .state
+                    .prefix_values
+                    .entry(binding.clone())
+                    .or_default()
+                    .extend(values.iter().cloned());
+                self.executor
+                    .state
+                    .prefix_callable_selections
+                    .remove(binding);
+                self.executor.state.prefix_revision =
+                    self.executor.state.prefix_revision.wrapping_add(1);
+                let mut result = values.clone();
+                result.insert(AbstractValue::Value(Value::Unavailable));
+                return Some(LocalValueResult {
+                    allocation: super::super::allocation_transfer::AllocationValue::opaque(result),
                     effects: EffectCoverageFragment::default(),
                     selection: None,
                     postcondition: None,
@@ -2786,14 +2845,39 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .state
                 .prefix_callable_selections
                 .remove(binding);
-            // Invocation queries retain the no-call alternative, just as
-            // captured-cell stores do. This is no singleton/strong update.
-            self.executor
-                .state
-                .prefix_values
-                .entry(binding.clone())
-                .or_default()
-                .extend(values.iter().cloned());
+            let root_store = matches!(self.scope, LocalExecutionScope::Root);
+            let selection = if root_store {
+                selected
+                    .selection
+                    .clone()
+                    .filter(|selection| selection.matches(values))
+            } else {
+                None
+            };
+            if root_store {
+                // This source operation executed once in the module prefix.
+                // Later reads select its actual evaluated RHS, not the
+                // superseded hoisted function or a no-call alternative.
+                self.executor
+                    .state
+                    .prefix_values
+                    .insert(binding.clone(), values.clone());
+                if let Some(selection) = &selection {
+                    self.executor
+                        .state
+                        .prefix_callable_selections
+                        .insert(binding.clone(), selection.clone());
+                }
+            } else {
+                // Invocation queries retain the no-call alternative, just as
+                // captured-cell stores do; these remain weak updates.
+                self.executor
+                    .state
+                    .prefix_values
+                    .entry(binding.clone())
+                    .or_default()
+                    .extend(values.iter().cloned());
+            }
             self.executor.state.prefix_revision =
                 self.executor.state.prefix_revision.wrapping_add(1);
             let mut effects = EffectCoverageFragment::no_effects();
@@ -2803,7 +2887,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     values.clone(),
                 ),
                 effects,
-                selection: None,
+                selection,
                 postcondition: None,
             });
         }

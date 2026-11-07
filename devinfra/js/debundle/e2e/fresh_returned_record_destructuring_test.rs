@@ -1,7 +1,9 @@
 //! Immediate reads of known own data fields do not run getter code.
 //! The factory's eager effects and unsupported result shapes remain ordered.
 
-use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalEffectRoot};
+use analysis::reports::schema::{
+    BindingEffectAuthorityReport, LexicalBindingEffectBody, LexicalEffectRoot,
+};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
@@ -222,11 +224,60 @@ fn alternate_return_or_missing_key_keeps_destructuring_order() {
 }
 
 #[test]
-fn rebound_factory_keeps_destructuring_order() {
+fn rebound_factory_selects_the_executed_replacement() {
     let source = declarations(
         "function factory() { return { selected: () => 1 }; }\nfactory = () => ({ selected: () => 2 });",
-    );
-    assert!(first_reasons(&source).contains(&analysis::PurityRule::DestructuringPattern));
+    ).replace("console.log(typeof first, typeof middle, typeof last);", "console.log(first(), middle(), last());");
+    let fixture = run_fixture(split(&source));
+    assert_preserved_entry_output(&fixture, "2 2 2\n");
+    for binding in ["first", "middle", "last"] {
+        assert_object_binding_receipt(&fixture, binding, &[("selected", binding)]);
+    }
+    let graph = fixture.dependency_graph();
+    for binding in ["first", "middle", "last"] {
+        let unit = source_unit_for_binding(&graph, binding);
+        let node = graph.nodes.iter().find(|node| node.id == unit).unwrap();
+        let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) = &node
+            .synchronous_execution
+            .as_ref()
+            .unwrap()
+            .binding_effect_authority
+        else {
+            unreachable!()
+        };
+        assert_eq!(receipt.calls.len(), 1, "{receipt:#?}");
+        assert!(
+            matches!(&receipt.calls[0].target, LexicalBindingEffectBody::Callable { owner, .. } if owner.0 == 1),
+            "receipt must execute the replacement's source owner: {receipt:#?}"
+        );
+    }
+}
+
+#[test]
+fn effectful_replacement_factory_keeps_its_body_effects() {
+    let source = declarations(
+        "function factory() { return { selected: () => 1 }; }\nfactory = () => { console.log('replacement'); return { selected: () => 2 }; };",
+    ).replace("console.log(typeof first, typeof middle, typeof last);", "console.log(first(), middle(), last());");
+    let fixture = run_inspection_fixture(split(&source));
+    assert_preserved_entry_output(&fixture, "replacement\nreplacement\nreplacement\n2 2 2\n");
+    for binding in ["first", "middle", "last"] {
+        assert_object_binding_uncovered(&fixture, binding, None);
+    }
+}
+
+#[test]
+fn unproved_module_mutability_retains_the_replacement_normal_path() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"
+class factory {}
+factory = () => ({ selected: () => 2 });
+const { selected: first } = factory();
+console.log(first());
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "2\n");
+    assert_object_binding_uncovered(&fixture, "first", None);
 }
 
 #[test]

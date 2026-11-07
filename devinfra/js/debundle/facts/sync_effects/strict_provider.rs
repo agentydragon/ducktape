@@ -484,7 +484,7 @@ impl LocalContext for ProviderContext<'_> {
         &mut self,
         _frame: &mut LocalFrame,
         _binding: &Id,
-        _values: &Values,
+        _selected: &SelectedValue,
         _span: Span,
     ) -> Option<LocalValueResult> {
         None
