@@ -178,10 +178,10 @@
       "registry": "forgejo"
     },
     "firecracker-manager": {
-      "target": "//devinfra/firecracker/manager:image"
+      "target": "//devinfra/x/firecracker/manager:image"
     },
     "fc-vm-pod": {
-      "target": "//devinfra/firecracker/vm_pod:image"
+      "target": "//devinfra/x/firecracker/vm_pod:image"
     },
     "inventree": {
       "target": "//inventree_utils/rai_plugin:image",

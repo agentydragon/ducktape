@@ -98,7 +98,7 @@ def main() -> None:
         raise SystemExit(f"kernel image is not available: {kernel}")
 
     initramfs = runfiles_root / "ducktape/agentplane/x/runner_layering/base-initramfs.cpio"
-    firecracker_layer = runfiles_root / "ducktape/devinfra/firecracker/firecracker_layer.tar"
+    firecracker_layer = runfiles_root / "ducktape/devinfra/x/firecracker/firecracker_layer.tar"
 
     with tempfile.TemporaryDirectory(prefix="agentplane-runner-layering-") as directory:
         root = Path(directory)

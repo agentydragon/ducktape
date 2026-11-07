@@ -16,8 +16,8 @@ from typing import Any
 
 from kubernetes import client, config
 
-from devinfra.firecracker.manager.config import StorageConfig
-from devinfra.firecracker.manager.models import VMInfo, VMStatus
+from devinfra.x.firecracker.manager.config import StorageConfig
+from devinfra.x.firecracker.manager.models import VMInfo, VMStatus
 
 logger = logging.getLogger(__name__)
 

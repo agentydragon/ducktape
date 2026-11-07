@@ -73,7 +73,7 @@ concrete authoring seam.
   resources and suspended, unwired Flux declarations. Haku's managed-agent package has a
   suspended node in the generated chart. Keep it in the adoption inventory and convert as
   part of deliberate revival; do not reactivate to measure coverage. Other raw packages
-  (`devinfra/firecracker/deploy`, `x/codex_pod_image/deploy`) need an owner/use decision;
+  (`devinfra/x/firecracker/deploy`, `x/codex_pod_image/deploy`) need an owner/use decision;
   no active central node for them was found in this audit.
 - **Parked/vendor/example trees:** `cluster/parked`, vendored Browsertrix charts,
   archived experiments and documentation examples are outside the active conversion

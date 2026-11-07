@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import logging
 
-from devinfra.firecracker.manager.clients import FirecrackerClient, ProcessApiControl
-from devinfra.firecracker.manager.k8s_client import SNAPSHOT_MOUNT, WORK_MOUNT
+from devinfra.x.firecracker.manager.clients import FirecrackerClient, ProcessApiControl
+from devinfra.x.firecracker.manager.k8s_client import SNAPSHOT_MOUNT, WORK_MOUNT
 
 logger = logging.getLogger(__name__)
 
