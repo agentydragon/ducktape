@@ -339,6 +339,12 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     env = {entry["name"]: entry.get("value") for entry in runner["env"]}
     assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3133"
     assert env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
+    notifications_route = runner_settings["platform_routes"]["notifications"]
+    assert notifications_route["listen_address"] == "127.0.0.1:3134"
+    assert notifications_route["upstream"] == "notifications.agentplane-staging.svc.cluster.local:8080"
+    assert notifications_route["token_file"] == f"{token_mount['mountPath']}/notifications-token"
+    assert env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"] == "http://127.0.0.1:3134"
+    assert env["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
     for name, route in runner_settings["platform_routes"].items():
         _, port = route["listen_address"].rsplit(":", 1)
         assert route["listen_address"] == f"127.0.0.1:{port}"
