@@ -9,42 +9,13 @@ from enum import Enum
 from typing import NoReturn, TypeVar, override
 
 import grpc
-from google.protobuf.timestamp_pb2 import Timestamp
 
 from platform_sessions.limits import MAX_SESSION_BYTES
-from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc
-from platform_sessions.routes import Route
+from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as pb_grpc, validation
 
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
-
-type ImportSessionOutcome = (
-    pb.SessionInstalled
-    | pb.CandidateRejected
-    | pb.ReauthenticationRequired
-    | pb.ChallengeRequired
-    | pb.UpstreamUnavailable
-    | pb.OperationOutcomeUnknown
-    | pb.ImportFailure
-)
-type ProbeOutcome = (
-    pb.ProbeVerified
-    | pb.ReauthenticationRequired
-    | pb.ChallengeRequired
-    | pb.UpstreamUnavailable
-    | pb.OperationOutcomeUnknown
-    | pb.ProbeNoSession
-    | pb.ProbeFailure
-)
-type CandidateVerificationOutcome = (
-    pb.CandidateVerified
-    | pb.CandidateRejected
-    | pb.ReauthenticationRequired
-    | pb.ChallengeRequired
-    | pb.UpstreamUnavailable
-    | pb.OperationOutcomeUnknown
-)
 
 
 class ProbeSource(Enum):
@@ -58,7 +29,8 @@ class ProviderBackend(ABC):
     """Local provider operations used by the control-plane adapter.
 
     The backend owns provider-specific persistence, upstream calls, and any cookie or token
-    rotation. It returns a typed outcome for completed operations. If an upstream call may have
+    rotation. It returns a protobuf result with its outcome oneof set. The service supplies the
+    response instance and probe source and completion time. If an upstream call may have
     rotated credentials but its result is ambiguous, return OperationOutcomeUnknown and persist
     that uncertainty in the local session snapshot. Do not raise an exception for that known case.
 
@@ -78,16 +50,16 @@ class ProviderBackend(ABC):
     @abstractmethod
     async def import_session(
         self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-    ) -> ImportSessionOutcome:
+    ) -> pb.ImportSessionResponse:
         """Install and durably persist a candidate; never log or return candidate bytes."""
 
     @abstractmethod
-    async def probe(self, instance_id: str, *, source: ProbeSource) -> ProbeOutcome:
+    async def probe(self, instance_id: str, *, source: ProbeSource) -> pb.ProbeResult:
         """Verify one session and persist any credential rotation before returning."""
 
     async def verify_candidate(
         self, instance_id: str, *, media_type: str, format_version: str, candidate: bytes
-    ) -> CandidateVerificationOutcome:
+    ) -> pb.VerifyCandidateResponse:
         """Verify a candidate without installing it or updating installed-session probe state."""
         raise NotImplementedError("Provider advertised candidate verification without implementing it")
 
@@ -102,7 +74,7 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
     def __init__(self, provider: ProviderBackend) -> None:
         self._provider_info = pb.ProviderInfo()
         self._provider_info.CopyFrom(provider.info)
-        self._validate_provider_info(self._provider_info)
+        validation.provider_info(self._provider_info)
         self._provider = provider
         self._instance_ids = frozenset(instance.instance_id for instance in self._provider_info.instances)
         self._accepted_formats = {
@@ -131,7 +103,11 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             instance_id=instance_id,
             action=lambda: self._provider.get_session(instance_id),
         )
-        if not isinstance(snapshot, pb.SessionSnapshot) or not self._valid_snapshot(snapshot):
+        try:
+            if not isinstance(snapshot, pb.SessionSnapshot):
+                raise validation.ProviderProtocolError("Invalid snapshot type")
+            validation.snapshot(snapshot)
+        except validation.ProviderProtocolError:
             await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid session snapshot")
         return pb.GetSessionResponse(
             instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id),
@@ -165,10 +141,15 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 candidate=bytes(request.candidate),
             ),
         )
-        response = pb.ImportSessionResponse(
-            instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id)
-        )
-        await self._set_import_outcome(response, outcome, context)
+        try:
+            if not isinstance(outcome, pb.ImportSessionResponse):
+                raise validation.ProviderProtocolError("Invalid result type")
+            validation.candidate_result(outcome)
+        except validation.ProviderProtocolError:
+            await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
+        response = pb.ImportSessionResponse()
+        response.CopyFrom(outcome)
+        response.instance.CopyFrom(request.instance)
         return response
 
     @override
@@ -184,9 +165,16 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
             instance_id=instance_id,
             action=lambda: self._provider.probe(instance_id, source=source),
         )
-        result = pb.ProbeResult(source=request.source)
+        try:
+            if not isinstance(outcome, pb.ProbeResult):
+                raise validation.ProviderProtocolError("Invalid result type")
+            validation.probe_result(outcome, require_metadata=False)
+        except validation.ProviderProtocolError:
+            await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
+        result = pb.ProbeResult()
+        result.CopyFrom(outcome)
+        result.source = request.source
         result.completed_at.GetCurrentTime()
-        await self._set_probe_outcome(result, outcome, context)
         return pb.ProbeResponse(
             instance=pb.InstanceRef(provider_id=self._provider_info.provider_id, instance_id=instance_id), result=result
         )
@@ -222,7 +210,14 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 candidate=bytes(request.candidate),
             ),
         )
-        await self._set_candidate_verification_outcome(response, outcome, context)
+        try:
+            if not isinstance(outcome, pb.VerifyCandidateResponse):
+                raise validation.ProviderProtocolError("Invalid result type")
+            validation.candidate_result(outcome)
+        except validation.ProviderProtocolError:
+            await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
+        response.CopyFrom(outcome)
+        response.instance.CopyFrom(request.instance)
         return response
 
     async def _resolve_instance(self, reference: pb.InstanceRef, context: grpc.aio.ServicerContext) -> str:
@@ -259,211 +254,6 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
 
     async def _abort(self, context: grpc.aio.ServicerContext, code: grpc.StatusCode, detail: str) -> NoReturn:
         await context.abort(code, detail)
-
-    @staticmethod
-    def _validate_provider_info(provider: pb.ProviderInfo) -> None:
-        if not provider.provider_id or not provider.display_name or not provider.version:
-            raise ValueError("provider identity, display name, and version are required")
-        instance_ids: set[str] = set()
-        for instance in provider.instances:
-            if not instance.instance_id or instance.instance_id in instance_ids:
-                raise ValueError("provider instance identifiers must be present and unique")
-            instance_ids.add(instance.instance_id)
-            if instance.HasField("openapi_document_path"):
-                SessionProviderControlService._validate_origin_path(instance.openapi_document_path)
-            if instance.supports_candidate_verification and not instance.accepted_session_import_formats:
-                raise ValueError("candidate verification requires a declared session import format")
-            accepted_formats: set[tuple[str, str]] = set()
-            for session_format in instance.accepted_session_import_formats:
-                item = (session_format.media_type, session_format.version)
-                if not all(item) or item in accepted_formats:
-                    raise ValueError("session import formats must be complete and unique")
-                accepted_formats.add(item)
-            operation_ids: set[str] = set()
-            for route in instance.routes:
-                if not route.operation_id or route.operation_id in operation_ids:
-                    raise ValueError("route operation identifiers must be present and unique per instance")
-                operation_ids.add(route.operation_id)
-                try:
-                    Route(route.method, route.path_template)
-                except ValueError as error:
-                    raise ValueError("provider route descriptor has an invalid method or path") from error
-
-    @staticmethod
-    def _validate_origin_path(path: str) -> None:
-        try:
-            Route("GET", path)
-        except ValueError as error:
-            raise ValueError("provider HTTP path must be a valid origin-relative path") from error
-
-    @staticmethod
-    def _valid_snapshot(snapshot: pb.SessionSnapshot) -> bool:
-        if snapshot.state not in (
-            pb.SESSION_STATE_NO_SESSION,
-            pb.SESSION_STATE_UNVERIFIED,
-            pb.SESSION_STATE_VERIFIED,
-            pb.SESSION_STATE_REAUTHENTICATION_REQUIRED,
-            pb.SESSION_STATE_CHALLENGE_REQUIRED,
-            pb.SESSION_STATE_OUTCOME_UNKNOWN,
-            pb.SESSION_STATE_STORAGE_ERROR,
-        ):
-            return False
-        if snapshot.state != pb.SESSION_STATE_STORAGE_ERROR and not snapshot.HasField("state_changed_at"):
-            return False
-        if snapshot.HasField("state_changed_at") and not SessionProviderControlService._valid_timestamp(
-            snapshot.state_changed_at
-        ):
-            return False
-        if snapshot.HasField("last_verified_at") and not SessionProviderControlService._valid_timestamp(
-            snapshot.last_verified_at
-        ):
-            return False
-        if snapshot.HasField("imported_at") and not SessionProviderControlService._valid_timestamp(
-            snapshot.imported_at
-        ):
-            return False
-        if snapshot.HasField("last_probe"):
-            result = snapshot.last_probe
-            if not SessionProviderControlService._valid_probe_result(result):
-                return False
-        return True
-
-    @staticmethod
-    def _valid_probe_result(result: pb.ProbeResult) -> bool:
-        if (
-            result.source not in (pb.PROBE_SOURCE_SCHEDULED, pb.PROBE_SOURCE_MANUAL)
-            or not result.HasField("completed_at")
-            or not SessionProviderControlService._valid_timestamp(result.completed_at)
-        ):
-            return False
-        result_kind = result.WhichOneof("result")
-        if result_kind is None:
-            return False
-        return result_kind != "failure" or result.failure.reason in (
-            pb.PROBE_FAILURE_REASON_INVALID_RESPONSE,
-            pb.PROBE_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
-            pb.PROBE_FAILURE_REASON_STORAGE_ERROR,
-            pb.PROBE_FAILURE_REASON_SUPERSEDED,
-            pb.PROBE_FAILURE_REASON_PROVIDER_INTERNAL,
-        )
-
-    @staticmethod
-    def _valid_timestamp(timestamp: Timestamp) -> bool:
-        try:
-            timestamp.ToDatetime()
-        except OverflowError, ValueError:
-            return False
-        return True
-
-    async def _set_import_outcome(
-        self, response: pb.ImportSessionResponse, outcome: ImportSessionOutcome, context: grpc.aio.ServicerContext
-    ) -> None:
-        if isinstance(outcome, pb.SessionInstalled):
-            response.installed.CopyFrom(outcome)
-        elif isinstance(outcome, pb.CandidateRejected):
-            if outcome.reason not in (
-                pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT,
-                pb.CANDIDATE_REJECTION_REASON_MALFORMED,
-                pb.CANDIDATE_REJECTION_REASON_NOT_ACCEPTED,
-            ):
-                await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-            response.rejected.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ReauthenticationRequired):
-            response.reauthentication_required.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ChallengeRequired):
-            response.challenge_required.CopyFrom(outcome)
-        elif isinstance(outcome, pb.UpstreamUnavailable):
-            response.upstream_unavailable.CopyFrom(outcome)
-        elif isinstance(outcome, pb.OperationOutcomeUnknown):
-            if outcome.reason not in (
-                pb.UNKNOWN_OUTCOME_REASON_UNSPECIFIED,
-                pb.UNKNOWN_OUTCOME_REASON_TIMEOUT,
-                pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE,
-                pb.UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE,
-                pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
-            ) or (
-                outcome.HasField("upstream_http_status")
-                and (
-                    outcome.reason != pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR
-                    or not 100 <= outcome.upstream_http_status <= 599
-                )
-            ):
-                await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-            response.outcome_unknown.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ImportFailure):
-            if outcome.reason not in (
-                pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE,
-                pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
-                pb.IMPORT_FAILURE_REASON_STORAGE_ERROR,
-            ) or (
-                outcome.HasField("upstream_http_status")
-                and (
-                    outcome.reason != pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR
-                    or not 100 <= outcome.upstream_http_status <= 599
-                )
-            ):
-                await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-            response.failure.CopyFrom(outcome)
-        else:
-            logger.error("provider control operation returned an invalid result operation=import_session")
-            await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-
-    async def _set_probe_outcome(
-        self, result: pb.ProbeResult, outcome: ProbeOutcome, context: grpc.aio.ServicerContext
-    ) -> None:
-        if isinstance(outcome, pb.ProbeVerified):
-            result.verified.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ReauthenticationRequired):
-            result.reauthentication_required.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ChallengeRequired):
-            result.challenge_required.CopyFrom(outcome)
-        elif isinstance(outcome, pb.UpstreamUnavailable):
-            result.upstream_unavailable.CopyFrom(outcome)
-        elif isinstance(outcome, pb.OperationOutcomeUnknown):
-            result.outcome_unknown.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ProbeNoSession):
-            result.no_session.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ProbeFailure):
-            if outcome.reason not in (
-                pb.PROBE_FAILURE_REASON_INVALID_RESPONSE,
-                pb.PROBE_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
-                pb.PROBE_FAILURE_REASON_STORAGE_ERROR,
-                pb.PROBE_FAILURE_REASON_SUPERSEDED,
-                pb.PROBE_FAILURE_REASON_PROVIDER_INTERNAL,
-            ):
-                await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-            result.failure.CopyFrom(outcome)
-        else:
-            logger.error("provider control operation returned an invalid result operation=probe")
-            await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-
-    async def _set_candidate_verification_outcome(
-        self,
-        response: pb.VerifyCandidateResponse,
-        outcome: CandidateVerificationOutcome,
-        context: grpc.aio.ServicerContext,
-    ) -> None:
-        if isinstance(outcome, pb.CandidateVerified):
-            response.verified.CopyFrom(outcome)
-        elif isinstance(outcome, pb.CandidateRejected):
-            if outcome.reason not in (
-                pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT,
-                pb.CANDIDATE_REJECTION_REASON_MALFORMED,
-                pb.CANDIDATE_REJECTION_REASON_NOT_ACCEPTED,
-            ):
-                await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
-            response.rejected.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ReauthenticationRequired):
-            response.reauthentication_required.CopyFrom(outcome)
-        elif isinstance(outcome, pb.ChallengeRequired):
-            response.challenge_required.CopyFrom(outcome)
-        elif isinstance(outcome, pb.UpstreamUnavailable):
-            response.upstream_unavailable.CopyFrom(outcome)
-        elif isinstance(outcome, pb.OperationOutcomeUnknown):
-            response.outcome_unknown.CopyFrom(outcome)
-        else:
-            logger.error("provider control operation returned an invalid result operation=verify_candidate")
-            await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
 
 
 def add_session_provider_control_service(

@@ -8,7 +8,7 @@ import "google/protobuf/timestamp.proto";
 // Control-plane operations for a provider process. A process can serve one or more configured
 // instances of one provider. Provider routes themselves use the separate private HTTP data plane.
 service SessionProviderControl {
-  // Returns process identity, all configured instances, their route declarations, and accepted
+  // Returns process identity, all configured instances, their capabilities and accepted
   // session-import formats. This reads local configuration and does not contact upstreams.
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
 
@@ -59,7 +59,8 @@ message ProviderInfo {
 
 message ProviderInstanceInfo {
   string instance_id = 1;
-  repeated RouteDescription routes = 2;
+  reserved 2;
+  reserved "routes";
   // Origin-relative HTTP data-plane path serving this instance's OpenAPI document, when available.
   optional string openapi_document_path = 3;
   repeated SessionImportFormat accepted_session_import_formats = 4;
@@ -75,19 +76,6 @@ message ExportInstruction {
   string text = 1;
   // Optional export command for the owner to copy. The service must never execute it.
   optional string command = 2;
-}
-
-message RouteDescription {
-  // Stable and unique within this instance, suitable for gateway grant configuration.
-  string operation_id = 1;
-  // Uppercase HTTP method token. The gateway must never infer safety from this field.
-  string method = 2;
-  // Origin-relative upstream path template handled by the provider's private HTTP data plane.
-  // This is descriptive routing metadata, not an arbitrary destination URL.
-  string path_template = 3;
-  reserved 4;
-  reserved "access_class";
-  string summary = 5;
 }
 
 message SessionImportFormat {

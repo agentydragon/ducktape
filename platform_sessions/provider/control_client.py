@@ -10,42 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import math
-import re
 from collections.abc import Sequence
 from pathlib import Path
 
 import grpc
 
-from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as rpc
-from platform_sessions.routes import Route, _segments
-
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
-_PROBE_SOURCES = {pb.PROBE_SOURCE_SCHEDULED, pb.PROBE_SOURCE_MANUAL}
-_SESSION_STATES = {
-    pb.SESSION_STATE_NO_SESSION,
-    pb.SESSION_STATE_UNVERIFIED,
-    pb.SESSION_STATE_VERIFIED,
-    pb.SESSION_STATE_REAUTHENTICATION_REQUIRED,
-    pb.SESSION_STATE_CHALLENGE_REQUIRED,
-    pb.SESSION_STATE_OUTCOME_UNKNOWN,
-    pb.SESSION_STATE_STORAGE_ERROR,
-}
-_REJECTION_REASONS = {
-    pb.CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT,
-    pb.CANDIDATE_REJECTION_REASON_MALFORMED,
-    pb.CANDIDATE_REJECTION_REASON_NOT_ACCEPTED,
-}
-_PROBE_FAILURE_REASONS = {
-    pb.PROBE_FAILURE_REASON_INVALID_RESPONSE,
-    pb.PROBE_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
-    pb.PROBE_FAILURE_REASON_STORAGE_ERROR,
-    pb.PROBE_FAILURE_REASON_SUPERSEDED,
-    pb.PROBE_FAILURE_REASON_PROVIDER_INTERNAL,
-}
-
-
-class ProviderProtocolError(ValueError):
-    """A completed RPC response violates the provider control contract."""
+from platform_sessions.limits import MAX_SESSION_BYTES
+from platform_sessions.provider.v1 import session_provider_pb2 as pb, session_provider_pb2_grpc as rpc, validation
+from platform_sessions.provider.v1.validation import ProviderProtocolError
 
 
 def dial_provider_control(
@@ -79,7 +51,7 @@ class ProviderControlClient:
     def __init__(
         self, channel: grpc.aio.Channel, *, provider_id: str, instance_id: str, token_file: Path, timeout_s: float
     ) -> None:
-        if not _ID.fullmatch(provider_id) or not _ID.fullmatch(instance_id):
+        if not validation.valid_id(provider_id) or not validation.valid_id(instance_id):
             raise ValueError("Invalid provider or instance ID")
         if not math.isfinite(timeout_s) or timeout_s <= 0:
             raise ValueError("RPC timeout must be positive")
@@ -100,76 +72,24 @@ class ProviderControlClient:
             raise ProviderProtocolError("Provider response has the wrong instance identity")
 
     @staticmethod
-    def _check_timestamp(timestamp) -> None:
-        try:
-            timestamp.ToDatetime()
-        except (OverflowError, ValueError) as exc:
-            raise ProviderProtocolError("Provider returned an invalid timestamp") from exc
-
-    @staticmethod
-    def _check_probe_result(result: pb.ProbeResult) -> None:
-        if not result.HasField("completed_at") or result.source not in _PROBE_SOURCES:
-            raise ProviderProtocolError("Provider returned an incomplete probe result")
-        ProviderControlClient._check_timestamp(result.completed_at)
-        kind = result.WhichOneof("result")
-        if kind is None or (kind == "failure" and result.failure.reason not in _PROBE_FAILURE_REASONS):
-            raise ProviderProtocolError("Provider returned a probe without a typed result")
-
-    @staticmethod
     def _check_candidate(candidate: bytes, media_type: str, format_version: str) -> None:
         if (
             not isinstance(candidate, bytes)
             or not candidate
-            or len(candidate) > 65_536
+            or len(candidate) > MAX_SESSION_BYTES
             or not media_type
             or not format_version
         ):
             raise ValueError("Invalid session candidate request")
 
-    @staticmethod
-    def _check_candidate_result(result: str | None, rejection_reason: int) -> None:
-        if result is None or (result == "rejected" and rejection_reason not in _REJECTION_REASONS):
-            raise ProviderProtocolError("Provider returned a candidate operation without a valid typed result")
-
     async def get_info(self) -> pb.GetInfoResponse:
         response = await self.stub.GetInfo(
             pb.GetInfoRequest(), metadata=await self._metadata(), timeout=self.timeout_s, wait_for_ready=False
         )
-        if (
-            not response.HasField("provider")
-            or response.provider.provider_id != self.instance.provider_id
-            or not response.provider.display_name
-            or not response.provider.version
-        ):
+        if not response.HasField("provider") or response.provider.provider_id != self.instance.provider_id:
             raise ProviderProtocolError("Provider info has the wrong provider identity")
-        seen_instances: set[str] = set()
-        for info in response.provider.instances:
-            if not _ID.fullmatch(info.instance_id) or info.instance_id in seen_instances:
-                raise ProviderProtocolError("Provider info has an invalid instance identity")
-            seen_instances.add(info.instance_id)
-            if info.HasField("openapi_document_path"):
-                try:
-                    _segments(info.openapi_document_path)
-                except ValueError as exc:
-                    raise ProviderProtocolError("Provider info has an invalid OpenAPI path") from exc
-            seen_operations: set[str] = set()
-            for route in info.routes:
-                if not _ID.fullmatch(route.operation_id) or route.operation_id in seen_operations:
-                    raise ProviderProtocolError("Provider info has an invalid route declaration")
-                try:
-                    Route(route.method, route.path_template)
-                except ValueError as exc:
-                    raise ProviderProtocolError("Provider info has an invalid route declaration") from exc
-                seen_operations.add(route.operation_id)
-            seen_formats: set[tuple[str, str]] = set()
-            for session_format in info.accepted_session_import_formats:
-                identity = (session_format.media_type, session_format.version)
-                if not all(identity) or identity in seen_formats:
-                    raise ProviderProtocolError("Provider info has an invalid import format")
-                seen_formats.add(identity)
-            if info.supports_candidate_verification and not seen_formats:
-                raise ProviderProtocolError("Provider info declares candidate verification without an import format")
-        if self.instance.instance_id not in seen_instances:
+        validation.provider_info(response.provider)
+        if self.instance.instance_id not in {item.instance_id for item in response.provider.instances}:
             raise ProviderProtocolError("Provider info omits the configured instance")
         return response
 
@@ -181,20 +101,9 @@ class ProviderControlClient:
             wait_for_ready=False,
         )
         self._check_instance(response.instance)
-        if not response.HasField("snapshot") or response.snapshot.state not in _SESSION_STATES:
+        if not response.HasField("snapshot"):
             raise ProviderProtocolError("Provider returned an invalid session snapshot")
-        if response.snapshot.state != pb.SESSION_STATE_STORAGE_ERROR and not response.snapshot.HasField(
-            "state_changed_at"
-        ):
-            raise ProviderProtocolError("Provider returned an incomplete session snapshot")
-        if response.snapshot.HasField("state_changed_at"):
-            self._check_timestamp(response.snapshot.state_changed_at)
-        if response.snapshot.HasField("last_verified_at"):
-            self._check_timestamp(response.snapshot.last_verified_at)
-        if response.snapshot.HasField("imported_at"):
-            self._check_timestamp(response.snapshot.imported_at)
-        if response.snapshot.HasField("last_probe"):
-            self._check_probe_result(response.snapshot.last_probe)
+        validation.snapshot(response.snapshot)
         return response
 
     async def import_session(
@@ -210,37 +119,7 @@ class ProviderControlClient:
             wait_for_ready=False,
         )
         self._check_instance(response.instance)
-        self._check_candidate_result(response.WhichOneof("result"), response.rejected.reason)
-        if response.WhichOneof("result") == "failure":
-            failure = response.failure
-            if failure.reason not in (
-                pb.IMPORT_FAILURE_REASON_INVALID_RESPONSE,
-                pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR,
-                pb.IMPORT_FAILURE_REASON_STORAGE_ERROR,
-            ) or (
-                failure.HasField("upstream_http_status")
-                and (
-                    failure.reason != pb.IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR
-                    or not 100 <= failure.upstream_http_status <= 599
-                )
-            ):
-                raise ProviderProtocolError("Provider returned an invalid import failure")
-        if response.WhichOneof("result") == "outcome_unknown":
-            unknown = response.outcome_unknown
-            if unknown.reason not in (
-                pb.UNKNOWN_OUTCOME_REASON_UNSPECIFIED,
-                pb.UNKNOWN_OUTCOME_REASON_TIMEOUT,
-                pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE,
-                pb.UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE,
-                pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
-            ) or (
-                unknown.HasField("upstream_http_status")
-                and (
-                    unknown.reason != pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR
-                    or not 100 <= unknown.upstream_http_status <= 599
-                )
-            ):
-                raise ProviderProtocolError("Provider returned invalid unknown-outcome diagnostics")
+        validation.candidate_result(response)
         return response
 
     async def verify_candidate(
@@ -257,11 +136,11 @@ class ProviderControlClient:
             wait_for_ready=False,
         )
         self._check_instance(response.instance)
-        self._check_candidate_result(response.WhichOneof("result"), response.rejected.reason)
+        validation.candidate_result(response)
         return response
 
     async def probe(self, *, source: pb.ProbeSource) -> pb.ProbeResponse:
-        if source not in _PROBE_SOURCES:
+        if source not in validation.PROBE_SOURCES:
             raise ValueError("Invalid probe source")
         response = await self.stub.Probe(
             pb.ProbeRequest(instance=self.instance, source=source),
@@ -272,7 +151,7 @@ class ProviderControlClient:
         self._check_instance(response.instance)
         if not response.HasField("result"):
             raise ProviderProtocolError("Provider returned an incomplete probe response")
-        self._check_probe_result(response.result)
+        validation.probe_result(response.result)
         if response.result.source != source:
             raise ProviderProtocolError("Provider returned a probe for the wrong source")
         return response

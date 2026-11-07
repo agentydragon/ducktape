@@ -42,9 +42,6 @@ class Provider(rpc.SessionProviderControlServicer):
                         instructions=[
                             pb.ExportInstruction(text="Export the browser session.", command="example export")
                         ],
-                        routes=[
-                            pb.RouteDescription(operation_id="read_account", method="GET", path_template="/account")
-                        ],
                         accepted_session_import_formats=[
                             pb.SessionImportFormat(media_type="application/json", version="1")
                         ],
@@ -206,21 +203,12 @@ async def test_import_rejects_malformed_provider_diagnostics(tmp_path):
 @pytest.mark.asyncio
 async def test_protocol_errors_reject_missing_and_mismatched_responses_without_candidate_data(tmp_path):
     async with served(tmp_path) as (provider, client, _, _):
-        provider.info.provider.instances.append(
-            pb.ProviderInstanceInfo(instance_id="second", routes=[provider.info.provider.instances[0].routes[0]])
-        )
-        assert (await client.get_info()).provider.instances[1].routes[0].operation_id == "read_account"
-        provider.info.provider.instances[0].routes.append(provider.info.provider.instances[0].routes[0])
-        with pytest.raises(ProviderProtocolError, match="route declaration"):
-            await client.get_info()
-        provider.info.provider.instances[0].routes.pop()
+        provider.info.provider.instances.append(pb.ProviderInstanceInfo(instance_id="second"))
+        assert (await client.get_info()).provider.instances[1].instance_id == "second"
         provider.info.provider.provider_id = "other"
         with pytest.raises(ProviderProtocolError, match="provider identity"):
             await client.get_info()
         provider.info.provider.provider_id = "example"
-        provider.info.provider.instances[0].routes[0].path_template = "/account/%2Fsecret"
-        with pytest.raises(ProviderProtocolError, match="route declaration"):
-            await client.get_info()
         provider.session.snapshot.state = pb.SESSION_STATE_UNSPECIFIED
         with pytest.raises(ProviderProtocolError, match="session snapshot"):
             await client.get_session()

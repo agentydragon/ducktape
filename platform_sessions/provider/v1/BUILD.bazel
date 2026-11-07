@@ -34,15 +34,25 @@ py_grpc_service_library(
 )
 
 py_library(
+    name = "validation",
+    srcs = ["validation.py"],
+    deps = [
+        "//platform_sessions:routes",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
     deps = [
+        ":validation",
         "//platform_sessions:limits",
-        "//platform_sessions:routes",
         "//platform_sessions/provider/v1:session_provider_pb2",
         "//platform_sessions/provider/v1:session_provider_pb2_grpc",
         "@pypi//grpcio",
-        "@pypi//protobuf",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
