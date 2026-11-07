@@ -11,18 +11,37 @@ import {
   McpUnavailableReason,
   type ActionGroup,
 } from "../../../action_service/action_service_pb";
-import type { McpLinkageView } from "../mcp_linkage_client";
+import {
+  McpLinkageStatus,
+  McpRefreshAction,
+  McpServerLinkageSchema,
+  type McpServerLinkage,
+} from "../../../action_service/operator_action_service_pb";
 import { McpServers } from "./mcp_servers";
 
 const LINKAGES = "/upstream/actions/v1/operator/mcp-servers:watch";
 const HEALTH = "/upstream/actions/v1/action-groups:watch";
 
 /** Mounts the page, then pushes `linkages` and `groups` down its two streams. */
-async function render(linkages: McpLinkageView[] = [], groups: ActionGroup[] = []): Promise<HTMLDivElement> {
+async function render(linkages: McpServerLinkage[] = [], groups: ActionGroup[] = []): Promise<HTMLDivElement> {
   const container = await mount(<McpServers />);
   await send(linkages, LINKAGES);
   await send(groups, HEALTH);
   return container;
+}
+
+function linkage(
+  serverId: string,
+  status: McpLinkageStatus = McpLinkageStatus.LINKED,
+  refreshFailure?: { action: McpRefreshAction; error: string; attempts: number }
+): McpServerLinkage {
+  return create(McpServerLinkageSchema, {
+    serverId,
+    serverUrl: "https://mcp.example.test",
+    status,
+    scopes: [],
+    refreshFailure,
+  });
 }
 
 // Each button's label, and the request it sends.
@@ -30,13 +49,7 @@ it.each([
   ["Reconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/start", {}],
   ["Disconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/disconnect", undefined],
 ] as const)("spins only the clicked %s button until the operation fails", async (label, path, body) => {
-  const rows: McpLinkageView[] = ["github", "second-server"].map((server_id) => ({
-    server_id,
-    server_url: "https://mcp.example.test",
-    status: "linked",
-    scopes: [],
-    refresh_failure: null,
-  }));
+  const rows = [linkage("github"), linkage("second-server")];
   let fail!: () => void;
   const failed = new Promise<Response>((answer) => {
     fail = () => answer(Response.json({ detail: "Operation failed" }, { status: 502 }));
@@ -63,18 +76,7 @@ it("renders independent linkage and health snapshots, then updates either withou
   const container = await mount(<McpServers />);
   expect(container.textContent).toContain("Loading MCP servers");
   expect(container.textContent).not.toContain("No MCP servers are configured");
-  await send(
-    [
-      {
-        server_id: "example",
-        server_url: "https://mcp.example.test",
-        status: "linked",
-        scopes: [],
-        refresh_failure: null,
-      },
-    ],
-    LINKAGES
-  );
+  await send([linkage("example")], LINKAGES);
   expect(container.textContent).toContain("Loading MCP servers");
   await send(
     [
@@ -147,15 +149,7 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
 
 it("labels a linked-but-disconnected server's two states and says why it cannot connect", async () => {
   const container = await render(
-    [
-      {
-        server_id: "github",
-        server_url: "https://mcp.example.test",
-        status: "linked",
-        scopes: [],
-        refresh_failure: null,
-      },
-    ],
+    [linkage("github")],
     [
       create(ActionGroupSchema, {
         key: "github",
@@ -179,15 +173,7 @@ it("labels a linked-but-disconnected server's two states and says why it cannot 
 });
 
 it("renders an oauth linkage with no matching health row exactly as before", async () => {
-  const container = await render([
-    {
-      server_id: "kubernetes",
-      server_url: "https://mcp.example.test",
-      status: "unlinked",
-      scopes: [],
-      refresh_failure: null,
-    },
-  ]);
+  const container = await render([linkage("kubernetes", McpLinkageStatus.UNLINKED)]);
   expect(container.textContent).toContain("kubernetes");
   expect(container.textContent).toContain("unlinked");
   const buttons = [...container.querySelectorAll("button")].map((button) => button.textContent);
@@ -214,18 +200,11 @@ it("excludes a non-mcp (e.g. sandbox-kind) group from the list", async () => {
 
 it("shows a refused token refresh with the provider's error and what to do next", async () => {
   const container = await render([
-    {
-      server_id: "github",
-      server_url: "https://mcp.example.test",
-      status: "degraded",
-      scopes: [],
-      refresh_failure: {
-        action: "reconnect",
-        error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
-        attempts: 1,
-        retry_at: null,
-      },
-    },
+    linkage("github", McpLinkageStatus.DEGRADED, {
+      action: McpRefreshAction.RECONNECT,
+      error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
+      attempts: 1,
+    }),
   ]);
   expect(container.textContent).toContain(
     "Token refresh failed once, link the account again:the OAuth provider refused the token request: invalid_grant: Token is not active"
@@ -235,13 +214,11 @@ it("shows a refused token refresh with the provider's error and what to do next"
 it("does not repeat a linkage wait under a refresh failure that already explains it", async () => {
   const container = await render(
     [
-      {
-        server_id: "github",
-        server_url: "https://mcp.example.test",
-        status: "degraded",
-        scopes: [],
-        refresh_failure: { action: "reconnect", error: "test-only refusal", attempts: 1, retry_at: null },
-      },
+      linkage("github", McpLinkageStatus.DEGRADED, {
+        action: McpRefreshAction.RECONNECT,
+        error: "test-only refusal",
+        attempts: 1,
+      }),
     ],
     [
       create(ActionGroupSchema, {

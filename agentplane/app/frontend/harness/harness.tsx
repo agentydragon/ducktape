@@ -32,6 +32,12 @@ import {
   type ActionRequest,
 } from "../../../action_service/action_service_pb";
 import {
+  McpLinkageStatus,
+  McpRefreshAction,
+  McpServerLinkageSchema,
+  type McpServerLinkage,
+} from "../../../action_service/operator_action_service_pb";
+import {
   PolicyBindingSchema,
   PolicySetSchema,
   WatchPolicyBindingsResponseSchema,
@@ -89,7 +95,6 @@ import type { Connection } from "../connections/models";
 import { type ThreadView, dispatchFromJson } from "../threads/client";
 import { ThreadMetadataSchema } from "../../app_service_pb";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
-import type { McpLinkageView } from "../mcp_linkage_client";
 import {
   WatchInboxResponseSchema,
   WatchInboxEntriesResponseSchema,
@@ -2495,45 +2500,42 @@ function rememberFailedDispatch(): void {
 // One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
 // lapsed while its refresh keeps failing, a refresh the provider refused, never linked, and
 // bearer-only backends that are up or unreachable.
-const MCP_LINKAGES: McpLinkageView[] = [
-  {
-    server_id: "example_docs",
-    server_url: "https://docs-mcp.example.test/mcp",
-    status: "linked",
+const MCP_LINKAGES: McpServerLinkage[] = [
+  create(McpServerLinkageSchema, {
+    serverId: "example_docs",
+    serverUrl: "https://docs-mcp.example.test/mcp",
+    status: McpLinkageStatus.LINKED,
     scopes: ["openid", "offline_access"],
-    refresh_failure: null,
-  },
-  {
-    server_id: "example_cluster",
-    server_url: "https://cluster-mcp.example.test/mcp",
-    status: "expired",
+  }),
+  create(McpServerLinkageSchema, {
+    serverId: "example_cluster",
+    serverUrl: "https://cluster-mcp.example.test/mcp",
+    status: McpLinkageStatus.EXPIRED,
     scopes: ["openid", "email", "profile", "offline_access"],
-    refresh_failure: {
-      action: "retrying",
+    refreshFailure: {
+      action: McpRefreshAction.RETRYING,
       error: "the token endpoint answered HTTP 503 Service Unavailable",
       attempts: 6,
-      retry_at: new Date(NOW + 4 * 60_000).toISOString(),
+      retryAt: fromJson(TimestampSchema, new Date(NOW + 4 * 60_000).toISOString()),
     },
-  },
-  {
-    server_id: "example_calendar",
-    server_url: "https://calendar-mcp.example.test/mcp",
-    status: "degraded",
+  }),
+  create(McpServerLinkageSchema, {
+    serverId: "example_calendar",
+    serverUrl: "https://calendar-mcp.example.test/mcp",
+    status: McpLinkageStatus.DEGRADED,
     scopes: ["openid", "offline_access"],
-    refresh_failure: {
-      action: "reconnect",
+    refreshFailure: {
+      action: McpRefreshAction.RECONNECT,
       error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
       attempts: 1,
-      retry_at: null,
     },
-  },
-  {
-    server_id: "example_pantry",
-    server_url: "https://pantry-mcp.example.test/mcp",
-    status: "unlinked",
+  }),
+  create(McpServerLinkageSchema, {
+    serverId: "example_pantry",
+    serverUrl: "https://pantry-mcp.example.test/mcp",
+    status: McpLinkageStatus.UNLINKED,
     scopes: [],
-    refresh_failure: null,
-  },
+  }),
 ];
 
 type McpFailure = {
@@ -2653,9 +2655,11 @@ function actionGroups(): ActionGroup[] {
   );
 }
 
-function mcpLinkages(): McpLinkageView[] {
+function mcpLinkages(): McpServerLinkage[] {
   return MCP_LINKAGES.map((row) =>
-    row.server_id === "example_docs" && flags.has("mcpLinkageChanged") ? { ...row, status: "expired" as const } : row
+    row.serverId === "example_docs" && flags.has("mcpLinkageChanged")
+      ? create(McpServerLinkageSchema, { ...row, status: McpLinkageStatus.EXPIRED })
+      : row
   );
 }
 
@@ -2808,7 +2812,7 @@ routes.push(
         [mcpLinkagesSnapshotProtoJson(mcpLinkages()), mcpLinkagesSnapshotCompleteProtoJson()],
         () =>
           mcpLinkages()
-            .filter((linkage) => linkage.server_id === "example_docs")
+            .filter((linkage) => linkage.serverId === "example_docs")
             .map(mcpLinkageUpsertProtoJson),
         signal
       );
