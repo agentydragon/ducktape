@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash"
 	"io"
 	"log/slog"
 	"net/http"
@@ -315,6 +318,21 @@ func TestSignatureIsTheHMACGitHubDocuments(t *testing.T) {
 
 	if !handler.signed([]byte("Hello, World!"), "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17") {
 		t.Error("the documented signature was refused")
+	}
+}
+
+func TestSignatureRejectsOtherGitHubAlgorithms(t *testing.T) {
+	handler := New(testSettings(), nil)
+	body := []byte("signed payload")
+	for name, mac := range map[string]hash.Hash{
+		"sha1":   hmac.New(sha1.New, []byte(testSecret)),
+		"sha512": hmac.New(sha512.New, []byte(testSecret)),
+	} {
+		mac.Write(body)
+		signature := name + "=" + hex.EncodeToString(mac.Sum(nil))
+		if handler.signed(body, signature) {
+			t.Errorf("accepted %s signature", name)
+		}
 	}
 }
 
