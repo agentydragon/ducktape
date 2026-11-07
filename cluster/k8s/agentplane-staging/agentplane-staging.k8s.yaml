@@ -9130,6 +9130,8 @@ spec:
               value: agentplane-staging
             - name: AGENTPLANE_POLICY_CONTROLLER_READER_ACCOUNTS
               value: agentplane-staging/app
+            - name: AGENTPLANE_POLICY_CONTROLLER_WRITER_ACCOUNTS
+              value: agentplane-staging/app
             - name: OTEL_SERVICE_NAME
               value: policy-controller
             - name: OTEL_RESOURCE_ATTRIBUTES
