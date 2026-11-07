@@ -19,7 +19,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/emptypb"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -243,7 +242,7 @@ func TestListPolicySetNamesReturnsOneSortedCallerVisibleSnapshot(t *testing.T) {
 		{token: "app", want: []string{"alpha", "base", "z-private"}},
 		{token: "alice", want: []string{"base"}},
 	} {
-		response, err := api.ListPolicySetNames(tokenContext(t, test.token), &emptypb.Empty{})
+		response, err := api.ListPolicySetNames(tokenContext(t, test.token), &policypb.ListPolicySetNamesRequest{})
 		if err != nil {
 			t.Fatalf("ListPolicySetNames(%s): %v", test.token, err)
 		}

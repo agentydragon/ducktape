@@ -195,7 +195,7 @@ func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grp
 }
 
 // ListPolicySetNames returns one sorted snapshot of the PolicySets visible to the caller.
-func (s *Service) ListPolicySetNames(ctx context.Context, _ *emptypb.Empty) (*policypb.ListPolicySetNamesResponse, error) {
+func (s *Service) ListPolicySetNames(ctx context.Context, _ *policypb.ListPolicySetNamesRequest) (*policypb.ListPolicySetNamesResponse, error) {
 	caller, broad, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
