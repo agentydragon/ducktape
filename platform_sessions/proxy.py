@@ -12,7 +12,6 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import Receive, Scope, Send
 
 from platform_sessions.auth import BearerAuth
-from platform_sessions.registry import IntegrationInstance
 from platform_sessions.routes import _encoded_path, _segments, authorize_route
 
 # The transport owns upstream authentication and session rotation. These are
@@ -72,9 +71,25 @@ class SessionTransport(Protocol):
     async def request(self, request: ProxyRequest) -> ProxyResponse: ...
 
 
+class ProxyConfig(Protocol):
+    """Configured identity and upstream origin used by the proxy."""
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def type(self) -> str: ...
+
+    @property
+    def enabled(self) -> bool: ...
+
+    @property
+    def upstream_base_url(self) -> str: ...
+
+
 @dataclass(frozen=True)
 class ProxyInstance:
-    config: IntegrationInstance
+    config: ProxyConfig
     transport: SessionTransport
     headers: HeaderPolicy = field(default_factory=HeaderPolicy)
 
