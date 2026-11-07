@@ -163,18 +163,33 @@ it("rejects a different Session ID in the Dispatcher response", async () => {
 it("reads the AppService runner status as the existing generated EnvironmentRuntimeStatus", async () => {
   const fetchMock = vi.fn().mockResolvedValue(
     Response.json({
-      environment_runtime_boot_id: "fixture-boot",
+      environmentRuntimeBootId: "fixture-boot",
+      processes: [],
+      sessions: [],
       lifecycle: {
-        desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
-        desired_generation: "9223372036854775809",
-        progress_generation: "7",
-        progress_available: true,
-        progress_current: false,
+        desiredMode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
+        desiredGeneration: "9223372036854775809",
+        progressGeneration: "7",
+        progressAvailable: true,
+        progressCurrent: false,
         stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
+        error: "",
         blocker: {
           kind: "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
-          journal_seal_cursor: "9223372036854775811",
-          acknowledgement_cursor: "9223372036854775810",
+          error: "",
+          resourceType: "",
+          resourceId: "",
+          processId: "",
+          resourcePresent: false,
+          admissions: "0",
+          journalSealPresent: false,
+          journalSealUid: "",
+          expectedJournalSealUid: "",
+          journalSealCursor: "9223372036854775811",
+          acknowledgementPresent: false,
+          acknowledgementSealed: false,
+          acknowledgementCursor: "9223372036854775810",
+          finalizersPending: false,
         },
       },
     })
@@ -194,9 +209,35 @@ it("reads the AppService runner status as the existing generated EnvironmentRunt
   expect(status.lifecycle?.blocker?.kind).toBe(EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT);
   expect(status.lifecycle?.blocker?.journalSealCursor).toBe(9223372036854775811n);
   expect(status.processes).toEqual([]);
+  expect(status.sessions).toEqual([]);
 });
 
-it("keeps runner status errors readable across old and generated AppService responses", async () => {
+it("reads snake_case status from an older app replica during rollout", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    Response.json({
+      environment_runtime_boot_id: "old-replica-boot",
+      lifecycle: {
+        desired_mode: "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
+        desired_generation: "4",
+        progress_generation: "4",
+        progress_available: true,
+        progress_current: true,
+        stage: "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
+      },
+      processes: [],
+      sessions: [],
+    })
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const statusTarget = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
+  const status = await getEnvironmentRuntimeStatus(statusTarget);
+
+  expect(status.environmentRuntimeBootId).toBe("old-replica-boot");
+  expect(status.lifecycle?.desiredGeneration).toBe(4n);
+});
+
+it("keeps runner status errors readable across old and new app replicas", async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(Response.json({ detail: "Runner is unavailable" }, { status: 503 }))

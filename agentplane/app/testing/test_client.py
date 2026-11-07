@@ -237,6 +237,80 @@ async def test_app_config_client_decodes_generated_proto_json() -> None:
     assert not preset.session_defaults.HasField("reasoning_effort")
 
 
+async def test_runner_status_client_reads_generated_defaults_and_old_replica_names() -> None:
+    async def generated(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            json.dumps(
+                {
+                    "environmentRuntimeBootId": "generated-boot",
+                    "processes": [
+                        {
+                            "processId": "process-a",
+                            "harness": "HARNESS_CLAUDE",
+                            "state": "PROCESS_STATE_RUNNING",
+                            "assignedSessionIds": ["session-a"],
+                        }
+                    ],
+                    "sessions": [
+                        {"sessionId": "session-a", "executionState": "SESSION_EXECUTION_STATE_READY", "busy": False}
+                    ],
+                    "lifecycle": {
+                        "desiredMode": "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING",
+                        "desiredGeneration": "7",
+                        "progressGeneration": "7",
+                        "progressAvailable": True,
+                        "progressCurrent": True,
+                        "stage": "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING",
+                        "error": "",
+                        "blocker": {
+                            "kind": "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT",
+                            "error": "",
+                            "resourceType": "IngressAcknowledgements.agentplane",
+                            "resourceId": "session-a",
+                            "processId": "",
+                            "resourcePresent": True,
+                            "admissions": "0",
+                            "journalSealPresent": False,
+                            "journalSealUid": "",
+                            "expectedJournalSealUid": "",
+                            "journalSealCursor": "9223372036854775811",
+                            "acknowledgementPresent": False,
+                            "acknowledgementSealed": False,
+                            "acknowledgementCursor": "9223372036854775810",
+                            "finalizersPending": False,
+                        },
+                    },
+                }
+            ).encode(),
+            "application/json",
+        )
+
+    async def older(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer,
+            "200 OK",
+            b'{"environment_runtime_boot_id":"older-boot","processes":[],"sessions":[]}',
+            "application/json",
+        )
+
+    async with _app(generated, older) as (client, _):
+        status = await client.runner_status("demo", "sandbox-uid")
+        old_status = await client.runner_status("demo", "sandbox-uid")
+
+    assert status.environment_runtime_boot_id == "generated-boot"
+    assert status.processes[0].process_id == "process-a"
+    assert status.sessions[0].execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
+    assert not status.sessions[0].HasField("process_id")
+    assert status.lifecycle is not None
+    assert status.lifecycle.blocker is not None
+    assert status.lifecycle.blocker.journal_seal_cursor == 9223372036854775811
+    assert old_status.environment_runtime_boot_id == "older-boot"
+    assert len(old_status.processes) == 0
+    assert len(old_status.sessions) == 0
+
+
 async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:
     async with _app(_first_two_then_close, _rest_then_end) as (client, _):
         assert await _cursors(client) == [1, 2, 3]

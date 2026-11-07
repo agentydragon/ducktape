@@ -11,6 +11,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -66,42 +67,48 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 	if response.Code != http.StatusOK {
 		t.Fatalf("runner status = %d: %s", response.Code, response.Body.String())
 	}
-	var body struct {
-		EnvironmentRuntimeBootId string `json:"environment_runtime_boot_id"`
-		Processes                []any  `json:"processes"`
-		Sessions                 []any  `json:"sessions"`
-		Lifecycle                struct {
-			DesiredMode        string `json:"desired_mode"`
-			DesiredGeneration  string `json:"desired_generation"`
-			ProgressGeneration string `json:"progress_generation"`
-			ProgressCurrent    bool   `json:"progress_current"`
-			Stage              string `json:"stage"`
-			Blocker            struct {
-				Kind                  string `json:"kind"`
-				ResourceType          string `json:"resource_type"`
-				JournalSealCursor     string `json:"journal_seal_cursor"`
-				AcknowledgementCursor string `json:"acknowledgement_cursor"`
-			} `json:"blocker"`
-		} `json:"lifecycle"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+	var wire map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &wire); err != nil {
 		t.Fatal(err)
 	}
-	if body.EnvironmentRuntimeBootId != "fixture-boot" {
-		t.Fatalf("boot ID = %q", body.EnvironmentRuntimeBootId)
+	if wire["environmentRuntimeBootId"] != "fixture-boot" {
+		t.Fatalf("wire status = %s", response.Body.String())
 	}
-	if body.Processes == nil || body.Sessions == nil {
-		t.Fatalf("unpopulated repeated fields were omitted: %s", response.Body.String())
+	if _, ok := wire["environment_runtime_boot_id"]; ok {
+		t.Fatalf("ProtoJSON used proto field names: %s", response.Body.String())
 	}
-	lifecycle := body.Lifecycle
-	if lifecycle.DesiredMode != "ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING" || lifecycle.Stage != "ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING" ||
-		lifecycle.DesiredGeneration != "9223372036854775809" || lifecycle.ProgressGeneration != "7" || lifecycle.ProgressCurrent {
+	processes, ok := wire["processes"].([]any)
+	if !ok || len(processes) != 0 {
+		t.Fatalf("empty repeated process field = %v: %s", wire["processes"], response.Body.String())
+	}
+	sessions, ok := wire["sessions"].([]any)
+	if !ok || len(sessions) != 0 {
+		t.Fatalf("empty repeated session field = %v: %s", wire["sessions"], response.Body.String())
+	}
+	lifecycleWire, ok := wire["lifecycle"].(map[string]any)
+	if !ok || lifecycleWire["progressCurrent"] != false {
+		t.Fatalf("default lifecycle fields = %v: %s", wire["lifecycle"], response.Body.String())
+	}
+	var body sessionpb.EnvironmentRuntimeStatus
+	if err := protojson.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.GetEnvironmentRuntimeBootId() != "fixture-boot" {
+		t.Fatalf("boot ID = %q", body.GetEnvironmentRuntimeBootId())
+	}
+	if len(body.GetProcesses()) != 0 || len(body.GetSessions()) != 0 {
+		t.Fatalf("empty repeated fields = %v, %v", body.GetProcesses(), body.GetSessions())
+	}
+	lifecycle := body.GetLifecycle()
+	if lifecycle.GetDesiredMode() != sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING ||
+		lifecycle.GetStage() != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING ||
+		lifecycle.GetDesiredGeneration() != 1<<63+1 || lifecycle.GetProgressGeneration() != 7 || lifecycle.GetProgressCurrent() {
 		t.Fatalf("lifecycle progress = %+v", lifecycle)
 	}
-	if lifecycle.Blocker.Kind != "ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT" ||
-		lifecycle.Blocker.ResourceType != "IngressAcknowledgements.agentplane" ||
-		lifecycle.Blocker.JournalSealCursor != "9223372036854775811" || lifecycle.Blocker.AcknowledgementCursor != "9223372036854775810" {
-		t.Fatalf("lifecycle blocker = %+v", lifecycle.Blocker)
+	if lifecycle.GetBlocker().GetKind() != sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT ||
+		lifecycle.GetBlocker().GetResourceType() != "IngressAcknowledgements.agentplane" ||
+		lifecycle.GetBlocker().GetJournalSealCursor() != 1<<63+3 || lifecycle.GetBlocker().GetAcknowledgementCursor() != 1<<63+2 {
+		t.Fatalf("lifecycle blocker = %+v", lifecycle.GetBlocker())
 	}
 }
 
