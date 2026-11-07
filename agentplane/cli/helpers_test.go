@@ -4,11 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -82,74 +78,6 @@ func notificationsEnv(baseURL string) map[string]string {
 
 func egressEnv(baseURL string) map[string]string {
 	return map[string]string{"AGENTPLANE_EGRESS_GRPC_URL": baseURL, "AGENTPLANE_EGRESS_GRPC_CREDENTIAL": testCredential}
-}
-
-// seen is a request a fake service received.
-type seen struct {
-	method, path  string
-	query         url.Values
-	body          []byte
-	authorization string
-}
-
-// fake is a service that records what it was asked and answers with handler.
-type fake struct {
-	*httptest.Server
-	mu   sync.Mutex
-	seen []seen
-}
-
-func newFake(t *testing.T, handler func(w http.ResponseWriter, r *http.Request, s seen)) *fake {
-	t.Helper()
-	f := &fake{}
-	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("reading request body: %v", err)
-		}
-		s := seen{r.Method, r.URL.Path, r.URL.Query(), body, r.Header.Get("Authorization")}
-		f.mu.Lock()
-		f.seen = append(f.seen, s)
-		f.mu.Unlock()
-		handler(w, r, s)
-	}))
-	t.Cleanup(f.Close)
-	return f
-}
-
-func (f *fake) all() []seen {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return slices.Clone(f.seen)
-}
-
-// requests are the recorded requests with this method.
-func (f *fake) requests(method string) []seen {
-	var matching []seen
-	for _, s := range f.all() {
-		if s.method == method {
-			matching = append(matching, s)
-		}
-	}
-	return matching
-}
-
-func (f *fake) count() int {
-	return len(f.all())
-}
-
-func reply(w http.ResponseWriter, status int, body string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = io.WriteString(w, body)
-}
-
-// drop ends the connection without answering: the request arrived and the response is lost.
-func drop(w http.ResponseWriter) {
-	connection, _, err := w.(http.Hijacker).Hijack()
-	if err == nil {
-		_ = connection.Close()
-	}
 }
 
 func decodeObject(t *testing.T, text string) map[string]any {

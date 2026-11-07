@@ -183,20 +183,3 @@ func group(use, short, long string, children ...*cobra.Command) *cobra.Command {
 	command.AddCommand(children...)
 	return command
 }
-
-// call is the body of a command: the connected service and the positional arguments, under the
-// call's deadline.
-type call func(ctx context.Context, svc *service, args []string) error
-
-// command connects the group, applies --timeout and runs fn.
-func (a *app) command(groupName string, fn call) func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, args []string) error {
-		svc, err := a.connect(groupName)
-		if err != nil {
-			return err
-		}
-		ctx, cancel := a.deadline()
-		defer cancel()
-		return fn(ctx, svc, args)
-	}
-}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -254,18 +253,6 @@ func TestCredentialIsSentAsBearerAndNeverPrinted(t *testing.T) {
 		if len(call.authorization) != 1 || call.authorization[0] != "Bearer "+testCredential {
 			t.Errorf("authorization metadata = %q, want bearer placeholder", call.authorization)
 		}
-	}
-}
-
-func TestRedirectIsNotFollowedForTheHTTPClients(t *testing.T) {
-	elsewhere := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, `{"subject":{},"policies":[]}`) })
-	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-		http.Redirect(w, r, elsewhere.URL, http.StatusFound)
-	})
-	_, err := (&service{baseURL: f.URL, credential: testCredential}).do(context.Background(), request{method: http.MethodGet, path: "/"})
-	var failed *failure
-	if !errors.As(err, &failed) || failed.exit != exitRefused || elsewhere.count() != 0 {
-		t.Errorf("error %v, %d requests followed the redirect; want refusal and none", err, elsewhere.count())
 	}
 }
 

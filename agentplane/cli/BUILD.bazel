@@ -10,7 +10,6 @@ go_library(
         "egress.go",
         "environments.go",
         "errors.go",
-        "gateway.go",
         "main.go",
         "notifications.go",
         "output.go",
