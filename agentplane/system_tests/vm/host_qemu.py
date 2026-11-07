@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TextIO
+from typing import Protocol, TextIO
 
 from agentplane.system_tests.vm import guest_logs
 
@@ -136,7 +136,13 @@ def _container_ids_in_cgroup(cgroup: str) -> set[str]:
     return {match.lower() for match in re.findall(r"(?<![A-Fa-f0-9])[A-Fa-f0-9]{32,128}(?![A-Fa-f0-9])", cgroup)}
 
 
-def _read_proc_field(output: TextIO, path: Path, field: str) -> None:
+class _TextWriter(Protocol):
+    def write(self, value: str, /) -> int: ...
+
+    def flush(self) -> None: ...
+
+
+def _read_proc_field(output: _TextWriter, path: Path, field: str) -> None:
     try:
         value = path.read_bytes().replace(b"\x00", b" ").decode(errors="replace")
     except OSError as error:
@@ -190,7 +196,7 @@ def _snapshot_host_qemu(
 
 
 def _snapshot_host_virtiofsd(
-    output: TextIO,
+    output: _TextWriter,
     pod_uid: str,
     stop: threading.Event,
     deadline: float,
