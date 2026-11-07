@@ -14,8 +14,7 @@ func (a *app) actionsGuideCommand() *cobra.Command {
 		Use:   "guide [NAME]",
 		Short: "Read a bundled Action workflow guide",
 		Long: `Prints the Action Service guide bundled with this CLI image, without making a service call.
-Omit NAME for the index. Otherwise use one of: session_delegation, action_lifecycle, recovery, kubernetes.
-On older images without this command, read the Action Service /llms.txt and linked /docs/agents/ guides.`,
+Omit NAME for the index. Otherwise use one of: session_delegation, action_lifecycle, recovery, kubernetes.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			name := actiondocs.Index
