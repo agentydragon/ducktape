@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -99,7 +98,7 @@ func testRulesAuth(t *testing.T) (*identity.Authenticator, *policy.Index) {
 	}
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
-		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audience: testAudience}},
+		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}},
 	}
 	authentication, err := identity.NewAuthenticator(forward, identity.NewVerifier(resolver, nil), nil)
 	if err != nil {
@@ -113,7 +112,7 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	authentication, index := testRulesAuth(t)
 	server, err := newAdminServer(c, api.TokenReviews(), admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
-	}, authentication, index, nil)
+	}, authentication, index)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +179,7 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	}
 }
 
-func TestAdminListenerUsesTheForwardSVIDForRulesAndKeepsPlaintextAdmin(t *testing.T) {
+func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	proxySVID := ca.Issue(t, environment_runtime_transport.EgressProxyURI)
 	forward := listener.Config{
@@ -188,20 +187,16 @@ func TestAdminListenerUsesTheForwardSVIDForRulesAndKeepsPlaintextAdmin(t *testin
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	serverTLS, err := forward.TLSConfig(environment_runtime_transport.EgressProxyURI)
-	if err != nil {
-		t.Fatal(err)
-	}
 	reader := testSandboxReader(t)
 	workloadAuth, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil, nil), map[string]*sandboxreader.Reader{"test-ns": reader})
 	if err != nil {
 		t.Fatal(err)
 	}
 	server, err := newAdminServer(config{
-		AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"},
+		Forward: forward, AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"},
 	}, api.TokenReviews(), admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
-	}, workloadAuth, policy.NewIndex(), serverTLS)
+	}, workloadAuth, policy.NewIndex())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,22 +216,26 @@ func TestAdminListenerUsesTheForwardSVIDForRulesAndKeepsPlaintextAdmin(t *testin
 		_ = server.Shutdown(ctx)
 	})
 
-	plain, err := grpc.NewClient(adminListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	backendCredentials, err := (&environment_runtime_transport.ClientTLS{CAFile: ca.RootFile, ServerURI: environment_runtime_transport.EgressProxyURI}).Credentials()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer plain.Close()
-	probe, err := healthpb.NewHealthClient(plain).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	backend, err := grpc.NewClient(adminListener.Addr().String(), grpc.WithTransportCredentials(backendCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	probe, err := healthpb.NewHealthClient(backend).Check(context.Background(), &healthpb.HealthCheckRequest{})
 	if err != nil || probe.GetStatus() != healthpb.HealthCheckResponse_SERVING {
-		t.Fatalf("plaintext health probe: %v, %v", probe, err)
+		t.Fatalf("TLS health probe: %v, %v", probe, err)
 	}
 	adminContext := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken)
-	adminHealth, err := egressadminpb.NewEgressAdminClient(plain).GetHealth(adminContext, &egressadminpb.GetHealthRequest{})
+	adminHealth, err := egressadminpb.NewEgressAdminClient(backend).GetHealth(adminContext, &egressadminpb.GetHealthRequest{})
 	if err != nil || !adminHealth.GetReady() {
-		t.Fatalf("plaintext admin API: %v, %v", adminHealth, err)
+		t.Fatalf("TLS admin API: %v, %v", adminHealth, err)
 	}
-	if _, err := egressrulespb.NewEgressRulesClient(plain).GetRules(adminContext, &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("plaintext Rules with a valid bearer: %v, want Unauthenticated", err)
+	if _, err := egressrulespb.NewEgressRulesClient(backend).GetRules(adminContext, &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Rules with a backend bearer: %v, want Unauthenticated", err)
 	}
 
 	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("test-ns", "sandbox-uid", runnerCredentialID)
@@ -258,6 +257,19 @@ func TestAdminListenerUsesTheForwardSVIDForRulesAndKeepsPlaintextAdmin(t *testin
 		t.Fatalf("SVID Rules response: %v, %v", response, err)
 	}
 
+	if _, err := egressadminpb.NewEgressAdminClient(secured).GetHealth(adminContext, &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("SVID plus admin bearer: %v, want Unauthenticated", err)
+	}
+	plain, err := grpc.NewClient(adminListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plain.Close()
+	plainContext, plainCancel := context.WithTimeout(t.Context(), time.Second)
+	defer plainCancel()
+	if _, err := healthpb.NewHealthClient(plain).Check(plainContext, &healthpb.HealthCheckRequest{}); err == nil {
+		t.Fatal("TLS RPC listener accepted plaintext")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
@@ -292,38 +304,11 @@ func testSandboxReader(t *testing.T) *sandboxreader.Reader {
 	return reader
 }
 
-func TestTLSAdminListenerShutdownBeforeServeDoesNotStartAcceptLoops(t *testing.T) {
-	authentication, index := testRulesAuth(t)
-	if _, err := environment_runtime_transport.ServerCredentials(&tls.Config{}); err == nil {
-		t.Fatal("ServerCredentials accepted a TLS config without the shared listener's certificate callback")
-	}
-	serverTLS := &tls.Config{GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return nil, nil }}
-	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}}, authentication, index, serverTLS)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		t.Fatalf("shutdown before Serve: %v", err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := server.Serve(listener); err != nil {
-		t.Fatalf("Serve after shutdown: %v", err)
-	}
-	if _, err := listener.Accept(); !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("listener after shutdown-before-Serve: %v, want closed", err)
-	}
-}
-
 // Kubernetes' native grpc probes send no bearer, so health is served whether or not the EgressAdmin
 // API is configured.
 func TestAdminListenerServesHealthWithoutTheAdminGRPCAPI(t *testing.T) {
 	authentication, index := testRulesAuth(t)
-	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}}, authentication, index, nil)
+	server, err := newAdminServer(config{}, api.TokenReviews(), admin.ServiceOptions{Index: readyIndex{}}, authentication, index)
 	if err != nil {
 		t.Fatal(err)
 	}

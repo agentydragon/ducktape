@@ -42,22 +42,22 @@ Environment Runtime environment changes or state ownership begins.
 
 `environment-runtime.json` is a strict JSON object with `version: 2`.
 
-| Field                             | Meaning                                                                                                                                                                                  |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_reconcile_concurrency`   | Optional positive count of concurrent Session COSI reconciliations; defaults to `16` and does not limit Session admission.                                                               |
-| `state_dir`                       | Required absolute persistent state path; deployed as `/state`.                                                                                                                           |
-| `initialization_cwd`              | Required absolute bootstrap working directory.                                                                                                                                           |
-| `workspace_root`                  | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.                                                                |
-| `control`                         | Required Environment Runtime listener with `listen_address` (`host:port`) and explicit `security` (`mtls` or `insecure`).                                                                |
-| `ingress`                         | Required History ingress endpoint with `target` (`host:port`) and `bearer`; it remains independent of Environment Runtime control.                                                       |
-| `model_config_target`             | Local sidecar gRPC target (`host:port`) for Claude model budgets. The sidecar inserts the projected workload token; Runtime sends no bearer. Without it, Claude Session admission fails. |
-| `platform_instructions`           | Required deployment-wide Session guidance, rendered from the shared `session_instructions/platform_instructions.j2`.                                                                     |
-| `environment_runtime_environment` | Optional `inherit` names and `values` map applied to Environment Runtime itself.                                                                                                         |
-| `harness_environment`             | Required `inherit` names and `values` map defining the native process environment.                                                                                                       |
-| `claude`, `codex`                 | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.                                                                      |
-| `environment`                     | Required tagged Pod or VM policy, including the optional executor.                                                                                                                       |
-| `codex_readiness`                 | Optional independent Codex executor and app-server readiness windows in positive integer milliseconds.                                                                                   |
-| `debug_checkpoint`                | Optional test-only object containing nonempty `name` and `command_id`.                                                                                                                   |
+| Field                             | Meaning                                                                                                                                        |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_reconcile_concurrency`   | Optional positive count of concurrent Session COSI reconciliations; defaults to `16` and does not limit Session admission.                     |
+| `state_dir`                       | Required absolute persistent state path; deployed as `/state`.                                                                                 |
+| `initialization_cwd`              | Required absolute bootstrap working directory.                                                                                                 |
+| `workspace_root`                  | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.                      |
+| `control`                         | Required Environment Runtime listener with `listen_address` (`host:port`) and explicit `security` (`mtls` or `insecure`).                      |
+| `ingress`                         | Required History ingress endpoint with `target` (`host:port`) and `bearer`; it remains independent of Environment Runtime control.             |
+| `model_config_target`             | Local sidecar gRPC `host:port` for Claude model budgets; the sidecar supplies SVID authentication. Without it, Claude Session admission fails. |
+| `platform_instructions`           | Required deployment-wide Session guidance, rendered from the shared `session_instructions/platform_instructions.j2`.                           |
+| `environment_runtime_environment` | Optional `inherit` names and `values` map applied to Environment Runtime itself.                                                               |
+| `harness_environment`             | Required `inherit` names and `values` map defining the native process environment.                                                             |
+| `claude`, `codex`                 | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.                            |
+| `environment`                     | Required tagged Pod or VM policy, including the optional executor.                                                                             |
+| `codex_readiness`                 | Optional independent Codex executor and app-server readiness windows in positive integer milliseconds.                                         |
+| `debug_checkpoint`                | Optional test-only object containing nonempty `name` and `command_id`.                                                                         |
 
 `codex_readiness` accepts these optional positive `int64` millisecond values. Omitted fields keep
 the listed defaults; each window is configured independently.
@@ -191,10 +191,10 @@ has been removed; the common file explicitly supplies proxy, trust, tool paths a
 
 ## Provider, Session and telemetry settings
 
-Deployed providers read `ANTHROPIC_AUTH_TOKEN` and `OPENAI_API_KEY`, set to the workload credential
-placeholder. The egress proxy substitutes credentials and the authenticated LLM ingress routes
-requests. Claude uses the ingress origin; Codex uses its `/v1` API base. Claude retains its resolved
-context budget for resume; Codex obtains metadata from the ingress catalog.
+Deployed providers read `ANTHROPIC_AUTH_TOKEN` and `OPENAI_API_KEY`, set to `unused` in Sandbox
+environments. The sidecar strips Authorization on the exact-origin SVID route, and the LLM ingress
+uses its server-held provider key. Claude uses the ingress origin; Codex uses its `/v1` API base.
+Claude retains its resolved context budget for resume; Codex obtains metadata from the ingress catalog.
 
 Environment Runtime composes platform instructions, the Session ID and caller task in
 that order. They are persisted and must match when reopened. Sandbox bootstrap and Session setup

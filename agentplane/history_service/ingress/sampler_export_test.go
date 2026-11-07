@@ -257,7 +257,7 @@ func updateSamplerModel(t *testing.T, store *centralsampler.Store, session *cent
 
 func startSamplerExport(ctx context.Context, f samplerExportFixture, sessionID string) <-chan error {
 	done := make(chan error, 1)
-	go func() { done <- centralsampler.ExportSession(ctx, f.sampler, sessionID, f.target, f.token) }()
+	go func() { done <- centralsampler.ExportSession(ctx, f.sampler, sessionID, f.target, f.token, nil) }()
 	return done
 }
 

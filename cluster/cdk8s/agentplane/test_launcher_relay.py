@@ -76,31 +76,10 @@ def policy() -> dict:
     return rendered
 
 
-@pytest.fixture(scope="module")
-def tls_policy() -> dict:
-    chart = Chart(App(), "test-tls")
-    LauncherRelayPolicy(
-        chart,
-        "policy",
-        namespace=NAMESPACE,
-        runner_pod=deepcopy(RUNNER_POD),
-        settings_config_map=RELAY_SETTINGS,
-        runner_tls_enabled=True,
-    )
-    rendered: dict = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
-    del rendered["spec"]["webhookConfiguration"]
-    return rendered
-
-
 def test_tls_injection_can_read_only_the_sandbox_in_its_namespace() -> None:
     chart = Chart(App(), "test-tls-reader")
     LauncherRelayPolicy(
-        chart,
-        "policy",
-        namespace=NAMESPACE,
-        runner_pod=deepcopy(RUNNER_POD),
-        settings_config_map=RELAY_SETTINGS,
-        runner_tls_enabled=True,
+        chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
     )
     documents = Cdk8sTesting.synth(chart)
     role = one(doc for doc in documents if doc["kind"] == "Role")
@@ -262,12 +241,16 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert spec["serviceAccountName"] == "sandbox-a"
     assert spec["automountServiceAccountToken"] is False
     assert spec["imagePullSecrets"] == [{"name": "relay-test-pull"}]
-    assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME]
+    assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME, RUNNER_TLS_VOLUME_NAME]
     assert not any(c["name"] == "egress-sidecar" for c in spec["containers"])
     relay = one(c for c in spec["initContainers"] if c["name"] == "egress-sidecar")
     assert relay["restartPolicy"] == "Always"
     assert relay["image"] == "sidecar:test"
-    assert {mount["name"] for mount in relay["volumeMounts"]} == {TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME}
+    assert {mount["name"] for mount in relay["volumeMounts"]} == {
+        TOKEN_VOLUME,
+        SIDECAR_SETTINGS_VOLUME_NAME,
+        RUNNER_TLS_VOLUME_NAME,
+    }
     # The runner's settings listen on loopback; the guest dials the relay from outside it.
     assert one(v for v in spec["volumes"] if v["name"] == SIDECAR_SETTINGS_VOLUME_NAME)["configMap"] == {
         "name": RELAY_SETTINGS
@@ -289,9 +272,9 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
 
 
 def test_rejects_a_missing_credential_during_mutation_even_if_validation_reads_it_later(
-    tmp_path: Path, tls_policy: dict
+    tmp_path: Path, policy: dict
 ) -> None:
-    policy = deepcopy(tls_policy)
+    policy = deepcopy(policy)
     injection = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
     sandbox_read = one(entry for entry in injection["context"] if entry["name"] == "sandboxLive")
     del sandbox_read["apiCall"]
@@ -307,8 +290,8 @@ def test_rejects_a_missing_credential_during_mutation_even_if_validation_reads_i
     assert not result.ok, result.stdout
 
 
-def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Path, tls_policy: dict) -> None:
-    first = apply(tmp_path, tls_policy, launcher())
+def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Path, policy: dict) -> None:
+    first = apply(tmp_path, policy, launcher())
     assert first.ok, first.stdout
     mutated = one(r for r in first.mutated_resources if r["kind"] == "Pod")
     spec = mutated["spec"]
@@ -335,7 +318,7 @@ def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Pat
         for mount in c.get("volumeMounts", [])
     )
 
-    second = apply(tmp_path, tls_policy, deepcopy(mutated))
+    second = apply(tmp_path, policy, deepcopy(mutated))
     assert second.ok, second.stdout
     assert second.mutated_resources == first.mutated_resources
 
@@ -343,14 +326,14 @@ def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Pat
     workload_mount["spec"]["containers"][0].setdefault("volumeMounts", []).append(
         {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/runner-tls", "readOnly": True}
     )
-    update = apply(tmp_path, tls_policy, workload_mount, operation="UPDATE")
+    update = apply(tmp_path, policy, workload_mount, operation="UPDATE")
     assert update.failed > 0
 
     create_with_workload_mount = launcher()
     create_with_workload_mount["spec"]["containers"][0]["volumeMounts"] = [
         {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/runner-tls", "readOnly": True}
     ]
-    create = apply(tmp_path, tls_policy, create_with_workload_mount)
+    create = apply(tmp_path, policy, create_with_workload_mount)
     assert create.failed > 0
 
 
@@ -548,9 +531,9 @@ def test_rejects_unproven_launcher(tmp_path: Path, policy: dict, forgery: dict) 
     ],
 )
 def test_mtls_rejects_launcher_without_current_sandbox_status_binding(
-    tmp_path: Path, tls_policy: dict, binding: dict
+    tmp_path: Path, policy: dict, binding: dict
 ) -> None:
-    assert apply(tmp_path, tls_policy, launcher(), **binding).failed > 0
+    assert apply(tmp_path, policy, launcher(), **binding).failed > 0
 
 
 def test_rejects_stale_vmi(tmp_path: Path, policy: dict) -> None:

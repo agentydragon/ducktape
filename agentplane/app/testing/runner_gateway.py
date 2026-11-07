@@ -95,7 +95,7 @@ async def session_dispatcher_client(
     gateway: GatewayProcess, token_file: Path
 ) -> AsyncIterator[SessionDispatcherClient]:
     """A replica's own Dispatcher client: a channel of its own to the one Gateway."""
-    async with dial(gateway.target) as channel:
+    async with dial(gateway.target, channel_credentials=gateway.channel_credentials()) as channel:
         yield SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=10)
 
 

@@ -79,6 +79,10 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 - Runner control always uses the runner as an mTLS server and the Runner Gateway as its client. The
   controller exposes no transport choice on a `SandboxTemplate` and labels workloads only with the
   fresh credential ID used to bind each incarnation to its certificate.
+  The controller's own Gateway calls retain their projected bearer and verify the shared service's
+  SVID with `runner_gateway_tls`. Its scalar environment fields are
+  `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__CA_FILE` and
+  `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__SERVER_URI`; a partial TLS configuration is refused.
 - Before starting a new workload, the controller creates a cert-manager `Certificate` named
   `runner-<credential-id>` and waits for its generated TLS Secret. The leaf URI SAN is exactly
   `spiffe://agentplane/environment-runtime/<namespace>/<Sandbox UID>/<credential-id>` and has
@@ -95,9 +99,8 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   when the template includes it, the `egress-sidecar` container. Runtime-only custom templates remain
   valid. The workload and executor containers receive no mount. The sidecar uses those files when
   `proxy.transport` selects TLS with `auth.mode: spiffe`; a handshake or certificate failure ends the
-  request. It may also send a separately projected workload-audience token as destination context for
-  an egress credential; that token is reviewed against the live Sandbox Pod and never authenticates
-  an SVID hop.
+  request. It sends the Kubernetes-audience token as destination context, reviewed against the live
+  Sandbox Pod; that token never authenticates an SVID hop.
 - A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
   first VMI UID is persisted on its VM and in the Sandbox's status. If KubeVirt unexpectedly replaces a VMI while
   the VM still carries the old identity, the controller halts that replacement, rotates to a new

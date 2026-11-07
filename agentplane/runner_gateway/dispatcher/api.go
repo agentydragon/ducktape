@@ -199,9 +199,8 @@ func sendWatchDispatch(
 	}
 }
 
-// Methods admits callers to every SessionDispatcher RPC.
-func Methods(resolver *auth.Resolver) auth.Methods {
-	rule := auth.ReviewedServiceAccount(resolver)
+// Methods applies the caller's explicit authorization rule to every SessionDispatcher RPC.
+func Methods(rule auth.Rule) auth.Methods {
 	return auth.Methods{
 		dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_ChangeModel_FullMethodName:           rule,
@@ -224,7 +223,7 @@ func MethodsWithDelegation(
 	serviceAccounts auth.ServiceAccountUIDReader,
 	delegatedMethods []string,
 ) (auth.Methods, error) {
-	methods, err := Methods(resolver).WithDelegation(
+	methods, err := Methods(auth.ReviewedServiceAccount(resolver)).WithDelegation(
 		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts,
 	)
 	if err != nil {

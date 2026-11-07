@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -39,15 +40,17 @@ from agentplane.action_service.orchestration_v1.binding import (
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
+from agentplane.environment_runtime_transport.config import ACTIONS_URI, HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth import listener
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, notifications
+from cluster.cdk8s.agentplane import database, notifications, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import grpc_probe
+from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.secret_ref import SecretRef
@@ -317,9 +320,6 @@ class Actions(Construct):
 
         props = env.actions
         content: dict[str, Any] = {
-            "host": "0.0.0.0",
-            "port": self.service.pod_port,
-            "token_audience": WORKLOAD_TOKEN_AUDIENCE,
             "operator_oidc": props.operator_oidc,
             "policy_namespace": env.namespace,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
@@ -341,11 +341,13 @@ class Actions(Construct):
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
                 token_file=f"{_PEER_TOKEN_DIR}/dispatcher",
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
+                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             )
             content["history_service"] = ServicePeer(
                 target=f"{history.fqdn}:{history.pod_port}",
                 token_file=f"{_PEER_TOKEN_DIR}/history",
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
+                tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
             )
         if props.session_delegation is not None:
             groups.update(_session_delegation_groups(props.session_delegation))
@@ -353,21 +355,39 @@ class Actions(Construct):
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
                 token_file=f"{_PEER_TOKEN_DIR}/dispatcher",
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
+                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             )
             content["session_delegation_history"] = ServicePeer(
                 target=f"{history.fqdn}:{history.pod_port}",
                 token_file=f"{_PEER_TOKEN_DIR}/history",
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
+                tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
             )
         content["action_groups"] = groups
+        settings_name = "actions-settings"
+        workload = self._add_workload(settings_name)
+        serving_tls = workload_tls.serving_certificate(
+            self, env, container=workload.container, name=NAME, uri=ACTIONS_URI
+        )
+        assert serving_tls.cert_file is not None
+        assert serving_tls.key_file is not None
+        assert serving_tls.ca_file is not None
+        content["rpc"] = listener.Listener(
+            listen_address=f"0.0.0.0:{self.service.pod_port}",
+            tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+            auth=[
+                listener.KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
+                listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
+            ],
+        )
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name="actions-settings", namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
             content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-actions/settings.yaml",
         )
-        workload = self._add_workload(settings)
+        settings.mount_into(workload.container, env=Settings.config_file_env)
         self._add_rbac(workload.account)
         if props.orchestration_v1 is not None:
             add_launcher_admission(self, env.namespace)
@@ -414,9 +434,8 @@ class Actions(Construct):
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
-        # TokenReview proves the Pod-bound workload bearer the central egress proxy
-        # forwards, and the session-bound bearer the app forwards for its BFF/operator
-        # adapter. Creating a review grants none of the reviewed identity's authority.
+        # TokenReview authenticates backend ServiceAccount callers. Sandbox callers
+        # prove their SVID separately. A review grants none of the reviewed account's authority.
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
@@ -439,7 +458,10 @@ class Actions(Construct):
         }
         for caller_namespace in self.env.actions.caller_service_account_namespaces:
             rules_by_namespace.setdefault(caller_namespace, []).append(
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["list", "watch"])
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
+            )
+            rules_by_namespace[caller_namespace].append(
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"])
             )
 
         # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
@@ -528,12 +550,30 @@ class Actions(Construct):
             names.add(self.mcp_oauth.name)
         return sorted(names)
 
-    def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
+    def _add_workload(self, settings_name: str) -> ServiceWorkload:
         reload_secrets = self._reload_secrets()
-        readiness = grpc_probe(port=self.service.pod_port, initial_delay_seconds=3)
-        liveness = grpc_probe(port=self.service.pod_port, service="livez", initial_delay_seconds=20, period_seconds=30)
-        startup = grpc_probe(
-            port=self.service.pod_port, initial_delay_seconds=0, period_seconds=5, service="livez", failure_threshold=60
+        readiness = tls_grpc_probe(
+            port=self.service.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=ACTIONS_URI,
+            initial_delay_seconds=3,
+        )
+        liveness = tls_grpc_probe(
+            port=self.service.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=ACTIONS_URI,
+            service="livez",
+            initial_delay_seconds=20,
+            period_seconds=30,
+        )
+        startup = tls_grpc_probe(
+            port=self.service.pod_port,
+            ca_file=workload_tls.TRUST_BUNDLE_FILE,
+            server_uri=ACTIONS_URI,
+            initial_delay_seconds=0,
+            period_seconds=5,
+            service="livez",
+            failure_threshold=60,
         )
         workload = add_service_workload(
             self,
@@ -560,7 +600,7 @@ class Actions(Construct):
                 **({"secret.reloader.stakater.com/reload": ",".join(reload_secrets)} if reload_secrets else {}),
                 # No configMapGenerator hash rolls the Deployment on settings changes
                 # (cluster/docs/cdk8s.md); reloader does.
-                "configmap.reloader.stakater.com/reload": settings.config_map.name,
+                "configmap.reloader.stakater.com/reload": settings_name,
             },
         )
         container = workload.container
@@ -575,7 +615,6 @@ class Actions(Construct):
                 items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
             )
             container.mount(MCP_OAUTH_DIR, oauth_volume, read_only=True)
-        settings.mount_into(container, env=Settings.config_file_env)
         if self.env.actions.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(
                 self, "github-mcp-client-secret", self.env.actions.github_mcp_client_secret_name

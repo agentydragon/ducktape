@@ -29,7 +29,11 @@ func newSessionTestRuntimeWithState(t *testing.T, config runtimeTestConfig, reso
 		config.deps.runIngress = func(ctx context.Context, endpoint configuration.Endpoint) error {
 			select {
 			case <-cleanupDelivery:
-				return r.ingressSupervisor(endpoint, r.fail).Run(ctx)
+				supervisor, err := r.ingressSupervisor(endpoint, r.fail)
+				if err != nil {
+					return err
+				}
+				return supervisor.Run(ctx)
 			case <-ctx.Done():
 				return nil
 			}

@@ -1,10 +1,8 @@
-"""The Pod shape every agentplane box shares: the egress sidecar that relays a box's
-traffic to the central proxy, the tokens only it mounts, the interception CA over the system bundle
-and as Java's trust store, and the proxy environment that points a workload at the sidecar. The
-runner SandboxTemplates (environment_sandbox.py) and
-the sandbox Actions' box templates (command_sandbox.py) are both built from it, so both kinds of box sit
-behind the same egress path; only the command box also gets the system bazelrc that points Bazel at
-the trust store.
+"""Pod shapes for the runner and command boxes.
+
+Runner Pods use the egress sidecar, its projected destination tokens, and the proxy environment.
+Caller-owned command boxes use the shared pod hardening and trust mounts, but have no sidecar or
+proxy environment while their separate authentication design is unresolved.
 
 The recipe speaks core Pod types (`cdk8s_plus_34.k8s`); `render_pod_template` turns them into the
 Kubernetes JSON a template holds.
@@ -24,10 +22,8 @@ from agentplane.egress import sidecar_config
 from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.egress.platform_routes import PlatformRoutes
 from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import egress, notifications, session_dispatcher, telemetry
+from cluster.cdk8s.agentplane import egress, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
@@ -37,18 +33,11 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 # Mounted by the egress sidecar and no other container; every token under it is the Pod's own.
 _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
-EGRESS_TOKEN_FILE = Path(_EGRESS_TOKEN_DIR) / "token"
 # Audiences the central proxy may substitute this Pod's identity for, and the file each is projected
-# to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
-# neither can name a file the other does not project. Destination projections are independent
-# of hop authentication; the workload audience also supplies the legacy bearer hop.
-_SUBSTITUTABLE_AUDIENCE_FILES = {
-    WORKLOAD_TOKEN_AUDIENCE: "token",
-    KUBERNETES_AUDIENCE: "kubernetes-token",
-    notifications.TOKEN_AUDIENCE: "notifications-token",
-    session_dispatcher.TOKEN_AUDIENCE: "session-dispatcher-token",
-    RUNNER_INGRESS_AUDIENCE: "runner-ingress-token",
-}
+# to under `_EGRESS_TOKEN_DIR`. The volume and sidecar's mapping are both rendered from this, so
+# neither can name a file the other does not project. Platform service calls use SVID routes; the
+# only projected token retained by Sandbox Pods is the Kubernetes API token.
+_SUBSTITUTABLE_AUDIENCE_FILES = {KUBERNETES_AUDIENCE: "kubernetes-token"}
 SIDECAR_LISTEN_PORT = 3128
 # The sidecar's settings file: a ConfigMap per Pod template, mounted on the sidecar alone.
 SIDECAR_SETTINGS_VOLUME_NAME = "egress-sidecar-settings"
@@ -76,8 +65,6 @@ CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE",
 
 def audience_token_file(audience: str) -> str:
     """The sidecar-only file holding this Pod's projected token for `audience`."""
-    if audience == WORKLOAD_TOKEN_AUDIENCE:
-        return f"{_EGRESS_TOKEN_DIR}/token"
     return f"{_EGRESS_TOKEN_DIR}/{_SUBSTITUTABLE_AUDIENCE_FILES[audience]}"
 
 
@@ -86,8 +73,13 @@ def proxy_environment() -> list[k8s.EnvVar]:
     return [
         *(k8s.EnvVar(name=name, value=_MITM_PROXY_URL) for name in PROXY_VAR_NAMES),
         *(k8s.EnvVar(name=name, value=_NO_PROXY_HOSTS) for name in NO_PROXY_VAR_NAMES),
-        *(k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES),
+        *trust_environment(),
     ]
+
+
+def trust_environment() -> list[k8s.EnvVar]:
+    """System CA paths for workloads that need trust without the egress proxy."""
+    return [k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES]
 
 
 def workload_environment(env: Environment, existing: Sequence[k8s.EnvVar]) -> list[k8s.EnvVar]:
@@ -146,9 +138,8 @@ def bazelrc_mount() -> k8s.VolumeMount:
 def add_tool_config(scope: Construct, env: Environment) -> None:
     """Bazel's system rc, which Bazel in a command box reads before its workspace's own.
 
-    Bazel's JVM fetches through the proxy but trusts only its own store, which lacks the interception
-    root; and Bazel scrubs a test's environment, so the box's egress environment reaches a test only
-    when named here.
+    Bazel's JVM uses its own trust store, and Bazel scrubs a test's environment. Forward the
+    caller's proxy and trust variables when present; offline command boxes supply only trust.
     """
     passthrough = " ".join(f"--test_env={var.name}" for var in proxy_environment())
     tool_config_data = {
@@ -187,6 +178,7 @@ def add_sidecar_settings(
     name: str,
     platform_routes: PlatformRoutes,
     proxy_transport: sidecar_config.ProxyTransport,
+    workload_routes: Mapping[str, sidecar_config.WorkloadRoute] | None = None,
     listen_address: str | None = None,
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
@@ -200,6 +192,7 @@ def add_sidecar_settings(
             audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
         },
         platform_routes=platform_routes,
+        workload_routes=dict(workload_routes) if workload_routes is not None else {},
     )
     if listen_address is not None:
         settings.listen_address = listen_address
@@ -259,28 +252,28 @@ def _egress_volumes(env: Environment) -> list[k8s.Volume]:
     return [
         k8s.Volume(name=_EGRESS_CA_VOLUME_NAME, config_map=k8s.ConfigMapVolumeSource(name=env.egress.ca_secret_name)),
         k8s.Volume(name=_TOOL_CONFIG_VOLUME_NAME, config_map=k8s.ConfigMapVolumeSource(name=TOOL_CONFIG_MAP_NAME)),
-        # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar
-        # alone, so no token here is readable from the container an agent runs commands in.
-        # The first token remains temporarily for the old proxy's destination identity context and
-        # is mapped as an audience token in mTLS mode. It is never hop authentication there; each
-        # other token is for a destination's audience and may be substituted where policy names it.
-        # All are bound to this Pod and rotated by kubelet.
-        k8s.Volume(
-            name=EGRESS_TOKEN_VOLUME_NAME,
-            projected=k8s.ProjectedVolumeSource(
-                sources=[
-                    *(
-                        k8s.VolumeProjection(
-                            service_account_token=k8s.ServiceAccountTokenProjection(
-                                audience=audience, expiration_seconds=600, path=file
-                            )
-                        )
-                        for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
-                    )
-                ]
-            ),
-        ),
     ]
+
+
+def _egress_token_volume() -> k8s.Volume:
+    # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar alone.
+    # These tokens are for destination audiences only and may be substituted where policy names them.
+    # All are bound to this Pod and rotated by kubelet.
+    return k8s.Volume(
+        name=EGRESS_TOKEN_VOLUME_NAME,
+        projected=k8s.ProjectedVolumeSource(
+            sources=[
+                *(
+                    k8s.VolumeProjection(
+                        service_account_token=k8s.ServiceAccountTokenProjection(
+                            audience=audience, expiration_seconds=600, path=file
+                        )
+                    )
+                    for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
+                )
+            ]
+        ),
+    )
 
 
 def pod_spec(
@@ -288,7 +281,7 @@ def pod_spec(
     *,
     workload: k8s.Container,
     additional_workloads: Sequence[k8s.Container] = (),
-    sidecar_settings: SettingsFile,
+    sidecar_settings: SettingsFile | None,
     node_selector: Mapping[str, str] | None = None,
     workload_volumes: Sequence[k8s.Volume] = (),
     sidecar_resources: k8s.ResourceRequirements | None = None,
@@ -297,37 +290,53 @@ def pod_spec(
     disable_otel_sdk: bool = False,
     keep_sidecar_until_workload_exit: bool = False,
 ) -> k8s.PodSpec:
-    """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
-    projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
-    several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
+    """`workload` and additional workloads as uid 1000, with no automatically mounted ServiceAccount
+    token: when present, projected tokens are mounted by the egress sidecar alone, which keeps an
+    account shared by several boxes out of the container a command runs in
+    (agentplane/action_service/sandbox/README.md).
     A box names no account of its own: whoever creates one from this shape sets the identity it runs
     as (the Sandbox controller the Sandbox's own, the sandbox Actions the caller's).
     `additional_workloads` are other workload containers. `sidecar_settings` is the sidecar's
-    settings file (`add_sidecar_settings`), and `workload_volumes`
-    are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
+    settings file (`add_sidecar_settings`); `None` omits the sidecar, settings mount, and projected
+    tokens. `workload_volumes` are Pod volumes the workload mounts beyond the trust and tool-config
+    volumes. `node_selector` is the optional
     placement restriction for this template. `disable_otel_sdk` avoids a sidecar export attempt in a
     hermetic fixture with no collector. A Runner needs its local telemetry relay through its own
     tracing shutdown; `keep_sidecar_until_workload_exit` uses Kubernetes' native sidecar lifecycle."""
-    settings = sidecar_settings.pod_wiring(
-        volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
+    if keep_sidecar_until_workload_exit and sidecar_settings is None:
+        raise ValueError("sidecar settings are required when keeping the sidecar until workload exit")
+    settings = (
+        sidecar_settings.pod_wiring(
+            volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
+        )
+        if sidecar_settings is not None
+        else None
     )
-    sidecar = _egress_sidecar(
-        env,
-        settings,
-        sidecar_resources
-        or k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
-        ),
-        telemetry_enabled=enable_telemetry,
-        disable_otel_sdk=disable_otel_sdk,
-        restart_policy="Always" if keep_sidecar_until_workload_exit else None,
+    sidecar = (
+        _egress_sidecar(
+            env,
+            settings,
+            sidecar_resources
+            or k8s.ResourceRequirements(
+                requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
+                limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
+            ),
+            telemetry_enabled=enable_telemetry,
+            disable_otel_sdk=disable_otel_sdk,
+            restart_policy="Always" if keep_sidecar_until_workload_exit else None,
+        )
+        if settings is not None
+        else None
     )
     return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
-        containers=[workload, *additional_workloads, *([] if keep_sidecar_until_workload_exit else [sidecar])],
-        init_containers=[sidecar] if keep_sidecar_until_workload_exit else None,
+        containers=[
+            workload,
+            *additional_workloads,
+            *([sidecar] if sidecar is not None and not keep_sidecar_until_workload_exit else []),
+        ],
+        init_containers=[sidecar] if sidecar is not None and keep_sidecar_until_workload_exit else None,
         automount_service_account_token=False,
         # Container restarts create a fresh PID namespace for the isolated Codex executor.
         restart_policy="Always",
@@ -345,7 +354,12 @@ def pod_spec(
             fs_group=1000,
             seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
         ),
-        volumes=[*_egress_volumes(env), settings.volume, *workload_volumes],
+        volumes=[
+            *_egress_volumes(env),
+            *([_egress_token_volume()] if settings is not None else []),
+            *([settings.volume] if settings is not None else []),
+            *workload_volumes,
+        ],
     )
 
 

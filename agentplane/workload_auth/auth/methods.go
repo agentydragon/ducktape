@@ -22,6 +22,7 @@ const (
 	rulePublic
 	ruleAnyAccount
 	ruleAccounts
+	ruleSVIDOrAccounts
 	ruleReviewedServiceAccount
 )
 
@@ -55,6 +56,14 @@ func Accounts(resolver *Resolver, accounts []Account) Rule {
 		allowed[account] = struct{}{}
 	}
 	return Rule{kind: ruleAccounts, resolver: resolver, accounts: allowed}
+}
+
+// SVIDOrAccounts admits a verified Sandbox SVID, or a bearer for one of the
+// listed accounts. The resolver must be bound to the listener's allowed modes.
+func SVIDOrAccounts(resolver *Resolver, accounts []Account) Rule {
+	rule := Accounts(resolver, accounts)
+	rule.kind = ruleSVIDOrAccounts
+	return rule
 }
 
 // ReviewedServiceAccount admits any reviewed ServiceAccount in the Resolver's namespace policy.
@@ -179,34 +188,44 @@ func AdmittedReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
 // resolution; zero leaves it bounded by the call's own deadline.
 func (m Methods) ServerOptions(admissionTimeout time.Duration) []grpc.ServerOption {
 	return []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-			admitted, err := m.admit(ctx, info.FullMethod, admissionTimeout)
-			if err != nil {
-				return nil, err
-			}
-			return handler(admitted, request)
-		}),
-		grpc.ChainStreamInterceptor(func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-			admitted, err := m.admit(stream.Context(), info.FullMethod, admissionTimeout)
-			if err != nil {
-				return err
-			}
-			if original, err := Admitted(admitted); err == nil {
-				revalidate := func(ctx context.Context) error {
-					current, err := m.admit(ctx, info.FullMethod, admissionTimeout)
-					if err != nil {
-						return err
-					}
-					identity, err := Admitted(current)
-					if err != nil || !sameAdmission(original, identity) {
-						return status.Error(codes.Unauthenticated, "stream caller changed")
-					}
-					return nil
+		grpc.ChainUnaryInterceptor(m.UnaryInterceptor(admissionTimeout)),
+		grpc.ChainStreamInterceptor(m.StreamInterceptor(admissionTimeout)),
+	}
+}
+
+// UnaryInterceptor applies the same method admission to native and in-process RPCs.
+func (m Methods) UnaryInterceptor(admissionTimeout time.Duration) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		admitted, err := m.admit(ctx, info.FullMethod, admissionTimeout)
+		if err != nil {
+			return nil, err
+		}
+		return handler(admitted, request)
+	}
+}
+
+// StreamInterceptor admits streams and retains their caller revalidation boundary.
+func (m Methods) StreamInterceptor(admissionTimeout time.Duration) grpc.StreamServerInterceptor {
+	return func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		admitted, err := m.admit(stream.Context(), info.FullMethod, admissionTimeout)
+		if err != nil {
+			return err
+		}
+		if original, err := Admitted(admitted); err == nil {
+			revalidate := func(ctx context.Context) error {
+				current, err := m.admit(ctx, info.FullMethod, admissionTimeout)
+				if err != nil {
+					return err
 				}
-				admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
+				identity, err := Admitted(current)
+				if err != nil || !sameAdmission(original, identity) {
+					return status.Error(codes.Unauthenticated, "stream caller changed")
+				}
+				return nil
 			}
-			return handler(server, admittedStream{ServerStream: stream, ctx: admitted})
-		}),
+			admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
+		}
+		return handler(server, admittedStream{ServerStream: stream, ctx: admitted})
 	}
 }
 
@@ -220,7 +239,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return ctx, nil
-	case ruleAnyAccount, ruleAccounts, ruleReviewedServiceAccount:
+	case ruleAnyAccount, ruleAccounts, ruleSVIDOrAccounts, ruleReviewedServiceAccount:
 	default:
 		return nil, errMethodNotAllowed
 	}
@@ -240,11 +259,16 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 		if rule.delegation == nil {
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
+		if rule.resolver.usesSVID(resolveContext) {
+			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		}
 		return rule.delegation.admit(ctx, resolveContext, authorization, delegations)
 	}
 	var principal Principal
 	var err error
-	if rule.kind == ruleAccounts {
+	if rule.kind == ruleSVIDOrAccounts && rule.resolver.usesSVID(resolveContext) {
+		principal, err = rule.resolver.Resolve(resolveContext)
+	} else if rule.kind == ruleAccounts || rule.kind == ruleSVIDOrAccounts {
 		principal, err = rule.resolver.RequireAccount(resolveContext, rule.accounts)
 	} else if rule.kind == ruleReviewedServiceAccount {
 		var caller ReviewedCaller

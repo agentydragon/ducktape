@@ -142,6 +142,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     code_mode_host,
                     undeclared_outputs_dir(),
                     gateway_target=gateway.target,
+                    gateway_tls=gateway.client_tls,
                     gateway_token_file=sampler_token,
                     history_target=history.ingress_target,
                     history_token_file=history_token,
@@ -214,7 +215,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                                 pytest.fail("sampler stream ended before the turn completed")
                     finally:
                         stream.cancel()
-                    async with dial(gateway.target) as channel:
+                    async with dial(gateway.target, channel_credentials=gateway.channel_credentials()) as channel:
                         stream = executor_pb2_grpc.ExecutorStub(channel).OpenSession(
                             executor_pb2.OpenSessionRequest(
                                 scope=executor_pb2.ExecutionScope(

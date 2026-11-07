@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"google.golang.org/grpc"
@@ -15,6 +17,7 @@ import (
 
 // Config pins this client's service address and rotating projected bearer token.
 type Config struct {
+	TLS       *environment_runtime_transport.ClientTLS
 	Target    string
 	TokenFile string
 	Timeout   time.Duration
@@ -41,7 +44,7 @@ func New(config Config) (*Client, error) {
 }
 
 func (c *Client) dialLocked() error {
-	conn, err := bearer.Dial(c.config.Target, c.config.TokenFile, c.config.Timeout, nil)
+	conn, err := bearer.Dial(c.config.Target, c.config.TokenFile, c.config.Timeout, c.config.TLS)
 	if err != nil {
 		return err
 	}

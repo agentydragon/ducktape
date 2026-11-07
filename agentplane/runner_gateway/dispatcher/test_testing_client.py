@@ -12,6 +12,7 @@ from agentplane.grpc.serving import serving
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.testing.tls import issue_leaf, make_ca
 
 # The generated Dispatcher stubs' own pyi chain imports google.protobuf.
 # gazelle:include_dep @pypi//protobuf
@@ -126,6 +127,33 @@ async def test_native_submission_does_not_automatically_retry_an_unknown_outcome
             await client.submit_input("session", "same-command", "original", "original-uid", "original input")
     assert caught.value.code == grpc.StatusCode.UNAVAILABLE
     assert len(backend.requests) == 1
+
+
+async def test_native_client_verifies_tls_through_a_port_forward(tmp_path: Path) -> None:
+    ca = make_ca("test dispatcher CA")
+    certificate, key = issue_leaf(ca, "localhost", tmp_path)
+    backend = Dispatcher()
+    server = grpc.aio.server()
+    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(backend, server)
+    port = server.add_secure_port(
+        "127.0.0.1:0", grpc.ssl_server_credentials([(key.read_bytes(), certificate.read_bytes())])
+    )
+    token_file = tmp_path / "dispatcher-token"
+    token_file.write_text("test-service-token")
+    await server.start()
+    try:
+        async with SessionDispatcherClient.connect(
+            f"127.0.0.1:{port}",
+            token_file=token_file,
+            request_timeout_s=3,
+            channel_credentials=grpc.ssl_channel_credentials(root_certificates=ca.cert_pem),
+            server_name="localhost",
+        ) as client:
+            session = await client.get_session("test-session")
+        assert session.session_id == "test-session"
+        assert backend.bearers == ["Bearer test-service-token"]
+    finally:
+        await server.stop(grace=0)
 
 
 if __name__ == "__main__":

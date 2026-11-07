@@ -24,7 +24,7 @@ func TestAuthenticationDecodeHookKeepsVariantsClosed(t *testing.T) {
 
 	for name, data := range map[string]map[string]any{
 		"SPIFFE":            {"mode": "spiffe", "ca_file": "/roots.pem"},
-		"Kubernetes bearer": {"mode": "kubernetes_bearer", "audience": "hop"},
+		"Kubernetes bearer": {"mode": "kubernetes_bearer", "audiences": []string{"hop", "backend"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			decoded, err := AuthenticationDecodeHook(reflect.TypeOf(data), target, data)
@@ -40,8 +40,8 @@ func TestAuthenticationDecodeHookKeepsVariantsClosed(t *testing.T) {
 
 func TestSelectionIsAnAllowlistNotFallbackOrder(t *testing.T) {
 	for _, methods := range [][]Authentication{
-		{&SPIFFEAuth{CAFile: "/roots.pem"}, &KubernetesBearerAuth{Audience: "test-audience"}},
-		{&KubernetesBearerAuth{Audience: "test-audience"}, &SPIFFEAuth{CAFile: "/roots.pem"}},
+		{&SPIFFEAuth{CAFile: "/roots.pem"}, &KubernetesBearerAuth{Audiences: []string{"test-audience"}}},
+		{&KubernetesBearerAuth{Audiences: []string{"test-audience"}}, &SPIFFEAuth{CAFile: "/roots.pem"}},
 	} {
 		config := Config{ListenAddress: ":443", TLS: &TLS{CertFile: "/cert.pem", KeyFile: "/key.pem"}, Auth: methods}
 		if err := config.Validate(); err != nil {
@@ -65,7 +65,7 @@ func TestSelectionIsAnAllowlistNotFallbackOrder(t *testing.T) {
 	for _, mode := range []Mode{SPIFFE, KubernetesBearer} {
 		var method Authentication = &SPIFFEAuth{CAFile: "/roots.pem"}
 		if mode == KubernetesBearer {
-			method = &KubernetesBearerAuth{Audience: "test-audience"}
+			method = &KubernetesBearerAuth{Audiences: []string{"test-audience"}}
 		}
 		config := Config{Auth: []Authentication{method}}
 		if _, err := config.Select(mode != SPIFFE, mode == SPIFFE); err == nil {
@@ -79,11 +79,11 @@ func TestInvalidAuthenticationConfigurationIsRefused(t *testing.T) {
 		"empty":                   {},
 		"no auth":                 {ListenAddress: ":443"},
 		"nil auth variant":        {ListenAddress: ":443", Auth: []Authentication{(*SPIFFEAuth)(nil)}},
-		"duplicate":               {ListenAddress: ":443", Auth: []Authentication{&KubernetesBearerAuth{Audience: "a"}, &KubernetesBearerAuth{Audience: "b"}}},
+		"duplicate":               {ListenAddress: ":443", Auth: []Authentication{&KubernetesBearerAuth{Audiences: []string{"a"}}, &KubernetesBearerAuth{Audiences: []string{"b"}}}},
 		"bearer without audience": {ListenAddress: ":443", Auth: []Authentication{&KubernetesBearerAuth{}}},
 		"spiffe without tls":      {ListenAddress: ":443", Auth: []Authentication{&SPIFFEAuth{CAFile: "/roots"}}},
 		"spiffe relative roots":   {ListenAddress: ":443", TLS: &TLS{CertFile: "/cert", KeyFile: "/key"}, Auth: []Authentication{&SPIFFEAuth{CAFile: "roots"}}},
-		"relative serving key":    {ListenAddress: ":443", TLS: &TLS{CertFile: "/cert", KeyFile: "key"}, Auth: []Authentication{&KubernetesBearerAuth{Audience: "a"}}},
+		"relative serving key":    {ListenAddress: ":443", TLS: &TLS{CertFile: "/cert", KeyFile: "key"}, Auth: []Authentication{&KubernetesBearerAuth{Audiences: []string{"a"}}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := config.Validate(); err == nil {

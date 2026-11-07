@@ -10,8 +10,10 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.environment_runtime_transport.config import SESSION_DISPATCHER_URI
 from agentplane.sandbox_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s.agentplane import workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -70,6 +72,7 @@ class SandboxController(Construct):
         namespace = env.namespace
         endpoint = metrics(namespace)
         settings = Settings(
+            runner_gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             namespace=namespace,
             metrics_bind_address=f":{endpoint.port.number}",
             health_probe_bind_address=f":{_HEALTH_PORT}",
@@ -103,6 +106,7 @@ class SandboxController(Construct):
             registry_secret_name=registry_secret_name,
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
+        workload_tls.mount_trust_bundle(self, workload.container)
         workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": gateway_audience})
         role_name = NAME.removeprefix("agentplane-")
         Role(

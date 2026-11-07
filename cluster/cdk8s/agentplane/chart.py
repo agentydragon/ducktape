@@ -169,12 +169,18 @@ def environment_chart(
         chart,
         "egress",
         env,
-        enable_svid_auth=env.runner_egress_mtls,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[app_account],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
+        tls_passthrough_services=[
+            history_service.service(env.namespace),
+            llm_ingress.service(env.namespace),
+            notifications.service(env.namespace),
+            runner_gateway.service(env.namespace),
+            actions.service(env.namespace),
+        ],
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {app_account: app_component.service(env.namespace).pods}

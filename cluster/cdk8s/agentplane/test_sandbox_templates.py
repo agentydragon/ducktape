@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from typing import Any, cast
-from urllib.parse import urlsplit
 
 import pytest
 import pytest_bazel
@@ -17,7 +16,8 @@ from more_itertools import one
 from agentplane.crd_group import GROUP
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
-from cluster.cdk8s.agentplane import platform_routes, sandbox_pod, staging
+from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
+from cluster.cdk8s.agentplane import llm_ingress, platform_routes, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
 
@@ -35,13 +35,6 @@ def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> di
     volume = one(volume for volume in pod["volumes"] if volume["name"] == "environment-runtime-config")
     config_map = _by_name(docs, "ConfigMap", volume["configMap"]["name"])
     return cast(dict[str, Any], json.loads(config_map["data"]["environment-runtime.json"]))
-
-
-def _host_port(address: str) -> tuple[str, int]:
-    parsed = urlsplit(address if "://" in address else f"//{address}")
-    assert parsed.hostname is not None
-    assert parsed.port is not None
-    return parsed.hostname, parsed.port
 
 
 def _runner_pod(
@@ -323,70 +316,27 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     launcher_settings = settings("launcher-relay-egress-sidecar")
     assert runner_settings["listen_address"] == "127.0.0.1:3128"
     assert launcher_settings["listen_address"] == "0.0.0.0:3128"
-    proxy = runner_settings["proxy"]
-    assert proxy["transport"]["mode"] == "plaintext"
-    auth = proxy["transport"]["auth"]
-    assert auth["mode"] == "kubernetes_bearer"
-    template = _by_name(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
-    pod = template["spec"]["pod"]["spec"]
-    sidecar = one(container for container in pod["initContainers"] if container["name"] == "egress-sidecar")
-    token_mount = one(
-        mount for mount in sidecar["volumeMounts"] if mount["name"] == sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
-    )
-    token_volume = one(volume for volume in pod["volumes"] if volume["name"] == sandbox_pod.EGRESS_TOKEN_VOLUME_NAME)
-    hop_token = one(
-        source["serviceAccountToken"]
-        for source in token_volume["projected"]["sources"]
-        if source["serviceAccountToken"]["path"] == "token"
-    )
-    assert auth["token_file"] == f"{token_mount['mountPath']}/{hop_token['path']}"
-
+    assert runner_settings["proxy"]["transport"]["mode"] == "tls"
+    assert runner_settings["proxy"]["transport"]["auth"]["mode"] == "spiffe"
     runner_routes = runner_settings["platform_routes"]
     launcher_routes = launcher_settings["platform_routes"]
-    runner_listener = ("127.0.0.1", PLATFORM_ROUTES_PORT)
-    assert runner_routes["listen_address"] == f"{runner_listener[0]}:{runner_listener[1]}"
+    assert runner_routes["listen_address"] == f"127.0.0.1:{PLATFORM_ROUTES_PORT}"
     assert launcher_routes["listen_address"] == f"0.0.0.0:{PLATFORM_ROUTES_PORT}"
-    routes = runner_routes["routes"]
-    ingress_route = routes["ingress"]
-    assert ingress_route["service_prefixes"] == ["/agentplane.history_service.SessionJournalIngress/"]
-    assert ingress_route["upstream"] == "history-service.agentplane-staging.svc.cluster.local:8081"
-    assert ingress_route["transport"] == {
-        "mode": "plaintext",
-        "token_file": f"{token_mount['mountPath']}/runner-ingress-token",
-    }
-    rules_route = routes["egress-rules"]
-    assert rules_route["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
-    assert rules_route["transport"] == {"mode": "plaintext", "token_file": auth["token_file"]}
-    assert rules_route["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
-
+    for route in platform_routes.routes(staging.ENV.namespace):
+        rendered = runner_routes["routes"][route.name]
+        assert rendered["service_prefixes"] == list(route.service_prefixes)
+        assert rendered["upstream"] == f"{route.service.fqdn}:{route.service.pod_port}"
+        assert rendered["transport"] == route.transport.model_dump(mode="json", exclude_none=True)
+    template = _by_name(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
+    pod = template["spec"]["pod"]["spec"]
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     env = {entry["name"]: entry.get("value") for entry in runner["env"]}
-    assert _host_port(env["AGENTPLANE_EGRESS_GRPC_URL"]) == runner_listener
-    assert env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
-    model_config_route = routes["model-config"]
-    assert model_config_route["service_prefixes"] == ["/agentplane.llm_ingress.v1.ModelConfigService/"]
-    assert model_config_route["upstream"] == "llm-ingress.agentplane-staging.svc.cluster.local:8081"
-    assert model_config_route["transport"] == {"mode": "plaintext", "token_file": f"{token_mount['mountPath']}/token"}
-    notifications_route = routes["notifications"]
-    assert notifications_route["service_prefixes"] == ["/agentplane.notification_service.Notifications/"]
-    assert notifications_route["upstream"] == "notifications.agentplane-staging.svc.cluster.local:8080"
-    assert notifications_route["transport"] == {
-        "mode": "plaintext",
-        "token_file": f"{token_mount['mountPath']}/notifications-token",
-    }
-    assert _host_port(env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == runner_listener
-    assert env["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
-    runner_configuration = _runner_configuration(staging_manifests, pod)
-    assert _host_port(runner_configuration["model_config_target"]) == runner_listener
-    assert "model_config_service" not in runner_configuration
-    assert _host_port(env["OTEL_EXPORTER_OTLP_ENDPOINT"]) == runner_listener
-    assert routes["telemetry"]["service_prefixes"] == [
-        "/opentelemetry.proto.collector.trace.v1.TraceService/",
-        "/opentelemetry.proto.collector.metrics.v1.MetricsService/",
-        "/opentelemetry.proto.collector.logs.v1.LogsService/",
-    ]
-    assert routes["telemetry"]["transport"] == {"mode": "plaintext"}
-    assert launcher_routes["routes"] == runner_routes["routes"]
+    assert env["AGENTPLANE_EGRESS_GRPC_URL"] == f"http://127.0.0.1:{PLATFORM_ROUTES_PORT}"
+    assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in env
+    assert "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL" not in env
+    assert env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"] == f"http://127.0.0.1:{PLATFORM_ROUTES_PORT}"
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == f"http://127.0.0.1:{PLATFORM_ROUTES_PORT}"
+    assert _runner_configuration(staging_manifests, pod)["model_config_target"] == f"127.0.0.1:{PLATFORM_ROUTES_PORT}"
     launcher_routes["listen_address"] = runner_routes["listen_address"]
     launcher_settings["listen_address"] = runner_settings["listen_address"]
     assert launcher_settings == runner_settings
@@ -397,51 +347,16 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     assert {"name": "egress-sidecar-settings", "configMap": {"name": "launcher-relay-egress-sidecar"}} in volumes
 
 
-def test_runner_egress_mtls_uses_tls_connect_only_for_rules(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "runner-mtls-template-test")
-    EnvironmentSandboxTemplate(
-        chart,
-        "runner-template",
-        replace(staging.ENV, runner_egress_mtls=True),
-        name="runner-mtls-template",
-        image="example.invalid/runner",
-    )
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
-    pod = template["spec"]["pod"]["spec"]
+def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
-    settings_map = _by_name(docs, "ConfigMap", settings_volume["configMap"]["name"])
-    settings = cast(dict[str, Any], yaml.safe_load(settings_map["data"]["settings.yaml"]))
-
-    proxy_transport = settings["proxy"]["transport"]
-    assert proxy_transport == {
-        "mode": "tls",
-        "ca_file": "/run/agentplane/environment-runtime-tls/ca.crt",
-        "auth": {
-            "mode": "spiffe",
-            "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
-            "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
-        },
-    }
-    route_settings = settings["platform_routes"]
-    assert route_settings["listen_address"] == f"127.0.0.1:{PLATFORM_ROUTES_PORT}"
-    routes = route_settings["routes"]
-    assert routes["ingress"]["transport"]["mode"] == "plaintext"
-    assert routes["notifications"]["transport"]["mode"] == "plaintext"
-    assert routes["model-config"]["transport"]["mode"] == "plaintext"
-    assert routes["telemetry"]["transport"] == {"mode": "plaintext"}
-    assert routes["egress-rules"]["transport"] == {
-        "mode": "tls_connect",
-        "server_uri": platform_routes.EGRESS_PROXY_URI,
-    }
-    assert routes["egress-rules"]["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
-    assert routes["egress-rules"]["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
-    runtime = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
-    runtime_env = {entry["name"]: entry.get("value") for entry in runtime["env"]}
-    assert runtime_env["AGENTPLANE_EGRESS_GRPC_URL"] == f"http://127.0.0.1:{PLATFORM_ROUTES_PORT}"
-    assert runtime_env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
-    sidecar = one(container for container in pod["initContainers"] if container["name"] == "egress-sidecar")
-    assert all(mount["name"] != "buildbuddy-api-key" for mount in sidecar["volumeMounts"])
+    settings_doc = _by_name(staging_manifests, "ConfigMap", settings_volume["configMap"]["name"])
+    settings = cast(dict[str, Any], yaml.safe_load(settings_doc["data"]["settings.yaml"]))
+    origin = llm_ingress.service(staging.ENV.namespace)
+    destination = llm_ingress.service(staging.ENV.namespace)
+    route = settings["workload_routes"][f"{origin.fqdn}:{origin.port.number}"]
+    assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+    assert route["server_uri"] == LLM_INGRESS_URI
 
 
 def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifests: list[dict[str, Any]]) -> None:

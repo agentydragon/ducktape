@@ -8,6 +8,8 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.environment_runtime_transport.config import ClientTLS
+
 DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = 30
 MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = (2**63 - 1) // 1_000_000_000
 
@@ -46,10 +48,17 @@ class AuthConfig(BaseModel):
 
 
 class ConnectionConfig(BaseModel):
+    tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid")
 
     base_url: str
     auth: AuthConfig
+
+    @model_validator(mode="after")
+    def tls_requires_https(self) -> Self:
+        if self.tls is not None and urlsplit(self.base_url).scheme != "https":
+            raise ValueError("connection tls requires an https base_url")
+        return self
 
     @field_validator("base_url")
     @classmethod
@@ -184,6 +193,8 @@ class ModelConfig(BaseModel):
 
 
 class Settings(BaseModel):
+    history_tls: ClientTLS | None = None
+    gateway_tls: ClientTLS | None = None
     config_file_env: ClassVar[str] = "AGENTPLANE_CENTRAL_SAMPLER_CONFIG"
     model_config = SettingsConfigDict(extra="forbid", env_prefix="AGENTPLANE_CENTRAL_SAMPLER_")
 

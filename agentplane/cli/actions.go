@@ -22,7 +22,7 @@ import (
 // own budget because the deadline may be what lost the response.
 const recoveryTimeout = 10 * time.Second
 
-const actionsHelp = `Live commands call the generated ActionService client (AGENTPLANE_ACTIONS_URL, AGENTPLANE_ACTIONS_CREDENTIAL).
+const actionsHelp = `Live commands call the generated ActionService client (AGENTPLANE_ACTIONS_URL; optional AGENTPLANE_ACTIONS_CREDENTIAL bearer).
 
 Read bundled Action workflow guidance with guide [NAME]; it makes no service call. Omit NAME for the
 index, or choose session_delegation, action_lifecycle, recovery, or kubernetes.
@@ -154,7 +154,7 @@ func (a *app) policyCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "policy",
 		Short: "Show this account's Action auto-approval policy",
-		Long:  "Calls ActionService.GetActionPolicy for the ServiceAccount the credential proves.",
+		Long:  "Calls ActionService.GetActionPolicy for the authenticated caller's ServiceAccount.",
 		Args:  cobra.NoArgs,
 		RunE: a.actionCommand(func(ctx context.Context, client action_servicepb.ActionServiceClient, _ []string) error {
 			response, err := client.GetActionPolicy(ctx, &action_servicepb.GetActionPolicyRequest{})

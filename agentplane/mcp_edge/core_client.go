@@ -8,12 +8,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	uniqueauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -238,11 +239,15 @@ func (s *checkedStream) CloseSend() error {
 	return err
 }
 
-func dialActions(target string, caller *coreCaller) (*grpc.ClientConn, error) {
+func dialActions(target string, caller *coreCaller, tls *environment_runtime_transport.ClientTLS) (*grpc.ClientConn, error) {
+	credentials, err := tls.Credentials()
+	if err != nil {
+		return nil, err
+	}
 	return grpc.NewClient(
 		target,
 		observability.GRPCClientOption(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(credentials),
 		grpc.WithUnaryInterceptor(caller.unary), grpc.WithStreamInterceptor(caller.stream), grpc.WithDisableRetry(),
 	)
 }

@@ -33,7 +33,7 @@ func (r *GatewayRunnerProxy) withClient(ctx context.Context, sandbox *environmen
 	}
 	target := environmentruntimeclient.ExpandTarget(r.config.TargetTemplate, targetHandle.GetName(), targetHandle.GetNamespace())
 	err := environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
-		Target: target, TokenFile: r.config.TokenFile, Timeout: r.config.Timeout,
+		Target: target, TokenFile: r.config.TokenFile, TLS: r.config.TLS, Timeout: r.config.Timeout,
 		SandboxName: targetHandle.GetName(), SandboxUID: targetHandle.GetUid(), SandboxNamespace: targetHandle.GetNamespace(),
 		ReplaceOutgoingMetadata: true,
 	}, call)

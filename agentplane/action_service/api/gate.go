@@ -9,7 +9,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -40,7 +42,9 @@ const (
 type GateOptions struct {
 	// Workloads reviews a workload's bearer; it admits only the namespaces whose ServiceAccounts may call.
 	Workloads *auth.Resolver
-	Callers   Callers
+	// SVID resolves verified workload certificates on the shared TLS listener; operator tokens still use OIDC.
+	SVID    *auth.SVIDResolver
+	Callers Callers
 	// ReaderAccounts read every account's requests, labeled or not, and change none.
 	ReaderAccounts []auth.Account
 	// Operators verifies an operator's token; nil admits no operator.
@@ -52,6 +56,7 @@ type GateOptions struct {
 // names its failure.
 type Gate struct {
 	workloads *auth.Resolver
+	svid      *auth.SVIDResolver
 	callers   Callers
 	readers   map[auth.Account]struct{}
 	operators *OperatorVerifier
@@ -67,7 +72,7 @@ func NewGate(options GateOptions) *Gate {
 	}
 	draining, drain := context.WithCancel(context.Background())
 	return &Gate{
-		workloads: options.Workloads, callers: options.Callers, readers: readers, operators: options.Operators,
+		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: readers, operators: options.Operators,
 		draining: draining, drain: drain,
 	}
 }
@@ -99,6 +104,17 @@ func bearer(ctx context.Context) (string, error) {
 // operator's, and only its issuer may accept it; any other token is a workload's, which the API server reviews.
 // Each path verifies the token in full, so the claim only picks the verifier.
 func (g *Gate) authenticate(ctx context.Context) (admission, error) {
+	if hasSVIDPeer(ctx) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 || g.svid == nil {
+			return admission{}, unauthenticated
+		}
+		principal, err := g.svid.Resolve(ctx)
+		if err != nil {
+			return admission{}, err
+		}
+		return g.workloadAccount(principal.Account, principal.ServiceAccountUID)
+	}
 	token, err := bearer(ctx)
 	if err != nil {
 		return admission{}, err
@@ -117,7 +133,12 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	if identityAccount == nil || identityAccount.GetNamespace() == "" || identityAccount.GetName() == "" || workload.GetUid() == "" {
 		return admission{}, unauthenticated
 	}
-	accountRef := auth.Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}
+	return g.workloadAccount(auth.Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}, workload.GetUid())
+}
+
+// workloadAccount retains the existing caller-label and reader authorization for
+// both authentication boundaries, including canonical ServiceAccount ownership.
+func (g *Gate) workloadAccount(accountRef auth.Account, uid string) (admission, error) {
 	account := store.ServiceAccount{Namespace: accountRef.Namespace, Name: accountRef.Name}
 	if _, reader := g.readers[accountRef]; reader {
 		return admission{principal: store.ServiceReaderPrincipal{Account: account}}, nil
@@ -126,7 +147,7 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 		return admission{}, unauthenticated
 	}
 	return admission{principal: store.CallerPrincipal{
-		Account: account, ServiceAccountUID: workload.GetUid(),
+		Account: account, ServiceAccountUID: uid,
 	}}, nil
 }
 
@@ -155,6 +176,10 @@ func (g *Gate) Recheck(ctx context.Context) error {
 // authenticateOperator resolves the bearer of a call only an operator may make: a workload's token is not
 // reviewed.
 func (g *Gate) authenticateOperator(ctx context.Context) (admission, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	if hasSVIDPeer(ctx) || len(md.Get(auth.DelegationMetadataKey)) > 0 {
+		return admission{}, unauthenticated
+	}
 	token, err := bearer(ctx)
 	if err != nil {
 		return admission{}, err
@@ -163,6 +188,28 @@ func (g *Gate) authenticateOperator(ctx context.Context) (admission, error) {
 		return admission{}, unauthenticated
 	}
 	return g.operator(ctx, token)
+}
+
+func hasSVIDPeer(ctx context.Context) bool {
+	remote, ok := peer.FromContext(ctx)
+	if !ok {
+		return false
+	}
+	info, ok := remote.AuthInfo.(credentials.TLSInfo)
+	return ok && len(info.State.PeerCertificates) > 0
+}
+
+// rejectMixedCredentials applies to public and protected methods alike: a client certificate cannot be paired with
+// a bearer or delegated actor to select a different authorization path.
+func rejectMixedCredentials(ctx context.Context) error {
+	if !hasSVIDPeer(ctx) {
+		return nil
+	}
+	md, _ := metadata.FromIncomingContext(ctx)
+	if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 {
+		return unauthenticated
+	}
+	return nil
 }
 
 func (g *Gate) operator(ctx context.Context, token string) (admission, error) {
@@ -200,6 +247,9 @@ func (g *Gate) admit(ctx context.Context, authenticate func(context.Context) (ad
 
 // UnaryInterceptor admits a unary call and answers its failure.
 func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	if err := rejectMixedCredentials(ctx); err != nil {
+		return nil, err
+	}
 	authenticate := g.authenticator(info.FullMethod)
 	if authenticate == nil {
 		return handler(ctx, request)
@@ -217,6 +267,9 @@ func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 
 // StreamInterceptor admits a streaming call and answers its failure.
 func (g *Gate) StreamInterceptor(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if err := rejectMixedCredentials(stream.Context()); err != nil {
+		return err
+	}
 	authenticate := g.authenticator(info.FullMethod)
 	if authenticate == nil {
 		return handler(server, stream)

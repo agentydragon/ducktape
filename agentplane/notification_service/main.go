@@ -18,9 +18,11 @@ import (
 	"time"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
@@ -40,6 +42,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -107,7 +110,7 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	grpcListener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	grpcListener, err := netlistener.Open(c.RPC.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("gRPC listener: %w", err)
 	}
@@ -137,10 +140,21 @@ func newRoutes(webhookHandler http.Handler) http.Handler {
 	return routes
 }
 
-// serve answers until ctx ends or a worker or a listener fails: the servicers on grpcListener and the signed GitHub
-// webhook on httpListener.
+// serve answers until ctx ends or a worker or a listener fails: the gRPC servicers and signed webhook.
 func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
 	resolver, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
+	if err != nil {
+		return err
+	}
+	var workloadSVIDs *auth.SVIDResolver
+	if c.RPC.Has(listener.SPIFFE) {
+		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace})
+		if err != nil {
+			return err
+		}
+		workloadSVIDs = svid
+	}
+	resolver, err = resolver.WithListenerAuthentication(c.RPC, workloadSVIDs)
 	if err != nil {
 		return err
 	}
@@ -159,13 +173,13 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 	defer hub.Close()
 	// Neither connection dials until its first call, so a peer that is down does not stop the service starting.
-	historyConnection, err := bearer.Dial(c.HistoryService.Target, c.HistoryService.TokenFile, seconds(c.HistoryService.RequestTimeoutSeconds), nil,
+	historyConnection, err := bearer.Dial(c.HistoryService.Target, c.HistoryService.TokenFile, seconds(c.HistoryService.RequestTimeoutSeconds), c.HistoryService.TLS,
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(historyReceiveBytes)))
 	if err != nil {
 		return err
 	}
 	defer historyConnection.Close()
-	dispatcherConnection, err := bearer.Dial(c.SessionDispatcher.Target, c.SessionDispatcher.TokenFile, seconds(c.SessionDispatcher.RequestTimeoutSeconds), nil)
+	dispatcherConnection, err := bearer.Dial(c.SessionDispatcher.Target, c.SessionDispatcher.TokenFile, seconds(c.SessionDispatcher.RequestTimeoutSeconds), c.SessionDispatcher.TLS)
 	if err != nil {
 		return err
 	}
@@ -175,11 +189,11 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		return err
 	}
 	var actionDialOptions []grpc.DialOption
-	if actionEndpoint.tlsServerName != "" {
+	if actionEndpoint.tlsServerName != "" && c.Actions.TLS == nil {
 		actionDialOptions = append(actionDialOptions,
 			grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, actionEndpoint.tlsServerName)))
 	}
-	actionsConnection, err := bearer.Dial(actionEndpoint.target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds), nil, actionDialOptions...)
+	actionsConnection, err := bearer.Dial(actionEndpoint.target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds), c.Actions.TLS, actionDialOptions...)
 	if err != nil {
 		return err
 	}
@@ -219,10 +233,10 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 
 	options := api.Options{
-		Store: inboxes, Wakeups: hub, Resolver: resolver, Namespace: c.Namespace, Sandboxes: sandboxes,
+		Store: inboxes, Wakeups: hub, Namespace: c.Namespace, Sandboxes: sandboxes,
 		Runner: &api.ProxyRunner{
 			TokenFile: c.RunnerGateway.TokenFile, Timeout: seconds(c.RunnerGateway.RequestTimeoutSeconds),
-			TargetTemplate: c.RunnerGateway.ControlTarget,
+			TargetTemplate: c.RunnerGateway.ControlTarget, TLS: c.RunnerGateway.TLS,
 		},
 		// The Action Service source authorizes a subscription the same way it reads one.
 		Actions: actionsSource, GitHub: githubAPI, SendPolicy: sendPolicy, History: history,
@@ -235,8 +249,16 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	health := probes.New(db, hub)
 	methods := auth.HealthMethods()
 	// A watch carries no deadline of its own, so the request timeout bounds its admission.
-	maps.Copy(methods, api.Methods(options))
-	grpcServer := grpc.NewServer(append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())...)
+	maps.Copy(methods, api.Methods(options, resolver))
+	serverOptions := append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())
+	security, err := c.RPC.ServerCredentials(environment_runtime_transport.NotificationsURI)
+	if err != nil {
+		return err
+	}
+	if security != nil {
+		serverOptions = append(serverOptions, grpc.Creds(security))
+	}
+	grpcServer := grpc.NewServer(serverOptions...)
 	notifications := api.NewNotifications(options)
 	notificationspb.RegisterNotificationsServer(grpcServer, notifications)
 	healthpb.RegisterHealthServer(grpcServer, health)
@@ -259,7 +281,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		Dispatcher: dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		Actions:    actionsSource, GitHub: githubSource, Settings: c.Settings,
 	}
-	failed := make(chan error, workers+2)
+	failed := make(chan error, workers+3)
 	// The workers outlive the listeners, so a claim in progress is released before the database closes: the
 	// deferred cancel ends them, and the wait after it returns once they have released their claims.
 	workContext, stopWorkers := context.WithCancel(context.WithoutCancel(ctx))
@@ -281,7 +303,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	notifications.Drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
-	// Stop the webhook listener before the workload gRPC listener.
+	// Stop the webhook listener before draining workload and backend gRPC calls.
 	if err := server.Shutdown(stopped); err != nil {
 		server.Close()
 	}

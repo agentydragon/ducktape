@@ -29,11 +29,10 @@ func (r Request) isConnect() bool { return r.Method == http.MethodConnect }
 // WorkloadContext is credential material retained only after the proxy authenticated this
 // request or tunnel. Its tokens are never printed.
 type WorkloadContext struct {
-	Bearer string
 	Caller policyapi.ServiceAccountRef
 	PodUID string
 	// Projected maps an audience to the token the sidecar presented for it, each already reviewed as
-	// belonging to the same Pod as the hop bearer. An audience that did not review is absent rather
+	// belonging to the Sandbox's bound Pod. An audience that did not review is absent rather
 	// than present and unusable, so a rule naming it denies `credential-unavailable` at the point
 	// of use.
 	Projected map[string]string
@@ -195,8 +194,8 @@ func resolves(rule resources.Rule, presented map[string]presentation.Presentatio
 	return ok
 }
 
-// credentialValue is the real value of a credential. Both token sources are the caller's own
-// identity, so each is usable only while the context still belongs to the caller being decided; a
+// credentialValue is the real value of a credential. A projected token is the caller's own
+// identity, so it is usable only while the context still belongs to the caller being decided; a
 // Secret is the proxy's and needs no such binding.
 func (i *Index) credentialValue(
 	credential resources.Credential, caller policyapi.ServiceAccountRef, workload *WorkloadContext,
@@ -215,11 +214,6 @@ func (i *Index) credentialValue(
 		}
 		token, ok := workload.Projected[source.Audience]
 		return token, ok
-	case resources.AuthenticatedWorkloadToken:
-		if !bound {
-			return "", false
-		}
-		return workload.Bearer, workload.Bearer != ""
 	}
 	return "", false
 }

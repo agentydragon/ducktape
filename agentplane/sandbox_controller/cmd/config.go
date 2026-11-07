@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,12 +17,13 @@ const configFileEnv = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
 // config is the Sandbox Controller's deployment contract. Keep its YAML keys in sync with settings.py,
 // which renders the Deployment's required settings file.
 type config struct {
-	Namespace               string `yaml:"namespace"`
-	MetricsBindAddress      string `yaml:"metrics_bind_address"`
-	HealthProbeBindAddress  string `yaml:"health_probe_bind_address"`
-	RunnerGatewayTarget     string `yaml:"runner_gateway_target"`
-	RunnerGatewayTokenFile  string `yaml:"runner_gateway_token_file"`
-	RunnerCertificateIssuer string `yaml:"runner_certificate_issuer"`
+	RunnerGatewayTLS        *environment_runtime_transport.ClientTLS `yaml:"runner_gateway_tls"`
+	Namespace               string                                   `yaml:"namespace"`
+	MetricsBindAddress      string                                   `yaml:"metrics_bind_address"`
+	HealthProbeBindAddress  string                                   `yaml:"health_probe_bind_address"`
+	RunnerGatewayTarget     string                                   `yaml:"runner_gateway_target"`
+	RunnerGatewayTokenFile  string                                   `yaml:"runner_gateway_token_file"`
+	RunnerCertificateIssuer string                                   `yaml:"runner_certificate_issuer"`
 }
 
 func defaultConfig() config {
@@ -58,6 +61,11 @@ func loadConfig() (config, error) {
 }
 
 func (c config) validate() error {
+	if c.RunnerGatewayTLS != nil {
+		if err := c.RunnerGatewayTLS.Validate(); err != nil {
+			return fmt.Errorf("runner_gateway_tls: %w", err)
+		}
+	}
 	for _, required := range []struct{ name, value string }{
 		{"namespace", c.Namespace},
 		{"metrics_bind_address", c.MetricsBindAddress},

@@ -21,9 +21,10 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.environment_runtime_transport.config import ACTIONS_URI
 from agentplane.mcp_edge.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, app as app_component, database
+from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.mcp_routes import add_public_route
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -83,6 +84,7 @@ class McpEdge(Construct):
             "port": self.endpoint.pod_port,
             "http_port": self.http.pod_port,
             "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
+            "actions_tls": workload_tls.client_tls(ACTIONS_URI),
             "operator_oidc": props.operator_oidc,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
             "mintable_accounts": sorted(f"{account.namespace}/{account.name}" for account in props.mintable_accounts),
@@ -147,6 +149,7 @@ class McpEdge(Construct):
             )
             workload.container.mount(_SECRET_DIR, oauth_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
+        workload_tls.mount_trust_bundle(self, workload.container)
         self._add_rbac(workload.account)
 
     def _add_rbac(self, account: ServiceAccount) -> None:

@@ -171,9 +171,8 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"bad endpoint", func(v map[string]any) {
 			v["ingress"] = map[string]string{"target": "host:notaport", "bearer": "placeholder"}
 		}},
-		{"bad model config target", func(v map[string]any) { v["model_config_target"] = "host:notaport" }},
-		{"old model config service field", func(v map[string]any) {
-			v["model_config_service"] = map[string]string{"target": "host:3130", "bearer": "platform-route"}
+		{"bad model config endpoint", func(v map[string]any) {
+			v["model_config_target"] = "host:notaport"
 		}},
 		{"partial provider", func(v map[string]any) { v["codex"] = map[string]string{"binary": "/opt/codex"} }},
 		{"missing provider token", func(v map[string]any) { v["codex"].(map[string]string)["token_env"] = "ABSENT_PROVIDER_TOKEN" }},

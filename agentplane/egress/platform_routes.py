@@ -30,7 +30,7 @@ class TLSConnectRouteTransport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     mode: Literal[RouteTransportMode.TLS_CONNECT] = RouteTransportMode.TLS_CONNECT
-    server_uri: str = Field(min_length=1, description="Exact expected service identity URI.")
+    server_uri: str = Field(min_length=1, description="Exact SPIFFE identity the destination must present.")
 
 
 PlatformRouteTransport = Annotated[PlaintextRouteTransport | TLSConnectRouteTransport, Field(discriminator="mode")]

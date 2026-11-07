@@ -16,15 +16,16 @@ flowchart LR
     app[Integration API]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway: Dispatcher, EnvironmentService, proxy and observation]
+        gw[Runner Gateway TLS RPC :8080: Dispatcher, EnvironmentService, proxy and observation]
         sandboxctl[Sandbox Controller]
         policy[Policy Controller]
-        hs[History Service]
-        notif[Notification service]
-        actions[Action Service]
+        hs[History TLS RPC :8080: readers and JournalIngress]
+        notif[Notification TLS RPC :8080; signed webhook HTTP :8081]
+        actions[Action TLS RPC :8080]
         edge[MCP edge]
         egress[Egress proxy]
-        llm[LLM ingress]
+        egressRules[Rules and EgressAdmin TLS gRPC :8081]
+        llm[LLM inference HTTP and ModelConfig RPC over TLS :8080]
         electric[Electric]
         sampler[Experimental central sampler]
         samplerdb[(Sampler PostgreSQL)]
@@ -81,7 +82,7 @@ flowchart LR
     app -->|Dispatcher commands and watches: gRPC| gw
     app --> hs
     app -->|gRPC operator watches + health| notif
-    app -->|Action RPCs: gRPC; MCP OAuth callback: HTTP| actions
+    app -->|Action and MCP Linkage RPCs: gRPC| actions
     app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|authenticated ActionService gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
@@ -115,31 +116,44 @@ flowchart LR
     guest -->|local Codex JSON-RPC over WebSocket, isolated mode| vmexec
     guest -->|starts| guest_agent
     vmexec --> relay
-    runner --> sidecar -->|configured bearer or SVID TLS hop| egress
-    guest --> relay -->|configured bearer or SVID TLS hop| egress
-    sidecar -.->|rules gRPC: bearer or SVID TLS| egress
-    relay -.->|rules gRPC: bearer or SVID TLS| egress
-    sidecar -.->|notifications gRPC| notif
-    relay -.->|notifications gRPC| notif
+    runner -->|local HTTP CONNECT| sidecar
+    sidecar -->|mTLS Runtime SVID :8888| egress
+    guest -->|HTTP CONNECT through launcher relay| relay
+    relay -->|mTLS Runtime SVID :8888| egress
+    agent -.->|local Rules gRPC :3130| sidecar
+    sidecar -.->|service SVID TLS through CONNECT| egress
+    guest_agent -.->|local Rules gRPC :3130| relay
+    relay -.->|service SVID TLS through CONNECT| egress
+    egress -.->|opaque Action gRPC TLS, verified by the service| actions
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
     relay -->|OTLP/gRPC| alloy
     gw -->|mTLS Runner and Executor gRPC| runtime
     gw -->|mTLS Runner and Executor gRPC| vmruntime
-    runner -.->|dials SessionJournalIngress.Push| sidecar
-    sidecar -.->|outbound ingress route| hs
+    runner -.->|History mTLS through CONNECT| sidecar
+    sidecar -.->|opaque History TLS| egress
+    egress -.->|opaque SessionJournalIngress.Push TLS| hs
     agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| sidecar
-    guest -.->|dials SessionJournalIngress.Push| relay
-    relay -.->|outbound ingress route| hs
-    runner -.->|model configuration gRPC| sidecar
-    sidecar -.->|model configuration gRPC| llm
-    guest -.->|model configuration gRPC| relay
-    relay -.->|model configuration gRPC| llm
+    guest -.->|History mTLS through CONNECT| relay
+    relay -.->|opaque History TLS| egress
     guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
-    egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
+    egress -.->|opaque Dispatcher SVID TLS| gw
 
-    egress --> llm
+    egress -.->|opaque TLS; Rules verifies SVID :8081| egressRules
+    agent -.->|Notification HTTP| sidecar
+    guest_agent -.->|Notification HTTP| relay
+    sidecar -.->|Notification SVID TLS through CONNECT| egress
+    relay -.->|Notification SVID TLS through CONNECT| egress
+    egress -.->|opaque Notification TLS| notif
+    agent -.->|local Notification gRPC :3130| sidecar
+    guest_agent -.->|local Notification gRPC :3130| relay
+    runner -.->|local model configuration gRPC :3130| sidecar
+    guest -.->|local model configuration gRPC :3130| relay
+    sidecar -.->|model configuration SVID TLS through CONNECT| egress
+    relay -.->|model configuration SVID TLS through CONNECT| egress
+    egress -.->|opaque model configuration TLS| llm
+
 
     click app href "../app/go/server.go" "Integration app API server"
     click gw href "runner_control.md" "Runner gRPC and proxy"
@@ -155,6 +169,12 @@ flowchart LR
     click index href "../x/indexing/app.py" "Git index API"
 ```
 
+Each runner incarnation has one controller-issued `runner-<credential-id>` Secret. The Sandbox
+Controller projects it to Environment Runtime and the egress sidecar only; workload containers have
+no mount. The KubeVirt launcher relay gets that same Secret through the existing Kyverno injection
+after a live Sandbox status check binds the launcher VM and VMI to the accepted credential. Staging
+and testing use the SVID hop; TLS mode never falls back to token mode.
+
 A VM guest runs Environment Runtime with Session components and Execution; its relay is in the separate KubeVirt launcher Pod. The Git index is
 standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
 embeds files through an embedding endpoint and owns its own PostgreSQL database
@@ -166,7 +186,8 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
 - **Runner control uses native gRPC.** The Gateway dials each runner's private server using mTLS.
   It validates the certificate against the active Sandbox/workload and retains `<sandbox>-control`
   routing and `<sandbox>-runner` observation Leases. History push and ordinary Sandbox egress retain
-  their sidecar or VM relay paths ([runner control](runner_control.md)).
+  their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself
+  ([runner control](runner_control.md)).
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
   Browser spans post to the same-origin App relay, which forwards OTLP/HTTP to Alloy. Runner spans use
   the sidecar's local telemetry route; VM guest spans use the launcher relay's guest gateway route.
@@ -212,6 +233,7 @@ flowchart LR
     history[History Service]
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
+        rpc[Shared TLS RPC listener :8080<br/>bearer and Sandbox SVID auth]
         environments[EnvironmentService API]
         lifecycle[Shared lifecycle manager]
         gateway[Runner proxy and state observation]
@@ -240,18 +262,22 @@ flowchart LR
     lifecycle -->|guarded running + generation update| k8s
     pod -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| sidecar
     guest -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| relay
-    sidecar -.-> egress
-    relay -.-> egress
-    egress -.->|Exact RPC paths; substituted Sandbox bearer| dispatcher
+    sidecar -.->|mTLS proxy hop and CONNECT| egress
+    relay -.->|mTLS proxy hop and CONNECT| egress
+    egress -.->|Opaque Runner SVID TLS to :8080| rpc
+    rpc -->|Method-authorized Session and EnvironmentService calls| dispatcher
 ```
 
-Managed Pod and VM callers receive only the inert `AGENTPLANE_SESSIONS_CREDENTIAL` placeholder. The
-`AGENTPLANE_SESSIONS_URL` targets `session-dispatcher.<namespace>.svc.cluster.local:8080`. The egress sidecar
-or VM launcher relay holds the short-lived `session-dispatcher` audience token; the central proxy substitutes
-it on the allowlisted SessionDispatcher and EnvironmentService RPC paths.
-Backend checks of the Sandbox identity and object UID remain authoritative; network reachability
-grants no Session authority. The Action Service uses the same Dispatcher audience and a pod-bound
-Actions token on the opted-in `EnvironmentService` list/get methods and its separately configured
+Managed Pod and VM callers receive the `AGENTPLANE_SESSIONS_URL`, but no bearer credential for the
+Sandbox route. The URL targets the `session-dispatcher.<namespace>.svc.cluster.local:8080` alias of the
+Gateway's shared TLS RPC listener. The egress sidecar or VM launcher relay maps that exact origin through
+central CONNECT and presents its Runner SVID on the same `:8080` listener; the central proxy carries the
+destination TLS bytes opaquely. The Gateway resolves the current Sandbox credential and ServiceAccount UID before applying
+the unchanged Session and EnvironmentService method rules. No Dispatcher audience token is projected
+into Sandbox Pods. Backend checks of the Sandbox identity and
+object UID remain authoritative; network reachability grants no Session authority. The Action Service
+continues to use the configured Dispatcher audience and a pod-bound Actions token on the opted-in
+`EnvironmentService` list/get methods and its separately configured
 `EnvironmentService.ResumeEnvironment` method. The receiver applies the caller identity from the
 shared delegation envelope, then checks the current Sandbox and
 execution-ServiceAccount identity and resume policy. The integration app uses its own Pod-bound
@@ -294,7 +320,8 @@ flowchart LR
 The staging picker gives direct Anthropic models only to the central sampler, keeping them out of the
 subscription-backed Codex and Claude harnesses. The Anthropic key is copied by ESO from the existing
 LiteLLM-owned secret and mounted only in the sampler container; Cilium pins direct API traffic to
-`api.anthropic.com` and its TLS server name. Responses calls retain the existing LLM ingress token path.
+`api.anthropic.com` and its TLS server name. Responses calls use the LLM ingress HTTPS endpoint with
+the sampler's audience-scoped bearer token and verified service TLS.
 
 The sampler lazily starts one shared Codex host process when code-mode work needs it and multiplexes
 logical Sessions through it. The host retains per-Session `store()` / `load()` values across cells
@@ -479,7 +506,11 @@ flowchart LR
     dispatcher[Runner Gateway Dispatcher API]
     history[History Service]
 
-    agent -->|subscriptions, inboxes, messages| notifications
+    sidecar[Egress sidecar or launcher relay]
+    proxy[Central egress proxy]
+    agent -.->|HTTP subscriptions, inboxes, messages| sidecar
+    sidecar -.->|Sandbox SVID to destination inside CONNECT| proxy
+    proxy -.->|opaque TLS| notifications
     app -->|gRPC operator watches + health| notifications
     github --> notifications
     notifications --> github
@@ -489,6 +520,12 @@ flowchart LR
     notifications -->|SubmitInput| dispatcher
     notifications -->|command receipts, Session's Sandbox| history
 ```
+
+Sandboxes keep their existing HTTP service URL. Their sidecar or relay recognizes the exact origin,
+opens CONNECT through the central proxy, and presents the Runner SVID to Notification's shared TLS
+RPC listener. Notification resolves the current Sandbox and its ServiceAccount; inbox ownership and
+send grants are unchanged. Backend and operator callers retain their method-specific bearer
+authorization on that listener.
 
 The Notification service does not call the integration app, which watches subscription and notice
 state over the operator-only `NotificationsOperator` gRPC service. GitHub sends it signed webhooks; it
@@ -534,29 +571,35 @@ flowchart LR
     edge -->|public MCP client metadata: gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
-    workload --> box_sidecar --> egress
-    runner --> sidecar -->|configured bearer or SVID TLS hop| egress
-    guest --> relay -->|configured bearer or SVID TLS hop| egress
-    sidecar -.->|rules gRPC: bearer or SVID TLS| egress
-    relay -.->|rules gRPC: bearer or SVID TLS| egress
-    app -->|egress admin API| egress
-    egress -->|policy and credential watches| k8s
-    egress -->|workload Actions gRPC and MCP| actions
+    workload --> box_sidecar
+    runner --> sidecar -->|mTLS Runtime SVID :8888| egress
+    guest --> relay -->|mTLS Runtime SVID :8888| egress
+    app -->|admin API on shared TLS gRPC listener :8081| egress
+    egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|policy-approved requests| other
-    egress -->|model requests| llm
+    egress -.->|opaque TLS; Rules verifies SVID :8081| rules[Rules and EgressAdmin TLS gRPC :8081]
+    egress -.->|opaque TLS to shared SVID RPC listener :8080| llm
+    sampler -->|direct TokenReview HTTP:8080| llm
     llm -->|model API + server-held key| litellm
     actions -->|MCP calls| mcp_servers
     actions -->|REST + web push| github
 ```
 
-The Rules RPC shares the forward hop's authentication policy. In SVID mode the sidecar or relay
-opens an opaque CONNECT through central and presents the runner certificate to the shared gRPC
-listener; that listener verifies the peer and live Sandbox itself. The workload dials the shared local gRPC
-listener on port 3130 and holds no certificate. Plaintext probes and operator bearer RPCs remain
-on the central shared port, with independent method authorization.
+The required runner mTLS hop resolves the SVID's Sandbox UID and accepted credential through
+live status before using that Sandbox's own ServiceAccount as the policy subject. The plaintext
+central token hop is removed. Rules terminates its own SVID TLS through an opaque central tunnel;
+the proxy never asserts the caller. History, Notification, Gateway, Action and LLM each serve
+bearer-authenticated and Sandbox-SVID RPCs on their primary TLS listener, with method-specific
+authorization preserved. The central sampler uses verified service TLS with projected
+ServiceAccount bearer tokens and holds no SVID. Only LLM ingress holds the LiteLLM key.
+Kubernetes retains its destination-scoped projected token until the later impersonation cutover.
+Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
+service prefixes select independent upstream connections and authentication.
 
-The egress proxy substitutes a configured credential only for the destination covered by its
-policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
+The flip remains draft and blocked on separate authentication for non-Sandbox callers: Action
+boxes and Haku UI. Their token-mode sidecars cannot authenticate
+to this central listener. No Identity/account cutover is included. Existing Sandbox processes need
+recreation to read the new mode/route configuration; image updates alone do not replace running Pods.
 The app has independent `action_federation.service_url` and `connection_service_url` settings.
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.

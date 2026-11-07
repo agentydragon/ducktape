@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
@@ -33,11 +34,11 @@ type config struct {
 	Delegation    *delegationConfig `mapstructure:"delegation"`
 	TokenAudience string            `mapstructure:"token_audience"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
-	RequestTimeoutSeconds float64       `mapstructure:"request_timeout_s"`
-	ListenAddress         string        `mapstructure:"listen_address"`
-	Kubeconfig            string        `mapstructure:"kubeconfig"`
-	Ingress               ingressConfig `mapstructure:"ingress"`
-	FoldConcurrency       int           `mapstructure:"fold_concurrency"`
+	RequestTimeoutSeconds float64         `mapstructure:"request_timeout_s"`
+	RPC                   listener.Config `mapstructure:"rpc"`
+	Kubeconfig            string          `mapstructure:"kubeconfig"`
+	Ingress               ingressConfig   `mapstructure:"ingress"`
+	FoldConcurrency       int             `mapstructure:"fold_concurrency"`
 	// FoldPageSize is how many entries a cycle folds per Session; the history store serves at most 1000.
 	FoldPageSize             int     `mapstructure:"fold_page_size"`
 	FoldIntervalSeconds      float64 `mapstructure:"fold_interval_s"`
@@ -52,15 +53,13 @@ type delegationConfig struct {
 	Methods          []string     `mapstructure:"methods"`
 }
 
-// ingressConfig is the runners' listener, apart from the read API so the network fence can admit the egress proxy
-// to it and nothing else.
+// ingressConfig is the runner journal's authorization and storage policy. Its RPC shares the service listener.
 type ingressConfig struct {
 	TokenAudience string `mapstructure:"token_audience"`
 	// WriterNamespaces are the namespaces whose ServiceAccounts may push: the ones Sandboxes run in.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
 	// Only these service identities may announce centrally hosted Sessions. Empty disables the mode.
 	SamplerAccounts []auth.Account `mapstructure:"sampler_accounts"`
-	ListenAddress   string         `mapstructure:"listen_address"`
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
 	// provably holds their concatenation. Off keeps every entry, for debugging.
 	SettleDeltas bool `mapstructure:"settle_deltas"`
@@ -68,8 +67,9 @@ type ingressConfig struct {
 
 func defaultConfig() config {
 	return config{
-		RequestTimeoutSeconds: 15, MigrationTimeoutSeconds: defaultMigrationTimeoutSeconds, ListenAddress: "0.0.0.0:8080",
-		Ingress:         ingressConfig{ListenAddress: "0.0.0.0:8081", SettleDeltas: true},
+		RequestTimeoutSeconds: 15, MigrationTimeoutSeconds: defaultMigrationTimeoutSeconds,
+		RPC:             listener.Config{ListenAddress: "0.0.0.0:8080"},
+		Ingress:         ingressConfig{SettleDeltas: true},
 		FoldConcurrency: 4, FoldPageSize: 1000, FoldIntervalSeconds: 2,
 		NativeFrameReadBatchSize: 200, WatchLeaseSeconds: 300,
 	}
@@ -88,7 +88,9 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read History Service settings file")
 		}
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
+	))); err != nil {
 		return config{}, errors.New("invalid History Service settings")
 	}
 	if err := c.validate(); err != nil {
@@ -102,8 +104,6 @@ func (c *config) validate() error {
 		{"database_url", c.DatabaseURL},
 		{"token_audience", c.TokenAudience},
 		{"ingress.token_audience", c.Ingress.TokenAudience},
-		{"listen_address", c.ListenAddress},
-		{"ingress.listen_address", c.Ingress.ListenAddress},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
@@ -115,6 +115,14 @@ func (c *config) validate() error {
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
 		len(c.Delegation.CallerNamespaces) == 0 || len(c.Delegation.Methods) == 0) {
 		return errors.New("delegation requires an actor, caller namespaces and methods")
+	}
+	if err := c.RPC.Validate(); err != nil {
+		return fmt.Errorf("rpc listener: %w", err)
+	}
+	for _, audience := range []string{c.TokenAudience, c.Ingress.TokenAudience} {
+		if !c.RPC.AllowsBearerAudience(audience) {
+			return fmt.Errorf("rpc.auth must allow the %q bearer audience", audience)
+		}
 	}
 	if len(c.Ingress.WriterNamespaces) == 0 {
 		return errors.New("ingress.writer_namespaces must list at least one namespace")

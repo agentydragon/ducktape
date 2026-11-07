@@ -11,6 +11,7 @@ import (
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -105,9 +106,11 @@ type TokenReviews interface {
 // is gone, still resolves for at most that long. A rejection or a failed review is never reused, so
 // the next call asks again.
 type Resolver struct {
-	audience   string
-	namespaces map[string]struct{}
-	verdicts   authenticator.Token
+	audience     string
+	namespaces   map[string]struct{}
+	verdicts     authenticator.Token
+	svid         *SVIDResolver
+	listenerAuth *listener.Config
 }
 
 // PrincipalResolver resolves the principal admitted by an AnyAccount rule.
@@ -177,6 +180,9 @@ func (t tokenReviewer) AuthenticateToken(ctx context.Context, token string) (*au
 // Resolve adapts gRPC metadata to ResolveAuthorization. HTTP callers use the same
 // authorization parser and TokenReview policy directly.
 func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
+	if principal, secured, err := r.resolveSVID(ctx); secured {
+		return principal, err
+	}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return Principal{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
@@ -197,6 +203,12 @@ func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
 // ResolveReviewedCaller admits a reviewed ServiceAccount identity with or without a Pod binding.
 // Destinations must still choose which kind of caller is authoritative for each operation.
 func (r *Resolver) ResolveReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
+	if principal, secured, err := r.resolveSVID(ctx); secured {
+		if err != nil {
+			return ReviewedCaller{}, err
+		}
+		return ReviewedCaller{ServiceAccount: serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID), Pod: &principal}, nil
+	}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ReviewedCaller{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())

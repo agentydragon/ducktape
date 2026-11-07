@@ -24,8 +24,10 @@ py_library(
     deps = [
         "//agentplane/egress:settings",
         "//agentplane/testing:go_process",
+        "//agentplane/workload_auth:listener",
         "//util:db_url",
         "//util:net",
+        "@pypi//grpcio",
         "@rules_python//python/runfiles",
     ],
 )

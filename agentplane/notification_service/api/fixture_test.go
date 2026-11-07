@@ -328,7 +328,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	}
 	server.policy.Health.MarkSynced()
 	options := Options{
-		Store: server.store, Wakeups: hub, Resolver: resolver, Namespace: testNamespace, Sandboxes: sandboxes,
+		Store: server.store, Wakeups: hub, Namespace: testNamespace, Sandboxes: sandboxes,
 		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,
 		SendPolicy: server.policy, History: server.history, Sessions: server.openings, MessageBodyLimit: config.messageBodyLimit,
 		Debounce: config.debounce, RequestTimeout: config.requestTimeout,
@@ -341,7 +341,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grpcServer := grpc.NewServer(Methods(options).ServerOptions(config.requestTimeout)...)
+	grpcServer := grpc.NewServer(Methods(options, resolver).ServerOptions(config.requestTimeout)...)
 	notificationspb.RegisterNotificationsServer(grpcServer, server.notifications)
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(grpcServer.Stop)

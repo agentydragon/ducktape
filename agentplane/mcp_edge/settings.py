@@ -9,12 +9,15 @@ from pydantic import Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from util.yaml_file_settings import YamlFileSettings
 
 
 class Settings(YamlFileSettings):
     """YAML settings with AGENTPLANE_MCP_EDGE_ environment overrides."""
+
+    actions_tls: ClientTLS | None = None
 
     config_file_env: ClassVar[str] = "AGENTPLANE_MCP_EDGE_CONFIG_FILE"
     model_config = SettingsConfigDict(

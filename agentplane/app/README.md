@@ -663,11 +663,11 @@ snapshot, and changing the Environment incarnation or account discards the prior
   Callers use the per-Sandbox control Service across Pod replacements.
 - **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
   Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
-  key or workload token: a harness sends the inert placeholder the `agentplane-workload`
-  EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
-  and the authenticated LLM ingress replaces it with its one server-held key after resolving the
-  workload identity the token proves. The model endpoint remains governed by the credentialless egress design
-  in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather than excepted from it.
+  key: the sidecar strips caller Authorization on the exact-origin SVID route, the central proxy
+  authorizes CONNECT for the Sandbox's ServiceAccount, and the LLM ingress verifies the current
+  Sandbox certificate before it uses its one server-held key. The model endpoint remains governed
+  by the credentialless egress design in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather
+  than excepted from it.
 - **No gRPC-Web or Connect surface for browsers:** the app stays the one HTTP surface; the schema is
   shared through proto-JSON and generated types instead.
 - **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on

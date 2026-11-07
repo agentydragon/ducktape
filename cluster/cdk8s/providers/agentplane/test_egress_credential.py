@@ -25,21 +25,6 @@ def test_source_secret_ref(scratch_chart: Chart) -> None:
     assert manifest["spec"]["source"] == {"secretRef": {"name": "my-secret", "key": "token"}}
 
 
-def test_source_authenticated_workload_token(scratch_chart: Chart) -> None:
-    # The schema's `maxProperties: 0` branch: selecting it means an explicit empty object, not an
-    # absent field.
-    EgressCredential(
-        scratch_chart,
-        "test",
-        metadata=ApiObjectMetadata(name="test-credential"),
-        description="test",
-        source=Source.authenticated_workload_token(),
-        targets=_TARGETS,
-    )
-    (manifest,) = Cdk8sTesting.synth(scratch_chart)
-    assert manifest["spec"]["source"] == {"authenticatedWorkloadToken": {}}
-
-
 def test_source_projected_workload_token(scratch_chart: Chart) -> None:
     EgressCredential(
         scratch_chart,

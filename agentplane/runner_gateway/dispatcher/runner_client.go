@@ -6,6 +6,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -21,6 +22,8 @@ type ProxyRunner struct {
 	Namespace string
 	TokenFile string
 	Timeout   time.Duration
+	// GatewayTLS pins the Session Dispatcher server SVID without presenting a client certificate.
+	GatewayTLS *environment_runtime_transport.ClientTLS
 	// Defaults to the per-Sandbox control Service when empty. Templates can also
 	// be a fixed target for host-process integration tests.
 	TargetTemplate string
@@ -42,7 +45,7 @@ func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, c
 		return errors.New("complete in-namespace Sandbox identity is required for runner proxy")
 	}
 	return environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
-		Target: r.target(sandbox.Name), TokenFile: r.TokenFile, Timeout: r.Timeout,
+		TLS: r.GatewayTLS, Target: r.target(sandbox.Name), TokenFile: r.TokenFile, Timeout: r.Timeout,
 		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, SandboxNamespace: sandbox.Namespace,
 		ReplaceOutgoingMetadata: true,
 	}, call)

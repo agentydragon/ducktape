@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
@@ -45,7 +47,6 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -103,7 +104,7 @@ func run(ctx context.Context, config Config) error {
 
 	newHistory := func() (*historyclient.Client, error) {
 		return historyclient.New(historyclient.Config{
-			Target: config.HistoryServiceTarget, TokenFile: config.HistoryServiceTokenFile,
+			TLS: config.HistoryServiceTLS, Target: config.HistoryServiceTarget, TokenFile: config.HistoryServiceTokenFile,
 			Timeout: time.Duration(config.HistoryServiceRequestTimeoutSeconds * float64(time.Second)),
 		})
 	}
@@ -129,7 +130,7 @@ func run(ctx context.Context, config Config) error {
 	}
 	threadStore := threads.NewStore(db)
 	runner, err := bridge.NewGatewayRunnerProxy(bridge.RunnerConfig{
-		Namespace: config.SandboxNamespace, TokenFile: config.RunnerGatewayTokenFile,
+		TLS: config.RunnerGatewayTLS, Namespace: config.SandboxNamespace, TokenFile: config.RunnerGatewayTokenFile,
 		Timeout:        time.Duration(config.RunnerGatewayRequestTimeoutSeconds * float64(time.Second)),
 		TargetTemplate: config.RunnerGatewayControlTarget,
 	})
@@ -137,14 +138,14 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure Runner Gateway: %w", err)
 	}
 	dispatcher, err := bridge.NewDispatcherClient(bridge.DispatcherConfig{
-		Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
+		TLS: config.SessionDispatcherTLS, Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
 		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
 	})
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
 	environmentConn, err := bearer.Dial(config.SessionDispatcherTarget, config.SessionDispatcherTokenFile,
-		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)), nil)
+		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)), config.SessionDispatcherTLS)
 	if err != nil {
 		return fmt.Errorf("configure Environment Service client: %w", err)
 	}
@@ -218,8 +219,12 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Action Service gRPC client: %w", err)
 	}
+	actionCredentials, err := config.ActionsTLS.Credentials()
+	if err != nil {
+		return err
+	}
 	actionConnection, err := grpc.NewClient(actionTarget,
-		observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
+		observability.GRPCClientOption(), grpc.WithTransportCredentials(actionCredentials), grpc.WithDisableRetry())
 	if err != nil {
 		return fmt.Errorf("configure Action Service linkage gRPC client: %w", err)
 	}
@@ -227,8 +232,9 @@ func run(ctx context.Context, config Config) error {
 	linkageClient := linkage_servicepb.NewLinkageServiceClient(actionConnection)
 	facadeContext, stopFacades := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacades()
-	actionFacade, err := facade.NewHandler(
+	actionFacade, err := facade.NewHandlerWithOptions(
 		facadeContext, actionTarget, 10*time.Second,
+		facade.HandlerOptions{TLS: config.ActionsTLS},
 		actionpb.RegisterActionServiceHandlerFromEndpoint,
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
 		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
@@ -242,9 +248,10 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure generated Connection Service HTTP facade: %w", err)
 	}
 	connectionGateway := proxy.NewHandlerUpstream(connectionFacade, "")
-	dispatcherFacade, err := facade.NewHandler(
+	dispatcherFacade, err := facade.NewHandlerWithOptions(
 		facadeContext, config.SessionDispatcherTarget,
 		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
+		facade.HandlerOptions{TLS: config.SessionDispatcherTLS},
 		session_dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
 		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
 	)
@@ -257,9 +264,10 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure generated Policy Service HTTP facade: %w", err)
 	}
 	policyGateway := proxy.NewHandlerUpstream(policyFacade, config.PolicyServiceTokenFile)
-	historyFacade, err := facade.NewHandler(
+	historyFacade, err := facade.NewHandlerWithOptions(
 		facadeContext, config.HistoryServiceTarget,
 		time.Duration(config.HistoryServiceRequestTimeoutSeconds*float64(time.Second)),
+		facade.HandlerOptions{TLS: config.HistoryServiceTLS},
 		historypb.RegisterHistoryServiceHandlerFromEndpoint,
 	)
 	if err != nil {
@@ -273,7 +281,7 @@ func run(ctx context.Context, config Config) error {
 	notificationFacade, err := facade.NewHandlerWithOptions(
 		facadeContext, notificationTarget,
 		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)),
-		facade.HandlerOptions{RejectUnknownJSONFields: true},
+		facade.HandlerOptions{RejectUnknownJSONFields: true, TLS: config.NotificationsTLS},
 		notificationspb.RegisterNotificationsHandlerFromEndpoint,
 	)
 	if err != nil {
@@ -284,8 +292,8 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Egress Service gRPC client: %w", err)
 	}
-	egressFacade, err := facade.NewHandler(facadeContext, egressTarget,
-		time.Duration(config.EgressAdminTimeoutSeconds*float64(time.Second)), egress_adminpb.RegisterEgressAdminHandlerFromEndpoint)
+	egressFacade, err := facade.NewHandlerWithOptions(facadeContext, egressTarget,
+		time.Duration(config.EgressAdminTimeoutSeconds*float64(time.Second)), facade.HandlerOptions{TLS: config.EgressAdminTLS}, egress_adminpb.RegisterEgressAdminHandlerFromEndpoint)
 	if err != nil {
 		return fmt.Errorf("configure generated Egress HTTP facade: %w", err)
 	}
@@ -395,9 +403,13 @@ func kubernetesConfig(path string) (*rest.Config, error) {
 func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, []*grpc.ClientConn, error) {
 	probes := make([]status.Probe, 0, 7)
 	connections := make([]*grpc.ClientConn, 0, 5)
-	dialHealth := func(name, target string) error {
+	dialHealth := func(name, target string, tls *environment_runtime_transport.ClientTLS) error {
+		credentials, err := tls.Credentials()
+		if err != nil {
+			return err
+		}
 		connection, err := grpc.NewClient(target,
-			observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+			observability.GRPCClientOption(), grpc.WithTransportCredentials(credentials))
 		if err != nil {
 			return fmt.Errorf("configure %s health client: %w", name, err)
 		}
@@ -405,26 +417,32 @@ func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, [
 		probes = append(probes, status.GRPCHealthProbe(name, healthpb.NewHealthClient(connection)))
 		return nil
 	}
-	for _, endpoint := range []struct{ name, target string }{
-		{"Runner Gateway", config.RunnerGatewayTarget}, {"History Service", config.HistoryServiceTarget},
+	for _, endpoint := range []struct {
+		name, target string
+		tls          *environment_runtime_transport.ClientTLS
+	}{
+		{"Runner Gateway", config.RunnerGatewayTarget, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, config.HistoryServiceTLS},
 	} {
-		if err := dialHealth(endpoint.name, endpoint.target); err != nil {
+		if err := dialHealth(endpoint.name, endpoint.target, endpoint.tls); err != nil {
 			closeConnections(connections)
 			return nil, nil, err
 		}
 	}
-	for _, endpoint := range []struct{ name, raw string }{
-		{"Action Service", config.ActionFederation.ServiceURL},
-		{"Connection Service", config.ConnectionServiceURL},
-		{"Notification Service", config.NotificationsURL},
-		{"Egress proxy", config.EgressAdminURL},
+	for _, endpoint := range []struct {
+		name, raw string
+		tls       *environment_runtime_transport.ClientTLS
+	}{
+		{"Action Service", config.ActionFederation.ServiceURL, config.ActionsTLS},
+		{"Connection Service", config.ConnectionServiceURL, nil},
+		{"Notification Service", config.NotificationsURL, config.NotificationsTLS},
+		{"Egress proxy", config.EgressAdminURL, config.EgressAdminTLS},
 	} {
 		target, err := grpcTargetFromHTTPURL(endpoint.raw)
 		if err != nil {
 			closeConnections(connections)
 			return nil, nil, fmt.Errorf("configure %s health target: %w", endpoint.name, err)
 		}
-		if err := dialHealth(endpoint.name, target); err != nil {
+		if err := dialHealth(endpoint.name, target, endpoint.tls); err != nil {
 			closeConnections(connections)
 			return nil, nil, err
 		}

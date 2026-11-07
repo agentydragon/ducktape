@@ -95,7 +95,7 @@ func run(ctx context.Context, settings centralsampler.Settings) error {
 	running.Go(func() error { return runtime.Run(runningCtx, work) })
 	if settings.HistoryTarget != "" {
 		running.Go(func() error {
-			return centralsampler.RunExporter(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, hub)
+			return centralsampler.RunExporter(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, hub, settings.HistoryTLS)
 		})
 	}
 	running.Go(func() error {

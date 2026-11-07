@@ -36,6 +36,7 @@ py_library(
     deps = [
         ":cluster",
         ":port_forward",
+        ":tls",
         ":tracing",
         "//agentplane/runner_gateway/dispatcher:testing_client",
     ],
@@ -239,6 +240,7 @@ py_library(
     srcs = ["central_sampler.py"],
     deps = [
         ":cluster",
+        ":tls",
         ":tracing",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
@@ -472,10 +474,23 @@ py_library(
         ":cluster",
         ":dispatcher_transport",
         ":port_forward",
+        ":tls",
         "//agentplane/egress:egress_admin_pb2",
         "//agentplane/egress:egress_admin_pb2_grpc",
+        "//agentplane/grpc:calls",
         "//agentplane/proto:identity_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//types_grpcio",
+        "@pypi//types_protobuf",
+    ],
+)
+
+py_library(
+    name = "tls",
+    srcs = ["tls.py"],
+    deps = [
+        ":cluster",
+        "@pypi//grpcio",
     ],
 )

@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/history_service/api"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -32,6 +33,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -113,19 +115,6 @@ func readerNamespaces(accounts []auth.Account, servedNamespaces []string, extra 
 	return result
 }
 
-func openListeners(c config) (net.Listener, net.Listener, error) {
-	reader, err := netlistener.Open(c.ListenAddress)
-	if err != nil {
-		return nil, nil, err
-	}
-	ingress, err := netlistener.Open(c.Ingress.ListenAddress)
-	if err != nil {
-		reader.Close()
-		return nil, nil, err
-	}
-	return reader, ingress, nil
-}
-
 // run serves on the configured addresses, authenticating callers with the cluster's TokenReview API.
 func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up, migrate.WithMigrationTimeout(seconds(c.MigrationTimeoutSeconds))); err != nil {
@@ -139,18 +128,16 @@ func run(ctx context.Context, c config) error {
 	if err != nil {
 		return err
 	}
-	reader, ingressListener, err := openListeners(c)
+	rpcListener, err := netlistener.Open(c.RPC.ListenAddress)
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
-	// A separate listener, so the network fence can admit the egress proxy to the ingress and nothing else.
-	defer ingressListener.Close()
-	return serve(ctx, c, kube, reader, ingressListener)
+	defer rpcListener.Close()
+	return serve(ctx, c, kube, rpcListener)
 }
 
-// serve answers the read API on listener and the runner ingress on ingressListener until ctx ends.
-func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, ingressListener net.Listener) error {
+// serve answers the read API and runner ingress on one native gRPC listener until ctx ends.
+func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener net.Listener) error {
 	var delegatedNamespaces []auth.Account
 	if c.Delegation != nil {
 		delegatedNamespaces = append(delegatedNamespaces, c.Delegation.Actor)
@@ -161,6 +148,29 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 		return err
 	}
 	writerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.Ingress.TokenAudience, c.Ingress.WriterNamespaces)
+	if err != nil {
+		return err
+	}
+	// Reads remain bearer-only even when the shared transport also admits Sandbox certificates.
+	readerAuth, err = readerAuth.WithListenerAuthentication(listener.Config{
+		ListenAddress: c.RPC.ListenAddress, TLS: c.RPC.TLS,
+		Auth: []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience}}},
+	}, nil)
+	if err != nil {
+		return err
+	}
+	var svids *auth.SVIDResolver
+	if c.RPC.Has(listener.SPIFFE) {
+		base, err := kubernetesConfig(c)
+		if err != nil {
+			return err
+		}
+		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces)
+		if err != nil {
+			return err
+		}
+	}
+	writerAuth, err = writerAuth.WithListenerAuthentication(c.RPC, svids)
 	if err != nil {
 		return err
 	}
@@ -219,18 +229,27 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 		}
 	}
 	maps.Copy(methods, historyMethods)
-	server := grpc.NewServer(append(methods.ServerOptions(seconds(c.RequestTimeoutSeconds)), observability.GRPCServerOption())...)
+	pushRule := auth.AnyAccount(writerAuth)
+	if c.RPC.Has(listener.SPIFFE) {
+		pushRule = auth.SVIDOrAccounts(writerAuth, c.Ingress.SamplerAccounts)
+	}
+	methods[session_ingresspb.SessionJournalIngress_Push_FullMethodName] = pushRule
+	options := append(methods.ServerOptions(seconds(c.RequestTimeoutSeconds)), observability.GRPCServerOption(),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime: 30 * time.Second, PermitWithoutStream: false,
+		}))
+	security, err := c.RPC.ServerCredentials(environment_runtime_transport.HistoryIngressURI)
+	if err != nil {
+		return err
+	}
+	if security != nil {
+		options = append(options, grpc.Creds(security))
+	}
+	server := grpc.NewServer(options...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	ingressServer := grpc.NewServer(
-		observability.GRPCServerOption(),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             30 * time.Second,
-			PermitWithoutStream: false,
-		}),
-	)
-	session_ingresspb.RegisterSessionJournalIngressServer(ingressServer, &ingress.Service{
+	session_ingresspb.RegisterSessionJournalIngressServer(server, &ingress.Service{
 		Principals: writerAuth, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
 		History:         storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
 		SamplerAccounts: c.Ingress.SamplerAccounts,
@@ -250,9 +269,8 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 			Run(foldContext, seconds(c.FoldIntervalSeconds), changes, healthServer)
 	}()
 
-	failed := make(chan error, 2)
-	go func() { failed <- fmt.Errorf("gRPC listener: %w", server.Serve(listener)) }()
-	go func() { failed <- fmt.Errorf("runner ingress listener: %w", ingressServer.Serve(ingressListener)) }()
+	failed := make(chan error, 1)
+	go func() { failed <- fmt.Errorf("gRPC listener: %w", server.Serve(rpcListener)) }()
 
 	var result error
 	select {
@@ -268,10 +286,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	stopFold()
 	stopping, release := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer release()
-	ingressStopped := make(chan struct{})
-	go func() { graceful.Stop(stopping, ingressServer); close(ingressStopped) }()
 	graceful.Stop(stopping, server)
-	<-ingressStopped
 	<-folded
 	return result
 }

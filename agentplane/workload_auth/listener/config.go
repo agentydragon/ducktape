@@ -7,6 +7,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"strings"
+
+	"google.golang.org/grpc/credentials"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/go-viper/mapstructure/v2"
@@ -37,7 +41,7 @@ func (*SPIFFEAuth) authentication() {}
 func (*SPIFFEAuth) Mode() Mode      { return SPIFFE }
 
 type KubernetesBearerAuth struct {
-	Audience string
+	Audiences []string
 }
 
 func (*KubernetesBearerAuth) authentication() {}
@@ -78,16 +82,16 @@ func AuthenticationDecodeHook(from, to reflect.Type, data any) (any, error) {
 		return &SPIFFEAuth{CAFile: auth.CAFile}, nil
 	case KubernetesBearer:
 		var auth struct {
-			Mode     Mode   `mapstructure:"mode"`
-			Audience string `mapstructure:"audience"`
+			Mode      Mode     `mapstructure:"mode"`
+			Audiences []string `mapstructure:"audiences"`
 		}
 		if err := decodeAuthenticationFields(fields, &auth); err != nil {
 			return nil, err
 		}
-		if auth.Audience == "" {
-			return nil, errors.New("authentication field \"audience\" must be a non-empty string")
+		if len(auth.Audiences) == 0 {
+			return nil, errors.New("authentication field \"audiences\" must be a non-empty list")
 		}
-		return &KubernetesBearerAuth{Audience: auth.Audience}, nil
+		return &KubernetesBearerAuth{Audiences: auth.Audiences}, nil
 	default:
 		return nil, fmt.Errorf("unknown authentication mode %q", mode)
 	}
@@ -133,8 +137,15 @@ func (c Config) Validate() error {
 				return errors.New("spiffe requires tls and an absolute ca_file")
 			}
 		case *KubernetesBearerAuth:
-			if method == nil || method.Audience == "" {
-				return errors.New("kubernetes_bearer requires audience")
+			if method == nil || len(method.Audiences) == 0 {
+				return errors.New("kubernetes_bearer requires audiences")
+			}
+			audiences := make(map[string]bool, len(method.Audiences))
+			for _, audience := range method.Audiences {
+				if strings.TrimSpace(audience) == "" || audiences[audience] {
+					return errors.New("kubernetes_bearer audiences must be non-empty and unique")
+				}
+				audiences[audience] = true
 			}
 		default:
 			return fmt.Errorf("unknown authentication mode %q", mode)
@@ -155,13 +166,13 @@ func (c Config) Has(mode Mode) bool {
 	return false
 }
 
-func (c Config) BearerAudience() string {
+func (c Config) AllowsBearerAudience(audience string) bool {
 	for _, method := range c.Auth {
 		if bearer, ok := method.(*KubernetesBearerAuth); ok && bearer != nil {
-			return bearer.Audience
+			return slices.Contains(bearer.Audiences, audience)
 		}
 	}
-	return ""
+	return false
 }
 
 // Select chooses by the credentials presented, never by allowlist order. A
@@ -181,6 +192,10 @@ func (c Config) Select(hasCertificate, hasBearer bool) (Mode, error) {
 }
 
 func (c Config) TLSConfig(localURI string) (*tls.Config, error) {
+	return c.tlsConfig(localURI, false)
+}
+
+func (c Config) tlsConfig(localURI string, publicRPCs bool) (*tls.Config, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -191,11 +206,22 @@ func (c Config) TLSConfig(localURI string) (*tls.Config, error) {
 	for _, method := range c.Auth {
 		if spiffe, ok := method.(*SPIFFEAuth); ok && spiffe != nil {
 			files.CAFile = spiffe.CAFile
-			if c.Has(KubernetesBearer) {
+			if c.Has(KubernetesBearer) || publicRPCs {
 				return files.WorkloadServerTLSConfigWithBearer(localURI)
 			}
 			return files.WorkloadServerTLSConfig(localURI)
 		}
 	}
 	return files.BearerServerTLSConfig(localURI)
+}
+
+// ServerCredentials uses the listener's verified TLS identity for native RPCs.
+// A missing certificate reaches public health methods; private methods still
+// require one of the configured authentication modes. Every presented leaf is verified.
+func (c Config) ServerCredentials(localURI string) (credentials.TransportCredentials, error) {
+	config, err := c.tlsConfig(localURI, true)
+	if err != nil || config == nil {
+		return nil, err
+	}
+	return environment_runtime_transport.ServerCredentials(config)
 }

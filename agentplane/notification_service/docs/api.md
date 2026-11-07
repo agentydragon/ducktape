@@ -8,8 +8,12 @@ The App facade rejects request fields absent from the protobuf contract. Setup a
 ## Agent API
 
 The route and JSON examples below describe the App browser facade; agents use the `agentplane notifications` CLI,
-which calls gRPC directly. Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
-audience. Owner authority is the verified ServiceAccount namespace, name and UID, shared by its workloads. Subscription creation
+which calls native gRPC directly. Sandbox calls present the Runner SVID through the service-owned TLS
+listener and opaque proxy tunnel. The service verifies the certificate chain, explicit clientAuth EKU and
+validity, then checks that the leaf names the live Sandbox and its current accepted runner credential.
+It resolves the principal to that Sandbox's controlled ServiceAccount namespace, name and UID; caller
+headers cannot select another account. Backend workloads retain Pod-bound ServiceAccount tokens with
+the configured audience. Owner authority and resource authorization are unchanged. Subscription creation
 addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
 It reads the required environment from `environment_hosted` or the fixed `executor_environment` from
@@ -121,8 +125,8 @@ A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service w
 a `github` source with `PERMISSION_DENIED`; no route lists enabled providers. Inbox cursors,
 acknowledgement, and runner notices remain provider-neutral.
 
-Agent workflows are served through [`/llms.txt`](agents/llms.txt). Notices identify the inbox
-and its preparation-time acknowledgement/coverage cursors; reading and acknowledging the inbox
+Agent workflows are bundled with the CLI and described in the [workflow guide](agents/llms.txt). Notices
+identify the inbox and its preparation-time acknowledgement/coverage cursors; reading and acknowledging the inbox
 remain explicit client operations. A retried notice retains its original text.
 
 ## Messages

@@ -28,6 +28,13 @@ from constructs import Construct
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
+from agentplane.environment_runtime_transport.config import (
+    ACTIONS_URI,
+    EGRESS_PROXY_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
@@ -39,6 +46,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     session_dispatcher,
     telemetry,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
@@ -107,6 +115,16 @@ class App(Construct):
 
         self._add_agent_service_account()
         content = env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"})
+        content.update(
+            {
+                "egress_admin_tls": workload_tls.client_tls(EGRESS_PROXY_URI),
+                "runner_gateway_tls": workload_tls.client_tls(SESSION_DISPATCHER_URI),
+                "session_dispatcher_tls": workload_tls.client_tls(SESSION_DISPATCHER_URI),
+                "history_service_tls": workload_tls.client_tls(HISTORY_SERVICE_URI),
+                "notifications_tls": workload_tls.client_tls(NOTIFICATIONS_URI),
+                "actions_tls": workload_tls.client_tls(ACTIONS_URI),
+            }
+        )
         config = SettingsFile(
             self,
             "config",
@@ -266,6 +284,7 @@ class App(Construct):
             },
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
+        workload_tls.mount_trust_bundle(self, workload.container)
         for volume, audience, mount_path in [
             ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),
             ("history-service-token", history_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-history-service"),

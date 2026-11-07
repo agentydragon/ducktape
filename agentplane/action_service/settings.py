@@ -14,8 +14,10 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth.listener import Listener
 from util.yaml_file_settings import YamlFileSettings
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
@@ -44,6 +46,9 @@ class ServicePeer(BaseModel):
         min_length=1, description="The rotating projected ServiceAccount token for the peer's audience."
     )
     request_timeout_s: float = Field(gt=0, allow_inf_nan=False)
+    tls: ClientTLS | None = Field(
+        default=None, description="Verify the peer service SVID without presenting this service's client certificate."
+    )
 
 
 class Settings(YamlFileSettings):
@@ -65,10 +70,9 @@ class Settings(YamlFileSettings):
 
     database_url: str = Field(description="Action Service-owned PostgreSQL database URL.")
     log_levels: LogLevels
-    host: str = "127.0.0.1"
-    port: int = 8080
-    token_audience: str = Field(min_length=1, description="Accepted projected-token audience of Sandbox callers.")
+    rpc: Listener = Field(description="The single gRPC listener and its explicitly enabled authentication methods.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
+
     policy_namespace: str = Field(
         description="Kubernetes namespace whose PolicySets and PolicyBindings this service watches; "
         "it writes `ActionsReady` conditions only on those bindings."

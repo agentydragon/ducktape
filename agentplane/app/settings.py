@@ -11,6 +11,7 @@ from pydantic_settings import SettingsConfigDict
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.log_levels import LogLevels
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from util.urls import HttpEndpointUrl, HttpsEndpointUrl
@@ -108,6 +109,13 @@ class Settings(AppSettingsConfig):
     `AGENTPLANE_CONFIG_FILE` names, in that order of precedence; the staging Deployment keeps the model
     catalog in that file.
     """
+
+    egress_admin_tls: ClientTLS | None = None
+    runner_gateway_tls: ClientTLS | None = None
+    session_dispatcher_tls: ClientTLS | None = None
+    history_service_tls: ClientTLS | None = None
+    notifications_tls: ClientTLS | None = None
+    actions_tls: ClientTLS | None = None
 
     sandbox_namespace: str = Field(
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "

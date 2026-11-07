@@ -290,11 +290,12 @@ func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
 }
 
 type config struct {
-	Proxy                  proxyConfig           `yaml:"proxy"`
-	AudienceTokenFiles     map[string]string     `yaml:"audience_token_files"`
-	PlatformRoutes         *platformRoutesConfig `yaml:"platform_routes"`
-	ListenAddress          string                `yaml:"listen_address"`
-	ReadinessListenAddress string                `yaml:"readiness_listen_address"`
+	Proxy                  proxyConfig                    `yaml:"proxy"`
+	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
+	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
+	PlatformRoutes         *platformRoutesConfig          `yaml:"platform_routes"`
+	ListenAddress          string                         `yaml:"listen_address"`
+	ReadinessListenAddress string                         `yaml:"readiness_listen_address"`
 }
 
 // loadConfig reads the only settings source used by the process.
@@ -305,6 +306,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	c := config{
 		AudienceTokenFiles:     map[string]string{},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "0.0.0.0:3129",
@@ -374,6 +376,27 @@ func (c config) validate() error {
 			}
 		default:
 			return fmt.Errorf("platform route %q has unsupported transport %T", name, route.Transport)
+		}
+	}
+	if c.WorkloadRoutes == nil {
+		return errors.New("workload_routes must be an object")
+	}
+	if len(c.WorkloadRoutes) > 0 {
+		transport, ok := c.Proxy.Transport.(tlsProxyTransportConfig)
+		if !ok {
+			return errors.New("workload routes require TLS proxy transport")
+		}
+		if _, ok := transport.Auth.(spiffeProxyAuth); !ok {
+			return errors.New("workload routes require SPIFFE proxy authentication")
+		}
+	}
+	for authority, route := range c.WorkloadRoutes {
+		if err := validateWorkloadRoute(authority, route); err != nil {
+			return fmt.Errorf("workload route %q: %w", authority, err)
+		}
+		serverID, err := spiffeid.FromString(route.ServerURI)
+		if err != nil || serverID.String() != route.ServerURI {
+			return fmt.Errorf("workload route %q server_uri must be an exact SPIFFE ID: %q", authority, route.ServerURI)
 		}
 	}
 	return nil

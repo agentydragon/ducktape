@@ -36,6 +36,7 @@ from agentplane.system_tests.driver.sandbox import (
     ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
     POD_TEMPLATE,
 )
+from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -540,8 +541,15 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             "--for=jsonpath={.status.stopStage}=Stopped",
             "--timeout=300s",
         )
+        server_credentials = await service_credentials(cluster)
         target = await stack.enter_async_context(_forward(cluster))
-        channel = await stack.enter_async_context(dial(target))
+        channel = await stack.enter_async_context(
+            dial(
+                target,
+                channel_credentials=server_credentials,
+                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            )
+        )
         stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         with pytest.raises(grpc.aio.AioRpcError) as unauthenticated:
             await stub.ListDispatches(pb.ListDispatchesRequest(filter=pb.DispatchFilter(sandbox=sandbox)), timeout=15)
@@ -598,7 +606,13 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 _replace_owner_with_peer(cluster, uid, deployment["metadata"]["uid"], evidence)
             )
             peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
-            peer_channel = await stack.enter_async_context(dial(peer_target))
+            peer_channel = await stack.enter_async_context(
+                dial(
+                    peer_target,
+                    channel_credentials=server_credentials,
+                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                )
+            )
             stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
             retained = await stub.GetDispatch(
                 pb.GetDispatchRequest(command_id=command), metadata=authentication.metadata, timeout=15
@@ -677,9 +691,16 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
             assert len(live) == 2
             streams = []
+            server_credentials = await service_credentials(cluster)
             for replica in live:
                 target = await stack.enter_async_context(_forward(cluster, f"pod/{replica['metadata']['name']}"))
-                channel = await stack.enter_async_context(dial(target))
+                channel = await stack.enter_async_context(
+                    dial(
+                        target,
+                        channel_credentials=server_credentials,
+                        server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    )
+                )
                 reader = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 stream = reader.WatchDispatches(
                     pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=deletion_session)),
@@ -834,8 +855,13 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
             "notifications": {"name": notification_pod, "uid": notification_pod_uid},
         }
         path.write_text(json.dumps(evidence, indent=2) + "\n")
+        server_credentials = await service_credentials(cluster)
         async with _forward(cluster) as target:
-            channel = dial(target)
+            channel = dial(
+                target,
+                channel_credentials=server_credentials,
+                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            )
             try:
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 created = await stub.CreateSession(

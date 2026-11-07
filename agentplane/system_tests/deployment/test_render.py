@@ -17,6 +17,7 @@ from python.runfiles import Runfiles
 from agentplane.app.settings import Settings as AppSettings
 from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
 from agentplane.env.runtime.harness import Harness
+from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
@@ -28,8 +29,7 @@ from agentplane.system_tests.vm import infrastructure as vm_infrastructure, sand
 from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
-from cluster.cdk8s.agentplane.egress import PROXY_PORT
+from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway, session_dispatcher
 from util.settings_contract import env_name
 
 _MCP = McpInputs(
@@ -100,6 +100,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
     assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
     assert set(gateway_certificate["spec"]["usages"]) == {"digital signature", "client auth"}
+    dispatcher_certificate = _resource(docs, "Certificate", "runner-gateway-workload")
+    assert dispatcher_certificate["spec"]["dnsNames"] == [f"session-dispatcher.{NAMESPACE}.svc.cluster.local"]
     trust_bundle = _resource(docs, "Bundle", "cluster-internal-ca-bundle")
     root = _resource(docs, "Certificate", "test-runner-root")
     assert trust_bundle["spec"]["sources"] == [{"secret": {"name": root["spec"]["secretName"], "key": "ca.crt"}}]
@@ -110,18 +112,20 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     app_container = app_pod["containers"][0]
     assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     actions_container = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]
-    assert actions_container["readinessProbe"]["grpc"] == {"port": fixture_chart.ACTIONS_SERVICE.pod_port}
-    assert actions_container["livenessProbe"]["grpc"] == {
-        "port": fixture_chart.ACTIONS_SERVICE.pod_port,
-        "service": "livez",
-    }
-    for workload in ("actions", "notifications"):
+    for workload in ("actions", "notifications", "history-service", "runner-gateway", "llm-ingress"):
         pod = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         container = pod["containers"][0]
-        assert container["startupProbe"]["grpc"] == {
-            "port": container["readinessProbe"]["grpc"]["port"],
-            "service": "livez",
-        }
+        probes = (
+            ("readinessProbe", "livenessProbe") if workload == "llm-ingress" else ("readinessProbe", "startupProbe")
+        )
+        for probe in probes:
+            command = container[probe]["exec"]["command"]
+            assert command[:2] == ["/healthprobe", "--target"]
+            assert "--ca-file" in command
+            assert "--server-uri" in command
+            assert "--skip-verify" not in command
+    egress_proxy = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]["containers"][0]
+    assert "127.0.0.1:8081" in egress_proxy["readinessProbe"]["exec"]["command"]
     edge_pod = _resource(docs, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
     assert not edge_pod.get("initContainers")
     edge_container = edge_pod["containers"][0]
@@ -141,17 +145,10 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
     egress_config = yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
-    assert egress_config["forward"] == {
-        "listen_address": f"0.0.0.0:{PROXY_PORT}",
-        "tls": {"cert_file": "/etc/agentplane-egress/svid/tls.crt", "key_file": "/etc/agentplane-egress/svid/tls.key"},
-        "auth": [
-            {"mode": "spiffe", "ca_file": "/etc/agentplane-egress/svid-ca/ca-certificates.crt"},
-            {"mode": "kubernetes_bearer", "audience": WORKLOAD_TOKEN_AUDIENCE},
-        ],
-    }
-    assert WORKLOAD_TOKEN_AUDIENCE in egress_config["projected_token_audiences"]
+    assert egress_config["forward"]["listen_address"] == "0.0.0.0:8888"
     proxy_certificate = _resource(docs, "Certificate", "agentplane-egress-proxy")["spec"]
     assert proxy_certificate["uris"] == ["spiffe://agentplane/egress-proxy"]
+    assert proxy_certificate["dnsNames"] == [f"egress-admin.{NAMESPACE}.svc.cluster.local"]
     assert proxy_certificate["secretName"] == "agentplane-egress-proxy-tls"
     assert proxy_certificate["issuerRef"] == {"name": "agentplane-runner-ca", "kind": "Issuer"}
     assert any(mount["name"] == "svid" for mount in proxy["volumeMounts"])
@@ -191,6 +188,14 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     )
     assert gateway_config["operator_callers"] == [f"{NAMESPACE}/app"]
     assert gateway_config["environment_launchers"] == [f"{NAMESPACE}/actions"]
+    assert gateway_config["rpc"]["listen_address"] == "0.0.0.0:8080"
+    assert gateway_config["rpc"]["tls"] == {
+        "cert_file": "/run/agentplane/workload-tls/tls.crt",
+        "key_file": "/run/agentplane/workload-tls/tls.key",
+    }
+    bearer_auth = next(item for item in gateway_config["rpc"]["auth"] if item["mode"] == "kubernetes_bearer")
+    assert set(bearer_auth["audiences"]) == {session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE}
+    assert {item["mode"] for item in gateway_config["rpc"]["auth"]} == {"kubernetes_bearer", "spiffe"}
     assert gateway_config["runner_security"] == {
         "mode": "mtls",
         "tls": {
@@ -203,13 +208,14 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
 
     gateway_pod_labels = gateway["spec"]["template"]["metadata"]["labels"]
     gateway_listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
+    assert gateway_listener_ports["grpc"] == 8080
     for name in (fixture_chart.RUNNER_GATEWAY, fixture_chart.SESSION_DISPATCHER):
         service = _resource(docs, "Service", name)
         assert service["spec"]["selector"]
         assert all(gateway_pod_labels[key] == value for key, value in service["spec"]["selector"].items())
         assert all(port["targetPort"] == gateway_listener_ports[port["name"]] for port in service["spec"]["ports"])
 
-    assert int(gateway_env[env_name(Settings, "listen_address")].rsplit(":", 1)[1]) == gateway_listener_ports["grpc"]
+    assert "workload" not in gateway_listener_ports
 
     dispatcher = _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
     dispatcher_port = next(port["port"] for port in dispatcher["spec"]["ports"] if port["name"] == "grpc")
@@ -298,7 +304,12 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         _resource(docs, "ConfigMap", f"{fixture_chart.POD_TEMPLATE}-config")["data"]["environment-runtime.json"]
     )
     assert _host_port(runner_config["model_config_target"]) == pod_listener
-    assert _host_port(runner_config["ingress"]["target"]) == pod_listener
+    history = history_service.service(fixture.namespace)
+    assert runner_config["ingress"]["target"] == f"{history.fqdn}:{history.pod_port}"
+    assert runner_config["ingress"]["svid"] == {
+        "server_uri": HISTORY_SERVICE_URI,
+        "proxy_address": sidecar_settings["listen_address"],
+    }
     runtime = next(
         container
         for container in template["spec"]["pod"]["spec"]["containers"]
@@ -314,27 +325,27 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     runner_pod_spec = template["spec"]["pod"]["spec"]
     runner_egress_volume = next(v for v in runner_pod_spec["volumes"] if v["name"] == "egress-token")
     runner_token_sources = runner_egress_volume["projected"]["sources"]
-    assert any(
-        source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress"
-        and source["serviceAccountToken"]["path"] == "token"
-        for source in runner_token_sources
+    assert not any(
+        source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress" for source in runner_token_sources
     )
-    proxy = sidecar_settings["proxy"]
-    assert proxy["address"].endswith(f":{PROXY_PORT}")
-    assert proxy["transport"] == {
-        "mode": "tls",
-        "ca_file": "/run/agentplane/environment-runtime-tls/ca.crt",
-        "auth": {
-            "mode": "spiffe",
-            "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
-            "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
-        },
-    }
-    assert "authenticated_workload_audience" not in sidecar_settings
-    assert sidecar_settings["audience_token_files"][WORKLOAD_TOKEN_AUDIENCE] == "/var/run/agentplane-egress/token"
+    rules_route = routes["egress-rules"]
+    assert rules_route["transport"] == {"mode": "tls_connect", "server_uri": "spiffe://agentplane/egress-proxy"}
+    assert rules_route["upstream"] in egress_config["tls_passthrough_targets"]
+    assert _host_port(runtime_env["AGENTPLANE_EGRESS_GRPC_URL"]) == pod_listener
+    assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in runtime_env
+    assert sidecar_settings["proxy"]["transport"]["mode"] == "tls"
+    assert sidecar_settings["proxy"]["transport"]["auth"]["mode"] == "spiffe"
     for name in ("sandbox", "sandbox-build"):
         pod_template = _resource(docs, "PodTemplate", name)
-        assert pod_template["template"]["spec"]["automountServiceAccountToken"] is False
+        command_pod = pod_template["template"]["spec"]
+        assert command_pod["automountServiceAccountToken"] is False
+        assert not command_pod.get("initContainers")
+        assert len(command_pod["containers"]) == 1
+        assert {volume["name"] for volume in command_pod["volumes"]}.isdisjoint(
+            {"egress-token", "egress-sidecar-settings"}
+        )
+        env_names = {entry["name"].lower() for entry in command_pod["containers"][0]["env"]}
+        assert env_names.isdisjoint({"http_proxy", "https_proxy", "no_proxy", "grpc_proxy"})
     # Dex accepts the operator's password: its hash is bcrypt of the password the Secret hands the test,
     # at no less than the cost Dex requires.
     assert fixture.mcp_fixtures is not None
@@ -519,13 +530,19 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     assert vm_listener[0] == "0.0.0.0"
     guest_listener = ("10.0.2.1", vm_listener[1])
     assert _host_port(config["model_config_target"]) == guest_listener
-    assert _host_port(config["ingress"]["target"]) == guest_listener
+    history = history_service.service(vm_fixture.namespace)
+    assert config["ingress"]["target"] == f"{history.fqdn}:{history.pod_port}"
+    assert config["ingress"]["svid"]["server_uri"] == HISTORY_SERVICE_URI
+    assert _host_port(config["ingress"]["svid"]["proxy_address"]) == (
+        "10.0.2.1",
+        _host_port(relay["listen_address"])[1],
+    )
     assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"]) == guest_listener
     assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == guest_listener
     vm_runtime_env = dict(line.split("=", 1) for line in config_map["data"]["environment-runtime.env"].splitlines())
     assert _host_port(vm_runtime_env["OTEL_EXPORTER_OTLP_ENDPOINT"].strip('"')) == guest_listener
-    assert config["harness_environment"]["values"]["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
-    assert config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
+    assert "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL" not in config["harness_environment"]["values"]
+    assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in config["harness_environment"]["values"]
     oom_config_map = _resource(vm_fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
     oom_resources = oom_config["environment"]["resources"]
@@ -582,9 +599,14 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
     ingress_connection = settings.connections["llm-ingress"]
-    assert ingress_connection.base_url == llm_ingress.proxied_url(NAMESPACE)
+    assert ingress_connection.base_url == (
+        f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"
+    )
     assert ingress_connection.auth.type == "bearer"
     assert str(ingress_connection.auth.credential_file) == "/var/run/secrets/central-sampler/llm"
+    assert ingress_connection.tls is not None
+    assert str(ingress_connection.tls.ca_file) == "/run/agentplane/workload-trust/ca-certificates.crt"
+    assert ingress_connection.tls.server_uri == LLM_INGRESS_URI
     assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
     model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
     assert model.connection == "llm-ingress"

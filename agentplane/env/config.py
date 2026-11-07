@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -22,9 +22,26 @@ class _RuntimeConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
+class SVIDEndpoint(_RuntimeConfigModel):
+    server_uri: Literal["spiffe://agentplane/history-ingress"]
+    proxy_address: str = Field(min_length=1, description="Local egress sidecar host:port for CONNECT.")
+
+    @field_validator("proxy_address")
+    @classmethod
+    def proxy_host_port(cls, value: str) -> str:
+        return _valid_host_port(value, "SVID proxy_address")
+
+
 class Endpoint(_RuntimeConfigModel):
     target: str = Field(min_length=1, description="Service host:port.")
-    bearer: str = Field(min_length=1, description="Bearer presented to the platform route.")
+    bearer: str | None = Field(default=None, min_length=1, description="Bearer presented to a token platform route.")
+    svid: SVIDEndpoint | None = None
+
+    @model_validator(mode="after")
+    def one_credential(self) -> Self:
+        if (self.bearer is None) == (self.svid is None):
+            raise ValueError("An endpoint requires exactly one of bearer and svid")
+        return self
 
 
 def _valid_host_port(value: str, field: str) -> str:

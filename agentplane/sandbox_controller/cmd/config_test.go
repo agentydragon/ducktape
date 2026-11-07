@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 )
 
 const validSettings = `namespace: agentplane
@@ -111,6 +113,37 @@ func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 			t.Setenv(configFileEnv, writeSettings(t, content))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("started with invalid settings")
+			}
+		})
+	}
+}
+
+func TestRunnerGatewayTLSComesFromYAML(t *testing.T) {
+	t.Setenv(configFileEnv, writeSettings(t, validSettings+`runner_gateway_tls:
+  ca_file: /run/trust/ca.pem
+  server_uri: `+environment_runtime_transport.SessionDispatcherURI+"\n"))
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := environment_runtime_transport.ClientTLS{
+		CAFile: "/run/trust/ca.pem", ServerURI: environment_runtime_transport.SessionDispatcherURI,
+	}
+	if c.RunnerGatewayTLS == nil || *c.RunnerGatewayTLS != want {
+		t.Fatalf("runner Gateway TLS = %+v, want %+v", c.RunnerGatewayTLS, want)
+	}
+}
+
+func TestRunnerGatewayTLSRejectsIncompleteOrUnknownSettings(t *testing.T) {
+	for name, fields := range map[string]string{
+		"missing roots":     "  server_uri: " + environment_runtime_transport.SessionDispatcherURI + "\n",
+		"missing server":    "  ca_file: /run/trust/ca.pem\n",
+		"unknown TLS field": "  insecure_skip_verify: true\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(configFileEnv, writeSettings(t, validSettings+"runner_gateway_tls:\n"+fields))
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("accepted invalid runner Gateway TLS settings")
 			}
 		})
 	}

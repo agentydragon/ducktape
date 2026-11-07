@@ -21,25 +21,15 @@ from constructs import Construct
 
 
 class Source:
-    """`EgressCredentialSpecSource`'s real variant shapes, all three of which this repo uses: the
+    """`EgressCredentialSpecSource`'s real variant shapes, both of which this repo uses: the
     CRD schema declares them `oneOf`, so exactly one factory's result is ever set. `secret_ref`
-    resolves a Secret key in the proxy's configured credentials namespace; the other two draw on
-    the current request's own authenticated identity rather than a stored value --
-    `authenticated_workload_token` for the bearer that authenticated the current sidecar request
-    or CONNECT tunnel, `projected_workload_token` for that same Pod's identity minted for another
-    audience.
+    resolves a Secret key in the proxy's configured credentials namespace; `projected_workload_token`
+    selects that same Pod's identity minted for another audience.
     """
 
     @staticmethod
     def secret_ref(*, name: str, key: str) -> EgressCredentialSpecSource:
         return EgressCredentialSpecSource(secret_ref=EgressCredentialSpecSourceSecretRef(name=name, key=key))
-
-    @staticmethod
-    def authenticated_workload_token() -> EgressCredentialSpecSource:
-        # The schema types this branch `maxProperties: 0`: a required, always-empty object. The
-        # generated field defaults to unset (`None`), so selecting this branch means passing that
-        # empty object explicitly rather than omitting the keyword.
-        return EgressCredentialSpecSource(authenticated_workload_token={})
 
     @staticmethod
     def projected_workload_token(*, audience: str) -> EgressCredentialSpecSource:

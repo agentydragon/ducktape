@@ -194,7 +194,7 @@ async def app(
         db_url,
         history_client,
         sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-        gateway=GatewayAccess(gateway_service.target, app_token_file),
+        gateway=GatewayAccess(gateway_service.target, app_token_file, gateway_service.client_tls),
         config={"token_audience": AUDIENCE, "token_subjects": [agent]} | app_config,
     ) as process:
         yield process
