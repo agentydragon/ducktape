@@ -1830,10 +1830,25 @@ fn candidate_module_initialization_rejects_output_path_shadowing() {
         "",
     );
     let (direct, saved) = run_direct_and_saved_with_rejection(&staged);
-    for invocation in [&direct, &saved] {
+    for (case, invocation) in [
+        ("provider_shadow_direct", &direct),
+        ("provider_shadow_saved", &saved),
+    ] {
+        let diagnostics = save_relocation_reports(
+            &invocation.output_root().join("reports/tree"),
+            "static/app",
+            case,
+        );
+        for file in ["entry.js", "peer.js", "work.js"] {
+            fs::copy(
+                invocation.output_root().join("app/static/app").join(file),
+                diagnostics.join(file),
+            )
+            .expect("preserve emitted provider-shadow imports");
+        }
         assert_node_output(
             &invocation.output_root().join("app/static/app/entry.js"),
-            "99 object\n",
+            "1 object\n",
             "",
         );
         let graph: Value = read_gzip_json(
