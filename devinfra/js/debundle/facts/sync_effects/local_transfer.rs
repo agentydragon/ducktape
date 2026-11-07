@@ -325,7 +325,7 @@ pub(super) trait LocalContext: OwnDataContext {
         &mut self,
         frame: &mut LocalFrame,
         binding: &Id,
-        values: &Values,
+        selected: &SelectedValue,
         span: Span,
     ) -> Option<LocalValueResult>;
     /// Operands have already been evaluated in source order. Return the value
@@ -691,20 +691,24 @@ fn store_binding(
     selected: SelectedValue,
     span: Span,
 ) -> Option<SelectedValue> {
-    let values = selected.values;
-    if values.is_empty() {
-        return Some(SelectedValue::raw(values));
+    if selected.values.is_empty() {
+        return Some(SelectedValue::raw(selected.values));
     }
     let Some(kind) = body.bindings.get(binding) else {
         frame.binding_selections.remove(binding);
-        let result = context.assign_capture(frame, binding, &values, span)?;
+        let result = context.assign_capture(frame, binding, &selected, span)?;
         frame.effect_coverage.compose(&result.effects);
         judgment.compose(&result.allocation.judgment);
         return Some(completing_selected(
-            SelectedValue::raw(result.allocation.values),
+            SelectedValue {
+                values: result.allocation.values,
+                selection: result.selection,
+                postcondition: result.postcondition,
+            },
             frame,
         ));
     };
+    let values = selected.values;
     if matches!(kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
         || (*kind == LocalBinding::Parameter
             && frame.parameter_inputs.is_some()

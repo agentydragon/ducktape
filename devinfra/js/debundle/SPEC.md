@@ -720,6 +720,17 @@ imported/global/uninitialized binding reads, decorated/type-annotated
 functions remain uncovered. For class declarations,
 all other shapes remain uncovered. Parentheses alone preserve admissibility for
 variable initializers.
+An executed ordered module-binding assignment uses source-proved mutability
+and initialized-cell evidence independently of its evaluated RHS. Hoisted local
+function declarations supply their own mutable-cell source fact. A root store
+replaces the current prefix value and retains the callable selected by its
+actual RHS, transporting its existing selection and proof dependencies rather
+than deriving selection from a known value. Invocation queries preserve their
+weak/no-call alternatives. Missing mutation or initialization evidence keeps possible normal stores,
+callback effects and abrupt alternatives without a complete receipt. It never
+classifies missing declaration metadata as a definitely failing assignment or
+leaves only a superseded callable available to later proofs.
+
 A single original direct variable declarator can also initialize a shallow
 object binding through the shared ordered kernel. Static identifier or string
 property names select identifier targets, including shorthand without defaults.
