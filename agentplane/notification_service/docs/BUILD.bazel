@@ -12,5 +12,5 @@ go_library(
     srcs = ["docs.go"],
     embedsrcs = glob(["agents/**"]) + [":openapi_json"],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/docs",
-    visibility = ["//agentplane/notification_service:__pkg__"],
+    visibility = ["//agentplane:__subpackages__"],
 )

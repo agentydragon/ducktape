@@ -275,7 +275,7 @@ func TestEachGroupNeedsItsOwnConfiguration(t *testing.T) {
 		missing string
 	}{
 		{[]string{"actions", "groups"}, "AGENTPLANE_ACTIONS_URL"},
-		{[]string{"notifications", "subscriptions"}, "AGENTPLANE_NOTIFICATIONS_URL"},
+		{[]string{"notifications", "subscriptions"}, "AGENTPLANE_NOTIFICATIONS_GRPC_URL"},
 		{[]string{"egress", "rules"}, "AGENTPLANE_EGRESS_GRPC_URL"},
 	}
 	for _, tc := range cases {

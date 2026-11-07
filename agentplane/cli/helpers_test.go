@@ -74,9 +74,9 @@ func actionsEnv(baseURL string) map[string]string {
 
 func notificationsEnv(baseURL string) map[string]string {
 	return map[string]string{
-		"AGENTPLANE_NOTIFICATIONS_URL":        baseURL,
-		"AGENTPLANE_NOTIFICATIONS_CREDENTIAL": testCredential,
-		"AGENTPLANE_SESSION_ID":               "test-session",
+		"AGENTPLANE_NOTIFICATIONS_GRPC_URL":        baseURL,
+		"AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL": testCredential,
+		"AGENTPLANE_SESSION_ID":                    "test-session",
 	}
 }
 

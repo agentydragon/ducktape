@@ -225,6 +225,10 @@ async def vm_sandbox_turn(
         "namespace": view.execution_account.account.namespace,
         "name": view.execution_account.account.name,
     }, rules_turn.transcript
+    notifications_turn = await agent.run_shell(
+        model, "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK"
+    )
+    assert "NOTIFICATIONS_GRPC_OK" in notifications_turn.tool_outputs[-1], notifications_turn.transcript
     await runner_credentials.assert_vm_runner_identity_unchanged(
         cluster, view.kubernetes_diagnostics.pod.name, identity
     )
