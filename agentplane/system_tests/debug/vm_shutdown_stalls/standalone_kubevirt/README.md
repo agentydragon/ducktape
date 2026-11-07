@@ -4,6 +4,20 @@
 
 The VMI is direct, so this is not a full-stack reproduction of the Sandbox controller or production sidecar topology. The default arm installs only the production-derived `keep-virtiofs-through-guest-shutdown` ClusterPolicy rule, scoped to the test namespace and direct VMI. The opt-in policy-off arm skips that rule only for this test. It does not modify cluster-wide KubeVirt settings. The test retains serial, launcher, virtiofs, containerd, lifecycle, QEMU, VMI, policy, and cluster evidence and deletes only its UID-owned namespace and policy.
 
+## Manual repeated cycles
+
+The target can reuse one k3s/KubeVirt installation for up to three sequential VMI create/delete cycles. Each cycle has a fresh namespace, PVC, scoped policy, VMI UID, launcher Pod UID, and `cycles/NNN/` artifact directory; `cycle-identity.json` records the correlation. The test stops at the first cycle without ordered guest shutdown and correlated host shutdown evidence, then performs UID-checked cleanup. Its normal deletion path is graceful; any force deletion is confined to cleanup after the measured cycle has failed. The default is one cycle with policy on and production-like kernel log arguments.
+
+```bash
+bbr test //agentplane/system_tests/vm:test_tcg_vmi_shutdown \
+  --test_tag_filters=manual --nocache_test_results --flaky_test_attempts=1 \
+  --test_env=AGENTPLANE_TCG_VMI_CYCLES=3
+```
+
+After a clean baseline, a separate opt-in arm can add the exact historical debug arguments (`systemd.log_level=debug systemd.log_target=console loglevel=8`) with `--test_env=AGENTPLANE_TCG_VMI_DEBUG_KERNEL_ARGS=1`. Policy-off remains a separate explicit `--test_env=AGENTPLANE_TCG_VMI_SKIP_VIRTIOFS_POLICY=1` arm. The output `run-config.json` records these choices. A debug-arm stall could be affected by console verbosity; none of these direct-VMI arms reproduces the full CI topology.
+
+An uncached [two-cycle policy-on baseline](https://app.buildbuddy.io/invocation/83effe66-210e-465c-ac90-25c20125a390) passed in one 331.5-second test action. The distinct VMI UIDs were `a275228e-9347-4723-be8b-7168e26278b4` and `db74eceb-61be-4023-bf04-09c07b819f5f`; the corresponding guest ACPI request-marker counts were 3 and 4. Both retained shutdown diagnostics classify `orderly_guest_powerdown`, with ordered guest completion/powerdown markers and VMI-UID-correlated virt-handler `Shutoff reason Shutdown` events; neither has a correlated grace-expiry, launcher-kill, or destroyed-domain marker. The passing test also verifies UID-checked namespace, policy, PVC, and local PV cleanup after each cycle. Two clean cycles bound only this manual harness run; they do not establish a flake rate or explain the historical CI stalls.
+
 ## Policy A/B outcome
 
 The exact target ran three times in each arm, with test-result caching disabled and one allowed attempt. The arm commands were:
