@@ -1872,8 +1872,9 @@ the witness against the contract before authoring a premise. For
 receiver, `no_accessor_install_callables` when a computed-key call keeps that
 property from qualifying as bundle-owned, or `value_inputs` when a local
 binding captures an ordinary object (SPEC.md § Bundle-owned globals and §
-Captured ordinary-object values). `native_operation_inputs` applies to one
-selected consuming call; it does not discharge a census witness (SPEC.md §
+Captured ordinary-object values). `native_operation_inputs` applies separately
+to each selected consuming site; `map_empty` can select every direct `new Map()`
+data field of one checked object initializer. It does not discharge a census witness (SPEC.md §
 Native integrity inputs).
 For `set_from_primitive_array`, a dense array may contain primitive literals
 and earlier direct top-level primitive-literal `var`/`let`/`const` bindings

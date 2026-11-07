@@ -1779,6 +1779,78 @@ struct BindingDeclarationWrite {
     /// Source binding of a direct `new Set([...source, primitive literals])`.
     /// The interval and output schedule are certified separately.
     set_from_set_spread_source: Option<(Id, Span, Span)>,
+    /// Exact direct constructions in an object containing only ordinary,
+    /// noncomputed data fields initialized by bare zero-argument `new Map`.
+    empty_map_object_sites: Option<Vec<Span>>,
+}
+
+fn empty_map_object_sites(expression: &Expr) -> Option<Vec<Span>> {
+    let Expr::Object(object) = expression else {
+        return None;
+    };
+    if object.props.is_empty() {
+        return None;
+    }
+    object
+        .props
+        .iter()
+        .map(|property| {
+            let PropOrSpread::Prop(property) = property else {
+                return None;
+            };
+            let Prop::KeyValue(property) = property.as_ref() else {
+                return None;
+            };
+            if !matches!(
+                property.key,
+                PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+            ) || static_property_name(&property.key).as_deref() == Some("__proto__")
+            {
+                return None;
+            }
+            let Expr::New(construction) = property.value.as_ref() else {
+                return None;
+            };
+            (matches!(construction.callee.as_ref(), Expr::Ident(binding) if binding.sym == "Map")
+                && construction.args.as_ref().is_none_or(Vec::is_empty))
+            .then_some(construction.span)
+        })
+        .collect()
+}
+
+fn native_operation_initializers(
+    declaration: &BindingDeclarationWrite,
+    operation: NativeInputKind,
+) -> Option<Vec<(&ValueExpr, &[ValueExpr], CallSite)>> {
+    let initializer = declaration.initializer.as_ref()?;
+    match initializer {
+        ValueExpr::Call(callee, args, site) | ValueExpr::New(callee, args, site) => {
+            Some(vec![(callee.as_ref(), args.as_ref(), *site)])
+        }
+        ValueExpr::ObjectLiteral(_, fields)
+            if operation == NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) =>
+        {
+            let sites = declaration.empty_map_object_sites.as_ref()?;
+            if sites.len() != fields.len() {
+                return None;
+            }
+            fields
+                .iter()
+                .zip(sites)
+                .map(|((_, value), span)| {
+                    let ValueExpr::New(callee, args, site) = value else {
+                        return None;
+                    };
+                    (*site == CallSite::from(*span)).then_some((
+                        callee.as_ref(),
+                        args.as_ref(),
+                        *site,
+                    ))
+                })
+                .collect()
+        }
+        _ => None,
+    }
 }
 
 fn set_from_primitive_array_aliases(expression: &Expr) -> Option<Vec<Id>> {
@@ -7749,65 +7821,83 @@ impl ExecutionIndex {
             };
             let binding = (*binding).clone();
             let declaration = (*declaration).clone();
-            let Some(initializer) = declaration.initializer.as_ref() else {
+            if declaration.initializer.is_none() {
                 self.native_operation_input_errors.push(format!(
                     "{request} selected `{}` without an initializer",
                     input.selected_binding
                 ));
                 continue;
-            };
-            let (ValueExpr::Call(callee, args, call_site)
-            | ValueExpr::New(callee, args, call_site)) = initializer
+            }
+            let Some(initializers) =
+                native_operation_initializers(&declaration, input.evidence.operation)
             else {
+                let object_shape = if input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty)
+                {
+                    ", or an object containing only direct empty Map data fields"
+                } else {
+                    ""
+                };
                 self.native_operation_input_errors.push(format!(
-                    "{request} must select a direct top-level binding initialized by a {}",
+                    "{request} must select a direct top-level binding initialized by a {}{object_shape}",
                     native_operation_call_name(input.evidence.operation)
                 ));
                 continue;
             };
-            let Some(call) = self.top_calls[declaration.owner.0]
-                .iter()
-                .find(|call| CallSite::from(call.span) == *call_site)
-            else {
+            if declaration.empty_map_object_sites.is_some()
+                && self.binding_declaration_writes[&binding].len() != 1
+            {
                 self.native_operation_input_errors.push(format!(
-                    "{request} no longer resolves to a direct top-level call site"
+                    "{request} must select one unambiguous canonical object binding declaration"
                 ));
                 continue;
-            };
-            if input.evidence.operation.empty_constructor_name().is_some()
-                && declaration.initializer_span != Some(call.span)
-            {
-                self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
-                continue;
             }
-            if let Some(reason) = self.native_operation_call_shape_error(
-                input.evidence.operation,
-                callee,
-                args,
-                *call_site,
-                call,
-            ) {
-                self.native_operation_input_errors
-                    .push(format!("{request} {reason}"));
-                continue;
+            for (callee, args, call_site) in initializers {
+                let Some(call) = self.top_calls[declaration.owner.0]
+                    .iter()
+                    .find(|call| CallSite::from(call.span) == call_site)
+                else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} no longer resolves to a direct top-level call site"
+                    ));
+                    continue;
+                };
+                if input.evidence.operation.empty_constructor_name().is_some()
+                    && declaration.empty_map_object_sites.is_none()
+                    && declaration.initializer_span != Some(call.span)
+                {
+                    self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
+                    continue;
+                }
+                if let Some(reason) = self.native_operation_call_shape_error(
+                    input.evidence.operation,
+                    callee,
+                    args,
+                    call_site,
+                    call,
+                ) {
+                    self.native_operation_input_errors
+                        .push(format!("{request} {reason}"));
+                    continue;
+                }
+                let mut evidence = input.evidence.clone();
+                evidence.selected_binding = input.selected_binding.clone();
+                self.native_operation_input_evidence
+                    .insert(call_site, evidence.clone());
+                self.resolved_native_operation_inputs
+                    .push(ResolvedNativeOperationInput {
+                        evidence,
+                        binding: binding.clone(),
+                        selected_statement_span: input.selected_statement_span,
+                        declaration_span: declaration.binding_span,
+                        initializer_span: declaration.initializer_span.unwrap_or(call.span),
+                        call_span: call.span,
+                        initializer_ordinal: declaration.owner,
+                        spread_source: None,
+                        spread_source_span: None,
+                        spread_token_span: None,
+                    });
             }
-            let mut evidence = input.evidence.clone();
-            evidence.selected_binding = input.selected_binding.clone();
-            self.native_operation_input_evidence
-                .insert(*call_site, evidence.clone());
-            self.resolved_native_operation_inputs
-                .push(ResolvedNativeOperationInput {
-                    evidence,
-                    binding,
-                    selected_statement_span: input.selected_statement_span,
-                    declaration_span: declaration.binding_span,
-                    initializer_span: declaration.initializer_span.unwrap_or(call.span),
-                    call_span: call.span,
-                    initializer_ordinal: declaration.owner,
-                    spread_source: None,
-                    spread_source_span: None,
-                    spread_token_span: None,
-                });
         }
 
         for input in resolved {
@@ -7993,18 +8083,23 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            let Some(
-                ValueExpr::Call(callee, args, call_site) | ValueExpr::New(callee, args, call_site),
-            ) = declaration.initializer.as_ref()
+            let Some((callee, args, call_site)) =
+                native_operation_initializers(declaration, input.evidence.operation).and_then(
+                    |initializers| {
+                        initializers
+                            .into_iter()
+                            .find(|(_, _, site)| *site == CallSite::from(input.call_span))
+                    },
+                )
             else {
                 self.native_operation_input_errors.push(format!(
-                    "{request} no longer selects a direct native initializer"
+                    "{request} no longer selects the same direct native initializer site"
                 ));
                 continue;
             };
             let Some(call) = self.top_calls[declaration.owner.0]
                 .iter()
-                .find(|call| CallSite::from(call.span) == *call_site)
+                .find(|call| CallSite::from(call.span) == call_site)
             else {
                 self.native_operation_input_errors.push(format!(
                     "{request} no longer resolves to a direct top-level call site"
@@ -8012,6 +8107,7 @@ impl ExecutionIndex {
                 continue;
             };
             if input.evidence.operation.empty_constructor_name().is_some()
+                && declaration.empty_map_object_sites.is_none()
                 && declaration.initializer_span != Some(call.span)
             {
                 self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
@@ -8021,7 +8117,7 @@ impl ExecutionIndex {
                 input.evidence.operation,
                 callee,
                 args,
-                *call_site,
+                call_site,
                 call,
             ) {
                 self.native_operation_input_errors.push(format!(
@@ -8031,11 +8127,12 @@ impl ExecutionIndex {
             }
             let is_same = declaration.direct_top_level
                 && declaration.simple_identifier
+                && span_contains(input.selected_statement_span, declaration.binding_span)
                 && declaration.binding_span == input.declaration_span
                 && declaration.initializer_span == Some(input.initializer_span)
                 && declaration.owner == input.initializer_ordinal
                 && input.binding.0.as_ref() == input.evidence.selected_binding
-                && *call_site == CallSite::from(input.call_span);
+                && call_site == CallSite::from(input.call_span);
             if !is_same {
                 self.native_operation_input_errors.push(format!(
                     "{request} no longer identifies the same direct unshadowed native initializer"
@@ -8043,20 +8140,36 @@ impl ExecutionIndex {
                 continue;
             }
             self.native_operation_input_evidence
-                .insert(*call_site, input.evidence.clone());
+                .insert(call_site, input.evidence.clone());
             self.resolved_native_operation_inputs.push(input.clone());
         }
 
         let original_len = self.resolved_native_operation_inputs.len();
-        let mut references = BTreeSet::new();
+        let mut references = BTreeMap::new();
         let mut sites = BTreeSet::new();
         self.resolved_native_operation_inputs.retain(|input| {
-            references.insert(input.evidence.reference.clone())
-                && sites.insert(CallSite::from(input.call_span))
+            let same_initializer = references.get(&input.evidence.reference).is_none_or(
+                |previous: &ResolvedNativeOperationInput| {
+                    input.evidence.operation
+                        == NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty)
+                        && previous.evidence.operation == input.evidence.operation
+                        && previous.binding == input.binding
+                        && previous.selected_statement_span == input.selected_statement_span
+                        && previous.declaration_span == input.declaration_span
+                        && previous.initializer_span == input.initializer_span
+                        && previous.initializer_ordinal == input.initializer_ordinal
+                        && input.initializer_span != input.call_span
+                },
+            );
+            if !same_initializer || !sites.insert(CallSite::from(input.call_span)) {
+                return false;
+            }
+            references.insert(input.evidence.reference.clone(), input.clone());
+            true
         });
         if self.resolved_native_operation_inputs.len() != original_len {
             self.native_operation_input_errors.push(
-                "native_operation_inputs contain duplicate assertion references or call sites"
+                "native_operation_inputs contain conflicting assertion references or duplicate call sites"
                     .to_owned(),
             );
         }
@@ -12167,6 +12280,10 @@ impl Visit for ExecutionIndex {
                         .init
                         .as_deref()
                         .and_then(set_from_set_spread_source),
+                    empty_map_object_sites: declarator
+                        .init
+                        .as_deref()
+                        .and_then(empty_map_object_sites),
                 });
             self.property_key_assignments
                 .entry(binding.id.to_id())
@@ -12227,6 +12344,7 @@ impl Visit for ExecutionIndex {
                         primitive_literal_initializer: false,
                         set_from_primitive_array_aliases: None,
                         set_from_set_spread_source: None,
+                        empty_map_object_sites: None,
                     });
                 // A for-of declaration has no initializer: its key fact was
                 // supplied by the loop protocol, rather than an unknown RHS.
@@ -13652,7 +13770,7 @@ impl PreparedCallableCapabilities {
         };
         for input in &mut self.index.resolved_native_operation_inputs {
             input.evidence.declaration_location = locate(input.declaration_span);
-            input.evidence.initializer_location = locate(input.initializer_span);
+            input.evidence.initializer_location = locate(input.call_span);
             self.index
                 .native_operation_input_evidence
                 .insert(CallSite::from(input.call_span), input.evidence.clone());

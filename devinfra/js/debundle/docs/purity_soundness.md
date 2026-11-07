@@ -418,6 +418,15 @@ the program reject the assertion. Later property reads, methods, iteration and
 publication require their own ordinary proofs. Arguments, spreads, aliases,
 qualified callees, shadowing and wrapper expressions are not admitted.
 
+`map_empty` may select a nonempty object initializer whose fields are all
+noncomputed ordinary data properties directly initialized by bare zero-argument
+`new Map()`. The premise applies separately to each exact constructor site,
+including in saved-analysis restoration. Spreads, methods, accessors,
+`__proto__`, nesting and wrapped expressions are rejected by original syntax.
+The existing constructor transfer remains authoritative at each site; object
+result inference and heap checks are unchanged. This does not grant whole-object
+purity, a Map identity to the selected binding, or heap locality.
+
 For `text_encoder_empty`, the checked initializer is exactly a direct bare
 zero-argument `new TextEncoder()` through the unshadowed global identifier.
 The author asserts that this callee read resolves the original standard

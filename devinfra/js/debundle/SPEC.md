@@ -2513,7 +2513,7 @@ the facts came from a saved artifact.
 | Input                                | Selected source                                                                                                                                                            | Asserted slots                                                              |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `text_encoder_empty`                 | Top-level simple binding initialized by direct bare zero-argument `new TextEncoder()`                                                                                      | Original global `TextEncoder` data binding                                  |
-| `map_empty`                          | Top-level simple binding initialized by direct bare zero-argument `new Map()`                                                                                              | Original global `Map` data binding                                          |
+| `map_empty`                          | Top-level simple binding initialized by direct bare zero-argument `new Map()`, or an object containing only such data fields                                               | Original global `Map` data binding at each selected construction            |
 | `weak_map_empty`                     | Top-level simple binding initialized by direct bare zero-argument `new WeakMap()`                                                                                          | Original global `WeakMap` data binding                                      |
 | `set_empty`                          | Top-level simple binding initialized by direct bare zero-argument `new Set()`                                                                                              | Original global `Set` data binding                                          |
 | `symbol`                             | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                                                      | `%Symbol%`                                                                  |
@@ -2617,6 +2617,22 @@ mutations, and does not grant purity or integrity to another site. Aliases,
 shadowing, arguments, spreads, qualified callees and sequence or assignment
 wrappers remain unsupported. Each selected declarator carries its own
 assertion, including comma declarations.
+
+`map_empty` also accepts one unambiguous top-level simple binding whose
+initializer is a nonempty object literal containing only noncomputed ordinary
+data fields, each directly initialized by bare zero-argument `new Map()`:
+`var EMPTY = {counts: new Map(), statuses: new Map(), latest: new Map()};`.
+One assertion covers every constructor site in that initializer, with separate
+exact-site evidence and operation receipts. Fresh and restored analysis validate
+the same original field syntax and call spans. Each construction must read the
+original global `Map` data binding in every admitted initialization schedule;
+the audited parser-input digest remains required. Spreads, accessors, methods,
+computed keys, `__proto__` fields, empty objects, nested values, other calls and
+wrapper expressions are rejected. Keys may be identifiers, strings or numbers.
+Shadowed or imported constructors and known contradicting global `Map` writes
+remain rejected. The object and its fields retain ordinary value and heap
+inference; the input does not make the selected binding a Map or certify heap
+locality, later collection behavior, or program-wide native integrity.
 
 ### Bundle-owned globals
 

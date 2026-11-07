@@ -156,8 +156,8 @@ The `native_operation_inputs` selector may be a direct `source_match` or a
 reference to one already resolved logical member in the same provider chunk.
 The latter reuses the member's canonical selector result, including relational
 member selectors, and evidence records which selector form was used.
-The selector and parser-input digest identify one
-direct native initializer, while `AnalysisAssumptions` retains its validated
+The selector and parser-input digest identify the selected native initializer
+sites, while `AnalysisAssumptions` retains their validated
 evidence separately from inferred native identity. Operations include direct
 `Symbol` and `Symbol.for` calls, exact Map, WeakMap, and Set constructions,
 static `Object` own-data function member reads, and primitive array spreads
@@ -187,6 +187,15 @@ site. WeakMap shares the checked collection-construction effect transfer with
 Map and retains an opaque result; later methods and other constructor sites
 keep their ordinary checks. These inputs establish no family-wide integrity or
 purity.
+`map_empty` can also select a nonempty object initializer consisting solely of
+noncomputed ordinary data fields directly initialized by bare zero-argument
+`new Map()`. The declaration visitor retains those exact construction spans;
+fresh and restored validation use the same shape facts and constructor checks.
+Each site has its own resolved record, evidence and operation receipt under the
+one author reference. The object keeps ordinary value and heap inference.
+Unsupported fields, `__proto__`, wrappers and ambiguous declarations reject
+the input. This form asserts the original Map data binding separately at every
+selected construction in each admitted initialization schedule.
 The exact `Promise.resolve()` initializer premise requires stable global
 `Promise` and constructor `resolve` slots in the shared source census. Its
 independent `host_behavior.reentry_free_operations` assertion supplies timing; neither assertion
