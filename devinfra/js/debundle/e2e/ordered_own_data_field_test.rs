@@ -586,7 +586,9 @@ fn push_cannot_be_forced_before_a_root_array_length_read() {
         "",
     );
     assert_gate_rejected_banner(&rejected.entry_path(), &rejected.report_path("cycles.json"));
-    assert_node_output(&rejected.entry_path(), "1 1\n", "");
+    // The forced cyclic layout reaches append's lexical binding before its
+    // initializer, while the original evaluates normally.
+    assert_node_error(&rejected.entry_path(), "ReferenceError");
 
     let graph = rejected.dependency_graph();
     let length_origin = assert_non_assumed_length_read(&graph, "gamma");
@@ -596,12 +598,8 @@ fn push_cannot_be_forced_before_a_root_array_length_read() {
         cycles.iter().any(|cycle| {
             cycle["rejection"] == "mutual_constraining_cycle"
                 && cycle["modules"].as_array().is_some_and(|modules| {
-                    modules
-                        .iter()
-                        .any(|module| module.as_str().is_some_and(|path| path.contains("/read")))
-                        && modules.iter().any(|module| {
-                            module.as_str().is_some_and(|path| path.contains("/push"))
-                        })
+                    modules.iter().any(|module| module.as_str() == Some("read"))
+                        && modules.iter().any(|module| module.as_str() == Some("push"))
                 })
         }),
         "the forced module inversion must be refused as a read/push cycle: {cycles:#?}"
