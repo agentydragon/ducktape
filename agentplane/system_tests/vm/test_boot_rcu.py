@@ -1,6 +1,7 @@
 """Behavioral bounds and UID selection for the opt-in boot observer."""
 
 import json
+import threading
 from pathlib import Path
 
 import pytest_bazel
@@ -79,6 +80,38 @@ def test_output_byte_cap_keeps_complete_jsonl_records(tmp_path: Path, monkeypatc
     assert boot_rcu._append_bounded(path, {"x": "short"})
     assert not boot_rcu._append_bounded(path, {"x": "too-long-to-fit-twice"})
     assert [json.loads(line) for line in path.read_text().splitlines()] == [{"x": "short"}]
+
+
+def test_collector_records_byte_limit_as_clean_bounded_stop(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(boot_rcu, "MAX_BYTES", 0)
+    destination = tmp_path / "boot-rcu-host.jsonl"
+    stop, thread = boot_rcu.start(lambda *_args, **_kwargs: '{"items": []}', "scope", "vmi-uid", destination)
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    boot_rcu.stop_capture(stop, thread)
+    summary = json.loads((tmp_path / "boot-rcu-host-summary.json").read_text())
+    assert summary["stop_reason"] == "max_bytes"
+    assert summary["samples_written"] == 0
+    assert summary["clean_exit"] is True
+    assert destination.read_bytes() == b""
+    assert (tmp_path / "boot-rcu-host-summary.json").stat().st_size <= boot_rcu.MAX_SUMMARY_BYTES
+
+
+def test_collector_records_explicit_teardown_and_written_count(tmp_path: Path) -> None:
+    entered = threading.Event()
+
+    def kubectl(*_args: str, **_kwargs: object) -> str:
+        entered.set()
+        return '{"items": []}'
+
+    destination = tmp_path / "boot-rcu-host.jsonl"
+    stop, thread = boot_rcu.start(kubectl, "scope", "vmi-uid", destination)
+    assert entered.wait(timeout=2)
+    boot_rcu.stop_capture(stop, thread)
+    summary = json.loads((tmp_path / "boot-rcu-host-summary.json").read_text())
+    assert summary["stop_reason"] == "teardown"
+    assert summary["clean_exit"] is True
+    assert summary["samples_written"] == len(destination.read_text().splitlines())
 
 
 if __name__ == "__main__":

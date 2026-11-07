@@ -16,6 +16,7 @@ INTERVAL_SECONDS = 1.0
 MAX_SECONDS = 150.0
 MAX_SAMPLES = 120
 MAX_BYTES = 256 * 1024
+MAX_SUMMARY_BYTES = 1024
 MAX_THREADS = 16
 MAX_PROCESSES_SCANNED = 4096
 MAX_SCAN_SECONDS = 0.5
@@ -122,42 +123,90 @@ def _append_bounded(path: Path, record: dict[str, object]) -> bool:
     return True
 
 
+def _write_summary(
+    destination: Path, *, stop_reason: str, samples_written: int, clean_exit: bool, capture_errors: int
+) -> None:
+    summary = destination.with_name(destination.stem + "-summary.json")
+    encoded = (
+        json.dumps(
+            {
+                "stop_reason": stop_reason,
+                "samples_written": samples_written,
+                "clean_exit": clean_exit,
+                "capture_errors": capture_errors,
+                "observed_at_utc": datetime.now(UTC).isoformat(),
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode()
+    if len(encoded) > MAX_SUMMARY_BYTES:
+        raise ValueError("boot RCU observer summary exceeded its byte bound")
+    temporary = summary.with_name(summary.name + ".partial")
+    temporary.write_bytes(encoded)
+    temporary.replace(summary)
+
+
 def start(
     kubectl: Callable[..., str], namespace: str, vmi_uid: str, destination: Path, *, proc_root: Path = Path("/proc")
 ) -> tuple[threading.Event, threading.Thread]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(b"")
+    _write_summary(destination, stop_reason="not_finished", samples_written=0, clean_exit=False, capture_errors=0)
     stop = threading.Event()
 
     def collect() -> None:
         deadline = time.monotonic() + MAX_SECONDS
         pod: tuple[str, str] | None = None
-        for sample in range(MAX_SAMPLES):
-            if stop.is_set() or time.monotonic() >= deadline:
-                break
-            started = time.monotonic()
-            try:
-                if pod is None:
-                    pod = _launcher_pod(kubectl, namespace, vmi_uid)
-                record: dict[str, object] = {
-                    "sample": sample,
-                    "observed_at_utc": datetime.now(UTC).isoformat(),
-                    "namespace": namespace,
-                    "vmi_uid": vmi_uid,
-                    "pod_name": pod[0] if pod else None,
-                    "pod_uid": pod[1] if pod else None,
-                    "host_qemu": _sample_qemu(proc_root, pod[1]) if pod else {"pod_pending": True},
-                    "qmp": "disabled-passive-baseline",
-                }
-            except Exception as error:
-                record = {
-                    "sample": sample,
-                    "capture_error": type(error).__name__,
-                    "observed_at_utc": datetime.now(UTC).isoformat(),
-                }
-            if not _append_bounded(destination, record):
-                break
-            stop.wait(max(0.0, INTERVAL_SECONDS - (time.monotonic() - started)))
+        samples_written = 0
+        capture_errors = 0
+        stop_reason = "collector_error"
+        clean_exit = False
+        try:
+            for sample in range(MAX_SAMPLES):
+                if stop.is_set():
+                    stop_reason = "teardown"
+                    break
+                if time.monotonic() >= deadline:
+                    stop_reason = "deadline"
+                    break
+                started = time.monotonic()
+                try:
+                    if pod is None:
+                        pod = _launcher_pod(kubectl, namespace, vmi_uid)
+                    record: dict[str, object] = {
+                        "sample": sample,
+                        "observed_at_utc": datetime.now(UTC).isoformat(),
+                        "namespace": namespace,
+                        "vmi_uid": vmi_uid,
+                        "pod_name": pod[0] if pod else None,
+                        "pod_uid": pod[1] if pod else None,
+                        "host_qemu": _sample_qemu(proc_root, pod[1]) if pod else {"pod_pending": True},
+                        "qmp": "disabled-passive-baseline",
+                    }
+                except Exception as error:
+                    capture_errors += 1
+                    record = {
+                        "sample": sample,
+                        "capture_error": type(error).__name__,
+                        "observed_at_utc": datetime.now(UTC).isoformat(),
+                    }
+                if not _append_bounded(destination, record):
+                    stop_reason = "max_bytes"
+                    break
+                samples_written += 1
+                stop.wait(max(0.0, INTERVAL_SECONDS - (time.monotonic() - started)))
+            else:
+                stop_reason = "max_samples"
+            clean_exit = True
+        finally:
+            _write_summary(
+                destination,
+                stop_reason=stop_reason,
+                samples_written=samples_written,
+                clean_exit=clean_exit,
+                capture_errors=capture_errors,
+            )
 
     thread = threading.Thread(target=collect, name="vm-boot-rcu-host-observer", daemon=True)
     thread.start()

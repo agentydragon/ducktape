@@ -49,6 +49,9 @@ samples, 150 seconds and 256 KiB, with an explicit incomplete-scan result for
 permission errors or process-scan truncation. The new host observer issues no
 QMP command; the existing harness checks `query-kvm` only after the VMI becomes
 Ready. The guest's 1 Hz console writer is itself a perturbation.
+An independently bounded summary records the host sampler's stop reason,
+written sample count, capture-error count and clean-exit status; a crash leaves
+an explicit `not_finished` summary.
 
 One uncached policy-on smoke used source base `5a0996f9c2bcd437fb2af9aadc590e5c46f05509`
 plus working-tree patch SHA-256
