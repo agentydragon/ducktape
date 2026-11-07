@@ -672,25 +672,45 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
         .with_extra_chunks(REFLECT_CHUNKS)
         .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
     };
-    let control = run_rejection_fixture(opts());
-    let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
-    unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
-    let conflicts = control.atomic_group_conflicts();
+    let inferred = run_fixture(opts());
+    assert_preserved_entry_output(&inferred, "2 LaterError\n");
+    let inferred_effects = inferred.effect_translation_validation();
+    assert_eq!(
+        inferred_effects["decision"]["status"], "accepted",
+        "{inferred_effects:#}"
+    );
+    assert_eq!(
+        inferred_effects["decision"]["scope"], "statement_order_commutation",
+        "the accepted schedule is justified by its actual inversions: {inferred_effects:#}"
+    );
+    assert_eq!(inferred_effects["legacy_gate_accepts"], false);
+    assert_eq!(
+        inferred_effects["emitted_order"],
+        serde_json::json!([1, 2, 3, 4, 6, 5, 0, 7, 8]),
+        "the accepted schedule keeps the opaque Set call before LaterError: {inferred_effects:#}"
+    );
+    assert_eq!(inferred_effects["swapped_pairs"], 7, "{inferred_effects:#}");
+    assert_eq!(
+        inferred_effects["counts"]["uncovered_pairs"], 0,
+        "{inferred_effects:#}"
+    );
+    assert_eq!(
+        inferred_effects["premise_dependencies"],
+        serde_json::json!([])
+    );
+
+    let inferred_graph = serde_json::to_value(inferred.dependency_graph()).unwrap();
+    let inferred_program_graph = serde_json::to_value(inferred.program_graph()).unwrap();
     assert!(
-        conflicts.iter().any(|conflict| {
-            let claims = conflict["claims"].as_array().expect("conflict claims");
-            ["made", "later"].iter().all(|module| {
-                claims
-                    .iter()
-                    .any(|claim| claim["module"].as_str() == Some(*module))
-            })
-        }),
-        "the unproved constructor must block this split: {conflicts:#?}"
+        has_unknown_call_target(node_for_binding(&inferred_graph, "made")),
+        "the accepted schedule does not claim a Set operation proof: {inferred_graph}"
     );
     assert!(
-        has_unknown_call_target(node_for_binding(&control_graph, "made")),
-        "unproved Set construction still has a call frontier: {control_graph}"
+        native_input_uses(&inferred_graph).is_empty(),
+        "source-derived commutation must not invent an author premise: {inferred_graph}"
     );
+    unknown_receiver_witness(&inferred_program_graph);
+
     let fixture = run_fixture(
         opts().with_native_operation_inputs("static/app", vec![primitive_set_input(SOURCE)]),
     );
@@ -708,6 +728,12 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
         "exactly the selected Set site uses the premise: {graph}"
     );
     assert_eq!(uses[0]["evidence"]["operation"], "set_from_primitive_array");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "made");
+    assert_eq!(
+        uses[0]["evidence"]["reference"],
+        serde_json::json!({"defining_chunk": "static/app", "input_index": 0}),
+        "the explicit proof dependency belongs only to this selected input: {graph}"
+    );
     unknown_receiver_witness(&program_graph);
 }
 
