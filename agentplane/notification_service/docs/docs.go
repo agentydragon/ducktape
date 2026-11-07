@@ -1,15 +1,9 @@
-// Package docs holds the agent-facing documentation the Notification Service serves.
+// Package docs holds the agent-facing documentation embedded in the Notification CLI.
 package docs
 
 import "embed"
 
-// Agents holds the documentation served at /llms.txt and /docs/agents/, under `agents/`.
+// Agents holds the documentation embedded by `agentplane notifications guide`.
 //
 //go:embed agents
 var Agents embed.FS
-
-// OpenAPI is the OpenAPI document of the `Notifications` routes, generated from its proto and served at
-// /openapi.json.
-//
-//go:embed openapi.json
-var OpenAPI []byte

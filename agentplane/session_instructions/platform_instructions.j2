@@ -40,18 +40,16 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | Egress rules | {{ egress_api_url }} | `platform-route` |
 | Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
 | Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
-| Notifications HTTP | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
 
-The `agentplane` command calls these APIs for you. Its service commands read their base URLs and
+The `agentplane` command calls the workload APIs for you. Its service commands read their base URLs and
 placeholders from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
-or proxy flag. Recent Notification commands use their configured gRPC route rather than the HTTP URL above. Start with
-`agentplane --help`; each command's `--help` says what it does and what its exit status means.
+or proxy flag. Notifications uses its configured gRPC route. Start with `agentplane --help`; each
+command's `--help` says what it does and what its exit status means.
 
 Action workflow guides are bundled in the CLI: `agentplane actions guide [NAME]` reads the index or
-one guide without a service call. The Notifications HTTP service serves `/llms.txt` for its overview
-and links to workflow guides, and `/openapi.json` for request/response schemas. When this image's
-`agentplane notifications --help` lists `guide`, use `agentplane notifications guide` for the
-Notification overview and workflow guides; on older images, use the Notifications HTTP index.
+one guide without a service call. Notification overview and workflow guides are bundled in the CLI. When this image's
+`agentplane notifications --help` lists `guide`, use `agentplane notifications guide`. The
+Notification Service HTTP listener is reserved for the signed GitHub webhook.
 The Session Dispatcher exposes gRPC methods only, with no HTTP index. Check `agentplane --help` for
 the commands available in this image; when it lists `sessions`, use `agentplane sessions --help`.
 Read only the guides relevant to the task; you do not need every index at startup.
@@ -65,7 +63,7 @@ Read only the guides relevant to the task; you do not need every index at startu
 | Open or manage a Session | Check `agentplane --help`; if this image lists `sessions`, use `agentplane sessions --help` |
 | Delegate work to another Session | `agentplane actions guide session_delegation`; discover the target and runtime, then open and submit input separately |
 | Check Kubernetes access or request a temporary grant | `agentplane egress rules`, then `kubectl auth can-i`; `agentplane actions guide kubernetes` |
-| Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`, then `agentplane notifications guide` if available; otherwise Notifications `/llms.txt` |
+| Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`, then `agentplane notifications guide` |
 | Discover an existing environment (when `agentplane --help` lists `environments`) | `agentplane environments list`, then `agentplane environments get NAMESPACE NAME UID` for one exact target |
 
 Agentplane source and component documentation live in

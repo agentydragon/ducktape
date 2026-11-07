@@ -52,6 +52,33 @@ Callback and no-reentry keys below live under
 | A browser-global slot cannot expose its stored callback during synchronous initialization          | [Global publication](../../SPEC.md#deferred-browser-global-publication): `chunk_analysis_options.<chunk>.deferred_global_publications`; audit the host descriptor and all consumers                               |
 | A literal-key membership probe on a direct builtin global cannot reenter                           | [Host membership](../../SPEC.md#audited-builtin-global-membership-probes): `chunk_analysis_options.<chunk>.non_reentrant_global_membership`; audit exact keys, host identity, prototypes, aliases, and intrinsics |
 
+### Exact well-known Symbol class keys
+
+Use `native_operation_inputs` with `operation: symbol_well_known_class_keys`
+for one direct top-level simple class-variable initializer. Audit the original
+global Symbol data binding and its original own data properties at every eager
+computed method-key read through every admitted initialization schedule. Only
+direct `Symbol.asyncIterator`, `Symbol.asyncDispose` and `Symbol.dispose` keys
+are supported. The class must have no inheritance, decorators, static blocks
+or other computed key forms. Use the exact parser-input digest. Known required
+slot writes reject the input; opaque mutation paths remain an audit obligation.
+Each read receives separate evidence. Static field initializers and deferred
+instance code retain ordinary analysis; this supplies no whole-class purity,
+class shape or heap-locality contract. See
+[native integrity inputs](../../SPEC.md#native-integrity-inputs).
+
+Use the separate `symbol_primitive_class_keys` input when those same exact
+reads yield primitive own-data values that may be filled Symbols. Audit the
+global data read, ordinary non-Proxy receiver, and final own-data primitive
+result at every selected site in
+every admitted schedule. Only exact top-level typeof-guarded matching
+`Symbol.for("Symbol.<name>")` fills with empty catch are eligible known writes;
+other known selected-slot writes or global Symbol replacement reject it.
+The fill and its guard/call/setter effects remain ordinary. This grants no
+original-value identity or Symbol.for capability. Reads retain opaque external
+heap ordering, so removing callback constraints need not permit a smaller
+extraction. See the exact shape and ordering contract in the linked SPEC.
+
 ### Exact empty native construction
 
 Use `native_operation_inputs` with `operation: map_empty`,

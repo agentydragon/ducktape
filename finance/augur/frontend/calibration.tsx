@@ -7,7 +7,6 @@ import {
   type fetchAugurCatalog,
   type fetchAugurSettings,
   fetchCalibrationRun,
-  type CalibrationRunResponse,
 } from "./client";
 import { toastFetchError } from "./lib/toast";
 import { MetricFanChart } from "./fan_chart";
@@ -22,7 +21,8 @@ type CalibrationInfo = Awaited<ReturnType<typeof fetchAugurCalibrationInfo>>;
 type Bootstrap = Omit<Catalog, keyof Settings> & Settings & { calibration: CalibrationInfo };
 type MetricScale = ReturnType<typeof metricScaleFromSearch>;
 type MetricFanChartProps = Parameters<typeof MetricFanChart>[0];
-type CalibrationFan = NonNullable<CalibrationRunResponse["markFans"]>[number];
+type CalibrationRun = Awaited<ReturnType<typeof fetchCalibrationRun>>;
+type CalibrationFan = NonNullable<CalibrationRun["mark_fans"]>[number];
 
 // `chartValue` ending in `Usd` makes the shared `MetricFanChart` axis/tooltip format these
 // issuer channels as currency.
@@ -99,13 +99,13 @@ function IssuerFanPanel({
   );
 }
 
-function CalibrationResults({ response, metricScale }: { response: CalibrationRunResponse; metricScale: MetricScale }) {
-  const { result, markFans, valuationFans } = response;
+function CalibrationResults({ response, metricScale }: { response: CalibrationRun; metricScale: MetricScale }) {
+  const { result, mark_fans: markFans, valuation_fans: valuationFans } = response;
   return (
     <div className="min-w-0 space-y-5">
       <div className="augur-card p-4">
         <div className="augur-eyebrow">Model calibration</div>
-        <div className="mt-1 text-xs augur-muted">as of {result.asOf}</div>
+        <div className="mt-1 text-xs augur-muted">as of {result.as_of}</div>
       </div>
 
       <section className="augur-panel overflow-hidden" aria-label="Scored markets">
@@ -147,7 +147,7 @@ function CalibrationResults({ response, metricScale }: { response: CalibrationRu
         />
       ))}
 
-      {response.sanityBands && response.sanityBands.length > 0 && <SanityBandsPanel bands={response.sanityBands} />}
+      {response.sanity_bands && response.sanity_bands.length > 0 && <SanityBandsPanel bands={response.sanity_bands} />}
 
       <section className="augur-panel overflow-hidden" aria-label="Surfaced markets">
         <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -180,7 +180,7 @@ export function CalibrationWorkspace({
 }) {
   const catalog = bootstrap.calibration ?? null;
 
-  const [response, setResponse] = useState<CalibrationRunResponse | null>(null);
+  const [response, setResponse] = useState<CalibrationRun | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   // A run is in flight over already-rendered results (vs. the first load, which shows the skeleton).
   // Drives a subtle dim instead of tearing the page down — see the effect and render below.
@@ -193,11 +193,11 @@ export function CalibrationWorkspace({
   // effect from re-firing on unrelated re-renders (it keys on this request).
   const rollouts = clampRolloutCount(rolloutCount, bootstrap);
   const seed = clampFirstSeed(firstSeed);
-  const horizonMonths = bootstrap.maxHorizonMonths;
+  const horizonMonths = bootstrap.max_horizon_months;
   const request = useMemo(
     () => ({
-      presetId: model,
-      horizonMonths,
+      preset_id: model,
+      horizon_months: horizonMonths,
       rollouts,
       seed,
     }),
@@ -207,7 +207,7 @@ export function CalibrationWorkspace({
   // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score
   // on every settled request — mirrors the product page's metric-fan auto-refresh.
   useEffect(() => {
-    if (!catalog || !request.presetId) return undefined;
+    if (!catalog || !request.preset_id) return undefined;
     const controller = new AbortController();
     // Stale-while-revalidate: keep the current results on screen while the new run loads instead of
     // blanking to the skeleton. Changing the model (`?x=`) or rollout count (`?n=`) shouldn't flash

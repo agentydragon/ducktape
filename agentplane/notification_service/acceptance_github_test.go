@@ -17,11 +17,14 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/github/testing" // Shared fake API server; avoids colliding with Go testing.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -94,19 +97,23 @@ func postSignedGitHubDelivery(t *testing.T, service running, event string, paylo
 
 func githubSubscription(t *testing.T, service running, id string) map[string]any {
 	t.Helper()
-	code, result := agentCall(t, service, http.MethodGet, "/v1/subscriptions/"+id, sandboxToken, nil)
-	if code != http.StatusOK {
-		t.Fatalf("get GitHub subscription = %d %v", code, result)
+	code, result := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+		return service.notifications.GetSubscription(ctx, &notificationspb.GetSubscriptionRequest{SubscriptionId: id})
+	})
+	if code != codes.OK {
+		t.Fatalf("get GitHub subscription = %s %v", code, result)
 	}
 	return at(t, result, "subscription").(map[string]any)
 }
 
 func inboxEntries(t *testing.T, service running) []any {
 	t.Helper()
-	code, page := agentCall(t, service, http.MethodGet,
-		"/v1/sessions/"+testSession+"/inbox/entries?limit=128&after_cursor=0", sandboxToken, nil)
-	if code != http.StatusOK {
-		t.Fatalf("read recovered inbox = %d %v", code, page)
+	limit := int32(128)
+	code, page := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+		return service.notifications.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession, Limit: &limit})
+	})
+	if code != codes.OK {
+		t.Fatalf("read recovered inbox = %s %v", code, page)
 	}
 	return at(t, page, "entries").([]any)
 }
@@ -200,15 +207,20 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	}
 	service := start(t, tune)
 
-	code, created := agentCall(t, service, http.MethodPost, "/v1/subscriptions", sandboxToken, map[string]any{
-		"sessionId":      testSession,
-		"idempotencyKey": "missed-github-updates",
-		"source": map[string]any{"github": map[string]any{
-			"repository": "owner/repo", "subject": map[string]any{"pullRequest": map[string]any{"number": acceptancePullRequest}},
-		}},
+	request := &notificationspb.CreateSubscriptionRequest{
+		SessionId: testSession, IdempotencyKey: "missed-github-updates",
+		Source: &notificationspb.Source{Provider: &notificationspb.Source_Github{Github: &notificationspb.GitHubSource{
+			Repository: "owner/repo",
+			Subject: &notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_PullRequest{
+				PullRequest: &notificationspb.PullRequestSubject{Number: acceptancePullRequest},
+			}},
+		}}},
+	}
+	code, created := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+		return service.notifications.CreateSubscription(ctx, request)
 	})
-	if code != http.StatusOK {
-		t.Fatalf("subscribe to GitHub pull request = %d %v", code, created)
+	if code != codes.OK {
+		t.Fatalf("subscribe to GitHub pull request = %s %v", code, created)
 	}
 	subscription := at(t, created, "subscription").(map[string]any)
 	subscriptionID, inboxID := subscription["id"].(string), subscription["inboxId"].(string)
@@ -296,12 +308,14 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 			OriginCommandIds: []string{submitted[0].id},
 		}}}),
 	)
-	entriesPath := "/v1/sessions/" + testSession + "/inbox/entries?limit=128&after_cursor=0"
 	var confirmed map[string]any
 	eventually(t, "History confirmation of the notice", func() bool {
-		code, page := agentCall(t, service, http.MethodGet, entriesPath, sandboxToken, nil)
-		if code != http.StatusOK {
-			t.Fatalf("read confirmed inbox = %d %v", code, page)
+		limit := int32(128)
+		code, page := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+			return service.notifications.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession, Limit: &limit})
+		})
+		if code != codes.OK {
+			t.Fatalf("read confirmed inbox = %s %v", code, page)
 		}
 		confirmed = page
 		return at(t, page, "notice", "confirmed") == true
@@ -312,11 +326,16 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	if got := inboxEntries(t, service); !reflect.DeepEqual(got, recovered) {
 		t.Fatalf("History reconciliation changed recovered entries: %v", got)
 	}
-	lastCursor := at(t, recovered, 3, "cursor")
-	code, acknowledged := agentCall(t, service, http.MethodPut, "/v1/sessions/"+testSession+"/inbox/acknowledgement", sandboxToken,
-		map[string]any{"throughCursor": lastCursor})
-	if code != http.StatusOK || at(t, acknowledged, "inbox", "acknowledged") != lastCursor {
-		t.Fatalf("acknowledge through %v = %d %v", lastCursor, code, acknowledged)
+	lastCursor := at(t, recovered, 3, "cursor").(string)
+	throughCursor, err := strconv.ParseInt(lastCursor, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, acknowledged := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+		return service.notifications.AcknowledgeInbox(ctx, &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: throughCursor})
+	})
+	if code != codes.OK || at(t, acknowledged, "inbox", "acknowledged") != lastCursor {
+		t.Fatalf("acknowledge through %v = %s %v", lastCursor, code, acknowledged)
 	}
 
 	// Late matching native webhooks traverse signed HTTP ingress after polling recovered the same facts.

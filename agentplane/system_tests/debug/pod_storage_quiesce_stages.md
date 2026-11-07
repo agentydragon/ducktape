@@ -60,8 +60,8 @@ published `draining`, `flushing`, and `quiesced` before 09:45:34.185. Runner's
 The collector retained Runner's earlier `none` span but none of those later spans; it continued
 receiving Gateway spans during this interval.
 
-Runner's configured OTLP endpoint is `127.0.0.1:3132`, the egress sidecar's telemetry route to
-Alloy. Its SDK batches exports and flushes during process shutdown with a five-second bound.
+In the run documented here, Runner's configured OTLP endpoint was `127.0.0.1:3132`, the egress
+sidecar's telemetry route to Alloy. Its SDK batches exports and flushes during process shutdown with a five-second bound.
 Kubelet removed that route about 46 ms after signaling Runner, while Runner still had late
 spans to export. The exact exporter error is not retained in this run, so the artifacts do not
 prove which individual export attempt failed. They do establish that ordinary concurrent Pod

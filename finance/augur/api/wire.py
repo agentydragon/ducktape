@@ -1,6 +1,6 @@
 """Catalog/settings/calibration wire types for the public Augur API.
 
-Pydantic models at the HTTP boundary (snake_case on the wire; the frontend camelizes),
+Pydantic models at the HTTP boundary (snake_case on the wire, used directly by the frontend),
 exported to the frontend Zod schema via `augur.api.export_schema`. The three GET payloads
 (`CatalogResponse`, `SettingsResponse`, `CalibrationInfo`) are built once at startup from the
 deployment `Config` by `augur.api.catalog`."""

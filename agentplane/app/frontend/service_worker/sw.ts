@@ -1,5 +1,6 @@
+import { ActionState, Verdict, type ActionRequest } from "../../../action_service/action_service_pb";
 import { decideActionById, listActionRequests } from "../actions/client";
-import type { ActionRequestView } from "../actions/types";
+import { actionIdentity } from "../actions/presentation";
 import { formatActionNotification } from "../actions/notifications";
 
 interface PushShow {
@@ -7,7 +8,7 @@ interface PushShow {
   action_id: string;
   action_group: string;
   action_name: string;
-  version: number;
+  version: string;
   url: string;
 }
 
@@ -40,9 +41,9 @@ interface PendingSummary {
   kind: "summary";
 }
 
-async function fetchPending(): Promise<ActionRequestView[] | null> {
+async function fetchPending(): Promise<ActionRequest[] | null> {
   try {
-    return await listActionRequests("decision_pending", fetch);
+    return await listActionRequests(ActionState.DECISION_PENDING, fetch);
   } catch {
     /* Offline delivery still opens the app without offering stale decisions. */
   }
@@ -68,6 +69,7 @@ async function showPending(message: PushMessage): Promise<void> {
     for (const notification of await self.registration.getNotifications({ tag: PENDING_TAG })) notification.close();
   } else if (pending.length === 1) {
     const [request] = pending;
+    const action = actionIdentity(request);
     const content = formatActionNotification(request);
     await self.registration.showNotification(content.title, {
       ...options,
@@ -81,9 +83,9 @@ async function showPending(message: PushMessage): Promise<void> {
       data: {
         kind: "show",
         action_id: request.id,
-        action_group: request.action.group,
-        action_name: request.action.name,
-        version: request.version,
+        action_group: action.group,
+        action_name: action.name,
+        version: request.version.toString(),
         url: `/#/actions/${request.id}`,
       } satisfies PushShow,
     });
@@ -114,8 +116,15 @@ self.addEventListener("notificationclick", (event) => {
     return;
   }
   event.waitUntil(
-    decideActionById(message.action_id, message.version, event.action === "approve" ? "allow" : "deny", fetch)
-      .then(() => undefined)
+    Promise.resolve()
+      .then(() =>
+        decideActionById(
+          message.action_id,
+          BigInt(message.version),
+          event.action === "approve" ? Verdict.ALLOW : Verdict.DENY,
+          fetch
+        )
+      )
       .catch(() => self.clients.openWindow("/#/actions"))
   );
 });

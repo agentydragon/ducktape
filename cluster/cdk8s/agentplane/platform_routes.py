@@ -15,7 +15,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
-from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT, PlatformRoute, PlatformRoutes
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import egress, history_service, llm_ingress, notifications, sandbox_pod, telemetry
@@ -28,8 +28,12 @@ class Route:
     name: str
     service: ServiceRef
     audience: str | None
-    # On the sidecar's loopback, beside its proxy (3128) and readiness (3129) ports.
-    listen_port: int
+    service_prefixes: tuple[str, ...]
+
+    @property
+    def listen_port(self) -> int:
+        # All gRPC services share one local listener; full methods select the upstream route.
+        return PLATFORM_ROUTES_PORT
 
     @property
     def local_target(self) -> str:
@@ -41,24 +45,48 @@ ROUTE_BEARER = "platform-route"
 
 
 def ingress(namespace: str) -> Route:
-    return Route("ingress", history_service.ingress_service(namespace), RUNNER_INGRESS_AUDIENCE, 3131)
+    return Route(
+        "ingress",
+        history_service.ingress_service(namespace),
+        RUNNER_INGRESS_AUDIENCE,
+        ("/agentplane.history_service.SessionJournalIngress/",),
+    )
 
 
 def egress_rules(namespace: str) -> Route:
-    return Route("egress-rules", egress.admin(namespace), WORKLOAD_TOKEN_AUDIENCE, 3133)
+    return Route("egress-rules", egress.admin(namespace), WORKLOAD_TOKEN_AUDIENCE, ("/agentplane.egress.EgressRules/",))
 
 
 def model_config(namespace: str) -> Route:
-    return Route("model-config", llm_ingress.grpc_service(namespace), WORKLOAD_TOKEN_AUDIENCE, 3135)
+    return Route(
+        "model-config",
+        llm_ingress.grpc_service(namespace),
+        WORKLOAD_TOKEN_AUDIENCE,
+        ("/agentplane.llm_ingress.v1.ModelConfigService/",),
+    )
 
 
 def notifications_grpc(namespace: str) -> Route:
-    return Route("notifications", notifications.service(namespace), notifications.TOKEN_AUDIENCE, 3134)
+    return Route(
+        "notifications",
+        notifications.service(namespace),
+        notifications.TOKEN_AUDIENCE,
+        ("/agentplane.notification_service.Notifications/",),
+    )
 
 
 def telemetry_route() -> Route:
     """The runner's local, unauthenticated gRPC hop to Alloy; the runner never dials Alloy directly."""
-    return Route("telemetry", telemetry.ALLOY_OTLP_GRPC, None, 3132)
+    return Route(
+        "telemetry",
+        telemetry.ALLOY_OTLP_GRPC,
+        None,
+        (
+            "/opentelemetry.proto.collector.trace.v1.TraceService/",
+            "/opentelemetry.proto.collector.metrics.v1.MetricsService/",
+            "/opentelemetry.proto.collector.logs.v1.LogsService/",
+        ),
+    )
 
 
 def routes(namespace: str) -> tuple[Route, ...]:
@@ -71,21 +99,24 @@ def routes(namespace: str) -> tuple[Route, ...]:
     )
 
 
-def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> dict[str, PlatformRoute]:
-    """The sidecar's `platform_routes` setting."""
-    return {
-        route.name: PlatformRoute(
-            listen_address=f"{listen_host}:{route.listen_port}",
-            upstream=f"{route.service.fqdn}:{route.service.pod_port}",
-            **({"token_file": Path(sandbox_pod.audience_token_file(route.audience))} if route.audience else {}),
-        )
-        for route in routes(namespace)
-    }
+def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> PlatformRoutes:
+    """The sidecar's one listener and independently authenticated upstream routes."""
+    return PlatformRoutes(
+        listen_address=f"{listen_host}:{PLATFORM_ROUTES_PORT}",
+        routes={
+            route.name: PlatformRoute(
+                service_prefixes=route.service_prefixes,
+                upstream=f"{route.service.fqdn}:{route.service.pod_port}",
+                **({"token_file": Path(sandbox_pod.audience_token_file(route.audience))} if route.audience else {}),
+            )
+            for route in routes(namespace)
+        },
+    )
 
 
 def telemetry_endpoint(*, host: str = "127.0.0.1") -> str:
-    """The OTLP/gRPC endpoint on the sidecar route, in the caller's network namespace."""
-    return f"http://{host}:{telemetry_route().listen_port}"
+    """The OTLP/gRPC endpoint on the shared sidecar listener."""
+    return f"http://{host}:{PLATFORM_ROUTES_PORT}"
 
 
 class PlatformRouteFences(Construct):

@@ -2,8 +2,11 @@
 
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { create } from "@bufbuild/protobuf";
 
+import { ActionIdentitySchema, ActionState } from "../../../action_service/action_service_pb";
 import { STALE_AFTER_MS, streamRegistry } from "../stream_status";
+import { actionCaller, timestampText } from "./presentation";
 import { ActionRequests, stateLabel } from "./requests";
 import {
   ACTION_REQUEST_WATCH,
@@ -22,28 +25,29 @@ describe("ActionRequests", () => {
   it("shows a refused decision's structured error", async () => {
     const failure = { detail: { code: "operator_federation_exchange_failed" } };
     answerApi(() => Response.json(failure, { status: 502 }));
-    const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
+    const container = await renderLive(<ActionRequests />, [request(ActionState.DECISION_PENDING, 1)]);
     await act(async () => button(container, "Approve").click());
     await vi.waitFor(() => expect(container.textContent).toContain(JSON.stringify(failure)));
     expect(container.textContent).not.toContain("[object Object]");
   });
 
   it("summarizes who asked and when, and folds the full caller and request id behind it", async () => {
-    const row = request("decision_pending", 1);
+    const row = request(ActionState.DECISION_PENDING, 1);
     const container = await renderLive(<ActionRequests />, [row]);
-    const control = button(container, row.caller.name);
+    const caller = actionCaller(row);
+    const control = button(container, caller.name);
     expect(control.getAttribute("aria-expanded")).toBe("false");
     const requested = control.querySelector("time");
     if (!requested) throw new Error("missing the request time in the audit summary");
-    expect(Date.parse(requested.dateTime)).toBe(Date.parse(row.created_at));
-    expect(container.textContent).toContain(`Requested by ${row.caller.namespace}/${row.caller.name}`);
+    expect(Date.parse(requested.dateTime)).toBe(Date.parse(timestampText(row.createdAt) ?? ""));
+    expect(container.textContent).toContain(`Requested by ${caller.namespace}/${caller.name}`);
     expect(container.textContent).toContain(row.id);
     expect(button(container, "Approve").disabled).toBe(false);
   });
 
   it("renders every pending request with its arguments", async () => {
-    const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
-    expect(container.textContent).not.toContain(stateLabel("decision_pending"));
+    const container = await renderLive(<ActionRequests />, [request(ActionState.DECISION_PENDING, 1)]);
+    expect(container.textContent).not.toContain(stateLabel(ActionState.DECISION_PENDING));
     expect(button(container, "Approve").getAttribute("aria-label")).toBe("Approve");
     expect(button(container, "Deny").getAttribute("aria-label")).toBe("Deny");
     expect(button(container, "Approve").querySelector("svg")).not.toBeNull();
@@ -54,7 +58,7 @@ describe("ActionRequests", () => {
   });
 
   it("draws a registered Action's arguments with its widget, and the card's Raw switch turns them to JSON", async () => {
-    const container = await renderLive(<ActionRequests />, [sshExec("decision_pending")]);
+    const container = await renderLive(<ActionRequests />, [sshExec(ActionState.DECISION_PENDING)]);
     expect(container.textContent).toContain("test-user@test-host.example");
     expect(container.querySelector(".agentplane-command-call")).not.toBeNull();
     expect(container.textContent).not.toContain('"command"');
@@ -67,8 +71,8 @@ describe("ActionRequests", () => {
 
   it("uses a human-facing Action label instead of the technical group and name", async () => {
     const row = {
-      ...request("decision_pending", 1),
-      action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+      ...request(ActionState.DECISION_PENDING, 1),
+      action: create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" }),
       arguments: { namespace: "tofu-controller" },
     };
     const container = await renderLive(<ActionRequests />, [row]);
@@ -79,14 +83,14 @@ describe("ActionRequests", () => {
 
   it("offers no Raw switch where the arguments show only as their JSON", async () => {
     // An unregistered Action has no pretty argument view for Raw to switch back from.
-    const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
+    const container = await renderLive(<ActionRequests />, [request(ActionState.DECISION_PENDING, 1)]);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     expect(container.textContent).toContain('"token": "test-exact-token"');
   });
 
   it("renders the caller's own title and description verbatim, as plain text", async () => {
     const row = {
-      ...request("decision_pending", 1),
+      ...request(ActionState.DECISION_PENDING, 1),
       title: "delete the <b>crashlooping</b> test pod",
       description: "Restarted 14 times in *5* minutes; the rest of the test deployment is healthy.",
     };
@@ -98,18 +102,18 @@ describe("ActionRequests", () => {
   });
 
   it("renders a request whose caller supplied no description", async () => {
-    const row = { ...request("decision_pending", 1), description: null };
+    const row = { ...request(ActionState.DECISION_PENDING, 1), description: undefined };
     const container = await renderLive(<ActionRequests />, [row]);
     expect(container.textContent).toContain(row.title);
     expect(container.textContent).not.toContain("null");
   });
 
   it.each([
-    ["Approve", "allow", "allowed"],
-    ["Deny", "deny", "denied"],
+    ["Approve", "allow", ActionState.ALLOWED],
+    ["Deny", "deny", ActionState.DENIED],
   ] as const)("sends a human %s decision and replaces the pending receipt", async (label, verdict, state) => {
-    const pending = request("decision_pending", 1);
-    const sent = answerApi(() => ({ ...pending, state, version: 2 }));
+    const pending = request(ActionState.DECISION_PENDING, 1);
+    const sent = answerApi(() => ({ ...pending, state, version: 2n }));
     const container = await renderLive(<ActionRequests />, [pending]);
 
     await act(async () => button(container, label).click());
@@ -133,9 +137,9 @@ describe("ActionRequests", () => {
     await send([]);
     expect(container.textContent).toContain("No requests are waiting");
     expect(container.textContent).not.toContain("Loading actions");
-    await send([request("decision_pending", 1)]);
+    await send([request(ActionState.DECISION_PENDING, 1)]);
     expect(container.textContent).toContain("Pending (1)");
-    await send([request("denied", 1)]);
+    await send([request(ActionState.DENIED, 1)]);
     expect(container.textContent).toContain("Pending (0)");
     expect(sent).toEqual([]);
     const stream = TestNdjsonWatch.opened.get(ACTION_REQUEST_WATCH);
@@ -147,7 +151,7 @@ describe("ActionRequests", () => {
   it("keeps a dropped stream's requests without comment until it has been down a minute", async () => {
     vi.useFakeTimers();
     try {
-      const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
+      const container = await renderLive(<ActionRequests />, [request(ActionState.DECISION_PENDING, 1)]);
       await act(async () => {
         // A dropped fetch stream is retried with a fresh request after backoff.
         TestNdjsonWatch.current!.drop();

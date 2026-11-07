@@ -1,7 +1,7 @@
 import { NativeSelect, NumberInput, SegmentedControl } from "@mantine/core";
 import type { ReactNode } from "react";
 
-import type { AugurDeployment } from "./client";
+import type { fetchAugurDeployment } from "./client";
 import { replaceSearchParams } from "./url_state";
 
 const SCALE_OPTIONS = [
@@ -15,6 +15,7 @@ const CURRENCY_DISPLAY_OPTIONS = [
 ];
 
 type MetricScale = (typeof SCALE_OPTIONS)[number]["value"];
+type Deployment = Awaited<ReturnType<typeof fetchAugurDeployment>>;
 export type CurrencyDisplay = (typeof CURRENCY_DISPLAY_OPTIONS)[number]["value"];
 
 function isMetricScale(value: string): value is MetricScale {
@@ -237,17 +238,17 @@ function DeploymentCommitItem({
   image,
 }: {
   label: string;
-  image: NonNullable<AugurDeployment["api"]> | null | undefined;
+  image: NonNullable<Deployment["api"]> | null | undefined;
 }) {
-  const commit = shortCommit(image?.sourceCommit);
+  const commit = shortCommit(image?.source_commit);
   if (!commit) return null;
   const className = "mono font-semibold text-slate-700 dark:text-slate-200";
-  const title = image?.imageTag ? `${label}: ${image.imageTag}` : label;
+  const title = image?.image_tag ? `${label}: ${image.image_tag}` : label;
   return (
     <span className="whitespace-nowrap" title={title}>
       {label}{" "}
-      {image?.sourceCommitUrl ? (
-        <a className={`${className} augur-link`} href={image.sourceCommitUrl}>
+      {image?.source_commit_url ? (
+        <a className={`${className} augur-link`} href={image.source_commit_url}>
           {commit}
         </a>
       ) : (
@@ -257,9 +258,9 @@ function DeploymentCommitItem({
   );
 }
 
-export function DeploymentCommitSummary({ deployment }: { deployment: AugurDeployment | null }) {
-  const apiCommit = deployment?.api?.sourceCommit ?? null;
-  const frontendCommit = deployment?.frontend?.sourceCommit ?? null;
+export function DeploymentCommitSummary({ deployment }: { deployment: Deployment | null }) {
+  const apiCommit = deployment?.api?.source_commit ?? null;
+  const frontendCommit = deployment?.frontend?.source_commit ?? null;
   if (!apiCommit && !frontendCommit) return null;
   if (deployment != null && apiCommit && frontendCommit && apiCommit === frontendCommit) {
     return <DeploymentCommitItem label="Deployed" image={deployment.api} />;

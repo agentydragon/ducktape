@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"maps"
 	"net"
@@ -20,12 +19,10 @@ import (
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/github/client" // Distinguish GitHub transport from the Kubernetes client.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
@@ -131,24 +128,17 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 	return db, nil
 }
 
-// newRoutes is the HTTP listener's routes: the HTTP form of `Notifications` under /v1/ (served by agentFacade), the
-// webhook when GitHub is configured, and the agent documentation, which needs neither the database nor a peer.
-func newRoutes(agentFacade, webhookHandler http.Handler) (http.Handler, error) {
-	agentDocs, err := fs.Sub(docs.Agents, "agents")
-	if err != nil {
-		return nil, err
-	}
+// newRoutes keeps the HTTP listener for the signed GitHub webhook only. Workload methods are gRPC.
+func newRoutes(webhookHandler http.Handler) http.Handler {
 	routes := http.NewServeMux()
-	routes.Handle("/v1/", agentFacade)
 	if webhookHandler != nil {
 		routes.Handle(webhook.Pattern, webhookHandler)
 	}
-	facade.MountAgentDocs(routes, agentDocs, docs.OpenAPI)
-	return routes, nil
+	return routes
 }
 
-// serve answers until ctx ends or a worker or a listener fails: the servicers on grpcListener, and the HTTP form of
-// `Notifications`, its documentation and the webhook on httpListener.
+// serve answers until ctx ends or a worker or a listener fails: the servicers on grpcListener and the signed GitHub
+// webhook on httpListener.
 func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
 	resolver, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
 	if err != nil {
@@ -250,21 +240,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	notifications := api.NewNotifications(options)
 	notificationspb.RegisterNotificationsServer(grpcServer, notifications)
 	healthpb.RegisterHealthServer(grpcServer, health)
-	// The facade is the gRPC listener's own client, so the servicers authenticate every request. It outlives the termination signal, so that calls admitted before it
-	// finish while draining.
-	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopFacade()
-	agentFacade, err := facade.NewHandlerWithOptions(
-		facadeContext, grpcListener.Addr().String(), 0,
-		facade.HandlerOptions{RejectUnknownJSONFields: true}, notificationspb.RegisterNotificationsHandlerFromEndpoint,
-	)
-	if err != nil {
-		return err
-	}
-	routes, err := newRoutes(agentFacade, webhookHandler)
-	if err != nil {
-		return err
-	}
+	routes := newRoutes(webhookHandler)
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
 
 	// Each worker follows the commits on its own signal.
@@ -305,7 +281,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	notifications.Drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
-	// The facade's calls are gRPC calls, so the HTTP listener stops first.
+	// Stop the webhook listener before the workload gRPC listener.
 	if err := server.Shutdown(stopped); err != nil {
 		server.Close()
 	}

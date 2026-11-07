@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import pytest
 import pytest_bazel
@@ -33,6 +34,13 @@ def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> di
     volume = one(volume for volume in pod["volumes"] if volume["name"] == "environment-runtime-config")
     config_map = _by_name(docs, "ConfigMap", volume["configMap"]["name"])
     return cast(dict[str, Any], json.loads(config_map["data"]["environment-runtime.json"]))
+
+
+def _host_port(address: str) -> tuple[str, int]:
+    parsed = urlsplit(address if "://" in address else f"//{address}")
+    assert parsed.hostname is not None
+    assert parsed.port is not None
+    return parsed.hostname, parsed.port
 
 
 def _runner_pod(
@@ -331,28 +339,56 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
         if source["serviceAccountToken"]["path"] == "token"
     )
     assert auth["token_file"] == f"{token_mount['mountPath']}/{hop_token['path']}"
-    rules_route = runner_settings["platform_routes"]["egress-rules"]
+    runner_routes = runner_settings["platform_routes"]
+    launcher_routes = launcher_settings["platform_routes"]
+    runner_listener = _host_port(runner_routes["listen_address"])
+    launcher_listener = _host_port(launcher_routes["listen_address"])
+    assert runner_listener[0] == "127.0.0.1"
+    assert launcher_listener[0] == "0.0.0.0"
+    assert runner_listener[1] == launcher_listener[1]
+    routes = runner_routes["routes"]
+    launcher_route_config = launcher_routes["routes"]
+    ingress_route = routes["ingress"]
+    assert ingress_route["service_prefixes"] == ["/agentplane.history_service.SessionJournalIngress/"]
+    assert ingress_route["upstream"] == "history-service.agentplane-staging.svc.cluster.local:8081"
+    assert ingress_route["token_file"].endswith("/runner-ingress-token")
+    rules_route = routes["egress-rules"]
+    assert rules_route["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
     assert rules_route["token_file"] == auth["token_file"]
-    assert rules_route["listen_address"] == "127.0.0.1:3133"
     assert rules_route["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     env = {entry["name"]: entry.get("value") for entry in runner["env"]}
-    assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3133"
+    assert _host_port(env["AGENTPLANE_EGRESS_GRPC_URL"]) == runner_listener
     assert env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
-    notifications_route = runner_settings["platform_routes"]["notifications"]
-    assert notifications_route["listen_address"] == "127.0.0.1:3134"
+    model_config_route = routes["model-config"]
+    assert model_config_route["service_prefixes"] == ["/agentplane.llm_ingress.v1.ModelConfigService/"]
+    assert model_config_route["upstream"] == "llm-ingress.agentplane-staging.svc.cluster.local:8081"
+    notifications_route = routes["notifications"]
+    assert notifications_route["service_prefixes"] == ["/agentplane.notification_service.Notifications/"]
     assert notifications_route["upstream"] == "notifications.agentplane-staging.svc.cluster.local:8080"
     assert notifications_route["token_file"] == f"{token_mount['mountPath']}/notifications-token"
-    assert env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"] == "http://127.0.0.1:3134"
+    assert _host_port(env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == runner_listener
     assert env["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
-    for name, route in runner_settings["platform_routes"].items():
-        _, port = route["listen_address"].rsplit(":", 1)
-        assert route["listen_address"] == f"127.0.0.1:{port}"
-        assert launcher_settings["platform_routes"][name]["listen_address"] == f"0.0.0.0:{port}"
-        launcher_settings["platform_routes"][name]["listen_address"] = route["listen_address"]
+    assert (
+        _host_port(_runner_configuration(staging_manifests, pod)["model_config_service"]["target"]) == runner_listener
+    )
+    assert _host_port(env["OTEL_EXPORTER_OTLP_ENDPOINT"]) == runner_listener
+    telemetry_prefixes = routes["telemetry"]["service_prefixes"]
+    assert "token_file" not in routes["telemetry"]
+    assert telemetry_prefixes == [
+        "/opentelemetry.proto.collector.trace.v1.TraceService/",
+        "/opentelemetry.proto.collector.metrics.v1.MetricsService/",
+        "/opentelemetry.proto.collector.logs.v1.LogsService/",
+    ]
+    for name, route in routes.items():
+        assert launcher_route_config[name] == route
+    assert launcher_routes["listen_address"] == "0.0.0.0:3130"
+    del launcher_routes["listen_address"]
+    del runner_routes["listen_address"]
     del launcher_settings["listen_address"]
     del runner_settings["listen_address"]
     assert launcher_settings == runner_settings
+
     policy = _by_name(staging_manifests, "ClusterPolicy", f"{staging.ENV.namespace}-launcher-relay")
     inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
     volumes = inject["mutate"]["patchStrategicMerge"]["spec"]["volumes"]

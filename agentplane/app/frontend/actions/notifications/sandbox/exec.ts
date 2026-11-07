@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { actionArguments } from "../../presentation";
 
-import type { ActionRequestView } from "../../types";
+import type { ActionRequest } from "../../../../../action_service/action_service_pb";
 import { sandboxExecNotes } from "../../schemas/sandbox/exec";
 import { commandNotificationText } from "../command";
 import type { ActionNotificationParts } from "../types";
@@ -13,8 +14,8 @@ const sandboxExecNotificationArguments = z.strictObject({
   cwd: z.string().nullable().optional(),
 });
 
-export function sandboxExecNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = sandboxExecNotificationArguments.safeParse(request.arguments);
+export function sandboxExecNotification(request: ActionRequest): ActionNotificationParts | null {
+  const parsed = sandboxExecNotificationArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
 
   return {

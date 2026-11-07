@@ -1061,6 +1061,10 @@ pub enum NativeOperationKind {
     SetFromSetSpread,
     /// One static own-data function property read on the original Object constructor.
     ObjectOwnDataFunctionRead,
+    /// Exact well-known Symbol data reads in a direct class initializer's method keys.
+    SymbolWellKnownClassKeys,
+    /// Exact class-key reads of own data properties with unknown primitive values.
+    SymbolPrimitiveClassKeys,
     ArraySpreadFromPrimitiveArrays,
     PromiseResolve,
 }
@@ -1380,12 +1384,12 @@ pub enum VendorLevel {
     BundledPartialSwap(BundledPartialSwapMark),
 }
 
-/// What [`TransformSpec::unassigned_mode`] means for a chunk's
-/// top-level statements that the YAML doesn't explicitly claim for
-/// any logical module. The atomic-group primitive in
-/// `analysis::atomic_groups` partitions the chunk's source_units into
-/// minimal co-location groups; this enum decides what destination
-/// each *unclaimed* atomic group lands in.
+/// What [`TransformSpec::unassigned_mode`] means for a chunk's top-level
+/// statements that the YAML doesn't explicitly claim for any logical module.
+/// The atomic-group primitive in `analysis::atomic_groups` partitions the
+/// chunk's source units into minimal co-location groups; this enum decides how
+/// unclaimed source units are routed, with an explicit named-owner completion
+/// opt-in available under [`CoarseAtomicGroups`](Self::CoarseAtomicGroups).
 ///
 /// The variants are mutually exclusive — every chunk picks
 /// exactly one destination policy.
@@ -1419,8 +1423,16 @@ pub enum UnassignedMode {
     /// Merge wholly-unclaimed atomic groups with equal reachable fixed-owner
     /// sets in the strict constraining module projection. Output paths use
     /// `__auto/residual_groups/NNNN`. The final assignment still goes through
-    /// the ordinary realizability gate.
-    CoarseAtomicGroups,
+    /// the ordinary realizability gate. Each listed authored module may also
+    /// adopt unclaimed source units from an atomic group when it is that group's
+    /// sole authored owner.
+    CoarseAtomicGroups {
+        /// Explicitly opted-in authored module paths allowed to adopt the
+        /// unclaimed remainder of atomic groups they already own. Every path
+        /// must name a module in this chunk's authored `logical_modules` map.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        complete_partial_atomic_groups_for: Vec<String>,
+    },
 }
 
 impl UnassignedMode {
@@ -1433,6 +1445,17 @@ impl UnassignedMode {
                 Some(target.as_deref().unwrap_or(DEFAULT_RESIDUAL_MODULE_PATH))
             }
             _ => None,
+        }
+    }
+
+    /// Authored module paths explicitly allowed to complete a partial atomic
+    /// group under [`CoarseAtomicGroups`](Self::CoarseAtomicGroups).
+    pub fn partial_atomic_group_completion_owners(&self) -> &[String] {
+        match self {
+            UnassignedMode::CoarseAtomicGroups {
+                complete_partial_atomic_groups_for,
+            } => complete_partial_atomic_groups_for,
+            _ => &[],
         }
     }
 }

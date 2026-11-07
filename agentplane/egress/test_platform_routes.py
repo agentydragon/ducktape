@@ -19,7 +19,7 @@ UNARY = "/test.Echo/Unary"
 STREAM = "/test.Echo/Stream"
 FAILING = "/test.Echo/Failing"
 BLOCKING = "/test.Echo/Blocking"
-ARBITRARY = "/unknown.Service/AnyMethod"
+ARBITRARY = "/test.Echo/AnyMethod"
 
 
 @dataclass
@@ -92,7 +92,7 @@ def token_file(tmp_path: Path) -> Path:
 async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> AsyncIterator[RouteUnderTest]:
     handler, port = upstream
     route_config = {
-        "control": PlatformRoute(listen_address="127.0.0.1:0", upstream=f"127.0.0.1:{port}", token_file=token_file)
+        "control": PlatformRoute(service_prefixes=("/test.Echo/",), upstream=f"127.0.0.1:{port}", token_file=token_file)
     }
     async with (
         SidecarProcess(
@@ -103,7 +103,7 @@ async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> Asy
             platform_routes=route_config,
         ) as sidecar,
         grpc.aio.insecure_channel(
-            f"{sidecar.platform_route_listeners['control'].host}:{sidecar.platform_route_listeners['control'].port}"
+            f"{sidecar.platform_route_listener.host}:{sidecar.platform_route_listener.port}"
         ) as channel,
     ):
         yield RouteUnderTest(channel, handler, token_file)
@@ -151,9 +151,18 @@ async def test_stream_flows_both_ways_without_waiting_for_client_half_close(rout
     assert dict(await call.trailing_metadata())["x-upstream-trailer"] == "trailer-value"
 
 
-async def test_arbitrary_method_passes_through_without_service_protos(route_channel: RouteUnderTest) -> None:
+async def test_arbitrary_method_in_an_allowlisted_service_passes_without_service_protos(
+    route_channel: RouteUnderTest,
+) -> None:
     assert await _unary(route_channel.channel, ARBITRARY)(b"opaque payload") == b"daolyap euqapo"
     assert route_channel.upstream.seen[-1].method == ARBITRARY
+
+
+async def test_unknown_service_is_rejected(route_channel: RouteUnderTest) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as error:
+        await _unary(route_channel.channel, "/unknown.Service/AnyMethod")(b"opaque payload")
+    assert error.value.code() is grpc.StatusCode.UNIMPLEMENTED
+    assert all(call.method != "/unknown.Service/AnyMethod" for call in route_channel.upstream.seen)
 
 
 async def test_upstream_status_and_trailing_metadata_reach_the_workload(route_channel: RouteUnderTest) -> None:

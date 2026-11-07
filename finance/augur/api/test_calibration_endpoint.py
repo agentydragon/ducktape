@@ -100,7 +100,7 @@ def test_run_calibration(client: TestClient, synthetic_evidence_dir: Path) -> No
     clean_row = result["clean"][0]
     # Every market's p_market is the injected live stub price.
     assert clean_row["p_market"] == 0.5
-    # Snake_case on the wire (the frontend camelizes). p_model/kl_bits are optional (dropped when
+    # Snake_case on the wire (the frontend uses it directly). p_model/kl_bits are optional (dropped when
     # None — e.g. no rollout resolved within the horizon), so we only require the always-present
     # fields here.
     assert {"market_id", "question", "url", "platform", "p_market", "ci95", "n_resolved", "unresolved"} <= set(

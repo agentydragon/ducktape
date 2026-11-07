@@ -14,9 +14,9 @@ import "google/protobuf/timestamp.proto";
 // Callers are workloads. Every call acts for the caller's ServiceAccount, which its workloads share, and only on
 // what that account owns: a subscription or inbox that exists but belongs to another account answers `NOT_FOUND`,
 // as a missing one does. The configured app account can also read Session inbox diagnostics and entry payloads
-// across the namespace, without authority to mutate other accounts' inboxes. The HTTP annotations define the
-// service's compatibility API and the integration app's generated browser facade. `agentplane notifications` uses
-// generated gRPC for unary workload operations; direct HTTP clients remain supported during the compatibility period.
+// across the namespace, without authority to mutate other accounts' inboxes. The HTTP annotations define the integration app's generated browser facade over gRPC. `agentplane notifications`
+// uses generated gRPC for workload operations; the service itself serves no HTTP workload API. Keep these annotations
+// for the App gateway even though direct HTTP workload clients are no longer served here.
 //
 // An error carries the gRPC status code that names it. `INVALID_ARGUMENT` is a malformed or out-of-range request,
 // `NOT_FOUND` a missing or unowned resource, `PERMISSION_DENIED` a source the account may not follow or a Sandbox

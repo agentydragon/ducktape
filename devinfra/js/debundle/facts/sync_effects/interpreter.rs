@@ -3239,8 +3239,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ) else {
             return false;
         };
-        // Identity discharges this lookup only. An operation-use record is
-        // reserved for the separately admitted invocation.
+        // Identity discharges this lookup only. Heap read analysis records
+        // the exact read use; invocation uses require separate admission.
         self.record_proof_dependencies(
             NativeIntegrityGuard::NativeCallIdentity,
             &premise.dependencies,
@@ -10208,6 +10208,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 unreachable!("the shared transfer evaluates primitive values")
             }
             ValueExpr::Member(object, property, is_static_identifier, site) => {
+                if let Some(premise) = self
+                    .inputs
+                    .index
+                    .primitive_class_key_read_premise(site.source_span())
+                {
+                    self.record_proof_dependencies(
+                        NativeIntegrityGuard::NativeCallIdentity,
+                        &premise.dependencies,
+                    );
+                    self.state
+                        .inference_uses
+                        .borrow_mut()
+                        .insert(premise.inference_use);
+                    return Values::from([AbstractValue::PRIMITIVE]);
+                }
                 if let Some(read) = self.root_own_data_read(expr) {
                     return read.values;
                 }
@@ -11620,7 +11635,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return CallTransfer::EffectsOnly;
         }
         if call.kind == CallKind::LocalMemberRead {
-            if self.native_member_lookup_is_data(&call.callee, None) {
+            if let Some(premise) = self
+                .inputs
+                .index
+                .primitive_class_key_read_premise(call.span)
+            {
+                self.record_proof_dependencies(
+                    NativeIntegrityGuard::NativeCallIdentity,
+                    &premise.dependencies,
+                );
+                self.state
+                    .inference_uses
+                    .borrow_mut()
+                    .insert(premise.inference_use);
+                // Data and primitive do not imply a constant property value.
+                // Keep its external heap observation on the ordinary timeline.
+                outcome.effects.heap_contents.opaque = true;
+                outcome.effects.heap_contents.observes_external_heap = true;
+                return CallTransfer::EffectsOnly;
+            }
+            if self.native_member_lookup_is_data(&call.callee, Some(call.span.lo.0)) {
                 return CallTransfer::EffectsOnly;
             }
             if self.closed_enum_member_read(&call.callee) {
@@ -12807,6 +12841,10 @@ impl PreparedSynchronousCallIndex {
             })
             .collect();
         FreshRecordFreezeHeapProof { sites }
+    }
+
+    pub(crate) fn primitive_class_key_read(&self, span: Span) -> bool {
+        self.index.primitive_class_key_read_premise(span).is_some()
     }
 
     pub(crate) fn native_own_data_read(
@@ -14248,7 +14286,16 @@ impl Executor<'_, '_> {
                                     })
                             })
                 });
-                (result.values, selection)
+                // This declaration is reached only on the module's normal
+                // continuation. Unavailable denotes an abrupt alternative of
+                // the initializer, not a value that can be stored in its
+                // lexical cell. Keep the initializer's incomplete outcome and
+                // retain Unavailable when it has no normal result at all.
+                let mut values = result.values;
+                if values.len() > 1 {
+                    values.remove(&AbstractValue::Value(Value::Unavailable));
+                }
+                (values, selection)
             } else if let Some(source) = initializer_source {
                 let RuntimeValue::Initializer {
                     values,

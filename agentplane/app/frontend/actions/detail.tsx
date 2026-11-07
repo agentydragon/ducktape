@@ -5,6 +5,8 @@ import { useLocation, useNavigate } from "react-router";
 
 import { ActionRequestsContext, PendingActionCard } from "./requests";
 import { ActionHistoryCard } from "./history";
+import { ActionState, ExecutorKind } from "../../../action_service/action_service_pb";
+import { actionIdentity } from "./presentation";
 import { listActionGroups } from "./client";
 
 type InAppReturnTo = string | { pathname: string; search?: string; hash?: string };
@@ -34,8 +36,8 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const navigate = useNavigate();
   const location = useLocation();
   const actions = useContext(ActionRequestsContext);
-  const [executorKind, setExecutorKind] = useState<string | null>(null);
-  const [returnAfterDecision, setReturnAfterDecision] = useState<{ requestId: string; version: number } | null>(null);
+  const [executorKind, setExecutorKind] = useState<ExecutorKind | null>(null);
+  const [returnAfterDecision, setReturnAfterDecision] = useState<{ requestId: string; version: bigint } | null>(null);
   const historyState = location.state as { returnTo?: unknown } | null;
   const returnTo = inAppReturnTo(historyState?.returnTo);
   const liveRequest = actions?.requests.find((item) => item.id === requestId);
@@ -43,9 +45,11 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const request = liveRequest ?? cachedRequest;
   const detailRequestId = request?.id;
   const detailRequestState = request?.state;
-  const detailActionGroup = request?.action.group;
+  const detailActionGroup = request === undefined ? undefined : actionIdentity(request).group;
   const stalePendingRequest =
-    liveRequest === undefined && cachedRequest?.state === "decision_pending" && actions?.staleRequestIds.has(requestId);
+    liveRequest === undefined &&
+    cachedRequest?.state === ActionState.DECISION_PENDING &&
+    actions?.staleRequestIds.has(requestId);
   const loading = actions?.detailLoadingIds.has(requestId) ?? false;
   const error = actions?.detailErrors.get(requestId) ?? null;
   const knownRequests = actions?.knownRequests;
@@ -72,7 +76,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
     const decided = actions?.knownRequests.get(returnAfterDecision.requestId);
     if (
       decided === undefined ||
-      decided.state === "decision_pending" ||
+      decided.state === ActionState.DECISION_PENDING ||
       decided.version <= returnAfterDecision.version
     ) {
       return;
@@ -81,14 +85,14 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   }, [actions?.knownRequests, navigate, returnAfterDecision, returnTo]);
 
   useEffect(() => {
-    if (detailRequestId === undefined || detailRequestState === "decision_pending") {
+    if (detailRequestId === undefined || detailRequestState === ActionState.DECISION_PENDING) {
       setExecutorKind(null);
       return;
     }
     let active = true;
     void listActionGroups().then(
       (groups) => {
-        if (active) setExecutorKind(groups.find((group) => group.key === detailActionGroup)?.executor_kind ?? null);
+        if (active) setExecutorKind(groups.find((group) => group.key === detailActionGroup)?.executorKind ?? null);
       },
       () => {
         if (active) setExecutorKind(null);
@@ -126,7 +130,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
       {!loading && !stalePendingRequest && error === null && request === undefined && (
         <Text c="dimmed">This action is no longer available.</Text>
       )}
-      {!loading && !stalePendingRequest && error === null && request?.state === "decision_pending" && (
+      {!loading && !stalePendingRequest && error === null && request?.state === ActionState.DECISION_PENDING && (
         <Stack>
           {actions?.error !== null && actions?.error !== undefined && (
             <Alert color="red" title="Action update failed">
@@ -144,8 +148,8 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
           />
         </Stack>
       )}
-      {!loading && error === null && request !== undefined && request.state !== "decision_pending" && (
-        <ActionHistoryCard request={request} mcp={executorKind === "mcp"} />
+      {!loading && error === null && request !== undefined && request.state !== ActionState.DECISION_PENDING && (
+        <ActionHistoryCard request={request} mcp={executorKind === ExecutorKind.MCP} />
       )}
     </Stack>
   );

@@ -14,12 +14,6 @@ openapi_zod_ts_library(
 )
 
 ts_library(
-    name = "casing",
-    srcs = ["casing.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
     name = "frame",
     srcs = ["frame.ts"],
     tsconfig = TSCONFIG,

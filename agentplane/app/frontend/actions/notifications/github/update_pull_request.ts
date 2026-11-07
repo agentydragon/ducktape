@@ -1,4 +1,5 @@
-import type { ActionRequestView } from "../../types";
+import type { ActionRequest } from "../../../../../action_service/action_service_pb";
+import { actionArguments } from "../../presentation";
 import {
   pullRequestUpdateChanges,
   pullRequestUpdateVerb,
@@ -6,8 +7,8 @@ import {
 } from "../../schemas/github/update_pull_request";
 import type { ActionNotificationParts } from "../types";
 
-export function updatePullRequestNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = zUpdatePullRequestArguments.safeParse(request.arguments);
+export function updatePullRequestNotification(request: ActionRequest): ActionNotificationParts | null {
+  const parsed = zUpdatePullRequestArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
   const args = parsed.data;
   const changes = pullRequestUpdateChanges(args);

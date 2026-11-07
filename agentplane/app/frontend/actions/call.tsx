@@ -7,7 +7,8 @@ import { TimeAgo } from "../time_ago";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/frontend/clamped_block";
 import { JsonBlock } from "../text_block";
 import { RawSwitch } from "../raw_switch";
-import type { ActionRequestView } from "./client";
+import type { ActionRequest } from "../../../action_service/action_service_pb";
+import { actionArguments, actionCaller, actionIdentity, timestampText } from "./presentation";
 import {
   renderActionCall,
   renderActionLabel,
@@ -18,12 +19,17 @@ import {
 /** Who asked and when, on one summary line ("claude-ai · 2 minutes ago"), over the request's own
  * verbose identifiers nobody reads at a glance: the UUID, the caller's namespace, and the later
  * timestamps. */
-function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.Element {
+function RequestAuditDetails({ request }: { request: ActionRequest }): JSX.Element {
+  const caller = actionCaller(request);
+  const createdAt = timestampText(request.createdAt);
+  const decidedAt = timestampText(request.decision?.decidedAt);
+  const startedAt = timestampText(request.execution?.startedAt);
+  const completedAt = timestampText(request.execution?.completedAt);
   return (
     <Disclosure
       summary={
         <Text component="span" size="xs" c="dimmed">
-          {request.caller.name} · <TimeAgo value={request.created_at} />
+          {caller.name} · <TimeAgo value={createdAt ?? ""} />
         </Text>
       }
       keepMounted
@@ -34,21 +40,21 @@ function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.E
             Request <Code>{request.id}</Code>
           </Text>
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-            Requested by {serviceAccountKey(request.caller)}
+            Requested by {serviceAccountKey(caller)}
           </Text>
-          {request.decision && (
+          {decidedAt && (
             <Text size="xs" c="dimmed">
-              Decided <TimeAgo value={request.decision.decided_at} />
+              Decided <TimeAgo value={decidedAt} />
             </Text>
           )}
-          {request.execution?.started_at && (
+          {startedAt && (
             <Text size="xs" c="dimmed">
-              Started <TimeAgo value={request.execution.started_at} />
+              Started <TimeAgo value={startedAt} />
             </Text>
           )}
-          {request.execution?.completed_at && (
+          {completedAt && (
             <Text size="xs" c="dimmed">
-              Completed <TimeAgo value={request.execution.completed_at} />
+              Completed <TimeAgo value={completedAt} />
             </Text>
           )}
         </Stack>
@@ -75,7 +81,7 @@ export function ActionCall({
   combinedCall: providedCombinedCall,
   detailsOnly = false,
 }: {
-  request: ActionRequestView;
+  request: ActionRequest;
   /** The history summary already presents identity, intent, status and Raw controls. */
   detailsOnly?: boolean;
   status?: ReactNode;
@@ -87,10 +93,11 @@ export function ActionCall({
   /** Precomputed by history so it can hide a result already shown in this view. */
   combinedCall?: RenderedActionCall | null;
 }): JSX.Element {
-  const actionLabel = renderActionLabel(request.action, request.arguments);
-  const prettyArguments = renderDetailsArguments(request.action, request.arguments);
-  const combinedCall =
-    providedCombinedCall === undefined ? renderActionCall(request.action, request.arguments) : providedCombinedCall;
+  const action = actionIdentity(request);
+  const args = actionArguments(request);
+  const actionLabel = renderActionLabel(action, args);
+  const prettyArguments = renderDetailsArguments(action, args);
+  const combinedCall = providedCombinedCall === undefined ? renderActionCall(action, args) : providedCombinedCall;
   const showCombinedCall = combinedCall !== undefined && combinedCall !== null && combinedCall.content != null;
   return (
     <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
@@ -99,7 +106,7 @@ export function ActionCall({
           <Group justify="space-between" align="flex-start" gap="xs">
             {actionLabel === undefined ? (
               <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
-                {request.action.group} / {request.action.name}
+                {action.group} / {action.name}
               </Text>
             ) : (
               actionLabel
@@ -141,7 +148,7 @@ export function ActionCall({
               <Text size="sm" fw={600} mb={4}>
                 Exact arguments
               </Text>
-              {prettyArguments === undefined || raw ? <JsonBlock value={request.arguments} /> : prettyArguments}
+              {prettyArguments === undefined || raw ? <JsonBlock value={args} /> : prettyArguments}
             </>
           )}
         </div>

@@ -4,11 +4,10 @@ from dataclasses import dataclass
 
 from agentplane.egress.resources import placeholder_of
 from agentplane.session_instructions.platform_instructions import SessionRuntime, render_platform_instructions
-from cluster.cdk8s.agentplane import actions, notifications, platform_routes, session_dispatcher
+from cluster.cdk8s.agentplane import actions, platform_routes, session_dispatcher
 from cluster.cdk8s.agentplane.environment import Environment
 
 _WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
-_NOTIFICATIONS_PLACEHOLDER = "agentplane-credential-agentplane-notifications-workload"
 _SESSIONS_PLACEHOLDER = placeholder_of(session_dispatcher.WORKLOAD_CREDENTIAL)
 
 
@@ -19,19 +18,16 @@ class ServiceUrls:
     egress_grpc: str
     actions: str
     sessions: str
-    notifications: str
     notifications_grpc: str
 
 
 def service_urls(env: Environment, *, egress_host: str = "127.0.0.1") -> ServiceUrls:
     actions_service = actions.service(env.namespace)
     sessions_service = session_dispatcher.service(env.namespace)
-    notifications_http = notifications.http_service(env.namespace)
     return ServiceUrls(
         egress_grpc=f"http://{egress_host}:{platform_routes.egress_rules(env.namespace).listen_port}",
         actions=f"http://{actions_service.fqdn}:{actions_service.port.number}",
         sessions=f"http://{sessions_service.fqdn}:{sessions_service.port.number}",
-        notifications=f"http://{notifications_http.fqdn}:{notifications_http.port.number}",
         notifications_grpc=f"http://{egress_host}:{platform_routes.notifications_grpc(env.namespace).listen_port}",
     )
 
@@ -43,7 +39,6 @@ def platform_instructions(env: Environment, *, session_runtime: SessionRuntime, 
         egress_api_url=urls.egress_grpc,
         actions_service_url=urls.actions,
         sessions_service_url=urls.sessions,
-        notifications_service_url=urls.notifications,
         session_runtime=session_runtime,
     )
 
@@ -55,8 +50,6 @@ def agent_cli_environment(urls: ServiceUrls) -> dict[str, str]:
         "AGENTPLANE_ACTIONS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
         "AGENTPLANE_SESSIONS_URL": urls.sessions,
         "AGENTPLANE_SESSIONS_CREDENTIAL": _SESSIONS_PLACEHOLDER,
-        "AGENTPLANE_NOTIFICATIONS_URL": urls.notifications,
-        "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": _NOTIFICATIONS_PLACEHOLDER,
         "AGENTPLANE_NOTIFICATIONS_GRPC_URL": urls.notifications_grpc,
         "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL": platform_routes.ROUTE_BEARER,
         "AGENTPLANE_EGRESS_GRPC_URL": urls.egress_grpc,

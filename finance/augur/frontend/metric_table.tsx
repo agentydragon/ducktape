@@ -28,8 +28,8 @@ export function TerminalMetricTable({
   selectedSummary: SelectedSummary | null | undefined;
   selectedMetric: MetricOption;
 }) {
-  if (result == null || !("terminalMetricPercentiles" in result) || !result.terminalMetricPercentiles) return null;
-  const currency = { currencyCode: result.currencyCode, currencyQuantum: result.currencyQuantum };
+  if (result == null || !("terminal_metric_percentiles" in result) || !result.terminal_metric_percentiles) return null;
+  const currency = { currencyCode: result.currency_code, currencyQuantum: result.currency_quantum };
   const percentileRows = FAN_PERCENTILES.map((percentile) => ({
     percentile,
     value: terminalPercentileValue(result, percentile),
@@ -39,7 +39,7 @@ export function TerminalMetricTable({
   // currently-selected metric's selected value vs. its percentile distribution.
   const selectedValue =
     selectedSummary && (!selectedSummary.failed || result.basis === "observed_through_stop")
-      ? endingMetricValue(selectedSummary.endingMetrics, selectedMetric)
+      ? endingMetricValue(selectedSummary.ending_metrics, selectedMetric)
       : null;
   const anchorValue = selectedValue;
   const showSelectedColumn =
@@ -131,7 +131,7 @@ export function TerminalScenarioComparison({
     isActive: scenario.id === activeId,
     result: resultsById.get(scenario.id)?.metric === metric.value ? resultsById.get(scenario.id) : null,
   }));
-  if (columns.every((column) => !column.result?.terminalMetricPercentiles)) return null;
+  if (columns.every((column) => !column.result?.terminal_metric_percentiles)) return null;
   const recorded = columns.some((column) => column.result?.basis === "observed_through_stop");
   return (
     <div className="border-t border-slate-200 dark:border-slate-700" data-product-scenario-comparison="">
@@ -181,19 +181,19 @@ export function TerminalScenarioComparison({
                 >
                   <div className="font-semibold">
                     {fmtQuanta(terminalPercentileValue(column.result, 50), {
-                      currencyCode: column.result?.currencyCode,
-                      currencyQuantum: column.result?.currencyQuantum,
+                      currencyCode: column.result?.currency_code,
+                      currencyQuantum: column.result?.currency_quantum,
                     })}
                   </div>
                   <div className="text-[11px] augur-muted">
                     {fmtQuanta(terminalPercentileValue(column.result, 5), {
-                      currencyCode: column.result?.currencyCode,
-                      currencyQuantum: column.result?.currencyQuantum,
+                      currencyCode: column.result?.currency_code,
+                      currencyQuantum: column.result?.currency_quantum,
                     })}{" "}
                     -{" "}
                     {fmtQuanta(terminalPercentileValue(column.result, 95), {
-                      currencyCode: column.result?.currencyCode,
-                      currencyQuantum: column.result?.currencyQuantum,
+                      currencyCode: column.result?.currency_code,
+                      currencyQuantum: column.result?.currency_quantum,
                     })}
                   </div>
                 </td>

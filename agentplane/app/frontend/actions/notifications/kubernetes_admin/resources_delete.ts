@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { actionArguments } from "../../presentation";
 
-import type { ActionRequestView } from "../../types";
+import type { ActionRequest } from "../../../../../action_service/action_service_pb";
 import type { ActionNotificationParts } from "../types";
 
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
@@ -13,8 +14,8 @@ const resourcesDeleteNotificationArguments = z.strictObject({
   gracePeriodSeconds: z.int().nonnegative().optional(),
 });
 
-export function resourcesDeleteNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = resourcesDeleteNotificationArguments.safeParse(request.arguments);
+export function resourcesDeleteNotification(request: ActionRequest): ActionNotificationParts | null {
+  const parsed = resourcesDeleteNotificationArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
 
   return {

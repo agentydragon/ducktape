@@ -34,7 +34,7 @@ classifies errors by. CONNECT needs a hijacked tunnel either way.
 ## Sidecar settings: strict `yaml.v3`, not Viper
 
 The proxy and the other Go services read their settings through Viper. The sidecar does not, because
-its file keys maps by data: `audience_token_files` by audience and `platform_routes` by route name.
+its file keys maps by data: `audience_token_files` by audience and `platform_routes.routes` by route name; each route also allowlists exact gRPC service prefixes.
 Viper lowercases every key, map keys included. With v1.21.0 (`ExperimentalBindStruct`,
 `UnmarshalExact`) two audiences that differ only in case merge into one entry and a route name loses
 its case, so a Pod could offer one audience the other's token. `config_test.go` keeps both spellings

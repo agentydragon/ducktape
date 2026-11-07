@@ -1782,6 +1782,149 @@ struct BindingDeclarationWrite {
     /// Exact direct constructions in an object containing only ordinary,
     /// noncomputed data fields initialized by bare zero-argument `new Map`.
     empty_map_object_sites: Option<Vec<Span>>,
+    /// Eager computed ordinary method keys of a direct plain class initializer.
+    symbol_class_key_sites: Option<Vec<Span>>,
+}
+
+fn symbol_class_key_property(property: &str) -> Option<&'static str> {
+    if !matches!(property, "asyncIterator" | "asyncDispose" | "dispose") {
+        return None;
+    }
+    builtins::data_property("Symbol", property)
+        .filter(|data| data.value == builtins::PropertyValue::Primitive)
+        .map(|data| data.name)
+}
+
+/// Eligibility under the primitive-read premise, not a proof that the guard,
+/// call or assignment is silent or that the fill successfully installs data.
+fn symbol_guarded_fill(statement: &IfStmt) -> Option<(Id, &'static str, Span)> {
+    if statement.alt.is_some() {
+        return None;
+    }
+    let Expr::Bin(test) = statement.test.as_ref() else {
+        return None;
+    };
+    if !matches!(test.op, BinaryOp::NotEq | BinaryOp::NotEqEq) {
+        return None;
+    }
+    let Expr::Unary(probe) = test.left.as_ref() else {
+        return None;
+    };
+    if probe.op != UnaryOp::TypeOf
+        || !matches!(test.right.as_ref(), Expr::Lit(Lit::Str(value)) if value.value.to_string_lossy() == "symbol")
+    {
+        return None;
+    }
+    let Expr::Member(read) = probe.arg.as_ref() else {
+        return None;
+    };
+    let Expr::Ident(symbol) = read.obj.as_ref() else {
+        return None;
+    };
+    let MemberProp::Ident(key) = &read.prop else {
+        return None;
+    };
+    if symbol.sym != "Symbol" {
+        return None;
+    }
+    let property = symbol_class_key_property(key.sym.as_ref())?;
+    let Stmt::Try(body) = statement.cons.as_ref() else {
+        return None;
+    };
+    let handler = body.handler.as_ref()?;
+    if body.finalizer.is_some() || handler.param.is_some() || !handler.body.stmts.is_empty() {
+        return None;
+    }
+    let [Stmt::Expr(expression)] = body.block.stmts.as_slice() else {
+        return None;
+    };
+    let Expr::Assign(assignment) = expression.expr.as_ref() else {
+        return None;
+    };
+    let AssignTarget::Simple(SimpleAssignTarget::Member(target)) = &assignment.left else {
+        return None;
+    };
+    if assignment.op != AssignOp::Assign
+        || !matches!(target.obj.as_ref(), Expr::Ident(receiver) if receiver.to_id() == symbol.to_id())
+        || !matches!(&target.prop, MemberProp::Ident(key) if key.sym.as_ref() == property)
+    {
+        return None;
+    }
+    let Expr::Call(call) = assignment.right.as_ref() else {
+        return None;
+    };
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Member(callee) = callee.as_ref() else {
+        return None;
+    };
+    let [argument] = call.args.as_slice() else {
+        return None;
+    };
+    (matches!(callee.obj.as_ref(), Expr::Ident(receiver) if receiver.to_id() == symbol.to_id())
+        && matches!(&callee.prop, MemberProp::Ident(key) if key.sym == "for")
+        && argument.spread.is_none()
+        && matches!(argument.expr.as_ref(), Expr::Lit(Lit::Str(value))
+            if value.value.to_string_lossy() == format!("Symbol.{property}")))
+    .then(|| (symbol.to_id(), property, target.span))
+}
+
+fn symbol_class_key_sites(expression: &Expr) -> Option<Vec<Span>> {
+    let Expr::Class(expression) = expression else {
+        return None;
+    };
+    let class = &expression.class;
+    if class.super_class.is_some() || !class.decorators.is_empty() {
+        return None;
+    }
+    let mut sites = Vec::new();
+    for member in &class.body {
+        match member {
+            ClassMember::Method(method) => {
+                if !method.function.decorators.is_empty()
+                    || method.function.params.iter().any(|parameter| !parameter.decorators.is_empty())
+                {
+                    return None;
+                }
+                if let PropName::Computed(key) = &method.key {
+                    if method.kind != MethodKind::Method {
+                        return None;
+                    }
+                    let Expr::Member(read) = key.expr.as_ref() else {
+                        return None;
+                    };
+                    let Expr::Ident(receiver) = read.obj.as_ref() else {
+                        return None;
+                    };
+                    let MemberProp::Ident(property) = &read.prop else {
+                        return None;
+                    };
+                    if receiver.sym != "Symbol"
+                        || symbol_class_key_property(property.sym.as_ref()).is_none()
+                    {
+                        return None;
+                    }
+                    sites.push(read.span);
+                }
+            }
+            ClassMember::ClassProp(property)
+                if property.decorators.is_empty()
+                    && !matches!(property.key, PropName::Computed(_)) => {}
+            ClassMember::PrivateProp(property) if property.decorators.is_empty() => {}
+            ClassMember::PrivateMethod(method)
+                if method.function.decorators.is_empty()
+                    && method.function.params.iter().all(|parameter| parameter.decorators.is_empty()) => {}
+            ClassMember::Constructor(constructor)
+                if !matches!(constructor.key, PropName::Computed(_))
+                    && constructor.params.iter().all(|parameter| {
+                        matches!(parameter, ParamOrTsParamProp::Param(parameter) if parameter.decorators.is_empty())
+                    }) => {}
+            ClassMember::Empty(_) => {}
+            _ => return None,
+        }
+    }
+    (!sites.is_empty()).then_some(sites)
 }
 
 fn empty_map_object_sites(expression: &Expr) -> Option<Vec<Span>> {
@@ -2272,6 +2415,20 @@ pub(super) fn object_own_data_read_property(
     builtins::data_property("Object", property)
         .filter(|data| data.value == builtins::PropertyValue::Function)
         .map(|data| data.name)
+}
+
+fn symbol_well_known_read_property(
+    value: &ValueExpr,
+    is_declared: impl Fn(&Id) -> bool,
+) -> Option<&'static str> {
+    let [
+        IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+        IntrinsicSlot::Static(NativeIntrinsic::Symbol, property),
+    ] = native_own_data_read_slots(value, is_declared)?
+    else {
+        return None;
+    };
+    symbol_class_key_property(property)
 }
 
 /// Slot obligations for an exact native own-data lookup. Receiver and key
@@ -5901,6 +6058,7 @@ struct ExecutionIndex {
     value_input_errors: Vec<String>,
     resolved_native_operation_inputs: Vec<ResolvedNativeOperationInput>,
     native_operation_input_evidence: BTreeMap<CallSite, NativeOperationInputEvidence>,
+    symbol_guarded_fill_sites: BTreeMap<CallSite, (Id, &'static str)>,
     native_operation_input_errors: Vec<String>,
     primitive_native_symbol_calls: BTreeSet<CallSite>,
     native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
@@ -6101,6 +6259,7 @@ impl Default for ExecutionIndex {
             value_input_errors: Vec::new(),
             resolved_native_operation_inputs: Vec::new(),
             native_operation_input_evidence: BTreeMap::new(),
+            symbol_guarded_fill_sites: BTreeMap::new(),
             native_operation_input_errors: Vec::new(),
             primitive_native_symbol_calls: BTreeSet::new(),
             native_integrity_value_input_refs: BTreeSet::new(),
@@ -7143,6 +7302,23 @@ impl ExecutionIndex {
                             vec![Global(Object), Static(Object, property)],
                         )
                     }
+                    NativeInputKind::Operation(Operation::SymbolWellKnownClassKeys) => {
+                        let [declaration] = self
+                            .binding_declaration_writes
+                            .get(&input.binding)?
+                            .as_slice()
+                        else {
+                            return None;
+                        };
+                        let property =
+                            self.symbol_class_key_read_property(declaration, input.call_span)?;
+                        (
+                            input.call_span,
+                            vec![Global(Symbol), Static(Symbol, property)],
+                        )
+                    }
+                    // A primitive own-data read supplies no original native identity.
+                    NativeInputKind::Operation(Operation::SymbolPrimitiveClassKeys) => return None,
                     // The spread of the co-located primitive-array interval.
                     NativeInputKind::Operation(Operation::ArraySpreadFromPrimitiveArrays) => (
                         input.initializer_span,
@@ -7573,6 +7749,25 @@ impl ExecutionIndex {
                 self.validate_selected_object_read(input);
                 continue;
             }
+            if matches!(
+                input.evidence.operation,
+                NativeInputKind::Operation(
+                    spec::NativeOperationKind::SymbolWellKnownClassKeys
+                        | spec::NativeOperationKind::SymbolPrimitiveClassKeys
+                )
+            ) {
+                match self.resolve_symbol_class_keys(input) {
+                    Ok(inputs) => {
+                        for input in inputs {
+                            self.native_operation_input_evidence
+                                .insert(input.call_span.into(), input.evidence.clone());
+                            self.resolved_native_operation_inputs.push(input);
+                        }
+                    }
+                    Err(error) => self.native_operation_input_errors.push(error),
+                }
+                continue;
+            }
             if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::SetEmptyPrivateField)
             {
@@ -7916,6 +8111,40 @@ impl ExecutionIndex {
                 self.validate_resolved_object_read(input);
                 continue;
             }
+            if matches!(
+                input.evidence.operation,
+                NativeInputKind::Operation(
+                    spec::NativeOperationKind::SymbolWellKnownClassKeys
+                        | spec::NativeOperationKind::SymbolPrimitiveClassKeys
+                )
+            ) {
+                let selected = SelectedNativeOperationInput {
+                    evidence: input.evidence.clone(),
+                    selected_binding: input.evidence.selected_binding.clone(),
+                    selected_statement_span: input.selected_statement_span,
+                };
+                match self.resolve_symbol_class_keys(&selected) {
+                    Ok(inputs) if inputs.iter().any(|candidate| {
+                        candidate.binding == input.binding
+                            && candidate.declaration_span == input.declaration_span
+                            && candidate.initializer_span == input.initializer_span
+                            && candidate.call_span == input.call_span
+                            && candidate.initializer_ordinal == input.initializer_ordinal
+                            && input.spread_source.is_none()
+                            && input.spread_source_span.is_none()
+                            && input.spread_token_span.is_none()
+                    }) => {
+                        self.native_operation_input_evidence
+                            .insert(input.call_span.into(), input.evidence.clone());
+                        self.resolved_native_operation_inputs.push(input.clone());
+                    }
+                    Ok(_) => self.native_operation_input_errors.push(format!(
+                        "{request} no longer identifies the same exact well-known Symbol class-key read"
+                    )),
+                    Err(error) => self.native_operation_input_errors.push(error),
+                }
+                continue;
+            }
             if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::SetEmptyPrivateField)
             {
@@ -8150,9 +8379,14 @@ impl ExecutionIndex {
         self.resolved_native_operation_inputs.retain(|input| {
             let same_initializer = references.get(&input.evidence.reference).is_none_or(
                 |previous: &ResolvedNativeOperationInput| {
-                    input.evidence.operation
-                        == NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty)
-                        && previous.evidence.operation == input.evidence.operation
+                    matches!(
+                        input.evidence.operation,
+                        NativeInputKind::Operation(
+                            spec::NativeOperationKind::MapEmpty
+                                | spec::NativeOperationKind::SymbolWellKnownClassKeys
+                                | spec::NativeOperationKind::SymbolPrimitiveClassKeys
+                        )
+                    ) && previous.evidence.operation == input.evidence.operation
                         && previous.binding == input.binding
                         && previous.selected_statement_span == input.selected_statement_span
                         && previous.declaration_span == input.declaration_span
@@ -8173,6 +8407,85 @@ impl ExecutionIndex {
                     .to_owned(),
             );
         }
+    }
+
+    fn symbol_class_key_read_property(
+        &self,
+        declaration: &BindingDeclarationWrite,
+        span: Span,
+    ) -> Option<&'static str> {
+        if !declaration.symbol_class_key_sites.as_ref()?.contains(&span) {
+            return None;
+        }
+        let call = self.top_calls[declaration.owner.0].iter().find(|call| {
+            call.kind == CallKind::LocalMemberRead && call.caller.is_none() && call.span == span
+        })?;
+        symbol_well_known_read_property(&call.callee, |id| self.declared_bindings().contains(id))
+    }
+
+    fn resolve_symbol_class_keys(
+        &self,
+        input: &SelectedNativeOperationInput,
+    ) -> Result<Vec<ResolvedNativeOperationInput>, String> {
+        let request = &input.evidence.spec_location;
+        let candidates: Vec<_> = self
+            .binding_declaration_writes
+            .iter()
+            .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
+            .flat_map(|(binding, writes)| {
+                writes.iter().filter_map(move |declaration| {
+                    (declaration.direct_top_level
+                        && declaration.simple_identifier
+                        && span_contains(input.selected_statement_span, declaration.binding_span))
+                    .then_some((binding, declaration))
+                })
+            })
+            .collect();
+        let [(binding, declaration)] = candidates.as_slice() else {
+            return Err(format!(
+                "{request} must select exactly one direct simple top-level class-variable declaration"
+            ));
+        };
+        if self.binding_declaration_writes[*binding].len() != 1 {
+            return Err(format!(
+                "{request} requires one unambiguous canonical class binding declaration"
+            ));
+        }
+        let Some(sites) = declaration.symbol_class_key_sites.as_ref() else {
+            return Err(format!(
+                "{request} requires a direct class initializer without extends, decorators or static blocks, whose computed keys are ordinary methods using only direct Symbol.asyncIterator, Symbol.asyncDispose or Symbol.dispose reads"
+            ));
+        };
+        let initializer_span = declaration
+            .initializer_span
+            .ok_or_else(|| format!("{request} has no exact class initializer span"))?;
+        sites.iter().map(|span| {
+            let property = self.symbol_class_key_read_property(declaration, *span)
+                .ok_or_else(|| format!("{request} requires exact unshadowed bare-global Symbol class-key reads"))?;
+            let contradiction = if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolPrimitiveClassKeys) {
+                self.known_primitive_symbol_read_contradiction(property)
+            } else {
+                self.known_native_read_contradiction(NativeIntrinsic::Symbol, property)
+            };
+            if let Some(owner) = contradiction {
+                return Err(format!("{request} is contradicted by a known Symbol binding or Symbol.{property} write in source unit {}", owner.0));
+            }
+            let mut evidence = input.evidence.clone();
+            evidence.selected_binding = input.selected_binding.clone();
+            Ok(ResolvedNativeOperationInput {
+                evidence,
+                binding: (*binding).clone(),
+                selected_statement_span: input.selected_statement_span,
+                declaration_span: declaration.binding_span,
+                initializer_span,
+                call_span: *span,
+                initializer_ordinal: declaration.owner,
+                spread_source: None,
+                spread_source_span: None,
+                spread_token_span: None,
+            })
+        }).collect()
     }
 
     fn validate_selected_object_read(&mut self, input: &SelectedNativeOperationInput) {
@@ -8212,7 +8525,9 @@ impl ExecutionIndex {
             ));
             return;
         };
-        if let Some(owner) = self.known_object_read_contradiction(&property) {
+        if let Some(owner) =
+            self.known_native_read_contradiction(NativeIntrinsic::Object, &property)
+        {
             self.native_operation_input_errors.push(format!(
                 "{request} is contradicted by a known Object binding or Object.{property} write in source unit {}", owner.0
             ));
@@ -8283,7 +8598,9 @@ impl ExecutionIndex {
             ));
             return;
         }
-        if let Some(owner) = self.known_object_read_contradiction(&property) {
+        if let Some(owner) =
+            self.known_native_read_contradiction(NativeIntrinsic::Object, &property)
+        {
             self.native_operation_input_errors.push(format!(
                 "{request} is contradicted by a known Object binding or Object.{property} write in source unit {}", owner.0
             ));
@@ -8494,18 +8811,68 @@ impl ExecutionIndex {
         })
     }
 
-    fn known_object_read_contradiction(&self, property: &str) -> Option<SourceUnitOrdinal> {
+    fn known_native_read_contradiction(
+        &self,
+        family: NativeIntrinsic,
+        property: &str,
+    ) -> Option<SourceUnitOrdinal> {
         for slot in [
             NativeWriteSlot {
                 receiver: NativeReceiverPath::GlobalObject,
-                key: NativePropertyKey::String("Object".to_owned()),
+                key: NativePropertyKey::String(family.global_binding()?.to_owned()),
             },
             NativeWriteSlot {
-                receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Object),
+                receiver: NativeReceiverPath::Constructor(family),
                 key: NativePropertyKey::String(property.to_owned()),
             },
         ] {
             if let NativeSlotOverlap::Known(owner) = self.source_slot_overlap(&slot) {
+                return Some(owner);
+            }
+        }
+        None
+    }
+
+    /// Check this chunk's original source witnesses. Whole-program admission
+    /// applies this same check to every analyzed chunk with its own AST sites.
+    /// The raw census remains unchanged, including every eligible fill.
+    fn known_primitive_symbol_read_contradiction(
+        &self,
+        property: &str,
+    ) -> Option<SourceUnitOrdinal> {
+        for slot in [
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String("Symbol".to_owned()),
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Symbol),
+                key: NativePropertyKey::String(property.to_owned()),
+            },
+        ] {
+            let witnesses = self
+                .native_write_census
+                .witnesses
+                .iter()
+                .chain(
+                    self.native_write_census
+                        .conditional
+                        .iter()
+                        .map(|write| &write.witness),
+                )
+                .filter(|witness| {
+                    let allowed = slot.receiver
+                        == NativeReceiverPath::Constructor(NativeIntrinsic::Symbol)
+                        && witness.operation == NativeMutationOperation::PropertyAssignment
+                        && self
+                            .symbol_guarded_fill_sites
+                            .get(&CallSite::from(witness.span))
+                            .is_some_and(|(symbol, key)| {
+                                *key == property && !self.declared_bindings().contains(symbol)
+                            });
+                    !allowed
+                });
+            if let NativeSlotOverlap::Known(owner) = source_slot_overlap(witnesses, &slot) {
                 return Some(owner);
             }
         }
@@ -10482,11 +10849,49 @@ impl ExecutionIndex {
         self.all_native_point_effects = all;
     }
 
-    /// The exact native binding and own-data slot, intact or asserted at this
-    /// read. Dynamic name resolution cannot establish the receiver identity.
+    /// A separate exact-read capability; this never supplies original native
+    /// slot integrity or a known Symbol identity/type.
+    fn primitive_class_key_read_premise(&self, span: Span) -> Option<NativePremise> {
+        if !self.dynamic_scope_owners.is_empty() {
+            return None;
+        }
+        self.native_own_data_reads.get(&span.lo.0)?;
+        let evidence = self
+            .native_operation_input_evidence
+            .get(&CallSite::from(span))?;
+        if evidence.operation
+            != NativeInputKind::Operation(spec::NativeOperationKind::SymbolPrimitiveClassKeys)
+        {
+            return None;
+        }
+        let dependencies = ProofDependencies {
+            native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
+            ..Default::default()
+        };
+        Some(NativePremise {
+            inference_use: crate::analysis_provenance::InferenceUse {
+                conclusion: crate::analysis_provenance::InferenceRule::NativeOwnDataRead,
+                derivation_rules: BTreeSet::from([
+                    crate::analysis_provenance::InferenceRule::NativeOwnDataRead,
+                ]),
+                value_input_refs: BTreeSet::new(),
+                descriptor_copy_author_refs: BTreeSet::new(),
+                argument_input_refs: BTreeSet::new(),
+                native_operation_input_refs: dependencies.native_operation_inputs.clone(),
+            },
+            dependencies,
+            census: false,
+        })
+    }
+
+    /// The exact own-data read capability or native slot proof. A primitive
+    /// capability says nothing about the slot's original value or stability.
     fn native_own_data_read_premise(&self, span: Span) -> Option<NativePremise> {
         if !self.dynamic_scope_owners.is_empty() {
             return None;
+        }
+        if let Some(premise) = self.primitive_class_key_read_premise(span) {
+            return Some(premise);
         }
         let slots = self.native_own_data_reads.get(&span.lo.0)?;
         native_premise(
@@ -11664,6 +12069,13 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_if_stmt(&mut self, statement: &IfStmt) {
+        if self.current.is_none()
+            && self.original_statement_spans.get(self.owner.0) == Some(&statement.span)
+            && let Some((symbol, property, target)) = symbol_guarded_fill(statement)
+        {
+            self.symbol_guarded_fill_sites
+                .insert(target.into(), (symbol, property));
+        }
         statement.test.visit_with(self);
         let after_test = self.past_await;
         self.conditional_depth += 1;
@@ -12284,6 +12696,10 @@ impl Visit for ExecutionIndex {
                         .init
                         .as_deref()
                         .and_then(empty_map_object_sites),
+                    symbol_class_key_sites: declarator
+                        .init
+                        .as_deref()
+                        .and_then(symbol_class_key_sites),
                 });
             self.property_key_assignments
                 .entry(binding.id.to_id())
@@ -12345,6 +12761,7 @@ impl Visit for ExecutionIndex {
                         set_from_primitive_array_aliases: None,
                         set_from_set_spread_source: None,
                         empty_map_object_sites: None,
+                        symbol_class_key_sites: None,
                     });
                 // A for-of declaration has no initializer: its key fact was
                 // supplied by the loop protocol, rather than an unknown RHS.
@@ -13681,17 +14098,26 @@ impl PreparedCallableCapabilities {
         self.index.known_set_spread_protocol_mutation()
     }
 
-    pub(crate) fn known_object_read_contradiction_owner(
+    pub(crate) fn known_native_read_contradiction_owner(
         &self,
+        operation: NativeInputKind,
+        family: NativeIntrinsic,
         property: &str,
     ) -> Option<SourceUnitOrdinal> {
-        self.index.known_object_read_contradiction(property)
+        if operation
+            == NativeInputKind::Operation(spec::NativeOperationKind::SymbolPrimitiveClassKeys)
+        {
+            return self
+                .index
+                .known_primitive_symbol_read_contradiction(property);
+        }
+        self.index.known_native_read_contradiction(family, property)
     }
 
-    pub(crate) fn object_read_property(
+    pub(crate) fn native_input_read_property(
         &self,
         input: &ResolvedNativeOperationInput,
-    ) -> Option<String> {
+    ) -> Option<(NativeIntrinsic, &'static str)> {
         let [declaration] = self
             .index
             .binding_declaration_writes
@@ -13700,10 +14126,25 @@ impl PreparedCallableCapabilities {
         else {
             return None;
         };
-        object_own_data_read_property(declaration.initializer.as_ref()?, |id| {
-            self.index.declared_bindings().contains(id)
-        })
-        .map(str::to_owned)
+        match input.evidence.operation {
+            NativeInputKind::Operation(spec::NativeOperationKind::ObjectOwnDataFunctionRead) => {
+                let property =
+                    object_own_data_read_property(declaration.initializer.as_ref()?, |id| {
+                        self.index.declared_bindings().contains(id)
+                    })?;
+                Some((NativeIntrinsic::Object, property))
+            }
+            NativeInputKind::Operation(
+                spec::NativeOperationKind::SymbolWellKnownClassKeys
+                | spec::NativeOperationKind::SymbolPrimitiveClassKeys,
+            ) => {
+                let property = self
+                    .index
+                    .symbol_class_key_read_property(declaration, input.call_span)?;
+                Some((NativeIntrinsic::Symbol, property))
+            }
+            _ => None,
+        }
     }
 
     pub(crate) fn known_array_iterator_protocol_mutation_owner_in(

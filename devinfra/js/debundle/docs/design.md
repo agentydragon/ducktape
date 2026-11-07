@@ -173,6 +173,40 @@ For an Object member read, the shared semantic certificate instead binds the
 selected read span and its exact Object property slot. The author premise
 covers unknown mutation paths after known exact-slot contradictions are
 excluded; it never certifies a subsequent invocation of the function value.
+The `symbol_well_known_class_keys` input uses the same own-data proof for
+computed ordinary method keys in one direct plain class-variable initializer.
+The canonical declaration visitor retains only exact eager reads of
+`Symbol.asyncIterator`, `Symbol.asyncDispose` and `Symbol.dispose`; the shared
+recognizer also requires their existing primitive data-property rows. Other
+computed keys, inheritance, decorators and static blocks reject the input.
+Each selected read independently asserts the original global Symbol data
+binding and exact own data property through every admitted initialization
+schedule. Fresh and restored validation share resolution and known-slot
+contradiction checks, including writes in other chunks. The existing member
+read consumers use the canonical read span for the site axiom and evidence.
+Static field initializers and deferred instance code keep ordinary analysis;
+neither class result shape nor whole-class purity is inferred from this input.
+The additive `symbol_primitive_class_keys` capability shares that source shape
+and exact-site resolution but promises only data reads yielding unknown
+primitives. It supports native and filled property values without asserting
+original-value integrity. It never enters `IntrinsicIntact`, supplies no known
+Symbol identity/type and grants no later call capability. Each source chunk's
+canonical visitor recognizes only direct top-level typeof-guarded fills with a
+matching `Symbol.for("Symbol.<name>")` assignment and empty catch; whole-program
+admission applies the same known-write check to every analyzed chunk. Global
+Symbol replacement and every other known selected-slot write reject it.
+The guard, call, assignment/setter and catch keep ordinary effects.
+
+Primitive own-data reads remain observations of mutable external storage.
+Their getter/coercion callbacks are excluded while heap collection and the
+executor retain an opaque read. `HeapContentCells.observes_external_heap`
+propagates through composition and saved facts and seeds the existing heap
+timeline from chunk entry, including deferred observations. This storage has
+no unique source birth, so an earlier guarded fill cannot be skipped merely
+because the chunk has allocated no tracked array yet. Completion certificates
+cannot discharge this observed obligation. The interpreter records dependencies
+and inference uses; heap collection remains the producer of exact-read input
+use evidence. Ordinary heap constraints can still require expanded ownership.
 For a primitive array spread, the premise covers only the Array iterator and
 iterator `next` identities at the selected initializer; the source shape, not
 the author, proves the declarator interval has no producer.
@@ -3018,12 +3052,15 @@ The spec's explicit claims are resolved against the dependency graph in
 
 - Two different logical modules may not claim source units from the same
   atomic group.
-- A module claim that only covers part of an atomic group is a
-  conflict, not an implicit request to move the rest.
+- A module claim that only covers part of an atomic group is a conflict,
+  unless `coarse_atomic_groups.complete_partial_atomic_groups_for` explicitly
+  names that module as an allowed sole owner; groups with multiple owners
+  remain conflicts.
 - Unclaimed source units default to the typed entry destination, after the
   planned output modules.
-- The materializer consumes only the final explicit assignment; it
-  does not silently co-move extra source units on behalf of the author.
+- The materializer does not silently co-move extra source units on behalf of
+  the author. The coarse-mode opt-in is an explicit placement instruction and
+  still leaves the complete-assignment gate authoritative.
 
 If the explicit assignment is inconsistent, `debundle run` rejects
 and emits diagnostic side outputs (`cycles.json` or
@@ -3064,13 +3101,18 @@ the catchall file, or a generated per-atomic-group module.
 Empty-`declared` (anonymous) statements default to the entry destination
 unless explicitly claimed by a logical module's `anonymous_statements`
 shape selector or routed to a catchall or generated atomic-group plan.
-There is no implicit pulling into an explicitly named logical module: when an
+There is no silent pulling into an explicitly named logical module. When an
 atomic group or planner proposal includes anonymous statements, the spec author
-copies their source into `anonymous_statements` (one entry per claimed
-statement). `per_atomic_group` may place an unclaimed whole atomic group,
-including anonymous statements, into a generated plan.
-`coarse_atomic_groups` begins from those same wholly unclaimed atomic groups
-after the named and rebind-fold destinations are known. It assigns each
+normally copies their source into `anonymous_statements` (one entry per claimed
+statement). The narrow exception is the explicit
+`coarse_atomic_groups.complete_partial_atomic_groups_for` array: a listed
+authored module may adopt only the currently unclaimed source units of an atom
+for which it is the sole authored owner. Mixed-owner atoms remain unchanged and
+the ordinary gate rejects them. `per_atomic_group` may place an unclaimed whole
+atomic group, including anonymous statements, into a generated plan.
+`coarse_atomic_groups` applies the named-owner completions after rebind-fold
+destinations are known, then begins residual synthesis from the remaining
+wholly-unclaimed atomic groups. It assigns each
 candidate atom a temporary destination using the borrowed graph and ownership
 catalogue, then initially groups atoms with equal reachable nonvirtual owners
 in the canonical strict constraining module projection and the same interval

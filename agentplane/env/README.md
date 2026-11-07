@@ -30,7 +30,7 @@ lives in `env/images/`.
 The deployment renders the shared [Session guide](../session_instructions/platform_instructions.j2)
 with concrete service URLs. Native and central backends append the child's Session ID and standing
 instructions. Detailed Action workflows are available through `agentplane actions guide`;
-Notifications serves its own `/llms.txt` index.
+Notification workflow guides are embedded in `agentplane notifications guide`.
 
 The Runtime and companion ship with the `agentplane` CLI in `//agentplane/env/images:disk_image`.
 Native Claude/Codex executables, workspace tools and CA certificates come from the Runtime image.

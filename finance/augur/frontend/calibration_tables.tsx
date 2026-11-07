@@ -5,17 +5,18 @@ import React from "react";
 
 import { fmtProb, fmtKl, klTextClass, PlatformBadge } from "./calibration_format";
 import { fmtPct, fmtVolume } from "./lib/format";
-import type { CalibrationRunResponse } from "./client";
+import type { fetchCalibrationRun } from "./client";
 
-type CleanRow = CalibrationRunResponse["result"]["clean"][number];
-type SurfacedRow = CalibrationRunResponse["result"]["surfaced"][number];
+type CalibrationRun = Awaited<ReturnType<typeof fetchCalibrationRun>>;
+type CleanRow = CalibrationRun["result"]["clean"][number];
+type SurfacedRow = CalibrationRun["result"]["surfaced"][number];
 
 export function CleanTable({ rows }: { rows: readonly CleanRow[] }) {
   if (rows.length === 0) {
     return <div className="px-4 py-6 text-sm augur-muted">No apples-to-apples (scored) markets in this catalog.</div>;
   }
-  // Loudest disagreements first; rows the model couldn't resolve (no `klBits`) sink to the bottom.
-  const sorted = rows.slice().sort((left, right) => (right.klBits ?? -Infinity) - (left.klBits ?? -Infinity));
+  // Loudest disagreements first; rows the model couldn't resolve (no `kl_bits`) sink to the bottom.
+  const sorted = rows.slice().sort((left, right) => (right.kl_bits ?? -Infinity) - (left.kl_bits ?? -Infinity));
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
@@ -35,9 +36,9 @@ export function CleanTable({ rows }: { rows: readonly CleanRow[] }) {
           {sorted.map((row) => {
             const ci = row.ci95 ?? [];
             const unresolvedPct =
-              row.nResolved + row.unresolved > 0 ? row.unresolved / (row.nResolved + row.unresolved) : null;
+              row.n_resolved + row.unresolved > 0 ? row.unresolved / (row.n_resolved + row.unresolved) : null;
             return (
-              <tr key={row.marketId} data-calibration-clean-row={row.marketId}>
+              <tr key={row.market_id} data-calibration-clean-row={row.market_id}>
                 <td className="px-2 py-2 text-center align-top">
                   <PlatformBadge platform={row.platform} />
                 </td>
@@ -50,22 +51,22 @@ export function CleanTable({ rows }: { rows: readonly CleanRow[] }) {
                       {row.channel}
                     </span>
                   )}
-                  {fmtVolume(row.volume, row.volumeUnit) && (
+                  {fmtVolume(row.volume, row.volume_unit) && (
                     <div
                       className="mt-0.5 text-[11px] font-normal augur-muted augur-tabular"
                       title="total all-time volume traded on the platform"
                     >
-                      {fmtVolume(row.volume, row.volumeUnit)}
+                      {fmtVolume(row.volume, row.volume_unit)}
                     </div>
                   )}
                 </th>
-                <td className="px-3 py-2 text-right augur-tabular">{fmtProb(row.pMarket)}</td>
+                <td className="px-3 py-2 text-right augur-tabular">{fmtProb(row.p_market)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
-                  {row.pModel == null ? (
+                  {row.p_model == null ? (
                     <span className="augur-muted">n/a</span>
                   ) : (
                     <>
-                      {fmtProb(row.pModel)}
+                      {fmtProb(row.p_model)}
                       {ci.length === 2 && (
                         <span className="ml-1 text-xs augur-muted">
                           [{fmtProb(ci[0])}–{fmtProb(ci[1])}]
@@ -74,7 +75,7 @@ export function CleanTable({ rows }: { rows: readonly CleanRow[] }) {
                     </>
                   )}
                 </td>
-                <td className={`px-3 py-2 text-right ${klTextClass(row.klBits)}`}>{fmtKl(row.klBits)}</td>
+                <td className={`px-3 py-2 text-right ${klTextClass(row.kl_bits)}`}>{fmtKl(row.kl_bits)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
                   {unresolvedPct == null ? "—" : fmtPct(unresolvedPct)}
                 </td>
@@ -104,7 +105,7 @@ export function SurfacedTable({ rows }: { rows: readonly SurfacedRow[] }) {
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {rows.map((row) => (
-            <tr key={row.marketId} data-calibration-surfaced-row={row.marketId}>
+            <tr key={row.market_id} data-calibration-surfaced-row={row.market_id}>
               <td className="px-2 py-2 text-center align-top">
                 <PlatformBadge platform={row.platform} />
               </td>
@@ -114,25 +115,25 @@ export function SurfacedTable({ rows }: { rows: readonly SurfacedRow[] }) {
                 </a>
                 <div className="mt-0.5 text-[11px] font-normal augur-muted">
                   <span className="font-semibold">
-                    {row.correlateOf ? `correlate of ${row.correlateOf}` : row.mappability}
+                    {row.correlate_of ? `correlate of ${row.correlate_of}` : row.mappability}
                   </span>
-                  {fmtVolume(row.volume, row.volumeUnit) && (
+                  {fmtVolume(row.volume, row.volume_unit) && (
                     <span className="ml-2 augur-tabular" title="total all-time volume traded on the platform">
-                      · {fmtVolume(row.volume, row.volumeUnit)}
+                      · {fmtVolume(row.volume, row.volume_unit)}
                     </span>
                   )}
                 </div>
                 {row.reason && <div className="mt-0.5 text-xs font-normal augur-body">{row.reason}</div>}
               </th>
-              <td className="px-3 py-2 text-right align-top augur-tabular font-semibold">{fmtProb(row.pMarket)}</td>
+              <td className="px-3 py-2 text-right align-top augur-tabular font-semibold">{fmtProb(row.p_market)}</td>
               <td className="px-3 py-2 text-right align-top">
-                {row.augurContext ? (
+                {row.augur_context ? (
                   <>
                     <div className="augur-tabular font-semibold augur-accent-text">
-                      {row.augurContext.pModel == null ? "n/a" : fmtProb(row.augurContext.pModel)}
+                      {row.augur_context.p_model == null ? "n/a" : fmtProb(row.augur_context.p_model)}
                     </div>
-                    <div className="mt-0.5 text-[11px] augur-muted" title={row.augurContext.note}>
-                      {row.augurContext.signal}
+                    <div className="mt-0.5 text-[11px] augur-muted" title={row.augur_context.note}>
+                      {row.augur_context.signal}
                     </div>
                   </>
                 ) : (

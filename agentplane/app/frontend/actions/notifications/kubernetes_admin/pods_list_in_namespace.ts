@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { actionArguments } from "../../presentation";
 
-import type { ActionRequestView } from "../../types";
+import type { ActionRequest } from "../../../../../action_service/action_service_pb";
 import type { ActionNotificationParts } from "../types";
 
 const podsInNamespaceNotificationArguments = z.strictObject({
@@ -9,8 +10,8 @@ const podsInNamespaceNotificationArguments = z.strictObject({
   labelSelector: z.string().min(1).optional(),
 });
 
-export function podsInNamespaceNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = podsInNamespaceNotificationArguments.safeParse(request.arguments);
+export function podsInNamespaceNotification(request: ActionRequest): ActionNotificationParts | null {
+  const parsed = podsInNamespaceNotificationArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
 
   return {

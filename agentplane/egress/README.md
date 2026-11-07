@@ -50,7 +50,7 @@ Also here:
   settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
   refuses to start without; it reads no per-setting env and accepts no flags.
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
-  Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
+  Sandbox template's shared listener and per-service route settings from. The process entry point and both forwarding
   paths live in Go; `platform_routes.py` does not serve traffic.
 - `../app/go/streamapi.go`: the integration app's authenticated Egress HTTP facade
   for the generated Egress API.

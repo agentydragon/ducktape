@@ -359,6 +359,7 @@ author premise for one exact direct native initializer. The schema admits
 `operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
 `operation: set_from_primitive_array`,
 `operation: set_from_set_spread`, `operation: object_own_data_function_read`,
+`operation: symbol_well_known_class_keys`, `operation: symbol_primitive_class_keys`,
 and `operation: array_spread_from_primitive_arrays`.
 For `symbol` and `symbol_for`, the canonical selector engine identifies one
 direct top-level simple binding initialized by an ordinary, nonoptional,
@@ -1039,6 +1040,51 @@ visits its operands; static initializers keep their own effects. The executor
 uses the same slot obligations, and purity records a failed lookup obligation
 when the slots are unproved. No purity verdict for a whole class discharges a
 heap frontier.
+
+When the native census cannot establish those slots, an audited
+`symbol_well_known_class_keys` input may select one direct top-level simple
+class-variable initializer. It certifies only eager ordinary computed method
+keys that are exactly `Symbol.asyncIterator`, `Symbol.asyncDispose` or
+`Symbol.dispose`. The original global Symbol data binding and selected own
+data property must hold at every such read in every emitted initialization
+schedule. The canonical declaration shape excludes inheritance, decorators,
+static blocks, computed fields/accessors, aliases and wrapped keys. Other
+computed keys reject the input. Known writes to required slots in any analyzed
+chunk reject it, and the audited parser-input digest remains compulsory.
+Fresh and restored validation install separate exact-read axioms and records;
+purity, callback timing and heap collection consume the same own-data proof.
+Static field initializers and deferred instance code retain their normal
+effects. No class shape, whole-class purity or heap-locality premise is added.
+
+`symbol_primitive_class_keys` is a separate final-read premise for the same
+three names and direct class shape. It promises a data binding for the global
+Symbol read, an ordinary non-Proxy receiver, and a primitive-valued own data
+property at every selected site in
+every admitted schedule. It permits polyfilled Symbol values, and the abstract
+result is an unknown primitive rather than a known original Symbol value.
+The capability never enters native slot integrity or authorizes other reads
+or calls. Original-identity inputs retain their stricter known-write policy.
+
+The only eligible known selected-slot write is an exact top-level
+`if (typeof Symbol.key !=/!== "symbol") try { Symbol.key = Symbol.for("Symbol.key"); } catch {}`
+shape, with matching bare unshadowed receiver/key/string and no additional
+guarded work, alternate, catch binding, nonempty catch or finally. Canonical
+source AST facts supply eligibility, and every analyzed chunk applies the same
+check. All other known selected-slot writes and global Symbol replacements
+reject the premise. The raw write census, guard, Symbol.for call,
+assignment/setter and catch remain ordinary; no Symbol.for identity or
+successful-installation proof is inferred. The author must still justify
+primitive own-data reads in every admitted schedule.
+
+Excluding getter and key-coercion callbacks does not make a mutable read
+constant. Each selected read retains an opaque external-heap observation.
+Its required saved `observes_external_heap` fact propagates with heap effects,
+and the graph scans the whole chunk before emitting order so preceding opaque
+writers are retained even without tracked source allocations. Deferred
+observations conservatively seed the same early liveness. Initializer
+completion cannot discard this obligation: external storage has no unique
+eager allocation birth. Heap order, static initializer effects, deferred code
+and all whole-owner obligations remain independent of the callback refinement.
 
 ## Function-valued data properties — reads vs calls
 

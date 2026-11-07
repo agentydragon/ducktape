@@ -7,7 +7,7 @@ import { Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 
 import { type CallToolResult, toolContentRestatesValue, toolValue } from "../call_tool_result";
-import type { ActionRequestView } from "../client";
+import type { ActionIdentity } from "../../../../action_service/action_service_pb";
 import { JsonBlock } from "../../text_block";
 import { renderPreview } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
@@ -19,8 +19,6 @@ import { grocyRenderers } from "./grocy";
 import { tanaRenderers } from "./tana";
 import { sandboxRenderers } from "./sandbox";
 import { sshRenderers } from "./ssh/index";
-
-type ActionIdentity = ActionRequestView["action"];
 
 // Maps avoid prototype-key lookups for group and Action names.
 export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([

@@ -22,7 +22,7 @@ from constructs import Construct
 
 from agentplane.egress import sidecar_config
 from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
-from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.egress.platform_routes import PlatformRoutes
 from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -179,12 +179,7 @@ def workload_security_context() -> k8s.SecurityContext:
 
 
 def add_sidecar_settings(
-    scope: Construct,
-    env: Environment,
-    *,
-    name: str,
-    platform_routes: Mapping[str, PlatformRoute],
-    listen_address: str | None = None,
+    scope: Construct, env: Environment, *, name: str, platform_routes: PlatformRoutes, listen_address: str | None = None
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
@@ -202,8 +197,7 @@ def add_sidecar_settings(
     )
     if listen_address is not None:
         settings.listen_address = listen_address
-    if platform_routes:
-        settings.platform_routes = dict(platform_routes)
+    settings.platform_routes = platform_routes
     return SettingsFile(
         scope,
         f"{name}-settings",

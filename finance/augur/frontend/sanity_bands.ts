@@ -6,9 +6,9 @@
 // against this run. Kept React-free so the sort/summary/format logic is unit-testable.
 
 import { fmtPct } from "./lib/format";
-import type { CalibrationRunResponse } from "./client";
+import type { fetchCalibrationRun } from "./client";
 
-type SanityBands = CalibrationRunResponse["sanityBands"];
+type SanityBands = Awaited<ReturnType<typeof fetchCalibrationRun>>["sanity_bands"];
 export type SanityBand = NonNullable<SanityBands>[number];
 export type SanityStatus = SanityBand["status"];
 
@@ -50,12 +50,12 @@ export function fmtBandValue(kind: string, value: number | null | undefined) {
 // The expected band: "[lo, hi]" when both sides are set, "≥ lo" / "≤ hi" for a one-sided bound,
 // "—" when neither (e.g. an anchor or codes-allowed check carries no numeric range).
 export function fmtExpectedBand(kind: string, band: SanityBand) {
-  const hasLower = band.expectedLower != null && Number.isFinite(Number(band.expectedLower));
-  const hasUpper = band.expectedUpper != null && Number.isFinite(Number(band.expectedUpper));
+  const hasLower = band.expected_lower != null && Number.isFinite(Number(band.expected_lower));
+  const hasUpper = band.expected_upper != null && Number.isFinite(Number(band.expected_upper));
   if (hasLower && hasUpper)
-    return `[${fmtBandValue(kind, band.expectedLower)}, ${fmtBandValue(kind, band.expectedUpper)}]`;
-  if (hasLower) return `≥ ${fmtBandValue(kind, band.expectedLower)}`;
-  if (hasUpper) return `≤ ${fmtBandValue(kind, band.expectedUpper)}`;
+    return `[${fmtBandValue(kind, band.expected_lower)}, ${fmtBandValue(kind, band.expected_upper)}]`;
+  if (hasLower) return `≥ ${fmtBandValue(kind, band.expected_lower)}`;
+  if (hasUpper) return `≤ ${fmtBandValue(kind, band.expected_upper)}`;
   return "—";
 }
 
@@ -64,7 +64,7 @@ export function fmtExpectedBand(kind: string, band: SanityBand) {
 export function fmtObserved(band: SanityBand) {
   const values = band.observed ?? [];
   if (values.length === 0) return "—";
-  const labels = band.observedLabels ?? [];
+  const labels = band.observed_labels ?? [];
   return values
     .map((value, index) => `${labels[index] ? `${labels[index]} ` : ""}${fmtBandValue(band.kind, value)}`)
     .join(" · ");

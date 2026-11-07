@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { actionArguments } from "../../presentation";
 
-import type { ActionRequestView } from "../../types";
+import type { ActionRequest } from "../../../../../action_service/action_service_pb";
 import type { ActionNotificationParts } from "../types";
 
 const resourcesListNotificationArguments = z.strictObject({
@@ -11,8 +12,8 @@ const resourcesListNotificationArguments = z.strictObject({
   labelSelector: z.string().min(1).optional(),
 });
 
-export function resourcesListNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = resourcesListNotificationArguments.safeParse(request.arguments);
+export function resourcesListNotification(request: ActionRequest): ActionNotificationParts | null {
+  const parsed = resourcesListNotificationArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
   const { kind, namespace } = parsed.data;
 

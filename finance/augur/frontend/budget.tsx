@@ -3,7 +3,6 @@ import { NativeSelect } from "@mantine/core";
 import Decimal from "decimal.js";
 
 import {
-  type BudgetSnapshotRequest,
   fetchBudgetSnapshot,
   fetchBudgetSummaryCsv,
   fetchBudgetTransactions,
@@ -68,7 +67,7 @@ const TRAILING_CHOICES = [
 ];
 const MAX_CHOICE_VALUE = "max";
 
-function windowSpecFromChoice(value: string): BudgetSnapshotRequest["window"] {
+function windowSpecFromChoice(value: string): Parameters<typeof fetchBudgetSnapshot>[0]["window"] {
   if (value === MAX_CHOICE_VALUE) return { kind: "since_coverage_start" };
   const months = Number(value.split(":")[1]);
   return { kind: "trailing_months", months };
@@ -747,12 +746,12 @@ function LumpyPanel({
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {items.map((item) => (
-            <tr key={item.transactionId} data-budget-lumpy-row={item.transactionId}>
+            <tr key={item.transaction_id} data-budget-lumpy-row={item.transaction_id}>
               <td className="px-3 py-2 augur-tabular text-xs">{item.date}</td>
               <th className="px-3 py-2 text-left font-medium text-slate-700 dark:text-slate-200">
-                {item.merchantName || item.name}
+                {item.merchant_name || item.name}
               </th>
-              <td className="px-3 py-2 text-xs">{bucketsById.get(item.bucketId)?.label || item.bucketId}</td>
+              <td className="px-3 py-2 text-xs">{bucketsById.get(item.bucket_id)?.label || item.bucket_id}</td>
               <td className="px-3 py-2 text-right augur-tabular">{fmtUsd(item.amount)}</td>
             </tr>
           ))}
@@ -781,16 +780,16 @@ function TransactionsPanel({ transactions }: { transactions: readonly BudgetTran
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {transactions.map((tx) => (
-            <tr key={tx.transactionId}>
+            <tr key={tx.transaction_id}>
               <td className="px-3 py-2 augur-tabular text-xs">{tx.date}</td>
               <th className="px-3 py-2 text-left text-slate-700 dark:text-slate-200">
-                <div className="font-medium">{tx.merchantName || tx.name}</div>
-                {tx.merchantName && tx.merchantName !== tx.name && (
+                <div className="font-medium">{tx.merchant_name || tx.name}</div>
+                {tx.merchant_name && tx.merchant_name !== tx.name && (
                   <div className="text-[10px] augur-muted truncate max-w-md">{tx.name}</div>
                 )}
               </th>
-              <td className="px-3 py-2 text-[11px] augur-muted">{tx.pfcDetailed || tx.pfcPrimary || "—"}</td>
-              <td className="px-3 py-2 text-xs">{tx.accountName}</td>
+              <td className="px-3 py-2 text-[11px] augur-muted">{tx.pfc_detailed || tx.pfc_primary || "—"}</td>
+              <td className="px-3 py-2 text-xs">{tx.account_name}</td>
               <td className="px-3 py-2 text-right augur-tabular">{fmtUsd(tx.amount)}</td>
             </tr>
           ))}
@@ -840,7 +839,7 @@ export function BudgetWorkspace() {
     const controller = new AbortController();
     setBucketTx(null);
     setBucketTxError(null);
-    fetchBudgetTransactions({ bucketId: selectedBucketId, window: windowSpec }, { signal: controller.signal })
+    fetchBudgetTransactions({ bucket_id: selectedBucketId, window: windowSpec }, { signal: controller.signal })
       .then((payload) => setBucketTx(payload.transactions))
       .catch((error) => {
         if (error?.name === "AbortError") return;
@@ -858,18 +857,18 @@ export function BudgetWorkspace() {
 
   const rows = useMemo(() => {
     if (!snapshot) return [];
-    return snapshot.monthlyByBucket.map((series) => {
-      const bucket = bucketsById.get(series.bucketId);
+    return snapshot.monthly_by_bucket.map((series) => {
+      const bucket = bucketsById.get(series.bucket_id);
       return {
-        bucketId: series.bucketId,
-        label: bucket?.label ?? series.bucketId,
+        bucketId: series.bucket_id,
+        label: bucket?.label ?? series.bucket_id,
         kind: bucket?.kind ?? "expense",
         family: bucket?.family ?? null,
-        monthlyAmounts: series.monthlyAmounts.map((amount) => new Decimal(amount)),
+        monthlyAmounts: series.monthly_amounts.map((amount) => new Decimal(amount)),
         // Day-normalized $/mo from the backend (signed window total / days covered × avg
         // days/mo). Not sum/months, which counted a partial current month as a full one.
-        windowAvg: new Decimal(series.windowMonthlyAvg),
-        transactionCount: series.transactionCount,
+        windowAvg: new Decimal(series.window_monthly_avg),
+        transactionCount: series.transaction_count,
       };
     });
   }, [snapshot, bucketsById]);
@@ -932,7 +931,7 @@ export function BudgetWorkspace() {
   const exportTransactions = async () => {
     if (!selectedBucketId) return;
     try {
-      const blob = await fetchBudgetTransactionsCsv({ bucketId: selectedBucketId, window: windowSpec });
+      const blob = await fetchBudgetTransactionsCsv({ bucket_id: selectedBucketId, window: windowSpec });
       downloadBlob(`budget-transactions-${selectedBucketId}.csv`, blob);
     } catch (error) {
       toastFetchError("budget-transactions-csv", "Transactions CSV export failed", error);
@@ -982,8 +981,8 @@ export function BudgetWorkspace() {
             <NativeSelect
               aria-label="Window"
               data={
-                snapshot?.coverageStarts
-                  ? [...TRAILING_CHOICES, { value: MAX_CHOICE_VALUE, label: maxChoiceLabel(snapshot.coverageStarts) }]
+                snapshot?.coverage_starts
+                  ? [...TRAILING_CHOICES, { value: MAX_CHOICE_VALUE, label: maxChoiceLabel(snapshot.coverage_starts) }]
                   : TRAILING_CHOICES
               }
               value={windowChoice}
@@ -992,9 +991,9 @@ export function BudgetWorkspace() {
             />
           </div>
         </div>
-        {snapshot?.coverageStarts && (
+        {snapshot?.coverage_starts && (
           <div className="mt-2 text-[11px] augur-muted">
-            Spend before <span className="font-semibold">{snapshot.coverageStarts}</span> is partial -- one or more
+            Spend before <span className="font-semibold">{snapshot.coverage_starts}</span> is partial -- one or more
             linked accounts didn&apos;t return earlier transactions. The selected window is clamped to that date for
             consistency.
           </div>
@@ -1080,7 +1079,7 @@ export function BudgetWorkspace() {
 
           <section className="augur-panel overflow-hidden">
             <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-              <div className="augur-eyebrow">Lumpy spends (≥ {fmtUsd(snapshot.lumpyThresholdUsd)})</div>
+              <div className="augur-eyebrow">Lumpy spends (≥ {fmtUsd(snapshot.lumpy_threshold_usd)})</div>
               <div className="mt-1 text-xs augur-muted">
                 Single large outflows in the window. Click into a row above to see the full transaction list for that
                 bucket; this panel surfaces just the headline-grabbing items.
