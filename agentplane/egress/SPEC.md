@@ -4,6 +4,16 @@ The central proxy of the secure egress integration: sandbox tools reach the outs
 it decides each request from resources on the API server, and it alone holds the credentials it
 substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gateway.md).
 
+## Configuration
+
+The forward listener is configured by `forward.listen_address` and an explicit `forward.auth`
+list. Its supported method is `mode: kubernetes_bearer` with a nonempty `audience`; an empty list,
+unknown mode, duplicate mode or fields belonging to another mode fail startup. The sidecar names
+its central proxy as `proxy.address` (`host:port`) and chooses
+`proxy.transport.mode: plaintext`, whose `auth` is `mode: kubernetes_bearer` with an absolute
+`token_file`. These settings do not change the bearer protocol or destination-token projection.
+Unknown settings are refused, including the former flat settings.
+
 ## Identity
 
 - Every CONNECT and every request carries `Proxy-Authorization: Bearer <token>`, the Pod's

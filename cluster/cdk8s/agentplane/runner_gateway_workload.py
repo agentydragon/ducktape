@@ -199,7 +199,7 @@ class RunnerGateway(Construct):
             "environment_default_policy_sets": sorted(env.default_policy_sets),
             "gateway_callers": gateway_accounts,
             "runner_security": MTLS(
-                mode="mtls", tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
+                tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
             ).model_dump(mode="json"),
             **central_sampler_settings,
             **(

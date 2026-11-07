@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
+from agentplane.workload_auth.listener import Listener
 
 
 class Settings(BaseModel):
@@ -33,7 +34,7 @@ class Settings(BaseModel):
         "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
         "token at all; it grants nothing on its own, since a subject no binding names still reaches no rule.",
     )
-    listen_address: str = Field(default="0.0.0.0:8888", description="Proxy listener address the sidecars relay to.")
+    forward: Listener = Field(description="Proxy listener address and workload authentication allowlist.")
     admin_listen_address: str = Field(
         default="0.0.0.0:8081",
         description="Admin listener address serving gRPC health and, when configured, the EgressAdmin API.",
@@ -60,7 +61,6 @@ class Settings(BaseModel):
         "certificate no public root signs. Unset falls back to the image's system roots, which reach "
         "public hosts only.",
     )
-    token_audience: str = Field(min_length=1, description="Audience of the sidecars' projected tokens.")
     projected_token_audiences: frozenset[str] = Field(
         default=frozenset(),
         description="Every audience a rule may substitute a sidecar's projected token for, the API server's "

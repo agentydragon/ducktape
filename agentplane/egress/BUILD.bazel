@@ -55,6 +55,7 @@ py_test(
         ":conftest",
         ":resources",
         ":settings",
+        ":sidecar_config",
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
@@ -64,6 +65,7 @@ py_test(
         "//agentplane/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
+        "//agentplane/workload_auth:listener",
         "//util:net",
         "@pypi//aiohttp",
         "@pypi//grpcio",
@@ -136,6 +138,7 @@ py_library(
     ],
     deps = [
         "//agentplane:log_levels",
+        "//agentplane/workload_auth:listener",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
@@ -158,6 +161,7 @@ py_test(
     deps = [
         ":conftest",
         ":platform_routes",
+        ":sidecar_config",
         "//:conftest",
         "//agentplane/egress/testing:sidecar_process",
         "@pypi//grpcio",

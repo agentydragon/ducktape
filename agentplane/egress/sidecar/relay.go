@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -95,7 +94,7 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 	}
 	serve("HTTP proxy listener", s.acceptLoop)
 	s.ready.Store(true)
-	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
+	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", s.config.Proxy.Address)
 
 	select {
 	case <-ctx.Done():
@@ -205,17 +204,18 @@ func (s *sidecar) handle(client net.Conn) {
 			writeRefusal(client, http.StatusBadRequest, "bad-request")
 			return
 		}
-		token, err := readToken(s.config.TokenFile)
+		tokenFile := s.config.Proxy.Transport.Auth.TokenFile
+		token, err := readToken(tokenFile)
 		if err != nil {
-			slog.Error("central proxy token unavailable", "path", s.config.TokenFile, "error", err)
+			slog.Error("central proxy token unavailable", "path", tokenFile, "error", err)
 			writeRefusal(client, http.StatusServiceUnavailable, "token-unavailable")
 			return
 		}
 		rewriteRequest(request, token, s.readProjectedTokens())
 		if upstream == nil {
-			upstream, err = (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
+			upstream, err = (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", s.config.Proxy.Address)
 			if err != nil {
-				slog.Warn("central proxy unreachable", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
+				slog.Warn("central proxy unreachable", "address", s.config.Proxy.Address, "error", err)
 				writeRefusal(client, http.StatusBadGateway, "proxy-unreachable")
 				return
 			}
@@ -255,7 +255,7 @@ func (s *sidecar) exchange(client net.Conn, clientReader *bufio.Reader, upstream
 			return false
 		}
 		if err := pipeDuplex(client, clientReader, upstream, upstreamReader); err != nil {
-			slog.Warn("relay ended with connection error", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
+			slog.Warn("relay ended with connection error", "address", s.config.Proxy.Address, "error", err)
 		}
 		return false
 	}

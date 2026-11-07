@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
@@ -25,7 +26,7 @@ type config struct {
 	RulesNamespace                  string            `mapstructure:"rules_namespace"`
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
 	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	ListenAddress                   string            `mapstructure:"listen_address"`
+	Forward                         listener.Config   `mapstructure:"forward"`
 	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
 	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
 	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
@@ -33,7 +34,6 @@ type config struct {
 	CACert                          string            `mapstructure:"ca_cert"`
 	CAKey                           string            `mapstructure:"ca_key"`
 	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
-	TokenAudience                   string            `mapstructure:"token_audience"`
 	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
 	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 	LogLevels                       map[string]string `mapstructure:"log_levels"`
@@ -47,7 +47,7 @@ type config struct {
 
 func defaultConfig() config {
 	return config{
-		ListenAddress: "0.0.0.0:8888", AdminListenAddress: "0.0.0.0:8081",
+		Forward: listener.Config{ListenAddress: "0.0.0.0:8888"}, AdminListenAddress: "0.0.0.0:8081",
 		AgentAPIListenAddress: "0.0.0.0:8082", DecisionHistorySize: 200,
 		DecisionRetentionDays: 7, DecisionQueueSize: 2000, DecisionBatchSize: 100,
 	}
@@ -60,14 +60,12 @@ func loadConfig() (config, error) {
 	for _, key := range []string{
 		"rules_namespace",
 		"credentials_namespace",
-		"listen_address",
 		"admin_listen_address",
 		"admin_grpc_audience",
 		"agent_api_listen_address",
 		"ca_cert",
 		"ca_key",
 		"upstream_ca_file",
-		"token_audience",
 		"kubeconfig",
 		"database_url",
 		"decision_history_size",
@@ -84,7 +82,9 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read egress settings file")
 		}
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		listener.AuthenticationDecodeHook, mapstructure.TextUnmarshallerHookFunc(),
+	))); err != nil {
 		return config{}, errors.New("invalid egress settings")
 	}
 	if err := c.validate(); err != nil {
@@ -105,7 +105,6 @@ func (c *config) validate() error {
 		{"credentials_namespace", c.CredentialsNamespace},
 		{"ca_cert", c.CACert},
 		{"ca_key", c.CAKey},
-		{"token_audience", c.TokenAudience},
 		{"database_url", c.DatabaseURL},
 	} {
 		if required.value == "" {
@@ -117,6 +116,9 @@ func (c *config) validate() error {
 	}
 	if slices.Contains(c.ProjectedTokenAudiences, "") {
 		return errors.New("projected_token_audiences must not contain an empty audience")
+	}
+	if err := c.Forward.Validate(); err != nil {
+		return fmt.Errorf("forward listener: %w", err)
 	}
 	for _, limit := range []bounded{
 		{"decision_history_size", c.DecisionHistorySize, 1, history.MaxCapacity},

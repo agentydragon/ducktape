@@ -10,7 +10,7 @@ import aiohttp
 import pytest
 import pytest_bazel
 
-from agentplane.egress.sidecar_config import READINESS_PATH
+from agentplane.egress.sidecar_config import READINESS_PATH, KubernetesBearerProxyAuth, PlaintextProxyTransport, Proxy
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from util.net import Listener, listen_tcp
 
@@ -50,8 +50,14 @@ async def get_readiness(listener: Listener, method: str = "GET") -> int:
         return response.status
 
 
+def sidecar_proxy(address: str, token_file: Path) -> Proxy:
+    return Proxy(
+        address=address, transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=token_file))
+    )
+
+
 async def test_readiness_tracks_listener_startup_and_shutdown(central: Listener, token_file: Path) -> None:
-    relay = SidecarProcess(proxy_host=central.host, proxy_port=central.port, token_file=token_file)
+    relay = SidecarProcess(proxy=sidecar_proxy(f"{central.host}:{central.port}", token_file))
     async with relay:
         assert await get_readiness(relay.readiness_listener) == 200
         assert await get_readiness(relay.readiness_listener, "HEAD") == 200
@@ -60,7 +66,7 @@ async def test_readiness_tracks_listener_startup_and_shutdown(central: Listener,
 
 
 async def test_sigterm_shutdown_closes_an_active_tunnel(central: Listener, token_file: Path) -> None:
-    relay = SidecarProcess(proxy_host=central.host, proxy_port=central.port, token_file=token_file)
+    relay = SidecarProcess(proxy=sidecar_proxy(f"{central.host}:{central.port}", token_file))
     async with relay:
         reader, writer = await asyncio.open_connection(relay.proxy_listener.host, relay.proxy_listener.port)
         writer.write(

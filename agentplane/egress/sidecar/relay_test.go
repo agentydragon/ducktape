@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	workloadlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 )
 
 const (
@@ -187,9 +189,13 @@ func startTestSidecar(t *testing.T, proxyPort int, tokenFile string, audiences m
 	}
 	s := &sidecar{
 		config: config{
-			ProxyHost:          "127.0.0.1",
-			ProxyPort:          proxyPort,
-			TokenFile:          tokenFile,
+			Proxy: proxyConfig{
+				Address: net.JoinHostPort("127.0.0.1", fmt.Sprint(proxyPort)),
+				Transport: proxyTransportConfig{
+					Mode: proxyTransportPlaintext,
+					Auth: proxyAuthConfig{Mode: workloadlistener.KubernetesBearer, TokenFile: tokenFile},
+				},
+			},
 			AudienceTokenFiles: audiences,
 		},
 		proxyListener: listener,

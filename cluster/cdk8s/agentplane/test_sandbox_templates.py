@@ -312,14 +312,32 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
 
     runner_settings = settings(f"{staging.POD_TEMPLATE}-egress-sidecar")
     launcher_settings = settings("launcher-relay-egress-sidecar")
-    assert "listen_address" not in runner_settings
+    assert runner_settings["listen_address"] == "127.0.0.1:3128"
     assert launcher_settings["listen_address"] == "0.0.0.0:3128"
+    proxy = runner_settings["proxy"]
+    assert proxy["transport"]["mode"] == "plaintext"
+    auth = proxy["transport"]["auth"]
+    assert auth["mode"] == "kubernetes_bearer"
+    template = _by_name(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
+    pod = template["spec"]["pod"]["spec"]
+    sidecar = one(container for container in pod["initContainers"] if container["name"] == "egress-sidecar")
+    token_mount = one(
+        mount for mount in sidecar["volumeMounts"] if mount["name"] == sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
+    )
+    token_volume = one(volume for volume in pod["volumes"] if volume["name"] == sandbox_pod.EGRESS_TOKEN_VOLUME_NAME)
+    hop_token = one(
+        source["serviceAccountToken"]
+        for source in token_volume["projected"]["sources"]
+        if source["serviceAccountToken"]["path"] == "token"
+    )
+    assert auth["token_file"] == f"{token_mount['mountPath']}/{hop_token['path']}"
     for name, route in runner_settings["platform_routes"].items():
         _, port = route["listen_address"].rsplit(":", 1)
         assert route["listen_address"] == f"127.0.0.1:{port}"
         assert launcher_settings["platform_routes"][name]["listen_address"] == f"0.0.0.0:{port}"
         launcher_settings["platform_routes"][name]["listen_address"] = route["listen_address"]
     del launcher_settings["listen_address"]
+    del runner_settings["listen_address"]
     assert launcher_settings == runner_settings
     policy = _by_name(staging_manifests, "ClusterPolicy", f"{staging.ENV.namespace}-launcher-relay")
     inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")

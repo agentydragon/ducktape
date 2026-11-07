@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//agentplane/net/listener",
         "//agentplane/observability",
+        "//agentplane/workload_auth/listener",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
@@ -40,6 +41,7 @@ go_test(
     ],
     embed = [":runtime"],
     deps = [
+        "//agentplane/workload_auth/listener",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//keepalive",

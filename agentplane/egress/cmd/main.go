@@ -119,7 +119,7 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 // workloadIdentity reviews the hop bearer for the proxy's own audience and each projected token for
 // its audience, accepting only ServiceAccounts of the allowed namespaces.
 func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
-	hop, err := auth.NewResolver(reviews, c.TokenAudience, c.AllowedServiceAccountNamespaces)
+	hop, err := auth.NewResolver(reviews, c.Forward.BearerAudience(), c.AllowedServiceAccountNamespaces)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, historymigrations.Up); err != nil {
 		return err
 	}
-	proxyListener, err := openListener("proxy", c.ListenAddress)
+	proxyListener, err := openListener("proxy", c.Forward.ListenAddress)
 	if err != nil {
 		return err
 	}

@@ -14,7 +14,7 @@ import yaml
 from python.runfiles import Runfiles
 
 from agentplane.egress.platform_routes import PlatformRoute
-from agentplane.egress.sidecar_config import Settings
+from agentplane.egress.sidecar_config import Proxy, Settings
 from util.net import Listener, listen_tcp
 
 _BINARY = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/egress/sidecar/egress-sidecar_/egress-sidecar"
@@ -24,15 +24,11 @@ class SidecarProcess:
     def __init__(
         self,
         *,
-        proxy_host: str,
-        proxy_port: int,
-        token_file: Path,
+        proxy: Proxy,
         audience_token_files: Mapping[str, Path] = MappingProxyType({}),
         platform_routes: Mapping[str, PlatformRoute] = MappingProxyType({}),
     ) -> None:
-        self._proxy_host = proxy_host
-        self._proxy_port = proxy_port
-        self._token_file = token_file
+        self._proxy = proxy
         self._audience_token_files = audience_token_files
         self._platform_routes = platform_routes
         self._listener_stack = ExitStack()
@@ -57,18 +53,14 @@ class SidecarProcess:
                 )
 
             settings = Settings(
-                proxy_host=self._proxy_host,
-                proxy_port=self._proxy_port,
-                token_file=self._token_file,
+                proxy=self._proxy,
                 audience_token_files=dict(self._audience_token_files),
                 platform_routes=routes,
                 listen_address=self._fd_address(self.proxy_listener),
                 readiness_listen_address=self._fd_address(self.readiness_listener),
             )
             settings_path = Path(self._settings_dir.name) / "settings.yaml"
-            settings_path.write_text(
-                yaml.safe_dump(settings.model_dump(mode="json", exclude_unset=True, exclude_none=True))
-            )
+            settings_path.write_text(yaml.safe_dump(settings.model_dump(mode="json", exclude_none=True)))
             env = {Settings.config_file_env: str(settings_path)}
             listeners = [self.proxy_listener, self.readiness_listener, *self._route_listeners.values()]
             pass_fds = tuple(listener.socket.fileno() for listener in listeners)
