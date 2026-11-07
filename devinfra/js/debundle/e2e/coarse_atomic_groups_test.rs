@@ -1,7 +1,8 @@
 //! `coarse_atomic_groups` merges wholly-unclaimed atomic groups that share
 //! strict constraining reachability to existing owners within fine evaluation
-//! intervals. The normal gate and
-//! Node execution still decide whether the final placement is valid.
+//! intervals when their public export names have compatible origins. The
+//! normal gate and Node execution still decide whether the final placement is
+//! valid.
 
 use debundle_e2e_support::*;
 use std::path::{Path, PathBuf};
@@ -128,6 +129,50 @@ fn coarse_residuals_reduce_files_and_preserve_named_anonymous_placement_and_orde
     assert!(
         coarse_files.contains(&anonymous_module),
         "the anonymous statement must be placed in a generated residual module"
+    );
+}
+
+#[test]
+fn coarse_residuals_split_conflicting_origins_for_one_public_export_name() {
+    let source = r#"const a = 1;
+export { a as Q };
+const Q = 2;
+console.log(Q);
+"#;
+    let fixture = |mode| run_fixture(FixtureOpts::new(source, vec![]).with_unassigned_mode(mode));
+    let fine = fixture(unassigned_mode_per_atomic_group());
+    let coarse = fixture(unassigned_mode_coarse_atomic_groups());
+    assert_preserved_entry_output(&fine, "2\n");
+    assert_preserved_entry_output(&coarse, "2\n");
+
+    let directory = "static/app/modules/__auto/residual_groups";
+    let alias_module = module_containing(&coarse.out_root, directory, "export { a as Q }");
+    let binding_module = module_containing(&coarse.out_root, directory, "const Q = 2;");
+    assert_ne!(
+        alias_module, binding_module,
+        "coarse merging must keep distinct origins for public export `Q` apart"
+    );
+    assert_export_named_specifiers(
+        &std::fs::read_to_string(alias_module).unwrap(),
+        "a",
+        &[Some("Q"), None],
+    );
+    assert_export_named_specifiers(
+        &std::fs::read_to_string(binding_module).unwrap(),
+        "Q",
+        &[None],
+    );
+    assert_generated_module_after_entry_script(
+        &coarse,
+        "const mod = await import('./static/app/entry.js');\nconsole.log(JSON.stringify([Object.keys(mod).sort(), mod.Q]));\n",
+        "[[\"Q\"],1]\n",
+    );
+
+    let coarse_files = js_files_under(&coarse.out_root, directory);
+    let fine_files = js_files_under(&fine.out_root, "static/app/modules/__auto/atomic_groups");
+    assert!(
+        coarse_files.len() < fine_files.len(),
+        "coarse routing should still merge export-compatible groups: coarse={coarse_files:?}, fine={fine_files:?}"
     );
 }
 

@@ -650,7 +650,10 @@ with `per_atomic_group`, or in generated residual groups with
 completions, then merges remaining wholly unclaimed atomic groups
 with equal reachable fixed-owner sets in the strict constraining projection
 within intervals between fixed owners in the fine layout's simulated
-evaluation order. Simulator-omitted groups remain separate. Their paths use
+evaluation order, provided the merged module keeps each public export name
+associated with one source binding or export site. Incompatible groups remain
+separate with their names intact. Simulator-omitted groups remain separate.
+Their paths use
 `__auto/residual_groups/NNNN`. Authored names remain in the
 complete spec. Invalid full-spec selectors or duplicate/unmatched claims still
 fail even when their modules are omitted.
