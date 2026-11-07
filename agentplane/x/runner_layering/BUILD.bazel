@@ -75,7 +75,7 @@ py_binary(
     args = ["--kernel-rlocation=$(rlocationpath @firecracker_vmlinux_6_1_128//file)"],
     data = [
         ":base_initramfs",
-        "//devinfra/firecracker:firecracker_layer",
+        "//devinfra/x/firecracker:firecracker_layer",
         "@agentplane_codex_cli_linux_x64//:codex_binary",
         "@agentplane_codex_cli_linux_x64//:codex_bwrap",
         "@claude_code_cli_linux_x64//:claude",

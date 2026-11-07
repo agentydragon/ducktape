@@ -144,7 +144,7 @@ The NixOS rootfs is built via Nix on wyrm2 (which has the repo and Nix
 available). No OCI wrapping — just `nix build` + `dd` to the base LV:
 
 ```bash
-./devinfra/firecracker/provision-rootfs.sh
+./devinfra/x/firecracker/provision-rootfs.sh
 ```
 
 The script builds `.#fc-dev-rootfs` (fetches from binary cache if
@@ -162,7 +162,7 @@ base LV. Re-run when Nix config changes. The rootfs updates infrequently
 ### Guest init: process_api via initramfs
 
 The proposal uses Anthropic's captured ~3.3MB static `process_api` binary as
-guest PID 1. See the [RE record](../claude/web_env/re/process_api/README.md)
+guest PID 1. See the [RE record](../../claude/web_env/re/process_api/README.md)
 for its captured identity, annotated reconstruction, API and limitations.
 Reconstruction compilation does not establish runtime parity or provide a
 reproducible replacement for the captured proprietary binary.

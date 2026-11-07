@@ -68,7 +68,7 @@ py_library(
 
 py_binary(
     name = "service_bin",
-    main_module = "devinfra.firecracker.manager.service",
+    main_module = "devinfra.x.firecracker.manager.service",
     deps = [":service"],
 )
 

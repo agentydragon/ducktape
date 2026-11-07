@@ -20,7 +20,7 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 | NixOS rootfs       | `nix/nixos/hosts/fc_dev/`   | NixOS config for guest rootfs      |
 | Rootfs provisioner | `provision-rootfs.sh`       | Build rootfs via Nix, dd to LV     |
 | K8s manifests      | `deploy/`                   | Archived — unwired from Flux       |
-| KVM plugin         | `deploy/kvm-device-plugin/` | Device plugin for `/dev/kvm`       |
+| KVM plugin         | `deploy/kvm_device_plugin/` | Device plugin for `/dev/kvm`       |
 
 ## Quick Start
 
@@ -31,7 +31,7 @@ right now. To revive it, re-add a Flux Kustomization pointing at `./deploy`
 
 ```bash
 # Provision base rootfs on wyrm2 (requires Nix + LVM thin pool)
-./devinfra/firecracker/provision-rootfs.sh
+./devinfra/x/firecracker/provision-rootfs.sh
 
 # Create a VM (from a Claude Code session)
 kubectl port-forward -n claude-sandbox svc/firecracker-manager 8080:8080 &

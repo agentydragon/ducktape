@@ -19,10 +19,10 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from devinfra.firecracker.manager.clients import FirecrackerClient, ProcessApiControl
-from devinfra.firecracker.manager.config import ManagerConfig, load_config
-from devinfra.firecracker.manager.k8s_client import INITRAMFS_PATH, KERNEL_PATH, ROOTFS_DEVICE_PATH, K8sVMClient
-from devinfra.firecracker.manager.models import (
+from devinfra.x.firecracker.manager.clients import FirecrackerClient, ProcessApiControl
+from devinfra.x.firecracker.manager.config import ManagerConfig, load_config
+from devinfra.x.firecracker.manager.k8s_client import INITRAMFS_PATH, KERNEL_PATH, ROOTFS_DEVICE_PATH, K8sVMClient
+from devinfra.x.firecracker.manager.models import (
     CreateVMRequest,
     CreateVMResponse,
     ListVMsResponse,
@@ -30,7 +30,7 @@ from devinfra.firecracker.manager.models import (
     SnapshotRequest,
     VMInfo,
 )
-from devinfra.firecracker.manager.snapshots import snapshot_vm
+from devinfra.x.firecracker.manager.snapshots import snapshot_vm
 
 logger = logging.getLogger(__name__)
 

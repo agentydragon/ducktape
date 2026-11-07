@@ -10,6 +10,6 @@ pkg_tar(
     remap_paths = {"release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64": "firecracker"},
     visibility = [
         "//agentplane/x/runner_layering:__pkg__",
-        "//devinfra/firecracker:__subpackages__",
+        "//devinfra/x/firecracker:__subpackages__",
     ],
 )

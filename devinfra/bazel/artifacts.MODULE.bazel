@@ -895,7 +895,7 @@ http_file(
 
 # Firecracker v1.12.1 — microVM VMM binary for Firecracker dev VMs on wyrm2.
 # The tarball contains the firecracker binary + jailer + tools. We extract
-# just the firecracker binary in devinfra/firecracker/BUILD.bazel.
+# just the firecracker binary in devinfra/x/firecracker/BUILD.bazel.
 http_archive(
     name = "firecracker_release",
     build_file_content = 'exports_files(["release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64"])',

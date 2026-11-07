@@ -18,10 +18,10 @@ import signal
 import sys
 from pathlib import Path
 
-from devinfra.firecracker.vm_pod.config import load_config
-from devinfra.firecracker.vm_pod.firecracker_process import start_firecracker
-from devinfra.firecracker.vm_pod.networking import GUEST_IP, setup_tap_and_nat
-from devinfra.firecracker.vm_pod.proxy import start_tcp_to_tcp_proxy, start_tcp_to_unix_proxy
+from devinfra.x.firecracker.vm_pod.config import load_config
+from devinfra.x.firecracker.vm_pod.firecracker_process import start_firecracker
+from devinfra.x.firecracker.vm_pod.networking import GUEST_IP, setup_tap_and_nat
+from devinfra.x.firecracker.vm_pod.proxy import start_tcp_to_tcp_proxy, start_tcp_to_unix_proxy
 
 logger = logging.getLogger(__name__)
 

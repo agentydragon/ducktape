@@ -5,7 +5,7 @@ from collections.abc import Iterator
 import httpx
 import pytest_bazel
 
-from devinfra.firecracker.manager.service import _control_client, _firecracker_client, _require_auth, app
+from devinfra.x.firecracker.manager.service import _control_client, _firecracker_client, _require_auth, app
 
 
 async def test_health_responds_while_boot_waits_for_firecracker() -> None:
