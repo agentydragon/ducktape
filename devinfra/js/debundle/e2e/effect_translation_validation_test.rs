@@ -1743,6 +1743,30 @@ fn noncoercing_scalar_results_keep_local_call_receipts() {
 }
 
 #[test]
+fn scalar_call_receipt_accepts_independent_statement_inversion() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const seed = 41;\nfunction readSeed() { return !seed; }\nconst independent = 7;\nvar result = readSeed();\nconsole.log(independent, result);\n",
+        vec![logical_module(
+            "scalar",
+            &[
+                Member::new("seed"),
+                Member::new("readSeed"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "7 false\n");
+    assert_inline_operation_receipt(&fixture, "result", 1, "scalar inversion");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 1, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["decision"]["scope"], "statement_order_commutation",
+        "{report:#}"
+    );
+}
+
+#[test]
 fn noncoercing_scalar_operators_do_not_cover_abrupt_children() {
     for expression in ["void later", "!later", "later === later"] {
         let source = format!(
@@ -1774,7 +1798,7 @@ fn noncoercing_scalar_operators_refuse_unproved_getters() {
     for (expression, expected) in [
         ("void seed.value", "undefined 1\n"),
         ("!seed.value", "false 1\n"),
-        ("seed.value === seed.value", "true 2\n"),
+        ("seed.value === seed.value", "false 2\n"),
     ] {
         let source = format!(
             "let counter = 0;\nconst seed = {{ get value() {{ return ++counter; }} }};\nfunction readSeed() {{ return {expression}; }}\nvar result = readSeed();\nconsole.log(result, counter);\n"
