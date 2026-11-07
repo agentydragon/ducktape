@@ -3811,9 +3811,9 @@ const visualHarness = {
       Array.from(renderers.keys(), (name) => `${group}.${name}`)
     ).flat();
   },
-  showActionPreview(action: NonNullable<ActionRequest["action"]>, args: NonNullable<ActionRequest["arguments"]>): void {
+  showActionPreview(action: { group: string; name: string }, args: NonNullable<ActionRequest["arguments"]>): void {
     const preview = clone(ActionRequestSchema, COMPACT_POD_ACTION);
-    preview.action = action;
+    preview.action = create(ActionIdentitySchema, action);
     preview.arguments = args;
     preview.title =
       action.group === "kubernetes_admin" && action.name === "pods_list_in_namespace"
@@ -3823,31 +3823,31 @@ const visualHarness = {
     previewAction = preview;
   },
   showActionResult(
-    action: NonNullable<ActionRequest["action"]>,
+    action: { group: string; name: string },
     args: NonNullable<ActionRequest["arguments"]>,
-    result: NonNullable<ActionRequest["execution"]>["result"]
+    result: JsonValue
   ): void {
-    ACTIONS[2]!.action = action;
+    ACTIONS[2]!.action = create(ActionIdentitySchema, action);
     ACTIONS[2]!.arguments = args;
     ACTIONS[2]!.title = `Review ${action.name} result`;
-    ACTIONS[2]!.execution!.result = result;
+    ACTIONS[2]!.execution!.result = fromJson(ValueSchema, result);
   },
   showActionReceipt(
-    action: NonNullable<ActionRequest["action"]>,
+    action: { group: string; name: string },
     args: NonNullable<ActionRequest["arguments"]>,
-    result: NonNullable<ActionRequest["execution"]>["result"]
+    result: JsonValue
   ): void {
     receiptActionGroup =
       action.group === "sandbox" || MCP_GROUPS.some((group) => group.key === action.group)
         ? undefined
         : mcpGroup(action.group, "Test MCP backend for the receipt renderer.");
     const receipt = clone(ActionRequestSchema, ACTIONS[2]!);
-    receipt.action = action;
+    receipt.action = create(ActionIdentitySchema, action);
     receipt.arguments = args;
     receipt.title = "Long action text";
     receipt.description = undefined;
     if (receipt.execution === undefined) throw new Error("Receipt fixture has no Execution.");
-    receipt.execution.result = result;
+    receipt.execution.result = fromJson(ValueSchema, result);
     ACTIONS.splice(0, ACTIONS.length, receipt);
   },
   longPendingAction(): void {
