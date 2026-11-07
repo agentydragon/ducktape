@@ -49,6 +49,7 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -372,8 +373,44 @@ class Actions(Construct):
             add_launcher_admission(self, env.namespace)
 
     def add_platform_resources(self) -> None:
-        """Add the Cilium policy used by fleet environments."""
+        """Add the Cilium policy and Action Service availability alert."""
+        namespace = self.env.namespace
         self._add_network_policy()
+        PrometheusRule(
+            self,
+            "availability-alert",
+            metadata=ApiObjectMetadata(
+                name=f"{NAME}-availability",
+                namespace=namespace,
+                annotations={
+                    "description": "Alerts when the Action Service has fewer available replicas than requested."
+                },
+            ),
+            groups=[
+                group(
+                    NAME,
+                    [
+                        Rule.alert(
+                            "AgentplaneActionServiceReplicasUnavailable",
+                            (
+                                f"max by (cluster, namespace, deployment) "
+                                f'(kube_deployment_spec_replicas{{namespace="{namespace}", deployment="{NAME}"}}) '
+                                f"- max by (cluster, namespace, deployment) "
+                                f'(kube_deployment_status_replicas_available{{namespace="{namespace}", deployment="{NAME}"}}) > 0'
+                            ),
+                            for_="10m",
+                            labels={"severity": "warning"},
+                            summary="Agentplane Action Service has fewer available replicas than requested",
+                            description=(
+                                "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has "
+                                "{{ $value }} fewer available replicas than requested for 10 minutes. "
+                                "The readiness check uses gRPC health; inspect the Action Service pods and logs."
+                            ),
+                        )
+                    ],
+                )
+            ],
+        )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace

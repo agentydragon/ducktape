@@ -528,6 +528,7 @@ py_library(
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s:token_reviewer_rbac",
         "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/ssh_mcp:config",
         "//util:settings_contract",
         "@pypi//cdk8s",
