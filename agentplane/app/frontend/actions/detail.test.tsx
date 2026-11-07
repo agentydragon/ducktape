@@ -3,10 +3,15 @@
 import { type JSX, act } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 
 import { ActionRequestDetail } from "./detail";
-import { ActionIdentitySchema, ActionState, type ActionRequest } from "../../../action_service/action_service_pb";
+import {
+  ActionIdentitySchema,
+  ActionRequestSchema,
+  ActionState,
+  type ActionRequest,
+} from "../../../action_service/action_service_pb";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { answerApi, mount, request, send, unmountLast, type Sent } from "./testing/harness";
