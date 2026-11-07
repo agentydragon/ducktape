@@ -2151,6 +2151,55 @@ describe the current proxy. Live `Runner.ListSessions` remains part of the app a
 service caller contract. The separate destination-authority decision
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
 
+```mermaid
+flowchart TD
+    RUNNER_OBSERVATION_READINESS_RACE[Candidate: investigate runner readiness and routing race]
+    RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN[Decision: reconsider per-runner Gateway ownership]
+```
+
+### `RUNNER_OBSERVATION_READINESS_RACE` — investigate readiness before a usable runner connection
+
+**Candidate; operator follow-up to the observed failure, 2026-11-07 UTC.** The
+[Session deletion system test](../system_tests/scenarios/session_deletion.py) recreated a Sandbox
+with the same name and a new UID, then `ListSessions` returned `UNAVAILABLE: another replica holds
+this Sandbox's runner connection` in a fixture with only one Gateway replica
+([failed invocation](https://app.buildbuddy.io/invocation/737afbc2-7595-5be8-b789-93b6c0a49c74)).
+An [isolated rerun](https://app.buildbuddy.io/invocation/5075b621-94f6-4746-a991-131280be6ec8)
+passed; this establishes intermittent behavior, not its cause. The error also covers an absent
+local connection without establishing that another replica owns it. The test retries assertion
+failures but not `UNAVAILABLE` from the read-only `ListSessions` poll.
+
+The Gateway can record the runner boot ID and renew the connection Lease before it installs its
+local proxy connection. The Sandbox Controller can derive `EnvironmentRuntimeConnected` from that
+Lease, so publication before local installation is a candidate readiness window, not a proven
+explanation of this failure. Map observation, route publication, readiness, shutdown and
+reconciliation ownership; capture the relevant Gateway/Lease/route evidence and build a
+deterministic race test before choosing the fix. Correct any confirmed readiness/connection ordering
+or recovery defect and make errors describe what is known. Treat readiness as a recent observation,
+not a guarantee that a subsequent RPC cannot fail after connection loss. A bounded retry of the
+test's read-only poll may be appropriate alongside that coverage; do not replay uncertain mutations.
+**Exit:** reproducible boundary and regression coverage for first observation, same-name Sandbox
+replacement, loss and supersession; preserve UID/incarnation and epoch fencing and stale-call denial.
+
+### `RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` — reconsider per-runner Gateway ownership
+
+**Decision; no implementation selected.** The Gateway now dials the runner's private gRPC listener,
+but one elected replica owns `WatchState`, publishes the Lease and route, and alone serves proxy
+calls for that runner. Decide whether per-runner replica ownership and its Lease/EndpointSlice
+routing remain necessary. Compare the current design, a single observer with any authenticated
+Gateway replica able to dial and serve calls, and removing or replacing the singleton observation
+mechanism entirely. Prefer separating request serving from observation ownership if it preserves the
+required guarantees; review the alternatives and tradeoffs before selecting it.
+
+Specify how callers obtain and validate the current Sandbox UID, workload incarnation, runner boot
+ID and epoch; how facts, readiness, shutdown and reconciliation are owned; and what happens on
+observer loss, stale routes, replica failover, restart and same-name replacement. Preserve peer
+authorization, fencing, session safety and uncertain-outcome handling without automatic replay.
+The readiness-race investigation can proceed independently; if this decision selects a new
+architecture, its implementation depends on the reviewed decision and must account for that work.
+**Exit:** reviewed choice, ownership and failure semantics, migration/rollback plan, and
+deterministic multi-replica and race coverage for any selected change.
+
 ## Scope and retirement of stale gates
 
 - Notifications keep workers in the HTTP service. Retention, worker extraction, idle-polling
