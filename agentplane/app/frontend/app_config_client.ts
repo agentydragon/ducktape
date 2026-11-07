@@ -2,10 +2,12 @@ import { fromJson } from "@bufbuild/protobuf";
 
 import { createAppServiceClient } from "./app_service_client";
 import {
-  ListModelsResponseSchema,
   GetFrontendConfigResponseSchema,
+  GetSandboxFormResponseSchema,
+  ListModelsResponseSchema,
   ListSandboxPresetsResponseSchema,
   type GetFrontendConfigResponse as ProtoGetFrontendConfigResponse,
+  type GetSandboxFormResponse,
   type ListModelsResponse,
   type ListSandboxPresetsResponse,
 } from "../app_service_pb";
@@ -60,6 +62,16 @@ export type SandboxPresetView = {
   inbox_tags: string[];
   session_defaults: SessionDefaultsView;
   bootstrap: string;
+};
+
+export type NewSandboxDefaults = {
+  wake_on_send: boolean;
+  idle_suspend_after_seconds: number | null;
+};
+
+export type SandboxFormView = {
+  policy_sets: string[];
+  new_sandbox_defaults: NewSandboxDefaults;
 };
 
 const APP_CONFIG_PATH = "/upstream/app-config/v1";
@@ -138,5 +150,22 @@ export async function getFrontendConfig(): Promise<FrontendConfig> {
           sandbox_service_account_metadata_key: config.langfuseSearch.sandboxServiceAccountMetadataKey,
         }
       : null,
+  };
+}
+
+export async function getSandboxForm(): Promise<SandboxFormView> {
+  const response: GetSandboxFormResponse = fromJson(
+    GetSandboxFormResponseSchema,
+    await appConfigClient.get("/sandbox-form")
+  );
+  const defaults = response.newSandboxDefaults;
+  if (defaults === undefined) throw new Error("App configuration omitted Sandbox defaults.");
+  return {
+    policy_sets: response.policySets,
+    new_sandbox_defaults: {
+      wake_on_send: defaults.wakeOnSend,
+      idle_suspend_after_seconds:
+        defaults.idleSuspendAfterSeconds === undefined ? null : Number(defaults.idleSuspendAfterSeconds),
+    },
   };
 }

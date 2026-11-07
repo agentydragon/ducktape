@@ -1,15 +1,13 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import type { NewSandboxDefaults } from "../schema";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api } from "../client";
 import * as sandboxClient from "./client";
 import * as appConfigClient from "../app_config_client";
-import type { SandboxPresetView } from "../app_config_client";
+import type { NewSandboxDefaults, SandboxPresetView } from "../app_config_client";
 import { SandboxList } from "./list";
 import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
@@ -88,12 +86,9 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
   };
   vi.spyOn(appConfigClient, "listSandboxPresets").mockResolvedValue([preset]);
   vi.spyOn(sandboxClient, "listEnvironmentTemplates").mockResolvedValue(["test-template", "other-template"]);
-  vi.spyOn(api, "GET").mockImplementation(async (path) => {
-    const data =
-      path === "/sandboxes/form"
-        ? { policy_sets: ["test-basic", "test-packages"], new_sandbox_defaults: newSandboxDefaults }
-        : [];
-    return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
+  vi.spyOn(appConfigClient, "getSandboxForm").mockResolvedValue({
+    policy_sets: ["test-basic", "test-packages"],
+    new_sandbox_defaults: newSandboxDefaults,
   });
   const container = document.createElement("div");
   document.body.append(container);

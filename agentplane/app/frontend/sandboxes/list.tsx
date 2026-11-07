@@ -22,13 +22,17 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import type { NewSandboxDefaults } from "../schema";
 import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError } from "../client";
-import { listSandboxPresets, type SandboxPresetView } from "../app_config_client";
+import { displayableError } from "../client";
+import {
+  getSandboxForm,
+  listSandboxPresets,
+  type NewSandboxDefaults,
+  type SandboxPresetView,
+} from "../app_config_client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
 import { useRequiredSandboxesLive } from "./live";
@@ -135,12 +139,13 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   useEffect(() => {
     void (async () => {
-      const { data: sandboxForm, error: formFailure } = await api.GET("/sandboxes/form");
-      if (formFailure) setError(displayableError(formFailure));
-      else {
+      try {
+        const sandboxForm = await getSandboxForm();
         setPolicySets(sandboxForm.policy_sets);
         setDefaults(sandboxForm.new_sandbox_defaults);
         setForm((current) => ({ ...current, ...sandboxForm.new_sandbox_defaults }));
+      } catch (failure) {
+        setError(displayableError(failure));
       }
       try {
         setPresets(await listSandboxPresets());

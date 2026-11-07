@@ -6,10 +6,18 @@ import (
 	"sort"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
+	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+type policySetNameReader interface {
+	ListPolicySetNames(context.Context, *policypb.ListPolicySetNamesRequest, ...grpc.CallOption) (*policypb.ListPolicySetNamesResponse, error)
+}
 
 // RegisterAppConfigRoutes serves the app-owned browser configuration through generated
 // ProtoJSON HTTP routes. The generated gateway and service implementation share this process;
@@ -23,7 +31,25 @@ func RegisterAppConfigRoutes(server *HTTPServer, service *appService) error {
 	server.RegisterRawRoute("GET "+prefix+"/v1/models", http.StripPrefix(prefix, gateway), false)
 	server.RegisterRawRoute("GET "+prefix+"/v1/presets", http.StripPrefix(prefix, gateway), false)
 	server.RegisterRawRoute("GET "+prefix+"/v1/frontend-config", http.StripPrefix(prefix, gateway), false)
+	server.RegisterRawRoute("GET "+prefix+"/v1/sandbox-form", http.StripPrefix(prefix, gateway), false)
 	return nil
+}
+
+func (s *appService) GetSandboxForm(ctx context.Context, _ *apppb.GetSandboxFormRequest) (*apppb.GetSandboxFormResponse, error) {
+	if s.policySetNames == nil {
+		return nil, status.Error(codes.Unavailable, "Policy access is unavailable")
+	}
+	sets, err := s.policySetNames.ListPolicySetNames(ctx, &policypb.ListPolicySetNamesRequest{})
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "Policy access is unavailable")
+	}
+	defaults := &apppb.NewSandboxDefaults{WakeOnSend: s.config.NewSandboxDefaults.WakeOnSend}
+	if seconds := s.config.NewSandboxDefaults.IdleSuspendAfterSeconds; seconds != nil {
+		defaults.IdleSuspendAfterSeconds = seconds
+	}
+	return &apppb.GetSandboxFormResponse{
+		PolicySets: nonNilStrings(sets.GetNames()), NewSandboxDefaults: defaults,
+	}, nil
 }
 
 func (s *appService) ListModels(context.Context, *emptypb.Empty) (*apppb.ListModelsResponse, error) {
