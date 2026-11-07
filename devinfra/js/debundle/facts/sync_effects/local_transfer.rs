@@ -208,6 +208,11 @@ pub(super) enum BindingOperation {
 }
 
 pub(super) trait LocalContext: OwnDataContext {
+    /// An actual initialized receiver. Execution consumers must record their
+    /// conservative fallback when that operand is unavailable.
+    fn receiver_value(&mut self, frame: &mut LocalFrame) -> Option<Values> {
+        frame.this_values.clone()
+    }
     fn constructor_phase(&mut self, _phase: ConstructorPhase) {}
     fn constructor_prefix_is_unexposed(&self, _class: u32) -> bool {
         false
@@ -769,7 +774,7 @@ fn expression(
             Some(SelectedValue::raw(result.allocation.values))
         }
         LocalExpression::This => {
-            let values = frame.this_values.clone()?;
+            let values = context.receiver_value(frame)?;
             frame
                 .effect_coverage
                 .compose(&EffectCoverageFragment::no_effects());

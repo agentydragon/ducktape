@@ -1899,6 +1899,12 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 }
 
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
+    fn receiver_value(&mut self, frame: &mut LocalFrame) -> Option<Values> {
+        if frame.this_values.is_none() {
+            self.refuse_activation_value(frame);
+        }
+        frame.this_values.clone()
+    }
     fn constructor_phase(&mut self, phase: ConstructorPhase) {
         let LocalExecutionScope::Construction(class) = self.scope else {
             unreachable!("constructor phase requires construction execution")
@@ -12965,24 +12971,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &captured_context,
                 receiver.as_ref(),
             );
-            let outcome = self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
-                owner: callable_owner,
-                arguments: args,
-                captured: captured_context,
-                receiver,
-                reason: ExecutionPrecisionLossReason::UnsupportedOperation {
-                    operation: ExecutionOperation::OpaqueExecution,
-                    ordered_field_read_refusal: None,
-                    ordered_call_admission_refusal: None,
+            return self.invoke_receiver_fallback(
+                signature,
+                active_invocation,
+                BoundedInvocationFallbackRequest {
+                    owner: callable_owner,
+                    arguments: args,
+                    captured: captured_context,
+                    receiver,
+                    reason: ExecutionPrecisionLossReason::UnsupportedOperation {
+                        operation: ExecutionOperation::OpaqueExecution,
+                        ordered_field_read_refusal: None,
+                        ordered_call_admission_refusal: None,
+                    },
+                    reach,
+                    span: self.inputs.index.callable_spans[&key],
+                    diagnostics: BoundedInvocationFallbackDiagnostics::default(),
                 },
-                reach,
-                span: self.inputs.index.callable_spans[&key],
-                diagnostics: BoundedInvocationFallbackDiagnostics::default(),
-            });
-            self.state.active.remove(&active_invocation);
-            self.state.invocation_depth -= 1;
-            self.remember_invocation(signature, &outcome);
-            return outcome;
+            );
         }
         // Source-summary lanes pre-evaluate assignments and flatten control flow.
         // They cannot preserve a live mutable capture's ordered value proof.
@@ -13189,6 +13195,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // The flat compatibility execution did not compose every body
         // operation. Its last child's receipt cannot certify the whole body.
         outcome.effect_coverage = EffectCoverageFragment::default();
+        self.remember_invocation(signature, &outcome);
+        outcome
+    }
+
+    // Keep the opaque receiver's large outcome off every ordinary recursive
+    // invocation's frame, including paths that never capture a receiver.
+    #[cold]
+    #[inline(never)]
+    fn invoke_receiver_fallback(
+        &mut self,
+        signature: InvocationSignature,
+        active: ActiveInvocation,
+        request: BoundedInvocationFallbackRequest,
+    ) -> Outcome {
+        let outcome = self.bounded_invocation_fallback(request);
+        self.state.active.remove(&active);
+        self.state.invocation_depth -= 1;
         self.remember_invocation(signature, &outcome);
         outcome
     }

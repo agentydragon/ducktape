@@ -931,8 +931,8 @@ pub enum BoundedInvocationFallbackInputPath {
 
 /// One of the exact root groups supplied to the bounded fallback's existing
 /// callback-value union. If a value occurs in several groups, the witness
-/// follows the first matching group in argument, captured-binding, escaped
-/// pool, export-callback order.
+/// follows the first matching group in argument, captured-binding, captured
+/// receiver, escaped pool, export-callback order.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BoundedInvocationFallbackSeed {
