@@ -317,6 +317,11 @@ py_test(
     data = [
         K3S_BINARY,
         ":test_tcg_vmi_shutdown_image_manifest",
+        "//agentplane/system_tests/vm/guest:agentplane-cgroup-pilot-resident.service",
+        "//agentplane/system_tests/vm/guest:agentplane-cgroup-stress-probe.service",
+        "//agentplane/system_tests/vm/guest:agentplane-cgroup-stress-probe.timer",
+        "//agentplane/system_tests/vm/guest:agentplane-cgroup-stress-resident.service",
+        "//agentplane/system_tests/vm/guest:cgroup_pilot_probe",
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
         "@nodejs_linux_amd64//:bin/node",
@@ -436,7 +441,14 @@ py_test(
     size = "small",
     srcs = ["test_tcg_vmi_shutdown.py"],
     args = ["-k=cgroup_stress"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
+    data = [
+        "//agentplane/system_tests/vm/guest:agentplane-cgroup-pilot-resident.service",
+        "//agentplane/system_tests/vm/guest:agentplane-cgroup-stress-probe.service",
+        "//agentplane/system_tests/vm/guest:agentplane-cgroup-stress-probe.timer",
+        "//agentplane/system_tests/vm/guest:agentplane-cgroup-stress-resident.service",
+        "//agentplane/system_tests/vm/guest:cgroup_pilot_probe",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [

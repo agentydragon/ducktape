@@ -190,6 +190,7 @@ pkg_files(
         "agentplane-cgroup-pilot-resident.service",
         "agentplane-cgroup-stress-probe.service",
         "agentplane-cgroup-stress-probe.timer",
+        "agentplane-cgroup-stress-resident.service",
         "agentplane-guest-prepare.service",
         "agentplane-home-prepare.service",
         "agentplane-journal-console.service",
