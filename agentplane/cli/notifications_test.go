@@ -32,6 +32,18 @@ func TestNotificationsGuideIsAvailableWithoutServiceConfiguration(t *testing.T) 
 	}
 }
 
+func TestSubscribeCreateAcceptsActionSourceAsProtoJSON(t *testing.T) {
+	server := answering(pullRequestSubscription(1, false))
+	cli := newCLI(notificationsEnv(serveNotifications(t, server)), `{"sessionId":"session-1","idempotencyKey":"follow-1","source":{"actions":{"requestId":"action-1","afterSequence":7}}}`)
+	if code := cli.run("notifications", "subscribe", "create", "--request-file", "-"); code != 0 {
+		t.Fatalf("create: exit %d: %s", code, cli.stderr.String())
+	}
+	requests := received[*notificationspb.CreateSubscriptionRequest](server)
+	if len(requests) != 1 || requests[0].GetSessionId() != "session-1" || requests[0].GetIdempotencyKey() != "follow-1" || requests[0].GetSource().GetActions().GetRequestId() != "action-1" || requests[0].GetSource().GetActions().GetAfterSequence() != 7 {
+		t.Fatalf("create requests: %v", requests)
+	}
+}
+
 // notificationsServer is the Notification Service's gRPC API with canned answers. Every CLI call reaches it
 // directly over gRPC, preserving the service's typed requests and status codes.
 type notificationsServer struct {

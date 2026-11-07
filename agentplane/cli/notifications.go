@@ -82,9 +82,51 @@ func (a *app) notificationsCommand() *cobra.Command {
 			},
 		},
 		group("subscribe", "Subscribe to a source", "Creates a subscription for this Session's inbox.",
-			group("github", "Subscribe to GitHub activity", "Only pull requests (`pr`) are supported.", a.subscribePullRequestCommand())),
+			a.subscribeRequestCommand(),
+			group("github", "Subscribe to GitHub activity", "Only pull requests (`pr`) have a dedicated command.", a.subscribePullRequestCommand())),
 		a.inboxCommand(), a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand(),
 		a.sendCommand(), a.messageCommand())
+}
+
+func (a *app) subscribeRequestCommand() *cobra.Command {
+	var filename string
+	command := &cobra.Command{
+		Use:   "create --request-file FILE",
+		Short: "Create a subscription from a protobuf JSON request",
+		Long:  "Read a CreateSubscriptionRequest as protobuf JSON from FILE, or - for stdin. Supply sessionId, idempotencyKey and source; retry with the identical request.",
+		Args:  cobra.NoArgs,
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, _ []string) error {
+			var data []byte
+			var err error
+			if filename == "-" {
+				data, err = io.ReadAll(a.stdin)
+			} else {
+				data, err = os.ReadFile(filename)
+			}
+			if err != nil {
+				return usageFailure("--request-file: %v", err)
+			}
+			var request notificationspb.CreateSubscriptionRequest
+			if err := protojson.Unmarshal(data, &request); err != nil {
+				return usageFailure("--request-file: %v", err)
+			}
+			response, err := svc.CreateSubscription(ctx, &request)
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			if response.GetSubscription().GetCancelled() {
+				return clientFailure(exitConflict, "ALREADY_EXISTS", "idempotency key %s belongs to a cancelled subscription: use a new key", request.GetIdempotencyKey())
+			}
+			encoded, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			return a.showSubscription(encoded)
+		}),
+	}
+	command.Flags().StringVar(&filename, "request-file", "", "protobuf JSON request file; - reads stdin")
+	_ = command.MarkFlagRequired("request-file")
+	return command
 }
 
 func (a *app) inboxCommand() *cobra.Command {

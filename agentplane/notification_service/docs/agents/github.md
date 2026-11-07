@@ -10,9 +10,10 @@ accessible to the App, including private repositories.
 for your Session (`AGENTPLANE_SESSION_ID`; or `--session ID`). Its repeated invocation
 returns the same subscription, `--event NAME[:ACTION[,ACTION]]` (a GitHub event name such as
 `issue_comment`) replaces the default events, and it exits `4` when the response is a cancelled
-subscription (pass a new `--key`). The other subjects (issue, branch, commit) take
-`POST /v1/subscriptions` ([request schema](/openapi.json)) with the Session ID and idempotency key
-as in the [Action example](subscriptions.md#follow-an-action) and this `source`:
+subscription (pass a new `--key`). For other subjects (issue, branch, commit), use
+`agentplane notifications subscribe create --request-file FILE` with a protobuf JSON request
+containing the Session ID and idempotency key as in `agentplane notifications guide subscriptions`
+and this `source`:
 
 ```json
 {

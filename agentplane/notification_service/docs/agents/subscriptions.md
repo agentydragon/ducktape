@@ -9,8 +9,8 @@ Keep the Action's actual request ID and original submission idempotency key. If 
 uncertain, recover through the Actions API first; do not invent a request ID or submit another
 Action. For an already-finished Action, read its result directly.
 
-The command does not create Action subscriptions yet: create one with `POST /v1/subscriptions` and an
-`actions` source ([request schema](/openapi.json)):
+Create an Action subscription with `agentplane notifications subscribe create --request-file FILE`.
+The file contains a protobuf JSON `CreateSubscriptionRequest` with an `actions` source:
 
 ```json
 {
