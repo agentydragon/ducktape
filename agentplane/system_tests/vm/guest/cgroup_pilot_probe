@@ -8,17 +8,19 @@ pilot)
 	marker=AGENTPLANE_CGROUP_PILOT
 	pairs=2
 	unit=agentplane-cgroup-pilot-resident.service
+	slice_unit=pilot.slice
 	;;
 stress)
 	mode=stress
 	marker=AGENTPLANE_CGROUP_STRESS
 	pairs=5
 	unit=agentplane-cgroup-stress-resident.service
+	slice_unit=stress.slice
 	;;
 *) exit 2 ;;
 esac
 probe_start_uptime=$("$busybox" awk '{print int($1)}' /proc/uptime)
-slice=/sys/fs/cgroup/pilot.slice
+slice=/sys/fs/cgroup/$slice_unit
 tracefs=/sys/kernel/tracing
 scratch=$("$busybox" mktemp -d /run/agentplane-cgroup-pilot.XXXXXX)
 "$busybox" chmod 0700 "$scratch"
