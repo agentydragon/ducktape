@@ -204,6 +204,12 @@ class RemoteIntegration:
                 raise IntegrationError("verification_timeout", 504)
             if response.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE:
                 raise IntegrationError("upstream_unavailable", 503)
+            if response.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE:
+                raise IntegrationError("outcome_unknown_invalid_response", 502)
+            if response.outcome_unknown.reason == pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR:
+                if response.outcome_unknown.HasField("upstream_http_status"):
+                    raise IntegrationError(f"outcome_unknown_http_{response.outcome_unknown.upstream_http_status}", 502)
+                raise IntegrationError("outcome_unknown_http", 502)
         if result != "installed":
             raise _candidate_failure(result, response.rejected.reason)
         return {"configured": True}

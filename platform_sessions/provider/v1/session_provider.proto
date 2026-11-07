@@ -304,10 +304,14 @@ message OperationOutcomeUnknown {
   bool credential_rotation_may_have_occurred = 1;
   // Optional sanitized diagnostic; this does not make retrying safe.
   UnknownOutcomeReason reason = 2;
+  // Present only for UPSTREAM_HTTP_ERROR and restricted to HTTP status codes 100 through 599.
+  optional uint32 upstream_http_status = 3;
 }
 
 enum UnknownOutcomeReason {
   UNKNOWN_OUTCOME_REASON_UNSPECIFIED = 0;
   UNKNOWN_OUTCOME_REASON_TIMEOUT = 1;
   UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE = 2;
+  UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE = 3;
+  UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR = 4;
 }

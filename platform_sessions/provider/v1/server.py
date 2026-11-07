@@ -379,6 +379,14 @@ class SessionProviderControlService(pb_grpc.SessionProviderControlServicer):
                 pb.UNKNOWN_OUTCOME_REASON_UNSPECIFIED,
                 pb.UNKNOWN_OUTCOME_REASON_TIMEOUT,
                 pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE,
+                pb.UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE,
+                pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
+            ) or (
+                outcome.HasField("upstream_http_status")
+                and (
+                    outcome.reason != pb.UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR
+                    or not 100 <= outcome.upstream_http_status <= 599
+                )
             ):
                 await self._abort(context, grpc.StatusCode.INTERNAL, "provider returned an invalid operation result")
             response.outcome_unknown.CopyFrom(outcome)

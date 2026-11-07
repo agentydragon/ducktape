@@ -116,6 +116,10 @@ const importErrorMessages = {
   reauth_required: "The provider requires a fresh sign-in. Sign in and copy a fresh export.",
   security_challenge: "The provider blocked verification with a security challenge. The new session was not installed.",
   outcome_unknown: "The import outcome is unknown. Check the session status before trying again.",
+  outcome_unknown_invalid_response:
+    "The provider returned an unexpected response. The import outcome is unknown; check the session status before retrying.",
+  outcome_unknown_http:
+    "The provider returned an HTTP error. The import outcome is unknown; check the session status before retrying.",
   verification_timeout:
     "Verification timed out. The import may have completed; check the session status before retrying.",
   upstream_unavailable:
@@ -128,6 +132,10 @@ function importErrorMessage(data, status) {
   const code = data && typeof data === "object" ? data.error : undefined;
   if (typeof code === "string") {
     if (Object.hasOwn(importErrorMessages, code)) return importErrorMessages[code];
+    const unknownHttpStatus = /^outcome_unknown_http_([1-5]\d{2})$/.exec(code)?.[1];
+    if (unknownHttpStatus) {
+      return `The provider returned HTTP ${unknownHttpStatus}. The import outcome is unknown; check the session status before retrying.`;
+    }
     const upstreamStatus = /^upstream_http_([1-5]\d{2})$/.exec(code)?.[1];
     if (upstreamStatus) {
       return `The provider returned HTTP ${upstreamStatus}. Check the session status before retrying.`;

@@ -108,6 +108,9 @@ for (const [error, status, message] of [
   ["reauth_required", 409, /fresh sign-in/],
   ["security_challenge", 503, /security challenge/],
   ["outcome_unknown", 504, /outcome is unknown/],
+  ["outcome_unknown_invalid_response", 502, /unexpected response.*outcome is unknown/],
+  ["outcome_unknown_http", 502, /HTTP error.*outcome is unknown/],
+  ["outcome_unknown_http_429", 502, /HTTP 429.*outcome is unknown/],
   ["verification_timeout", 504, /timed out.*may have completed/],
   ["upstream_unavailable", 502, /Could not connect.*may have completed/],
   ["invalid_response", 502, /unexpected response.*Check the session status/],
@@ -127,7 +130,7 @@ for (const [error, status, message] of [
   assert.equal(ui.nodes.session.value, beta);
 }
 
-for (const error of ["unknown_sensitive_value", "upstream_http_999", "toString"]) {
+for (const error of ["unknown_sensitive_value", "upstream_http_999", "outcome_unknown_http_999", "toString"]) {
   ui.nodes.session.value = beta;
   ui.nodes.session.listeners.input();
   ui.replies.set(
