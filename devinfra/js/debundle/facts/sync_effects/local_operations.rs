@@ -103,6 +103,12 @@ pub(super) enum LocalExpression {
     /// The fresh receiver supplied by a checked constructor query.
     This,
     Sequence(Arc<[Self]>),
+    Binary {
+        op: BinaryOp,
+        left: Arc<Self>,
+        right: Arc<Self>,
+        span: Span,
+    },
     Record {
         allocation: u32,
         properties: Arc<[PropertyDefinition<Self>]>,
@@ -305,6 +311,14 @@ impl LocalExpression {
     }
 
     fn lower(expression: &Expr, class_template: bool) -> Option<Self> {
+        Self::lower_with_binary(expression, class_template, true)
+    }
+
+    fn lower_with_binary(
+        expression: &Expr,
+        class_template: bool,
+        allow_binary: bool,
+    ) -> Option<Self> {
         match expression.unwrap_parens() {
             Expr::Lit(Lit::Str(_)) => Some(Self::PrimitiveLiteral(PrimKinds::STRING)),
             Expr::Lit(Lit::Num(_)) => Some(Self::PrimitiveLiteral(PrimKinds::NUMBER)),
@@ -326,7 +340,11 @@ impl LocalExpression {
                             }),
                             Prop::KeyValue(pair) => Some(PropertyDefinition::Data {
                                 name: Some(literal_definition_name(&pair.key)?),
-                                value: Self::lower(&pair.value, class_template)?,
+                                value: Self::lower_with_binary(
+                                    &pair.value,
+                                    class_template,
+                                    allow_binary,
+                                )?,
                             }),
                             Prop::Method(method)
                                 if method.function.decorators.is_empty()
@@ -392,9 +410,9 @@ impl LocalExpression {
                     .iter()
                     .map(|element| match element {
                         None => Some(None),
-                        Some(element) if element.spread.is_none() => {
-                            Some(Some(Self::lower(&element.expr, class_template)?))
-                        }
+                        Some(element) if element.spread.is_none() => Some(Some(
+                            Self::lower_with_binary(&element.expr, class_template, allow_binary)?,
+                        )),
                         _ => None,
                     })
                     .collect::<Option<Arc<[_]>>>()?,
@@ -422,9 +440,27 @@ impl LocalExpression {
                 sequence
                     .exprs
                     .iter()
-                    .map(|expression| Self::lower(expression, class_template))
+                    .map(|expression| {
+                        Self::lower_with_binary(expression, class_template, allow_binary)
+                    })
                     .collect::<Option<Arc<[_]>>>()?,
             )),
+            Expr::Bin(binary) if allow_binary && ordered_primitive_binary(binary.op) => {
+                Some(Self::Binary {
+                    op: binary.op,
+                    left: Arc::new(Self::lower_with_binary(
+                        &binary.left,
+                        class_template,
+                        allow_binary,
+                    )?),
+                    right: Arc::new(Self::lower_with_binary(
+                        &binary.right,
+                        class_template,
+                        allow_binary,
+                    )?),
+                    span: binary.span,
+                })
+            }
             Expr::Call(call) if !call.args.iter().any(|argument| argument.spread.is_some()) => {
                 let Callee::Expr(callee) = &call.callee else {
                     return None;
@@ -435,7 +471,9 @@ impl LocalExpression {
                     arguments: call
                         .args
                         .iter()
-                        .map(|argument| Self::lower(&argument.expr, class_template))
+                        .map(|argument| {
+                            Self::lower_with_binary(&argument.expr, class_template, allow_binary)
+                        })
                         .collect::<Option<Arc<[_]>>>()?,
                     span: call.span,
                 })
@@ -454,7 +492,11 @@ impl LocalExpression {
                 })
             }
             Expr::Assign(assignment) if assignment.op == AssignOp::Assign => {
-                let value = Arc::new(Self::lower(&assignment.right, class_template)?);
+                let value = Arc::new(Self::lower_with_binary(
+                    &assignment.right,
+                    class_template,
+                    allow_binary,
+                )?);
                 match &assignment.left {
                     AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
                         Some(Self::Assign {
@@ -519,6 +561,10 @@ impl LocalExpression {
                 for expression in expressions.iter() {
                     expression.reads(reads);
                 }
+            }
+            Self::Binary { left, right, .. } => {
+                left.reads(reads);
+                right.reads(reads);
             }
             Self::Assign { binding, value, .. } => {
                 reads.insert(binding.clone());
@@ -601,6 +647,11 @@ impl LocalExpression {
                 }
                 (allocation_only, closure_allowed)
             }
+            Self::Binary { left, right, .. } => {
+                left.allocation_syntax(bindings, closure_sites);
+                right.allocation_syntax(bindings, closure_sites);
+                (false, false)
+            }
             Self::Assign { binding, value, .. } => {
                 let (allocation_only, closure_allowed) =
                     value.allocation_syntax(bindings, closure_sites);
@@ -629,6 +680,9 @@ impl LocalExpression {
                 .any(Self::requires_keyed_collection_new),
             Self::Sequence(expressions) => {
                 expressions.iter().any(Self::requires_keyed_collection_new)
+            }
+            Self::Binary { left, right, .. } => {
+                left.requires_keyed_collection_new() || right.requires_keyed_collection_new()
             }
             Self::Assign { value, .. }
             | Self::AssignField { value, .. }
@@ -664,6 +718,10 @@ impl LocalExpression {
                     expression.writes(writes);
                 }
             }
+            Self::Binary { left, right, .. } => {
+                left.writes(writes);
+                right.writes(writes);
+            }
             Self::Call { arguments, .. } => {
                 for argument in arguments.iter() {
                     argument.writes(writes);
@@ -681,9 +739,25 @@ impl LocalExpression {
     }
 }
 
+/// The ordered binary transfer handles only eager operators whose successful
+/// result is primitive. Equality without strict semantics and coercive
+/// operators still fall back when either evaluated operand may be an object.
+fn ordered_primitive_binary(op: BinaryOp) -> bool {
+    !matches!(
+        op,
+        BinaryOp::LogicalAnd
+            | BinaryOp::LogicalOr
+            | BinaryOp::NullishCoalescing
+            | BinaryOp::In
+            | BinaryOp::InstanceOf
+            | BinaryOp::EqEqEq
+            | BinaryOp::NotEqEq
+    )
+}
+
 impl LocalBody {
     pub(super) fn from_initializer(expression: &Expr) -> Option<Self> {
-        let mut body = Self::lower_expression(std::iter::empty(), expression)?;
+        let mut body = Self::lower_expression_with_binary(std::iter::empty(), expression, false)?;
         body.initializer_span = Some(expression.span());
         Some(body)
     }
@@ -770,13 +844,21 @@ impl LocalBody {
         parameters: impl Iterator<Item = &'a Pat>,
         expression: &Expr,
     ) -> Option<Self> {
+        Self::lower_expression_with_binary(parameters, expression, true)
+    }
+
+    fn lower_expression_with_binary<'a>(
+        parameters: impl Iterator<Item = &'a Pat>,
+        expression: &Expr,
+        allow_binary: bool,
+    ) -> Option<Self> {
         let (bindings, parameters) = Self::lower_parameters(parameters)?;
         Some(Self::from_operations(
             bindings,
             parameters,
-            vec![LocalOperation::Return(Some(LocalExpression::lower(
-                expression, false,
-            )?))],
+            vec![LocalOperation::Return(Some(
+                LocalExpression::lower_with_binary(expression, false, allow_binary)?,
+            ))],
         ))
     }
 

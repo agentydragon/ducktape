@@ -246,6 +246,9 @@ pub(super) trait LocalContext: OwnDataContext {
     ) -> Option<AllocationValue> {
         None
     }
+    /// Both binary operands have completed in source order, but at least one
+    /// may be an object or unknown value whose coercion can execute user code.
+    fn binary_fallback(&mut self, _frame: &LocalFrame, _reached: &Values, _span: Span) {}
 }
 
 struct LocalValueContext<'a, C> {
@@ -483,6 +486,12 @@ fn expression(
         LocalExpression::Sequence(expressions) => {
             sequence_expression(context, expressions, body, frame, judgment)
         }
+        LocalExpression::Binary {
+            op,
+            left,
+            right,
+            span,
+        } => binary_expression(context, *op, (left, right), *span, body, frame, judgment),
         LocalExpression::Closure(callable) => {
             closure_expression(context, callable, frame, judgment)
         }
@@ -521,6 +530,56 @@ fn expression(
             ..
         } => define_this_field_expression(context, property, node, body, frame, judgment),
     }
+}
+
+fn binary_expression(
+    context: &mut impl LocalContext,
+    op: swc_ecma_ast::BinaryOp,
+    (left, right): (&LocalExpression, &LocalExpression),
+    span: Span,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let left = expression(context, left, body, frame, judgment)?;
+    if left.values.is_empty() {
+        return Some(left);
+    }
+    let right = expression(context, right, body, frame, judgment)?;
+    if right.values.is_empty() {
+        return Some(right);
+    }
+
+    let transfer = allocation_transfer::binary(
+        op,
+        &left.values,
+        &right.values,
+        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+    );
+    let Some(transfer) = transfer else {
+        judgment.compose(&AllocationJudgment::Opaque);
+        let mut reached = left.values;
+        reached.extend(right.values);
+        context.binary_fallback(frame, &reached, span);
+        return None;
+    };
+    judgment.compose(&transfer.judgment);
+    let effects = if transfer
+        .values
+        .contains(&AbstractValue::Value(Value::Unavailable))
+    {
+        // Allocation opacity does not certify effect or completion coverage.
+        // A primitive operation such as Symbol coercion or BigInt division
+        // can throw after both operands ran, so leave those domains unknown.
+        EffectCoverageFragment::default()
+    } else {
+        EffectCoverageFragment::no_effects()
+    };
+    frame.effect_coverage.compose(&effects);
+    Some(completing_selected(
+        SelectedValue::raw(transfer.values),
+        frame,
+    ))
 }
 
 fn value_expression(

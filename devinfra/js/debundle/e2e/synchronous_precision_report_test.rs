@@ -1001,6 +1001,26 @@ fn prefix_observation(execution: &Value, guard: &str, property: Option<&str>) ->
         .clone()
 }
 
+fn assert_completed_native_integrity_inference(execution: &Value) {
+    assert_eq!(execution["complete"], true, "{execution}");
+    assert_eq!(
+        execution["precision_losses"],
+        serde_json::json!([]),
+        "{execution}"
+    );
+    assert!(
+        execution["inference_uses"].as_array().is_some_and(|uses| {
+            uses.iter().any(|use_| {
+                use_["conclusion"] == "native_integrity"
+                    && use_["derivation_rules"]
+                        .as_array()
+                        .is_some_and(|rules| rules.contains(&serde_json::json!("native_integrity")))
+            })
+        }),
+        "missing completed native-integrity inference in {execution}"
+    );
+}
+
 #[test]
 fn unused_deferred_native_writer_is_absent_from_prefix_observations() {
     let fixture = array_prefix_fixture("");
@@ -1012,11 +1032,10 @@ fn unused_deferred_native_writer_is_absent_from_prefix_observations() {
         "{array}"
     );
     assert_eq!(observed["uncertain_execution"], false);
-    // The existing whole-program guard still rejects the Array premise.
-    assert!(
-        array["native_integrity_checks"].as_array().is_some(),
-        "{array}"
-    );
+    // The callback's now-supported `value + 1` body completes with an
+    // explicit native-integrity inference. That whole-call evidence is
+    // separate from the runtime prefix observation above.
+    assert_completed_native_integrity_inference(&array);
     let fixture = prototype_prefix_fixture("");
     let result = execution(&fixture, "result");
     let observed = prefix_observation(&result, "ordinary_object_prototype", Some("prefixProbe"));
@@ -1103,13 +1122,13 @@ fn array_guard_references_a_direct_native_write_without_unknown_alias_widening()
     assert_eq!(witnesses[0]["affected_roots"], serde_json::json!(["array"]));
     assert_eq!(witnesses[0]["through_local_alias"], false);
     let result = execution(&fixture, "result");
+    // Foreign writes remain conservatively active with their known Array
+    // root. The completed callback introduces no unknown alias widening.
+    assert_completed_native_integrity_inference(&result);
+    let observed = prefix_observation(&result, "array_intrinsics", None);
     assert!(
-        result["native_integrity_checks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|check| check["guard"] == "array_intrinsics"
-                && check["affected_roots"] == serde_json::json!(["array"])),
+        observed["prior_affected_roots"] == serde_json::json!(["array"])
+            && observed["uncertain_execution"] == false,
         "{result}"
     );
 }

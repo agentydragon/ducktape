@@ -1705,6 +1705,19 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 }
 
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
+    fn binary_fallback(&mut self, frame: &LocalFrame, reached: &Values, span: Span) {
+        self.fallback(
+            frame,
+            reached.clone(),
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::ImplicitCoercion,
+                ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
+            },
+            span,
+        );
+    }
+
     fn array_created(&mut self, allocation: u32, sparse: bool) {
         if sparse {
             self.executor.state.tainted_objects.insert(allocation);

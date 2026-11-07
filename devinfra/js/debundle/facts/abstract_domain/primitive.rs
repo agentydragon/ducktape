@@ -143,6 +143,13 @@ fn binary(op: BinaryOp, left: Option<PrimKinds>, right: Option<PrimKinds>) -> Op
     })
 }
 
+/// The primitive result kinds for one binary operator after both operands
+/// have already been evaluated. Operators with operand-valued results are
+/// outside this transfer.
+pub(crate) fn binary_result(op: BinaryOp, left: PrimKinds, right: PrimKinds) -> Option<PrimKinds> {
+    binary(op, Some(left), Some(right))
+}
+
 /// Whether `op` can throw on some pair of primitives of these types, before or
 /// after converting them: a Symbol through `ToNumber`/`ToString`, a BigInt
 /// combined arithmetically with another numeric kind, or a BigInt operation
