@@ -6914,6 +6914,10 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-actions
+            - name: OTEL_METRICS_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+              value: cumulative
             - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
               value: '[{"namespace": "agentplane-staging", "name": "notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
