@@ -4206,19 +4206,26 @@ Statement facts feed the dependency graph (stored on `AssignmentInputs`), and th
 module dep graph is a quotient of that dependency graph under the current spec
 assignment (stored on `AssignmentAnalysis`). `AssignmentAnalysis::inputs()`
 returns the shared inputs; `module_quotient()` and `module_quotient_sccs()` expose
-the derived module graph. `ValidatedAssignment::assignment_analysis()` retains
-the accepted analysis while lowering projects its emission placement.
+the derived module graph. `CandidatePreflight` retains the analysis while
+lowering projects candidate placement before effect assessment;
+`ValidatedAssignment::assignment_analysis()` exposes the accepted analysis to
+post-gate consumers.
 
-`CandidateEvaluation::evaluate` derives the mandatory effect/placement assessment
-and diagnostic graph comparisons from one assignment. `into_validation` returns a
-`ValidatedAssignment` only when the joint status is `AcceptedWithinCheckedScope`. Lowering
-requires this immutable borrow of the checked assignment. Assignment inputs and
+`CandidatePreflight::prepare` derives and retains the legacy graph verdict,
+emitted order, and structural placement before effect assessment. Lowering
+projects its mappable placement and prepares candidate bodies from those same
+facts; `CandidatePreflight::evaluate` then runs the existing translation and
+effect sweeps and joins their result with the retained placement.
+`CandidateEvaluation::into_validation` returns a `ValidatedAssignment` only
+when the joint status is `AcceptedWithinCheckedScope`. Candidate body preparation
+uses the same immutable assignment through the preflight; final output emission
+still follows gate resolution. Assignment inputs and
 derived graph views are private and exposed only through immutable accessors, so
 callers cannot change the assignment independently of its cached import order or
-quotient. Rejection reports remain
-available to diagnostics without constructing an emission capability. This checks
-the assignment and shared import order; vendor consumer and final export checks
-still run on the emitted files.
+quotient. Assessment-only rejection reports remain available without requiring
+candidate emission preparation to succeed. This checks the assignment and shared
+import order; vendor consumer and final export checks still run on the emitted
+files.
 
 `BindingId` carries the interned source `ChunkId` together with the full SWC
 `Id` (symbol and `SyntaxContext`). `BindingCatalogue` stores that chunk identity

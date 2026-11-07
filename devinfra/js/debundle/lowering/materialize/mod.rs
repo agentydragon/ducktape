@@ -699,12 +699,42 @@ pub(super) fn finish_logical_chunk(
             && full_reports.contains(&super::FullReportKind::TranslationValidation)
             && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
     };
-    let (evaluation, report_out_dir) = evaluate_chunk_candidate(
-        report_context,
-        &assignment_analysis,
-        &analysis.facts,
-        &placement_projection,
-    )?;
+    let preflight = gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection);
+    let emission_preparation = EmissionPlacement::from_preflight(&preflight, &placement_projection)
+        .and_then(|placement| {
+            prepare_candidate_emission_plan(LowerChunkInputs {
+                context: LowerChunkContext {
+                    artifact,
+                    artifact_indexes,
+                    chunk_id,
+                    chunk_id_interned,
+                    source_path: &source_path,
+                    entry_file: &target_file,
+                    header_lines: &header_lines,
+                    vendor_import_oracle,
+                },
+                ast: LowerChunkAst {
+                    runtime_ast,
+                    declarations: &declarations,
+                    declaration_by_name: &declaration_by_name,
+                    chunk_top_level_mark,
+                },
+                plan: LowerChunkPlan {
+                    module_plans: &module_plans,
+                    placement: &placement,
+                },
+                spec_facts: LowerChunkSpecFacts {
+                    runtime_import_facts: &runtime_import_facts,
+                    sealed_renames: &sealed_renames,
+                    chunk_renames: &chunk_renames_map,
+                    pre_existing_entry_exports: &pre_existing_entry_exports,
+                    pre_existing_public_export_names: &pre_existing_public_export_names,
+                },
+            })
+            .map(|prepared| (placement, prepared))
+        });
+    let (evaluation, report_out_dir) =
+        evaluate_chunk_candidate(report_context, preflight, &analysis.facts)?;
     let assessment = if assessment_only {
         let report = evaluation.candidate_assessment().report();
         if report.status != gate::CandidateRelocationStatus::AcceptedWithinCheckedScope {
@@ -725,61 +755,22 @@ pub(super) fn finish_logical_chunk(
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
-    let (header_lines, linker_order, gate_rejection) = match &gate_outcome {
-        GateOutcome::Accepted(validated) => {
-            (header_lines, validated.report().linker_order.clone(), None)
-        }
+    let (linker_order, gate_rejection) = match &gate_outcome {
+        GateOutcome::Accepted(validated) => (validated.report().linker_order.clone(), None),
         GateOutcome::Rejected {
             assignment,
             rejection,
         } => (
-            // The banner leads the entry file so a reader (or a loader) meets
-            // it before any code; the chunk's own header follows.
-            [gate_rejected_banner_lines(rejection), header_lines].concat(),
             assignment.report().linker_order.clone(),
             Some(rejection.clone()),
         ),
     };
-    let placement = match &gate_outcome {
-        GateOutcome::Accepted(validated) => {
-            EmissionPlacement::from_validated(validated, &placement_projection)?
-        }
-        GateOutcome::Rejected { assignment, .. } => {
-            EmissionPlacement::for_inspection(assignment, &placement_projection)?
-        }
-    };
-
-    // Keep candidate preparation after evaluation so rejected candidates keep
-    // their existing diagnostics; it is now a separate value before file emission.
-    let prepared_emission = prepare_candidate_emission_plan(LowerChunkInputs {
-        context: LowerChunkContext {
-            artifact,
-            artifact_indexes,
-            chunk_id,
-            chunk_id_interned,
-            source_path: &source_path,
-            entry_file: &target_file,
-            header_lines: &header_lines,
-            vendor_import_oracle,
-        },
-        ast: LowerChunkAst {
-            runtime_ast,
-            declarations: &declarations,
-            declaration_by_name: &declaration_by_name,
-            chunk_top_level_mark,
-        },
-        plan: LowerChunkPlan {
-            module_plans: &module_plans,
-            placement: &placement,
-        },
-        spec_facts: LowerChunkSpecFacts {
-            runtime_import_facts: &runtime_import_facts,
-            sealed_renames: &sealed_renames,
-            chunk_renames: &chunk_renames_map,
-            pre_existing_entry_exports: &pre_existing_entry_exports,
-            pre_existing_public_export_names: &pre_existing_public_export_names,
-        },
-    })?;
+    let (placement, mut prepared_emission) = emission_preparation?;
+    if let GateOutcome::Rejected { rejection, .. } = &gate_outcome {
+        // The banner is file metadata, so add it after the verdict without
+        // rebuilding any prepared AST bodies.
+        prepared_emission.prepend_entry_header_lines(&gate_rejected_banner_lines(rejection));
+    }
     let lowered = prepared_emission.emit();
     let LoweredChunk {
         files,
@@ -1226,9 +1217,8 @@ struct GraphSummary<'a> {
 /// rejection-only streams are published only after that same assessment rejects.
 fn evaluate_chunk_candidate<'a, 'b>(
     context: ChunkReportContext<'b>,
-    assignment_analysis: &'a AssignmentAnalysis,
+    preflight: gate::CandidatePreflight<'a>,
     facts: &[analysis::facts::StatementFacts],
-    placement_projection: &analysis::PlacementProjection<'_>,
 ) -> Result<(gate::CandidateEvaluation<'a>, Option<&'b std::path::Path>)> {
     let ChunkReportContext {
         chunk_id,
@@ -1272,10 +1262,8 @@ fn evaluate_chunk_candidate<'a, 'b>(
                 .expect("active effect-conflict sink")
                 .write(row)
         };
-        gate::CandidateEvaluation::evaluate(
-            assignment_analysis,
+        preflight.evaluate(
             facts,
-            placement_projection,
             full_translation_validation.then_some(&mut write_tv),
             effect_conflicts_jsonl.then_some(&mut write_effect),
         )?

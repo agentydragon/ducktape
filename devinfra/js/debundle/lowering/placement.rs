@@ -5,9 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use analysis::{ModuleId, PlacementProjection, PlacementProjectionViolation};
 use anyhow::{Context, Result, ensure};
-use gate::{
-    AssignmentAnalysis, CandidateRelocationStatus, RejectedAssignment, ValidatedAssignment,
-};
+use gate::{AssignmentAnalysis, CandidatePreflight};
 use swc_ecma_ast::Id;
 
 /// Immutable placement instructions tied to the exact assignment the shared
@@ -21,23 +19,11 @@ pub(super) struct EmissionPlacement<'a> {
 }
 
 impl<'a> EmissionPlacement<'a> {
-    pub(super) fn from_validated(
-        validated: &ValidatedAssignment<'a>,
+    pub(super) fn from_preflight(
+        preflight: &CandidatePreflight<'a>,
         projection: &PlacementProjection<'_>,
     ) -> Result<Self> {
-        ensure!(
-            validated.assessment().status()
-                == CandidateRelocationStatus::AcceptedWithinCheckedScope,
-            "reconstruction requires an accepted effect and structural assessment"
-        );
-        Self::from_projection(validated.assignment_analysis(), projection)
-    }
-
-    pub(super) fn for_inspection(
-        rejected: &RejectedAssignment<'a>,
-        projection: &PlacementProjection<'_>,
-    ) -> Result<Self> {
-        Self::from_projection(rejected.assignment_analysis(), projection)
+        Self::from_projection(preflight.assignment_analysis(), projection)
     }
 
     fn from_projection(
@@ -68,7 +54,7 @@ impl<'a> EmissionPlacement<'a> {
         })
     }
 
-    pub(super) fn assignment_analysis(&self) -> &AssignmentAnalysis {
+    pub(super) fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
         self.assignment_analysis
     }
 

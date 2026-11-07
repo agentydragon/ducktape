@@ -125,8 +125,80 @@ impl<'a> RejectedAssignment<'a> {
     }
 }
 
-/// One final candidate assessment over the exact immutable assignment. Legacy
-/// graph and edge validation are retained only as diagnostic comparisons.
+/// Structural preflight for one exact immutable assignment. It retains the
+/// legacy graph verdict, emitted order, and structural placement so candidate
+/// preparation and effect assessment consume the same pre-effect evidence.
+pub struct CandidatePreflight<'a> {
+    assignment_analysis: &'a AssignmentAnalysis,
+    legacy_validation: AssignmentValidation,
+    emitted_order: CandidateEmittedOrder,
+    placement: StructuralPlacementAssessment,
+}
+
+impl<'a> CandidatePreflight<'a> {
+    /// Prepare all assignment and structural facts before candidate effects are
+    /// assessed. The projection must be for this immutable assignment.
+    pub fn prepare(
+        assignment_analysis: &'a AssignmentAnalysis,
+        projection: &analysis::PlacementProjection<'_>,
+    ) -> Self {
+        assert!(
+            std::ptr::eq(assignment_analysis.assignment(), projection.assignment()),
+            "candidate placement projection must belong to this immutable assignment"
+        );
+        let legacy_validation = assignment_analysis.validate_with_verdict();
+        let emitted_order = assignment_analysis.candidate_emitted_order();
+        let placement = structural_placement_assessment(
+            assignment_analysis.inputs.dependency_graph(),
+            &legacy_validation,
+            projection,
+        );
+        Self {
+            assignment_analysis,
+            legacy_validation,
+            emitted_order,
+            placement,
+        }
+    }
+
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
+        self.assignment_analysis
+    }
+
+    /// Complete the same translation and effect sweeps using the retained
+    /// validation, import order, and structural placement.
+    pub fn evaluate<E>(
+        self,
+        facts: &[analysis::facts::StatementFacts],
+        translation_validation_visitor: Option<
+            &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
+        >,
+        effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
+    ) -> Result<CandidateEvaluation<'a>, E> {
+        let translation_validation = self.assignment_analysis.translation_validation(
+            &self.legacy_validation,
+            &self.emitted_order,
+            translation_validation_visitor,
+        )?;
+        let candidate_assessment = self.assignment_analysis.candidate_relocation_assessment(
+            facts,
+            &translation_validation,
+            &self.emitted_order,
+            self.placement,
+            effect_visitor,
+        )?;
+        Ok(CandidateEvaluation {
+            assignment_analysis: self.assignment_analysis,
+            legacy_validation: self.legacy_validation,
+            translation_validation,
+            candidate_assessment,
+        })
+    }
+}
+
+/// One final effect and structural assessment over the exact immutable
+/// assignment. Legacy graph and edge validation are retained only as
+/// diagnostic comparisons.
 #[derive(Debug)]
 pub struct CandidateEvaluation<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
@@ -169,40 +241,6 @@ impl<'a> CandidateEvaluation<'a> {
                 assessment: self.candidate_assessment,
             })
         }
-    }
-
-    /// Assess every final candidate, regardless of report output. The visitors
-    /// export the same sweeps without retaining a second copy of their rows.
-    pub fn evaluate<E>(
-        assignment_analysis: &'a AssignmentAnalysis,
-        facts: &[analysis::facts::StatementFacts],
-        projection: &analysis::PlacementProjection<'_>,
-        translation_validation_visitor: Option<
-            &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
-        >,
-        effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
-    ) -> Result<Self, E> {
-        let legacy_validation = assignment_analysis.validate_with_verdict();
-        let emitted_order = assignment_analysis.candidate_emitted_order();
-        let translation_validation = assignment_analysis.translation_validation(
-            &legacy_validation,
-            &emitted_order,
-            translation_validation_visitor,
-        )?;
-        let candidate_assessment = assignment_analysis.candidate_relocation_assessment(
-            &legacy_validation,
-            facts,
-            &translation_validation,
-            &emitted_order,
-            projection,
-            effect_visitor,
-        )?;
-        Ok(Self {
-            assignment_analysis,
-            legacy_validation,
-            translation_validation,
-            candidate_assessment,
-        })
     }
 }
 
@@ -733,23 +771,17 @@ impl AssignmentAnalysis {
         })
     }
 
-    /// Assess structural placement and candidate-order effects together for
-    /// this exact assignment/import order. The effect report and typed effect
-    /// assessment come from one sweep; placement consumes the already-computed
-    /// canonical validation instead of rerunning realizability.
+    /// Assess candidate-order effects for this exact assignment/import order
+    /// and join them with the structural placement retained by preflight. The
+    /// effect report and typed effect assessment come from one sweep.
     fn candidate_relocation_assessment<E>(
         &self,
-        validation: &AssignmentValidation,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationResult,
         emitted_order: &CandidateEmittedOrder,
-        projection: &analysis::PlacementProjection<'_>,
+        placement: StructuralPlacementAssessment,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<CandidateRelocationAssessment, E> {
-        assert!(
-            std::ptr::eq(&self.assignment, projection.assignment()),
-            "candidate placement projection must belong to this immutable assignment"
-        );
         let effect = effect_translation_assess(
             EffectTranslationValidationInputs {
                 graph: self.inputs.dependency_graph(),
@@ -761,14 +793,7 @@ impl AssignmentAnalysis {
             },
             visitor,
         )?;
-        Ok(CandidateRelocationAssessment {
-            placement: structural_placement_assessment(
-                self.inputs.dependency_graph(),
-                validation,
-                projection,
-            ),
-            effect,
-        })
+        Ok(CandidateRelocationAssessment { placement, effect })
     }
 
     /// High-fidelity node-link view of the fine dependency graph plus

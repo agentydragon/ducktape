@@ -20,10 +20,11 @@ mod validation;
 pub use assignment_analysis::{
     ApplicationAssessmentError, ApplicationRelocationAssessmentReport, AssignmentAnalysis,
     AssignmentAnalysisBuildError, AtomicGroupPlacementClass, AtomicGroupPlacementObligation,
-    CandidateEvaluation, CandidateRelocationAssessment, CandidateRelocationAssessmentReport,
-    CandidateRelocationStatus, CrossDestinationRebindObligation, RejectedAssignment,
-    SemanticOrderSccObligation, StructuralPlacementAssessment, StructuralPlacementCoverage,
-    StructuralPlacementStatus, ValidatedAssignment,
+    CandidateEvaluation, CandidatePreflight, CandidateRelocationAssessment,
+    CandidateRelocationAssessmentReport, CandidateRelocationStatus,
+    CrossDestinationRebindObligation, RejectedAssignment, SemanticOrderSccObligation,
+    StructuralPlacementAssessment, StructuralPlacementCoverage, StructuralPlacementStatus,
+    ValidatedAssignment,
 };
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;

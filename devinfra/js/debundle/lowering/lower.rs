@@ -73,6 +73,16 @@ pub(super) struct PreparedCandidateEmissionPlan<'a> {
 }
 
 impl PreparedCandidateEmissionPlan<'_> {
+    pub(super) fn prepend_entry_header_lines(&mut self, prefix: &[String]) {
+        let entry = self
+            .files
+            .first_mut()
+            .expect("a candidate emission plan always contains its entry file");
+        let mut header_lines = prefix.to_vec();
+        header_lines.append(&mut entry.header_lines);
+        entry.header_lines = header_lines;
+    }
+
     pub(super) fn emit(self) -> LoweredChunk {
         let Self {
             mut files,
@@ -130,12 +140,12 @@ pub(super) struct LowerChunkAst<'a> {
     pub(super) chunk_top_level_mark: swc_common::Mark,
 }
 
-/// Plan-side inputs: the per-chunk module plans and validated emission
+/// Plan-side inputs: the per-chunk module plans and preflight-derived emission
 /// placement.
 /// Held in `LowerChunkInputs::plan`.
-pub(super) struct LowerChunkPlan<'a> {
-    pub(super) module_plans: &'a [ModulePlan],
-    pub(super) placement: &'a EmissionPlacement<'a>,
+pub(super) struct LowerChunkPlan<'output, 'placement> {
+    pub(super) module_plans: &'output [ModulePlan],
+    pub(super) placement: &'placement EmissionPlacement<'output>,
 }
 
 /// Spec-derived + chunk-AST-derived facts the lowerer consults at
@@ -171,16 +181,16 @@ pub(super) struct LowerChunkSpecFacts<'a> {
     pub(super) pre_existing_public_export_names: &'a HashSet<String>,
 }
 
-pub(super) struct LowerChunkInputs<'a> {
-    pub(super) context: LowerChunkContext<'a>,
-    pub(super) ast: LowerChunkAst<'a>,
-    pub(super) plan: LowerChunkPlan<'a>,
-    pub(super) spec_facts: LowerChunkSpecFacts<'a>,
+pub(super) struct LowerChunkInputs<'output, 'placement> {
+    pub(super) context: LowerChunkContext<'output>,
+    pub(super) ast: LowerChunkAst<'output>,
+    pub(super) plan: LowerChunkPlan<'output, 'placement>,
+    pub(super) spec_facts: LowerChunkSpecFacts<'output>,
 }
 
-pub(super) fn prepare_candidate_emission_plan<'a>(
-    inputs: LowerChunkInputs<'a>,
-) -> Result<PreparedCandidateEmissionPlan<'a>> {
+pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
+    inputs: LowerChunkInputs<'output, 'placement>,
+) -> Result<PreparedCandidateEmissionPlan<'output>> {
     let LowerChunkInputs {
         context,
         ast,
