@@ -47,6 +47,7 @@ from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     egress,
+    environment_firecracker,
     environment_vm,
     history_service,
     launcher_relay,
@@ -237,6 +238,40 @@ class EnvironmentSandbox(Construct):
                     env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=launcher_relay.GUEST_GATEWAY
                 ),
                 harness_env=agent_cli_environment(service_urls(env, egress_host=launcher_relay.GUEST_GATEWAY)),
+                session_reconcile_concurrency=session_reconcile_concurrency,
+                codex_readiness=vm_codex_readiness,
+            )
+
+        if env.firecracker_sandboxes:
+            guest_gateway = environment_firecracker.GATEWAY
+            state_volume = template.spec["stateVolume"]
+            claim = {
+                **state_volume["claim"],
+                "volumeMode": "Filesystem",
+                "resources": {"requests": {"storage": "100Gi"}},
+            }
+            if env.vm_storage_class is not None:
+                claim["storageClassName"] = env.vm_storage_class
+            firecracker_state = {
+                **state_volume,
+                "claim": claim,
+                "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
+            }
+            firecracker_workspace = workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
+            firecracker_workspace["claim"]["resources"] = state_volume["claim"]["resources"]
+            environment_firecracker.EnvironmentFirecrackerTemplate(
+                self,
+                "firecracker-template",
+                env,
+                labels={**_LABELS, **telemetry.EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS},
+                state_volume=firecracker_state,
+                workspace_volume=firecracker_workspace,
+                runner_image=environment_vm.RUNNER_DISK_IMAGE,
+                platform_instructions=platform_instructions(
+                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
+                ),
+                harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
+                image_pull_secret_name=image_pull_secret_name,
                 session_reconcile_concurrency=session_reconcile_concurrency,
                 codex_readiness=vm_codex_readiness,
             )

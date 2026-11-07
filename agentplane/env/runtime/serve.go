@@ -164,7 +164,7 @@ func (r *Runtime) ingressSupervisor(endpoint configuration.Endpoint, onWorkerFai
 		OnAcknowledgement: func(_ string, _ retained.Acknowledgement) error { r.changed(); return nil },
 	}
 	if secured := endpoint.SVID; secured != nil {
-		transport, err := r.config.Control.Security.ClientCredentials(secured.ServerURI)
+		transport, err := r.security.ClientCredentials(secured.ServerURI)
 		if err != nil {
 			return nil, err
 		}

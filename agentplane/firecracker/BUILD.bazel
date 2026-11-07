@@ -1,0 +1,123 @@
+# gazelle:resolve py agentplane.firecracker.launcher_test_image //agentplane/firecracker:launcher_test_image
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+go_library(
+    name = "firecracker",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "github.com/agentydragon/ducktape/agentplane/firecracker",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/env/firecracker:management_go_proto",
+        "//agentplane/firecracker/vsock",
+        "//agentplane/firecracker/workloadidentity",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+    ],
+)
+
+go_test(
+    name = "firecracker_test",
+    srcs = glob(["*_test.go"]),
+    embed = [":firecracker"],
+    deps = [
+        "//agentplane/env/firecracker:management_go_proto",
+        "//agentplane/environment_runtime_transport/testing",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+pkg_tar(
+    name = "firecracker_layer",
+    srcs = ["@firecracker_agentplane_release//:release-v1.17.0-x86_64/firecracker-v1.17.0-x86_64"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+    remap_paths = {"release-v1.17.0-x86_64/firecracker-v1.17.0-x86_64": "firecracker"},
+)
+
+pkg_tar(
+    name = "runtime_tool_links",
+    symlinks = {
+        "/usr/local/bin/firecracker": "firecracker-v1.17.0-x86_64",
+        "/usr/sbin/ip6tables": "ip6tables-nft",
+        "/usr/sbin/iptables": "iptables-nft",
+    },
+)
+
+pkg_tar(
+    name = "launcher_layer",
+    srcs = ["//agentplane/firecracker/cmd/launcher"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = ["/usr/local/bin/launcher"],
+    env = {"PATH": "/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        "@trixie_agentplane_firecracker//:flat",
+        ":firecracker_layer",
+        ":runtime_tool_links",
+        ":launcher_layer",
+    ],
+    visibility = [
+        "//agentplane/system_tests/firecracker:__pkg__",
+        "//agentplane/system_tests/suites:__pkg__",
+    ],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["agentplane-firecracker-launcher:proof"],
+)
+
+filegroup(
+    name = "load_tarball",
+    srcs = [":load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "launcher_test_image",
+    testonly = True,
+    image = ":image",
+)
+
+py_test(
+    name = "test_image",
+    size = "medium",
+    srcs = ["test_image.py"],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//agentplane/firecracker:launcher_test_image",
+        "//devinfra/oci",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,4 +1,4 @@
-"""The VM suite's optional lifecycle extension to workload orchestration."""
+"""A Sandbox backend's optional lifecycle extension to workload orchestration."""
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager

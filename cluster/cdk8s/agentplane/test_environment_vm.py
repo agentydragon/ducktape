@@ -206,6 +206,11 @@ def test_vm_template_renders_mtls_server_listener(scratch_app: App) -> None:
     assert {"port": listener_port} in interface["ports"]
 
 
+def test_vm_guest_config_uses_the_local_model_config_route(scratch_app: App) -> None:
+    runtime = _environment_vm_manifests(app=scratch_app, console_autologin=False)["environment_runtime"]
+    assert runtime["model_config_service"] == {"target": "10.0.2.1:3135", "bearer": "platform-route"}
+
+
 def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
     vm_guest_contract: dict[str, Any], runtime_service_unit: dict[str, str], scratch_app: App
 ) -> None:

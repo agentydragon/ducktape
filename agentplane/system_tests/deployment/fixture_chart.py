@@ -166,7 +166,12 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
 
 
 def environment(
-    *, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORIGIN, central_sampler: bool = False
+    *,
+    vm_sandboxes: bool,
+    models: Models,
+    app_origin: str = APP_ORIGIN,
+    central_sampler: bool = False,
+    firecracker_sandboxes: bool = False,
 ) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
     app_login = login_client(app_origin)
@@ -280,7 +285,8 @@ def environment(
             hostname=None,
         ),
         vm_sandboxes=vm_sandboxes,
-        vm_resources=vm_configuration.RESOURCES if vm_sandboxes else None,
+        firecracker_sandboxes=firecracker_sandboxes,
+        vm_resources=vm_configuration.RESOURCES if vm_sandboxes or firecracker_sandboxes else None,
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
             {
@@ -341,10 +347,18 @@ def objects(
     cluster_ca: str,
     models: Models,
     vm_sandboxes: bool,
+    firecracker_sandboxes: bool = False,
     central_sampler: bool = False,
 ) -> list[dict[str, Any]]:
-    """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
-    env = environment(vm_sandboxes=vm_sandboxes, models=models, central_sampler=central_sampler)
+    """Synthesize the common one-node fixture with optional VM or production Firecracker Sandboxes."""
+    if vm_sandboxes and firecracker_sandboxes:
+        raise ValueError("the test fixture selects either VM or Firecracker Sandboxes")
+    env = environment(
+        vm_sandboxes=vm_sandboxes,
+        firecracker_sandboxes=firecracker_sandboxes,
+        models=models,
+        central_sampler=central_sampler,
+    )
     fixture = build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
@@ -541,7 +555,7 @@ def build_chart(
                 exec_server_probe_timeout_ms=5_000,
                 exec_server_dependency_timeout_ms=120_000,
             )
-            if env.vm_sandboxes
+            if env.vm_sandboxes or env.firecracker_sandboxes
             else None
         ),
     )

@@ -33,8 +33,19 @@ func TestWatchStatePublishesChangesAndPeriodicHeartbeat(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		changed := make(chan struct{})
+		security, err := (environmentruntimetransport.Security{
+			Mode: environmentruntimetransport.Insecure,
+		}).Open(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := security.Close(); err != nil {
+				t.Errorf("close security: %v", err)
+			}
+		})
 		server := New(Config{
-			Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.Insecure},
+			Security: security,
 			Changes:  func() <-chan struct{} { return changed },
 		}, nil)
 		facts := &environmentruntimestatepb.EnvironmentRuntimeFacts{}

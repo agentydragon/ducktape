@@ -1804,6 +1804,15 @@ Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates 
 The disk split and Firecracker are not alternatives to each other: splitting disks is additive on the
 runtime we have, and Firecracker is a new runtime added beside it.
 
+The [Firecracker primitive spike](../debug/2026_11_02_firecracker_spike.md) has since landed in
+#13957. The opt-in environment backend is under review in #14029; its
+[contract](../docs/firecracker_sandboxes.md) and
+[system-test scenario](../system_tests/scenarios/firecracker.py) define the checked same-Pod behavior.
+It reuses the separate runner disk and preserves RAM within the same retained launcher Pod.
+Cross-Pod recovery, native execution-session parking with durable terminal release, and staging
+acceptance with Cilium enforcement remain separate work. KVM-enabled BuildBuddy execution on wyrm2 is tracked
+in #14034. None of this selects a separate tools/harness disk layout.
+
 ### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
 
 **Prototype merged (#10741, #10744, #10789); operator-requested 2026-10-16. The remaining compatibility
@@ -1843,7 +1852,7 @@ package, kernel pin, and child fence; do not leave the experiment as an implicit
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
-**Paused (no worker since the runner disk landed, 2026-10-20); operator chose to split the disks on KubeVirt first (2026-10-20 PDT); Firecracker and a runtime-class abstraction stay later, and whether harnesses become a separate disk stays open in `RUNNER_IMAGE_LAYERING_DESIGN`.**
+**Paused (no worker since the runner disk landed, 2026-10-20); operator chose to split the disks on KubeVirt first (2026-10-20 PDT). A Firecracker backend is now under review in #14029; a runtime-class abstraction and whether harnesses become a separate disk stay open in `RUNNER_IMAGE_LAYERING_DESIGN`.**
 Split the guest so a runner bump or a template's tool list does not rebuild and repush the whole VM. The
 two-stage shape the operator named — lean stage 1 booting the runner and mounting a stage 2 filesystem,
 with the runner jailing a forked child into stage 2 to exec Claude/Codex — is one option, with the

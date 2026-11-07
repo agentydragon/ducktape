@@ -98,6 +98,9 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 			return w, credentialPending("RunnerCredentialPending", fmt.Sprintf("Pod %s has no assigned UID yet", w.pod.Name)), nil
 		}
 		if bound.ID != id || (bound.PodUID != "" && bound.PodUID != string(w.pod.UID)) {
+			if isFirecrackerPod(w.pod) {
+				return w, &unready{reason: "RunnerCredentialMismatch", message: "Firecracker launcher credential mismatch; preserving the Pod and checkpoint"}, nil
+			}
 			// Never bind an existing certificate generation to another Pod UID. A replacement with
 			// a stale template label is deleted; once it is gone, the no-Pod path assigns a fresh ID
 			// and Certificate before creating its replacement.

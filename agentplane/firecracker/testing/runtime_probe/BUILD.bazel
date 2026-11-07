@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "runtime_probe",
+    srcs = ["main.go"],
+    pure = "on",
+    deps = [
+        "//agentplane/env/runtime/control",
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+    ],
+)

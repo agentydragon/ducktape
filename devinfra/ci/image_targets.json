@@ -287,6 +287,11 @@
     "tf-runner": {
       "target": "//cluster/tf_runner:image",
       "test": "//cluster/tf_runner/..."
+    },
+    "agentplane-firecracker-launcher": {
+      "target": "//agentplane/firecracker:image",
+      "test": "//agentplane/firecracker/...",
+      "registry": "forgejo"
     }
   }
 }

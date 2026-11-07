@@ -104,8 +104,9 @@ class McpFixtures(BaseModel):
 
 class RenderedFixture(BaseModel):
     backend: Backend
-    # The stack then installs KubeVirt and Kyverno, which the objects' VM template and launcher relay need.
+    # VM templates use KubeVirt and Kyverno. Firecracker uses KubeVirt's KVM device plugin.
     vm_sandboxes: bool
+    firecracker_sandboxes: bool = False
     central_sampler: bool = False
     namespace: str
     app_origin: str

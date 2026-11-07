@@ -219,6 +219,56 @@ def test_retains_native_journal_header_changes_after_unlink_on_failure(tmp_path:
     assert [path.read_bytes() for path in outputs.rglob("*.journal")] == [b"updated header\x00entries\x00shutdown"]
 
 
+def test_retains_unlinked_firecracker_console_and_only_namespace_logs(tmp_path: Path) -> None:
+    storage, logs, outputs = tmp_path / "storage", tmp_path / "pods", tmp_path / "artifacts"
+    console = storage / "pvc-uid_systest_sandbox-state/firecracker/firecracker.log"
+    console.parent.mkdir(parents=True)
+    console.write_text("VMM_START\n")
+    foreign_console = storage / "pvc-uid_other_sandbox-state/firecracker/firecracker.log"
+    foreign_console.parent.mkdir(parents=True)
+    foreign_console.write_text("FOREIGN_VMM\n")
+
+    runtime_log = logs / "systest_environment-runtime-abc_uid-one/environment-runtime/0.log"
+    runtime_log.parent.mkdir(parents=True)
+    runtime_log.write_text("CRI_RUNTIME\n")
+    foreign_runtime_log = logs / "other_environment-runtime-abc_uid-two/environment-runtime/0.log"
+    foreign_runtime_log.parent.mkdir(parents=True)
+    foreign_runtime_log.write_text("FOREIGN_RUNTIME\n")
+
+    def wait_for(text: str) -> None:
+        for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+            with attempt:
+                assert text in "".join(path.read_text() for path in outputs.rglob("*.log*"))
+
+    with (
+        capture(
+            log_root=logs,
+            pod_root=tmp_path / "kubelet-pods",
+            storage_root=storage,
+            namespace="systest",
+            kubevirt_namespace="kubevirt",
+            destination=outputs,
+            validate_shutdown=lambda: True,
+            require_shutdown_marker=False,
+        ),
+        console.open("a") as original,
+    ):
+        wait_for("VMM_START")
+        wait_for("CRI_RUNTIME")
+        console.unlink()
+        original.write("VMM_AFTER_UNLINK\n")
+        original.flush()
+        wait_for("VMM_AFTER_UNLINK")
+
+    retained_console = list((outputs / "firecracker").rglob("*-firecracker.log.log"))
+    assert len(retained_console) == 1
+    assert retained_console[0].read_text() == "VMM_START\nVMM_AFTER_UNLINK\n"
+    assert [path.read_text() for path in (outputs / "runtimes").rglob("*.cri.log")] == ["CRI_RUNTIME\n"]
+    all_logs = "".join(path.read_text() for path in outputs.rglob("*.log*"))
+    assert "FOREIGN_VMM" not in all_logs
+    assert "FOREIGN_RUNTIME" not in all_logs
+
+
 def test_retains_failure_evidence_without_masking_exception(tmp_path: Path) -> None:
     logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
     source = logs / "systest_virt-launcher-test_uid-one" / "guest-console-log" / "0.log"

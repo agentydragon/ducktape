@@ -47,6 +47,10 @@ the same cache, and new proxied calls are refused while it is unsynced or a watc
 losing a Runner observation, the owning Gateway retries after one second without waiting for an event.
 Each attempt claims a fresh Lease epoch and validates the current workload and Runner boot before
 serving calls. A replica refused by a foreign Lease holder retries its claim every heartbeat interval.
+For a RAM-suspended Firecracker launcher, Pod readiness loss ends the observation and proxy calls
+are refused. On resume, the same Pod and Runner boot ID reconnect under a higher Lease epoch;
+the Gateway forwards each execution request only once and does not replay one whose outcome was
+uncertain when the connection ended.
 [Queue semantics](dispatcher/README.md) remain distinct from History's retained
 conversation and from Runner admission.
 

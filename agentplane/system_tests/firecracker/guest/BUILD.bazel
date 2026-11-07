@@ -1,0 +1,159 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+exports_files(["init"])
+
+py_library(
+    name = "build_rootfs",
+    srcs = ["build_rootfs.py"],
+)
+
+py_binary(
+    name = "build_rootfs_bin",
+    main_module = "agentplane.system_tests.firecracker.guest.build_rootfs",
+    deps = [":build_rootfs"],
+)
+
+pkg_tar(
+    name = "etc",
+    srcs = [
+        "fstab",
+        "group",
+        "hostname",
+        "hosts",
+        "machine-id",
+        "passwd",
+    ],
+    mode = "0644",
+    package_dir = "/etc",
+)
+
+pkg_files(
+    name = "systemd_unit_files",
+    srcs = [
+        "agentplane-firecracker-thaw.service",
+        "agentplane-networkd.conf",
+        "agentplane-runtime.conf",
+        "agentplane-workspace.service",
+    ],
+    attributes = pkg_attributes(mode = "0644"),
+    prefix = "/etc/systemd/system",
+    renames = {
+        "agentplane-networkd.conf": "systemd-networkd.service.d/firecracker.conf",
+        "agentplane-runtime.conf": "agentplane-environment-runtime.service.d/firecracker.conf",
+    },
+)
+
+pkg_tar(
+    name = "systemd_unit_links",
+    package_dir = "/etc/systemd/system",
+    symlinks = {
+        "default.target": "/usr/lib/systemd/system/multi-user.target",
+        "getty.target": "/dev/null",
+        "multi-user.target.wants/agentplane-environment-runtime.service": "/usr/lib/systemd/system/agentplane-environment-runtime.service",
+        "multi-user.target.wants/agentplane-workspace.service": "../agentplane-workspace.service",
+        "multi-user.target.wants/systemd-networkd.service": "/usr/lib/systemd/system/systemd-networkd.service",
+        "multi-user.target.wants/systemd-resolved.service": "/usr/lib/systemd/system/systemd-resolved.service",
+        "network-pre.target.wants/agentplane-firecracker-thaw.service": "../agentplane-firecracker-thaw.service",
+        "sysinit.target.wants/systemd-sysusers.service": "/usr/lib/systemd/system/systemd-sysusers.service",
+        "systemd-firstboot.service": "/dev/null",
+        "systemd-logind.service": "/dev/null",
+    },
+)
+
+pkg_tar(
+    name = "systemd_units",
+    srcs = [":systemd_unit_files"],
+    deps = [":systemd_unit_links"],
+)
+
+pkg_tar(
+    name = "network",
+    srcs = ["10-firecracker.network"],
+    mode = "0644",
+    package_dir = "/etc/systemd/network",
+)
+
+pkg_tar(
+    name = "tmpfiles",
+    srcs = [
+        "agentplane-firecracker.conf",
+        "agentplane-workspace.conf",
+    ],
+    mode = "0644",
+    package_dir = "/etc/tmpfiles.d",
+)
+
+pkg_files(
+    name = "codex_files",
+    srcs = ["@agentplane_codex_cli_linux_x64//:files"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/opt/harnesses/codex",
+    strip_prefix = strip_prefix.from_pkg(),
+)
+
+pkg_tar(
+    name = "codex",
+    srcs = [":codex_files"],
+    symlinks = {"usr/bin/codex": "/opt/harnesses/codex/bin/codex"},
+)
+
+pkg_tar(
+    name = "base",
+    empty_dirs = [
+        "dev",
+        "proc",
+        "root",
+        "run",
+        "state",
+        "sys",
+        "tmp",
+        "var/lib",
+    ],
+    symlinks = {
+        "bin": "usr/bin",
+        "etc/resolv.conf": "/run/systemd/resolve/stub-resolv.conf",
+        "lib": "usr/lib",
+        "lib64": "usr/lib64",
+        "sbin": "usr/sbin",
+        "usr/bin/sh": "busybox",
+        "var/log/journal": "/state/systemd-journal",
+    },
+    deps = [
+        ":codex",
+        "//agentplane/system_tests/vm/guest:root_hwdb",
+        "//agentplane/system_tests/vm/guest:root_journald",
+        "//agentplane/system_tests/vm/guest:root_resource_limits",
+        "//agentplane/system_tests/vm/guest:root_shared_systemd",
+        "//agentplane/system_tests/vm/guest:root_tmpfiles",
+        "@trixie_firecracker_guest//:flat",
+    ],
+)
+
+pkg_tar(
+    name = "rootfs_tar",
+    deps = [
+        ":base",
+        ":etc",
+        ":network",
+        ":systemd_units",
+        ":tmpfiles",
+    ],
+)
+
+genrule(
+    name = "rootfs_ext4",
+    srcs = [
+        ":rootfs_tar",
+        "@trixie_vm_guest//:flat",
+    ],
+    outs = ["rootfs.ext4"],
+    cmd = "$(execpath :build_rootfs_bin) $(execpath :rootfs_tar) $(execpath @trixie_vm_guest//:flat) $@",
+    tools = [":build_rootfs_bin"],
+)

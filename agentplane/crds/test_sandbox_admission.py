@@ -15,12 +15,26 @@ VERSION = "v1alpha1"
 NAMESPACE = "sandbox-admission"
 
 
-def _template_spec(*, pod: bool = False, vm: bool = True) -> dict[str, Any]:
+def _template_spec(*, pod: bool = False, vm: bool = True, firecracker: bool = False) -> dict[str, Any]:
     spec: dict[str, Any] = {"stateVolume": {"name": "state", "claim": {}, "layout": {"type": "DirectoryTree"}}}
     if pod:
         spec["pod"] = {}
     if vm:
         spec["vm"] = {}
+    if firecracker:
+        spec["firecracker"] = {
+            "pod": {"metadata": {"labels": {"retained": "yes"}}},
+            "bootImage": "example.invalid/boot:v1",
+            "runnerImage": "example.invalid/runner:v1",
+            "vcpuCount": 2,
+            "memoryMiB": 2048,
+        }
+        spec["stateVolume"]["layout"] = {"type": "RawDiskImage", "filesystem": "ext4"}
+        spec["workspaceVolume"] = {
+            "name": "workspace",
+            "claim": {"volumeMode": "Filesystem"},
+            "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
+        }
     return spec
 
 
@@ -47,10 +61,49 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
         await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
         api = k8s_client.CustomObjectsApi(server.api)
 
-        for index, (pod, vm, valid) in enumerate(
-            [(True, False, True), (False, True, True), (False, False, False), (True, True, False)]
+        for index, (pod, vm, firecracker) in enumerate(
+            [
+                (False, False, False),
+                (True, False, False),
+                (False, True, False),
+                (False, False, True),
+                (True, True, False),
+                (True, False, True),
+                (False, True, True),
+                (True, True, True),
+            ]
         ):
-            await _create(api, "sandboxtemplates", f"kind-{index}", _template_spec(pod=pod, vm=vm), valid)
+            spec = _template_spec(pod=pod, vm=vm, firecracker=firecracker)
+            created = await _create(api, "sandboxtemplates", f"kind-{index}", spec, sum((pod, vm, firecracker)) == 1)
+            if firecracker and created is not None:
+                assert created["spec"]["firecracker"]["pod"] == spec["firecracker"]["pod"]
+
+        for index, (state, fc_workspace_layout, valid) in enumerate(
+            [
+                ({"type": "DirectoryTree"}, None, False),
+                ({"type": "RawDiskImage", "filesystem": "ext4"}, {"type": "DirectoryTree"}, False),
+                ({"type": "RawDiskImage", "filesystem": "ext4"}, {"type": "RawDiskImage", "filesystem": "ext4"}, True),
+                (
+                    {"type": "RawDiskImage", "filesystem": "ext4"},
+                    {"type": "BlockFilesystem", "filesystem": "ext4"},
+                    True,
+                ),
+            ]
+        ):
+            spec = _template_spec(vm=False, firecracker=True)
+            spec["stateVolume"]["layout"] = state
+            if fc_workspace_layout is not None:
+                fc_mode = "Block" if fc_workspace_layout["type"] == "BlockFilesystem" else "Filesystem"
+                spec["workspaceVolume"] = {
+                    "name": "workspace",
+                    "claim": {"volumeMode": fc_mode},
+                    "layout": fc_workspace_layout,
+                }
+            await _create(api, "sandboxtemplates", f"firecracker-layout-{index}", spec, valid)
+
+        no_workspace = _template_spec(vm=False, firecracker=True)
+        del no_workspace["workspaceVolume"]
+        await _create(api, "sandboxtemplates", "firecracker-no-workspace", no_workspace, False)
 
         workspace_cases: list[tuple[dict[str, str], str | None, bool]] = [
             ({"type": "DirectoryTree"}, None, True),
@@ -107,6 +160,36 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
         opaque_workspace = await _create(api, "sandboxtemplates", "opaque-workspace", opaque_spec, True)
         assert opaque_workspace is not None
         assert opaque_workspace["spec"]["workspaceVolume"]["claim"] == opaque_spec["workspaceVolume"]["claim"]
+
+        # The controller records Firecracker's raw state layout through the status subresource.
+        for index, (layout, valid) in enumerate(
+            [
+                ({"type": "DirectoryTree"}, True),
+                ({"type": "RawDiskImage", "filesystem": "ext4"}, True),
+                ({"type": "DirectoryTree", "filesystem": "ext4"}, False),
+                ({"type": "RawDiskImage"}, False),
+                ({"type": "RawDiskImage", "filesystem": "xfs"}, False),
+                ({"type": "BlockFilesystem", "filesystem": "ext4"}, False),
+            ]
+        ):
+            name = f"state-binding-{index}"
+            bound = await _create(api, "sandboxes", name, {"template": "firecracker-layout-2"}, True)
+            assert bound is not None
+            candidate = {
+                **bound,
+                "status": {"volumes": {"state": {"name": "state", "uid": "state-uid", "layout": layout}}},
+            }
+            if valid:
+                accepted = await api.replace_namespaced_custom_object_status(
+                    GROUP, VERSION, NAMESPACE, "sandboxes", name, candidate
+                )
+                assert accepted["status"]["volumes"]["state"]["layout"] == layout
+            else:
+                with pytest.raises(ApiException) as rejected:
+                    await api.replace_namespaced_custom_object_status(
+                        GROUP, VERSION, NAMESPACE, "sandboxes", name, candidate
+                    )
+                assert rejected.value.status == 422, f"{layout}: {rejected.value.body!r}"
 
         sandbox = await _create(api, "sandboxes", "suspension", {"template": "opaque"}, True)
         assert sandbox is not None

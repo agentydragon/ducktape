@@ -58,6 +58,14 @@ admission gate synchronously before desired-state publication. Failed or uncerta
 keeps that gate closed. A published Running revision becomes accepted only after transition-owned
 `ResetDemand`, eligible journal reopening and recoverable-work preparation finish.
 
+RAM-preserving suspension uses a separate admission gate. `PrepareSuspend` atomically checks the
+observed idle period and closes new Session, execution and native admissions without sealing or
+stopping existing processes. Controller-owned generations make preparation and release retryable;
+`ResumeAdmission` retains the released generation so delayed prepares cannot close it again.
+Watch reconnects preserve this gate, and Quiesce retires it only after lifecycle admission closes.
+The controller persists dispatch fencing before preparation and retains it through checkpoint and
+thaw; [control](docs/control.md) specifies the protocol.
+
 Session/app-server controllers register work through Runtime's exact-revision guard. Accepted
 registration increments `EnvironmentAdmissionCounts`, executes without holding `Runtime.mu`, and
 settles its count after the component operation slot is visible. The resource also carries the
