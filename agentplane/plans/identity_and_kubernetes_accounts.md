@@ -169,10 +169,10 @@ today, and never adopts one on name alone. No finalizer, for the reason the Poli
 
 The SVIDs already exist: the Sandbox Controller requests one cert-manager `Certificate` per
 incarnation with URI SAN `spiffe://agentplane/environment-runtime/<ns>/<sandbox-uid>/<credential-id>`
-([Sandbox Controller SPEC](../sandbox_controller/SPEC.md)), Environment Runtime presents it on the
-control connection, and the Firecracker launcher serves it over the Workload API. The egress sidecar
-or relay presents the same SVID on its hop to the central proxy in place of the proxy-audience
-projected token; the proxy verifies it with the Gateway's transport package
+([Sandbox Controller SPEC](../sandbox_controller/SPEC.md)), and Environment Runtime presents it on the
+control connection. Firecracker launcher delivery over the Workload API remains part of the launcher
+integration. The egress sidecar or relay presents the same SVID on its hop to the central proxy in
+place of the proxy-audience projected token; the proxy verifies it with the Gateway's transport package
 (`environment_runtime_transport`) and resolves the Sandbox UID in the path to the Sandbox's
 `Identity`. No SPIRE, Cilium mutual authentication or mesh is involved.
 

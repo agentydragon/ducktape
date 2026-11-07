@@ -6,31 +6,66 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Configuration
 
-The forward listener is configured by `forward.listen_address` and an explicit `forward.auth`
-list. Its supported method is `mode: kubernetes_bearer` with a nonempty `audience`; an empty list,
-unknown mode, duplicate mode or fields belonging to another mode fail startup. The sidecar names
-its central proxy as `proxy.address` (`host:port`) and chooses
-`proxy.transport.mode: plaintext`, whose `auth` is `mode: kubernetes_bearer` with an absolute
-`token_file`. These settings do not change the bearer protocol or destination-token projection.
-Unknown settings are refused, including the former flat settings.
+The forward listener is configured by `forward.listen_address`, optional serving `forward.tls`,
+and an explicit `forward.auth` list. `kubernetes_bearer` requires an audience; `spiffe` requires
+TLS and trust roots. The sidecar names its central proxy as `proxy.address` (`host:port`) and
+selects a typed `proxy.transport`: plaintext bearer, TLS bearer, or TLS with a SPIFFE client
+certificate. Each method owns its credential settings. Unknown fields, unsupported or duplicate
+modes, incomplete credentials and incompatible transport/auth combinations fail startup.
 
 ## Identity
 
-- Every CONNECT and every request carries `Proxy-Authorization: Bearer <token>`, the Pod's
-  projected ServiceAccount token with the proxy's audience, added by the sidecar. A tunnel's
-  inner requests inherit the tunnel's authenticated context. The proxy strips the hop header and
-  retains its bearer only after successful verification; malformed or rejected replacement headers
-  clear earlier connection context rather than falling back to it.
-- The token is proven by TokenReview against that audience, which names the Pod the API server
-  bound it to; a deleted or replaced Pod fails there once the proxy's reuse of an acceptance (30 s,
-  <../workload_auth/README.md>) lapses. The subject is the ServiceAccount the Pod runs
-  as, whatever else owns the Pod. Authenticating a workload is not admitting it: a subject no
-  binding names reaches no rule.
+- The single forward-proxy listener on port 8888 takes an explicit authentication allowlist. The
+  staging default is token-only and plaintext: every CONNECT and request carries
+  `Proxy-Authorization: Bearer <token>`, the Pod's projected ServiceAccount token for the configured
+  bearer audience. A tunnel's inner requests inherit the tunnel's authenticated context. The proxy
+  strips the hop header and retains its bearer only after successful verification; malformed or
+  rejected replacement headers clear earlier connection context rather than falling back to it.
+- The optional `spiffe` mode adds TLS to that same listener, with the bearer mode still allowed for
+  clients without a certificate. It is off by default and enabled together with a server
+  certificate, trust bundle, Sandbox RBAC and runner ingress rule. In this mixed configuration all
+  clients use TLS. The proxy presents
+  `spiffe://agentplane/egress-proxy`, issued by the environment's Runner Gateway issuer with the
+  server-auth EKU; the trust-manager cluster-internal CA bundle verifies runner clients. The TLS
+  verifier requires the client's explicit client-auth EKU and the canonical URI
+  `spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`.
+- Exactly one enabled credential must be presented: no credential, a disabled mode, and a bearer
+  together with an SVID are refused before policy evaluation. TLS by itself does not select SPIFFE.
+- Each SVID-authenticated request, including requests inherited through a CONNECT tunnel, checks
+  the leaf's validity and EKU again and reads the named Sandbox through an uncached API client.
+  The live object must still have the URI's UID, a current runner credential whose `id` and
+  `acceptedId` both match the URI, and a usable runner binding. A deletion timestamp or stop stage
+  does not revoke an otherwise accepted credential: the runner may need to stay authenticated while
+  it quiesces and seals final Session history. Revocation takes effect when the Sandbox is removed,
+  the credential is cleared or no longer accepted, or its runner binding changes. For Pod and
+  Firecracker runners, `runnerCredential.podUid` must match `status.incarnation.uid`; for KubeVirt,
+  the current `status.incarnation.uid` is the projected-token Pod binding and the accepted VM
+  credential must still carry its VMI UID. Replaced or stale credentials fail before policy
+  evaluation. There is no indefinitely cached Sandbox identity.
+- The resulting policy subject is exactly the Sandbox-owned ServiceAccount at
+  `Sandbox.namespace/Sandbox.name`. Neither a certificate subject DN nor a caller-supplied header
+  selects the subject, and the proxy does not read Pods or ServiceAccounts. The optional Sandbox
+  reader permission in the proxy's own namespace grants only `get`, `list` and `watch` on Sandboxes.
+  A Sandbox name no binding names reaches no rule.
+- A request authenticated with SPIFFE does not need a hop bearer and must not carry one. A sidecar's
+  separately projected workload token is forwarded under `X-Agentplane-Workload-Token` for a
+  `projectedWorkloadToken` credential. The proxy keeps it only when TokenReview proves the same
+  ServiceAccount and Pod UID as the live Sandbox binding and the credential names its configured
+  audience; a mismatched token is dropped and a rule needing it refuses with
+  `credential-unavailable`.
+- A token on the forward listener is proven by TokenReview against its audience, which
+  names the Pod the API server bound it to; a deleted or replaced Pod fails there once the proxy's
+  reuse of an acceptance (30 s, <../workload_auth/README.md>) lapses. The subject is the
+  ServiceAccount the Pod runs as, whatever else owns the Pod. Authenticating a workload is not
+  admitting it: a subject no binding names reaches no rule.
 - The connection's source address is not checked. A token copied out of its Pod and presented from
   elsewhere in the cluster is accepted for as long as it is valid, and is refused the same rules as
-  the Pod it was taken from.
-- Every request reviews its hop bearer with the API server, including requests inside an existing
-  tunnel; an earlier successful review does not authorize a later request.
+  the Pod it was taken from. An SVID copied from a runner is likewise only the transport proof for
+  the live Sandbox and current runner binding named by that SVID.
+- Every bearer-authenticated request reviews its hop bearer with the API server, including
+  requests inside an existing tunnel; an earlier successful review does not authorize a later
+  request. The SPIFFE mode repeats the certificate validity and live Sandbox checks for each request,
+  including those inside a tunnel.
 
 ## Decision
 
@@ -55,11 +90,10 @@ Unknown settings are refused, including the former flat settings.
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior; `authenticatedWorkloadToken`, the
-  bearer retained from successful authentication of this request or CONNECT tunnel; or
-  `projectedWorkloadToken`, naming the audience of a token the sidecar presented on the hop. The
-  latter two are resolved per request and must still be bound to the caller being decided; absent,
-  stale, or mismatched context refuses with `credential-unavailable`.
+  `secretRef`, preserving the central-held Secret behavior; or `projectedWorkloadToken`, naming the
+  audience of a token the sidecar presented on the hop. A projected token is resolved per request
+  and must still be bound to the caller being decided; absent, stale, or mismatched context refuses
+  with `credential-unavailable`.
 - **A projected token is the caller's own identity minted for somewhere else.** The hop bearer
   carries this proxy's audience, so a destination validating its own — the API server against
   `--api-audiences` — refuses it; the sidecar projects a second token per configured audience,
@@ -70,6 +104,8 @@ Unknown settings are refused, including the former flat settings.
   `credential-unavailable` rather than substituting something else. The sidecar drops a client's own
   copy of the header, and the workload can read neither token: both are projected into the sidecar
   alone. A tunnel's inner requests inherit what its CONNECT presented, as they inherit its identity.
+  On SPIFFE-authenticated requests the reviewed account namespace/name and Pod UID are compared to the live
+  Sandbox-owned account and runner binding; no ServiceAccount UID is inferred from the certificate.
 - A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
   `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
   `basicUsername` and `basicPassword` (the halves of a `Basic base64(username:password)` payload),
@@ -119,158 +155,32 @@ Unknown settings are refused, including the former flat settings.
 
 ## Upstream address
 
-- **A sandbox can read its effective egress rules** with `agentplane egress rules`. The CLI calls
-  `EgressRules.GetRules` through the local sidecar gRPC route (the launcher relay for VM guests).
-  The sidecar replaces the inert bearer with its own Pod-bound workload token. The shared gRPC
-  listener authorizes this method independently of the operator-only admin methods and returns
-  only the ServiceAccount that token proves and its redacted rules: hosts, methods, paths, credential
-  descriptions, placeholders and presentation targets, never Secret names, keys or values. No
-  request field selects another subject. A missing or invalid bearer fails closed. The response is
-  an informational snapshot of the answering replica's enforcement index.
-- `agentplane egress guide` and `agentplane egress guide credentials` print the bundled Markdown
-  workflow guides without requiring a service connection. Effective access comes from the live
-  authenticated rules response.
-- The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
-  is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
-  reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;
-  a literal address in place of a host is held to the same rule.
-- **A rule may declare its hosts cluster-internal**, which lifts that refusal for private unicast
-  addresses — and only for the rules that say so, never for loopback or link-local, which are the
-  sandbox's own interfaces rather than the cluster. It is how an in-cluster service is reached
-  through the proxy at all; without it the guard refuses every Service address. A pin is keyed by
-  host and port alone, so the check runs again on a cached address: one pinned for a rule that
-  declared its host internal is not served to a rule that did not. A host that does not resolve is
-  refused with `host-unresolved` (`502`).
-- **The destination's own certificate is verified**, against a bundle the deployment supplies and
-  not against the interception root, which the proxy issues rather than trusts. That bundle carries
-  the public roots plus this cluster's CA, which is what lets a `clusterInternal` rule reach the API
-  server; a destination it does not cover fails the connection rather than being carried unverified.
-- The connection is made to the address that was checked: a name is resolved once per admission
-  window (30 seconds) and every dial in it goes to that address, so a name cannot be re-pointed
-  between the check and the connect. A dial for a target the gate did not admit is not made.
-- The operator may exempt networks from the reachability rule (`--exempt-networks`); production
-  exempts none.
-
-## Resources and status
-
-- The proxy depends on the API server and nothing else. The integration app is a viewer of the
-  same resources, never a participant: no part of a decision passes through it, so an app that is
-  down or broken changes nothing about what a sandbox may reach.
-- The proxy watches egress policies, bindings, policy sets, policy bindings and credentials in its one configured rules namespace, and
-  Secrets in the credentials namespace; it reads no Pods at all, in any namespace. The rules namespace may be one
-  of the workload namespaces, and in both deployments it is the only one; the credentials namespace
-  is separate, so a workload is never in a namespace holding the Secrets the proxy substitutes. The proxy's picture is kept equal to the API server's, and a
-  rotated Secret is substituted from the next request on without a restart. An authenticated
-  workload source is request context, not a Secret or another watched object.
-- Each `PolicyBinding` carries an `EgressReady` condition, applied under the proxy's own field
-  manager so other readers' conditions stay: `Enforced`, or `False` with reason
-  `PolicySetUnavailable` naming the missing sets. Every replica writes it from its own picture, so
-  it says what a replica resolved, never that every proxy has.
-- Admission and readiness fail closed until all watched kinds are initially synced and remain
-  within the configured freshness bound. Existing CONNECT/HTTP2 connections do not bypass this
-  check. API/watch changes are independently observed; this is not linearizable revocation.
-- Termination refuses new connections and requests/streams while already admitted responses drain
-  for a bounded period. Unfinished streams can be interrupted; requests are never replayed and
-  TCP connections are never migrated. Diagnostic database outages do not gate enforcement.
-
-## Decisions
-
-- Decisions are admissions, not upstream completions. CONNECT and HTTP requests are distinct
-  events correlated by connection ID, with event time and stable producer/event IDs. The IDs
-  support correlation, not global causal order.
-- A record carries names, never values. It has no path, for denied requests too: query
-  stripping cannot protect secrets embedded in arbitrary paths. Bodies, headers, query strings,
-  raw exceptions, and Kubernetes object payloads are not recorded. An unauthenticated attempt has
-  no claimed identity; a recorded Pod UID is a snapshot, not a reference to a live object.
-- Recent history is shared PostgreSQL state, not a per-replica ring. Replacing a proxy does not
-  remove committed history. `ListDecisions` selects one subject (`at` is decision time) or the
-  requests that never authenticated. A lookup spans every workload that has run as that account.
-- `WatchDecisions` sends a complete snapshot on subscribing, then added decisions and removed event
-  IDs as the bounded window changes. Records are immutable and ordered by decision time and event ID;
-  removals include expiry and capacity eviction. A quiet, healthy history feed sends heartbeats; a lost feed or failed history read ends the stream
-  with `UNAVAILABLE`. A reconnect starts with a fresh snapshot, not a replay cursor.
-- The `EgressAdmin` gRPC service, when enabled, serves `ListDecisions`, `WatchDecisions`,
-  `WatchCredentials`, and `GetHealth`. Every call requires an allowed ServiceAccount bearer. Decision
-  and credential watches revalidate authorization without a forced lease and end on revocation or
-  proxy drain. Credential watches send an initial snapshot followed by upserts and UID-fenced removals,
-  and end when informer health is unavailable. Their protobuf contains only public descriptions, placeholders and presentation targets;
-  it never exposes sources or Secret values. The standard gRPC health service beside it reports
-  readiness (the empty service) and liveness (`livez`) to any caller.
-- Responses contain at most 200 recent records by default, ordered by decision time then event
-  ID, oldest first within that window. This is not a global causal or insertion order.
-- Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous
-  queue, finite retry budget, and bounded shutdown flush keep database failures off the admission
-  path. Queue overflow, expired events, exhausted retries and shutdown loss are counted explicitly.
-  A retried batch reuses its event IDs and insertion is idempotent on event ID, so an
-  acknowledgement lost after commit can count as a failure but never inserts a duplicate. The
-  counters describe producer knowledge: an event counted lost may still have been committed.
-- History is not tamper-evident auditing: the database owner can insert and delete records.
-- `GetHealth` reports `decision_history`: accepted and acknowledged events (acknowledged counts
-  producer events, not newly inserted rows), loss by overflow, unavailability, expiry and shutdown,
-  write and cleanup failures, queue depth, whether the writer is running, and `available`, the
-  outcome of the last write attempt (`null` before one). Counters are per process and reset on
-  restart; none of it changes the enforcement verdict `ready` reports. A failed history
-  read fails `UNAVAILABLE`, never an empty success or a local fallback. A successful read may lag queued
-  admissions.
-- Retention defaults to seven days and is a visibility bound: queries exclude expired records, and
-  bounded indexed cleanup deletes them eventually. Database outages delay physical cleanup, not
-  the visible time window.
-- Schema changes are Goose-managed in the serving binary and run before it opens listeners. The
-  embedded migrations preserve existing history when taking over the verified Alembic baseline;
-  Goose serializes concurrent startup migrations. A startup probe gates readiness, while old
-  replicas may continue enforcing, so every migration must support writer overlap. Request admission
-  remains independent of diagnostic DB availability.
-
-## Replica scope
-
-Replicas enforce from independent bounded-fresh watch snapshots and drain independently.
-Committed diagnostic history is shared; informational rule/binding observations are not a
-cluster-wide acknowledgement. A source change is not deployed evidence: image publication,
-GitOps gates and live rollout acceptance remain separate operational requirements.
-
-## What the proxy does not decide
-
-- **Only HTTP(S).** Substitution reaches declared header components and exact declared JSON
-  fields only. A placeholder elsewhere — a query parameter, an undeclared body field, another
-  envelope — is inert and reaches the upstream unsubstituted. In particular, a URL-borne
-  credential would travel through logs and referrers and is never substituted.
-- **Intercepted gRPC uses the same header target model.** A TLS gRPC client through the real
-  sidecar presents its initial metadata as HTTP/2 request headers; a `wholeValue` target on
-  `x-buildbuddy-api-key` substitutes the placeholder before the upstream sees it. The black-box
-  test (`test_interactive_grpc_before_eof`) drives a bidirectional Build Event Service-shaped
-  stream through the built proxy: several messages, upstream trailers, a client deadline and a
-  client cancel, each reaching the upstream. The client trusts the interception CA, the proxy
-  verifies the upstream TLS certificate, and neither leg uses mTLS.
-- **Only a JSON request body is held for the decision.** A request whose headers declare anything
-  but an uncompressed `application/json` body is decided from its headers and its body streams to
-  the upstream as it arrives, so an interactive stream such as plaintext gRPC inside a tunnel works
-  (`test_interactive_grpc_before_eof[h2c]`). A refusal of such a request
-  is sent once its body has been read.
-- This proves local Bazel, remote-cache/execution, BES, and BuildBuddy API clients whose credential
-  is request metadata. It does **not** make `bb remote` credentialless: the CLI authenticates its
-  local Remote Runner control RPC with the metadata, then also serialises the API key into the
-  Bazel command run on a BuildBuddy-hosted runner. That runner is outside this proxy, so a
-  placeholder arrives there unsubstituted. The public-coder KubeVirt devbox that used `bbr` as a
-  `bb remote` client was retired on 2026-10-21, so it no longer needs a BuildBuddy credential or an
-  egress path. This does not change the remote-runner boundary for any future `bb remote` client;
-  the boundary and candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
-
-## Sidecar platform routes
-
-- The sidecar may also serve platform routes. A platform route is a loopback gRPC listener per
-  configured Agentplane service, which forwards each call to that service as `authorization:
-Bearer <token>`. The token is the Pod's projected token for that service's audience, re-read per
-  call. The workload's own `authorization` is dropped; other metadata, the deadline and the status
-  pass through.
-- The central proxy never sees these calls and no egress rule admits them. What may reach the
-  service is network policy, and each service authorizes the token itself. Without a token the
-  sidecar refuses `UNAVAILABLE` and calls nothing.
-- Each route keeps one upstream gRPC connection. While an RPC is active, the sidecar sends an
-  HTTP/2 keepalive ping after 60 seconds without transport activity and gives its acknowledgement
-  10 seconds. It sends no pings without an active RPC. A silent transport failure ends the affected
-  call; later calls reconnect through the same route connection and use the service's current
-  endpoint. Runner commands are never replayed by the sidecar.
-- Route receivers accept active-call keepalive pings no more often than every 30 seconds: Gateway
-  control, History ingress, and Alloy OTLP gRPC. They do not permit pings without an active RPC.
-- An unexpected exit of a platform route, HTTP proxy, or readiness listener makes the sidecar
-  unready and stops the process. Its other listeners close before the process exits.
+- The rules API publishes `/llms.txt` and linked Markdown guides under `/docs/agents/` for
+  credential presentation and refusal recovery, and the OpenAPI document of `/v1/rules` at
+  `/openapi.json`. They contain no credentials or caller-specific rules;
+  effective access still comes from the authenticated `/v1/rules` view.
+- **A sandbox can read the rules that apply to it**, at
+  `http://egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
+  existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the
+  subject it is of and the egress policies an active binding grants it: each rule's
+  hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written
+  `description`, and every target — which is what a client needs to build the value and to know whose
+  credential it is spending, since a header name and a placeholder leave open both whether the value
+  reads `Bearer <placeholder>` or the placeholder bare, and what the token behind it can do. Never
+  the Secret, its key,
+  or its value — the projection is built from its own field list, so a field added to a resource
+  does not appear here until someone writes it in.
+  The API's existing listener shares the forward listener's explicit authentication modes,
+  serving certificate, trust roots and bearer audience. It has no independent auth settings.
+  In SPIFFE mode the sidecar originates destination TLS through an exact configured opaque
+  CONNECT route; the API independently verifies the actual peer and accepted live Sandbox
+  credential. In bearer mode the normal policy substitutes the projected destination token,
+  and the API reviews it against the forward policy's audience. No forwarded identity header
+  or source address is trusted. All API endpoints, including documentation, require exactly
+  one admitted credential. The answer is always the authenticated ServiceAccount's own rules.
+  Service port 80 reaches API port 8082; forward traffic uses 8888. TLS does not require another
+  API port or a separate certificate. Operator admin endpoints stay separate.
+  `GET /v1/rules` is the generated HTTP/JSON form of `EgressRules.GetRules`
+  (<egress_rules.proto>). The facade preserves the API's verified context in process and opens
+  no loopback listener. Authentication refusal returns `401` as `google.rpc.Status`; unavailable
+  verification returns `503`.

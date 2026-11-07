@@ -178,22 +178,12 @@ async def test_egress_credential_source_and_target_validation() -> None:
 
         source_cases: list[tuple[dict[str, Any], bool]] = [
             ({"secretRef": {"name": "api-token", "key": "token"}}, True),
-            ({"authenticatedWorkloadToken": {}}, True),
             ({"projectedWorkloadToken": {"audience": "kubernetes"}}, True),
             ({}, False),
-            ({"secretRef": {"name": "api-token", "key": "token"}, "authenticatedWorkloadToken": {}}, False),
+            ({"authenticatedWorkloadToken": {}}, False),
             (
                 {
                     "secretRef": {"name": "api-token", "key": "token"},
-                    "projectedWorkloadToken": {"audience": "kubernetes"},
-                },
-                False,
-            ),
-            ({"authenticatedWorkloadToken": {}, "projectedWorkloadToken": {"audience": "kubernetes"}}, False),
-            (
-                {
-                    "secretRef": {"name": "api-token", "key": "token"},
-                    "authenticatedWorkloadToken": {},
                     "projectedWorkloadToken": {"audience": "kubernetes"},
                 },
                 False,

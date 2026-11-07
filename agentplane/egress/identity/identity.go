@@ -1,6 +1,5 @@
-// Package identity authenticates the workload behind a proxied connection: the hop bearer in
-// `Proxy-Authorization` and the audience-scoped tokens a sidecar offers for substitution. A refusal
-// carries the reason the client sees.
+// Package identity authenticates workloads using the configured SVID or Kubernetes
+// bearer policy and verifies destination-audience tokens offered for substitution.
 package identity
 
 import (
@@ -15,8 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
-// Rejection is a bearer that does not prove a workload identity, or an identity that could not be
-// checked; Reason is what the client sees.
+// Rejection is a credential that does not prove a workload identity, or an identity
+// that could not be checked; Reason is what the client sees.
 type Rejection struct {
 	Reason decision.Reason
 	Detail string
@@ -24,8 +23,8 @@ type Rejection struct {
 
 func (r *Rejection) Error() string { return fmt.Sprintf("%s: %s", r.Reason, r.Detail) }
 
-// Verifier reviews bearers with the API server on every call: a revoked token stops working here at
-// the moment it stops working anywhere.
+// Verifier resolves hop and projected bearers with the shared TokenReview resolver.
+// Its bounded acceptance cache follows workload_auth/auth.Resolver.
 type Verifier struct {
 	hop *auth.Resolver
 	// projected has one resolver per audience this proxy will substitute a sidecar's projected token
@@ -118,6 +117,35 @@ func (v *Verifier) VerifyProjected(ctx context.Context, presented map[string]str
 		}
 		if reviewed != principal {
 			slog.Warn("projected token is not this hop's Pod", "audience", audience)
+			continue
+		}
+		verified[audience] = token
+	}
+	return verified
+}
+
+// VerifyProjectedForSandbox keeps only audience-scoped tokens whose TokenReview
+// names the ServiceAccount and Pod incarnation bound to a live Sandbox. Unlike
+// the legacy token hop, the SVID caller does not carry a ServiceAccount UID, so
+// the comparison is deliberately limited to the account and Pod UID that the
+// proxy resolved from Sandbox status.
+func (v *Verifier) VerifyProjectedForSandbox(
+	ctx context.Context, presented map[string]string, account auth.Account, podUID string,
+) map[string]string {
+	verified := map[string]string{}
+	for audience, token := range presented {
+		resolver, configured := v.projected[audience]
+		if !configured {
+			slog.Warn("no resolver configured for projected token audience", "audience", audience)
+			continue
+		}
+		reviewed, err := resolver.ResolveToken(ctx, token)
+		if err != nil {
+			slog.Warn("projected token rejected", "audience", audience, "error", err)
+			continue
+		}
+		if reviewed.Account != account || reviewed.PodUID != podUID {
+			slog.Warn("projected token is not bound to the SVID Sandbox account and Pod", "audience", audience)
 			continue
 		}
 		verified[audience] = token

@@ -27,6 +27,7 @@ type config struct {
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
 	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
 	Forward                         listener.Config   `mapstructure:"forward"`
+	TLSPassthroughTargets           []string          `mapstructure:"tls_passthrough_targets"`
 	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
 	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
 	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
@@ -46,8 +47,7 @@ type config struct {
 
 func defaultConfig() config {
 	return config{
-		Forward: listener.Config{ListenAddress: "0.0.0.0:8888"}, AdminListenAddress: "0.0.0.0:8081",
-		DecisionHistorySize:   200,
+		AdminListenAddress: "0.0.0.0:8081", DecisionHistorySize: 200,
 		DecisionRetentionDays: 7, DecisionQueueSize: 2000, DecisionBatchSize: 100,
 	}
 }
@@ -80,9 +80,7 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read egress settings file")
 		}
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
-		listener.AuthenticationDecodeHook, mapstructure.TextUnmarshallerHookFunc(),
-	))); err != nil {
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(listener.AuthenticationDecodeHook, mapstructure.TextUnmarshallerHookFunc()))); err != nil {
 		return config{}, errors.New("invalid egress settings")
 	}
 	if err := c.validate(); err != nil {

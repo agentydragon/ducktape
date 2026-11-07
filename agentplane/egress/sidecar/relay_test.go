@@ -2,19 +2,23 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	workloadlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 )
 
 const (
@@ -183,23 +187,27 @@ func readTestHead(reader *bufio.Reader) ([]byte, error) {
 
 func startTestSidecar(t *testing.T, proxyPort int, tokenFile string, audiences map[string]string) string {
 	t.Helper()
+	proxyAddress := net.JoinHostPort("127.0.0.1", strconv.Itoa(proxyPort))
+	proxy := proxyConfig{
+		Address:   proxyAddress,
+		Transport: plaintextProxyTransportConfig{Auth: kubernetesBearerProxyAuth{TokenFile: tokenFile}},
+	}
+	s, err := newSidecar(config{
+		Proxy:                  proxy,
+		AudienceTokenFiles:     audiences,
+		PlatformRoutes:         map[string]platformRouteConfig{},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
+		ListenAddress:          "127.0.0.1:0",
+		ReadinessListenAddress: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("configure test sidecar: %v", err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &sidecar{
-		config: config{
-			Proxy: proxyConfig{
-				Address: net.JoinHostPort("127.0.0.1", fmt.Sprint(proxyPort)),
-				Transport: proxyTransportConfig{
-					Mode: proxyTransportPlaintext,
-					Auth: proxyAuthConfig{Mode: workloadlistener.KubernetesBearer, TokenFile: tokenFile},
-				},
-			},
-			AudienceTokenFiles: audiences,
-		},
-		proxyListener: listener,
-	}
+	s.proxyListener = listener
 	finished := make(chan error, 1)
 	go func() { finished <- s.acceptLoop() }()
 	t.Cleanup(func() {
@@ -346,6 +354,204 @@ func TestSidecarPlainRequestReplacesProxyAuthorization(t *testing.T) {
 	}
 }
 
+func TestMTLSHopRemovesCallerHeaderAndProjectsDestinationBearer(t *testing.T) {
+	request, err := http.ReadRequest(bufio.NewReader(strings.NewReader(
+		"GET http://upstream.test/path HTTP/1.1\r\nProxy-Authorization: Bearer workload-forgery\r\n\r\n",
+	)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewriteRequest(request, "", map[string]string{testAudience: "audience-token", "agentplane-workload": "destination-context-token"})
+	if got := request.Header.Values("Proxy-Authorization"); len(got) != 0 {
+		t.Fatalf("mTLS forwarded hop bearer = %q", got)
+	}
+	if got := request.Header.Values(projectedTokenHeader); len(got) != 2 ||
+		got[0] != "agentplane-workload destination-context-token" || got[1] != testAudience+" audience-token" {
+		t.Fatalf("mTLS request lost destination audience identity: %q", got)
+	}
+}
+
+func TestMTLSFailureDoesNotRetryAsToken(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientCredentials := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	accepted := make(chan []byte, 2)
+	go func() {
+		for {
+			connection, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer connection.Close()
+				_ = connection.SetReadDeadline(time.Now().Add(5 * time.Second))
+				buffer := make([]byte, 8192)
+				n, err := connection.Read(buffer)
+				if err == nil {
+					accepted <- append([]byte(nil), buffer[:n]...)
+				}
+				if bytes.HasPrefix(buffer[:n], []byte("GET ")) {
+					_, _ = connection.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"))
+				} else {
+					_, _ = connection.Write([]byte("not a TLS server"))
+				}
+			}()
+		}
+	}()
+
+	_, portText, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := newSidecar(config{
+		Proxy: proxyConfig{
+			Address: net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
+			Transport: tlsProxyTransportConfig{
+				CAFile: ca.RootFile,
+				Auth:   spiffeProxyAuth{CertFile: clientCredentials.CertFile, KeyFile: clientCredentials.KeyFile},
+			},
+		},
+		ListenAddress:          "127.0.0.1:3128",
+		ReadinessListenAddress: "127.0.0.1:3129",
+		PlatformRoutes:         map[string]platformRouteConfig{},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
+	})
+	if err != nil {
+		t.Fatalf("configure valid client mTLS identity: %v", err)
+	}
+	server, client := net.Pipe()
+	go s.handle(server)
+	request, err := http.NewRequest(http.MethodGet, "http://upstream.test/path", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Proxy-Authorization", "Bearer caller-forgery")
+	if err := request.Write(client); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(client), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadGateway || response.Header.Get(refusedHeader) != "reason=proxy-unreachable" {
+		t.Fatalf("response = %d, %s; a TLS failure must refuse instead of retrying token mode", response.StatusCode, response.Header.Get(refusedHeader))
+	}
+	_ = client.Close()
+
+	var proxyBytes [][]byte
+	select {
+	case data := <-accepted:
+		proxyBytes = append(proxyBytes, data)
+	case <-time.After(5 * time.Second):
+		t.Fatal("proxy did not observe an mTLS handshake")
+	}
+	for {
+		select {
+		case data := <-accepted:
+			proxyBytes = append(proxyBytes, data)
+		default:
+			for _, data := range proxyBytes {
+				if bytes.HasPrefix(data, []byte("GET ")) {
+					t.Fatalf("mTLS failure sent an HTTP request or bearer to the proxy: %q", data)
+				}
+			}
+			if !bytes.HasPrefix(proxyBytes[0], []byte{0x16, 0x03}) {
+				t.Fatalf("proxy hop did not start with a TLS record: %q", proxyBytes[0])
+			}
+			return
+		}
+	}
+}
+
+func TestNewSidecarFailsClosedWhenMTLSFilesAreUnavailable(t *testing.T) {
+	_, err := newSidecar(config{
+		Proxy: proxyConfig{
+			Address: "proxy.test.invalid:8888",
+			Transport: tlsProxyTransportConfig{
+				CAFile: "/missing/ca",
+				Auth:   spiffeProxyAuth{CertFile: "/missing/cert", KeyFile: "/missing/key"},
+			},
+		},
+		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{},
+		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
+	})
+	if err == nil {
+		t.Fatal("mTLS sidecar started without its projected identity and trust files")
+	}
+}
+
+func TestMTLSDoesNotRequireDestinationBearer(t *testing.T) {
+	closed, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, portText, err := net.SplitHostPort(closed.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := closed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientCredentials := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	s, err := newSidecar(config{
+		Proxy: proxyConfig{
+			Address: net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
+			Transport: tlsProxyTransportConfig{
+				CAFile: ca.RootFile,
+				Auth:   spiffeProxyAuth{CertFile: clientCredentials.CertFile, KeyFile: clientCredentials.KeyFile},
+			},
+		},
+		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{},
+		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, client := net.Pipe()
+	go s.handle(server)
+	request, err := http.NewRequest(http.MethodGet, "http://upstream.test/path", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := request.Write(client); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(client), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadGateway || response.Header.Get(refusedHeader) != "reason=proxy-unreachable" {
+		t.Fatalf("response = %d, %s; mTLS should attempt the proxy without destination token state", response.StatusCode, response.Header.Get(refusedHeader))
+	}
+	_ = client.Close()
+}
+
 func TestSidecarTokenIsRereadOnEveryRequest(t *testing.T) {
 	central := startTestCentralProxy(t)
 	tokenFile := writeTestToken(t, "token-1\n")
@@ -360,9 +566,45 @@ func TestSidecarTokenIsRereadOnEveryRequest(t *testing.T) {
 	}
 }
 
-func TestSidecarMissingTokenRefusesWithoutForwarding(t *testing.T) {
+func TestNewSidecarRejectsMissingBearerAtStartup(t *testing.T) {
+	_, err := newSidecar(config{
+		Proxy: proxyConfig{
+			Address: "proxy.example:8888",
+			Transport: plaintextProxyTransportConfig{
+				Auth: kubernetesBearerProxyAuth{TokenFile: filepath.Join(t.TempDir(), "absent")},
+			},
+		},
+		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{},
+		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
+	})
+	if err == nil {
+		t.Fatal("sidecar started without its required proxy-hop token")
+	}
+	token := writeTestToken(t, " \n\t")
+	_, err = newSidecar(config{
+		Proxy: proxyConfig{
+			Address: "proxy.example:8888",
+			Transport: plaintextProxyTransportConfig{
+				Auth: kubernetesBearerProxyAuth{TokenFile: token},
+			},
+		},
+		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{},
+		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
+	})
+	if err == nil {
+		t.Fatal("sidecar started with an empty proxy-hop token")
+	}
+}
+
+func TestSidecarTokenUnavailableAfterStartupRefusesWithoutForwarding(t *testing.T) {
 	central := startTestCentralProxy(t)
-	address := startTestSidecar(t, central.port(), filepath.Join(t.TempDir(), "absent"), nil)
+	tokenFile := writeTestToken(t, "token-1")
+	address := startTestSidecar(t, central.port(), tokenFile, nil)
+	if err := os.Remove(tokenFile); err != nil {
+		t.Fatal(err)
+	}
 	got := getThroughSidecar(t, address, "/path", nil)
 	if got.status != http.StatusServiceUnavailable || got.refusal != "reason=token-unavailable" {
 		t.Fatalf("response = %+v", got)

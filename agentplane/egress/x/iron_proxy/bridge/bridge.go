@@ -139,7 +139,6 @@ func (b *Bridge) TransformRequest(ctx context.Context, request *transformv1.Tran
 		Name:      state.principal.Account.Name,
 	}
 	workload := &policy.WorkloadContext{
-		Bearer: state.token,
 		Caller: caller,
 		PodUID: state.principal.PodUID,
 		// Projected audience tokens are intentionally unsupported by this bridge prototype.

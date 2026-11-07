@@ -29,8 +29,11 @@ const (
 )
 
 type sidecar struct {
-	config config
-	ready  atomic.Bool
+	workloadContext context.Context
+	workloadRoutes  map[string]*workloadRoute
+	config          config
+	proxyHop        *proxyHop
+	ready           atomic.Bool
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
@@ -42,6 +45,10 @@ type sidecar struct {
 }
 
 func (s *sidecar) run(ctx context.Context) error {
+	if err := s.prepareWorkloadRoutes(); err != nil {
+		return err
+	}
+	defer s.closeWorkloadRoutes()
 	readinessListener, err := netlistener.Open(s.config.ReadinessListenAddress)
 	if err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
@@ -63,6 +70,7 @@ func (s *sidecar) run(ctx context.Context) error {
 }
 
 func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes []*platformRoute) error {
+	s.workloadContext = ctx
 	s.proxyListener = proxyListener
 	s.routes = routes
 	s.bindReadiness(readinessListener)
@@ -94,7 +102,7 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 	}
 	serve("HTTP proxy listener", s.acceptLoop)
 	s.ready.Store(true)
-	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", s.config.Proxy.Address)
+	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", s.proxyHop.address)
 
 	select {
 	case <-ctx.Done():
@@ -152,10 +160,12 @@ func (s *sidecar) stopProxy() {
 		_ = s.proxyListener.Close()
 	}
 	s.activeMu.Lock()
-	for conn := range s.active {
+	connections := slices.Collect(maps.Keys(s.active))
+	clear(s.active)
+	s.activeMu.Unlock()
+	for _, conn := range connections {
 		_ = conn.Close()
 	}
-	s.activeMu.Unlock()
 }
 
 func (s *sidecar) acceptLoop() error {
@@ -204,18 +214,39 @@ func (s *sidecar) handle(client net.Conn) {
 			writeRefusal(client, http.StatusBadRequest, "bad-request")
 			return
 		}
-		tokenFile := s.config.Proxy.Transport.Auth.TokenFile
-		token, err := readToken(tokenFile)
+		if request.Method == http.MethodConnect {
+			authority := request.URL.Host
+			if authority == "" {
+				authority = request.Host
+			}
+			if route := s.workloadRoutes[authority]; route != nil {
+				s.exchangeWorkloadConnectRoute(client, clientReader, route)
+				return
+			}
+		} else if request.URL.Scheme == "http" {
+			authority := request.URL.Host
+			if request.URL.Port() == "" {
+				authority = net.JoinHostPort(request.URL.Hostname(), "80")
+			}
+			if route := s.workloadRoutes[authority]; route != nil {
+				if !s.exchangeWorkloadRoute(client, clientReader, request, route) {
+					return
+				}
+				continue
+			}
+		}
+		token, err := s.proxyHop.auth.requestToken()
 		if err != nil {
-			slog.Error("central proxy token unavailable", "path", tokenFile, "error", err)
+			slog.Warn("proxy hop credential unavailable", "error", err)
 			writeRefusal(client, http.StatusServiceUnavailable, "token-unavailable")
 			return
 		}
-		rewriteRequest(request, token, s.readProjectedTokens())
+		projected := s.readProjectedTokens()
+		rewriteRequest(request, token, projected)
 		if upstream == nil {
-			upstream, err = (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", s.config.Proxy.Address)
+			upstream, err = s.dialProxy()
 			if err != nil {
-				slog.Warn("central proxy unreachable", "address", s.config.Proxy.Address, "error", err)
+				slog.Warn("central proxy unreachable", "address", s.proxyHop.address, "error", err)
 				writeRefusal(client, http.StatusBadGateway, "proxy-unreachable")
 				return
 			}
@@ -226,6 +257,14 @@ func (s *sidecar) handle(client net.Conn) {
 			return
 		}
 	}
+}
+
+// dialProxy creates one central connection with the transport selected at startup. A TLS error is
+// returned to the workload and never retried as bearer authentication.
+func (s *sidecar) dialProxy() (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.proxyHop.transport.dial(ctx, s.proxyHop.address)
 }
 
 // exchange forwards one request and relays its response. It reports whether the connection pair
@@ -255,7 +294,7 @@ func (s *sidecar) exchange(client net.Conn, clientReader *bufio.Reader, upstream
 			return false
 		}
 		if err := pipeDuplex(client, clientReader, upstream, upstreamReader); err != nil {
-			slog.Warn("relay ended with connection error", "address", s.config.Proxy.Address, "error", err)
+			slog.Warn("relay ended with connection error", "upstream", s.proxyHop.address, "error", err)
 		}
 		return false
 	}
@@ -304,7 +343,11 @@ func readFinalResponse(client io.Writer, upstreamReader *bufio.Reader, request *
 func rewriteRequest(request *http.Request, token string, projected map[string]string) {
 	request.Header.Del("Proxy-Connection")
 	request.Header.Del(projectedTokenHeader)
-	request.Header.Set("Proxy-Authorization", "Bearer "+token)
+	if token == "" {
+		request.Header.Del("Proxy-Authorization")
+	} else {
+		request.Header.Set("Proxy-Authorization", "Bearer "+token)
+	}
 	for _, audience := range slices.Sorted(maps.Keys(projected)) {
 		request.Header.Add(projectedTokenHeader, audience+" "+projected[audience])
 	}

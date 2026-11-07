@@ -350,8 +350,6 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
         assert route["listen_address"] == f"127.0.0.1:{port}"
         assert launcher_settings["platform_routes"][name]["listen_address"] == f"0.0.0.0:{port}"
         launcher_settings["platform_routes"][name]["listen_address"] = route["listen_address"]
-    del launcher_settings["listen_address"]
-    del runner_settings["listen_address"]
     assert launcher_settings == runner_settings
     policy = _by_name(staging_manifests, "ClusterPolicy", f"{staging.ENV.namespace}-launcher-relay")
     inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")

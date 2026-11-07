@@ -23,6 +23,7 @@ _GRACE_SECONDS = 55
 class GoReplica:
     proxy_listener: Listener
     process: GoProcess
+    agent_api_listener: Listener
 
     def terminate(self) -> None:
         self.process.terminate()
@@ -68,4 +69,4 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
             # The child inherited the listeners and has reported ready. Release the parent copies
             # before yielding so a later replica can safely reuse the descriptor numbers.
             listeners.close()
-            yield GoReplica(proxy_listener, process)
+            yield GoReplica(proxy_listener, process, agent_api_listener)

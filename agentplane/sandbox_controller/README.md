@@ -22,6 +22,11 @@ TLS Secret before starting a runner and binds its credential ID to the current P
 `status.runnerCredential`.
 Replacement workloads get distinct Secret names. trust-manager supplies the trusted roots.
 See [authentication and cutover](../docs/runner_control.md#authentication-and-incarnation-binding).
+The same Secret permits both server auth for Runner control and client auth for the egress sidecar's
+separately selected mTLS proxy hop. Pod projections go to Runtime and, when present, egress-sidecar;
+runtime-only custom templates remain supported. Workload containers do not mount it. For a KubeVirt
+launcher relay, admission checks the live Sandbox credential binding and current VMI before mounting
+that Secret into the sidecar; it does not mount it into a workload container.
 
 Because that condition is set only once the History Service's ingress has
 acknowledged every seal, deleting a Sandbox waits while the History Service is down or rolling;

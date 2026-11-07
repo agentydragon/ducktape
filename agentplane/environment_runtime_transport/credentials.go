@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,15 +27,34 @@ import (
 // control mutual-TLS trust domain.
 const GatewayURI = "spiffe://agentplane/runner-gateway"
 
+// EgressProxyURI is the fixed identity of the optional workload-authenticated
+// forward-proxy listener.
+const EgressProxyURI = "spiffe://agentplane/egress-proxy"
+
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
 // Config names the projected certificate, private key, and trust roots.
-// Credentials reload a file when it is replaced, so projected-secret rotations
-// are picked up at the next TLS handshake without restarting the process.
 type Config struct {
-	CertFile string `json:"cert_file" yaml:"cert_file" mapstructure:"cert_file"`
-	KeyFile  string `json:"key_file" yaml:"key_file" mapstructure:"key_file"`
-	CAFile   string `json:"ca_file" yaml:"ca_file" mapstructure:"ca_file"`
+	CertFile string `json:"cert_file,omitempty" yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty"`
+	KeyFile  string `json:"key_file,omitempty" yaml:"key_file,omitempty" mapstructure:"key_file,omitempty"`
+	CAFile   string `json:"ca_file,omitempty" yaml:"ca_file,omitempty" mapstructure:"ca_file,omitempty"`
+}
+
+// Validate requires a complete file-backed source.
+func (c Config) Validate() error {
+	for _, file := range []struct{ name, path string }{
+		{name: "cert_file", path: c.CertFile},
+		{name: "key_file", path: c.KeyFile},
+		{name: "ca_file", path: c.CAFile},
+	} {
+		if file.path == "" {
+			return fmt.Errorf("TLS %s is required for file-backed mtls security", file.name)
+		}
+		if !filepath.IsAbs(file.path) {
+			return fmt.Errorf("TLS %s must be an absolute path", file.name)
+		}
+	}
+	return nil
 }
 
 // EnvironmentRuntimeURI returns the identity assigned to one Runner credential. credentialID
@@ -110,6 +130,137 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
 }
 
+// WorkloadServerCredentials creates mTLS server credentials for the fixed
+// egress identity and a live EnvironmentRuntime peer. Established connections
+// close when either selected leaf certificate expires.
+func (c Config) WorkloadServerCredentials(localURI string) (credentials.TransportCredentials, error) {
+	config, err := c.WorkloadServerTLSConfig(localURI)
+	if err != nil {
+		return nil, err
+	}
+	return newExpiringCredentials(config, true), nil
+}
+
+// ClientTLSConfig creates HTTPS proxy credentials pinned to the egress proxy's
+// fixed SPIFFE identity. The file source reloads projected certificate, key,
+// and CA bundle replacements while keeping the client identity pinned.
+func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
+	if expectedPeerURI != EgressProxyURI {
+		return nil, fmt.Errorf("expected peer URI must be %q", EgressProxyURI)
+	}
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	source, err := newFileSource(c, x509.ExtKeyUsageClientAuth)
+	if err != nil {
+		return nil, err
+	}
+	expected, err := spiffeid.FromString(expectedPeerURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
+	}
+	return tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth)), nil
+}
+
+// ProxyServerTLSConfig creates verified TLS credentials for the egress proxy
+// without presenting a client certificate. The CA bundle is the same
+// reloadable file source used by file-backed SVID credentials, and the peer
+// must present the fixed egress-proxy SVID with serverAuth usage.
+func (c Config) ProxyServerTLSConfig() (*tls.Config, error) {
+	if c.CertFile != "" || c.KeyFile != "" {
+		return nil, errors.New("proxy server TLS without a client certificate accepts only ca_file")
+	}
+	source, err := newFileBundleSource(c.CAFile)
+	if err != nil {
+		return nil, err
+	}
+	expected, err := spiffeid.FromString(EgressProxyURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
+	}
+	return tlsconfig.TLSClientConfig(source, authorize(expected, x509.ExtKeyUsageServerAuth)), nil
+}
+
+// WorkloadServerTLSConfig creates mTLS server credentials for the egress
+// listener. It accepts only a current EnvironmentRuntime identity with an
+// explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
+func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
+	return c.workloadServerTLSConfig(localURI, false)
+}
+
+// WorkloadServerTLSConfigWithBearer permits a missing client certificate for a
+// listener that also authenticates Kubernetes bearers. Every certificate that
+// is presented still passes the same SPIFFE chain, identity and client EKU checks.
+func (c Config) WorkloadServerTLSConfigWithBearer(localURI string) (*tls.Config, error) {
+	return c.workloadServerTLSConfig(localURI, true)
+}
+
+func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls.Config, error) {
+	if localURI != EgressProxyURI {
+		return nil, fmt.Errorf("local URI must be %q", EgressProxyURI)
+	}
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	source, err := newFileSource(c, x509.ExtKeyUsageServerAuth)
+	if err != nil {
+		return nil, err
+	}
+	if source.identity.String() != localURI {
+		return nil, fmt.Errorf("local certificate identity %q does not match expected identity %q", source.identity, localURI)
+	}
+	authorizeRuntime := func(id spiffeid.ID, verifiedChains [][]*x509.Certificate) error {
+		if _, _, _, err := ParseEnvironmentRuntimeURI(id.String()); err != nil {
+			return fmt.Errorf("client identity must be a valid EnvironmentRuntimeURI: %w", err)
+		}
+		if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
+			return errors.New("client certificate chain is not verified")
+		}
+		if err := requireEKU(verifiedChains[0][0], x509.ExtKeyUsageClientAuth); err != nil {
+			return fmt.Errorf("peer certificate: %w", err)
+		}
+		return nil
+	}
+	config := tlsconfig.MTLSServerConfig(source, source, authorizeRuntime)
+	if allowBearer {
+		config.ClientAuth = tls.RequestClientCert
+		verify := config.VerifyPeerCertificate
+		config.VerifyPeerCertificate = func(rawCerts [][]byte, chains [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return nil
+			}
+			return verify(rawCerts, chains)
+		}
+	}
+	return config, nil
+}
+
+// BearerServerTLSConfig serves TLS without admitting certificate authentication.
+// Its certificate reloads with the same identity and server EKU checks as mTLS.
+// A client presenting a certificate is refused because that method is disabled.
+func (c Config) BearerServerTLSConfig(localURI string) (*tls.Config, error) {
+	if c.CAFile != "" || !filepath.IsAbs(c.CertFile) || !filepath.IsAbs(c.KeyFile) {
+		return nil, errors.New("bearer TLS requires absolute cert_file and key_file paths only")
+	}
+	svid, err := loadSVID(c, x509.ExtKeyUsageServerAuth)
+	if err != nil {
+		return nil, err
+	}
+	if svid.ID.String() != localURI {
+		return nil, fmt.Errorf("local certificate identity %q does not match expected identity %q", svid.ID, localURI)
+	}
+	source := &fileSource{config: c, usage: x509.ExtKeyUsageServerAuth, identity: svid.ID}
+	config := tlsconfig.TLSServerConfig(source)
+	config.ClientAuth = tls.RequestClientCert
+	config.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if len(rawCerts) != 0 {
+			return errors.New("certificate authentication is not enabled")
+		}
+		return nil
+	}
+	return config, nil
+}
+
 // LocalIdentity returns the certificate URI after validating its chain and the
 // caller's required authentication usage.
 func (c Config) LocalIdentity(usage x509.ExtKeyUsage) (string, error) {
@@ -137,17 +288,39 @@ func PeerIdentity(ctx context.Context) (string, error) {
 	if !ok || len(info.State.PeerCertificates) == 0 {
 		return "", errors.New("gRPC peer is not authenticated with TLS")
 	}
-	leaf := info.State.PeerCertificates[0]
+	return peerIdentityFromTLSState(info.State, nil)
+}
+
+// PeerIdentityFromTLSState extracts an authenticated SPIFFE peer identity
+// from a TLS connection and requires the peer certificate to explicitly allow
+// the requested EKU. The caller must use the state from a TLS configuration
+// that verified the peer chain.
+func PeerIdentityFromTLSState(state tls.ConnectionState, usage x509.ExtKeyUsage) (string, error) {
+	return peerIdentityFromTLSState(state, &usage)
+}
+
+func peerIdentityFromTLSState(state tls.ConnectionState, usage *x509.ExtKeyUsage) (string, error) {
+	if len(state.PeerCertificates) == 0 {
+		return "", errors.New("TLS peer certificate is missing")
+	}
+	leaf := state.PeerCertificates[0]
 	now := time.Now()
 	if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
-		return "", errors.New("gRPC peer TLS certificate is outside its validity period")
+		return "", errors.New("TLS peer certificate is outside its validity period")
+	}
+	if usage != nil {
+		if err := requireEKU(leaf, *usage); err != nil {
+			return "", fmt.Errorf("TLS peer certificate: %w", err)
+		}
 	}
 	id, err := x509svid.IDFromCert(leaf)
 	if err != nil {
-		return "", fmt.Errorf("gRPC peer identity: %w", err)
+		return "", fmt.Errorf("TLS peer identity: %w", err)
 	}
 	if _, err := parseIdentity(id.String()); err != nil {
-		return "", fmt.Errorf("gRPC peer has an unsupported identity: %w", err)
+		if id.String() != EgressProxyURI {
+			return "", fmt.Errorf("TLS peer has an unsupported identity: %w", err)
+		}
 	}
 	return id.String(), nil
 }
@@ -176,12 +349,11 @@ type fileSource struct {
 	config   Config
 	usage    x509.ExtKeyUsage
 	identity spiffeid.ID
+	bundles  *fileBundleSource
 
-	mu          sync.Mutex
-	svid        *x509svid.SVID
-	svidFiles   []os.FileInfo
-	bundle      *x509bundle.Bundle
-	bundleFiles []os.FileInfo
+	mu        sync.Mutex
+	svid      *x509svid.SVID
+	svidFiles []os.FileInfo
 }
 
 // newFileSource loads the local credentials and requires the certificate to
@@ -192,7 +364,11 @@ func newFileSource(config Config, usage x509.ExtKeyUsage) (*fileSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	source := &fileSource{config: config, usage: usage, identity: svid.ID}
+	bundles, err := newFileBundleSource(config.CAFile)
+	if err != nil {
+		return nil, err
+	}
+	source := &fileSource{config: config, usage: usage, identity: svid.ID, bundles: bundles}
 	if _, err := parseIdentity(svid.ID.String()); err != nil {
 		return nil, fmt.Errorf("local certificate identity: %w", err)
 	}
@@ -224,26 +400,51 @@ func (s *fileSource) GetX509SVID() (*x509svid.SVID, error) {
 }
 
 func (s *fileSource) GetX509BundleForTrustDomain(td spiffeid.TrustDomain) (*x509bundle.Bundle, error) {
+	return s.bundles.GetX509BundleForTrustDomain(td)
+}
+
+// fileBundleSource loads and reloads only the mounted trust bundle. Bearer
+// TLS clients use it without needing a local SVID, while fileSource embeds the
+// same behavior for mTLS clients and servers.
+type fileBundleSource struct {
+	caFile string
+	mu     sync.Mutex
+	bundle *x509bundle.Bundle
+	files  []os.FileInfo
+}
+
+func newFileBundleSource(caFile string) (*fileBundleSource, error) {
+	if caFile == "" || !filepath.IsAbs(caFile) {
+		return nil, errors.New("CA file must be an absolute path")
+	}
+	source := &fileBundleSource{caFile: caFile}
+	if _, err := source.GetX509BundleForTrustDomain(trustDomain); err != nil {
+		return nil, err
+	}
+	return source, nil
+}
+
+func (s *fileBundleSource) GetX509BundleForTrustDomain(td spiffeid.TrustDomain) (*x509bundle.Bundle, error) {
 	if td != trustDomain {
 		return nil, fmt.Errorf("no trust bundle for trust domain %q", td)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	files, err := statFiles(s.config.CAFile)
+	files, err := statFiles(s.caFile)
 	if err != nil {
 		return nil, err
 	}
-	if s.bundle != nil && sameFiles(files, s.bundleFiles) {
+	if s.bundle != nil && sameFiles(files, s.files) {
 		return s.bundle, nil
 	}
-	bundle, err := x509bundle.Load(trustDomain, s.config.CAFile)
+	bundle, err := x509bundle.Load(trustDomain, s.caFile)
 	if err != nil {
 		return nil, fmt.Errorf("load configured CA roots: %w", err)
 	}
 	if bundle.Empty() {
 		return nil, errors.New("CA file contains no certificates")
 	}
-	s.bundle, s.bundleFiles = bundle, files
+	s.bundle, s.files = bundle, files
 	return bundle, nil
 }
 
@@ -308,7 +509,7 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 
 // parseIdentity accepts only GatewayURI or a canonical EnvironmentRuntimeURI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
-	if identity != GatewayURI {
+	if identity != GatewayURI && identity != EgressProxyURI {
 		if _, _, _, err := ParseEnvironmentRuntimeURI(identity); err != nil {
 			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid EnvironmentRuntimeURI: %w", err)
 		}

@@ -2,7 +2,8 @@
 
 [`listener`](listener/config.go) and [`listener.py`](listener.py) define the shared authoring
 and Go decoding contract for workload listeners: a listen address and an explicit list of
-supported authentication methods. `kubernetes_bearer` requires an audience. Unsupported modes,
+supported authentication methods. `kubernetes_bearer` requires an audience; `spiffe` requires
+serving TLS and trust roots. Unsupported modes,
 empty lists, duplicates and unknown fields fail configuration loading; configuring a method does
 not grant its caller authorization. The egress proxy consumes this contract.
 
@@ -54,3 +55,14 @@ Operator and browser-session authentication use separate mechanisms and do not p
 principal. The approved [delegated authorization design](../docs/delegated_authorization.md) records
 the shared protocol. Its Action Service sender and SessionDispatcher receiver integrations remain
 separate work and are prerequisites for an operational delegated call.
+
+[`listener`](listener/config.go) and its [authoring model](listener.py) describe one address,
+optional serving `tls` (`cert_file`, `key_file`), and a nonempty `auth` allowlist. `spiffe` requires
+TLS and an absolute `ca_file`; `kubernetes_bearer` requires its TokenReview `audience`. Each mode
+accepts only its own fields. Unknown, duplicate or incomplete modes fail startup. SPIFFE-only TLS
+requires a client certificate;
+a mixed listener permits no certificate but verifies any certificate presented with the same
+chain, Runtime URI and explicit clientAuth checks. Supplying both a certificate and an
+application authentication credential is ambiguous and fails. Selection never depends on list
+order or retries another method after a failed credential. Each service retains its own
+namespace admission and authorization after authentication.

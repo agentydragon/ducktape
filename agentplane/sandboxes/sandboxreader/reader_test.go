@@ -218,6 +218,103 @@ func TestGetReadsTheSandboxAndItsIdentity(t *testing.T) {
 	}
 }
 
+func TestFindRunnerCredentialRequiresCurrentAcceptedCredentialAndReturnsBoundPod(t *testing.T) {
+	clearedCredential := runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "pod-a", "pod-a")
+	clearedCredential.Status.RunnerCredential = nil
+	deletingAcceptedCredential := deletingSandbox(runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "pod-a", "pod-a"))
+	cases := []struct {
+		name     string
+		resource *sandboxapi.Sandbox
+		wantPod  string
+		found    bool
+	}{
+		{name: "Pod credential", resource: runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "pod-a", "pod-a"), wantPod: "pod-a", found: true},
+		{name: "KubeVirt launcher incarnation", resource: runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindVM, "cred-a", "cred-a", "ignored", "launcher-a"), wantPod: "launcher-a", found: true},
+		{name: "stale accepted credential", resource: runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-old", "cred-a", "pod-a", ""), found: false},
+		{name: "unaccepted generation", resource: runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-a", "", "pod-a", ""), found: false},
+		{name: "missing Pod binding", resource: runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "", ""), found: false},
+		{name: "changed Pod binding", resource: runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "pod-a", "replacement-pod"), found: false},
+		{name: "missing VM incarnation", resource: runnerSandbox("sandbox-a", "uid-a", sandboxapi.RunnerCredentialKindVM, "cred-a", "cred-a", "", ""), found: false},
+		{name: "cleared credential", resource: clearedCredential, found: false},
+		{name: "deleting Sandbox with accepted credential", resource: deletingAcceptedCredential, wantPod: "pod-a", found: true},
+		{name: "quiescing stage with accepted credential", resource: runnerSandboxWithStopStage("sandbox-a", "uid-a", sandboxapi.StopStageQuiescing), wantPod: "pod-a", found: true},
+		{name: "deleting stage with accepted credential", resource: runnerSandboxWithStopStage("sandbox-a", "uid-a", sandboxapi.StopStageDeleting), wantPod: "pod-a", found: true},
+		{name: "stopped stage with accepted credential", resource: runnerSandboxWithStopStage("sandbox-a", "uid-a", sandboxapi.StopStageStopped), wantPod: "pod-a", found: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reader, err := New(testNamespace, clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(tc.resource).Build())
+			if err != nil {
+				t.Fatal(err)
+			}
+			view, found, err := reader.FindRunnerCredential(context.Background(), "uid-a", "cred-a")
+			if err != nil || found != tc.found {
+				t.Fatalf("FindRunnerCredential() found=%v err=%v; want found=%v", found, err, tc.found)
+			}
+			if !tc.found {
+				return
+			}
+			if view.Identity.Name != "sandbox-a" || view.Identity.Uid != "uid-a" {
+				t.Fatalf("identity = %#v", view.Identity)
+			}
+			if got, ok := view.RunnerPodUID(); !ok || got != tc.wantPod {
+				t.Fatalf("RunnerPodUID() = %q, %v; want %q", got, ok, tc.wantPod)
+			}
+			if name, _, ok := view.RunnerPod(); !ok || name != "runner" {
+				t.Fatalf("RunnerPod() name = %q, %v; want runner", name, ok)
+			}
+		})
+	}
+}
+
+func TestFindRunnerCredentialDoesNotMatchReplacedSandboxUIDOrAnotherCredential(t *testing.T) {
+	resource := runnerSandbox("sandbox-a", "uid-current", sandboxapi.RunnerCredentialKindPod, "cred-current", "cred-current", "pod-current", "")
+	reader, err := New(testNamespace, clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource).Build())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ uid, credential string }{
+		{uid: "uid-old", credential: "cred-current"},
+		{uid: "uid-current", credential: "cred-old"},
+	} {
+		if view, found, err := reader.FindRunnerCredential(context.Background(), tc.uid, tc.credential); err != nil || found || view.Resource != nil {
+			t.Fatalf("FindRunnerCredential(%q, %q) = %#v, %v, %v; want no match", tc.uid, tc.credential, view, found, err)
+		}
+	}
+}
+
+func TestFindRunnerCredentialDoesNotMatchRemovedSandbox(t *testing.T) {
+	reader := newReader(t)
+	if view, found, err := reader.FindRunnerCredential(context.Background(), "uid-a", "cred-a"); err != nil || found || view.Resource != nil {
+		t.Fatalf("FindRunnerCredential() = %#v, %v, %v; want no match", view, found, err)
+	}
+}
+
+func runnerSandbox(name string, uid types.UID, kind sandboxapi.RunnerCredentialKind, id, acceptedID, podUID, incarnationUID string) *sandboxapi.Sandbox {
+	resource := sandbox(testNamespace, name, uid)
+	resource.Status.RunnerCredential = &sandboxapi.RunnerCredential{ID: id, AcceptedID: acceptedID, Kind: kind, PodUID: podUID}
+	if kind == sandboxapi.RunnerCredentialKindVM {
+		resource.Status.RunnerCredential.LastVMIUID = "vmi-a"
+	}
+	if incarnationUID != "" {
+		resource.Status.Incarnation = &sandboxapi.Incarnation{Name: "runner", UID: incarnationUID}
+	}
+	return resource
+}
+
+func runnerSandboxWithStopStage(name string, uid types.UID, stage sandboxapi.StopStage) *sandboxapi.Sandbox {
+	resource := runnerSandbox(name, uid, sandboxapi.RunnerCredentialKindPod, "cred-a", "cred-a", "pod-a", "pod-a")
+	resource.Status.StopStage = stage
+	return resource
+}
+
+func deletingSandbox(resource *sandboxapi.Sandbox) *sandboxapi.Sandbox {
+	now := metav1.Now()
+	resource.DeletionTimestamp = &now
+	resource.Finalizers = []string{"test"}
+	return resource
+}
+
 func TestGetRefusesWhatHasNoSandboxOrNoUsableIdentity(t *testing.T) {
 	reader := newReader(t, sandbox(testNamespace, "no-uid", ""))
 	for name, want := range map[string]codes.Code{"absent": codes.NotFound, "no-uid": codes.Unavailable} {

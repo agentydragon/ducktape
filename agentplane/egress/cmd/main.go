@@ -24,15 +24,21 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"k8s.io/apimachinery/pkg/runtime"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -114,12 +120,17 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 	return base, nil
 }
 
-// workloadIdentity reviews the hop bearer for the proxy's own audience and each projected token for
-// its audience, accepting only ServiceAccounts of the allowed namespaces.
+// workloadIdentity reviews an enabled bearer hop and each projected token for its audience,
+// accepting only ServiceAccounts of the allowed namespaces. SPIFFE-only listeners have no hop
+// bearer resolver.
 func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, *auth.Resolver, error) {
-	hop, err := auth.NewResolver(reviews, c.Forward.BearerAudience(), c.AllowedServiceAccountNamespaces)
-	if err != nil {
-		return nil, nil, err
+	var hop *auth.Resolver
+	var err error
+	if c.Forward.Has(listener.KubernetesBearer) {
+		hop, err = auth.NewResolver(reviews, c.Forward.BearerAudience(), c.AllowedServiceAccountNamespaces)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
 	for _, audience := range c.ProjectedTokenAudiences {
@@ -173,6 +184,13 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer proxyListener.Close()
+	proxyTLS, err := c.Forward.TLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		return fmt.Errorf("proxy listener TLS configuration: %w", err)
+	}
+	if proxyTLS != nil {
+		proxyListener = tls.NewListener(proxyListener, proxyTLS)
+	}
 	adminListener, err := openListener("admin", c.AdminListenAddress)
 	if err != nil {
 		return err
@@ -193,6 +211,24 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	verifier, rulesResolver, err := workloadIdentity(reviews.TokenReviews(), c)
 	if err != nil {
 		return err
+	}
+	sandboxReaders := map[string]*sandboxreader.Reader{}
+	if c.Forward.Has(listener.SPIFFE) {
+		scheme := runtime.NewScheme()
+		if err := sandboxapi.AddToScheme(scheme); err != nil {
+			return fmt.Errorf("register Sandbox API: %w", err)
+		}
+		objects, err := client.New(base, client.Options{Scheme: scheme})
+		if err != nil {
+			return fmt.Errorf("create live Sandbox reader: %w", err)
+		}
+		for _, namespace := range c.AllowedServiceAccountNamespaces {
+			reader, err := sandboxreader.New(namespace, objects)
+			if err != nil {
+				return fmt.Errorf("configure Sandbox reader for %q: %w", namespace, err)
+			}
+			sandboxReaders[namespace] = reader
+		}
 	}
 	ca, err := tls.LoadX509KeyPair(c.CACert, c.CAKey)
 	if err != nil {
@@ -232,9 +268,14 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return err
 	}
 
+	authentication, err := identity.NewAuthenticator(c.Forward, verifier, sandboxReaders)
+	if err != nil {
+		return err
+	}
 	egress, err := proxy.New(proxy.Options{
-		CA: ca, UpstreamRoots: roots, Identity: verifier, Policy: index,
+		CA: ca, UpstreamRoots: roots, Authentication: authentication, Policy: index,
 		Upstream: upstream.NewResolver(c.ExemptNetworks), Record: decisions.Record,
+		TLSPassthroughTargets: c.TLSPassthroughTargets,
 	})
 	if err != nil {
 		return err

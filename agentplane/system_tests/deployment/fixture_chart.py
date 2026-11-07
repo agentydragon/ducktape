@@ -280,6 +280,7 @@ def environment(
             hostname=None,
         ),
         vm_sandboxes=vm_sandboxes,
+        runner_egress_mtls=not vm_sandboxes,
         vm_resources=vm_configuration.RESOURCES if vm_sandboxes else None,
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
@@ -414,6 +415,7 @@ def build_chart(
         chart,
         "egress",
         env,
+        enable_svid_auth=env.runner_egress_mtls,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],

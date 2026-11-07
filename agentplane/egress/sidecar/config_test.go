@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	workloadlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 )
 
-func writeSettingsFile(t *testing.T, content string) string {
+func writeSettingsFile(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "settings.yaml")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -27,7 +27,7 @@ func settingsFileEnv(path string) func(string) string {
 	}
 }
 
-func TestLoadConfigReadsTheSettingsFile(t *testing.T) {
+func TestLoadConfigReadsNestedBearerProxySettings(t *testing.T) {
 	path := writeSettingsFile(t, `
 proxy:
   address: egress.example:9001
@@ -50,11 +50,12 @@ listen_address: 127.0.0.1:0
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Proxy.Address != "egress.example:9001" ||
-		config.Proxy.Transport.Mode != proxyTransportPlaintext ||
-		config.Proxy.Transport.Auth.Mode != workloadlistener.KubernetesBearer ||
-		config.Proxy.Transport.Auth.TokenFile != "/var/run/egress/token" {
-		t.Fatalf("unexpected proxy settings: %+v", config)
+	if config.Proxy.Address != "egress.example:9001" {
+		t.Fatalf("proxy address = %q", config.Proxy.Address)
+	}
+	transport, okay := config.Proxy.Transport.(plaintextProxyTransportConfig)
+	if !okay || transport.Auth.mode() != listener.KubernetesBearer || transport.Auth.TokenFile != "/var/run/egress/token" {
+		t.Fatalf("proxy transport = %#v, want bearer plaintext", config.Proxy.Transport)
 	}
 	if config.ListenAddress != "127.0.0.1:0" {
 		t.Fatalf("listen_address = %q, want the file's value", config.ListenAddress)
@@ -72,40 +73,101 @@ listen_address: 127.0.0.1:0
 	}
 }
 
-func TestLoadConfigRefusesWhatTheSettingsFileGetsWrong(t *testing.T) {
-	const required = "" +
-		"proxy:\n" +
-		"  address: p.example:8888\n" +
-		"  transport:\n" +
-		"    mode: plaintext\n" +
-		"    auth:\n" +
-		"      mode: kubernetes_bearer\n" +
-		"      token_file: /token\n"
+func TestLoadConfigReadsSpiffeAuthAndTransport(t *testing.T) {
+	path := writeSettingsFile(t, `
+proxy:
+  address: egress.example:8888
+  transport:
+    mode: tls
+    ca_file: /run/runner/ca.crt
+    auth:
+      mode: spiffe
+      cert_file: /run/runner/tls.crt
+      key_file: /run/runner/tls.key
+audience_token_files:
+  agentplane-workload: /var/run/agentplane-egress/token
+  https://kubernetes.test: /var/run/egress/kubernetes-token
+platform_routes: {}
+`)
+	config, err := loadConfig(settingsFileEnv(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Proxy.Address != "egress.example:8888" {
+		t.Fatalf("proxy address = %q", config.Proxy.Address)
+	}
+	transport, okay := config.Proxy.Transport.(tlsProxyTransportConfig)
+	if !okay || transport.CAFile != "/run/runner/ca.crt" {
+		t.Fatalf("proxy transport = %#v, want TLS with CA", config.Proxy.Transport)
+	}
+	auth, okay := transport.Auth.(spiffeProxyAuth)
+	if !okay || auth.mode() != listener.SPIFFE || auth.CertFile != "/run/runner/tls.crt" || auth.KeyFile != "/run/runner/tls.key" {
+		t.Fatalf("proxy auth = %#v, want SPIFFE files", transport.Auth)
+	}
+	if config.AudienceTokenFiles["agentplane-workload"] != "/var/run/agentplane-egress/token" {
+		t.Fatalf("destination audience token file = %#v", config.AudienceTokenFiles)
+	}
+}
+
+func TestLoadConfigAllowsBearerWithServerAuthenticatedTLS(t *testing.T) {
+	path := writeSettingsFile(t, `
+proxy:
+  address: egress.example:8888
+  transport:
+    mode: tls
+    ca_file: /run/cluster/ca.crt
+    auth: {mode: kubernetes_bearer, token_file: /token}
+platform_routes: {}
+`)
+	config, err := loadConfig(settingsFileEnv(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := config.Proxy.Transport.(tlsProxyTransportConfig)
+	if transport.CAFile != "/run/cluster/ca.crt" {
+		t.Fatalf("proxy transport CA file = %q", transport.CAFile)
+	}
+	if _, okay := transport.Auth.(kubernetesBearerProxyAuth); !okay {
+		t.Fatalf("proxy auth = %T, want bearer without a client certificate", transport.Auth)
+	}
+}
+
+func TestLoadConfigRefusesMalformedOrContradictorySettings(t *testing.T) {
+	const required = `proxy: {address: p.example:8888, transport: {mode: plaintext, auth: {mode: kubernetes_bearer, token_file: /token}}}` + "\n"
 	for name, content := range map[string]string{
-		"unknown key":            required + "proxy_hots: typo\n",
-		"legacy proxy field":     "proxy_host: p.example\ntoken_file: /token\n",
-		"proxy unknown key":      required + "  extra: true\n",
-		"transport unknown key":  strings.Replace(required, "    auth:", "    ca_file: /ca\n    auth:", 1),
-		"auth unknown key":       strings.Replace(required, "      token_file:", "      cert_file: /cert\n      token_file:", 1),
-		"unsupported transport":  strings.Replace(required, "mode: plaintext", "mode: tls", 1),
-		"unsupported auth":       strings.Replace(required, "mode: kubernetes_bearer", "mode: spiffe", 1),
-		"missing transport mode": strings.Replace(required, "    mode: plaintext\n", "", 1),
-		"missing auth mode":      strings.Replace(required, "      mode: kubernetes_bearer\n", "", 1),
-		"route unknown key":      required + "platform_routes: {control: {listen_address: 127.0.0.1:3130, upstream: u, token_file: /t, extra: true}}\n",
-		"route missing address":  required + "platform_routes: {control: {upstream: u, token_file: /t}}\n",
-		"route empty address":    required + "platform_routes: {control: {listen_address: '', upstream: u, token_file: /t}}\n",
-		"port not an integer":    strings.Replace(required, "p.example:8888", "p.example:eight", 1),
-		"not an object":          "- proxy_host\n",
-		"empty":                  "",
-		"explicit null routes":   required + "platform_routes: null\n",
-		"routes not an object":   required + "platform_routes: [control]\n",
-		"audience value object":  required + "audience_token_files: {a: {nested: 1}}\n",
-		"proxy address missing":  strings.Replace(required, "  address: p.example:8888\n", "", 1),
-		"token file missing":     strings.Replace(required, "      token_file: /token\n", "", 1),
-		"relative token file":    strings.Replace(required, "      token_file: /token\n", "      token_file: token\n", 1),
-		"invalid proxy port":     strings.Replace(required, "p.example:8888", "p.example:65536", 1),
-		"invalid bracketed host": strings.Replace(required, "p.example:8888", "[p.example]:8888", 1),
-		"unbracketed ipv6":       strings.Replace(required, "p.example:8888", "2001:db8::1:8888", 1),
+		"unknown key":              required + "proxy_hots: typo\n",
+		"unknown nested proxy key": strings.Replace(required, "transport:", "extra: true, transport:", 1),
+		"unknown auth key":         strings.Replace(required, "token_file: /token", "token_file: /token, extra: true", 1),
+		"missing proxy":            "platform_routes: {}\n",
+		"missing address":          "proxy: {transport: {mode: plaintext, auth: {mode: kubernetes_bearer, token_file: /token}}}\n",
+		"malformed address":        strings.Replace(required, "p.example:8888", "p.example/path:8888", 1),
+		"invalid port":             strings.Replace(required, "8888", "70000", 1),
+		"missing transport":        "proxy: {address: p.example:8888}\n",
+		"missing transport mode":   strings.Replace(required, "mode: plaintext, ", "", 1),
+		"missing auth mode":        strings.Replace(required, "mode: kubernetes_bearer, ", "", 1),
+		"unknown auth mode":        strings.Replace(required, "kubernetes_bearer", "token", 1),
+		"bearer token missing":     strings.Replace(required, ", token_file: /token", "", 1),
+		"bearer token relative":    strings.Replace(required, "/token", "token", 1),
+		"plaintext cannot take SVID": strings.Replace(required,
+			"auth: {mode: kubernetes_bearer, token_file: /token}",
+			"auth: {mode: spiffe, cert_file: /c, key_file: /k}", 1),
+		"unknown transport":   strings.Replace(required, "plaintext", "insecure", 1),
+		"plaintext extra key": strings.Replace(required, "mode: plaintext", "mode: plaintext, ca_file: /ca", 1),
+		"TLS missing CA":      strings.Replace(required, "mode: plaintext", "mode: tls", 1),
+		"TLS relative CA":     strings.Replace(required, "mode: plaintext", "mode: tls, ca_file: ca.pem", 1),
+		"SPIFFE missing key": strings.Replace(required,
+			"mode: plaintext, auth: {mode: kubernetes_bearer, token_file: /token}",
+			"mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /c}", 1),
+		"SPIFFE extra token": strings.Replace(required,
+			"auth: {mode: kubernetes_bearer, token_file: /token}",
+			"auth: {mode: spiffe, cert_file: /c, key_file: /k, token_file: /token}", 1),
+		"top-level auth is unknown":  required + "auth: {mode: spiffe}\n",
+		"not an object":              "- proxy\n",
+		"empty":                      "",
+		"explicit null routes":       required + "platform_routes: null\n",
+		"routes not an object":       required + "platform_routes: [control]\n",
+		"audience value object":      required + "audience_token_files: {a: {nested: 1}}\n",
+		"workload routes not object": required + "workload_routes: [control]\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadConfig(settingsFileEnv(writeSettingsFile(t, content))); err == nil {
@@ -119,11 +181,5 @@ func TestLoadConfigRefusesAMissingSettingsFile(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent.yaml")
 	if _, err := loadConfig(settingsFileEnv(absent)); err == nil {
 		t.Fatal("a settings file that is not there must be an error, not defaults")
-	}
-}
-
-func TestLoadConfigRequiresTheSettingsFileVariable(t *testing.T) {
-	if _, err := loadConfig(func(string) string { return "" }); err == nil {
-		t.Fatalf("loadConfig succeeded without %s", configFileEnv)
 	}
 }

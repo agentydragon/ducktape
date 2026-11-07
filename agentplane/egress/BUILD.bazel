@@ -68,6 +68,7 @@ py_test(
         "//agentplane/workload_auth:listener",
         "//util:net",
         "@pypi//aiohttp",
+        "@pypi//cryptography",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",
@@ -108,7 +109,21 @@ py_library(
     ],
     deps = [
         ":platform_routes",
+        "//agentplane/environment_runtime_transport:config",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_sidecar_config",
+    srcs = ["test_sidecar_config.py"],
+    deps = [
+        ":conftest",
+        ":sidecar_config",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "gate.go",
         "lifecycle.go",
+        "passthrough.go",
         "proxy.go",
         "tunnel.go",
     ],
@@ -16,6 +17,7 @@ go_library(
         "//agentplane/egress/policy",
         "//agentplane/egress/presentation",
         "//agentplane/egress/upstream",
+        "//agentplane/environment_runtime_transport",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/workload_auth/auth",
@@ -42,6 +44,7 @@ go_test(
         "//agentplane/testing/kubeapiserver",
         "//agentplane/watchhealth",
         "//agentplane/workload_auth/auth",
+        "//agentplane/workload_auth/listener",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

@@ -34,7 +34,11 @@ class Settings(BaseModel):
         "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
         "token at all; it grants nothing on its own, since a subject no binding names still reaches no rule.",
     )
-    forward: Listener = Field(description="Proxy listener address and workload authentication allowlist.")
+    tls_passthrough_targets: list[str] = Field(
+        default_factory=list,
+        description="Exact service authorities carried as opaque TLS; each destination verifies its caller.",
+    )
+    forward: Listener = Field(description="The one forward listener, transport and accepted hop credentials.")
     admin_listen_address: str = Field(
         default="0.0.0.0:8081",
         description="Shared gRPC listener address serving rules, health and, when configured, EgressAdmin.",
@@ -60,8 +64,8 @@ class Settings(BaseModel):
     )
     projected_token_audiences: frozenset[str] = Field(
         default=frozenset(),
-        description="Every audience a rule may substitute a sidecar's projected token for, the API server's "
-        "among them. Reviewing the list here is what decides which destinations this proxy will spend a "
+        description="Every audience a rule may substitute a sidecar's projected token for. Reviewing "
+        "the list here is what decides which destinations this proxy will spend a "
         "caller's own identity on; a credential naming an audience absent from it resolves to nothing.",
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")

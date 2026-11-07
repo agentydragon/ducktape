@@ -29,6 +29,7 @@ from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
+from cluster.cdk8s.agentplane.egress import PROXY_PORT
 from util.settings_contract import env_name
 
 _MCP = McpInputs(
@@ -133,6 +134,20 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
     egress_config = yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    assert egress_config["forward"] == {
+        "listen_address": f"0.0.0.0:{PROXY_PORT}",
+        "tls": {"cert_file": "/etc/agentplane-egress/svid/tls.crt", "key_file": "/etc/agentplane-egress/svid/tls.key"},
+        "auth": [
+            {"mode": "spiffe", "ca_file": "/etc/agentplane-egress/svid-ca/ca-certificates.crt"},
+            {"mode": "kubernetes_bearer", "audience": WORKLOAD_TOKEN_AUDIENCE},
+        ],
+    }
+    assert WORKLOAD_TOKEN_AUDIENCE in egress_config["projected_token_audiences"]
+    proxy_certificate = _resource(docs, "Certificate", "agentplane-egress-proxy")["spec"]
+    assert proxy_certificate["uris"] == ["spiffe://agentplane/egress-proxy"]
+    assert proxy_certificate["secretName"] == "agentplane-egress-proxy-tls"
+    assert proxy_certificate["issuerRef"] == {"name": "agentplane-runner-ca", "kind": "Issuer"}
+    assert any(mount["name"] == "svid" for mount in proxy["volumeMounts"])
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
     assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
     app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
@@ -286,6 +301,27 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == f"http://{telemetry_route['upstream']}"
     assert sidecar_env.get("OTEL_SDK_DISABLED") != "true"
     assert telemetry_route["upstream"] == "alloy.monitoring.svc.cluster.local:4317"
+    runner_pod_spec = template["spec"]["pod"]["spec"]
+    runner_egress_volume = next(v for v in runner_pod_spec["volumes"] if v["name"] == "egress-token")
+    runner_token_sources = runner_egress_volume["projected"]["sources"]
+    assert any(
+        source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress"
+        and source["serviceAccountToken"]["path"] == "token"
+        for source in runner_token_sources
+    )
+    proxy = sidecar_settings["proxy"]
+    assert proxy["address"].endswith(f":{PROXY_PORT}")
+    assert proxy["transport"] == {
+        "mode": "tls",
+        "ca_file": "/run/agentplane/environment-runtime-tls/ca.crt",
+        "auth": {
+            "mode": "spiffe",
+            "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
+            "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
+        },
+    }
+    assert "authenticated_workload_audience" not in sidecar_settings
+    assert sidecar_settings["audience_token_files"][WORKLOAD_TOKEN_AUDIENCE] == "/var/run/agentplane-egress/token"
     for name in ("sandbox", "sandbox-build"):
         pod_template = _resource(docs, "PodTemplate", name)
         assert pod_template["template"]["spec"]["automountServiceAccountToken"] is False

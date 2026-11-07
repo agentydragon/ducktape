@@ -23,6 +23,7 @@ import (
 const (
 	EnvironmentRuntimeTLSVolumeName   = "agentplane-environment-runtime-tls"
 	EnvironmentRuntimeTLSMountPath    = "/run/agentplane/environment-runtime-tls"
+	EnvironmentRuntimeEgressSidecar   = "egress-sidecar"
 	EnvironmentRuntimeTrustVolumeName = "agentplane-environment-runtime-trust"
 	EnvironmentRuntimeTrustMountPath  = "/run/agentplane/environment-runtime-trust"
 	RunnerTrustBundleName             = "cluster-internal-ca-bundle"
@@ -356,7 +357,23 @@ func (r *Reconciler) ensureRunnerCertificate(ctx context.Context, sandbox *sandb
 		return nil, err
 	}
 	desiredSpec, _, _ := unstructured.NestedMap(certificate.Object, "spec")
-	if !found || !runnerCertificateSpecMatches(currentSpec, desiredSpec) {
+	if !found {
+		return &unready{reason: "CertificateIdentityConflict", message: fmt.Sprintf("Certificate %s does not have the immutable runner identity", secretName)}, nil
+	}
+	if runnerCertificateNeedsClientAuthUpgrade(currentSpec, desiredSpec) {
+		currentSpec["usages"] = desiredSpec["usages"]
+		if err := unstructured.SetNestedMap(current.Object, currentSpec, "spec"); err != nil {
+			return nil, err
+		}
+		if err := r.Update(ctx, current); err != nil {
+			if apierrors.IsConflict(err) {
+				return credentialPending("CertificatePending", fmt.Sprintf("Certificate %s is being updated", secretName)), nil
+			}
+			return nil, err
+		}
+		return credentialPending("CertificatePending", fmt.Sprintf("Certificate %s is being reissued with client auth", secretName)), nil
+	}
+	if !runnerCertificateSpecMatches(currentSpec, desiredSpec) {
 		return &unready{reason: "CertificateIdentityConflict", message: fmt.Sprintf("Certificate %s does not have the immutable runner identity", secretName)}, nil
 	}
 	if !certificateReady(current) {
@@ -412,7 +429,7 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer, credentialID s
 				"group": runnerCertificateGroup,
 			},
 			"uris":       []interface{}{runnerCertificateURI(sandbox, credentialID)},
-			"usages":     []interface{}{"digital signature", "server auth"},
+			"usages":     []interface{}{"digital signature", "server auth", "client auth"},
 			"privateKey": map[string]interface{}{"algorithm": "ECDSA", "size": int64(256), "rotationPolicy": "Always"},
 			"secretTemplate": map[string]interface{}{"labels": map[string]interface{}{
 				sandboxapi.SandboxLabel:                      sandbox.Name,
@@ -479,6 +496,27 @@ func runnerCertificateSpecMatches(actual, expected map[string]interface{}) bool 
 		return false
 	}
 	return true
+}
+
+// runnerCertificateNeedsClientAuthUpgrade recognizes only the exact controller-owned certificate
+// profile we issued before the egress sidecar needed a client certificate. Its URI, issuer, key
+// policy, lifetime, labels and every other spec field must still match before we change this one
+// field; arbitrary drift remains a conflict.
+func runnerCertificateNeedsClientAuthUpgrade(actual, expected map[string]interface{}) bool {
+	actualUsages, ok := actual["usages"].([]interface{})
+	if !ok || !equality.Semantic.DeepEqual(actualUsages, []interface{}{"digital signature", "server auth"}) {
+		return false
+	}
+	desiredUsages, ok := expected["usages"].([]interface{})
+	if !ok || !equality.Semantic.DeepEqual(desiredUsages, []interface{}{"digital signature", "server auth", "client auth"}) {
+		return false
+	}
+	withoutUsageChange := make(map[string]interface{}, len(actual))
+	for key, value := range actual {
+		withoutUsageChange[key] = value
+	}
+	withoutUsageChange["usages"] = expected["usages"]
+	return runnerCertificateSpecMatches(withoutUsageChange, expected)
 }
 
 func certificateReady(certificate *unstructured.Unstructured) bool {
@@ -596,8 +634,18 @@ func withRunnerTLS(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemp
 	if i < 0 {
 		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no %s container", template.Name, EnvironmentRuntimeContainer)}
 	}
+	proxy := slices.IndexFunc(spec.InitContainers, func(container corev1.Container) bool { return container.Name == EnvironmentRuntimeEgressSidecar })
+	proxyIsInit := proxy >= 0
+	if proxy < 0 {
+		proxy = slices.IndexFunc(spec.Containers, func(container corev1.Container) bool { return container.Name == EnvironmentRuntimeEgressSidecar })
+	}
+	reservedMount := func(container corev1.Container) bool {
+		return slices.ContainsFunc(container.VolumeMounts, func(mount corev1.VolumeMount) bool {
+			return mount.Name == EnvironmentRuntimeTLSVolumeName || mount.MountPath == EnvironmentRuntimeTLSMountPath
+		})
+	}
 	if slices.ContainsFunc(spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == EnvironmentRuntimeTLSVolumeName }) ||
-		slices.ContainsFunc(spec.Containers[i].VolumeMounts, func(mount corev1.VolumeMount) bool { return mount.MountPath == EnvironmentRuntimeTLSMountPath }) {
+		slices.ContainsFunc(spec.Containers, reservedMount) || slices.ContainsFunc(spec.InitContainers, reservedMount) {
 		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the reserved runner TLS volume or mount", template.Name)}
 	}
 	mode := int32(0440)
@@ -620,6 +668,17 @@ func withRunnerTLS(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemp
 	spec.Containers[i].VolumeMounts = append(spec.Containers[i].VolumeMounts, corev1.VolumeMount{
 		Name: EnvironmentRuntimeTLSVolumeName, MountPath: EnvironmentRuntimeTLSMountPath, ReadOnly: true,
 	})
+	if proxyIsInit {
+		proxyMount := corev1.VolumeMount{
+			Name: EnvironmentRuntimeTLSVolumeName, MountPath: EnvironmentRuntimeTLSMountPath, ReadOnly: true,
+		}
+		spec.InitContainers[proxy].VolumeMounts = append(spec.InitContainers[proxy].VolumeMounts, proxyMount)
+	} else if proxy >= 0 {
+		proxyMount := corev1.VolumeMount{
+			Name: EnvironmentRuntimeTLSVolumeName, MountPath: EnvironmentRuntimeTLSMountPath, ReadOnly: true,
+		}
+		spec.Containers[proxy].VolumeMounts = append(spec.Containers[proxy].VolumeMounts, proxyMount)
+	}
 	return nil
 }
 

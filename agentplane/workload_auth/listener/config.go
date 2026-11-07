@@ -1,20 +1,39 @@
-// Package listener defines the authentication methods admitted on one listener.
+// Package listener configures the authentication methods admitted on one listener.
 package listener
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"reflect"
+
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 )
 
 type Mode string
 
-const KubernetesBearer Mode = "kubernetes_bearer"
+const (
+	SPIFFE           Mode = "spiffe"
+	KubernetesBearer Mode = "kubernetes_bearer"
+)
+
+type TLS struct {
+	CertFile string `mapstructure:"cert_file"`
+	KeyFile  string `mapstructure:"key_file"`
+}
 
 type Authentication interface {
 	Mode() Mode
 	authentication()
 }
+
+type SPIFFEAuth struct {
+	CAFile string
+}
+
+func (*SPIFFEAuth) authentication() {}
+func (*SPIFFEAuth) Mode() Mode      { return SPIFFE }
 
 type KubernetesBearerAuth struct {
 	Audience string
@@ -23,15 +42,16 @@ type KubernetesBearerAuth struct {
 func (*KubernetesBearerAuth) authentication() {}
 func (*KubernetesBearerAuth) Mode() Mode      { return KubernetesBearer }
 
-// AuthenticationDecodeHook maps the YAML mode discriminator to the sealed
-// authentication type and rejects fields that do not belong to that mode.
+// AuthenticationDecodeHook maps the YAML discriminator and variant fields to
+// the sealed authentication union. Keeping this at the config boundary lets
+// the runtime model omit fields that do not apply to a mode.
 func AuthenticationDecodeHook(from, to reflect.Type, data any) (any, error) {
 	if to != reflect.TypeOf((*Authentication)(nil)).Elem() || from == nil || from.Kind() != reflect.Map {
 		return data, nil
 	}
 	fields, ok := data.(map[string]any)
 	if !ok {
-		return nil, errors.New("authentication must be a mapping with string keys")
+		return nil, fmt.Errorf("authentication must be a mapping with string keys")
 	}
 	modeValue, ok := fields["mode"]
 	if !ok {
@@ -41,29 +61,55 @@ func AuthenticationDecodeHook(from, to reflect.Type, data any) (any, error) {
 	if !ok {
 		return nil, errors.New("authentication mode must be a string")
 	}
-	switch mode := Mode(modeText); mode {
+	mode := Mode(modeText)
+	switch mode {
+	case SPIFFE:
+		if err := rejectUnexpectedAuthenticationFields(fields, "mode", "ca_file"); err != nil {
+			return nil, err
+		}
+		caFile, err := requiredAuthenticationString(fields, "ca_file")
+		if err != nil {
+			return nil, err
+		}
+		return &SPIFFEAuth{CAFile: caFile}, nil
 	case KubernetesBearer:
-		for name := range fields {
-			if name != "mode" && name != "audience" {
-				return nil, fmt.Errorf("unexpected authentication field %q", name)
-			}
+		if err := rejectUnexpectedAuthenticationFields(fields, "mode", "audience"); err != nil {
+			return nil, err
 		}
-		audience, ok := fields["audience"]
-		if !ok {
-			return nil, errors.New(`authentication field "audience" is required`)
+		audience, err := requiredAuthenticationString(fields, "audience")
+		if err != nil {
+			return nil, err
 		}
-		text, ok := audience.(string)
-		if !ok || text == "" {
-			return nil, errors.New(`authentication field "audience" must be a non-empty string`)
-		}
-		return &KubernetesBearerAuth{Audience: text}, nil
+		return &KubernetesBearerAuth{Audience: audience}, nil
 	default:
 		return nil, fmt.Errorf("unknown authentication mode %q", mode)
 	}
 }
 
+func requiredAuthenticationString(fields map[string]any, name string) (string, error) {
+	value, ok := fields[name]
+	if !ok {
+		return "", fmt.Errorf("authentication field %q is required", name)
+	}
+	text, ok := value.(string)
+	if !ok || text == "" {
+		return "", fmt.Errorf("authentication field %q must be a non-empty string", name)
+	}
+	return text, nil
+}
+
+func rejectUnexpectedAuthenticationFields(fields map[string]any, allowedFirst, allowedSecond string) error {
+	for name := range fields {
+		if name != allowedFirst && name != allowedSecond {
+			return fmt.Errorf("unexpected authentication field %q", name)
+		}
+	}
+	return nil
+}
+
 type Config struct {
 	ListenAddress string           `mapstructure:"listen_address"`
+	TLS           *TLS             `mapstructure:"tls"`
 	Auth          []Authentication `mapstructure:"auth"`
 }
 
@@ -85,6 +131,10 @@ func (c Config) Validate() error {
 		}
 		seen[mode] = true
 		switch method := method.(type) {
+		case *SPIFFEAuth:
+			if method == nil || c.TLS == nil || !filepath.IsAbs(method.CAFile) {
+				return errors.New("spiffe requires tls and an absolute ca_file")
+			}
 		case *KubernetesBearerAuth:
 			if method == nil || method.Audience == "" {
 				return errors.New("kubernetes_bearer requires audience")
@@ -93,7 +143,19 @@ func (c Config) Validate() error {
 			return fmt.Errorf("unknown authentication mode %q", mode)
 		}
 	}
+	if c.TLS != nil && (!filepath.IsAbs(c.TLS.CertFile) || !filepath.IsAbs(c.TLS.KeyFile)) {
+		return errors.New("tls requires absolute cert_file and key_file paths")
+	}
 	return nil
+}
+
+func (c Config) Has(mode Mode) bool {
+	for _, method := range c.Auth {
+		if method != nil && method.Mode() == mode {
+			return true
+		}
+	}
+	return false
 }
 
 func (c Config) BearerAudience() string {
@@ -105,11 +167,38 @@ func (c Config) BearerAudience() string {
 	return ""
 }
 
-func (c Config) Has(mode Mode) bool {
+// Select chooses by the credentials presented, never by allowlist order. A
+// malformed credential still counts as presented and cannot enable a fallback.
+func (c Config) Select(hasCertificate, hasBearer bool) (Mode, error) {
+	if hasCertificate == hasBearer {
+		return "", errors.New("exactly one authentication credential is required")
+	}
+	mode := KubernetesBearer
+	if hasCertificate {
+		mode = SPIFFE
+	}
+	if !c.Has(mode) {
+		return "", fmt.Errorf("authentication mode %q is not enabled", mode)
+	}
+	return mode, nil
+}
+
+func (c Config) TLSConfig(localURI string) (*tls.Config, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	if c.TLS == nil {
+		return nil, nil
+	}
+	files := environment_runtime_transport.Config{CertFile: c.TLS.CertFile, KeyFile: c.TLS.KeyFile}
 	for _, method := range c.Auth {
-		if method != nil && method.Mode() == mode {
-			return true
+		if spiffe, ok := method.(*SPIFFEAuth); ok && spiffe != nil {
+			files.CAFile = spiffe.CAFile
+			if c.Has(KubernetesBearer) {
+				return files.WorkloadServerTLSConfigWithBearer(localURI)
+			}
+			return files.WorkloadServerTLSConfig(localURI)
 		}
 	}
-	return false
+	return files.BearerServerTLSConfig(localURI)
 }

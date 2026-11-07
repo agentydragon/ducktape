@@ -2,12 +2,19 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "identity",
-    srcs = ["identity.go"],
+    srcs = [
+        "authentication.go",
+        "identity.go",
+        "svid.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/identity",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/decision",
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/auth",
+        "//agentplane/workload_auth/listener",
     ],
 )
 

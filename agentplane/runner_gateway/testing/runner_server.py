@@ -77,6 +77,8 @@ async def runner_server(
     `tls` carries the Runner's server certificate and the CA used to authenticate the Gateway client.
     `add_services` registers the scripted Runner methods; WatchState is supplied by this fixture.
     """
+    if tls.ca_file is None or tls.key_file is None or tls.cert_file is None:
+        raise ValueError("scripted Runner requires file-backed TLS credentials")
     root_certificates, private_key, certificate_chain = await asyncio.gather(
         asyncio.to_thread(Path(tls.ca_file).read_bytes),
         asyncio.to_thread(Path(tls.key_file).read_bytes),

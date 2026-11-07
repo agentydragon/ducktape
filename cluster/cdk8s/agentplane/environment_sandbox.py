@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
@@ -26,6 +27,7 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.egress import sidecar_config
 from agentplane.env import config as configuration
 from agentplane.env.config import (
     CONFIG_FILE,
@@ -51,6 +53,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     sandbox_pod,
     telemetry,
+    workload_routes,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
@@ -208,6 +211,7 @@ class EnvironmentSandbox(Construct):
                 namespace=namespace,
                 runner_pod=template.spec["pod"],
                 settings_config_map=template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar"),
+                runner_tls_enabled=env.runner_egress_mtls,
             )
             # VM claim storage is separate from the runner Pod's state claim. Copy it before
             # selecting the VM class so the Pod template keeps its own storage policy.
@@ -239,13 +243,14 @@ class EnvironmentSandbox(Construct):
     def add_platform_resources(self) -> None:
         """Add the fleet runner network and platform-route fences."""
         namespace = self.env.namespace
+        proxy_egress = [cilium.dns_egress(), egress.proxy(namespace).egress()]
         NetworkPolicy(
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=pods(namespace).selector,
             ingress=isolate_ingress(),
-            egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
+            egress=proxy_egress,
         )
         platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
         NetworkPolicy(
@@ -474,12 +479,28 @@ class EnvironmentSandboxTemplate(Construct):
 
     def _add_sidecar_settings(self, *, name: str, listen_host: str | None = None) -> SettingsFile:
         bind_host = listen_host or "127.0.0.1"
+        if self.env.runner_egress_mtls:
+            tls_path = Path(sidecar_config.RUNNER_TLS_MOUNT_PATH)
+            proxy_transport: sidecar_config.ProxyTransport = sidecar_config.TLSProxyTransport(
+                ca_file=tls_path / "ca.crt",
+                auth=sidecar_config.SpiffeProxyAuth(cert_file=tls_path / "tls.crt", key_file=tls_path / "tls.key"),
+            )
+        else:
+            proxy_transport = sidecar_config.PlaintextProxyTransport(
+                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=sandbox_pod.EGRESS_TOKEN_FILE)
+            )
         return sandbox_pod.add_sidecar_settings(
             self,
             self.env,
             name=name,
             platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
+            workload_routes=(
+                workload_routes.sidecar_routes(self.env.namespace, rules_origin=self.egress_api_service)
+                if self.env.runner_egress_mtls
+                else {}
+            ),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
+            proxy_transport=proxy_transport,
         )
 
     def _add_sandbox_template(self) -> dict[str, Any]:
