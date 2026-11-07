@@ -1,8 +1,8 @@
-import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson, toJson } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 
 import { GetSystemStatusResponseSchema, SystemComponentState } from "../app_service_pb";
-import { fetchWithLogin, HttpError } from "./client";
+import { createAppServiceClient } from "./app_service_client";
 
 export type SystemComponentStatus = {
   name: string;
@@ -11,13 +11,7 @@ export type SystemComponentStatus = {
   checked_at: string;
 };
 
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (typeof value !== "object") return false;
-  return Object.values(value).every(isJsonValue);
-}
+const appServiceClient = createAppServiceClient("/upstream/app/v1", "Invalid system status response.");
 
 function stateName(state: SystemComponentState): SystemComponentStatus["state"] {
   switch (state) {
@@ -30,24 +24,8 @@ function stateName(state: SystemComponentState): SystemComponentStatus["state"] 
   }
 }
 
-async function readSystemStatus(): Promise<JsonValue> {
-  const response = await fetchWithLogin("/upstream/app/v1/system/status", {
-    headers: { Accept: "application/json" },
-  });
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = JSON.parse(text);
-  } catch {
-    payload = text;
-  }
-  if (!response.ok) throw new HttpError(response, payload);
-  if (!isJsonValue(payload)) throw new Error("Invalid system status response.");
-  return payload;
-}
-
 export async function getSystemStatus(): Promise<SystemComponentStatus[]> {
-  const response = fromJson(GetSystemStatusResponseSchema, await readSystemStatus());
+  const response = fromJson(GetSystemStatusResponseSchema, await appServiceClient.get("/system/status"));
   return response.components.map((component) => {
     if (component.checkedAt === undefined) throw new Error("System status omitted a component check time.");
     return {
