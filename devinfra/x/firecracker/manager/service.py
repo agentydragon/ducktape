@@ -12,6 +12,7 @@ import os
 import secrets
 import sys
 from collections.abc import Iterator
+from contextlib import closing
 from pathlib import Path
 from typing import Annotated
 
@@ -76,20 +77,14 @@ def _require_vm_with_ip(vm_id: str, k8s: K8s) -> VMInfo:
 
 def _firecracker_client(vm: RunningVM) -> Iterator[FirecrackerClient]:
     assert vm.pod_ip is not None
-    client = FirecrackerClient(vm.pod_ip)
-    try:
+    with closing(FirecrackerClient(vm.pod_ip)) as client:
         yield client
-    finally:
-        client.close()
 
 
 def _control_client(vm: RunningVM) -> Iterator[ProcessApiControl]:
     assert vm.pod_ip is not None
-    client = ProcessApiControl(vm.pod_ip)
-    try:
+    with closing(ProcessApiControl(vm.pod_ip)) as client:
         yield client
-    finally:
-        client.close()
 
 
 Config = Annotated[ManagerConfig, Depends(_config)]

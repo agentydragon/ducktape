@@ -88,16 +88,11 @@ def _handle_connection(tcp_conn: socket.socket, connect_fn: Callable[[], socket.
             if not events:
                 continue
             for key, _ in events:
-                if key.fileobj is tcp_conn:
-                    data = tcp_conn.recv(_BUFFER_SIZE)
-                    if not data:
-                        return
-                    backend.sendall(data)
-                else:
-                    data = backend.recv(_BUFFER_SIZE)
-                    if not data:
-                        return
-                    tcp_conn.sendall(data)
+                source, destination = (tcp_conn, backend) if key.fileobj is tcp_conn else (backend, tcp_conn)
+                data = source.recv(_BUFFER_SIZE)
+                if not data:
+                    return
+                destination.sendall(data)
     except OSError:
         logger.debug("Proxy connection closed for %s", addr)
     finally:
