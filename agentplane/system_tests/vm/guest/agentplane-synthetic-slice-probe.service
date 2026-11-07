@@ -1,0 +1,12 @@
+[Unit]
+Description=Opt-in agentplane slice controller probe
+ConditionKernelCommandLine=agentplane.synthetic-slice-probe=1
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/agentplane-synthetic-slice-probe
+TimeoutStartSec=45s
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0

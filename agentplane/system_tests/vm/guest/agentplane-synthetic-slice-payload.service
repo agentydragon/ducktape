@@ -1,0 +1,9 @@
+[Unit]
+Description=Short synthetic workload in agentplane.slice
+ConditionKernelCommandLine=agentplane.synthetic-slice-probe=1
+
+[Service]
+Type=simple
+Slice=agentplane.slice
+ExecStart=/usr/bin/busybox sleep 8
+TimeoutStartSec=15s

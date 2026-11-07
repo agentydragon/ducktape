@@ -5,6 +5,9 @@
 The guest shutdown proof markers and bounded proof-helper sampling are described in
 [`proof_progress.md`](proof_progress.md), including the uncached one-guest validation and
 its diagnostic limits.
+The separate [synthetic slice probe](synthetic_slice.md) tests whether activating a
+short service in `agentplane.slice` exercises the boot-time cgroup controller path
+without starting Runtime.
 
 The VMI is direct, so this is not a full-stack reproduction of the Sandbox controller or production sidecar topology. The default arm installs only the production-derived `keep-virtiofs-through-guest-shutdown` ClusterPolicy rule, scoped to the test namespace and direct VMI. The opt-in policy-off arm skips that rule only for this test. It does not modify cluster-wide KubeVirt settings. The test retains serial, launcher, virtiofs, containerd, lifecycle, QEMU, VMI, policy, and cluster evidence and deletes only its UID-owned namespace and policy.
 
