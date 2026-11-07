@@ -692,7 +692,7 @@ pub(super) fn prepare_candidate_emission_plan<'output, 'placement>(
     // NOT carry into rayon worker threads, so we capture the parent
     // thread's `Globals` and re-set it inside each worker closure.
     // Mirrors the chunk-level `par_iter` in `lowering/mod.rs`.
-    let modules: Vec<PreparedModuleEmission<'a>> = GLOBALS.with(|globals| -> Result<_> {
+    let modules: Vec<PreparedModuleEmission<'output>> = GLOBALS.with(|globals| -> Result<_> {
         naturalized_modules
             .into_par_iter()
             .zip(module_plans.par_iter())
