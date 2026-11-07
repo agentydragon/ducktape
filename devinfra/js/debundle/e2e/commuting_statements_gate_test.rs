@@ -191,9 +191,11 @@ fn heap_frontier_split(
 
 /// Commuting an observer past a no-op must not move it past the later writer
 /// whose ordering was represented through the no-op's heap frontier.
+/// The spread invocation keeps a real unproved argument-iterator protocol;
+/// a bare known `noop?.()` now has complete effects and creates no frontier.
 #[test]
 fn commuting_a_heap_frontier_preserves_third_statement_order() {
-    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.(...[]);\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
     let fixture = run_fixture(heap_frontier_split(
         SOURCE,
         &["gamma"],
@@ -223,7 +225,7 @@ fn commuting_a_heap_frontier_preserves_third_statement_order() {
 
 #[test]
 fn commuting_a_writer_past_a_frontier_preserves_the_earlier_observer() {
-    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.(...[]);\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
     let fixture = run_fixture(heap_frontier_split(
         SOURCE,
         &["gamma", "beta"],
@@ -238,7 +240,7 @@ fn commuting_a_writer_past_a_frontier_preserves_the_earlier_observer() {
 
 #[test]
 fn overlapping_heap_commutations_preserve_order_independently_of_spec_order() {
-    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst delta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, delta, alpha, store.length);\n";
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.(...[]);\nconst delta = noop?.(...[]);\nconst alpha = write();\nconsole.log(gamma, beta, delta, alpha, store.length);\n";
     let pairs = vec![
         commuting_pair(
             member_source_unit("mutator", "beta"),
@@ -545,41 +547,78 @@ fn assumed_callee_heap_contents_remain_inertable() {
     assert_eq!(report["validation"]["success"], true, "{report:#}");
 }
 
-/// The same body can be reached both through an assumed host callback and a
-/// direct call. Either source order must retain the direct cell as non-assumed.
+const ASSUMED_THEN_DIRECT_SOURCE: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (serialize([append]), append(), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
+const DIRECT_THEN_ASSUMED_SOURCE: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (append(), serialize([append]), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
+
+fn mixed_callee_heap_contents(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("cells"),
+                Member::new("append"),
+                Member::new("serialize"),
+                Member::new("first"),
+                Member::new("second"),
+            ],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+}
+
+fn assert_mixed_callee_heap_conflict(source: &str) {
+    expect_rejected(
+        || {
+            mixed_callee_heap_contents(source).with_commuting_statements(
+                "static/app",
+                vec![commuting_pair(
+                    member_source_unit("all", "first"),
+                    member_source_unit("all", "second"),
+                )],
+            )
+        },
+        "contradicted",
+        &[ENTRY, CONTRADICTION, "array contents"],
+    );
+}
+
+/// Each order runs independently so a refusal or missing contradiction in one
+/// does not suppress evidence about the other.
 #[test]
-fn direct_callee_heap_contents_win_over_assumed_path_in_both_orders() {
-    const ASSUMED_FIRST: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (serialize([append]), append(), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
-    const DIRECT_FIRST: &str = "const cells = [];\nfunction append() { cells.push(1); }\nconst serialize = JSON.stringify;\nconst first = (append(), serialize([append]), 1);\nconst second = (cells.push(2), 2);\nexport { first, second };\n";
-    for source in [ASSUMED_FIRST, DIRECT_FIRST] {
-        expect_rejected(
-            || {
-                FixtureOpts::new(
-                    source,
-                    vec![logical_module(
-                        "all",
-                        &[
-                            Member::new("cells"),
-                            Member::new("append"),
-                            Member::new("serialize"),
-                            Member::new("first"),
-                            Member::new("second"),
-                        ],
-                    )],
-                )
-                .with_unassigned_mode(unassigned_mode_inline())
-                .with_commuting_statements(
-                    "static/app",
-                    vec![commuting_pair(
-                        member_source_unit("all", "first"),
-                        member_source_unit("all", "second"),
-                    )],
-                )
-            },
-            "contradicted",
-            &[ENTRY, CONTRADICTION, "array contents"],
-        );
-    }
+fn direct_callee_heap_contents_after_assumed_path_reject_the_pair() {
+    assert_mixed_callee_heap_conflict(ASSUMED_THEN_DIRECT_SOURCE);
+}
+
+#[test]
+fn direct_callee_heap_contents_before_assumed_path_reject_the_pair() {
+    assert_mixed_callee_heap_conflict(DIRECT_THEN_ASSUMED_SOURCE);
+}
+
+fn assert_mixed_callee_heap_baseline(source: &str, case: &str) {
+    let source = format!("{source}console.log(first, second, cells.join(\",\"));\n");
+    let fixture = run_fixture(mixed_callee_heap_contents(&source));
+    save_relocation_reports(&fixture.report_root, &fixture.chunk_id, case);
+    assert_preserved_entry_output(&fixture, "1 2 1,2\n");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["swapped_pairs"], 0, "{report:#}");
+    assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
+}
+
+#[test]
+fn direct_callee_heap_contents_after_assumed_path_preserve_unreordered_runtime() {
+    assert_mixed_callee_heap_baseline(
+        ASSUMED_THEN_DIRECT_SOURCE,
+        "callee-heap-assumed-then-direct",
+    );
+}
+
+#[test]
+fn direct_callee_heap_contents_before_assumed_path_preserve_unreordered_runtime() {
+    assert_mixed_callee_heap_baseline(
+        DIRECT_THEN_ASSUMED_SOURCE,
+        "callee-heap-direct-then-assumed",
+    );
 }
 
 /// A binding's write/read timeline is a derived conflict in either S-chain

@@ -108,6 +108,7 @@ pub(crate) use statement_facts::{
     ConstructorFacts, ExportLinkage, HeapContentCells, LocalRecordFactoryPurityCertificate,
     SettledElements,
 };
+pub use sync_effects::OperationSupportReceipt;
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
@@ -129,7 +130,7 @@ pub use initialization_effects::{
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{
-    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, PositionBucketed, StatementEffectSummary,
-    StatementFacts, StatementKind, StructuralChunkAnalysis, StructuralChunkSourceFacts,
-    StructuralStatementFacts,
+    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, LexicalCellId, PositionBucketed,
+    StatementEffectSummary, StatementFacts, StatementKind, StructuralChunkAnalysis,
+    StructuralChunkSourceFacts, StructuralStatementFacts,
 };

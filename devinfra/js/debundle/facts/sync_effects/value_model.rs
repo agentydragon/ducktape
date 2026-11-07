@@ -1,6 +1,7 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
 use crate::analysis_inputs::ProofDependencies;
+use crate::facts::LexicalCellId;
 use crate::facts::abstract_domain::builtins::IterationRow;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::value_flow::static_prop as static_string_prop;
@@ -28,6 +29,12 @@ pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
         },
         _ => None,
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct PrivateFieldId {
+    pub(super) class: u32,
+    pub(super) name: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -245,16 +252,15 @@ impl<T> Hash for Captured<T> {
     }
 }
 
-/// One instantiated lexical cell, not a source binding or structural cache key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct LexicalCellId(pub(super) usize);
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct LexicalCaptures {
     pub(super) snapshots: Context,
     pub(super) cells: OrdMap<Id, LexicalCellId>,
     /// Source containment only, never a trusted receiver or instance identity.
     pub(super) home_object: Option<u32>,
+    /// Actual lexical `this`, distinct from source containment. This retains
+    /// receiver capabilities but never a constructor frame's descriptor proof.
+    pub(super) receiver: Option<Values>,
 }
 
 impl Hash for LexicalCaptures {
@@ -265,6 +271,7 @@ impl Hash for LexicalCaptures {
             values.hash(state);
         }
         self.home_object.hash(state);
+        self.receiver.hash(state);
         self.cells.len().hash(state);
         for (binding, cell) in &self.cells {
             binding.hash(state);
@@ -275,7 +282,10 @@ impl Hash for LexicalCaptures {
 
 impl LexicalCaptures {
     pub(super) fn is_empty(&self) -> bool {
-        self.snapshots.is_empty() && self.cells.is_empty() && self.home_object.is_none()
+        self.snapshots.is_empty()
+            && self.cells.is_empty()
+            && self.home_object.is_none()
+            && self.receiver.is_none()
     }
 }
 
@@ -328,6 +338,9 @@ impl ProviderScopeId {
 pub(super) enum ProviderInput {
     Argument(usize),
     Capture(usize),
+    Property { argument: usize, property: usize },
+    Getter { argument: usize, property: usize },
+    Setter { argument: usize, property: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -337,9 +350,13 @@ pub(super) struct SymbolicInputId {
 }
 
 /// Provenance of a local class capability; neither variant proves allocation identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum InstanceOrigin {
-    Constructed,
+    /// Present data descriptors established by this completed constructor
+    /// activation. The pooled class heap still supplies their possible values.
+    Constructed {
+        own_data: Arc<BTreeSet<String>>,
+    },
     Projected,
 }
 
@@ -635,6 +652,9 @@ pub(super) enum ValueExpr {
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
     Primitive(Arc<[Self]>),
+    /// Retain the actual operator for primitive result and abrupt-completion
+    /// semantics. Operands remain ordered; object coercions require fallback.
+    Binary(BinaryOp, Arc<Self>, Arc<Self>),
     /// Both strict equality operators produce an unknown Boolean without coercion.
     StrictEquality(Arc<Self>, Arc<Self>),
     Sequence(Arc<[Self]>),
@@ -786,6 +806,21 @@ fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
                 && matches!(&symbol.prop, MemberProp::Ident(id) if id.sym == "iterator")))
 }
 
+/// Operations whose operand evaluation is strict and whose primitive semantics
+/// are shared with purity. Membership and instanceof retain protocol handling.
+pub(super) fn modeled_binary_operator(operator: BinaryOp) -> bool {
+    !matches!(
+        operator,
+        BinaryOp::LogicalAnd
+            | BinaryOp::LogicalOr
+            | BinaryOp::NullishCoalescing
+            | BinaryOp::In
+            | BinaryOp::InstanceOf
+            | BinaryOp::EqEqEq
+            | BinaryOp::NotEqEq
+    )
+}
+
 impl ValueExpr {
     /// Possible returned values; the conditional test is evaluated separately.
     pub(super) fn result_alternatives(&self) -> Option<&[Self]> {
@@ -827,7 +862,8 @@ impl ValueExpr {
                         | Lit::Regex(_)
                 )
         ) && !matches!(expr.unwrap_parens(), Expr::Bin(bin)
-            if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq))
+            if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq)
+                || modeled_binary_operator(bin.op))
             && !matches!(expr.unwrap_parens(), Expr::Unary(unary)
                 if matches!(unary.op, UnaryOp::Void | UnaryOp::Bang))
         {
@@ -1050,6 +1086,11 @@ impl ValueExpr {
                     .into(),
                 )
             }
+            Expr::Bin(bin) if modeled_binary_operator(bin.op) => Self::Binary(
+                bin.op,
+                Arc::new(Self::lower(&bin.left, covered)),
+                Arc::new(Self::lower(&bin.right, covered)),
+            ),
             Expr::Bin(bin) => Self::Primitive(
                 [
                     Self::lower(&bin.left, covered),
@@ -1105,7 +1146,7 @@ impl ValueExpr {
             | Self::SetIteratorPrototype(expression)
             | Self::LogicalNot(expression)
             | Self::Void(expression) => expression.bindings(result),
-            Self::StrictEquality(left, right) => {
+            Self::StrictEquality(left, right) | Self::Binary(_, left, right) => {
                 left.bindings(result);
                 right.bindings(result);
             }
@@ -1154,9 +1195,11 @@ impl ValueExpr {
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
             Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
                 .result_alternatives()
                 .expect("alternative expression")
@@ -1282,9 +1325,11 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
                 value.may_publish_namespace_inner(
                     id,
@@ -1440,9 +1485,11 @@ impl ValueExpr {
                     facts,
                 )
             }
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),

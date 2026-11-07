@@ -51,30 +51,34 @@ struct ModuleOutputContext<'a> {
     source_path: &'a str,
 }
 
-pub(super) struct ModuleEmissionInputs<'a> {
+/// Output context borrows use `'output` because `PreparedModuleEmission` keeps
+/// them. Planning-only views use `'planning`; the cache borrow is short-lived
+/// while its artifact/index referents use the independent `'cache` lifetime.
+/// The vendor oracle's borrowed data likewise has its own `'vendor` lifetime.
+pub(super) struct ModuleEmissionInputs<'output, 'planning, 'cache, 'vendor> {
     pub(super) index: usize,
-    pub(super) plan: &'a ModulePlan,
+    pub(super) plan: &'output ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
-    pub(super) assignment_analysis: &'a AssignmentAnalysis,
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
-    pub(super) binding_assignment: &'a HashMap<Id, usize>,
-    pub(super) runtime_import_facts: &'a RuntimeImportFacts,
-    pub(super) entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,
-    pub(super) imported_reexports: &'a [super::imports::plan_references::ImportedReexport],
-    pub(super) selected_exports: Option<&'a BTreeMap<String, String>>,
-    pub(super) cross_module_chunk_renames: &'a BTreeMap<String, String>,
-    pub(super) source_import_cache: &'a Mutex<ArtifactSourceImportResolutionCache<'a>>,
-    pub(super) chunk_id: &'a str,
+    pub(super) assignment_analysis: &'output AssignmentAnalysis,
+    pub(super) declaration_by_name: &'planning HashMap<Id, Vec<StatementId>>,
+    pub(super) binding_assignment: &'planning HashMap<Id, usize>,
+    pub(super) runtime_import_facts: &'planning RuntimeImportFacts,
+    pub(super) entry_exports_by_original_local: &'planning HashMap<Id, EntryExport>,
+    pub(super) imported_reexports: &'planning [super::imports::plan_references::ImportedReexport],
+    pub(super) selected_exports: Option<&'planning BTreeMap<String, String>>,
+    pub(super) cross_module_chunk_renames: &'planning BTreeMap<String, String>,
+    pub(super) source_import_cache: &'planning Mutex<ArtifactSourceImportResolutionCache<'cache>>,
+    pub(super) chunk_id: &'output str,
     pub(super) chunk_id_interned: ChunkId,
-    pub(super) entry_file: &'a str,
-    pub(super) source_path: &'a str,
+    pub(super) entry_file: &'output str,
+    pub(super) source_path: &'output str,
     pub(super) chunk_top_level_mark: swc_common::Mark,
-    pub(super) runtime_ast: &'a ParsedJsModule,
-    pub(super) vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
+    pub(super) runtime_ast: &'output ParsedJsModule,
+    pub(super) vendor_import_oracle: Option<&'planning VendorReimportOracle<'vendor>>,
 }
 
 /// One module plan's lowered output: the emitted file plus the
-/// per-plan bookkeeping `lower_chunk` rolls up.
+/// per-plan bookkeeping `PreparedCandidateEmissionPlan::emit` rolls up.
 pub(super) struct LoweredModuleOutput {
     pub(super) file: JsFile,
     pub(super) record: (String, FileRole),
@@ -82,7 +86,36 @@ pub(super) struct LoweredModuleOutput {
     pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
-pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredModuleOutput> {
+/// An exact module body and import list prepared from the candidate placement.
+/// Rendering consumes this value without repeating reference or import planning.
+pub(super) struct PreparedModuleEmission<'a> {
+    plan: &'a ModulePlan,
+    body: Vec<ModuleItem>,
+    explicit_renames: BTreeMap<String, String>,
+    output_context: ModuleOutputContext<'a>,
+    vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
+}
+
+impl PreparedModuleEmission<'_> {
+    pub(super) fn emit(self) -> LoweredModuleOutput {
+        let (file, record, lowering) = build_module_output(
+            self.plan,
+            self.body,
+            &self.explicit_renames,
+            &self.output_context,
+        );
+        LoweredModuleOutput {
+            file,
+            record,
+            lowering,
+            vendor_reference_rewrites: self.vendor_reference_rewrites,
+        }
+    }
+}
+
+pub(super) fn prepare_module_emission<'output, 'planning, 'cache, 'vendor>(
+    inputs: ModuleEmissionInputs<'output, 'planning, 'cache, 'vendor>,
+) -> Result<PreparedModuleEmission<'output>> {
     let ModuleEmissionInputs {
         index,
         plan,
@@ -448,12 +481,11 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         entry_file,
         source_path,
     };
-    let (file, record, lowering) =
-        build_module_output(plan, body, &explicit_renames, &output_context);
-    Ok(LoweredModuleOutput {
-        file,
-        record,
-        lowering,
+    Ok(PreparedModuleEmission {
+        plan,
+        body,
+        explicit_renames,
+        output_context,
         vendor_reference_rewrites,
     })
 }

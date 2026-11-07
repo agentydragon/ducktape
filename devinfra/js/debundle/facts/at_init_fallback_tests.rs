@@ -46,8 +46,6 @@ fn an_element_reaching_other_code_before_the_statement_is_not_settled() {
         "function pick() { return tools[0]; }\nglobalThis.consume?.(pick());\n",
         // Captured by a closure that unknown code may run.
         "const grab = () => tools[0];\nglobalThis.consume?.(grab);\n",
-        // Written through an alias.
-        "const first = tools[0];\nfirst.name = { toString() { return later; } };\n",
         // Reflection installs an accessor, replaces the prototype or writes.
         "Object.defineProperty(tools[0], \"name\", { get() { return later; } });\n",
         "Object.setPrototypeOf(tools[0], { get name() { return later; } });\n",
@@ -67,6 +65,28 @@ fn an_element_reaching_other_code_before_the_statement_is_not_settled() {
             "{prefix}"
         );
     }
+}
+
+#[test]
+fn a_modeled_element_field_write_keeps_only_unchanged_primitive_keys_settled() {
+    let prefix = "const registry = {};\nconst first = tools[0];\nfirst.name = { toString() { return later; } };\n";
+    let elements = settled(prefix, READER);
+    assert_eq!(
+        elements,
+        Some(SettledElements::Records {
+            shared_keys: BTreeSet::from(["systemNodeId".to_string()]),
+        })
+    );
+    assert!(
+        !admitted(READER, elements.clone()),
+        "the reader still consumes the mutated `name` field"
+    );
+
+    let system_node_id_reader = "const ids = tools.map((n) => n.systemNodeId);";
+    assert!(
+        admitted(system_node_id_reader, elements),
+        "the reader only consumes the remaining primitive own field"
+    );
 }
 
 #[test]

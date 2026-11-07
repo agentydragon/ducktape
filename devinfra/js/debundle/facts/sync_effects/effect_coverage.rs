@@ -1,16 +1,26 @@
 //! Nonterminal receipts from operations executed by the ordered local kernel.
 
-use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
+use super::local_operations::{ObjectBindingPattern, ObjectBindingProperty};
+use super::value_model::CallSite;
+use crate::analysis_inputs::{
+    NativeIntrinsic, NativeOperationInputEvidence, ParameterHeapRead, ProofDependencies,
+};
+use crate::execution_evidence::{ExecutionPrecisionLoss, SkippedCallReason};
+use crate::facts::EffectCell;
+use crate::facts::abstract_domain::builtins::Row;
+use crate::facts::semantic_inference::NativePremise;
+use crate::reports::saved::SavedExecutionPrecisionLoss;
 use crate::reports::schema::BindingEffectAuthorityReport;
 use analysis_codec::{ContextOrdinals, SavedBinding};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub(super) enum DomainCoverage {
     #[default]
     Unknown,
@@ -26,7 +36,7 @@ impl DomainCoverage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum Completion {
     #[default]
     Unknown,
@@ -34,13 +44,86 @@ pub(super) enum Completion {
     Abrupt,
 }
 
-/// Exact identity for the one root initializer whose ordered execution may
-/// seal lexical binding-effect coverage.
+/// Exact source root whose ordered execution may seal lexical binding effects.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct RootInitializerIdentity {
+pub(crate) struct RootEffectIdentity {
     pub(super) owner: SourceUnitOrdinal,
-    pub(super) binding: Id,
-    pub(super) initializer_span: Option<Span>,
+    pub(super) source: RootEffectSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) enum RootEffectSource {
+    BindingInitializer {
+        binding: Id,
+        initializer_span: Span,
+    },
+    ObjectBindingInitializer {
+        pattern: ObjectBindingPattern,
+        declarator_span: Span,
+        initializer_span: Span,
+    },
+    ClassDeclaration {
+        binding: Id,
+        declaration_span: Span,
+    },
+    ExpressionStatement {
+        expression_span: Span,
+    },
+}
+
+impl RootEffectIdentity {
+    pub(super) fn binding_initialization(&self) -> Option<(&Id, Span)> {
+        match &self.source {
+            RootEffectSource::BindingInitializer {
+                binding,
+                initializer_span,
+            } => Some((binding, *initializer_span)),
+            RootEffectSource::ClassDeclaration {
+                binding,
+                declaration_span,
+            } => Some((binding, *declaration_span)),
+            RootEffectSource::ExpressionStatement { .. }
+            | RootEffectSource::ObjectBindingInitializer { .. } => None,
+        }
+    }
+
+    pub(super) fn targets_initialized(&self, initialized: &std::collections::BTreeSet<Id>) -> bool {
+        match &self.source {
+            RootEffectSource::ObjectBindingInitializer { pattern, .. } => pattern
+                .properties
+                .iter()
+                .all(|property| initialized.contains(&property.binding)),
+            _ => self
+                .binding_initialization()
+                .is_none_or(|(binding, _)| initialized.contains(binding)),
+        }
+    }
+
+    pub(super) fn body_identity(&self) -> LocalBodyIdentity {
+        match self.source {
+            RootEffectSource::BindingInitializer {
+                initializer_span, ..
+            }
+            | RootEffectSource::ObjectBindingInitializer {
+                initializer_span, ..
+            } => LocalBodyIdentity::RootInitializer {
+                owner: self.owner,
+                initializer_span,
+            },
+            RootEffectSource::ClassDeclaration {
+                declaration_span, ..
+            } => LocalBodyIdentity::RootClassDeclaration {
+                owner: self.owner,
+                declaration_span,
+            },
+            RootEffectSource::ExpressionStatement { expression_span } => {
+                LocalBodyIdentity::RootExpression {
+                    owner: self.owner,
+                    expression_span,
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,14 +132,54 @@ pub(super) enum LocalBodyIdentity {
         owner: SourceUnitOrdinal,
         initializer_span: Span,
     },
+    RootClassDeclaration {
+        owner: SourceUnitOrdinal,
+        declaration_span: Span,
+    },
+    RootExpression {
+        owner: SourceUnitOrdinal,
+        expression_span: Span,
+    },
     Callable {
         key: u32,
         owner: SourceUnitOrdinal,
     },
+    Construction {
+        class: u32,
+        owner: SourceUnitOrdinal,
+    },
+    ImportedCallable(Box<ImportedCallableIdentity>),
     Native {
         intrinsic: NativeIntrinsic,
         property: Option<String>,
     },
+    NativeConstruction {
+        intrinsic: NativeIntrinsic,
+    },
+}
+
+/// The exact intrinsic selected by an executed callee GetValue. The ordered
+/// caller transports this snapshot across operand evaluation to the row transfer.
+#[derive(Debug, Clone)]
+pub(super) struct NativeCalleeSelection {
+    pub(super) owner: SourceUnitOrdinal,
+    pub(super) site: CallSite,
+    pub(super) row: &'static Row,
+    pub(super) premise: NativePremise,
+    /// Exact-site author input when census integrity is unavailable. It is
+    /// carried across operand evaluation so the row transfer consumes the
+    /// same assertion that selected the original intrinsic.
+    pub(super) native_operation_input: Option<Box<NativeOperationInputEvidence>>,
+}
+
+/// Kept out of every ordinary local edge's inline layout.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub(super) struct ImportedCallableIdentity {
+    pub(super) defining_module: String,
+    pub(super) export: String,
+    pub(super) local: String,
+    pub(super) member: Option<String>,
+    pub(super) key: u32,
 }
 
 /// One selected direct local invocation. The flat edge set avoids expanding
@@ -71,11 +194,22 @@ pub(super) struct LocalCallReceipt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct SkippedCallReceipt {
+    pub(super) caller: LocalBodyIdentity,
+    pub(super) call_span: Span,
+    pub(super) region_span: Span,
+    pub(super) frontier_span: Span,
+    pub(super) reason: SkippedCallReason,
+    pub(super) dependencies: Box<ProofDependencies>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct LexicalBindingEffectReceipt {
-    pub(super) identity: RootInitializerIdentity,
+    pub(super) identity: RootEffectIdentity,
     pub(super) read_dependencies: ProofDependencies,
     pub(super) rebind_dependencies: ProofDependencies,
     pub(super) calls: Vec<LocalCallReceipt>,
+    pub(super) skipped_calls: Vec<SkippedCallReceipt>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -84,9 +218,14 @@ pub(crate) enum BindingEffectCoverage {
     #[default]
     Unclassified,
     LegacyExecution,
-    OrderedRootInitializer {
-        identity: RootInitializerIdentity,
+    OrderedRoot {
+        identity: RootEffectIdentity,
         receipt: Option<Box<LexicalBindingEffectReceipt>>,
+    },
+    RetainedEffectClosure {
+        receipt: Box<LexicalBindingEffectReceipt>,
+        dependencies: Box<ProofDependencies>,
+        precision_losses: Vec<ExecutionPrecisionLoss>,
     },
 }
 
@@ -95,31 +234,92 @@ pub(crate) enum BindingEffectAuthority {
     Unclassified,
     LegacyExecution { complete: bool },
     AuthorSourceOnly,
-    OrderedRootInitializerUncovered,
+    OrderedRootUncovered,
     OperationReceipt,
+    RetainedEffectClosure,
 }
 
 impl BindingEffectCoverage {
     pub(crate) fn snapshot(
         &self,
         ordinals: &ContextOrdinals,
-    ) -> Result<SavedBindingEffectCoverage> {
+    ) -> Result<SavedBindingEffectCoverage<'_>> {
         Ok(match self {
             Self::Unclassified => SavedBindingEffectCoverage::Unclassified,
             Self::LegacyExecution => SavedBindingEffectCoverage::LegacyExecution,
-            Self::OrderedRootInitializer { identity, receipt } => {
-                SavedBindingEffectCoverage::OrderedRootInitializer {
-                    identity: SavedRootInitializerIdentity::snapshot(identity, ordinals)?,
-                    receipt: receipt
-                        .as_deref()
-                        .map(|receipt| {
-                            SavedLexicalBindingEffectReceipt::snapshot(receipt, ordinals)
-                        })
-                        .transpose()?
-                        .map(Box::new),
-                }
-            }
+            Self::OrderedRoot { identity, receipt } => SavedBindingEffectCoverage::OrderedRoot {
+                identity: SavedRootEffectIdentity::snapshot(identity, ordinals)?,
+                receipt: receipt
+                    .as_deref()
+                    .map(|receipt| SavedLexicalBindingEffectReceipt::snapshot(receipt, ordinals))
+                    .transpose()?
+                    .map(Box::new),
+            },
+            Self::RetainedEffectClosure {
+                receipt,
+                dependencies,
+                precision_losses,
+            } => SavedBindingEffectCoverage::RetainedEffectClosure {
+                receipt: Box::new(SavedLexicalBindingEffectReceipt::snapshot(
+                    receipt, ordinals,
+                )?),
+                dependencies: dependencies.clone(),
+                precision_losses: precision_losses
+                    .iter()
+                    .map(SavedExecutionPrecisionLoss::snapshot)
+                    .collect(),
+            },
         })
+    }
+
+    /// Actual lexical operation coverage for this exact root. Legacy
+    /// completion and author source-only assertions supply no such proof.
+    pub(crate) fn operation_dependencies(
+        &self,
+        owner: SourceUnitOrdinal,
+    ) -> Option<ProofDependencies> {
+        let (identity, receipt) = match self {
+            Self::OrderedRoot {
+                identity,
+                receipt: Some(receipt),
+            } => (identity, receipt),
+            Self::RetainedEffectClosure { receipt, .. } => (&receipt.identity, receipt),
+            _ => return None,
+        };
+        if identity.owner != owner || receipt.identity != *identity {
+            return None;
+        }
+        let mut dependencies = receipt.read_dependencies.clone();
+        dependencies.extend(&receipt.rebind_dependencies);
+        for call in &receipt.calls {
+            dependencies.extend(&call.dependencies);
+        }
+        for call in &receipt.skipped_calls {
+            dependencies.extend(&call.dependencies);
+        }
+        Some(dependencies)
+    }
+
+    pub(crate) fn retained_effect_dependencies(
+        &self,
+        owner: SourceUnitOrdinal,
+        losses: &[ExecutionPrecisionLoss],
+    ) -> Option<&ProofDependencies> {
+        let Self::RetainedEffectClosure {
+            receipt,
+            dependencies,
+            precision_losses,
+        } = self
+        else {
+            return None;
+        };
+        (receipt.identity.owner == owner
+            && !losses.is_empty()
+            && losses.len() == precision_losses.len()
+            && losses
+                .iter()
+                .all(|loss| precision_losses.iter().any(|held| same_loss(held, loss))))
+        .then_some(dependencies)
     }
 
     pub(crate) fn authority(
@@ -133,12 +333,11 @@ impl BindingEffectCoverage {
         match self {
             Self::Unclassified => BindingEffectAuthority::Unclassified,
             Self::LegacyExecution => BindingEffectAuthority::LegacyExecution { complete },
-            Self::OrderedRootInitializer {
+            Self::OrderedRoot {
                 receipt: Some(_), ..
             } => BindingEffectAuthority::OperationReceipt,
-            Self::OrderedRootInitializer { receipt: None, .. } => {
-                BindingEffectAuthority::OrderedRootInitializerUncovered
-            }
+            Self::OrderedRoot { receipt: None, .. } => BindingEffectAuthority::OrderedRootUncovered,
+            Self::RetainedEffectClosure { .. } => BindingEffectAuthority::RetainedEffectClosure,
         }
     }
 
@@ -156,7 +355,7 @@ impl BindingEffectCoverage {
                 BindingEffectAuthorityReport::LegacyExecution { complete }
             }
             BindingEffectAuthority::OperationReceipt => {
-                let Self::OrderedRootInitializer {
+                let Self::OrderedRoot {
                     receipt: Some(receipt),
                     ..
                 } = self
@@ -167,14 +366,59 @@ impl BindingEffectCoverage {
                     receipt: Box::new(receipt.as_ref().to_report()),
                 }
             }
-            BindingEffectAuthority::OrderedRootInitializerUncovered => {
-                let Self::OrderedRootInitializer { identity, .. } = self else {
+            BindingEffectAuthority::OrderedRootUncovered => {
+                let Self::OrderedRoot { identity, .. } = self else {
                     unreachable!("typed authority comes from this root attempt");
                 };
-                BindingEffectAuthorityReport::OrderedRootInitializerUncovered {
-                    owner: identity.owner,
-                    binding: identity.binding.0.to_string(),
-                    initializer_span: identity.initializer_span,
+                match &identity.source {
+                    RootEffectSource::BindingInitializer {
+                        binding,
+                        initializer_span,
+                    } => BindingEffectAuthorityReport::OrderedRootInitializerUncovered {
+                        owner: identity.owner,
+                        binding: binding.0.to_string(),
+                        initializer_span: Some(*initializer_span),
+                    },
+                    RootEffectSource::ObjectBindingInitializer {
+                        pattern,
+                        declarator_span,
+                        initializer_span,
+                    } => BindingEffectAuthorityReport::OrderedRootObjectBindingUncovered {
+                        owner: identity.owner,
+                        pattern_span: pattern.span,
+                        declarator_span: *declarator_span,
+                        initializer_span: *initializer_span,
+                        targets: pattern.to_report(),
+                    },
+                    RootEffectSource::ClassDeclaration {
+                        binding,
+                        declaration_span,
+                    } => BindingEffectAuthorityReport::OrderedRootClassDeclarationUncovered {
+                        owner: identity.owner,
+                        binding: binding.0.to_string(),
+                        declaration_span: *declaration_span,
+                    },
+                    RootEffectSource::ExpressionStatement { expression_span } => {
+                        BindingEffectAuthorityReport::OrderedRootExpressionUncovered {
+                            owner: identity.owner,
+                            expression_span: *expression_span,
+                        }
+                    }
+                }
+            }
+            BindingEffectAuthority::RetainedEffectClosure => {
+                let Self::RetainedEffectClosure {
+                    receipt,
+                    dependencies,
+                    precision_losses,
+                } = self
+                else {
+                    unreachable!("retained authority comes from its complete closure");
+                };
+                BindingEffectAuthorityReport::RetainedEffectClosure {
+                    receipt: Box::new(receipt.to_report()),
+                    dependencies: dependencies.as_ref().clone(),
+                    precision_losses: precision_losses.clone(),
                 }
             }
         }
@@ -182,75 +426,197 @@ impl BindingEffectCoverage {
 }
 
 /// Process-independent binding-effect authority retained by staged analysis.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum SavedBindingEffectCoverage {
+pub(crate) enum SavedBindingEffectCoverage<'a> {
     Unclassified,
     LegacyExecution,
-    OrderedRootInitializer {
-        identity: SavedRootInitializerIdentity,
+    OrderedRoot {
+        identity: SavedRootEffectIdentity,
         receipt: Option<Box<SavedLexicalBindingEffectReceipt>>,
+    },
+    RetainedEffectClosure {
+        receipt: Box<SavedLexicalBindingEffectReceipt>,
+        dependencies: Box<ProofDependencies>,
+        precision_losses: Vec<SavedExecutionPrecisionLoss<'a>>,
     },
 }
 
-impl SavedBindingEffectCoverage {
+impl SavedBindingEffectCoverage<'_> {
     pub(crate) fn restore(self, ordinals: &ContextOrdinals) -> Result<BindingEffectCoverage> {
         Ok(match self {
             Self::Unclassified => BindingEffectCoverage::Unclassified,
             Self::LegacyExecution => BindingEffectCoverage::LegacyExecution,
-            Self::OrderedRootInitializer { identity, receipt } => {
-                BindingEffectCoverage::OrderedRootInitializer {
-                    identity: identity.restore(ordinals)?,
-                    receipt: receipt
-                        .map(|receipt| receipt.restore(ordinals))
-                        .transpose()?
-                        .map(Box::new),
-                }
-            }
+            Self::OrderedRoot { identity, receipt } => BindingEffectCoverage::OrderedRoot {
+                identity: identity.restore(ordinals)?,
+                receipt: receipt
+                    .map(|receipt| receipt.restore(ordinals))
+                    .transpose()?
+                    .map(Box::new),
+            },
+            Self::RetainedEffectClosure {
+                receipt,
+                dependencies,
+                precision_losses,
+            } => BindingEffectCoverage::RetainedEffectClosure {
+                receipt: Box::new(receipt.restore(ordinals)?),
+                dependencies,
+                precision_losses: precision_losses
+                    .into_iter()
+                    .map(SavedExecutionPrecisionLoss::restore)
+                    .collect(),
+            },
         })
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SavedRootInitializerIdentity {
+pub(crate) struct SavedRootEffectIdentity {
     owner: SourceUnitOrdinal,
-    binding: SavedBinding,
-    initializer_span: Option<Span>,
+    source: SavedRootEffectSource,
 }
 
-impl SavedRootInitializerIdentity {
-    fn snapshot(identity: &RootInitializerIdentity, ordinals: &ContextOrdinals) -> Result<Self> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum SavedRootEffectSource {
+    ObjectBindingInitializer {
+        pattern_span: Span,
+        properties: Vec<SavedObjectBindingProperty>,
+        declarator_span: Span,
+        initializer_span: Span,
+    },
+    BindingInitializer {
+        binding: SavedBinding,
+        initializer_span: Span,
+    },
+    ClassDeclaration {
+        binding: SavedBinding,
+        declaration_span: Span,
+    },
+    ExpressionStatement {
+        expression_span: Span,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SavedObjectBindingProperty {
+    property: String,
+    binding: SavedBinding,
+    span: Span,
+}
+
+impl SavedRootEffectIdentity {
+    fn snapshot(identity: &RootEffectIdentity, ordinals: &ContextOrdinals) -> Result<Self> {
         Ok(Self {
             owner: identity.owner,
-            binding: ordinals.snapshot_binding(&identity.binding)?,
-            initializer_span: identity.initializer_span,
+            source: match &identity.source {
+                RootEffectSource::BindingInitializer {
+                    binding,
+                    initializer_span,
+                } => SavedRootEffectSource::BindingInitializer {
+                    binding: ordinals.snapshot_binding(binding)?,
+                    initializer_span: *initializer_span,
+                },
+                RootEffectSource::ObjectBindingInitializer {
+                    pattern,
+                    declarator_span,
+                    initializer_span,
+                } => SavedRootEffectSource::ObjectBindingInitializer {
+                    pattern_span: pattern.span,
+                    properties: pattern
+                        .properties
+                        .iter()
+                        .map(|property| {
+                            Ok(SavedObjectBindingProperty {
+                                property: property.property.clone(),
+                                binding: ordinals.snapshot_binding(&property.binding)?,
+                                span: property.span,
+                            })
+                        })
+                        .collect::<Result<_>>()?,
+                    declarator_span: *declarator_span,
+                    initializer_span: *initializer_span,
+                },
+                RootEffectSource::ClassDeclaration {
+                    binding,
+                    declaration_span,
+                } => SavedRootEffectSource::ClassDeclaration {
+                    binding: ordinals.snapshot_binding(binding)?,
+                    declaration_span: *declaration_span,
+                },
+                RootEffectSource::ExpressionStatement { expression_span } => {
+                    SavedRootEffectSource::ExpressionStatement {
+                        expression_span: *expression_span,
+                    }
+                }
+            },
         })
     }
 
-    fn restore(self, ordinals: &ContextOrdinals) -> Result<RootInitializerIdentity> {
-        Ok(RootInitializerIdentity {
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<RootEffectIdentity> {
+        Ok(RootEffectIdentity {
             owner: self.owner,
-            binding: ordinals.restore_binding(self.binding)?,
-            initializer_span: self.initializer_span,
+            source: match self.source {
+                SavedRootEffectSource::BindingInitializer {
+                    binding,
+                    initializer_span,
+                } => RootEffectSource::BindingInitializer {
+                    binding: ordinals.restore_binding(binding)?,
+                    initializer_span,
+                },
+                SavedRootEffectSource::ObjectBindingInitializer {
+                    pattern_span,
+                    properties,
+                    declarator_span,
+                    initializer_span,
+                } => RootEffectSource::ObjectBindingInitializer {
+                    pattern: ObjectBindingPattern {
+                        span: pattern_span,
+                        properties: properties
+                            .into_iter()
+                            .map(|property| {
+                                Ok(ObjectBindingProperty {
+                                    property: property.property,
+                                    binding: ordinals.restore_binding(property.binding)?,
+                                    span: property.span,
+                                })
+                            })
+                            .collect::<Result<_>>()?,
+                    },
+                    declarator_span,
+                    initializer_span,
+                },
+                SavedRootEffectSource::ClassDeclaration {
+                    binding,
+                    declaration_span,
+                } => RootEffectSource::ClassDeclaration {
+                    binding: ordinals.restore_binding(binding)?,
+                    declaration_span,
+                },
+                SavedRootEffectSource::ExpressionStatement { expression_span } => {
+                    RootEffectSource::ExpressionStatement { expression_span }
+                }
+            },
         })
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SavedLexicalBindingEffectReceipt {
-    identity: SavedRootInitializerIdentity,
+    identity: SavedRootEffectIdentity,
     read_dependencies: ProofDependencies,
     rebind_dependencies: ProofDependencies,
     calls: Vec<LocalCallReceipt>,
+    skipped_calls: Vec<SkippedCallReceipt>,
 }
 
 impl SavedLexicalBindingEffectReceipt {
     fn snapshot(receipt: &LexicalBindingEffectReceipt, ordinals: &ContextOrdinals) -> Result<Self> {
         Ok(Self {
-            identity: SavedRootInitializerIdentity::snapshot(&receipt.identity, ordinals)?,
+            identity: SavedRootEffectIdentity::snapshot(&receipt.identity, ordinals)?,
             read_dependencies: receipt.read_dependencies.clone(),
             rebind_dependencies: receipt.rebind_dependencies.clone(),
             calls: receipt.calls.clone(),
+            skipped_calls: receipt.skipped_calls.clone(),
         })
     }
 
@@ -260,6 +626,7 @@ impl SavedLexicalBindingEffectReceipt {
             read_dependencies: self.read_dependencies,
             rebind_dependencies: self.rebind_dependencies,
             calls: self.calls,
+            skipped_calls: self.skipped_calls,
         })
     }
 }
@@ -267,64 +634,64 @@ impl SavedLexicalBindingEffectReceipt {
 impl LexicalBindingEffectReceipt {
     pub(super) fn to_report(&self) -> crate::reports::schema::LexicalBindingEffectReceipt {
         use crate::reports::schema::{
-            LexicalBindingEffectBody, LexicalBindingEffectCall, LexicalBindingEffectReceipt,
+            LexicalBindingEffectCall, LexicalBindingEffectReceipt, LexicalBindingEffectSkippedCall,
+            LexicalEffectRoot,
         };
 
         LexicalBindingEffectReceipt {
             owner: self.identity.owner,
-            binding: self.identity.binding.0.to_string(),
-            initializer_span: self.identity.initializer_span,
+            root: match &self.identity.source {
+                RootEffectSource::BindingInitializer {
+                    binding,
+                    initializer_span,
+                } => LexicalEffectRoot::BindingInitializer {
+                    binding: binding.0.to_string(),
+                    initializer_span: *initializer_span,
+                },
+                RootEffectSource::ObjectBindingInitializer {
+                    pattern,
+                    declarator_span,
+                    initializer_span,
+                } => LexicalEffectRoot::ObjectBindingInitializer {
+                    pattern_span: pattern.span,
+                    declarator_span: *declarator_span,
+                    initializer_span: *initializer_span,
+                    targets: pattern.to_report(),
+                },
+                RootEffectSource::ClassDeclaration {
+                    binding,
+                    declaration_span,
+                } => LexicalEffectRoot::ClassDeclaration {
+                    binding: binding.0.to_string(),
+                    declaration_span: *declaration_span,
+                },
+                RootEffectSource::ExpressionStatement { expression_span } => {
+                    LexicalEffectRoot::ExpressionStatement {
+                        expression_span: *expression_span,
+                    }
+                }
+            },
             read_dependencies: self.read_dependencies.clone(),
             rebind_dependencies: self.rebind_dependencies.clone(),
             calls: self
                 .calls
                 .iter()
                 .map(|call| LexicalBindingEffectCall {
-                    caller: match &call.caller {
-                        LocalBodyIdentity::RootInitializer {
-                            owner,
-                            initializer_span,
-                        } => LexicalBindingEffectBody::RootInitializer {
-                            owner: *owner,
-                            initializer_span: *initializer_span,
-                        },
-                        LocalBodyIdentity::Callable { key, owner } => {
-                            LexicalBindingEffectBody::Callable {
-                                key: *key,
-                                owner: *owner,
-                            }
-                        }
-                        LocalBodyIdentity::Native {
-                            intrinsic,
-                            property,
-                        } => LexicalBindingEffectBody::Native {
-                            intrinsic: *intrinsic,
-                            property: property.clone(),
-                        },
-                    },
+                    caller: call.caller.to_report(),
                     call_span: call.call_span,
-                    target: match &call.target {
-                        LocalBodyIdentity::RootInitializer {
-                            owner,
-                            initializer_span,
-                        } => LexicalBindingEffectBody::RootInitializer {
-                            owner: *owner,
-                            initializer_span: *initializer_span,
-                        },
-                        LocalBodyIdentity::Callable { key, owner } => {
-                            LexicalBindingEffectBody::Callable {
-                                key: *key,
-                                owner: *owner,
-                            }
-                        }
-                        LocalBodyIdentity::Native {
-                            intrinsic,
-                            property,
-                        } => LexicalBindingEffectBody::Native {
-                            intrinsic: *intrinsic,
-                            property: property.clone(),
-                        },
-                    },
+                    target: call.target.to_report(),
+                    dependencies: call.dependencies.as_ref().clone(),
+                })
+                .collect(),
+            skipped_calls: self
+                .skipped_calls
+                .iter()
+                .map(|call| LexicalBindingEffectSkippedCall {
+                    caller: call.caller.to_report(),
+                    call_span: call.call_span,
+                    region_span: call.region_span,
+                    frontier_span: call.frontier_span,
+                    reason: call.reason,
                     dependencies: call.dependencies.as_ref().clone(),
                 })
                 .collect(),
@@ -332,19 +699,279 @@ impl LexicalBindingEffectReceipt {
     }
 }
 
+impl LocalBodyIdentity {
+    fn to_report(&self) -> crate::reports::schema::LexicalBindingEffectBody {
+        use crate::reports::schema::LexicalBindingEffectBody;
+        match self {
+            Self::RootInitializer {
+                owner,
+                initializer_span,
+            } => LexicalBindingEffectBody::RootInitializer {
+                owner: *owner,
+                initializer_span: *initializer_span,
+            },
+            Self::RootClassDeclaration {
+                owner,
+                declaration_span,
+            } => LexicalBindingEffectBody::RootClassDeclaration {
+                owner: *owner,
+                declaration_span: *declaration_span,
+            },
+            Self::RootExpression {
+                owner,
+                expression_span,
+            } => LexicalBindingEffectBody::RootExpression {
+                owner: *owner,
+                expression_span: *expression_span,
+            },
+            Self::Callable { key, owner } => LexicalBindingEffectBody::Callable {
+                key: *key,
+                owner: *owner,
+            },
+            Self::Construction { class, owner } => LexicalBindingEffectBody::Construction {
+                class: *class,
+                owner: *owner,
+            },
+            Self::ImportedCallable(identity) => LexicalBindingEffectBody::ImportedCallable {
+                defining_module: identity.defining_module.clone(),
+                export: identity.export.clone(),
+                local: identity.local.clone(),
+                member: identity.member.clone(),
+                key: identity.key,
+            },
+            Self::Native {
+                intrinsic,
+                property,
+            } => LexicalBindingEffectBody::Native {
+                intrinsic: *intrinsic,
+                property: property.clone(),
+            },
+            Self::NativeConstruction { intrinsic } => {
+                LexicalBindingEffectBody::NativeConstruction {
+                    intrinsic: *intrinsic,
+                }
+            }
+        }
+    }
+}
+
 /// This describes only the operations of one execution. It never identifies
 /// or certifies a whole source owner, and may travel through invocation memos.
-#[derive(Debug, Clone, Default)]
-pub(super) struct EffectCoverageFragment {
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct EffectCoverageFragment {
     initialization: Option<Box<InitializationEffectCoverage>>,
     lexical: Option<Box<LexicalEffectCoverage>>,
     completion: Completion,
+    call_observations: Option<Box<CallObservationCoverage>>,
+    /// Loss sites whose retained suffix was covered through the same kernel.
+    /// This is not an execution-completion or returned-value certificate.
+    retained_losses: Option<Box<RetainedLossCoverage>>,
+    /// Typed prerequisites for the successful own-data operations in this
+    /// fragment. These receipts never close an effect domain themselves.
+    #[serde(deserialize_with = "deserialize_required_operation_support")]
+    operation_support: Option<Box<[OperationSupportReceipt]>>,
+}
+
+fn deserialize_required_operation_support<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Box<[OperationSupportReceipt]>>, D::Error> {
+    Ok(
+        Option::<Vec<OperationSupportReceipt>>::deserialize(deserializer)?
+            .filter(|receipts| !receipts.is_empty())
+            .map(Vec::into_boxed_slice),
+    )
+}
+
+/// Which descriptor/shape proof an already admitted own-data operation read.
+/// Provider arguments stay parameterized until the caller instantiates them;
+/// pooled allocation ordinals are never compared across provider worlds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub(crate) enum OperationSupportLocation {
+    PooledObjectShape {
+        origin: u32,
+    },
+    /// Address from an isolated provider-body execution. Birth and escape are
+    /// not established by its ordinal, so callers must keep it unresolved.
+    ProviderWorldObjectShape {
+        origin: u32,
+    },
+    /// This exact access observed a frame-born, nonborrowed object. It remains
+    /// unresolved until the complete normal provider transfer seals the body.
+    ProviderLocalBirthCandidate {
+        origin: u32,
+    },
+    /// A completed provider-local birth proof. No provider allocation address
+    /// survives sealing, so this cannot be compared with another provider or
+    /// projected into a caller heap cell.
+    ProviderLocalBirth,
+    ParameterHeapRead {
+        read: ParameterHeapRead,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OperationSupportOperation {
+    OwnDataRead,
+    WritableOwnDataStore,
+}
+
+/// Evidence that a selected present own-data operation consumed descriptor
+/// or shape state. It is diagnostic and a read-footprint projection only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationSupportReceipt {
+    pub(crate) operation: OperationSupportOperation,
+    pub(crate) support: OperationSupportLocation,
+    pub(crate) dependencies: Box<ProofDependencies>,
+}
+
+impl OperationSupportReceipt {
+    pub(crate) fn pooled_object_shape(
+        operation: OperationSupportOperation,
+        origin: u32,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        Self {
+            operation,
+            support: OperationSupportLocation::PooledObjectShape { origin },
+            dependencies: Box::new(dependencies.clone()),
+        }
+    }
+
+    pub(crate) fn parameter_object_shape(
+        operation: OperationSupportOperation,
+        argument: usize,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        Self {
+            operation,
+            support: OperationSupportLocation::ParameterHeapRead {
+                read: ParameterHeapRead::ObjectShape { argument },
+            },
+            dependencies: Box::new(dependencies.clone()),
+        }
+    }
+
+    pub(crate) fn provider_world_object_shape(
+        operation: OperationSupportOperation,
+        origin: u32,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        Self {
+            operation,
+            support: OperationSupportLocation::ProviderWorldObjectShape { origin },
+            dependencies: Box::new(dependencies.clone()),
+        }
+    }
+
+    pub(crate) fn provider_local_birth_candidate(
+        operation: OperationSupportOperation,
+        origin: u32,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        Self {
+            operation,
+            support: OperationSupportLocation::ProviderLocalBirthCandidate { origin },
+            dependencies: Box::new(dependencies.clone()),
+        }
+    }
+
+    pub(crate) fn projected_cell(&self) -> Option<EffectCell> {
+        match &self.support {
+            OperationSupportLocation::PooledObjectShape { origin } => {
+                Some(EffectCell::ObjectShape(*origin))
+            }
+            OperationSupportLocation::ProviderWorldObjectShape { .. }
+            | OperationSupportLocation::ProviderLocalBirthCandidate { .. }
+            | OperationSupportLocation::ParameterHeapRead { .. } => None,
+            OperationSupportLocation::ProviderLocalBirth => None,
+        }
+    }
+
+    fn instantiate_parameter(&mut self, arguments: &[u32]) -> bool {
+        if matches!(
+            &self.support,
+            OperationSupportLocation::ProviderWorldObjectShape { .. }
+                | OperationSupportLocation::ProviderLocalBirthCandidate { .. }
+        ) {
+            return false;
+        }
+        let OperationSupportLocation::ParameterHeapRead { read } = &self.support else {
+            return true;
+        };
+        let ParameterHeapRead::ObjectShape { argument } = read else {
+            return false;
+        };
+        let Some(origin) = arguments.get(*argument) else {
+            return false;
+        };
+        self.support = OperationSupportLocation::PooledObjectShape { origin: *origin };
+        true
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+struct RetainedLossCoverage {
+    sites: Vec<ExecutionPrecisionLoss>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct SavedEffectCoverageFragment<'a> {
+    initialization: Cow<'a, Option<Box<InitializationEffectCoverage>>>,
+    lexical: Cow<'a, Option<Box<LexicalEffectCoverage>>>,
+    completion: Completion,
+    call_observations: Cow<'a, Option<Box<CallObservationCoverage>>>,
+    retained_losses: Option<Vec<SavedExecutionPrecisionLoss<'a>>>,
+    operation_support: Vec<OperationSupportReceipt>,
+}
+
+impl<'a> SavedEffectCoverageFragment<'a> {
+    pub(crate) fn snapshot(fragment: &'a EffectCoverageFragment) -> Self {
+        Self {
+            initialization: Cow::Borrowed(&fragment.initialization),
+            lexical: Cow::Borrowed(&fragment.lexical),
+            completion: fragment.completion,
+            call_observations: Cow::Borrowed(&fragment.call_observations),
+            retained_losses: fragment.retained_losses.as_ref().map(|losses| {
+                losses
+                    .sites
+                    .iter()
+                    .map(SavedExecutionPrecisionLoss::snapshot)
+                    .collect()
+            }),
+            operation_support: fragment.operation_support_receipts().to_vec(),
+        }
+    }
+
+    pub(crate) fn restore(self) -> EffectCoverageFragment {
+        let operation_support = if self.operation_support.is_empty() {
+            None
+        } else {
+            Some(self.operation_support.into_boxed_slice())
+        };
+        EffectCoverageFragment {
+            initialization: self.initialization.into_owned(),
+            lexical: self.lexical.into_owned(),
+            completion: self.completion,
+            call_observations: self.call_observations.into_owned(),
+            retained_losses: self.retained_losses.map(|losses| {
+                Box::new(RetainedLossCoverage {
+                    sites: losses
+                        .into_iter()
+                        .map(SavedExecutionPrecisionLoss::restore)
+                        .collect(),
+                })
+            }),
+            operation_support,
+        }
+    }
 }
 
 /// The three existing initialization domains remain independent, but are
 /// grouped behind one pointer so every recursive fragment does not carry
 /// three inline proof-dependency payloads.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 struct InitializationEffectCoverage {
     global_properties: DomainCoverage,
     general_heap: DomainCoverage,
@@ -354,16 +981,71 @@ struct InitializationEffectCoverage {
 /// Kept behind one pointer because `ProofDependencies` contains several
 /// inline set headers. This data is absent on the conservative default path,
 /// which is common in deep ordinary call execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 struct LexicalEffectCoverage {
     reads: DomainCoverage,
     rebinds: DomainCoverage,
+}
+
+/// Call-site observations outlive lexical effect authority: composing an
+/// unknown effect fragment must not erase already observed source sites.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+struct CallObservationCoverage {
+    #[serde(
+        serialize_with = "serialize_calls",
+        deserialize_with = "deserialize_calls"
+    )]
     calls: BTreeMap<LocalCallKey, LocalCallReceipt>,
+    #[serde(
+        serialize_with = "serialize_skipped_calls",
+        deserialize_with = "deserialize_skipped_calls"
+    )]
+    skipped_calls: BTreeMap<LocalSkippedCallKey, SkippedCallReceipt>,
+}
+
+fn serialize_calls<S: serde::Serializer>(
+    calls: &BTreeMap<LocalCallKey, LocalCallReceipt>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    calls.values().collect::<Vec<_>>().serialize(serializer)
+}
+
+fn deserialize_calls<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<LocalCallKey, LocalCallReceipt>, D::Error> {
+    let mut calls = BTreeMap::<LocalCallKey, LocalCallReceipt>::new();
+    for call in Vec::<LocalCallReceipt>::deserialize(deserializer)? {
+        calls
+            .entry(local_call_key(&call))
+            .and_modify(|held| held.dependencies.extend(&call.dependencies))
+            .or_insert(call);
+    }
+    Ok(calls)
+}
+
+fn serialize_skipped_calls<S: serde::Serializer>(
+    calls: &BTreeMap<LocalSkippedCallKey, SkippedCallReceipt>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    calls.values().collect::<Vec<_>>().serialize(serializer)
+}
+
+fn deserialize_skipped_calls<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<LocalSkippedCallKey, SkippedCallReceipt>, D::Error> {
+    let mut calls = BTreeMap::<LocalSkippedCallKey, SkippedCallReceipt>::new();
+    for call in Vec::<SkippedCallReceipt>::deserialize(deserializer)? {
+        calls
+            .entry(local_skipped_call_key(&call))
+            .and_modify(|held| held.dependencies.extend(&call.dependencies))
+            .or_insert(call);
+    }
+    Ok(calls)
 }
 
 impl EffectCoverageFragment {
-    /// Explicit receipt for an operation that touches none of these domains,
-    /// such as GetBindingValue of an initialized module declarative cell.
+    /// No unaccounted effect in these domains. Concrete cell effects, such as
+    /// an initialized declarative read, belong in the caller's ledger.
     /// Source identity and actual binding effects remain separate evidence.
     pub(super) fn no_effects() -> Self {
         Self {
@@ -375,15 +1057,19 @@ impl EffectCoverageFragment {
             lexical: Some(Box::new(LexicalEffectCoverage {
                 reads: DomainCoverage::Covered(ProofDependencies::default()),
                 rebinds: DomainCoverage::Covered(ProofDependencies::default()),
-                calls: BTreeMap::new(),
             })),
             completion: Completion::Normal,
+            call_observations: None,
+            retained_losses: None,
+            operation_support: None,
         }
     }
 
-    /// Checked native body with no application callback, accessor, host
-    /// operation or exterior write. Callee and operand evaluation remain with
-    /// the caller; this receipt grants no lexical binding-effect authority.
+    /// Complete initialization-domain coverage for a checked native body with
+    /// no application callback or accessor. Concrete shared-cell effects are
+    /// recorded by the runtime transfer. Callee and operand evaluation remain
+    /// with the caller; this receipt grants no lexical binding-effect
+    /// authority.
     pub(super) fn native_operation(dependencies: &ProofDependencies) -> Self {
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
@@ -394,6 +1080,9 @@ impl EffectCoverageFragment {
             // Native operands are outside the bounded lexical migration.
             lexical: None,
             completion: Completion::Normal,
+            call_observations: None,
+            retained_losses: None,
+            operation_support: None,
         }
     }
 
@@ -402,6 +1091,15 @@ impl EffectCoverageFragment {
     /// this is body coverage, not completion of operand evaluation.
     pub(super) fn native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
         Self::native_operation(dependencies)
+    }
+
+    /// Ordered local execution also owns the operand reads and exact lexical
+    /// call edge. Preserve that coverage while certifying the native protocol
+    /// body with the same dependencies as the ordinary iterable receipt.
+    pub(super) fn ordered_native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
+        let mut fragment = Self::no_effects();
+        fragment.depend_on(dependencies);
+        fragment
     }
 
     /// A top-level module-cell read has no global/heap/host effect, and its
@@ -416,19 +1114,99 @@ impl EffectCoverageFragment {
         fragment
     }
 
-    /// An executed lexical operation whose global, heap, and host effects
-    /// remain outside this receipt family. Keeping those domains Unknown is
-    /// deliberate: this proof can seal binding-effect coverage only.
-    pub(super) fn lexical_operation() -> Self {
-        Self {
-            lexical: Some(Box::new(LexicalEffectCoverage {
-                reads: DomainCoverage::Covered(ProofDependencies::default()),
-                rebinds: DomainCoverage::Covered(ProofDependencies::default()),
-                calls: BTreeMap::new(),
-            })),
-            completion: Completion::Normal,
-            ..Self::default()
+    /// A checked present own-data access has no implicit accessor, prototype,
+    /// global or host operation. Its actual property cell must be recorded in
+    /// the heap ledger separately; receiver/RHS evaluation composes separately.
+    /// Writes additionally require the current-prefix writable witness.
+    pub(super) fn modeled_own_data_access() -> Self {
+        Self::no_effects()
+    }
+
+    pub(super) fn operation_support(&mut self, receipt: OperationSupportReceipt) {
+        if self
+            .operation_support
+            .as_deref()
+            .is_some_and(|receipts| receipts.contains(&receipt))
+        {
+            return;
         }
+        let mut receipts = self
+            .operation_support
+            .take()
+            .map(|receipts| receipts.into_vec())
+            .unwrap_or_default();
+        receipts.push(receipt);
+        self.operation_support = Some(receipts.into_boxed_slice());
+    }
+
+    pub(crate) fn operation_support_receipts(&self) -> &[OperationSupportReceipt] {
+        self.operation_support.as_deref().unwrap_or(&[])
+    }
+
+    pub(crate) fn has_uninstantiated_operation_support(&self) -> bool {
+        self.operation_support_receipts().iter().any(|receipt| {
+            matches!(
+                &receipt.support,
+                OperationSupportLocation::ProviderWorldObjectShape { .. }
+                    | OperationSupportLocation::ProviderLocalBirthCandidate { .. }
+                    | OperationSupportLocation::ParameterHeapRead { .. }
+            )
+        })
+    }
+
+    pub(crate) fn has_unresolved_provider_operation_support(&self) -> bool {
+        self.operation_support_receipts().iter().any(|receipt| {
+            matches!(
+                &receipt.support,
+                OperationSupportLocation::ProviderWorldObjectShape { .. }
+                    | OperationSupportLocation::ProviderLocalBirthCandidate { .. }
+            )
+        })
+    }
+
+    /// Seal only per-access candidates from a complete normal transfer. The
+    /// caller additionally checks that this was the admitted straight-line
+    /// LocalBody and that allocation transfer itself completed.
+    pub(super) fn seal_provider_local_birth_support(
+        &mut self,
+        fresh_records: &std::collections::BTreeSet<u32>,
+        borrowed_records: &std::collections::BTreeSet<u32>,
+    ) -> bool {
+        if self.closed_effect_dependencies().is_none() {
+            return false;
+        }
+        let mut receipts = self.operation_support_receipts().to_vec();
+        for receipt in &mut receipts {
+            match &receipt.support {
+                OperationSupportLocation::ProviderLocalBirthCandidate { origin } => {
+                    let origin = *origin;
+                    if !fresh_records.contains(&origin) || borrowed_records.contains(&origin) {
+                        return false;
+                    }
+                    receipt.support = OperationSupportLocation::ProviderLocalBirth;
+                }
+                OperationSupportLocation::ParameterHeapRead { .. } => {}
+                _ => return false,
+            }
+        }
+        self.operation_support = (!receipts.is_empty()).then(|| receipts.into_boxed_slice());
+        true
+    }
+
+    /// Bind provider-parameter support to the caller's actual pooled object
+    /// regions. Any unsupported or unavailable correspondence refuses the
+    /// entire binding rather than comparing provider ordinals to caller ones.
+    pub(crate) fn instantiate_operation_support(&mut self, arguments: &[u32]) -> bool {
+        let mut instantiated = self.operation_support_receipts().to_vec();
+        if instantiated
+            .iter_mut()
+            .any(|receipt| !receipt.instantiate_parameter(arguments))
+        {
+            return false;
+        }
+        self.operation_support =
+            (!instantiated.is_empty()).then(|| instantiated.into_boxed_slice());
+        true
     }
 
     /// Proof prerequisites for a successfully consumed own-data selection.
@@ -451,6 +1229,14 @@ impl EffectCoverageFragment {
     }
 
     pub(super) fn compose(&mut self, next: &Self) {
+        if let Some(losses) = &next.retained_losses {
+            for loss in &losses.sites {
+                self.retain_loss(loss.clone());
+            }
+        }
+        for receipt in next.operation_support_receipts() {
+            self.operation_support(receipt.clone());
+        }
         match (&mut self.initialization, &next.initialization) {
             (Some(current), Some(next)) => {
                 current.global_properties.compose(&next.global_properties);
@@ -463,15 +1249,27 @@ impl EffectCoverageFragment {
             (Some(current), Some(next)) => {
                 current.reads.compose(&next.reads);
                 current.rebinds.compose(&next.rebinds);
-                for (key, next_call) in &next.calls {
-                    current
-                        .calls
-                        .entry(key.clone())
-                        .and_modify(|call| call.dependencies.extend(&next_call.dependencies))
-                        .or_insert_with(|| next_call.clone());
-                }
             }
             _ => self.lexical = None,
+        }
+        if let Some(next_observations) = &next.call_observations {
+            let current = self
+                .call_observations
+                .get_or_insert_with(|| Box::new(CallObservationCoverage::default()));
+            for (key, next_call) in &next_observations.calls {
+                current
+                    .calls
+                    .entry(key.clone())
+                    .and_modify(|call| call.dependencies.extend(&next_call.dependencies))
+                    .or_insert_with(|| next_call.clone());
+            }
+            for (key, next_call) in &next_observations.skipped_calls {
+                current
+                    .skipped_calls
+                    .entry(key.clone())
+                    .and_modify(|call| call.dependencies.extend(&next_call.dependencies))
+                    .or_insert_with(|| next_call.clone());
+            }
         }
         self.completion = match (self.completion, next.completion) {
             (Completion::Unknown, _) | (_, Completion::Unknown) => Completion::Unknown,
@@ -500,21 +1298,81 @@ impl EffectCoverageFragment {
                     current.extend(dependencies);
                 }
             }
-            for call in lexical.calls.values_mut() {
+        }
+        if let Some(observations) = &mut self.call_observations {
+            for call in observations.calls.values_mut() {
                 call.dependencies.extend(dependencies);
             }
+            for call in observations.skipped_calls.values_mut() {
+                call.dependencies.extend(dependencies);
+            }
+        }
+        for receipt in self.operation_support.as_deref_mut().into_iter().flatten() {
+            receipt.dependencies.extend(dependencies);
         }
     }
 
     /// Add one selected call edge without expanding child paths.
     pub(super) fn selected_local_call(&mut self, call: LocalCallReceipt) {
-        if let Some(lexical) = &mut self.lexical {
-            lexical
-                .calls
-                .entry(local_call_key(&call))
-                .and_modify(|existing| existing.dependencies.extend(&call.dependencies))
-                .or_insert(call);
-        }
+        let observations = self
+            .call_observations
+            .get_or_insert_with(|| Box::new(CallObservationCoverage::default()));
+        observations
+            .calls
+            .entry(local_call_key(&call))
+            .and_modify(|existing| existing.dependencies.extend(&call.dependencies))
+            .or_insert(call);
+    }
+
+    pub(super) fn skipped_local_call(&mut self, call: SkippedCallReceipt) {
+        let observations = self
+            .call_observations
+            .get_or_insert_with(|| Box::new(CallObservationCoverage::default()));
+        observations
+            .skipped_calls
+            .entry(local_skipped_call_key(&call))
+            .and_modify(|existing| existing.dependencies.extend(&call.dependencies))
+            .or_insert(call);
+    }
+
+    /// Whether this exact source site has either invocation or skip evidence.
+    pub(super) fn has_local_call(&self, caller: &LocalBodyIdentity, call_span: Span) -> bool {
+        let Some(observations) = &self.call_observations else {
+            return false;
+        };
+        observations
+            .calls
+            .values()
+            .any(|call| call.caller == *caller && call.call_span == call_span)
+            || observations
+                .skipped_calls
+                .values()
+                .any(|call| call.caller == *caller && call.call_span == call_span)
+    }
+
+    /// Exact union of invoked and skipped sites for one source body.
+    pub(super) fn has_call_inventory(
+        &self,
+        caller: &LocalBodyIdentity,
+        expected: &std::collections::BTreeSet<(u32, u32)>,
+    ) -> bool {
+        let Some(observations) = &self.call_observations else {
+            return expected.is_empty();
+        };
+        let observed: std::collections::BTreeSet<_> = observations
+            .calls
+            .values()
+            .filter(|call| call.caller == *caller)
+            .map(|call| (call.call_span.lo.0, call.call_span.hi.0))
+            .chain(
+                observations
+                    .skipped_calls
+                    .values()
+                    .filter(|call| call.caller == *caller)
+                    .map(|call| (call.call_span.lo.0, call.call_span.hi.0)),
+            )
+            .collect();
+        &observed == expected
     }
 
     pub(super) fn lexical_effect_dependencies(
@@ -533,27 +1391,109 @@ impl EffectCoverageFragment {
         Some((read_dependencies.clone(), rebind_dependencies.clone()))
     }
 
+    pub(super) fn closed_effect_dependencies(&self) -> Option<ProofDependencies> {
+        let mut dependencies = self.normal_dependencies()?;
+        let (reads, rebinds) = self.lexical_effect_dependencies()?;
+        dependencies.extend(&reads);
+        dependencies.extend(&rebinds);
+        if let Some(observations) = &self.call_observations {
+            for call in observations.calls.values() {
+                dependencies.extend(&call.dependencies);
+            }
+            for call in observations.skipped_calls.values() {
+                dependencies.extend(&call.dependencies);
+            }
+        }
+        Some(dependencies)
+    }
+
+    /// Dependencies for consuming a fully covered abrupt alternative.
+    /// The caller must independently know this is an actual known throw, not
+    /// a return or mixed/unknown completion.
+    pub(super) fn known_abrupt_dependencies(&self) -> Option<ProofDependencies> {
+        if self.completion != Completion::Abrupt {
+            return None;
+        }
+        let initialization = self.initialization.as_ref()?;
+        let lexical = self.lexical.as_ref()?;
+        let mut dependencies = ProofDependencies::default();
+        for domain in [
+            &initialization.global_properties,
+            &initialization.general_heap,
+            &initialization.host_effects,
+            &lexical.reads,
+            &lexical.rebinds,
+        ] {
+            let DomainCoverage::Covered(domain_dependencies) = domain else {
+                return None;
+            };
+            dependencies.extend(domain_dependencies);
+        }
+        if let Some(observations) = &self.call_observations {
+            for call in observations.calls.values() {
+                dependencies.extend(&call.dependencies);
+            }
+            for call in observations.skipped_calls.values() {
+                dependencies.extend(&call.dependencies);
+            }
+        }
+        Some(dependencies)
+    }
+
+    /// Turn a fully covered abrupt fragment normal after its known throw is
+    /// consumed by the matching handler. Call only for a known-throw path.
+    pub(super) fn handle_known_throw(&mut self) -> bool {
+        if self.known_abrupt_dependencies().is_none() {
+            return false;
+        }
+        self.completion = Completion::Normal;
+        true
+    }
+
+    pub(super) fn has_closed_effects(&self) -> bool {
+        let (Some(initialization), Some(lexical)) = (&self.initialization, &self.lexical) else {
+            return false;
+        };
+        self.completion == Completion::Normal
+            && [
+                &initialization.global_properties,
+                &initialization.general_heap,
+                &initialization.host_effects,
+                &lexical.reads,
+                &lexical.rebinds,
+            ]
+            .into_iter()
+            .all(|domain| matches!(domain, DomainCoverage::Covered(_)))
+    }
+
+    pub(super) fn retain_loss(&mut self, loss: ExecutionPrecisionLoss) {
+        let losses = self.retained_losses.get_or_insert_with(Box::default);
+        if !losses.sites.iter().any(|held| same_loss(held, &loss)) {
+            losses.sites.push(loss);
+        }
+    }
+
+    pub(super) fn covers_retained_losses(&self, losses: &[ExecutionPrecisionLoss]) -> bool {
+        !losses.is_empty()
+            && self.has_closed_effects()
+            && self.retained_losses.as_ref().is_some_and(|covered| {
+                losses
+                    .iter()
+                    .all(|loss| covered.sites.iter().any(|held| same_loss(held, loss)))
+            })
+    }
+
     pub(super) fn seal_lexical_binding_effects(
         &self,
-        identity: RootInitializerIdentity,
+        identity: RootEffectIdentity,
         expected_root_calls: &std::collections::BTreeSet<(u32, u32)>,
     ) -> Option<LexicalBindingEffectReceipt> {
         let (read_dependencies, rebind_dependencies) = self.lexical_effect_dependencies()?;
-        let initializer_span = identity.initializer_span?;
-        let root_body = LocalBodyIdentity::RootInitializer {
-            owner: identity.owner,
-            initializer_span,
-        };
-        let lexical = self.lexical.as_ref()?;
-        let observed_root_calls: std::collections::BTreeSet<_> = lexical
-            .calls
-            .values()
-            .filter(|call| call.caller == root_body)
-            .map(|call| (call.call_span.lo.0, call.call_span.hi.0))
-            .collect();
-        if &observed_root_calls != expected_root_calls {
+        let root_body = identity.body_identity();
+        if !self.has_call_inventory(&root_body, expected_root_calls) {
             return None;
         }
+        let observations = self.call_observations.as_deref();
 
         // A receipt can contain only edges reached while executing this root.
         // Check the flattened caller/target relation iteratively, without
@@ -563,7 +1503,10 @@ impl EffectCoverageFragment {
             LocalBodyKey,
             std::collections::BTreeSet<LocalBodyKey>,
         >::new();
-        for call in lexical.calls.values() {
+        for call in observations
+            .into_iter()
+            .flat_map(|calls| calls.calls.values())
+        {
             adjacency
                 .entry(local_body_key(&call.caller))
                 .or_default()
@@ -581,18 +1524,30 @@ impl EffectCoverageFragment {
                 }
             }
         }
-        if lexical
-            .calls
-            .values()
-            .any(|call| !reachable_bodies.contains(&local_body_key(&call.caller)))
-        {
+        if observations.into_iter().any(|observations| {
+            observations
+                .calls
+                .values()
+                .any(|call| !reachable_bodies.contains(&local_body_key(&call.caller)))
+                || observations
+                    .skipped_calls
+                    .values()
+                    .any(|call| !reachable_bodies.contains(&local_body_key(&call.caller)))
+        }) {
             return None;
         }
         Some(LexicalBindingEffectReceipt {
             identity,
             read_dependencies,
             rebind_dependencies,
-            calls: lexical.calls.values().cloned().collect(),
+            calls: observations
+                .into_iter()
+                .flat_map(|observations| observations.calls.values().cloned())
+                .collect(),
+            skipped_calls: observations
+                .into_iter()
+                .flat_map(|observations| observations.skipped_calls.values().cloned())
+                .collect(),
         })
     }
 
@@ -624,12 +1579,29 @@ impl EffectCoverageFragment {
     }
 }
 
+fn same_loss(first: &ExecutionPrecisionLoss, later: &ExecutionPrecisionLoss) -> bool {
+    first.statement_ordinal == later.statement_ordinal
+        && first.span == later.span
+        && first.reason == later.reason
+        && first.reach == later.reach
+}
+
 /// Compact ordered identity for the edge map and iterative connectivity check.
 /// Spans are represented by their exact byte coordinates because SWC `Span`
 /// itself does not implement `Ord`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 enum LocalBodyKey {
     RootInitializer {
+        owner: usize,
+        lo: u32,
+        hi: u32,
+    },
+    RootClassDeclaration {
+        owner: usize,
+        lo: u32,
+        hi: u32,
+    },
+    RootExpression {
         owner: usize,
         lo: u32,
         hi: u32,
@@ -638,20 +1610,40 @@ enum LocalBodyKey {
         key: u32,
         owner: usize,
     },
+    Construction {
+        class: u32,
+        owner: usize,
+    },
+    ImportedCallable(Box<ImportedCallableIdentity>),
     Native {
         intrinsic: NativeIntrinsic,
         property: Option<String>,
+    },
+    NativeConstruction {
+        intrinsic: NativeIntrinsic,
     },
 }
 
 /// Exact identity for a flat local call edge. Span coordinates are used
 /// because SWC `Span` itself does not implement `Ord`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 struct LocalCallKey {
     caller: LocalBodyKey,
     call_lo: u32,
     call_hi: u32,
     target: LocalBodyKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+struct LocalSkippedCallKey {
+    caller: LocalBodyKey,
+    call_lo: u32,
+    call_hi: u32,
+    region_lo: u32,
+    region_hi: u32,
+    frontier_lo: u32,
+    frontier_hi: u32,
+    reason: SkippedCallReason,
 }
 
 fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
@@ -664,16 +1656,42 @@ fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
             lo: initializer_span.lo.0,
             hi: initializer_span.hi.0,
         },
+        LocalBodyIdentity::RootClassDeclaration {
+            owner,
+            declaration_span,
+        } => LocalBodyKey::RootClassDeclaration {
+            owner: owner.0,
+            lo: declaration_span.lo.0,
+            hi: declaration_span.hi.0,
+        },
+        LocalBodyIdentity::RootExpression {
+            owner,
+            expression_span,
+        } => LocalBodyKey::RootExpression {
+            owner: owner.0,
+            lo: expression_span.lo.0,
+            hi: expression_span.hi.0,
+        },
         LocalBodyIdentity::Callable { key, owner } => LocalBodyKey::Callable {
             key: *key,
             owner: owner.0,
         },
+        LocalBodyIdentity::Construction { class, owner } => LocalBodyKey::Construction {
+            class: *class,
+            owner: owner.0,
+        },
+        LocalBodyIdentity::ImportedCallable(identity) => {
+            LocalBodyKey::ImportedCallable(identity.clone())
+        }
         LocalBodyIdentity::Native {
             intrinsic,
             property,
         } => LocalBodyKey::Native {
             intrinsic: *intrinsic,
             property: property.clone(),
+        },
+        LocalBodyIdentity::NativeConstruction { intrinsic } => LocalBodyKey::NativeConstruction {
+            intrinsic: *intrinsic,
         },
     }
 }
@@ -684,6 +1702,19 @@ fn local_call_key(call: &LocalCallReceipt) -> LocalCallKey {
         call_lo: call.call_span.lo.0,
         call_hi: call.call_span.hi.0,
         target: local_body_key(&call.target),
+    }
+}
+
+fn local_skipped_call_key(call: &SkippedCallReceipt) -> LocalSkippedCallKey {
+    LocalSkippedCallKey {
+        caller: local_body_key(&call.caller),
+        call_lo: call.call_span.lo.0,
+        call_hi: call.call_span.hi.0,
+        region_lo: call.region_span.lo.0,
+        region_hi: call.region_span.hi.0,
+        frontier_lo: call.frontier_span.lo.0,
+        frontier_hi: call.frontier_span.hi.0,
+        reason: call.reason,
     }
 }
 
@@ -711,6 +1742,25 @@ mod tests {
             caller,
             call_span: Span::new(BytePos(lo), BytePos(hi)),
             target,
+            dependencies: Box::new(dependencies),
+        }
+    }
+
+    fn test_skipped_call(
+        caller: LocalBodyIdentity,
+        lo: u32,
+        hi: u32,
+        region: (u32, u32),
+        frontier: (u32, u32),
+        reason: SkippedCallReason,
+        dependencies: ProofDependencies,
+    ) -> SkippedCallReceipt {
+        SkippedCallReceipt {
+            caller,
+            call_span: Span::new(BytePos(lo), BytePos(hi)),
+            region_span: Span::new(BytePos(region.0), BytePos(region.1)),
+            frontier_span: Span::new(BytePos(frontier.0), BytePos(frontier.1)),
+            reason,
             dependencies: Box::new(dependencies),
         }
     }
@@ -843,7 +1893,7 @@ mod tests {
         let mut composed = first_path.clone();
         composed.compose(&second_path);
         composed.compose(&first_path);
-        let calls = &composed.lexical.as_ref().unwrap().calls;
+        let calls = &composed.call_observations.as_ref().unwrap().calls;
         assert_eq!(calls.len(), 3, "each exact source edge is retained once");
         let branch_to_leaf = calls
             .values()
@@ -868,6 +1918,11 @@ mod tests {
         assert!(
             composed.lexical.is_none(),
             "unknown lexical coverage absorbs"
+        );
+        assert_eq!(
+            composed.call_observations.as_ref().unwrap().calls.len(),
+            3,
+            "unknown effect coverage does not erase exact site observations"
         );
         assert!(composed.lexical_effect_dependencies().is_none());
     }
@@ -927,5 +1982,365 @@ mod tests {
                 "a differing caller identity, span, or target keeps a separate edge"
             );
         }
+    }
+
+    #[test]
+    fn serialized_fragments_preserve_module_qualified_call_identity_and_coverage() {
+        let mut fragment = EffectCoverageFragment::no_effects();
+        let caller = test_callable(7, 2);
+        for module in ["first", "second"] {
+            fragment.selected_local_call(test_call(
+                caller.clone(),
+                10,
+                15,
+                LocalBodyIdentity::ImportedCallable(Box::new(ImportedCallableIdentity {
+                    defining_module: module.into(),
+                    export: "make".into(),
+                    local: "make".into(),
+                    member: None,
+                    key: 1,
+                })),
+                ProofDependencies::default(),
+            ));
+        }
+        let bytes = serde_json::to_vec(&fragment)
+            .expect("non-string runtime edge keys serialize as receipts");
+        let decoded: EffectCoverageFragment = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(decoded, fragment);
+        assert!(decoded.has_closed_effects());
+        assert_eq!(decoded.call_observations.as_ref().unwrap().calls.len(), 2);
+        let mut unknown = EffectCoverageFragment::default();
+        unknown.compose(&decoded);
+        let bytes = serde_json::to_vec(&unknown).unwrap();
+        let decoded: EffectCoverageFragment = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            !decoded.has_closed_effects(),
+            "artifact transport must not promote unknown domains"
+        );
+    }
+
+    #[test]
+    fn operation_support_survives_unknown_composition_and_saved_roundtrip_without_authority() {
+        let receipt = OperationSupportReceipt::pooled_object_shape(
+            OperationSupportOperation::OwnDataRead,
+            17,
+            &ProofDependencies::default(),
+        );
+        let mut fragment = EffectCoverageFragment::no_effects();
+        fragment.operation_support(receipt.clone());
+        assert!(fragment.normal_dependencies().is_some());
+
+        fragment.compose(&EffectCoverageFragment::default());
+        assert!(fragment.normal_dependencies().is_none());
+        assert_eq!(
+            fragment.operation_support_receipts(),
+            std::slice::from_ref(&receipt)
+        );
+
+        let saved = SavedEffectCoverageFragment::snapshot(&fragment);
+        let bytes = serde_json::to_vec(&saved).unwrap();
+        let saved: SavedEffectCoverageFragment<'_> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(saved.restore(), fragment);
+
+        let mut incomplete_fragment: serde_json::Value =
+            serde_json::from_slice(&serde_json::to_vec(&fragment).unwrap()).unwrap();
+        incomplete_fragment
+            .as_object_mut()
+            .unwrap()
+            .remove("operation_support");
+        assert!(serde_json::from_value::<EffectCoverageFragment>(incomplete_fragment).is_err());
+
+        let mut incomplete: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        incomplete
+            .as_object_mut()
+            .unwrap()
+            .remove("operation_support");
+        assert!(serde_json::from_value::<SavedEffectCoverageFragment<'_>>(incomplete).is_err());
+    }
+
+    #[test]
+    fn parameter_support_instantiates_only_with_its_argument_origin() {
+        let mut parameterized = EffectCoverageFragment::no_effects();
+        parameterized.operation_support(OperationSupportReceipt::parameter_object_shape(
+            OperationSupportOperation::OwnDataRead,
+            0,
+            &ProofDependencies::default(),
+        ));
+        assert!(parameterized.has_uninstantiated_operation_support());
+        assert!(!parameterized.instantiate_operation_support(&[]));
+        assert!(parameterized.instantiate_operation_support(&[91]));
+        assert_eq!(
+            parameterized.operation_support_receipts()[0].projected_cell(),
+            Some(EffectCell::ObjectShape(91))
+        );
+
+        let mut provider_world = EffectCoverageFragment::no_effects();
+        provider_world.operation_support(OperationSupportReceipt::provider_world_object_shape(
+            OperationSupportOperation::OwnDataRead,
+            7,
+            &ProofDependencies::default(),
+        ));
+        assert!(provider_world.has_unresolved_provider_operation_support());
+        assert!(!provider_world.instantiate_operation_support(&[91]));
+        provider_world.compose(&EffectCoverageFragment::default());
+        assert!(provider_world.normal_dependencies().is_none());
+        assert_eq!(
+            provider_world.operation_support_receipts()[0].projected_cell(),
+            None,
+            "provider-world pooled origins never become caller heap cells"
+        );
+    }
+
+    #[test]
+    fn provider_local_birth_seals_without_cross_world_address_or_projection() {
+        let mut candidate = EffectCoverageFragment::no_effects();
+        candidate.operation_support(OperationSupportReceipt::provider_local_birth_candidate(
+            OperationSupportOperation::WritableOwnDataStore,
+            7,
+            &ProofDependencies::default(),
+        ));
+        assert!(candidate.has_uninstantiated_operation_support());
+        assert!(candidate.has_unresolved_provider_operation_support());
+        assert!(!candidate.instantiate_operation_support(&[91]));
+        assert_eq!(
+            candidate.operation_support_receipts()[0].projected_cell(),
+            None
+        );
+
+        let fresh = std::collections::BTreeSet::from([7]);
+        let borrowed = std::collections::BTreeSet::new();
+        assert!(candidate.seal_provider_local_birth_support(&fresh, &borrowed));
+        assert!(!candidate.has_uninstantiated_operation_support());
+        assert!(!candidate.has_unresolved_provider_operation_support());
+        assert!(candidate.instantiate_operation_support(&[91]));
+        let receipt = &candidate.operation_support_receipts()[0];
+        assert_eq!(
+            receipt.support,
+            OperationSupportLocation::ProviderLocalBirth
+        );
+        assert_eq!(receipt.projected_cell(), None);
+
+        let saved = SavedEffectCoverageFragment::snapshot(&candidate);
+        let bytes = serde_json::to_vec(&saved).unwrap();
+        let saved: SavedEffectCoverageFragment<'_> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(saved.restore(), candidate);
+        let mut incomplete: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        incomplete
+            .as_object_mut()
+            .unwrap()
+            .remove("operation_support");
+        assert!(serde_json::from_value::<SavedEffectCoverageFragment<'_>>(incomplete).is_err());
+    }
+
+    #[test]
+    fn provider_local_birth_refuses_missing_or_borrowed_frame_birth() {
+        let candidate = || {
+            let mut fragment = EffectCoverageFragment::no_effects();
+            fragment.operation_support(OperationSupportReceipt::provider_local_birth_candidate(
+                OperationSupportOperation::OwnDataRead,
+                7,
+                &ProofDependencies::default(),
+            ));
+            fragment
+        };
+        let fresh = std::collections::BTreeSet::from([7]);
+        let borrowed = std::collections::BTreeSet::from([7]);
+        assert!(!candidate().seal_provider_local_birth_support(
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        ));
+        assert!(!candidate().seal_provider_local_birth_support(&fresh, &borrowed));
+    }
+
+    #[test]
+    fn provider_local_birth_refuses_uncertain_or_abrupt_completion() {
+        let candidate = || {
+            let mut fragment = EffectCoverageFragment::no_effects();
+            fragment.operation_support(OperationSupportReceipt::provider_local_birth_candidate(
+                OperationSupportOperation::OwnDataRead,
+                7,
+                &ProofDependencies::default(),
+            ));
+            fragment
+        };
+        let fresh = std::collections::BTreeSet::from([7]);
+        let borrowed = std::collections::BTreeSet::new();
+
+        let mut uncertain = candidate();
+        uncertain.compose(&EffectCoverageFragment::default());
+        assert!(!uncertain.seal_provider_local_birth_support(&fresh, &borrowed));
+        assert!(uncertain.has_unresolved_provider_operation_support());
+
+        let mut abrupt = candidate();
+        abrupt.abrupt();
+        assert!(!abrupt.seal_provider_local_birth_support(&fresh, &borrowed));
+        assert!(abrupt.has_unresolved_provider_operation_support());
+    }
+
+    #[test]
+    fn call_inventory_unions_invoked_and_skipped_site_evidence_exactly() {
+        let caller = test_callable(7, 2);
+        let mut fragment = EffectCoverageFragment::no_effects();
+        fragment.selected_local_call(test_call(
+            caller.clone(),
+            10,
+            15,
+            test_callable(8, 2),
+            ProofDependencies::default(),
+        ));
+        fragment.skipped_local_call(test_skipped_call(
+            caller.clone(),
+            20,
+            25,
+            (1, 100),
+            (10, 15),
+            SkippedCallReason::KnownThrow,
+            ProofDependencies::default(),
+        ));
+
+        let expected = std::collections::BTreeSet::from([(10, 15), (20, 25)]);
+        assert!(fragment.has_call_inventory(&caller, &expected));
+        assert!(fragment.has_local_call(&caller, Span::new(BytePos(10), BytePos(15))));
+        assert!(fragment.has_local_call(&caller, Span::new(BytePos(20), BytePos(25))));
+        assert!(!fragment.has_local_call(&caller, Span::new(BytePos(30), BytePos(35))));
+        assert!(
+            !fragment.has_call_inventory(&caller, &std::collections::BTreeSet::from([(10, 15)]))
+        );
+        assert!(!fragment.has_call_inventory(
+            &caller,
+            &std::collections::BTreeSet::from([(10, 15), (20, 25), (30, 35)])
+        ));
+        assert!(!fragment.has_call_inventory(&test_callable(7, 3), &expected));
+    }
+
+    #[test]
+    fn skipped_call_composition_merges_only_equal_frontier_evidence() {
+        let caller = test_callable(7, 2);
+        let mut first = EffectCoverageFragment::no_effects();
+        first.skipped_local_call(test_skipped_call(
+            caller.clone(),
+            20,
+            25,
+            (1, 100),
+            (10, 15),
+            SkippedCallReason::KnownThrow,
+            captured_value_input(1),
+        ));
+        let mut second = EffectCoverageFragment::no_effects();
+        second.skipped_local_call(test_skipped_call(
+            caller.clone(),
+            20,
+            25,
+            (1, 100),
+            (10, 15),
+            SkippedCallReason::KnownThrow,
+            captured_value_input(2),
+        ));
+        second.skipped_local_call(test_skipped_call(
+            caller.clone(),
+            20,
+            25,
+            (1, 100),
+            (12, 17),
+            SkippedCallReason::KnownThrow,
+            captured_value_input(3),
+        ));
+
+        first.compose(&second);
+        let skipped_calls = &first.call_observations.as_ref().unwrap().skipped_calls;
+        assert_eq!(skipped_calls.len(), 2);
+        let same_frontier = skipped_calls
+            .values()
+            .find(|call| call.frontier_span.lo.0 == 10)
+            .unwrap();
+        assert_eq!(
+            same_frontier.dependencies.value_inputs,
+            std::collections::BTreeSet::from([
+                ValueInputRef {
+                    defining_chunk: "static/provider".to_string(),
+                    input_index: 1,
+                },
+                ValueInputRef {
+                    defining_chunk: "static/provider".to_string(),
+                    input_index: 2,
+                },
+            ])
+        );
+        assert!(first.has_call_inventory(&caller, &std::collections::BTreeSet::from([(20, 25)])));
+    }
+
+    #[test]
+    fn known_throw_dependencies_are_required_before_completion_is_consumed() {
+        let mut abrupt = EffectCoverageFragment::no_effects();
+        abrupt.abrupt();
+        assert_eq!(
+            abrupt.known_abrupt_dependencies(),
+            Some(ProofDependencies::default())
+        );
+        assert!(abrupt.handle_known_throw());
+        assert_eq!(abrupt.completion, Completion::Normal);
+
+        let mut unknown = EffectCoverageFragment::no_effects();
+        unknown.uncertain_completion();
+        assert!(unknown.known_abrupt_dependencies().is_none());
+        assert!(!unknown.handle_known_throw());
+        assert_eq!(unknown.completion, Completion::Unknown);
+
+        let mut uncovered = EffectCoverageFragment::no_effects();
+        uncovered.abrupt();
+        uncovered.initialization.as_mut().unwrap().host_effects = DomainCoverage::Unknown;
+        assert!(uncovered.known_abrupt_dependencies().is_none());
+        assert!(!uncovered.handle_known_throw());
+        assert_eq!(uncovered.completion, Completion::Abrupt);
+    }
+
+    #[test]
+    fn skipped_call_receipts_survive_saved_fragment_and_root_receipt_roundtrips() {
+        let caller = test_callable(7, 2);
+        let skipped_call = test_skipped_call(
+            caller.clone(),
+            20,
+            25,
+            (1, 100),
+            (10, 15),
+            SkippedCallReason::HandlerNotEntered,
+            captured_value_input(4),
+        );
+        let mut fragment = EffectCoverageFragment::no_effects();
+        fragment.skipped_local_call(skipped_call.clone());
+
+        let saved = SavedEffectCoverageFragment::snapshot(&fragment);
+        let bytes = serde_json::to_vec(&saved).unwrap();
+        let saved: SavedEffectCoverageFragment<'_> = serde_json::from_slice(&bytes).unwrap();
+        let restored = saved.restore();
+        assert_eq!(restored, fragment);
+        assert!(restored.has_local_call(&caller, skipped_call.call_span));
+
+        let receipt = LexicalBindingEffectReceipt {
+            identity: RootEffectIdentity {
+                owner: SourceUnitOrdinal(2),
+                source: RootEffectSource::ExpressionStatement {
+                    expression_span: Span::new(BytePos(1), BytePos(100)),
+                },
+            },
+            read_dependencies: ProofDependencies::default(),
+            rebind_dependencies: ProofDependencies::default(),
+            calls: Vec::new(),
+            skipped_calls: vec![skipped_call.clone()],
+        };
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let saved = SavedLexicalBindingEffectReceipt::snapshot(&receipt, &ordinals).unwrap();
+        let bytes = serde_json::to_vec(&saved).unwrap();
+        let saved: SavedLexicalBindingEffectReceipt = serde_json::from_slice(&bytes).unwrap();
+        let restored = saved.restore(&ordinals).unwrap();
+        assert_eq!(restored, receipt);
+        let report = restored.to_report();
+        assert_eq!(report.skipped_calls.len(), 1);
+        assert_eq!(
+            report.skipped_calls[0].reason,
+            SkippedCallReason::HandlerNotEntered
+        );
+        assert_eq!(report.skipped_calls[0].call_span, skipped_call.call_span);
+        assert_eq!(report.skipped_calls[0].caller, caller.to_report());
     }
 }

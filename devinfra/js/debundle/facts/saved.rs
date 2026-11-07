@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 use super::statement_facts::{
-    ConstructorFacts, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells, SynchronousCalls,
+    ConstructorFacts, ExportLinkage, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells,
+    SynchronousCalls,
 };
 use super::*;
 use crate::facts::sync_effects::SavedBindingEffectCoverage;
@@ -97,24 +98,55 @@ impl SavedConstructorFacts {
 #[serde(rename_all = "snake_case")]
 enum SavedEffectCell {
     Binding(SavedBinding),
+    LexicalCell {
+        origin: u32,
+        instance: LexicalCellId,
+    },
     GlobalProp(String),
+    ExecutionProgress,
     ArrayContents(u32),
     SetContents(u32),
+    GlobalSymbolRegistry,
     ObjectShape(u32),
-    OwnProperty { origin: u32, property: String },
+    DescriptorMapContents(u32),
+    OwnProperty {
+        origin: u32,
+        property: String,
+    },
+    PrivateSlot {
+        origin: u32,
+        class: u32,
+        name: String,
+    },
 }
 
 impl SavedEffectCell {
     fn snapshot(cell: &EffectCell, ordinals: &ContextOrdinals) -> Result<Self> {
         Ok(match cell {
             EffectCell::Binding(binding) => Self::Binding(ordinals.snapshot_binding(binding)?),
+            EffectCell::LexicalCell { origin, instance } => Self::LexicalCell {
+                origin: *origin,
+                instance: *instance,
+            },
             EffectCell::GlobalProp(property) => Self::GlobalProp(property.clone()),
+            EffectCell::ExecutionProgress => Self::ExecutionProgress,
             EffectCell::ArrayContents(origin) => Self::ArrayContents(*origin),
             EffectCell::SetContents(origin) => Self::SetContents(*origin),
+            EffectCell::GlobalSymbolRegistry => Self::GlobalSymbolRegistry,
             EffectCell::ObjectShape(origin) => Self::ObjectShape(*origin),
+            EffectCell::DescriptorMapContents(origin) => Self::DescriptorMapContents(*origin),
             EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
                 origin: *origin,
                 property: property.clone(),
+            },
+            EffectCell::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => Self::PrivateSlot {
+                origin: *origin,
+                class: *class,
+                name: name.clone(),
             },
         })
     }
@@ -122,11 +154,24 @@ impl SavedEffectCell {
     fn restore(self, ordinals: &ContextOrdinals) -> Result<EffectCell> {
         Ok(match self {
             Self::Binding(binding) => EffectCell::Binding(ordinals.restore_binding(binding)?),
+            Self::LexicalCell { origin, instance } => EffectCell::LexicalCell { origin, instance },
             Self::GlobalProp(property) => EffectCell::GlobalProp(property),
+            Self::ExecutionProgress => EffectCell::ExecutionProgress,
             Self::ArrayContents(origin) => EffectCell::ArrayContents(origin),
             Self::SetContents(origin) => EffectCell::SetContents(origin),
+            Self::GlobalSymbolRegistry => EffectCell::GlobalSymbolRegistry,
             Self::ObjectShape(origin) => EffectCell::ObjectShape(origin),
+            Self::DescriptorMapContents(origin) => EffectCell::DescriptorMapContents(origin),
             Self::OwnProperty { origin, property } => EffectCell::OwnProperty { origin, property },
+            Self::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => EffectCell::PrivateSlot {
+                origin,
+                class,
+                name,
+            },
         })
     }
 }
@@ -454,6 +499,12 @@ struct SavedSynchronousCalls<'a> {
         Cow<'a, Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>>,
     completed_initialization:
         Cow<'a, Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    root_normal_completion:
+        Cow<'a, Option<Box<super::sync_effects::noninvoking_initialization::RootNormalCompletion>>>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    root_outward_throw:
+        Cow<'a, Option<Box<super::sync_effects::noninvoking_initialization::RootOutwardThrow>>>,
     initialization_coverage_refusal:
         Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
     evaluation_effects: Cow<'a, super::evaluation_effects::EvaluationEffects>,
@@ -465,11 +516,12 @@ struct SavedSynchronousCalls<'a> {
     uninitialized_reads: BTreeSet<SavedBinding>,
     fallback_only: SavedFallbackOnlyEffects,
     complete: bool,
-    binding_effect_coverage: SavedBindingEffectCoverage,
+    binding_effect_coverage: SavedBindingEffectCoverage<'a>,
     settled_array_elements: BTreeMap<SavedBinding, super::SettledElements>,
     global_object_aliases: Option<BTreeSet<SavedBinding>>,
     heap_contents: SavedHeapContentCells,
     non_assumed_heap_accesses: SavedHeapContentAccesses,
+    operation_support_receipts: Vec<super::sync_effects::OperationSupportReceipt>,
     precision_losses: Vec<SavedExecutionPrecisionLoss<'a>>,
     native_integrity_checks: Cow<'a, [crate::reports::schema::NativeIntegrityCheck]>,
     native_prototype_property_checks:
@@ -499,6 +551,8 @@ impl<'a> SavedSynchronousCalls<'a> {
         Ok(Self {
             initializer_binding_effects: Cow::Borrowed(&calls.initializer_binding_effects),
             completed_initialization: Cow::Borrowed(&calls.completed_initialization),
+            root_normal_completion: Cow::Borrowed(&calls.root_normal_completion),
+            root_outward_throw: Cow::Borrowed(&calls.root_outward_throw),
             initialization_coverage_refusal: Cow::Borrowed(&calls.initialization_coverage_refusal),
             evaluation_effects: Cow::Borrowed(&calls.evaluation_effects),
             local_record_factory_uses: calls
@@ -543,6 +597,7 @@ impl<'a> SavedSynchronousCalls<'a> {
                 &calls.non_assumed_heap_accesses,
                 ordinals,
             )?,
+            operation_support_receipts: calls.operation_support_receipts().to_vec(),
             precision_losses: calls
                 .precision_losses
                 .iter()
@@ -584,6 +639,8 @@ impl<'a> SavedSynchronousCalls<'a> {
         Ok(SynchronousCalls {
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
+            root_normal_completion: self.root_normal_completion.into_owned(),
+            root_outward_throw: self.root_outward_throw.into_owned(),
             initialization_coverage_refusal: self.initialization_coverage_refusal.into_owned(),
             evaluation_effects: self.evaluation_effects.into_owned(),
             purity_disagreement: self
@@ -631,6 +688,8 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .transpose()?,
             heap_contents: self.heap_contents.restore(ordinals)?,
             non_assumed_heap_accesses: self.non_assumed_heap_accesses.restore(ordinals)?,
+            operation_support_receipts: (!self.operation_support_receipts.is_empty())
+                .then(|| self.operation_support_receipts.into_boxed_slice()),
             precision_losses: self
                 .precision_losses
                 .into_iter()
@@ -670,7 +729,14 @@ mod tests {
     fn saved_synchronous_calls_require_binding_effect_authority() {
         let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
         let mut purities = PuritySnapshot::default();
-        let calls = SynchronousCalls::default();
+        let mut calls = SynchronousCalls::default();
+        calls.record_operation_support(
+            super::super::sync_effects::OperationSupportReceipt::pooled_object_shape(
+                super::super::sync_effects::OperationSupportOperation::OwnDataRead,
+                3,
+                &ProofDependencies::default(),
+            ),
+        );
         let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
             .expect("default facts snapshot");
         let mut encoded = serde_json::to_value(saved).expect("saved facts serialize");
@@ -681,6 +747,29 @@ mod tests {
             .expect("saved synchronous facts are a struct")
             .remove("binding_effect_coverage");
         assert!(serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err());
+
+        let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
+            .expect("support receipt snapshot");
+        let mut encoded = serde_json::to_value(saved).expect("saved facts serialize");
+        encoded
+            .as_object_mut()
+            .expect("saved synchronous facts are a struct")
+            .remove("operation_support_receipts");
+        assert!(serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err());
+
+        for field in ["root_normal_completion", "root_outward_throw"] {
+            let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut purities)
+                .expect("control receipt snapshot");
+            let mut encoded = serde_json::to_value(saved).expect("saved facts serialize");
+            encoded
+                .as_object_mut()
+                .expect("saved synchronous facts are a struct")
+                .remove(field);
+            assert!(
+                serde_json::from_value::<SavedSynchronousCalls<'_>>(encoded).is_err(),
+                "missing {field} must not silently erase control evidence"
+            );
+        }
     }
 
     // A disagreement denotes a classifier invariant failure, so a normal

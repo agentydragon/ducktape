@@ -1,6 +1,7 @@
 //! Deterministic synchronous models that consume a settled runtime prefix.
 
-use super::super::value_model::{AbstractValue, CallSite, Context, Values};
+use super::super::local_transfer::SelectedValue;
+use super::super::value_model::{CallSite, Context};
 use super::interpreter::{Executor, Outcome, ValidatedMetadataDecoration};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use source_identity::SourceUnitOrdinal;
@@ -14,7 +15,7 @@ pub(super) enum ModelOperation {
     },
     ConstructLocalClass {
         key: u32,
-        arguments: Vec<Values>,
+        arguments: Vec<SelectedValue>,
     },
     SummarizeMetadataDecoration {
         application: MetadataDecorateCall,
@@ -30,9 +31,7 @@ pub(super) enum ModelResult {
         handled: bool,
         outcome: Box<Outcome>,
     },
-    LocalClassConstruction(
-        Box<Result<(Outcome, AbstractValue), crate::execution_evidence::ConstructionRejection>>,
-    ),
+    LocalClassConstruction(Box<Result<Outcome, crate::execution_evidence::ConstructionRejection>>),
     MetadataDecoration {
         outcome: Box<Outcome>,
     },

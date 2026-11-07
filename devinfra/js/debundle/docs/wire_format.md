@@ -39,6 +39,25 @@ report field. `dependency_graph.json.gz` retains the existing
 may now come from a directly invoked callee. Saved analysis from an earlier
 engine must be recomputed before this field can be read.
 
+Saved `SynchronousCalls` facts carry the required `operation_support_receipts`
+list, `[]` when no admitted own-data operation has support evidence. Saved
+`EffectCoverageFragment` facts carry the required `operation_support` field,
+`[]` when empty. Removing either field makes the saved artifact fail to
+decode. Receipts describe an own-data read or writable-own-data store and its
+mutable shape support; they do not grant effect coverage. Provider parameter
+support is substituted with the caller's actual pooled object origin before it
+enters caller effects. An unresolved provider-world origin is never compared
+with a caller ordinal and retains conservative effects.
+
+The `provider_local_birth_candidate` support kind is unresolved per-access
+evidence and carries only its provider-local `origin`. A complete normal shared
+transfer may seal it to `provider_local_birth` after checking the bounded private
+body and frame births. That sealed kind has no address fields and projects no
+caller heap cell. Parameter support retains its separate caller substitution.
+The graph's `synchronous_execution.operation_support_receipts` list exposes
+composed support evidence when present, including the address-free certificate.
+Its presence alone supplies no effect coverage or returned-value identity.
+
 ## Native input identity in saved analysis
 
 The staged analysis projection stores native operation premises separately from
@@ -50,6 +69,13 @@ chunk. Saved native input evidence uses the same source-only declaration;
 rendered reports restore the current `resolved_member` selector. Structural
 selectors remain `source_match`. Fresh analysis is required after this compiled
 schema change. The authored YAML field and its values are unchanged.
+
+Foreign callable products carry `native_operations` entries with `invocation`,
+`intrinsic` and an optional `property`. Each identifies the canonical row whose
+complete native slots must remain intact across all analyzed chunks. This
+replaces constructor-family-only metadata; it supplies no body-effect coverage.
+Engine-mismatched saved analysis must be regenerated, rather than reinterpreting
+old constructor metadata as proof of static native operations.
 
 ## Convention: `Atom`-only on the wire
 
@@ -179,7 +205,8 @@ export-reentry classification, atomic/cycle checks, rejection markers, or stderr
 ### Translation validation
 
 `effect_translation_validation.json` contains a typed effect relocation
-assessment beside the unchanged legacy gate and edge-TV reports. Its
+assessment beside the legacy graph and edge-TV comparison reports. The same
+assessment runs even when report output is disabled. Its
 `emitted_order` is the exact statement-unit order produced from the candidate
 assignment and emitter import order. `decision` describes statement-order
 commutation only: `accepted/no_reordering` is vacuous; a reordered `accepted`
@@ -188,12 +215,32 @@ one endpoint is a statement proved to have no evaluation effects. An open
 effect set is treated as Havoc against every nonempty partner, so crossing a
 proved-empty endpoint needs no assumption about the open endpoint. `conflict`
 means an uncovered modeled may-conflict or a contradiction with an existing
-premise; `incomplete` means an uncovered Havoc pair or a pair conditioned by
-an authored premise. A may-conflict does not prove a particular runtime trace
+premise; `incomplete` means an uncovered Havoc pair. Exact authored premise coverage
+can accept with `assumed_statement_order_commutation` and explicit typed
+`premise_dependencies`; observed contradictions still block. A may-conflict does not prove a particular runtime trace
 executes both accesses. The assessment does not prove cross-module rebinding,
-importability, vendor replacement, privacy or singleton behavior, and never
-changes the legacy gate. `legacy_gate_accepts` and `legacy_tv_accepts` retain
-those current verdicts.
+vendor replacement, privacy or singleton behavior. `legacy_gate_accepts` and
+`legacy_tv_accepts` retain diagnostic comparison verdicts, without a second veto.
+
+The cell set includes one shared `execution_progress` key for synchronous
+initialization across the candidate's emitted logical modules. Evaluated
+non-inert owners read it. Owners lacking exact whole-root normal-completion
+evidence write it, preserving possible outward suppression and source-unreached
+suffixes. This control relation is separate from may-effect domain closure;
+the exact initializer receipt for lazy function creation can prove normality
+without certifying its deferred body effects. Internal caught throws and
+returns do not write the outer fence when the shared root transfer proves
+normal completion. A missing normal receipt is serialized with the
+`potential_suppression` evidence basis; it remains a conservative modeled
+conflict but does not claim an observed throw or contradict a pair premise.
+Only an exact root-level outward known throw with covered abrupt-effect
+dependencies has observed progress-write evidence. The report's
+`relocation_dependencies` includes the typed conditions consumed by this
+completion projection.
+Saved synchronous facts require both `root_normal_completion` and
+`root_outward_throw` fields, using `null` when absent. A throw receipt requires
+its proof dependencies. Missing fields fail decoding; they never silently erase
+control evidence or downgrade an observed throw to potential suppression.
 
 `candidate_relocation_assessment.json` pairs the same emitted statement order
 and single effect sweep with typed structural placement obligations from the
@@ -224,12 +271,12 @@ The top-level candidate `status` distinguishes `blocked_by_effect`,
 `blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
 means the effect decision or one of the required placement domains remains
 unproved. `accepted_within_checked_scope` means the effect component accepted
-and all four placement checks completed without a known structural blocker.
-It is a scoped assessment only: it does not establish vendor replacement, final
-exports, reconstruction or output validity, and it is not emission authority.
-`legacy_gate_ordering_veto` identifies semantic-order SCCs that still veto
-under the current legacy gate. Thus an ordering-only gate veto does not appear
-as a structural placement blocker, and the legacy gate remains authoritative.
+and all four placement checks completed without a known structural blocker,
+with `placement.emission_mappable: true`. This joint verdict authorizes
+relocation lowering; vendor replacement, final export and reconstruction checks
+still apply. `legacy_gate_ordering_veto` identifies semantic-order SCCs rejected
+by the diagnostic graph comparison. An ordering-only comparison veto is neither
+a structural placement blocker nor a second emission veto.
 Its flattened `decision`, `emitted_order` and `swapped_pairs` are projections
 of the same sweep reported in `effect_translation_validation.json`; the
 flattened `decision.status` describes the effect component only.
@@ -242,9 +289,26 @@ legacy report's forward-edge and placement diagnostics.
 `coverage.unknown_coverage` counts missing global/property/host domains
 independently of legacy dataflow opacity, execution incompleteness and heap
 opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
-false. Cell conflicts can include `own_property` with `origin` and `property`;
-the origin includes all runtime generations of its source allocation and
-supplies no strong-update or privacy proof.
+false. Cell conflicts can include `lexical_cell`, `object_shape` or `descriptor_map_contents`
+with `origin`, `own_property` with `origin` and `property`, and `private_slot`
+with `origin`, `class` and `name`. For a private slot, `origin` identifies the
+receiver allocation source, `class` identifies the private-brand source, and
+`name` preserves the private name. These source identities can represent
+multiple runtime generations and do not prove a one-shot allocation, strong
+update, or private ownership. An `own_property` origin likewise includes all
+runtime generations of its source allocation and supplies no strong-update or
+privacy proof.
+For `lexical_cell`, `origin` is the canonical binding declaration offset and
+required `instance` is the actual nonreused declarative-cell arena ID in this
+analyzed chunk. Distinct activations of the same declaration have different
+instances; aliases of one captured cell retain both fields unchanged. Saved
+analysis preserves these identities without rebuilding the runtime arena.
+They are not process pointers or globally comparable cross-chunk IDs, and do
+not prove cell contents, initialization, private ownership or strong-update
+permission. There is no pooled lexical-cell address: an access without an
+active cell/source correspondence retains unknown heap coverage instead.
+Immutable function-name invocation views do not emit per-call lexical-cell
+births or writes; source-checked initialized name reads have no exterior effect.
 `coverage.covered_owner_dependencies` retains the typed conditions for
 all owner coverage certificates in the analyzed facts. `relocation_dependencies`
 retains the typed conditions for closed owners participating in candidate
@@ -262,23 +326,36 @@ They explain the report and do not change the certificate or coverage.
 is a diagnostic projection of the graph's decision to skip the syntactic
 at-init call fallback. Its report DTO is internally tagged by `authority` and
 has `unclassified`, `legacy_execution` (with the existing `complete` value),
-`author_source_only`, `ordered_root_initializer_uncovered`, and
-`operation_receipt` forms. The receipt reports the exact root owner, binding
-and initializer span, separate read/rebind prerequisites, and flat local call
+`author_source_only`, `ordered_root_initializer_uncovered`,
+`ordered_root_class_declaration_uncovered`, `ordered_root_expression_uncovered`,
+and `operation_receipt` forms. The receipt
+reports the exact root owner and a typed `root_kind`: `binding_initializer`
+retains its binding and initializer span; `class_declaration` retains its binding
+and declaration span; `expression_statement` retains its expression span. Each
+has separate read/rebind prerequisites and flat local call
 edges with caller/target bodies and merged conditions. The analyzer verifies
 that those edges connect to the root body. This DTO is output-only; it cannot
 be loaded as engine authority.
+Call targets distinguish `native` invocation (intrinsic and optional property)
+from `native_construction` (intrinsic). Checked empty collection construction
+can contribute the latter edge in application execution. An imported body
+retains its matched `imported_callable` edge and transports the provider's
+constructor dependencies; its internal operations are not expanded into
+application call edges. Both paths separately retain the constructor's global
+binding read.
 Staged analysis artifacts instead carry the engine-owned, externally tagged
-saved `BindingEffectCoverage` fact. Its root binding uses the same saved
-symbol and context ordinal as other staged facts. That field is required:
+saved `BindingEffectCoverage` fact. Initializer and class-declaration root
+bindings use the same saved symbol and context ordinal as other staged facts. That field is required:
 artifacts missing it fail to decode, and the normal analysis-engine and source
 provenance checks still apply. `legacy_execution` is a temporary decision for
 owners outside ordered-root execution, not evidence of covered operations.
 
-`examples` retains at most twenty deterministic pairs, preferring rows with
-modeled cells and filling unused slots with the earliest Havoc-only rows. The
-selected pairs retain sweep order and each contains at most twenty conflicting
-cells with their access provenance. Each sampled pair retains its exact
+`examples` retains at most twenty deterministic pairs. It ranks rows with
+non-`execution_progress` data cells or an observed `execution_progress`
+conflict first, potential-control-only rows second, and cell-free Havoc rows
+last; earlier rows win within each tier. Each selected pair contains at most
+twenty conflicting cells with their access provenance. The full JSONL stream
+retains sweep order and every cell. Each sampled pair retains its exact
 `cell_count` and `cells_truncated` marker;
 `examples_truncated` makes omitted pairs explicit. Counts remain exact when
 examples are truncated. `full_detail_export_available` is true: request
@@ -290,7 +367,9 @@ it leaves every graph, bounded summary, source input and census scope intact.
 Each JSONL line is one pair in the complete sweep order; summary examples are
 selected from this stream without changing that order. A line includes
 `runs_first`, `runs_later`, every `cells` entry
-with access provenance, exact `cell_count`, `havoc`, typed `disposition`,
+with access provenance and any full `first_operation_support_reads` /
+`later_operation_support_reads` receipts, exact `cell_count`, `havoc`, typed
+`disposition`,
 `premise_locations`, typed `premise_references`, and the report-only
 `legacy_edge_conflict` comparison.
 `first_opacity` and
@@ -326,8 +405,8 @@ ordinary heap, host effects, throws and reordered execution remain covered by
 the existing conservative gaps.
 
 `translation_validation.json`, beside `dependency_graph.json.gz`, is the bounded
-report-only edge-TV verdict;
-the gate remains authoritative. `gate_accepts`, `accepts` and `swapped_pairs`
+diagnostic edge-TV verdict. The joint candidate assessment is the relocation
+authority. `gate_accepts`, `accepts` and `swapped_pairs`
 are exact. `counts` contains exact `conflicts`, `forward_edges_kept`,
 `forward_edges_swapped`, `placement_splits` totals and `conflicts_by_kind`.
 Each of those four evidence fields has `{ "total": N, "examples": [...],

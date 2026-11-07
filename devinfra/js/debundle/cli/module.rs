@@ -2,17 +2,13 @@
 //! target YAML module and delete the sources. The companion
 //! `debundle modules delete --force` verb removes a non-empty module.
 //!
-//! Both verbs run the unified realizability gate through
-//! [`crate::edit_gate::Gate::check`] against the
-//! **post-edit** assignment before touching the filesystem. The gate
-//! borrows the chunk's canonical topology from a `DependencyGraphInput`,
-//! builds the post-edit `ModuleAssignment`
-//! by mapping each surviving spec module's bindings to a fresh
-//! `ModuleId`, and runs BOTH `validate_assignment` (cross-module
-//! cycles) AND atom-split detection (every `AtomicGroup`'s members
-//! must co-locate). Either rejection prints a diagnostic to stderr
-//! and exits non-zero without writing any file. `--no-verify` skips
-//! the gate for single merges only; `--dry-run` validates without writing.
+//! Both verbs resolve exact post-edit claims from the graph before touching
+//! the filesystem. Verified ownership writes also require the canonical
+//! full-context candidate assessment; the historical graph-only cycle and
+//! atom reports remain planning diagnostics and do not veto these writes.
+//! An assessment rejection exits non-zero without writing YAML. `--no-verify`
+//! skips claim checks and the assessment, and explicitly marks the write as
+//! unvalidated; `--dry-run` reports the available checks without writing.
 //!
 //! The splice deserializes the target and each source into the typed
 //! [`spec::LogicalModule`] schema, concatenates their `members`,
@@ -39,7 +35,7 @@ use yaml_edit::write_yaml_atomic;
 
 use crate::binding::load_module_docs;
 use crate::candidate_assessment::CandidateEffectAssessmentArgs;
-use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
+use crate::edit_gate::{GraphEditArgs, post_delete_spec, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 
 #[derive(Debug, ClapArgs)]
@@ -47,8 +43,8 @@ pub struct MergeArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
 
-    /// Optional full-context report-only effect assessment of the complete
-    /// in-memory merge candidate. Requires `--dry-run` and `--analysis`.
+    /// Optional full-context canonical candidate assessment of the complete
+    /// in-memory merge candidate. Verified writes require `--analysis`; dry runs may omit it.
     #[command(flatten)]
     pub effect_assessment: CandidateEffectAssessmentArgs,
 
@@ -94,7 +90,7 @@ pub struct MergeOutcome {
     pub outcome: MutationOutcome,
     pub target: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    pub effect_relocation_assessment: Option<gate::ApplicationRelocationAssessmentReport>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -103,7 +99,7 @@ struct MergeBatchOutcome {
     outcome: MutationOutcome,
     targets: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    effect_relocation_assessment: Option<gate::ApplicationRelocationAssessmentReport>,
 }
 
 /// `modules delete` outcome: just the shared core (deleted paths in
@@ -113,7 +109,7 @@ pub struct DeleteOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    pub effect_relocation_assessment: Option<gate::ApplicationRelocationAssessmentReport>,
 }
 
 /// Why `modules merge` cannot compose its documents; the merge refuses before writing anything,
@@ -192,8 +188,8 @@ pub struct DeleteArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
 
-    /// Optional full-context report-only effect assessment of the complete
-    /// post-delete candidate. Requires `--dry-run` and `--analysis`.
+    /// Optional full-context canonical candidate assessment of the complete
+    /// post-delete candidate. Verified writes require `--analysis`; dry runs may omit it.
     #[command(flatten)]
     pub effect_assessment: CandidateEffectAssessmentArgs,
 
@@ -236,12 +232,10 @@ impl DeleteSummary {
 ///
 /// Validation contract (per docs/cli.md § "Validate-by-default"):
 ///
-/// * Default: run the realizability gate against the post-merge
-///   assignment. Accept and splice if `Verdict::Realizable`; reject
-///   and exit non-zero with the same `render_cycle_summary`
-///   diagnostic the pipeline prints if `Verdict::Unrealizable`.
-/// * `--dry-run`: run the gate but do not modify any file.
-/// * `--no-verify`: skip the gate for a single merge; rejected with `--batch`.
+/// * Default: resolve exact claims, then require the canonical candidate
+///   assessment before writing the merged documents.
+/// * `--dry-run`: report the claims and candidate assessment without writing.
+/// * `--no-verify`: write without claim validation or candidate assessment.
 pub fn run_merge(
     merge: MergeArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
@@ -249,8 +243,7 @@ pub fn run_merge(
 ) -> Result<()> {
     if merge.edit.no_verify {
         eprintln!(
-            "warning: --no-verify skips the realizability gate; the merge YAML splice will \
-             not be re-checked for cross-module cycles."
+            "warning: --no-verify skips claim validation and candidate assessment; this merge is unvalidated."
         );
     }
     let gate = merge.edit.gate(source_context)?;
@@ -280,34 +273,33 @@ pub fn run_merge(
         .collect::<Result<Vec<_>>>()?;
     let effect_context = merge
         .effect_assessment
-        .resolve(&merge.edit, source_context)?;
-    let (candidate_docs, effect_relocation_assessment) =
-        if let Some(context) = effect_context.as_ref() {
-            let docs = post_merge_docs(&modules_root, &plans)?;
-            let candidate_modules = docs
-                .iter()
-                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
-                .collect();
-            let assessment = context.assess(
-                &merge.edit.modules_root,
-                &candidate_modules,
-                analysis_engine_sha256,
-            )?;
-            (Some(docs), Some(assessment))
-        } else {
-            (None, None)
-        };
-    let validation = if let Some(docs) = candidate_docs.as_ref() {
-        gate.check(&modules_root, || {
-            post_edit_spec_from_docs(docs, &BTreeSet::new())
-        })
-    } else {
-        gate.check(&modules_root, || post_merge_spec(&modules_root, &plans))
-    };
+        .resolve_for_verified_write(&merge.edit, source_context)?;
+    let candidate_docs = post_merge_docs(&modules_root, &plans)?;
+    let validation = gate.check_claims(&modules_root, || {
+        post_edit_spec_from_docs(&candidate_docs, &BTreeSet::new())
+    });
     if let Err(err) = validation {
         emit_gate_rejection_json("merge", merge.edit.format, &err);
         return Err(err);
     }
+    let effect_relocation_assessment = if let Some(context) = effect_context.as_ref() {
+        let candidate_modules = candidate_docs
+            .iter()
+            .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
+            .collect();
+        Some(context.assess(
+            &merge.edit.modules_root,
+            &candidate_modules,
+            analysis_engine_sha256,
+        )?)
+    } else {
+        None
+    };
+    crate::candidate_assessment::ensure_candidate_write(
+        effect_relocation_assessment.as_ref(),
+        merge.edit.dry_run,
+        merge.edit.no_verify,
+    )?;
     if !merge.edit.dry_run {
         // Every target is written before any source is deleted. Per-file writes
         // are atomic; this is not a crash-atomic multi-file transaction.
@@ -329,7 +321,10 @@ pub fn run_merge(
     let outcome = MutationOutcome {
         verb: "merge",
         action,
-        gate: gate.outcome(),
+        gate: gate
+            .outcome()
+            .with_candidate_assessment(effect_relocation_assessment.as_ref()),
+        needs_full_assessment: effect_relocation_assessment.is_none() && !merge.edit.no_verify,
         files_written: plans
             .iter()
             .map(|p| p.summary.target.display().to_string())
@@ -342,19 +337,25 @@ pub fn run_merge(
     };
     match OutputFormat::resolve(merge.edit.format) {
         OutputFormat::Text => {
+            let assessment = if outcome.needs_full_assessment {
+                "; needs_full_assessment"
+            } else {
+                ""
+            };
             if is_batch {
-                println!("{action}: {} merge target(s)", plans.len());
+                println!("{action}: {} merge target(s){}", plans.len(), assessment,);
                 return Ok(());
             }
             let summary = &plans[0].summary;
             if merge.edit.dry_run {
                 println!(
-                    "dry-run: would merge {} source(s) into {}",
+                    "dry-run: would merge {} source(s) into {}{}",
                     summary.merged_sources.len(),
-                    summary.target.display()
+                    summary.target.display(),
+                    assessment,
                 );
             } else {
-                println!("{}", summary.summary_line());
+                println!("{}{}", summary.summary_line(), assessment);
             }
         }
         format if is_batch => {
@@ -437,37 +438,6 @@ fn post_merge_docs(
         );
     }
     Ok(docs)
-}
-
-fn post_merge_spec(modules_root: &Path, plans: &[MergePlan]) -> Result<PostEditSpec> {
-    let replaced: Vec<_> = plans
-        .iter()
-        .flat_map(|plan| {
-            plan.summary
-                .merged_sources
-                .iter()
-                .cloned()
-                .chain(std::iter::once(plan.summary.target.clone()))
-        })
-        .collect();
-    let mut post_spec = post_delete_spec(modules_root, &replaced)?;
-    let docs = plans
-        .iter()
-        .enumerate()
-        .map(|(index, plan)| {
-            (
-                index.to_string(),
-                (plan.summary.target.clone(), plan.document.clone()),
-            )
-        })
-        .collect();
-    post_spec
-        .modules
-        .extend(post_edit_spec_from_docs(&docs, &BTreeSet::new())?.modules);
-    post_spec
-        .modules
-        .sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(post_spec)
 }
 
 /// Resolve aliases without changing the physical spelling of a new filename.
@@ -706,7 +676,8 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 ///   falls back to residual); an `Unrealizable` verdict rejects the
 ///   deletion.
 /// * `--dry-run`: run the gate but do not delete any file.
-/// * `--no-verify`: skip the gate; delete unconditionally.
+/// * `--no-verify`: skip claim validation and candidate assessment; delete
+///   unconditionally as an explicitly unvalidated edit.
 ///
 /// All paths are resolved relative to `args.edit.modules_root` unless
 /// absolute. Paths that do not exist on disk are reported as an
@@ -720,8 +691,7 @@ pub fn run_delete(
 ) -> Result<()> {
     if args.edit.no_verify {
         eprintln!(
-            "warning: --no-verify skips the realizability gate; the deletion will not be \
-             re-checked for cross-module cycles."
+            "warning: --no-verify skips claim validation and candidate assessment; this deletion is unvalidated."
         );
     }
 
@@ -771,37 +741,26 @@ pub fn run_delete(
         );
     }
 
-    let effect_context = args.effect_assessment.resolve(&args.edit, source_context)?;
-    let (candidate_docs, deleted_module_paths, effect_paths_abs, effect_relocation_assessment) =
-        if let Some(context) = effect_context.as_ref() {
-            let docs = load_module_docs(&args.edit.modules_root)?;
-            let delete_plan = resolve_delete_plan(&docs, &paths_abs)?;
-            let candidate_modules = docs
-                .iter()
-                .filter(|(module_path, _)| !delete_plan.module_paths.contains(*module_path))
-                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
-                .collect();
-            let assessment = context.assess(
-                &args.edit.modules_root,
-                &candidate_modules,
-                analysis_engine_sha256,
-            )?;
-            (
-                Some(docs),
-                Some(delete_plan.module_paths),
-                Some(delete_plan.entry_paths),
-                Some(assessment),
-            )
-        } else {
-            (None, None, None, None)
-        };
+    let effect_context = args
+        .effect_assessment
+        .resolve_for_verified_write(&args.edit, source_context)?;
+    let (candidate_docs, deleted_module_paths, effect_paths_abs) = if effect_context.is_some() {
+        let docs = load_module_docs(&args.edit.modules_root)?;
+        let delete_plan = resolve_delete_plan(&docs, &paths_abs)?;
+        (
+            Some(docs),
+            Some(delete_plan.module_paths),
+            Some(delete_plan.entry_paths),
+        )
+    } else {
+        (None, None, None)
+    };
     let delete_paths = effect_paths_abs.as_deref().unwrap_or(&paths_abs);
 
-    // Realizability gate. The all-empty fast path is a structural
-    // no-op (an empty module owns no bindings and contributes no
-    // anonymous statements, so removing it leaves the assignment
-    // unchanged). For non-empty `--force` deletions we run the full
-    // gate against the post-delete assignment.
+    // The all-empty fast path is a structural no-op (an empty module owns no
+    // bindings and contributes no anonymous statements, so removing it leaves
+    // the assignment unchanged). Non-empty `--force` deletions resolve the
+    // post-delete claims before the canonical assessment.
     let gate_outcome = if non_empty.is_empty() {
         GateOutcome::NotRequired
     } else {
@@ -809,11 +768,11 @@ pub fn run_delete(
         let validation = if let (Some(docs), Some(deleted_module_paths)) =
             (candidate_docs.as_ref(), deleted_module_paths.as_ref())
         {
-            gate.check(&args.edit.modules_root, || {
+            gate.check_claims(&args.edit.modules_root, || {
                 post_edit_spec_from_docs(docs, deleted_module_paths)
             })
         } else {
-            gate.check(&args.edit.modules_root, || {
+            gate.check_claims(&args.edit.modules_root, || {
                 post_delete_spec(&args.edit.modules_root, delete_paths)
             })
         };
@@ -824,6 +783,34 @@ pub fn run_delete(
         gate.outcome()
     };
 
+    let effect_relocation_assessment = if let (Some(context), Some(docs), Some(deleted)) = (
+        effect_context.as_ref(),
+        candidate_docs.as_ref(),
+        deleted_module_paths.as_ref(),
+    ) {
+        let candidate_modules = docs
+            .iter()
+            .filter(|(module_path, _)| !deleted.contains(*module_path))
+            .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
+            .collect();
+        Some(context.assess(
+            &args.edit.modules_root,
+            &candidate_modules,
+            analysis_engine_sha256,
+        )?)
+    } else {
+        None
+    };
+
+    if !non_empty.is_empty() {
+        crate::candidate_assessment::ensure_candidate_write(
+            effect_relocation_assessment.as_ref(),
+            args.edit.dry_run,
+            args.edit.no_verify,
+        )?;
+    }
+    let gate_outcome =
+        gate_outcome.with_candidate_assessment(effect_relocation_assessment.as_ref());
     let summary = delete_modules(delete_paths, args.edit.dry_run)?;
     let delete_outcome = DeleteOutcome {
         outcome: MutationOutcome {
@@ -834,6 +821,9 @@ pub fn run_delete(
                 "applied"
             },
             gate: gate_outcome,
+            needs_full_assessment: !non_empty.is_empty()
+                && effect_relocation_assessment.is_none()
+                && !args.edit.no_verify,
             files_written: Vec::new(),
             files_deleted: summary
                 .deleted
@@ -844,14 +834,21 @@ pub fn run_delete(
         effect_relocation_assessment,
     };
     match OutputFormat::resolve(args.edit.format) {
-        OutputFormat::Text => println!("{}", summary.summary_line()),
+        OutputFormat::Text => {
+            let assessment = if delete_outcome.outcome.needs_full_assessment {
+                " needs_full_assessment"
+            } else {
+                ""
+            };
+            println!("{}{}", summary.summary_line(), assessment);
+        }
         format => print_outcome_json(&delete_outcome, format)?,
     }
     Ok(())
 }
 
 /// A requested assessment resolves each path to one physical directory entry,
-/// then uses that identity for candidate filtering, the legacy gate and the
+/// then uses that identity for candidate filtering, claim projection, and the
 /// eventual unlink plan.
 #[derive(Debug)]
 struct ResolvedDeletePlan {
@@ -860,11 +857,11 @@ struct ResolvedDeletePlan {
 }
 
 /// Resolve the exact file deletion plan into the logical keys used by both the
-/// candidate effect assessment and the in-memory legacy gate. Parent
+/// candidate assessment and the in-memory claim projection. Parent
 /// components are normalized, while the final filename is preserved so a
-/// symlink module entry remains distinct from its target. A requested
-/// assessment must map every file to exactly one logical module in the
-/// complete typed snapshot.
+/// symlink module entry remains distinct from its target. The resolved plan
+/// must map every file to exactly one logical module in the complete typed
+/// snapshot.
 fn resolve_delete_plan(
     docs: &BTreeMap<String, (PathBuf, LogicalModule)>,
     deleted_abs: &[PathBuf],

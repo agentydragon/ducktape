@@ -58,8 +58,9 @@ For each snapshot-backed lane worker, also supply:
   captured source, YAML and package inputs, engine digest verified against that
   provenance, and the spec tree/version they describe;
 - the copied engine path, copied graph and spec/source roots, tree config,
-  modules path, relocated graph package-root map, and the exact regeneration
-  `argv`; record the working directory used for every command;
+  modules path, relocated graph package-root map, native `analysis_input_args`
+  and `transform_context_args`, and the exact regeneration `argv`; record the
+  working directory used for every command;
 - the worker's permitted YAML subtree and exact commands for the proposed
   assignment, regeneration and runtime checks, plus CI when applicable. Keep
   baseline pipeline, proposed-assignment, post-edit, runtime and CI results
@@ -76,8 +77,10 @@ each verb accepts.
 For a runnable composition of one reviewed `modules merge`, starting after
 `snapshot create` and `snapshot verify`, see
 [`examples/isolated_edit.py`](examples/isolated_edit.py). It prints the plan,
-runs the dry-run, applies with invocation capture, and regenerates explicitly;
-it is an example of that edit flow, not a generic adapter framework.
+stages native analysis with the copied engine and exported context, runs both
+preview and apply through the common relocation verdict with invocation
+capture, and regenerates explicitly. The edit scope is a chunk's module
+subtree; the assessment uses the complete tree context.
 
 Use one writable snapshot per worker. A Git worktree does not isolate external
 source or package roots. A snapshot carries the graph inputs and engine, not

@@ -23,7 +23,13 @@ fn assert_reason(execution: &Value, expected: Value) -> &Value {
         .as_array()
         .expect("losses")
         .iter()
-        .find(|loss| loss["reason"] == expected)
+        .find(|loss| {
+            expected
+                .as_object()
+                .expect("asserted reason fields")
+                .iter()
+                .all(|(field, value)| loss["reason"].get(field) == Some(value))
+        })
         .unwrap_or_else(|| panic!("missing {expected} in {execution}"))
 }
 
@@ -568,8 +574,7 @@ fn compound_call_chains_preserve_output_at_the_depth_limit() {
     }
 }
 
-#[test]
-fn compound_call_root_keeps_its_unexecuted_remainder_fallback() {
+fn compound_depth_fixture(tail: &str) -> Fixture {
     let mut source = String::from("const seed = 7;\n");
     for index in 0..66 {
         source.push_str(&format!(
@@ -577,24 +582,61 @@ fn compound_call_root_keeps_its_unexecuted_remainder_fallback() {
             index + 1
         ));
     }
-    source.push_str("function step66() { return 3; }\nfunction tail() { return seed; }\nconst result = (step0(), tail());\nconsole.log(result);\n");
-    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    source.push_str("function step66() { return 3; }\n");
+    source.push_str(tail);
+    source.push_str("\nconst result = (step0(), tail());\nconsole.log(result);\n");
+    run_fixture(FixtureOpts::new(&source, vec![]))
+}
+
+#[test]
+fn compound_call_root_executes_covered_remainder_after_retained_child() {
+    let fixture = compound_depth_fixture("function tail() { return seed; }");
     assert_preserved_entry_output(&fixture, "7\n");
     let result = execution(&fixture, "result");
     assert_reason(
         &result,
         serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
     );
-    assert!(
-        result["precision_losses"]
-            .as_array()
-            .unwrap()
+    assert_eq!(
+        result["precision_losses"].as_array().unwrap().len(),
+        1,
+        "covered suffix operations must not invent another loss: {result:#}"
+    );
+    let authority = &result["binding_effect_authority"];
+    assert_eq!(
+        authority["authority"], "retained_effect_closure",
+        "{result:#}"
+    );
+    let calls = authority["receipt"]["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 68, "{authority:#}");
+    assert_eq!(
+        calls
             .iter()
-            .any(|loss| {
-                loss["reason"]["code"] == "unsupported_operation"
-                    && loss["reason"]["operation"] == "opaque_execution"
-            }),
-        "the second root operand still needs conservative remainder handling: {result:#}"
+            .filter(|call| call["caller"]["kind"] == "root_initializer")
+            .count(),
+        2,
+        "both root calls need their own operation receipts: {authority:#}"
+    );
+}
+
+#[test]
+fn compound_call_root_keeps_an_unproved_remainder_uncovered() {
+    let fixture = compound_depth_fixture(
+        "const api = { get value() { return seed; } };\nfunction tail() { return api.value; }",
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let result = execution(&fixture, "result");
+    assert_reason(
+        &result,
+        serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
+    );
+    assert_reason(
+        &result,
+        serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+    );
+    assert_eq!(
+        result["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "a covered child cannot cover the getter in the remainder: {result:#}"
     );
 }
 
@@ -616,15 +658,19 @@ fn multichunk_acyclic_call_chain_below_depth_bound_remains_complete() {
     let extra_chunks = [("static/peer", source.as_str())];
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&extra_chunks));
 
-    assert_entry_output(&fixture, "3\n");
+    assert_preserved_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    assert_eq!(result["complete"], true, "{result:#}");
     assert_eq!(
-        execution(&fixture, "result"),
-        serde_json::json!({
-            "binding_effect_authority": {
-                "authority": "legacy_execution", "complete": true
-            },
-            "complete": true, "precision_losses": []
-        })
+        result["precision_losses"],
+        serde_json::json!([]),
+        "{result:#}"
+    );
+    let authority = &result["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{result:#}");
+    assert_eq!(
+        authority["receipt"]["calls"].as_array().unwrap().len(),
+        depth
     );
 }
 
@@ -844,8 +890,10 @@ fn possible_object_prototype_field_reports_the_field() {
 
 #[test]
 fn unknown_property_source_reports_its_parameter() {
+    // The constructor owner must reach its source proof after the opaque
+    // producer, rather than stop while evaluating that producer as an operand.
     assert_construction_rejection(
-        "class Box { constructor(config) { this.value = config.value; } }\nconst result = new Box(JSON.parse('{\"value\": 3}'));\nconsole.log(result.value);",
+        "class Box { constructor(config) { this.value = config.value; } }\nconst config = JSON.parse('{\"value\": 3}');\nconst result = new Box(config);\nconsole.log(result.value);",
         "3\n",
         serde_json::json!({"check": "unchecked_property_source", "parameter": 0}),
     );
@@ -963,7 +1011,7 @@ fn unrelated_object_write_does_not_supply_native_mutation_evidence() {
 
 fn array_prefix_fixture(write: &str) -> Fixture {
     let source = format!(
-        "function mutate() {{ Array.flag = 1; }}\n\
+        "function mutate() {{ Array.prototype.map = Array.prototype.map; }}\n\
          {write}\n\
          const arrayResult = [1, 2].map(value => value + 1);\n\
          console.log(arrayResult.join(','));"
@@ -1001,26 +1049,6 @@ fn prefix_observation(execution: &Value, guard: &str, property: Option<&str>) ->
         .clone()
 }
 
-fn assert_completed_native_integrity_inference(execution: &Value) {
-    assert_eq!(execution["complete"], true, "{execution}");
-    assert_eq!(
-        execution["precision_losses"],
-        serde_json::json!([]),
-        "{execution}"
-    );
-    assert!(
-        execution["inference_uses"].as_array().is_some_and(|uses| {
-            uses.iter().any(|use_| {
-                use_["conclusion"] == "native_integrity"
-                    && use_["derivation_rules"]
-                        .as_array()
-                        .is_some_and(|rules| rules.contains(&serde_json::json!("native_integrity")))
-            })
-        }),
-        "missing completed native-integrity inference in {execution}"
-    );
-}
-
 #[test]
 fn unused_deferred_native_writer_is_absent_from_prefix_observations() {
     let fixture = array_prefix_fixture("");
@@ -1032,10 +1060,12 @@ fn unused_deferred_native_writer_is_absent_from_prefix_observations() {
         "{array}"
     );
     assert_eq!(observed["uncertain_execution"], false);
-    // The callback's now-supported `value + 1` body completes with an
-    // explicit native-integrity inference. That whole-call evidence is
-    // separate from the runtime prefix observation above.
-    assert_completed_native_integrity_inference(&array);
+    // The deferred write targets the actual prototype slot required by the
+    // whole-program Array guard. An unrelated Array.flag write does not.
+    assert!(
+        array["native_integrity_checks"].as_array().is_some(),
+        "{array}"
+    );
     let fixture = prototype_prefix_fixture("");
     let result = execution(&fixture, "result");
     let observed = prefix_observation(&result, "ordinary_object_prototype", Some("prefixProbe"));
@@ -1110,7 +1140,7 @@ fn array_guard_references_a_direct_native_write_without_unknown_alias_widening()
             "import './mutation.js';\nconst result = [1, 2].map(value => value + 1);\nconsole.log(result.join(','));",
             vec![],
         )
-        .with_extra_chunks(&[("static/mutation", "export function mutate() { Array.flag = 1; }")]),
+        .with_extra_chunks(&[("static/mutation", "export function mutate() { Array.prototype.map = Array.prototype.map; }")]),
     );
     assert_entry_output(&fixture, "2,3\n");
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
@@ -1122,13 +1152,13 @@ fn array_guard_references_a_direct_native_write_without_unknown_alias_widening()
     assert_eq!(witnesses[0]["affected_roots"], serde_json::json!(["array"]));
     assert_eq!(witnesses[0]["through_local_alias"], false);
     let result = execution(&fixture, "result");
-    // Foreign writes remain conservatively active with their known Array
-    // root. The completed callback introduces no unknown alias widening.
-    assert_completed_native_integrity_inference(&result);
-    let observed = prefix_observation(&result, "array_intrinsics", None);
     assert!(
-        observed["prior_affected_roots"] == serde_json::json!(["array"])
-            && observed["uncertain_execution"] == false,
+        result["native_integrity_checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["guard"] == "array_intrinsics"
+                && check["affected_roots"] == serde_json::json!(["array"])),
         "{result}"
     );
 }

@@ -4,6 +4,18 @@ use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
+fn binding_execution_report(fixture: &Fixture, binding: &str) -> serde_json::Value {
+    let graph = fixture.dependency_graph();
+    let unit = source_unit_for_binding(&graph, binding);
+    let node = graph.nodes.iter().find(|node| node.id == unit).unwrap();
+    serde_json::to_value(
+        node.synchronous_execution
+            .as_ref()
+            .expect("execution report"),
+    )
+    .expect("serialize execution report")
+}
+
 fn has_constraining_callback_edge(
     fixture: &Fixture,
     caller_binding: &str,
@@ -98,6 +110,86 @@ const later = dynamic;
 console.log(later);
 "#,
     );
+}
+
+#[test]
+fn normal_sequel_reads_the_stored_value_after_an_incomplete_initializer() {
+    let fixture = run_fixture(split_fixture(
+        r#"const prefix = new globalThis.Date();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+console.log(later);
+"#,
+    ));
+    assert_preserved_entry_output(&fixture, "1\n");
+    assert_eq!(
+        binding_execution_report(&fixture, "prefix")["complete"],
+        false
+    );
+    let dynamic = binding_execution_report(&fixture, "dynamic");
+    assert_eq!(dynamic["complete"], false, "{dynamic:#}");
+    assert!(
+        dynamic["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| {
+                loss["reason"]["code"] == "unsupported_operation"
+                    && loss["reason"]["operation"] == "property_write"
+            }),
+        "the computed write remains outside the completed-body proof: {dynamic:#}"
+    );
+    assert_eq!(
+        binding_execution_report(&fixture, "later")["complete"],
+        true
+    );
+    assert_eq!(
+        binding_execution_report(&fixture, "later")["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+}
+
+#[test]
+fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
+    for initializer in [
+        "(() => { throw new TypeError('stopped'); })()",
+        "(function stop() { throw new TypeError('stopped'); })()",
+        "(() => { while (false) {} throw new TypeError('stopped'); })()",
+    ] {
+        let source =
+            format!("const dynamic = {initializer}; const later = dynamic; console.log(later);\n");
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_error(&fixture, "TypeError");
+        let later = binding_execution_report(&fixture, "later");
+        assert_ne!(
+            later["binding_effect_authority"]["authority"], "operation_receipt",
+            "{initializer}: a throw-only initializer cannot certify its sequel: {later:#}"
+        );
+    }
+}
+
+#[test]
+fn explicit_empty_return_supplies_a_normal_undefined_value() {
+    for initializer in [
+        "(() => { return; })()",
+        "(function stop() { return; })()",
+        "(() => { return; throw new TypeError('unreachable'); })()",
+        "(function stop() { return; throw new TypeError('unreachable'); })()",
+    ] {
+        let source = format!(
+            "const dynamic = {initializer}; const later = dynamic; console.log(typeof later);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let later = binding_execution_report(&fixture, "later");
+        assert_eq!(
+            later["binding_effect_authority"]["authority"], "operation_receipt",
+            "{initializer}: an explicit normal undefined result stays readable: {later:#}"
+        );
+    }
 }
 
 #[test]

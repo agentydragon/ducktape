@@ -1,7 +1,7 @@
 //! Mutation JSON, diagnostic artifacts, and recovery over real JS/spec inputs.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::{parse_stdout_json, read_json, run_debundle, write_text_file};
+use debundle_e2e_support::{parse_stdout_json, run_debundle, write_text_file};
 use serde_json::Value;
 
 fn assert_core(report: &Value, verb: &str, action: &str, gate: &str) {
@@ -40,8 +40,9 @@ fn assign_unassign_and_merge_report_the_edits_that_still_run() {
             "b.yaml",
         ),
     ] {
-        let fixture = GraphFixture::acyclic_pair();
-        let report = fixture.json(&args);
+        let fixture = GraphFixture::acyclic_pair_full_tree();
+        let analysis = fixture.stage_analysis();
+        let report = fixture.json_with_assessment(&args, &analysis);
         assert_core(&report, args[1], "applied", "passed");
         if let Some(count) = count {
             assert_eq!(report[count], 1);
@@ -98,7 +99,8 @@ fn dry_run_merge_and_empty_delete_report_their_gate_contract() {
         "a.yaml",
         "b.yaml",
     ]);
-    assert_core(&report, "merge", "dry-run", "passed");
+    assert_core(&report, "merge", "dry-run", "claims_checked");
+    assert_eq!(report["needs_full_assessment"], true);
     assert!(fixture.modules.join("b.yaml").exists());
     write_text_file(&fixture.modules.join("ui/empty.yaml"), "members: []\n");
     fixture.assert_rejected_unchanged(
@@ -115,258 +117,62 @@ fn dry_run_merge_and_empty_delete_report_their_gate_contract() {
 }
 
 #[test]
-fn atom_split_reports_both_destinations_and_writes_the_same_artifact() {
+fn graph_only_atom_split_reports_a_candidate_preview_without_legacy_artifacts() {
     let fixture = GraphFixture::atomic_pair();
-    let out = fixture.command(&[
+    let preview = fixture.json(&["bindings", "assign", "alpha:dogfood/split", "--dry-run"]);
+    assert_core(&preview, "assign", "dry-run", "claims_checked");
+    assert_eq!(preview["needs_full_assessment"], true);
+    assert!(
+        has_file(&preview, "files_written", "dogfood/split.yaml"),
+        "{preview}"
+    );
+    let original = std::fs::read(fixture.modules.join("home/atom.yaml")).unwrap();
+    let output = fixture.command(&[
         "bindings",
         "assign",
         "alpha:dogfood/split",
         "--format",
         "json",
     ]);
-    assert!(!out.status.success());
-    let report = parse_stdout_json(&out);
-    assert_eq!(report["verb"], "assign");
-    assert_eq!(report["action"], "rejected");
-    assert_eq!(report["rejection"]["kind"], "atom_split");
-    let conflicts = report["rejection"]["conflicts"].as_array().unwrap();
-    assert_eq!(conflicts.len(), 1);
-    let modules: Vec<_> = conflicts[0]["claims"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| c["module"].as_str().unwrap())
-        .collect();
-    assert!(modules.contains(&"dogfood/split") && modules.contains(&"home/atom"));
-    let artifact: Value = read_json(&fixture.graph.with_file_name("atomic_group_conflicts.json"));
-    assert_eq!(conflicts, artifact.as_array().unwrap());
-    let labels: Vec<_> = conflicts[0]["claims"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .flat_map(|claim| claim["binding_names"].as_array().unwrap())
-        .map(|name| name.as_str().unwrap())
-        .collect();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("needs_full_assessment"));
+    assert_eq!(
+        std::fs::read(fixture.modules.join("home/atom.yaml")).unwrap(),
+        original
+    );
+    assert!(!fixture.modules.join("dogfood/split.yaml").exists());
     assert!(
-        labels.contains(&"alpha") && labels.contains(&"beta"),
-        "{conflicts:#?}"
-    );
-
-    let ordinary_run = GraphFixture::rejected(
-        "let alpha = 0;\nfunction beta() { alpha = 1; }\nconsole.log(alpha, typeof beta);\n",
-        &[
-            (
-                "dogfood/split.yaml",
-                "members: [{selector: {binding: {name: alpha}}}]\n",
-            ),
-            (
-                "home/atom.yaml",
-                "members: [{selector: {binding: {name: beta}}}]\n",
-            ),
-        ],
-    );
-    let ordinary_run_artifact: Value = read_json(
-        &ordinary_run
+        !fixture
             .graph
-            .with_file_name("atomic_group_conflicts.json"),
-    );
-    assert_eq!(artifact, ordinary_run_artifact);
-}
-
-#[test]
-fn atom_split_also_writes_current_cycles_for_gate_queries() {
-    let fixture = GraphFixture::new(
-        "const alpha = beta;\nconst beta = alpha;\n",
-        &[(
-            "home/atom.yaml",
-            "members: [{selector: {binding: {name: alpha}}}, {selector: {binding: {name: beta}}}]\n",
-        )],
-    );
-    let out = fixture.command(&[
-        "bindings",
-        "assign",
-        "alpha:dogfood/split",
-        "--format",
-        "json",
-    ]);
-    assert!(!out.status.success());
-    let report = parse_stdout_json(&out);
-    assert_eq!(report["rejection"]["kind"], "atom_split");
-
-    let atomic_path = fixture.graph.with_file_name("atomic_group_conflicts.json");
-    let cycles_path = fixture.graph.with_file_name("cycles.json");
-    let atomic: Value = read_json(&atomic_path);
-    let cycles: Value = read_json(&cycles_path);
-    assert_eq!(atomic.as_array().unwrap().len(), 1, "{atomic}");
-    assert_eq!(cycles.as_array().unwrap().len(), 1, "{cycles}");
-
-    let listed = run_debundle(&[
-        "gate",
-        "list",
-        "--graph",
-        fixture.graph.to_str().unwrap(),
-        "--format",
-        "json",
-    ]);
-    assert!(
-        listed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&listed.stderr)
-    );
-    let listed = parse_stdout_json(&listed);
-    assert_eq!(
-        listed["blocking_sccs"].as_array().unwrap().len(),
-        1,
-        "{listed}"
-    );
-
-    let described = run_debundle(&[
-        "gate",
-        "describe",
-        "0",
-        "--graph",
-        fixture.graph.to_str().unwrap(),
-        "--format",
-        "json",
-    ]);
-    assert!(
-        described.status.success(),
-        "{}",
-        String::from_utf8_lossy(&described.stderr)
-    );
-    let described = parse_stdout_json(&described);
-    assert_eq!(
-        described["modules"].as_array().unwrap().len(),
-        2,
-        "{described}"
-    );
-    assert!(
-        described["evidence"].as_array().unwrap().is_empty(),
-        "the stored graph still has the original co-located assignment; the candidate cut is stored in cycles.json: {described}"
-    );
-    assert_eq!(described["modules"], cycles[0]["modules"], "{described}");
-    assert_eq!(described["cut"], cycles[0]["cut"], "{described}");
-    assert!(
-        !described["cut"].as_array().unwrap().is_empty(),
-        "{described}"
-    );
-    assert!(
-        described["modules"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|module| module == "dogfood/split"),
-        "describe must expose the rejected candidate's destination: {described}"
+            .with_file_name("atomic_group_conflicts.json")
+            .exists()
     );
 }
 
 #[test]
-fn completed_edit_results_replace_both_rejection_artifacts() {
-    let fixture = GraphFixture::new(
-        "const beta = 1;\nconst gamma = beta + 1;\nconst alpha = gamma + 1;\nconst left = right;\nconst right = left;\n",
-        &[
-            (
-                "a.yaml",
-                "members: [{selector: {binding: {name: alpha}}}]\n",
-            ),
-            ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
-            (
-                "c.yaml",
-                "members: [{selector: {binding: {name: gamma}}}]\n",
-            ),
-            (
-                "home/atom.yaml",
-                "members: [{selector: {binding: {name: left}}}, {selector: {binding: {name: right}}}]\n",
-            ),
-        ],
-    );
-    let cycles_path = fixture.graph.with_file_name("cycles.json");
-    let atomic_path = fixture.graph.with_file_name("atomic_group_conflicts.json");
-
-    let atom_split = fixture.command(&[
-        "bindings",
-        "assign",
-        "left:dogfood/split",
-        "--format",
-        "json",
-    ]);
-    assert!(!atom_split.status.success());
-    assert_eq!(
-        parse_stdout_json(&atom_split)["rejection"]["kind"],
-        "atom_split"
-    );
-    assert!(cycles_path.exists());
-    assert!(atomic_path.exists());
-    let atom_cycle: Value = read_json(&cycles_path);
-
-    let cycle_only = fixture.command(&[
-        "modules", "merge", "--target", "a.yaml", "b.yaml", "--format", "json",
-    ]);
-    assert!(!cycle_only.status.success());
-    assert_eq!(
-        parse_stdout_json(&cycle_only)["rejection"]["kind"],
-        "unrealizable_cycles"
-    );
-    assert!(cycles_path.exists());
-    assert!(
-        !atomic_path.exists(),
-        "the completed cycle-only result must replace the earlier atom-split report"
-    );
-    let cycle_only_report: Value = read_json(&cycles_path);
-    assert_ne!(
-        atom_cycle[0]["modules"], cycle_only_report[0]["modules"],
-        "the second report must describe its new assignment"
-    );
-
-    fixture.assert_success(&["modules", "merge", "--target", "a.yaml", "c.yaml"]);
-    assert!(!cycles_path.exists());
-    assert!(!atomic_path.exists());
-}
-
-#[test]
-fn merge_cycle_report_drives_gate_list_then_a_passing_edit_clears_it() {
+fn graph_only_cycle_candidate_needs_full_assessment_and_preserves_modules() {
     let fixture = GraphFixture::dependency_chain();
-    let out = fixture.command(&[
+    let before = std::fs::read(fixture.modules.join("b.yaml")).unwrap();
+    let preview = fixture.json(&[
+        "modules",
+        "merge",
+        "--target",
+        "a.yaml",
+        "b.yaml",
+        "--dry-run",
+    ]);
+    assert_core(&preview, "merge", "dry-run", "claims_checked");
+    assert_eq!(preview["needs_full_assessment"], true);
+    let output = fixture.command(&[
         "modules", "merge", "--target", "a.yaml", "b.yaml", "--format", "json",
     ]);
-    assert!(!out.status.success());
-    let report = parse_stdout_json(&out);
-    assert_eq!(report["verb"], "merge");
-    assert_eq!(report["action"], "rejected");
-    assert_eq!(report["rejection"]["kind"], "unrealizable_cycles");
-    let sccs = report["rejection"]["blocking_sccs"].as_array().unwrap();
-    assert_eq!(sccs.len(), 1);
-    let modules: Vec<_> = sccs[0]["modules"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|m| m.as_str().unwrap())
-        .collect();
-    assert!(modules.contains(&"a") && modules.contains(&"c"));
-    assert!(!sccs[0]["cut"].as_array().unwrap().is_empty());
-    let gate_list = || {
-        let out = run_debundle(&[
-            "gate",
-            "list",
-            "--graph",
-            fixture.graph.to_str().unwrap(),
-            "--format",
-            "json",
-        ]);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        parse_stdout_json(&out)
-    };
-    let report = gate_list();
-    assert_eq!(report["blocking_sccs"].as_array().unwrap().len(), 1);
-    assert_eq!(report["blocking_sccs"][0]["module_count"], 2);
-    assert!(fixture.graph.with_file_name("cycles.json").exists());
-    fixture.assert_success(&["modules", "merge", "--target", "a.yaml", "c.yaml"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("needs_full_assessment"));
+    assert_eq!(
+        std::fs::read(fixture.modules.join("b.yaml")).unwrap(),
+        before
+    );
     assert!(!fixture.graph.with_file_name("cycles.json").exists());
-    fixture.assert_runs("3\n");
 }
 
 #[test]
@@ -377,4 +183,27 @@ fn text_rejection_does_not_emit_json() {
     assert!(!out.status.success());
     assert!(!out.stderr.is_empty());
     assert!(serde_json::from_slice::<Value>(&out.stdout).is_err());
+}
+
+#[test]
+fn no_verify_assignment_is_reported_as_unvalidated() {
+    let fixture = GraphFixture::atomic_pair();
+    let output = fixture.command(&[
+        "bindings",
+        "assign",
+        "alpha:dogfood/split",
+        "--no-verify",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = parse_stdout_json(&output);
+    assert_eq!(report["gate"], "skipped");
+    assert!(report.get("needs_full_assessment").is_none());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("this assignment is unvalidated"));
+    assert!(fixture.modules.join("dogfood/split.yaml").is_file());
 }

@@ -7,11 +7,11 @@ use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 
 const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(marker.description, made.name, globalThis.unrelatedKey);\nexport { marker, factory, LaterError, reflect };\n";
 const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
 const REFLECT_CHUNKS: &[(&str, &str)] = &[("static/reflect", REFLECT_SOURCE)];
-const BASELINE_CONFLICT_MODULES: &[&str] = &["marker", "later"];
 
 fn source_hash(source: &str) -> String {
     Sha256::digest(source.as_bytes())
@@ -184,10 +184,10 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
 }
 
 #[test]
-fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
+fn transitive_borrowed_and_static_member_sets_keep_their_existing_frontier() {
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst memo = new Box(() => 1);\nconst seed = new Set(alias);\nconst lookup = { key: 'token' };\nconst unique = new Set([lookup.key]);\nconsole.log(seed.size, unique.size);\n",
+            "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst tail = alias;\nconst memo = new Box(() => 1);\nconst seed = new Set(tail);\nconst lookup = { key: 'token' };\nconst unique = new Set([lookup.key]);\nconsole.log(seed.size, unique.size);\n",
             vec![],
         )
         .with_extra_chunks(&[(
@@ -207,7 +207,7 @@ fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
         graph.edges.iter().any(|edge| edge.source == seed
             && edge.target == memo
             && edge.edge_kind == DepKind::Sequenced),
-        "borrowed array's live frontier disappeared: {graph:#?}"
+        "transitive borrowed array's live ArrayContents frontier disappeared: {graph:#?}"
     );
     let graph = serde_json::to_value(graph).unwrap();
     assert_eq!(
@@ -223,6 +223,39 @@ fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
         node_for_binding(&graph, "unique")["synchronous_execution"]["complete"],
         true,
         "the static-member source keeps its existing effect frontier: {graph}"
+    );
+}
+
+#[test]
+fn direct_borrowed_root_keeps_its_runtime_prefix_and_contents_frontier() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { Box } from './box.js';\nconst input = ['a'];\nconst memo = new Box(() => 1);\nconst result = new Set(input);\nconsole.log(result.size, result.has('a'));\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/box",
+            "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
+            .with_pure_new_exports(&["Box"])
+            .with_retained_callback_constructor("Box", 1, &[0])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "1 true\n");
+    let graph = fixture.dependency_graph();
+    let result = source_unit_for_binding(&graph, "result");
+    let memo = source_unit_for_binding(&graph, "memo");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result && edge.target == memo && edge.edge_kind == DepKind::Sequenced
+        }),
+        "the borrowed input keeps its live ArrayContents frontier: {graph:#?}"
+    );
+    let graph = serde_json::to_value(graph).unwrap();
+    assert_eq!(
+        node_for_binding(&graph, "result")["synchronous_execution"]["complete"],
+        true
     );
 }
 
@@ -368,7 +401,7 @@ fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
             .with_native_operation_inputs("static/app", vec![seed.clone(), spread.clone()]),
         &["uncertified intervening source unit"],
     );
-    expect_rejection_containing_all(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -377,8 +410,61 @@ fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
             ],
         )
         .with_native_operation_inputs("static/app", vec![seed, sibling, spread]),
-        &["atomic-group conflict"],
     );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(
+        assessment["status"], "blocked_by_placement",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["scope"], "no_reordering",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["placement"]["status"], "blocked",
+        "{assessment:#}"
+    );
+    let violations = assessment["placement"]["projection_violations"]
+        .as_array()
+        .expect("typed placement projection violations");
+    let split = violations
+        .iter()
+        .find(|violation| violation["kind"] == "stable_set_interval_destination_split")
+        .expect("certified Set interval split in candidate placement report");
+    assert_eq!(split["interval_index"], 0, "{assessment:#}");
+    let bindings = split["bindings"]
+        .as_array()
+        .expect("Set interval binding owners");
+    assert_eq!(bindings.len(), 3, "{assessment:#}");
+    let binding_names = bindings
+        .iter()
+        .map(|binding| {
+            binding
+                .as_array()
+                .expect("SWC Id tuple")
+                .first()
+                .and_then(Value::as_str)
+                .expect("SWC Id symbol")
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        binding_names,
+        BTreeSet::from(["seed", "sibling", "merged"]),
+        "{assessment:#}"
+    );
+    let destinations = split["destinations"]
+        .as_array()
+        .expect("Set interval destination identities");
+    let destination_ids = destinations
+        .iter()
+        .map(|destination| destination.as_u64().expect("serialized ModuleId"))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(destinations.len(), 2, "{assessment:#}");
+    assert_eq!(destination_ids.len(), 2, "{assessment:#}");
 }
 
 #[test]
@@ -586,25 +672,45 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
         .with_extra_chunks(REFLECT_CHUNKS)
         .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
     };
-    let control = run_rejection_fixture(opts());
-    let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
-    unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
-    let conflicts = control.atomic_group_conflicts();
+    let inferred = run_fixture(opts());
+    assert_preserved_entry_output(&inferred, "2 LaterError\n");
+    let inferred_effects = inferred.effect_translation_validation();
+    assert_eq!(
+        inferred_effects["decision"]["status"], "accepted",
+        "{inferred_effects:#}"
+    );
+    assert_eq!(
+        inferred_effects["decision"]["scope"], "statement_order_commutation",
+        "the accepted schedule is justified by its actual inversions: {inferred_effects:#}"
+    );
+    assert_eq!(inferred_effects["legacy_gate_accepts"], false);
+    assert_eq!(
+        inferred_effects["emitted_order"],
+        serde_json::json!([1, 2, 3, 4, 6, 5, 0, 7, 8]),
+        "the accepted schedule keeps the opaque Set call before LaterError: {inferred_effects:#}"
+    );
+    assert_eq!(inferred_effects["swapped_pairs"], 7, "{inferred_effects:#}");
+    assert_eq!(
+        inferred_effects["counts"]["uncovered_pairs"], 0,
+        "{inferred_effects:#}"
+    );
+    assert_eq!(
+        inferred_effects["premise_dependencies"],
+        serde_json::json!([])
+    );
+
+    let inferred_graph = serde_json::to_value(inferred.dependency_graph()).unwrap();
+    let inferred_program_graph = serde_json::to_value(inferred.program_graph()).unwrap();
     assert!(
-        conflicts.iter().any(|conflict| {
-            let claims = conflict["claims"].as_array().expect("conflict claims");
-            ["made", "later"].iter().all(|module| {
-                claims
-                    .iter()
-                    .any(|claim| claim["module"].as_str() == Some(*module))
-            })
-        }),
-        "the unproved constructor must block this split: {conflicts:#?}"
+        has_unknown_call_target(node_for_binding(&inferred_graph, "made")),
+        "the accepted schedule does not claim a Set operation proof: {inferred_graph}"
     );
     assert!(
-        has_unknown_call_target(node_for_binding(&control_graph, "made")),
-        "unproved Set construction still has a call frontier: {control_graph}"
+        native_input_uses(&inferred_graph).is_empty(),
+        "source-derived commutation must not invent an author premise: {inferred_graph}"
     );
+    unknown_receiver_witness(&inferred_program_graph);
+
     let fixture = run_fixture(
         opts().with_native_operation_inputs("static/app", vec![primitive_set_input(SOURCE)]),
     );
@@ -622,6 +728,12 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
         "exactly the selected Set site uses the premise: {graph}"
     );
     assert_eq!(uses[0]["evidence"]["operation"], "set_from_primitive_array");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "made");
+    assert_eq!(
+        uses[0]["evidence"]["reference"],
+        serde_json::json!({"defining_chunk": "static/app", "input_index": 0}),
+        "the explicit proof dependency belongs only to this selected input: {graph}"
+    );
     unknown_receiver_witness(&program_graph);
 }
 
@@ -1005,6 +1117,39 @@ fn has_unknown_call_target(node: &Value) -> bool {
         })
 }
 
+fn assert_source_side_effect_order(fixture: &Fixture) {
+    let graph = fixture.dependency_graph();
+    let mut source_order: Vec<_> = graph
+        .nodes
+        .iter()
+        .filter(|node| node.statement_kind == StatementKind::SideEffect)
+        .map(|node| node.statement_ordinal.0)
+        .collect();
+    source_order.sort_unstable();
+    let expected: Vec<_> = source_order
+        .iter()
+        .map(|ordinal| u64::try_from(*ordinal).unwrap())
+        .collect();
+    assert!(
+        expected.len() > 1,
+        "the accepted fixture must exercise multiple source effects: {graph:#?}"
+    );
+
+    let assessment = fixture.candidate_relocation_assessment();
+    let emitted_order = assessment["emitted_order"]
+        .as_array()
+        .expect("candidate emitted order");
+    let emitted_effects: Vec<_> = emitted_order
+        .iter()
+        .filter_map(Value::as_u64)
+        .filter(|unit| expected.contains(unit))
+        .collect();
+    assert_eq!(
+        emitted_effects, expected,
+        "the accepted verdict must retain source effect order: {assessment:#}"
+    );
+}
+
 fn unknown_receiver_witness(program_graph: &Value) -> &Value {
     program_graph["native_integrity_witnesses"]
         .as_array()
@@ -1024,25 +1169,37 @@ fn unknown_receiver_witness(program_graph: &Value) -> &Value {
 
 #[test]
 fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
-    let control = run_rejection_fixture(split_opts(None));
+    let control = run_fixture(split_opts(None));
+    assert_preserved_entry_output(&control, "marker LaterError safe\n");
     let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
     unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
-    let conflicts = control.atomic_group_conflicts();
+    assert!(native_input_uses(&control_graph).is_empty());
+    let control_marker = node_for_binding(&control_graph, "marker");
     assert!(
-        conflicts.iter().any(|conflict| {
-            let claims = conflict["claims"].as_array().expect("conflict claims");
-            BASELINE_CONFLICT_MODULES.iter().all(|module| {
-                claims
-                    .iter()
-                    .any(|claim| claim["module"].as_str() == Some(*module))
-            })
-        }),
-        "unexpected no-input atomic-group conflicts: {conflicts:#?}"
-    );
-    assert!(
-        has_unknown_call_target(node_for_binding(&control_graph, "marker")),
+        has_unknown_call_target(control_marker),
         "without the input, the selected initializer retains its unknown-call precision loss: {control_graph}"
     );
+    let control_execution = &control_marker["synchronous_execution"];
+    assert_eq!(control_execution["complete"], false, "{control_execution}");
+    assert_eq!(
+        control_execution["binding_effect_authority"]["authority"], "legacy_execution",
+        "{control_execution}"
+    );
+    assert_eq!(
+        control_execution["binding_effect_authority"]["complete"], false,
+        "{control_execution}"
+    );
+    let control_effects = control.effect_translation_validation();
+    assert_eq!(
+        control_effects["decision"]["status"], "accepted",
+        "{control_effects}"
+    );
+    assert_eq!(
+        control_effects["decision"]["scope"], "statement_order_commutation",
+        "{control_effects}"
+    );
+    assert_eq!(control_effects["counts"]["pairs"], 0, "{control_effects}");
+    assert_source_side_effect_order(&control);
 
     let fixture = run_fixture(split_opts(Some(marker_input(SOURCE))));
     assert_preserved_entry_output(&fixture, "marker LaterError safe\n");
@@ -1085,6 +1242,64 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
                 .iter()
                 .any(|slot| { slot["receiver"] == "unknown" && slot["key"] == "unknown" })),
         "the opaque reflective write must retain its unknown slot witness: {graph}"
+    );
+}
+
+#[test]
+fn no_input_symbol_initializer_cannot_cross_an_effectful_global_write() {
+    let source = SOURCE.replacen(
+        "import { reflect } from './reflect.js';\n",
+        "import { reflect } from './reflect.js';\nglobalThis.marker = 'before';\n",
+        1,
+    );
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "marker",
+                    &[Member::new("marker")],
+                    &["globalThis.saved = () => factory();"],
+                ),
+                logical_module("factory", &[Member::new("factory")]),
+                logical_module("later", &[Member::new("LaterError")]),
+            ],
+        )
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)]),
+    );
+
+    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    let marker = node_for_binding(&graph, "marker");
+    assert!(has_unknown_call_target(marker), "{graph}");
+    assert_eq!(
+        marker["synchronous_execution"]["complete"], false,
+        "{graph}"
+    );
+    assert_eq!(
+        marker["synchronous_execution"]["binding_effect_authority"]["authority"],
+        "legacy_execution",
+        "{graph}"
+    );
+    assert!(native_input_uses(&graph).is_empty());
+
+    let report = rejected.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "incomplete", "{report:#}");
+    assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert!(
+        report["counts"]["havoc_pairs"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
+    assert!(
+        report["examples"].as_array().unwrap().iter().any(|pair| {
+            pair["runs_first"]["unit"] == 3
+                && pair["runs_later"]["unit"] == 1
+                && pair["havoc"] == true
+                && pair["disposition"] == "uncovered"
+        }),
+        "the candidate's incomplete Symbol initializer at unit 3 must remain an uncovered effect before source unit 1's global write: {report:#}"
     );
 }
 
@@ -1174,6 +1389,20 @@ fn selected_literal_symbol_for_breaks_order_cycle_with_live_array_contents() {
         0
     );
     assert_eq!(native_input_uses(&graph).len(), 1);
+    let execution = &marker["synchronous_execution"];
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{authority:#}");
+    assert_eq!(
+        authority["receipt"]["calls"].as_array().unwrap().len(),
+        1,
+        "{authority:#}"
+    );
+    let assessment = fixture.candidate_relocation_assessment();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the selected native call must actually cross a source unit: {assessment:#}"
+    );
 
     for (call, description) in [
         ("Symbol()", "undefined"),
@@ -1291,7 +1520,14 @@ fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
     );
     assert_preserved_entry_error(&fixture, "TypeError");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert_eq!(native_input_uses(&graph).len(), 1);
+    assert!(
+        native_input_uses(&graph).is_empty(),
+        "the mixed numeric argument always throws before the native body consumes its input"
+    );
+    assert_ne!(
+        node_for_binding(&graph, "marker")["synchronous_execution"]["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
     assert_eq!(
         node_for_binding(&graph, "marker")["purity"]["kind"],
         "not_pure"
@@ -1443,20 +1679,17 @@ fn unselected_symbol_site_keeps_the_strict_fallback() {
     .with_extra_chunks(REFLECT_CHUNKS)
     .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
     .with_native_operation_inputs("static/app", vec![marker_input(source)]);
-    let rejected = run_rejection_fixture(opts);
-    let conflicts = rejected.atomic_group_conflicts();
-    assert!(
-        conflicts.iter().any(|conflict| {
-            let claims = conflict["claims"].as_array().expect("conflict claims");
-            ["other", "later"].iter().all(|module| {
-                claims
-                    .iter()
-                    .any(|claim| claim["module"].as_str() == Some(*module))
-            })
-        }),
-        "unselected Symbol call must retain the synthetic reentry conflict: {conflicts:#?}"
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, "marker other LaterError\n");
+    assert_preserved_entry_output_with_host_setup(
+        &fixture,
+        r#"Object.defineProperty(globalThis, 'saved', { configurable: true, set(callback) {
+  try { callback(); } catch (error) { console.log(error.name); }
+} });"#,
+        "ReferenceError\nmarker other LaterError\n",
+        "unselected-symbol-global-root",
     );
-    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert!(
         has_unknown_call_target(node_for_binding(&graph, "other")),
         "the unselected primitive Symbol call must retain its unknown-call precision loss: {graph}"
@@ -1561,8 +1794,14 @@ fn primitive_argument_throw_is_preserved_by_the_selected_call_path() {
     assert_preserved_entry_error(&fixture, "TypeError");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let uses = native_input_uses(&graph);
-    assert_eq!(uses.len(), 1, "the exact selected call is still reported");
-    assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
+    assert!(
+        uses.is_empty(),
+        "the native body is not reached after its argument throws"
+    );
+    assert_ne!(
+        node_for_binding(&graph, "marker")["synchronous_execution"]["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
 }
 
 fn encoder_input(source: &str) -> NativeOperationInputContract {

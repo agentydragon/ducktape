@@ -5,10 +5,10 @@
 //! native call, and the projection borrows it only while deriving that result.
 
 use super::value_model::{
-    AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
+    AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, SymbolicInputId, Values,
     ordered_own_property_names,
 };
-use crate::analysis_inputs::ProofDependencies;
+use crate::analysis_inputs::{ProofDependencies, RecordInputProperty, RecordInputShape};
 use crate::analysis_provenance::{InferenceRule, InferenceUse};
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{NativePremise, SemanticFact, SemanticFacts, SemanticKey};
@@ -17,6 +17,9 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone)]
 pub(super) enum OwnPropertyRequest {
     Ordinary,
+    /// Logical descriptor metadata for a conditional body input. This is no
+    /// native call or effect receipt; its consumer owns those proofs.
+    DescriptorLayout,
     /// Provider identity and exact Object/prototype slots are an independent
     /// author premise checked against the whole-program raw write census.
     AuditedDescriptorCopy {
@@ -37,17 +40,60 @@ pub(super) enum CapturedPropertyDescriptor {
     Accessor { getter: Values, setter: Values },
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct DescriptorAttributes {
+    pub(super) writable: Option<bool>,
+    pub(super) enumerable: Option<bool>,
+    pub(super) configurable: Option<bool>,
+}
+
+impl DescriptorAttributes {
+    pub(super) fn literal(data: bool) -> Self {
+        Self {
+            writable: data.then_some(true),
+            enumerable: Some(true),
+            configurable: Some(true),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum DescriptorCallbackModel {
+    CapturedClosure,
+    /// Capture cells are retained separately by the isolated provider heap.
+    ProviderFunction,
+}
+
+impl DescriptorCallbackModel {
+    fn key(self, value: &AbstractValue) -> Option<u32> {
+        match (self, value) {
+            (Self::CapturedClosure, AbstractValue::Closure(key, _))
+            | (Self::ProviderFunction, AbstractValue::Value(Value::Alloc(Kind::Function, key))) => {
+                Some(*key)
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OwnPropertyNamesProjection {
     pub(super) names: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DescriptorSource {
+    Object(u32),
+    Input(SymbolicInputId),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OwnPropertyDescriptorProjection {
-    pub(super) source_object: u32,
+    pub(super) source_object: DescriptorSource,
     /// ECMAScript own-key order, including canonical integer indices first.
     pub(super) ordered_names: Vec<String>,
     pub(super) properties: BTreeMap<String, CapturedPropertyDescriptor>,
+    pub(super) attributes: BTreeMap<String, DescriptorAttributes>,
     pub(super) retained_values: Values,
 }
 
@@ -64,6 +110,141 @@ pub(super) struct OwnPropertyProof {
     conclusion: InferenceRule,
     derivation_rules: BTreeSet<InferenceRule>,
     pub(super) dependencies: ProofDependencies,
+}
+
+impl RecordInputShape {
+    pub(super) fn from_shape(shape: &OwnPropertyShape) -> Option<Self> {
+        if shape.properties.contains_key("__proto__") {
+            return None;
+        }
+        Some(Self {
+            creation_order: shape.creation_order.clone(),
+            properties: shape
+                .properties
+                .iter()
+                .map(|(name, descriptor)| {
+                    (
+                        name.clone(),
+                        match descriptor {
+                            OwnPropertyDescriptorSyntax::Data => RecordInputProperty::Data,
+                            OwnPropertyDescriptorSyntax::Accessor { getter, setter } => {
+                                RecordInputProperty::Accessor {
+                                    getter: getter.is_some(),
+                                    setter: setter.is_some(),
+                                }
+                            }
+                        },
+                    )
+                })
+                .collect(),
+        })
+    }
+
+    pub(super) fn matches_projection(&self, projection: &OwnPropertyDescriptorProjection) -> bool {
+        ordered_own_property_names(&self.creation_order) == projection.ordered_names
+            && self.properties.len() == projection.properties.len()
+            && self.properties.iter().all(|(name, kind)| {
+                let data = matches!(kind, RecordInputProperty::Data);
+                projection.attributes.get(name) == Some(&DescriptorAttributes::literal(data))
+                    && match (kind, projection.properties.get(name)) {
+                        (RecordInputProperty::Data, Some(CapturedPropertyDescriptor::Data(_))) => {
+                            true
+                        }
+                        (
+                            RecordInputProperty::Accessor { getter, setter },
+                            Some(CapturedPropertyDescriptor::Accessor {
+                                getter: actual_getter,
+                                setter: actual_setter,
+                            }),
+                        ) => {
+                            *getter == !actual_getter.is_empty()
+                                && *setter == !actual_setter.is_empty()
+                        }
+                        _ => false,
+                    }
+            })
+    }
+}
+
+/// Conditional query evidence. Only a consumer that checks the complete input
+/// layout may instantiate its parameterized footprint and body coverage.
+pub(super) fn conditional_input_projection(
+    shape: &RecordInputShape,
+    input: SymbolicInputId,
+    request: OwnPropertyRequest,
+) -> Option<OwnPropertyProof> {
+    use super::value_model::ProviderInput;
+    let ProviderInput::Argument(argument) = input.input else {
+        return None;
+    };
+    let (native_call, names_only) = match request {
+        OwnPropertyRequest::Names { native_call } => (native_call, true),
+        OwnPropertyRequest::Descriptors { native_call } => (native_call, false),
+        _ => return None,
+    };
+    let names = ordered_own_property_names(&shape.creation_order);
+    let input_scope = input.scope;
+    let symbolic = |input| {
+        Values::from([AbstractValue::SymbolicInput(SymbolicInputId {
+            scope: input_scope,
+            input,
+        })])
+    };
+    let mut properties = BTreeMap::new();
+    let mut attributes = BTreeMap::new();
+    let mut retained_values = Values::new();
+    for (property, (name, kind)) in shape.properties.iter().enumerate() {
+        let data = matches!(kind, RecordInputProperty::Data);
+        let descriptor = match kind {
+            RecordInputProperty::Data => {
+                CapturedPropertyDescriptor::Data(symbolic(ProviderInput::Property {
+                    argument,
+                    property,
+                }))
+            }
+            RecordInputProperty::Accessor { getter, setter } => {
+                CapturedPropertyDescriptor::Accessor {
+                    getter: if *getter {
+                        symbolic(ProviderInput::Getter { argument, property })
+                    } else {
+                        Values::new()
+                    },
+                    setter: if *setter {
+                        symbolic(ProviderInput::Setter { argument, property })
+                    } else {
+                        Values::new()
+                    },
+                }
+            }
+        };
+        match &descriptor {
+            CapturedPropertyDescriptor::Data(values) => {
+                retained_values.extend(values.iter().cloned())
+            }
+            CapturedPropertyDescriptor::Accessor { getter, setter } => {
+                retained_values.extend(getter.iter().cloned());
+                retained_values.extend(setter.iter().cloned());
+            }
+        }
+        properties.insert(name.clone(), descriptor);
+        attributes.insert(name.clone(), DescriptorAttributes::literal(data));
+    }
+    Some(OwnPropertyProof {
+        projection: if names_only {
+            OwnPropertyProjection::Names(OwnPropertyNamesProjection { names })
+        } else {
+            OwnPropertyProjection::Descriptors(OwnPropertyDescriptorProjection {
+                source_object: DescriptorSource::Input(input),
+                ordered_names: names,
+                properties,
+                attributes,
+                retained_values,
+            })
+        },
+        conclusion: InferenceRule::OwnPropertyPrefixState,
+        derivation_rules: BTreeSet::from([InferenceRule::NativeCallIdentity]),
+        dependencies: native_call.dependencies,
+    })
 }
 
 impl OwnPropertyProof {
@@ -93,8 +274,11 @@ fn descriptor_projection(
     ordered_names: &[String],
     shape: &OwnPropertyShape,
     prefix_properties: &BTreeMap<Option<String>, Values>,
+    callbacks_model: DescriptorCallbackModel,
+    literal_descriptors_intact: bool,
 ) -> Option<OwnPropertyDescriptorProjection> {
     let mut properties = BTreeMap::new();
+    let mut attributes = BTreeMap::new();
     for name in ordered_names {
         let values = prefix_properties.get(&Some(name.clone()))?;
         let descriptor = match shape.properties.get(name)? {
@@ -103,10 +287,8 @@ fn descriptor_projection(
                 let expected: BTreeSet<_> = getter.iter().chain(setter.iter()).copied().collect();
                 let mut callbacks = Values::new();
                 for value in values {
-                    let AbstractValue::Closure(key, _) = value else {
-                        return None;
-                    };
-                    if !expected.contains(key) {
+                    let key = callbacks_model.key(value)?;
+                    if !expected.contains(&key) {
                         return None;
                     }
                     callbacks.insert(value.clone());
@@ -115,9 +297,7 @@ fn descriptor_projection(
                     key.map_or_else(Values::new, |key| {
                         callbacks
                             .iter()
-                            .filter(|value| {
-                                matches!(value, AbstractValue::Closure(found, _) if *found == key)
-                            })
+                            .filter(|value| callbacks_model.key(value) == Some(key))
                             .cloned()
                             .collect()
                     })
@@ -135,6 +315,17 @@ fn descriptor_projection(
                 }
             }
         };
+        attributes.insert(
+            name.clone(),
+            if literal_descriptors_intact {
+                DescriptorAttributes::literal(matches!(
+                    descriptor,
+                    CapturedPropertyDescriptor::Data(_)
+                ))
+            } else {
+                DescriptorAttributes::default()
+            },
+        );
         properties.insert(name.clone(), descriptor);
     }
 
@@ -151,9 +342,10 @@ fn descriptor_projection(
         }
     }
     Some(OwnPropertyDescriptorProjection {
-        source_object,
+        source_object: DescriptorSource::Object(source_object),
         ordered_names: ordered_names.to_vec(),
         properties,
+        attributes,
         retained_values,
     })
 }
@@ -176,15 +368,29 @@ fn require_native_certificate(
     Some(())
 }
 
+pub(super) struct OwnPropertyPrefix<'a> {
+    pub(super) source_object: u32,
+    pub(super) source_values: &'a Values,
+    pub(super) shape: &'a OwnPropertyShape,
+    pub(super) properties: &'a BTreeMap<Option<String>, Values>,
+    pub(super) tainted: bool,
+    pub(super) literal_descriptors_intact: bool,
+}
+
 pub(super) fn infer_own_property_projection(
-    source_object: u32,
-    source_values: &Values,
-    shape: &OwnPropertyShape,
-    prefix_properties: &BTreeMap<Option<String>, Values>,
-    tainted: bool,
-    semantic_facts: &SemanticFacts,
+    prefix: OwnPropertyPrefix<'_>,
+    semantic_facts: Option<&SemanticFacts>,
+    callbacks_model: DescriptorCallbackModel,
     request: OwnPropertyRequest,
 ) -> Option<OwnPropertyProof> {
+    let OwnPropertyPrefix {
+        source_object,
+        source_values,
+        shape,
+        properties: prefix_properties,
+        tainted,
+        literal_descriptors_intact,
+    } = prefix;
     let source_is_exact_object = source_values.len() == 1
         && matches!(
             source_values.first(),
@@ -231,13 +437,19 @@ pub(super) fn infer_own_property_projection(
         }
         OwnPropertyRequest::AuditedDescriptorCopy { semantic_call } => {
             require_native_certificate(
-                semantic_facts,
+                semantic_facts?,
                 &semantic_call,
                 &mut dependencies,
                 &mut derivation_rules,
             )?;
-            let projection =
-                descriptor_projection(source_object, &ordered_names, shape, prefix_properties)?;
+            let projection = descriptor_projection(
+                source_object,
+                &ordered_names,
+                shape,
+                prefix_properties,
+                callbacks_model,
+                literal_descriptors_intact,
+            )?;
             derivation_rules.insert(InferenceRule::DescriptorCopyFactory);
             (
                 InferenceRule::DescriptorCopyFactory,
@@ -246,11 +458,20 @@ pub(super) fn infer_own_property_projection(
         }
         // The `%Object.getOwnPropertyDescriptors%` identity already holds
         // the Object family and global object intact.
-        OwnPropertyRequest::Descriptors { native_call } => {
-            dependencies.extend(&native_call.dependencies);
-            derivation_rules.extend(native_call.inference_use.derivation_rules);
-            let projection =
-                descriptor_projection(source_object, &ordered_names, shape, prefix_properties)?;
+        request @ (OwnPropertyRequest::Descriptors { .. }
+        | OwnPropertyRequest::DescriptorLayout) => {
+            if let OwnPropertyRequest::Descriptors { native_call } = request {
+                dependencies.extend(&native_call.dependencies);
+                derivation_rules.extend(native_call.inference_use.derivation_rules);
+            }
+            let projection = descriptor_projection(
+                source_object,
+                &ordered_names,
+                shape,
+                prefix_properties,
+                callbacks_model,
+                literal_descriptors_intact,
+            )?;
             derivation_rules.insert(InferenceRule::OwnPropertyDescriptorProjection);
             (
                 InferenceRule::OwnPropertyDescriptorProjection,
@@ -272,14 +493,17 @@ mod tests {
         AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
         ordered_own_property_names,
     };
-    use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
+    use super::{
+        DescriptorCallbackModel, OwnPropertyPrefix, OwnPropertyProjection, OwnPropertyRequest,
+        infer_own_property_projection,
+    };
     use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
     use crate::analysis_provenance::InferenceRule;
     use crate::facts::abstract_domain::integrity::{
         IntegrityFlags, IntrinsicSlot, PrototypeWrites,
     };
     use crate::facts::abstract_domain::value::{Kind, Value};
-    use crate::facts::semantic_inference::{SemanticFacts, native_premise};
+    use crate::facts::semantic_inference::native_premise;
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
@@ -314,12 +538,16 @@ mod tests {
             Values::from([AbstractValue::PRIMITIVE]),
         )]);
         let proof = infer_own_property_projection(
-            source_object,
-            &source_values,
-            &shape,
-            &prefix_properties,
-            false,
-            &SemanticFacts::default(),
+            OwnPropertyPrefix {
+                source_object,
+                source_values: &source_values,
+                shape: &shape,
+                properties: &prefix_properties,
+                tainted: false,
+                literal_descriptors_intact: true,
+            },
+            None,
+            DescriptorCallbackModel::CapturedClosure,
             OwnPropertyRequest::Ordinary,
         )
         .expect("ordinary source projection");
@@ -385,12 +613,16 @@ mod tests {
         .expect("intact census");
 
         let proof = infer_own_property_projection(
-            source_object,
-            &source_values,
-            &shape,
-            &prefix_properties,
-            false,
-            &SemanticFacts::default(),
+            OwnPropertyPrefix {
+                source_object,
+                source_values: &source_values,
+                shape: &shape,
+                properties: &prefix_properties,
+                tainted: false,
+                literal_descriptors_intact: true,
+            },
+            None,
+            DescriptorCallbackModel::CapturedClosure,
             OwnPropertyRequest::Names {
                 native_call: native_call.clone(),
             },

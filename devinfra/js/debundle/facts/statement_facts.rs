@@ -211,6 +211,17 @@ pub(crate) struct SynchronousCalls {
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
     pub(crate) completed_initialization:
         Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
+    /// Keep proof dependencies off recursive `Outcome`/`SynchronousCalls`
+    /// frames. The box is transparent in saved analysis serialization.
+    /// Exact-owner normal-completion evidence for the initialization control
+    /// fence is independent of effect-domain closure.
+    pub(crate) root_normal_completion:
+        Option<Box<super::sync_effects::noninvoking_initialization::RootNormalCompletion>>,
+    /// Exact root-level outward known throw, distinct from potential
+    /// suppression inferred from missing normal-completion evidence.
+    /// Boxed so its proof dependencies do not inflate recursive outcome frames.
+    pub(crate) root_outward_throw:
+        Option<Box<super::sync_effects::noninvoking_initialization::RootOutwardThrow>>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
     pub(crate) initialization_coverage_refusal:
@@ -256,6 +267,10 @@ pub(crate) struct SynchronousCalls {
     /// path. This is a subset of `heap_contents` and is used only to check
     /// explicit commuting premises; the conservative heap order uses all cells.
     pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
+    /// Typed descriptor/shape support for admitted own-data reads and stores.
+    /// This is report/read-footprint evidence, not effect-domain authority.
+    pub(crate) operation_support_receipts:
+        Option<Box<[super::sync_effects::OperationSupportReceipt]>>,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
@@ -283,6 +298,32 @@ pub(crate) struct FallbackOnlyEffects {
 }
 
 impl SynchronousCalls {
+    pub(crate) fn record_operation_support(
+        &mut self,
+        receipt: super::sync_effects::OperationSupportReceipt,
+    ) {
+        if self
+            .operation_support_receipts
+            .as_deref()
+            .is_some_and(|receipts| receipts.contains(&receipt))
+        {
+            return;
+        }
+        let mut receipts = self
+            .operation_support_receipts
+            .take()
+            .map(|receipts| receipts.into_vec())
+            .unwrap_or_default();
+        receipts.push(receipt);
+        self.operation_support_receipts = Some(receipts.into_boxed_slice());
+    }
+
+    pub(crate) fn operation_support_receipts(
+        &self,
+    ) -> &[super::sync_effects::OperationSupportReceipt] {
+        self.operation_support_receipts.as_deref().unwrap_or(&[])
+    }
+
     pub(crate) fn record_heap_contents(&mut self, cells: &HeapContentCells, non_assumed: bool) {
         self.heap_contents.extend(cells);
         if non_assumed {
@@ -450,6 +491,19 @@ impl StatementFacts {
     }
 }
 
+/// Identity in a chunk's declarative-cell arena. Slots are never reused; saved
+/// effects preserve the identity without retaining its runtime value graph.
+/// Immutable function-name views are not new activation-cell effects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct LexicalCellId(pub(crate) usize);
+
+impl std::fmt::Display for LexicalCellId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// One outer-observable storage location a statement can read or
 /// write. `EffectCell::Binding(name)` covers identifier reads
 /// (`Foo` or `Foo.bar` triggers a read of `Foo`) and rebind writes;
@@ -461,21 +515,60 @@ impl StatementFacts {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum EffectCell {
     Binding(Id),
+    /// The actual captured cell, with its canonical declaration offset.
+    /// Identity does not prove initialization, contents, or private ownership.
+    LexicalCell {
+        origin: u32,
+        instance: LexicalCellId,
+    },
     GlobalProp(String),
+    /// Shared synchronous module-initialization progress across all logical
+    /// modules in one exact per-chunk relocation sweep.
+    ExecutionProgress,
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
     ArrayContents(u32),
     /// Mutable contents of one proved fresh native Set construction.
     SetContents(u32),
+    /// Shared agent-local ECMAScript GlobalSymbolRegistry used by
+    /// `Symbol.for`. Its entries are not enumerable or removable from source,
+    /// but repeated lookups observe the same key-unique symbol.
+    GlobalSymbolRegistry,
     /// Own keys and descriptor attributes, shared by every generation of
     /// this source allocation. Distinct from stored data values.
     ObjectShape(u32),
+    /// A captured native descriptor carrier, including its property records.
+    DescriptorMapContents(u32),
     /// One static own property, conservatively shared by every runtime
     /// generation of the source allocation. This supplies no strong update.
     OwnProperty {
         origin: u32,
         property: String,
     },
+    /// One private element, keyed independently by receiver allocation source,
+    /// class brand source, and private name. Source origins still aggregate
+    /// runtime generations and supply no strong-update or privacy proof.
+    PrivateSlot {
+        origin: u32,
+        class: u32,
+        name: String,
+    },
+}
+
+impl EffectCell {
+    pub(crate) fn is_heap_content(&self) -> bool {
+        match self {
+            Self::Binding(_) | Self::GlobalProp(_) | Self::ExecutionProgress => false,
+            Self::ArrayContents(_)
+            | Self::LexicalCell { .. }
+            | Self::SetContents(_)
+            | Self::GlobalSymbolRegistry
+            | Self::ObjectShape(_)
+            | Self::DescriptorMapContents(_)
+            | Self::OwnProperty { .. }
+            | Self::PrivateSlot { .. } => true,
+        }
+    }
 }
 
 /// The (writes, reads) cell view of one statement, derived by
@@ -934,7 +1027,7 @@ mod initializer_overlay_tests {
                 .as_ref()
                 .unwrap()
                 .clone();
-            let BindingEffectCoverage::OrderedRootInitializer { receipt, .. } =
+            let BindingEffectCoverage::OrderedRoot { receipt, .. } =
                 &before.binding_effect_coverage
             else {
                 panic!("the fixture must exercise ordered root receipt sealing: {before:#?}");

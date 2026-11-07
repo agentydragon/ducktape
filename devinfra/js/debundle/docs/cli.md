@@ -70,6 +70,16 @@ directly. The replay uses only copied inputs and writes under that worker's
 jq -r '.regeneration_argv | @sh' /tmp/worker-one.json
 ```
 
+The returned `analysis_input_args` contains the relocated source and package
+arguments for the copied engine's `analyze` command. `transform_context_args`
+adds the complete tree config, module, vendor and output context; use it with
+`spec project-analysis` and with validating edits. Regeneration uses that same
+context plus its run-only options. After baseline verification, create a
+projection with `spec project-analysis`, produce its matching native artifact
+with `analyze`, and supply `--analysis` plus `transform_context_args` to both
+preview and apply. The [runnable worker recipe](../skills/shared/examples/isolated_edit.py)
+records each step and uses the common effect-based relocation verdict.
+
 Send the worker its snapshot directory, task, acceptance checks and permitted
 edit scope. It edits its own YAML tree and regenerates analysis there. The
 original saved graph and `snapshot.json` describe the starting state; the
@@ -154,8 +164,9 @@ source unit from a flat graph: it does not resolve module claims, but still
 checks the captured engine and input fingerprints plus the exact source path
 and digest before loading source bytes. Other `--id` selections retain the
 module-scope check.
-`--no-verify` skips the post-edit assignment gate only; it does not skip
-the saved graph's baseline compatibility check when a graph is supplied.
+`--no-verify` skips post-edit claim validation and the canonical candidate
+assessment; the write is explicitly unvalidated. It does not skip the saved
+graph's baseline compatibility check when a graph is supplied.
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in
@@ -287,16 +298,18 @@ Description proposal fields and residual dependency names are defined in
 The mutating verbs (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules apply`, `modules merge`, `modules delete`) take the same
 `--format` flag with the same tty/pipe default. Under `text` they print a
-one-line verdict (`<action>` plus move/file counts). Under a JSON format
+one-line verdict (`<action>` plus move/file counts); graph-only ownership
+previews include `needs_full_assessment`. Under a JSON format
 each verb prints **one outcome object** sharing a common schema core:
 
-| Field           | Values                                                                                                                             |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `verb`          | `assign` \| `unassign` \| `rename` \| `apply` \| `merge` \| `delete`                                                               |
-| `action`        | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                      |
-| `gate`          | `passed` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only |
-| `files_written` | Files written (or, under `--dry-run`, that would be written)                                                                       |
-| `files_deleted` | Files deleted (or, under `--dry-run`, that would be deleted)                                                                       |
+| Field                   | Values                                                                                                                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verb`                  | `assign` \| `unassign` \| `rename` \| `apply` \| `merge` \| `delete`                                                                                                                   |
+| `action`                | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                                                                          |
+| `gate`                  | `passed` (canonical assessment accepted) \| `claims_checked` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only |
+| `needs_full_assessment` | `true` on a graph-only ownership preview; it cannot be written as a verified edit                                                                                                      |
+| `files_written`         | Files written (or, under `--dry-run`, that would be written)                                                                                                                           |
+| `files_deleted`         | Files deleted (or, under `--dry-run`, that would be deleted)                                                                                                                           |
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `identity` / `old_readable` /
@@ -304,36 +317,42 @@ Verb-specific fields flatten in alongside the core: `moves_applied`
 `selector_reviews` (apply), `target` (single merge) / `targets` (merge batch).
 When requested, `bindings assign`, `bindings unassign`, `modules apply`,
 `modules merge`, and `modules delete` also return
-`effect_relocation_assessment`, a report-only assessment of their exact
-in-memory candidate plan. Most commands require `--dry-run --analysis <artifact>`;
-`bindings assign` and `modules apply` also accept `--analysis` when writing,
-assessing the final candidate before changing YAML. This requires `--graph`
+`effect_relocation_assessment`, the canonical verdict for their exact
+in-memory candidate plan. A verified ownership write requires `--analysis
+<artifact>` and a complete transform context. A graph-only `--dry-run`
+checks claim identity and reports `needs_full_assessment`; it does not issue a
+final acceptance verdict. This requires `--graph`
 and the full tree transform context (`--tree-config`,
 `--tree-modules`, `--tree-vendor-marks`, `--tree-source-root`, and
-`--out-root`); `--modules` and `--tree-modules` must resolve to the same root.
+`--out-root`). `--tree-modules` must identify the verified full authored tree;
+`--modules` may identify that tree or one of its configured graph-chunk subtrees.
 `modules apply` and `modules refine` reuse their existing `--modules` root as
 `--tree-modules` and their existing `--tree-config`, avoiding a second
 root/config argument. These two commands require the auxiliary tree inputs to
 be explicit; they do not inherit `DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT`.
 Other existing assessment commands retain their transform environment defaults.
-The current path supports one full-tree graph chunk. It loads complete typed
+Canonical tree compilation projects the exact candidate while preserving other
+roots and chunks. The `effect_relocation_assessment` object has one overall
+`status` and a `chunks` map containing every required materialized chunk's
+effect/placement assessment. Overall acceptance requires every chunk and the
+normal final program reconstruction checks. Accepted candidates pass through
+cross-chunk import rewrites, export pruning and final export/replacement
+validation in memory without writing program outputs. It loads complete typed
 facts through the canonical pipeline and verifies source, engine and analysis
 projection identities; diagnostic reports are never decoded as facts. The
-effect commutation result remains report-only; the legacy edit gate still decides
-ordering and rebinding. For writes with `--analysis`, the canonical placement
-projection must yield emitter maps, and a refusal leaves YAML untouched.
-Omitting `--analysis` preserves the ordinary graph-backed edit behavior;
-`bindings assign` and `modules apply` then report
-`effect_assessment_unavailable: analysis_not_supplied`. Gate rejections replace the
+canonical assessment decides verified writes. The CLI also checks selector and
+source-unit claims before writing. An assessment refusal leaves YAML untouched
+and returns its actual report in the typed rejection. `--no-verify` remains an
+explicitly unvalidated write where supported. Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
 
 For `modules delete`, every requested file must resolve to a module in the
-complete typed module tree. The exact resolved deletion set is used by both the
-legacy edit gate and the assessment candidate; non-empty files still require
-`--force`. The assessment reports the emitted order after those module
-documents are removed. As with the other edit assessments, it proves only
-statement-order commutation for that candidate and does not replace the gate.
+complete typed module tree. The exact resolved deletion set determines both
+the post-delete claim projection and the assessment candidate; non-empty files
+still require `--force`. The canonical assessment evaluates the candidate after
+those module documents are removed, including its effect and structural
+placement obligations. Empty-module deletion does not change ownership.
 
 ## Whole-module merge batches
 
@@ -467,11 +486,11 @@ filters.
 
 ## Validate-by-default (mutating commands)
 
-Every command that modifies the spec runs validation **by default** before
-writing changes back to disk. For commands that affect the chunk's module
-assignment (anything that moves a binding between modules), that means
-the post-edit claim checks followed by the full realizability + atom-split
-gate — which requires `--graph <dependency_graph.json.gz>` unless `--no-verify` is set.
+Every command that modifies the spec runs its applicable checks **by default**
+before writing changes back to disk. Ownership edits resolve exact post-edit
+claims from `--graph`, then use the canonical full-context candidate
+assessment as the verified-write verdict. Claim checks require
+`--graph <dependency_graph.json.gz>` unless `--no-verify` is set.
 Direct local claims must identify graph source units, typed `kind` pins must match
 one source chunk (a repeated declaration may satisfy the kind at any site),
 and `import_specifier` pins must name an import specifier. Pass `--source-root` when
@@ -480,24 +499,25 @@ name-collision detection; comment edits run shape preservation only (they take
 `--dry-run` but no `--no-verify`). If validation fails the command refuses
 with a structured diagnostic and **does not modify any file**.
 
-For these edit commands, a JSON result of `gate: "passed"` means the
-post-edit source-claim, assignment, and realizability checks passed. It does
-not mean the full reconstruction was accepted: `debundle run` remains the
-end-to-end acceptance path and checks vendor boundaries, exports,
-reconstruction, and browser planning. The source-claim check recognizes named,
-default, and namespace imports as import specifiers, while module emission
-currently supports moving named imports only (`lowering/imports/imports_runtime.rs`).
+For ownership edits, `gate: "passed"` means the canonical candidate
+assessment accepted the exact planned documents after their claims were
+resolved. `gate: "claims_checked"` means only the graph-backed claim checks
+ran; it is not final acceptance. `debundle run` remains the end-to-end
+acceptance path and checks vendor boundaries, exports, reconstruction, and
+browser planning. The source-claim check recognizes named, default, and
+namespace imports as import specifiers, while module emission currently
+supports moving named imports only (`lowering/imports/imports_runtime.rs`).
 
 On spec-edit commands:
 
-| Flag          | Effect                                                                                                                                                        |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (default)     | Validate; refuse the change if invalid; apply if valid.                                                                                                       |
-| `--no-verify` | Skip validation; apply the change regardless. Escape hatch for multi-step refactors where an intermediate state is intentionally invalid. Don't use casually. |
-| `--dry-run`   | Validate (or simulate) but do not modify any file. Print the validation result and the planned file set, not a YAML diff.                                     |
+| Flag          | Effect                                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| (default)     | Resolve claims and assess ownership candidates; refuse a verified write unless the canonical assessment accepts it.                           |
+| `--no-verify` | Skip claim validation and candidate assessment; emit a warning and apply an explicitly unvalidated edit where supported.                      |
+| `--dry-run`   | Run the available checks without writing. A graph-only ownership preview reports `needs_full_assessment`; it does not claim final acceptance. |
 
-`--dry-run` and `--no-verify` can be combined: show what would change
-without validating — useful when investigating _why_ the gate would reject.
+`--dry-run` and `--no-verify` can be combined to preview the planned files
+without claim validation or candidate assessment.
 
 `run` is the exception: the gate is part of the pipeline contract, not an
 optional pre-check. There is no `run --no-verify` — if you want the pipeline
@@ -1026,25 +1046,26 @@ refactors whose intermediate states would be invalid can land in one shot:
    `annotations:`, and `anonymous_statements:` in every module stay
    claimed. Moving a `source_matches[].bindings[]` entry carries its
    structural template and claim note. Selecting only some bindings from a
-   claim splits the claim; move atomic siblings together in one batch when
-   the gate reports that a single move would split their source statement.
-3. Run the realizability gate on the post-batch spec.
-4. If invalid: print binding-pair blame, exit non-zero, **do not modify any
+   claim splits the claim; the canonical assessment checks the complete
+   candidate, including structural relocation obligations.
+3. Resolve every post-edit claim and requested selector. Assess the exact
+   candidate with staged facts before a verified write.
+4. If rejected: report the canonical assessment, exit non-zero, **do not modify any
    file**.
-5. If valid: write every changed surviving YAML first, then delete drained
+5. If accepted: write every changed surviving YAML first, then delete drained
    move-source files — an interruption can never lose a member that was not
    yet written to its destination.
 
-`--dry-run` runs steps 1–4 and stops. `--no-verify` skips step 3 (still
-does duplicate-claim detection — that's a structural error, not a
-validation one). `bindings unassign` shares the same post-batch validation
-and drain sweep. Automatic cleanup preserves module-level `comment:` and
+`--dry-run` runs the available checks and stops; without full context it reports
+`needs_full_assessment`. `--no-verify` skips claim validation and candidate
+assessment, and its write is explicitly unvalidated. `bindings unassign` shares
+the same post-batch claim validation, assessment requirement, and drain sweep. Automatic cleanup preserves module-level `comment:` and
 `note:` fields, including explicitly empty values. `modules list --auto-deletable`
 uses the same metadata-preserving predicate; `--empty` only tests structural
 emptiness. Explicit `modules delete <path>` may remove a comment/note-only module
 without `--force`, because it owns no code and the author named it for deletion.
 
-To include the report-only effect assessment, add `--analysis <artifact>` and
+For the full candidate assessment, add `--analysis <artifact>` and
 the full tree transform context to a graph-backed dry run. For example,
 `bindings unassign` accepts:
 
@@ -1056,7 +1077,7 @@ debundle bindings unassign XOe \
   --out-root "$OUT_ROOT" --analysis analysis.dba --dry-run --format json
 ```
 
-The same opt-in applies to `bindings assign`, `modules apply`, and
+The same context applies to `bindings assign`, `modules apply`, and
 `modules merge`. For `modules apply` and `modules refine`, the existing
 `--modules` root and `--tree-config` arguments also supply the transform's
 tree modules and config; the command does not accept duplicate root/config
@@ -1070,13 +1091,11 @@ against the verified graph source and the artifact's engine, source digests and
 completed projection before the candidate plan is assessed. A missing, stale
 or mismatched input fails before YAML is written. The JSON
 `effect_relocation_assessment` field contains the common candidate assessment:
-its effect decision and exact statement order plus typed placement obligations
-from the same assignment. Status distinguishes effect conflicts from
-structural placement blockers, and `legacy_gate_ordering_veto` makes the
-remaining semantic-order gate veto explicit. Unresolved typed structural
-checks keep the overall result incomplete. This does not change the legacy edit
-gate or establish vendor replacement, privacy or singleton guarantees. Without
-`--analysis`, the normal graph-backed edit path remains unchanged.
+its effect decision and exact statement order plus typed structural placement
+obligations from the same assignment. The report status distinguishes effect
+conflicts, placement blockers, incomplete assessment, and acceptance within the
+checked scope. The canonical assessment is the verified-write verdict. A
+graph-only preview cannot claim final acceptance.
 
 ### `bindings assign --batch` JSON format
 
@@ -1169,7 +1188,7 @@ reports planned files without writing the spec. Uniqueness is proved against
 the current source snapshot; review the retained literals and property names
 before applying. Omit a proposal from the batch to leave it in residual.
 
-For a report-only relocation assessment of the exact post-claim candidate, add
+For a verified write assessment of the exact post-claim candidate, add
 `--dry-run --analysis <staged-artifact>`, the existing `--tree-config`, and
 `--tree-vendor-marks`, `--tree-source-root`, and `--out-root`. The existing
 `--modules` root also supplies the transform's `--tree-modules`. Use
@@ -1178,13 +1197,11 @@ assign one full module root to the graph chunk, and the transform must
 materialize only that chunk. These auxiliary transform flags are explicit-only
 for `modules apply`: ambient `DEBUNDLE_TREE_SOURCE_ROOT` and `DEBUNDLE_OUT`
 values do not alter ordinary apply, and an explicitly supplied auxiliary flag
-without `--analysis` is rejected. After the existing expected-member and
-realizability gates pass, the command assesses the exact typed documents that
+without `--analysis` is rejected. After the expected-member and claim checks pass, the command assesses the exact typed documents that
 would be written. A missing, stale, or mismatched context fails before YAML
 writes. The JSON `effect_relocation_assessment` contains the effect component
-and typed placement obligations for the same exact candidate. It does not
-change edit acceptance or prove replacement, privacy or singleton obligations.
-Scoped `--tree-config` behavior remains available without `--analysis`.
+and typed placement obligations for the same exact candidate. The assessment determines verified write acceptance. Graph-only previews
+remain available without `--analysis` and report `needs_full_assessment`.
 
 Optional `selectors` entries choose a reviewed selector for a binding; bindings
 without an entry use synthesis. A `source_match` entry uses the normal
@@ -1424,26 +1441,24 @@ unclaimed, import, and export source units cannot be assigned. It rejects duplic
 source-unit rows, split/conflicting current claims, destination name or annotation
 collisions, and stale dependency graphs. It then resolves every selector in the
 complete scoped post-edit spec and compares every graph source unit—including
-unchanged and residual source units—to the requested complete assignment. Only after
-that identity check does the shared atomic-group and realizability gate run.
+unchanged and residual source units—to the requested complete assignment. The canonical candidate assessment then determines write acceptance.
 There is no `--no-verify` mode. `--dry-run` performs the same checks without
 writing YAML; a rejected batch leaves every module document unchanged.
 
-For a report-only effect relocation assessment of the exact candidate, add
+For the canonical assessment of the exact candidate, add
 `--dry-run --analysis <staged-artifact>` and the tree transform inputs
 `--tree-vendor-marks`, `--tree-source-root`, and `--out-root`. The existing
 `--tree-config` and `--modules` arguments also supply the assessment's tree
-config and module root. The config must select exactly one full-tree root for
-the graph chunk, and the transform must materialize only that graph chunk.
+config and module root. Several configured roots and materialized chunks are
+assessed as one complete application candidate; documents outside the verified
+graph chunk must remain unchanged.
 The assessment's source root and output root must be passed explicitly; it does
 not inherit `DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT`.
 This assessment uses the complete post-refinement documents, after drained
-modules are removed, and runs after the unchanged identity and realizability
-gates pass but before YAML writes. It reports statement-order commutation only;
-it does not change edit acceptance or prove replacement, privacy, or singleton
-obligations. A missing or stale artifact, incomplete context, or scoped tree
-config is rejected before any YAML is written. The existing scoped
-`--tree-config` behavior remains available without `--analysis`.
+modules are removed, and runs after the complete selector identity check
+but before YAML writes. It determines the verified write verdict. A missing or stale artifact, incomplete context, a refused sibling assessment, or a final
+program validation failure is rejected before any YAML is written. Scoped graph-only previews
+remain available without `--analysis` and report `needs_full_assessment`.
 
 The primitive does not create selectors or choose semantic module names. It
 applies the reviewed source-unit map as written; inspect the resulting modules and

@@ -10,7 +10,7 @@ use swc_ecma_ast::Id;
 use crate::ModuleId;
 use crate::analysis_inputs::CommutingStatementsRef;
 use crate::execution_evidence::AssumedEffectReason;
-use crate::facts::{DataflowOpacityCause, EffectCell};
+use crate::facts::{DataflowOpacityCause, EffectCell, LexicalCellId};
 
 use super::build::PremiseVerdict;
 
@@ -304,12 +304,39 @@ pub enum CellConflict {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectCellReport {
-    Binding { binding: Atom },
-    GlobalProp { key: String },
-    ArrayContents { origin: u32 },
-    SetContents { origin: u32 },
-    ObjectShape { origin: u32 },
-    OwnProperty { origin: u32, property: String },
+    Binding {
+        binding: Atom,
+    },
+    LexicalCell {
+        origin: u32,
+        instance: LexicalCellId,
+    },
+    GlobalProp {
+        key: String,
+    },
+    ExecutionProgress,
+    ArrayContents {
+        origin: u32,
+    },
+    SetContents {
+        origin: u32,
+    },
+    GlobalSymbolRegistry,
+    ObjectShape {
+        origin: u32,
+    },
+    DescriptorMapContents {
+        origin: u32,
+    },
+    OwnProperty {
+        origin: u32,
+        property: String,
+    },
+    PrivateSlot {
+        origin: u32,
+        class: u32,
+        name: String,
+    },
 }
 
 impl From<&EffectCell> for EffectCellReport {
@@ -318,13 +345,31 @@ impl From<&EffectCell> for EffectCellReport {
             EffectCell::Binding(id) => Self::Binding {
                 binding: id.0.clone(),
             },
+            EffectCell::LexicalCell { origin, instance } => Self::LexicalCell {
+                origin: *origin,
+                instance: *instance,
+            },
             EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
+            EffectCell::ExecutionProgress => Self::ExecutionProgress,
             EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
             EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
+            EffectCell::GlobalSymbolRegistry => Self::GlobalSymbolRegistry,
             EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
+            EffectCell::DescriptorMapContents(origin) => {
+                Self::DescriptorMapContents { origin: *origin }
+            }
             EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
                 origin: *origin,
                 property: property.clone(),
+            },
+            EffectCell::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => Self::PrivateSlot {
+                origin: *origin,
+                class: *class,
+                name: name.clone(),
             },
         }
     }
@@ -334,13 +379,29 @@ impl fmt::Display for EffectCellReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Binding { binding } => write!(f, "binding `{binding}`"),
+            Self::LexicalCell { origin, instance } => {
+                write!(f, "lexical cell #{origin} instance {instance}")
+            }
             Self::GlobalProp { key } => write!(f, "global property `{key}`"),
+            Self::ExecutionProgress => f.write_str("synchronous initialization progress"),
             Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
             Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
+            Self::GlobalSymbolRegistry => write!(f, "global symbol registry"),
             Self::ObjectShape { origin } => write!(f, "object shape #{origin}"),
+            Self::DescriptorMapContents { origin } => {
+                write!(f, "descriptor map contents #{origin}")
+            }
             Self::OwnProperty { origin, property } => {
                 write!(f, "own property `{property}` of allocation #{origin}")
             }
+            Self::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => write!(
+                f,
+                "private slot `#{name}` of class #{class} on allocation #{origin}"
+            ),
         }
     }
 }

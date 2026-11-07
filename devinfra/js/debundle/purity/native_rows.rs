@@ -296,25 +296,45 @@ pub(crate) fn native_call_purity(
                 evaluation()
             }
             Operand::Array(elements) => {
-                let Expr::Array(array) = operand.expr.unwrap_parens() else {
-                    return None;
-                };
-                let purity = fresh_array_elements(
-                    array,
-                    elements,
-                    &spelling,
-                    shadowed,
-                    local_shadowed,
-                    declared_pure,
-                    graph,
-                )?;
                 if let Some((projection, dependencies)) = operand.native_iterable {
                     if !projection.matches_operand(operand.expr) {
                         return None;
                     }
-                    purity.with_dependencies(dependencies)
+                    match projection.operand_origin() {
+                        crate::facts::NativeIterableOperandOrigin::BorrowedConstArray {
+                            ..
+                        } => evaluation().with_dependencies(dependencies),
+                        crate::facts::NativeIterableOperandOrigin::ImmediateArrayLiteral {
+                            ..
+                        } => {
+                            let Expr::Array(array) = operand.expr.unwrap_parens() else {
+                                return None;
+                            };
+                            fresh_array_elements(
+                                array,
+                                elements,
+                                &spelling,
+                                shadowed,
+                                local_shadowed,
+                                declared_pure,
+                                graph,
+                            )?
+                            .with_dependencies(dependencies)
+                        }
+                    }
                 } else {
-                    purity
+                    let Expr::Array(array) = operand.expr.unwrap_parens() else {
+                        return None;
+                    };
+                    fresh_array_elements(
+                        array,
+                        elements,
+                        &spelling,
+                        shadowed,
+                        local_shadowed,
+                        declared_pure,
+                        graph,
+                    )?
                 }
             }
         };

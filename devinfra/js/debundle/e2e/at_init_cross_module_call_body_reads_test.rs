@@ -36,23 +36,33 @@ fn cross_module_at_init_call_preserves_initialized_body_read() {
 
 #[test]
 fn cross_module_at_init_call_cannot_initialize_a_later_body_read_early() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"const seed = 7;
+    let opts = FixtureOpts::new(
+        r#"const seed = 7;
 const result = readValue(seed);
 function readValue(x) { return value + x; }
 const value = 42;
 console.log(result);
 export { seed, result, readValue, value };
 "#,
-            vec![
-                logical_module("readers", &[Member::new("readValue")]),
-                logical_module("values", &[Member::new("value")]),
-            ],
-        ),
-        &["residual", "values"],
-        &["eager_use", "sequenced"],
+        vec![
+            logical_module("readers", &[Member::new("readValue")]),
+            logical_module("values", &[Member::new("value")]),
+        ],
     );
+    // An accepted emitted order may preserve the source's TDZ failure even
+    // when the conservative dependency quotient contains an ordering cycle.
+    match run_fixture_observing_gate(opts) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            assert_preserved_entry_error(&fixture, "ReferenceError");
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+            assert_ne!(
+                rejected.candidate_relocation_assessment()["status"],
+                "accepted_within_checked_scope"
+            );
+        }
+    }
 }
 
 #[test]

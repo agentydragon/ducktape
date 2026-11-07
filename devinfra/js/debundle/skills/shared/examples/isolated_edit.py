@@ -3,9 +3,10 @@
 The adapter supplies the JSON stdout of ``snapshot create`` (or ``snapshot
 verify`` after relocation), the chunk's configured module subdirectory, reviewed
 paths relative to that subtree, and a new evidence directory. ``modules merge``
-accepts a per-chunk modules root, not the app-level ``--tree-config`` option.
+edits that subtree while assessing it against the complete transform context.
 Run this file with ``--help`` for its standalone arguments. It uses the copied
-engine and roots, previews before applying, then explicitly regenerates analysis.
+engine and exported context to stage analysis, previews before applying through
+the same effect verdict, then explicitly regenerates analysis.
 The launcher saves argv/cwd in *.started.json before execution; CLI invocation
 JSON and *.result.json separately record the interpreted request and exit
 status, with stdout/stderr alongside them. Adapter smoke tests remain separate.
@@ -27,6 +28,8 @@ class Snapshot(TypedDict):
     graph_package_roots: dict[str, str]
     source_root: str
     modules: str
+    analysis_input_args: list[str]
+    transform_context_args: list[str]
     regeneration_argv: list[str]
 
 
@@ -70,6 +73,26 @@ def merge_and_regenerate(
     snapshot = cast(Snapshot, json.loads(verified))
     modules = (Path(snapshot["modules"]) / module_subdir).resolve()
     modules.relative_to(Path(snapshot["modules"]).resolve())
+    projection = cwd / "analysis/edit.projection"
+    analysis = cwd / "analysis/edit.dba"
+    recorded_run(
+        [snapshot["engine"], "spec", "project-analysis", *snapshot["transform_context_args"], "--out", str(projection)],
+        cwd,
+        evidence / "project",
+    )
+    recorded_run(
+        [
+            snapshot["engine"],
+            "analyze",
+            "--projection",
+            str(projection),
+            *snapshot["analysis_input_args"],
+            "--out",
+            str(analysis),
+        ],
+        cwd,
+        evidence / "analyze",
+    )
     merge = [
         *graph_command(snapshot),
         "modules",
@@ -84,6 +107,9 @@ def merge_and_regenerate(
         "json",
         "--target",
         target,
+        *snapshot["transform_context_args"],
+        "--analysis",
+        str(analysis),
     ]
     # Global capture options precede the command; source paths follow `--`.
     plan = [merge[0], "--print-invocation", *merge[1:], "--", *sources]

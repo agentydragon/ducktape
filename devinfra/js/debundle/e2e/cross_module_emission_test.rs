@@ -102,19 +102,9 @@ console.log(value);
 }
 
 #[test]
-fn folds_unclaimed_assigner_with_extracted_mutable_binding() {
-    // This is the minimal shape behind the an upstream boot-progress
-    // `Assignment to constant variable` failure: the spec peels a
-    // mutable binding, while a still-residual function assigns to
-    // that binding at runtime. Emitting `import { a } ...` into the
-    // residual entry and leaving `a = 1` there makes Node reject the
-    // assignment because imported ESM bindings are read-only in the
-    // importing module.
-    //
-    // Rebind-only atomic-group folding extends the explicit `state`
-    // destination to cover the unclaimed assigner `b`. That keeps the
-    // assignment local to the module that owns `a`; the residual entry
-    // imports and calls `b` instead of assigning an imported binding.
+fn explicitly_claimed_assigner_stays_with_extracted_mutable_binding() {
+    // Both the mutable cell and its writer are explicit members. The entry
+    // imports the writer instead of assigning through a read-only ESM import.
     let mut opts = FixtureOpts::new(
         r#"let a = 0;
 function b() {
@@ -124,7 +114,10 @@ b();
 console.log(a);
 export { a };
 "#,
-        vec![logical_module("state", &[Member::new("a")])],
+        vec![logical_module(
+            "state",
+            &[Member::new("a"), Member::new("b")],
+        )],
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
@@ -148,6 +141,69 @@ export { a };
         &["a = 1;"],
     );
     assert_entry_output(&fixture, "1\n");
+}
+
+#[test]
+fn partial_rebind_claim_does_not_pull_an_unclaimed_writer_into_a_named_module() {
+    for mode in [
+        unassigned_mode_inline(),
+        unassigned_mode_catchall_file(None),
+        unassigned_mode_per_atomic_group(),
+        unassigned_mode_coarse_atomic_groups(),
+    ] {
+        let rejected = run_rejection_fixture(
+            FixtureOpts::new(
+                "let mutable = 0;\nfunction write() { mutable = 1; }\nwrite();\nconsole.log(mutable);\n",
+                vec![logical_module("state", &[Member::new("mutable")])],
+            )
+            .with_unassigned_mode(mode),
+        );
+        let candidate = rejected.candidate_relocation_assessment();
+        assert_eq!(candidate["placement"]["status"], "blocked", "{candidate:#}");
+        assert!(
+            !candidate["placement"]["cross_destination_rebinds"]
+                .as_array()
+                .unwrap()
+                .is_empty(),
+            "{candidate:#}"
+        );
+    }
+}
+
+#[test]
+fn wholly_unclaimed_rebind_group_keeps_its_configured_fallback_and_runtime() {
+    for (mode, module_path) in [
+        (unassigned_mode_inline(), None),
+        (
+            unassigned_mode_catchall_file(None),
+            Some("static/app/modules/residual/unhandled.js"),
+        ),
+        (
+            unassigned_mode_per_atomic_group(),
+            Some("static/app/modules/__auto/atomic_groups/0000.js"),
+        ),
+        (
+            unassigned_mode_coarse_atomic_groups(),
+            Some("static/app/modules/__auto/residual_groups/0000.js"),
+        ),
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "let mutable = 0;\nfunction write() { mutable = 1; }\nwrite();\nconsole.log(mutable);\n",
+                vec![],
+            )
+            .with_unassigned_mode(mode),
+        );
+        assert_preserved_entry_output(&fixture, "1\n");
+        if let Some(module_path) = module_path {
+            assert_module_source(
+                &fixture.out_root,
+                module_path,
+                &["let mutable = 0;", "function write()", "mutable = 1;"],
+                &[],
+            );
+        }
+    }
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
-    TreeFixture, assert_module_exports, assert_node_output, debundler_path, run_tree_graph_fixture,
+    TreeFixture, assert_node_output, debundler_path, run_tree_graph_fixture,
 };
 use serde_json::json;
 use std::fs;
@@ -10,7 +10,7 @@ use std::process::Command;
 
 #[test]
 fn applies_renamed_multi_declarator_with_cross_initializer_reference() {
-    let fixture = GraphFixture::new("var a = 1000, b = 15, c = b + 5;\n", &[]);
+    let fixture = GraphFixture::new_full_tree("var a = 1000, b = 15, c = b + 5;\n", &[]);
     let report = fixture.json(&["modules", "propose"]);
     let names = [
         ("a", "fooDeadline"),
@@ -42,7 +42,11 @@ fn applies_renamed_multi_declarator_with_cross_initializer_reference() {
     let temp = tempfile::tempdir().unwrap();
     let batch = temp.path().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&requests).unwrap()).unwrap();
-    fixture.assert_success(&["modules", "apply", "--batch", batch.to_str().unwrap()]);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &["modules", "apply", "--batch", batch.to_str().unwrap()],
+        &analysis,
+    );
     let yaml = fs::read_to_string(fixture.modules.join("foo/delays.yaml")).unwrap();
     assert!(yaml.contains("fooDeadline"), "{yaml}");
     assert!(yaml.contains("fooDelays"), "{yaml}");
@@ -209,7 +213,7 @@ fn apply_preserves_case_sensitive_chunk_root() {
         .arg(&graph)
         .arg("--source-root")
         .arg(run.root().join("snapshot"))
-        .args(["--size-cap-lines", "1"])
+        .args(["--size-cap-lines", "1", "--dry-run", "--format", "json"])
         .output()
         .unwrap();
     assert!(
@@ -217,7 +221,20 @@ fn apply_preserves_case_sensitive_chunk_root() {
         "{}",
         String::from_utf8_lossy(&applied.stderr)
     );
-    assert!(modules.join("chunks/Main/services/foo.yaml").is_file());
+    let preview: serde_json::Value = serde_json::from_slice(&applied.stdout).unwrap();
+    assert_eq!(preview["needs_full_assessment"], true);
+    assert!(
+        preview["files_written"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|path| path
+                .as_str()
+                .unwrap()
+                .ends_with("chunks/Main/services/foo.yaml")),
+        "{preview}"
+    );
+    assert!(!modules.join("chunks/Main/services/foo.yaml").exists());
     assert!(!modules.join("chunks/main/services/foo.yaml").exists());
     let out_root = run.root().join("rerun");
     let emitted = Command::new(debundler_path())
@@ -238,12 +255,12 @@ fn apply_preserves_case_sensitive_chunk_root() {
         "{}",
         String::from_utf8_lossy(&emitted.stderr)
     );
-    assert_module_exports(&out_root, "app/main/services/foo.js", &["foo"], &[]);
+    assert!(!out_root.join("app/main/services/foo.js").exists());
     assert_node_output(&out_root.join("app/main/entry.js"), "4\n", "");
 }
 
 fn provider_fixture() -> (GraphFixture, serde_json::Value) {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const provider = { value: 4 };\nconsole.log(provider.value);",
         &[],
     );
@@ -309,7 +326,8 @@ fn applies_fresh_proposal_with_a_structural_selector() {
     assert!(text.contains("source_match"), "{text}");
     assert!(text.contains("review_warnings"), "{text}");
     assert!(!fixture.modules.join("services/provider.yaml").exists());
-    fixture.assert_success(&args);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(&args, &analysis);
     let yaml = fs::read_to_string(fixture.modules.join("services/provider.yaml")).unwrap();
     assert!(yaml.contains("source_matches:"), "{yaml}");
     assert!(!yaml.contains("provider"), "{yaml}");
@@ -323,7 +341,7 @@ fn synthesizes_multideclarator_template_with_trailing_spaces() {
         "var a = () => `foo{}\nbar`, b = 1;\nconsole.log(a());\n",
         "  "
     );
-    let fixture = GraphFixture::new(&source, &[]);
+    let fixture = GraphFixture::new_full_tree(&source, &[]);
     let report = fixture.json(&["modules", "propose", "--size-cap-lines", "2"]);
     let proposal = report["proposals"]
         .as_array()
@@ -366,7 +384,8 @@ fn synthesizes_multideclarator_template_with_trailing_spaces() {
             .unwrap()
             .contains("foo  \n")
     );
-    fixture.assert_success(&args);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(&args, &analysis);
     fixture.assert_runs("foo  \nbar\n");
 }
 
@@ -399,7 +418,8 @@ fn applies_reviewed_source_match_instead_of_synthesized_one() {
         preview["selector_reviews"][0]["claim"]["match"],
         "const Target = { value: 4 };"
     );
-    fixture.assert_success(&args);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(&args, &analysis);
     let yaml = fs::read_to_string(fixture.modules.join("services/provider.yaml")).unwrap();
     assert!(yaml.contains("const Target = { value: 4 };"), "{yaml}");
     fixture.assert_runs("4\n");
@@ -450,7 +470,7 @@ fn rejects_reviewed_selector_that_claims_a_different_binding() {
 
 #[test]
 fn applies_reviewed_relational_selector() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const anchor = { value: 4 };\nconst alias = anchor;\nconsole.log(alias.value);\nexport { anchor, alias };",
         &[(
             "services/anchor.yaml",
@@ -490,7 +510,8 @@ fn applies_reviewed_relational_selector() {
     ];
     let preview = fixture.json(&[&args[..], &["--dry-run"]].concat());
     assert_eq!(preview["selector_reviews"][0]["kind"], "relational");
-    fixture.assert_success(&args);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(&args, &analysis);
     let yaml = fs::read_to_string(fixture.modules.join("services/alias.yaml")).unwrap();
     assert!(yaml.contains("cross_ref:"), "{yaml}");
     fixture.assert_runs("4\n");
@@ -547,7 +568,7 @@ fn assign_points_fresh_residual_claims_to_apply() {
 
 #[test]
 fn applies_host_scoped_accessor_with_a_structural_selector() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "class Cache { constructor(make) { this.make = make; } of(host) { return this.make(host); } }\nfunction context() { return { host: 'foo' }; }\nclass ProviderA { label = 'foo'; }\nvar factoryA = new Cache(() => new ProviderA);\nclass ProviderB { label = 'bar'; }\nvar factoryB = new Cache(() => new ProviderB);\nfunction accessor() { return factoryB.of(context().host); }\nfunction gap() { return null; }\nfunction sibling() { return factoryA.of(context().host); }\nconsole.log(accessor().label);\n",
         &[(
             "existing.yaml",
@@ -575,14 +596,18 @@ fn applies_host_scoped_accessor_with_a_structural_selector() {
     let temp = tempfile::tempdir().unwrap();
     let batch = temp.path().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--batch",
-        batch.to_str().unwrap(),
-        "--size-cap-lines",
-        "1",
-    ]);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "apply",
+            "--batch",
+            batch.to_str().unwrap(),
+            "--size-cap-lines",
+            "1",
+        ],
+        &analysis,
+    );
     let module_file = fixture.modules.join("services/accessor.yaml");
     let yaml = fs::read_to_string(&module_file).unwrap();
     assert!(yaml.contains("source_matches:"), "{yaml}");

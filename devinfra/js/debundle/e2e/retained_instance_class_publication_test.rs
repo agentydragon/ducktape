@@ -1,6 +1,9 @@
 //! Retained local instances must not be confused with escaped class members.
 use analysis::execution_evidence::ConstructionRejection;
-use analysis::reports::schema::RecordFactoryRejectionReason;
+use analysis::graph::EffectCellReport;
+use analysis::reports::schema::{
+    BindingEffectAuthorityReport, LexicalEffectRoot, RecordFactoryRejectionReason,
+};
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value as JsonValue;
@@ -15,6 +18,53 @@ const retained = [first];
 const selected = retained.map(item => item.callback);
 const again = create({ value: 8 });
 console.log(selected[0](), again.callback());
+"#;
+
+const DIRECT_FIELD_READ_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const selected = first.callback;
+const again = create({ value: 8 });
+console.log(selected(), again.callback());
+"#;
+
+const ESCAPED_FIELD_READ_SOURCE: &str = r#"import { retain } from "./opaque.js";
+class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+retain(first);
+const selected = first.callback;
+const again = create({ value: 8 });
+console.log(typeof selected, again.callback());
+"#;
+
+const GETTER_REPLACED_FIELD_SOURCE: &str = r#"let reads = 0;
+class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+Object.defineProperty(first, "callback", { configurable: true, get() { reads++; return () => 41; } });
+const selected = first.callback;
+console.log(selected(), reads);
+"#;
+
+const OVERWRITTEN_FIELD_SOURCE: &str = r#"class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+first.callback = () => 41;
+const selected = first.callback;
+console.log(selected());
 "#;
 
 const LOCAL_SOURCE: &str = r#"class Box {
@@ -267,6 +317,52 @@ fn assert_factory_complete(graph: &analysis::DependencyGraphReport, binding: &st
     );
 }
 
+fn assert_checked_instance_field_read(graph: &analysis::DependencyGraphReport, binding: &str) {
+    let node = source_unit(graph, binding);
+    let execution = node
+        .synchronous_execution
+        .as_ref()
+        .expect("field read execution report");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("{binding} lacks a checked operation receipt: {execution:#?}");
+    };
+    assert_eq!(receipt.owner, node.statement_ordinal, "{receipt:#?}");
+    assert!(
+        matches!(&receipt.root, LexicalEffectRoot::BindingInitializer { binding: name, .. } if name == binding),
+        "{receipt:#?}"
+    );
+    let reads = &execution
+        .heap_frontier
+        .as_ref()
+        .expect("field read heap evidence")
+        .non_assumed_heap_accesses
+        .reads;
+    assert_eq!(reads.count, reads.sample.len(), "{reads:#?}");
+    assert!(
+        reads.sample.iter().any(|cell| matches!(
+            cell,
+            EffectCellReport::OwnProperty { property, .. } if property == "callback"
+        )),
+        "missing actual non-assumed callback field read: {reads:#?}"
+    );
+}
+
+fn assert_no_checked_instance_field_read(graph: &analysis::DependencyGraphReport, binding: &str) {
+    let execution = source_unit(graph, binding)
+        .synchronous_execution
+        .as_ref()
+        .expect("field read execution report");
+    assert!(
+        !matches!(
+            execution.binding_effect_authority.as_ref(),
+            Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+        ),
+        "{binding} acquired an unproved operation receipt: {execution:#?}"
+    );
+}
+
 fn assert_class_members_escape_refusal(graph: &analysis::DependencyGraphReport, binding: &str) {
     let execution = source_unit(graph, binding)
         .synchronous_execution
@@ -331,6 +427,82 @@ fn mapping_a_retained_instance_does_not_publish_class_members() {
 }
 
 #[test]
+fn checked_instance_own_field_read_keeps_later_construction_private() {
+    let fixture = run_fixture(FixtureOpts::new(
+        DIRECT_FIELD_READ_SOURCE,
+        modules(&["Box", "create", "first", "selected", "again"]),
+    ));
+    assert_preserved_entry_output(&fixture, "7 8\n");
+
+    let graph = fixture.dependency_graph();
+    assert_factory_complete(&graph, "first");
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("field read execution report");
+    assert!(selected.complete, "{selected:#?}");
+    assert!(selected.precision_losses.is_empty(), "{selected:#?}");
+    assert_checked_instance_field_read(&graph, "selected");
+    assert_factory_complete(&graph, "again");
+}
+
+#[test]
+fn escaped_instance_cannot_supply_a_later_own_field_read() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            ESCAPED_FIELD_READ_SOURCE,
+            vec![module(
+                &["Box", "create", "first", "selected", "again"],
+                &["retain(first);"],
+            )],
+        )
+        .with_extra_chunks(&[("static/opaque", OPAQUE_CHUNK)]),
+    );
+    assert_preserved_entry_output(&fixture, "function 8\n");
+
+    let graph = fixture.dependency_graph();
+    let selected = source_unit(&graph, "selected")
+        .synchronous_execution
+        .as_ref()
+        .expect("field read execution report");
+    assert!(!selected.complete, "{selected:#?}");
+    assert_no_checked_instance_field_read(&graph, "selected");
+    assert_class_members_escape_refusal(&graph, "again");
+}
+
+#[test]
+fn replaced_instance_getter_runs_without_an_own_data_read_receipt() {
+    let fixture = run_fixture(FixtureOpts::new(
+        GETTER_REPLACED_FIELD_SOURCE,
+        vec![module(
+            &["reads", "Box", "create", "first", "selected"],
+            &[
+                "Object.defineProperty(first, \"callback\", { configurable: true, get() { reads++; return () => 41; } });",
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "41 1\n");
+    let graph = fixture.dependency_graph();
+    assert_factory_complete(&graph, "first");
+    assert_no_checked_instance_field_read(&graph, "selected");
+}
+
+#[test]
+fn overwritten_instance_field_loses_its_constructor_read_receipt() {
+    let fixture = run_fixture(FixtureOpts::new(
+        OVERWRITTEN_FIELD_SOURCE,
+        vec![module(
+            &["Box", "create", "first", "selected"],
+            &["first.callback = () => 41;"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "41\n");
+    let graph = fixture.dependency_graph();
+    assert_factory_complete(&graph, "first");
+    assert_no_checked_instance_field_read(&graph, "selected");
+}
+
+#[test]
 fn locally_retained_instance_does_not_publish_class_members() {
     let fixture = run_fixture(FixtureOpts::new(
         LOCAL_SOURCE,
@@ -365,8 +537,27 @@ fn opaque_consumer_of_an_instance_still_blocks_later_construction() {
         .as_ref()
         .expect("first actual class-members publication");
     let publication = serde_json::to_value(publication).expect("serialize publication");
-    assert_ne!(publication["writer"], "bounded_invocation_fallback");
-    assert!(publication.get("bounded_fallback_input_path").is_none());
+    assert_eq!(publication["writer"], "bounded_invocation_fallback");
+    // Opaque callback analysis visits the stored arrow before recording
+    // argument retention. Its unsupported read retains the actual receiver.
+    assert_eq!(publication["top_level_owner"], 4, "{publication:#}");
+    let callback = "() => this.record.value";
+    let start = OPAQUE_SOURCE.find(callback).expect("receiver callback") + 1;
+    assert_eq!(publication["span_start"], start, "{publication:#}");
+    assert_eq!(
+        publication["span_end"],
+        start + callback.len(),
+        "{publication:#}"
+    );
+    assert_eq!(
+        publication["bounded_fallback_input_path"],
+        serde_json::json!({
+            "kind": "retained",
+            "seed": {"kind": "captured_receiver"},
+            "edges": [{"kind": "class_members_capability"}],
+        }),
+        "{publication:#}"
+    );
 }
 
 #[test]

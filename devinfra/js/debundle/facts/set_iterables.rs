@@ -21,57 +21,74 @@ use std::sync::Arc;
 /// proof that joins an exact top-level operation with its checked input. This
 /// records syntax/proof identity only; it never contains evaluated iterator
 /// yields or a runtime collection size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TopLevelNativeIterableOperandProjection {
     operation_span: Span,
     operand: NativeIterableOperandOrigin,
-    owner: SourceUnitOrdinal,
+    operation_owner: SourceUnitOrdinal,
 }
 
 /// Origin of the statically checked constructor operand. Runtime iteration
 /// still resolves and validates the corresponding allocation at its prefix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NativeIterableOperandOrigin {
-    ImmediateArrayLiteral { allocation_site: u32 },
+    ImmediateArrayLiteral {
+        allocation_site: u32,
+    },
+    BorrowedConstArray {
+        source_binding: Id,
+        allocation_site: u32,
+        allocation_owner: SourceUnitOrdinal,
+    },
 }
 
 impl TopLevelNativeIterableOperandProjection {
-    fn new(operation_span: Span, allocation_site: u32, owner: SourceUnitOrdinal) -> Self {
+    fn new(
+        operation_span: Span,
+        operand: NativeIterableOperandOrigin,
+        operation_owner: SourceUnitOrdinal,
+    ) -> Self {
         Self {
             operation_span,
-            operand: NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site },
-            owner,
+            operand,
+            operation_owner,
         }
     }
 
-    pub(crate) fn operation_span(self) -> Span {
+    pub(crate) fn operation_span(&self) -> Span {
         self.operation_span
     }
 
-    pub(crate) fn operand_origin(self) -> NativeIterableOperandOrigin {
-        self.operand
+    pub(crate) fn operand_origin(&self) -> &NativeIterableOperandOrigin {
+        &self.operand
     }
 
-    pub(crate) fn owner(self) -> SourceUnitOrdinal {
-        self.owner
+    pub(crate) fn operation_owner(&self) -> SourceUnitOrdinal {
+        self.operation_owner
     }
 
-    pub(crate) fn matches_operand(self, expr: &Expr) -> bool {
+    pub(crate) fn matches_operand(&self, expr: &Expr) -> bool {
         matches!(
-            (self.operand, expr.unwrap_parens()),
+            (&self.operand, expr.unwrap_parens()),
             (
                 NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site },
                 Expr::Array(array)
-            ) if array.span.lo.0 == allocation_site
+            ) if array.span.lo.0 == *allocation_site
+        ) || matches!(
+            (&self.operand, expr.unwrap_parens()),
+            (
+                NativeIterableOperandOrigin::BorrowedConstArray { source_binding, .. },
+                Expr::Ident(ident)
+            ) if ident.to_id() == *source_binding
         )
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct TopLevelNativeIterableOperandSite {
     pub(crate) operation_span: Span,
     pub(crate) operand: NativeIterableOperandOrigin,
-    pub(crate) owner: SourceUnitOrdinal,
+    pub(crate) operation_owner: SourceUnitOrdinal,
 }
 
 /// Certify the one-way source/schedule premise before value-flow inference.
@@ -156,6 +173,7 @@ pub fn certify_stable_set_spreads(
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SetIterableShapes {
     pub(super) constructor_starts: BTreeSet<u32>,
+    borrowed_const_array_operands: BTreeMap<u32, NativeIterableOperandOrigin>,
 }
 
 impl SetIterableShapes {
@@ -207,9 +225,20 @@ impl SetIterableShapes {
         let invalid: BTreeSet<_> = inference.solve(rules).into_values().into_keys().collect();
 
         let mut constructor_starts = scanner.direct_literal_calls;
+        let mut borrowed_const_array_operands = BTreeMap::new();
         for (array, start) in scanner.alias_consumers {
             if !invalid.contains(&array) {
                 constructor_starts.insert(start);
+                if let Some(candidate) = candidates.get(&array) {
+                    borrowed_const_array_operands.insert(
+                        start,
+                        NativeIterableOperandOrigin::BorrowedConstArray {
+                            source_binding: array,
+                            allocation_site: candidate.allocation_site,
+                            allocation_owner: candidate.allocation_owner,
+                        },
+                    );
+                }
             }
         }
         constructor_starts.extend(proven_static_member_sets(
@@ -218,7 +247,17 @@ impl SetIterableShapes {
             flow,
             plain_data_bindings,
         ));
-        Self { constructor_starts }
+        Self {
+            constructor_starts,
+            borrowed_const_array_operands,
+        }
+    }
+
+    pub(crate) fn borrowed_const_array_operand(
+        &self,
+        operation_span: Span,
+    ) -> Option<&NativeIterableOperandOrigin> {
+        self.borrowed_const_array_operands.get(&operation_span.lo.0)
     }
 }
 
@@ -253,6 +292,7 @@ pub(crate) struct SetIterableProof {
     stable_spreads: BTreeMap<u32, ProofDependencies>,
     source_constructions: BTreeMap<u32, InferredSetConstruction>,
     native_iterable_operands: BTreeMap<u32, TopLevelNativeIterableOperandProjection>,
+    required_native_iterable_operands: BTreeSet<u32>,
     protected_intervals: Vec<Vec<Id>>,
     spread_sources: BTreeMap<u32, u32>,
     array_spreads: StableArraySpreadShapes,
@@ -329,6 +369,16 @@ impl SetIterableProof {
             spread_sources,
             source_constructions: source_constructions.clone(),
             native_iterable_operands: BTreeMap::new(),
+            required_native_iterable_operands: constructor_operands
+                .iter()
+                .filter_map(|(site, source)| {
+                    matches!(
+                        &source.operand,
+                        NativeIterableOperandOrigin::BorrowedConstArray { .. }
+                    )
+                    .then_some(*site)
+                })
+                .collect(),
             stable_spreads: spreads
                 .into_iter()
                 .flat_map(|stable| {
@@ -343,6 +393,13 @@ impl SetIterableProof {
             .author_inputs
             .keys()
             .chain(proof.source_constructions.keys())
+            .chain(constructor_operands.iter().filter_map(|(site, source)| {
+                matches!(
+                    &source.operand,
+                    NativeIterableOperandOrigin::BorrowedConstArray { .. }
+                )
+                .then_some(site)
+            }))
             .copied()
             .collect();
         for site in operation_sites {
@@ -355,8 +412,15 @@ impl SetIterableProof {
             {
                 continue;
             }
-            let NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site } =
-                source.operand;
+            if matches!(
+                &source.operand,
+                NativeIterableOperandOrigin::BorrowedConstArray {
+                    allocation_owner,
+                    ..
+                } if allocation_owner.0 >= source.operation_owner.0
+            ) {
+                continue;
+            }
             if source.operation_span.lo.0 != site {
                 continue;
             }
@@ -364,8 +428,8 @@ impl SetIterableProof {
                 site,
                 TopLevelNativeIterableOperandProjection::new(
                     source.operation_span,
-                    allocation_site,
-                    source.owner,
+                    source.operand.clone(),
+                    source.operation_owner,
                 ),
             );
         }
@@ -409,17 +473,23 @@ impl SetIterableProof {
             .then_some((projection, self.dependencies_for_constructor(span)?))
     }
 
+    pub(crate) fn requires_native_iterable_operand(&self, span: Span) -> bool {
+        self.required_native_iterable_operands.contains(&span.lo.0)
+    }
+
     /// The projection constrains literals that use the shared certificate.
     /// Previously certified nonliteral and unrelated fresh-Set sites keep
     /// their existing flow-root admission and do not acquire a new owner gate.
     pub(crate) fn heap_constructor_in_owner(&self, span: Span, owner: SourceUnitOrdinal) -> bool {
-        self.native_iterable_operand(span)
-            .is_none_or(|(projection, _)| projection.owner() == owner)
+        match self.native_iterable_operand(span) {
+            Some((projection, _)) => projection.operation_owner() == owner,
+            None => !self.requires_native_iterable_operand(span),
+        }
     }
 
-    /// Return canonical proof dependencies for early heap admission. The
-    /// immediate-literal projection is the shared path; selected alias and
-    /// static-member constructions retain their existing proof-backed path.
+    /// Return canonical proof dependencies for early heap admission. Immediate
+    /// literals and checked const-array operands use the shared projection;
+    /// primitive static-member constructions retain their existing path.
     pub(crate) fn heap_constructor_dependencies(
         &self,
         span: Span,
@@ -627,11 +697,13 @@ fn proven_static_member_sets(
 #[derive(Debug)]
 struct ArrayCandidate {
     source: Option<Id>,
+    allocation_site: u32,
+    allocation_owner: SourceUnitOrdinal,
 }
 
 fn collect_const_primitive_arrays(body: &[TopLevelItemView<'_>]) -> BTreeMap<Id, ArrayCandidate> {
-    let mut candidates = BTreeMap::new();
-    for item in body {
+    let mut candidates = BTreeMap::<Id, ArrayCandidate>::new();
+    for (ordinal, item) in body.iter().enumerate() {
         let module_item = item.as_module_item();
         // An exported declaration is already published outside this chunk.
         let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) = module_item else {
@@ -647,12 +719,28 @@ fn collect_const_primitive_arrays(body: &[TopLevelItemView<'_>]) -> BTreeMap<Id,
         let Some(init) = decl.init.as_deref() else {
             continue;
         };
-        let source = match init.unwrap_parens() {
-            Expr::Array(array) if array_is_primitive_literal(array) => None,
-            Expr::Ident(ident) if candidates.contains_key(&ident.to_id()) => Some(ident.to_id()),
+        let (source, allocation_site, allocation_owner) = match init.unwrap_parens() {
+            Expr::Array(array) if array_is_primitive_literal(array) => {
+                (None, array.span.lo.0, SourceUnitOrdinal(ordinal))
+            }
+            Expr::Ident(ident) if candidates.contains_key(&ident.to_id()) => {
+                let source = &candidates[&ident.to_id()];
+                (
+                    Some(ident.to_id()),
+                    source.allocation_site,
+                    source.allocation_owner,
+                )
+            }
             _ => continue,
         };
-        candidates.insert(binding.id.to_id(), ArrayCandidate { source });
+        candidates.insert(
+            binding.id.to_id(),
+            ArrayCandidate {
+                source,
+                allocation_site,
+                allocation_owner,
+            },
+        );
     }
     candidates
 }
@@ -751,7 +839,7 @@ mod tests {
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
     use raw_js_test_support::parse;
 
-    fn proves_only_new(src: &str) -> bool {
+    fn set_iterable_proof(src: &str) -> (SetIterableShapes, Span) {
         let module = parse(src);
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
@@ -783,7 +871,12 @@ mod tests {
         let mut spans = NewSpans(Vec::new());
         module.visit_with(&mut spans);
         assert_eq!(spans.0.len(), 1, "fixture needs one constructor");
-        proof.constructor_starts.contains(&spans.0[0].lo.0)
+        (proof, spans.0[0])
+    }
+
+    fn proves_only_new(src: &str) -> bool {
+        let (proof, span) = set_iterable_proof(src);
+        proof.constructor_starts.contains(&span.lo.0)
     }
 
     #[test]
@@ -822,5 +915,47 @@ mod tests {
         assert!(!proves_only_new(
             "const values = ['a'], alias = values, tail = alias; tail.push('b'); const unique = new Set(values);"
         ));
+    }
+
+    #[test]
+    fn checked_const_array_aliases_use_the_shared_source_projection() {
+        let (proof, span) =
+            set_iterable_proof("const input = ['a']; const result = new Set(input);");
+        assert!(proof.borrowed_const_array_operand(span).is_some());
+
+        let (proof, span) = set_iterable_proof(
+            "const input = ['a']; const alias = input; const tail = alias; const result = new Set(tail);",
+        );
+        assert!(matches!(
+            proof.borrowed_const_array_operand(span),
+            Some(NativeIterableOperandOrigin::BorrowedConstArray {
+                source_binding,
+                allocation_owner: SourceUnitOrdinal(0),
+                ..
+            }) if source_binding.0.as_ref() == "tail"
+        ));
+        assert!(proof.constructor_starts.contains(&span.lo.0));
+
+        for source in [
+            "let input = ['a']; input = ['b']; const result = new Set(input);",
+            "const input = ['a']; input.push('b'); const result = new Set(input);",
+            "const input = ['a']; const result = new Set(input); input.push('b');",
+            "const input = ['a']; Object.defineProperty(input, Symbol.iterator, { get() { return function* () {}; } }); const result = new Set(input);",
+            "function make() { const input = ['a']; return new Set(input); } const result = make();",
+            "const input = ['a']; const alias = input; const tail = alias; input.push('b'); const result = new Set(tail);",
+            "const input = ['a']; const alias = input; const tail = alias; const result = new Set(tail); tail.push('b');",
+            "const input = ['a']; const alias = input; const tail = alias; consume(tail); const result = new Set(input);",
+            "const input = ['a']; const alias = input; const tail = alias; Object.defineProperty(tail, Symbol.iterator, { get() { return function* () {}; } }); const result = new Set(tail);",
+        ] {
+            let (proof, span) = set_iterable_proof(source);
+            assert!(
+                proof.borrowed_const_array_operand(span).is_none(),
+                "unexpected borrowed-root certificate for {source}"
+            );
+            assert!(
+                !proof.constructor_starts.contains(&span.lo.0),
+                "the rejected borrowed root kept its old admission for {source}"
+            );
+        }
     }
 }

@@ -5,19 +5,22 @@
 
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{
-    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PropertyDefinition,
-    ProviderScopeId, ValueExpr, Values,
+    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PrivateFieldId,
+    PropertyDefinition, ProviderScopeId, ValueExpr, Values,
 };
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{
-    ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
+    ArgSel, IntrinsicOp, Invocation, NativeBodyEffects, Return, Row, Throws,
 };
+use crate::facts::abstract_domain::effect::CoerceOp;
+use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
 use crate::facts::abstract_domain::primitive;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
+use swc_common::Span;
 use swc_ecma_ast::{BinaryOp, Id};
 
 #[derive(Clone)]
@@ -58,6 +61,22 @@ pub(super) enum LiteralLayout {
     Unsupported,
 }
 
+pub(super) enum ArraySpreadYields {
+    ExactSlots(Vec<Values>),
+    PrimitiveOnly,
+}
+
+pub(super) struct ArraySpreadResult {
+    pub(super) yields: ArraySpreadYields,
+    pub(super) dependencies: ProofDependencies,
+}
+
+pub(super) enum ArrayElement<'a, E> {
+    Hole,
+    Value(&'a E),
+    Spread(&'a E, Span),
+}
+
 pub(super) trait AllocationContext {
     /// Source coverage is necessary because ValueExpr may erase syntax.
     fn source_covered(&self) -> bool;
@@ -67,12 +86,29 @@ pub(super) trait AllocationContext {
     /// This operation adds no effects or abrupt completion of its own. Its
     /// children still supply their ordered effects and completion evidence.
     fn noninvoking_operation(&mut self) {}
+    /// Fresh literal creation and checked own definitions, excluding child
+    /// evaluation. The caller checks canonical record tags or no-spread array
+    /// syntax before supplying this operation proof.
+    fn literal_creation_operation(&mut self, _covered: bool) {
+        self.unmodeled_effect_operation();
+    }
     /// Resolve an actual closed input, or return opaque access evidence.
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue>;
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
     fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind;
+    fn array_creation_started(&mut self, _allocation: u32) {}
     fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
+    /// A pooled source-site allocation may represent an earlier generation.
+    /// Primitive-only contents are certified only when this site is new in the
+    /// current execution state.
+    fn array_allocation_is_fresh(&self, _allocation: u32) -> bool {
+        false
+    }
+    fn array_spread(&mut self, _span: Span, _operand: &Values) -> Option<ArraySpreadResult> {
+        None
+    }
+    fn primitive_array_created(&mut self, _allocation: u32, _dependencies: &ProofDependencies) {}
     fn heap(&mut self) -> LiteralHeap<'_>;
     /// The adapter proves original constructor identity for this canonical New
     /// expression. The operation's row and result semantics are shared.
@@ -81,61 +117,14 @@ pub(super) trait AllocationContext {
         _callee: &ValueExpr,
         _arguments: &[ValueExpr],
         _site: CallSite,
-    ) -> Option<AllocationValue> {
+    ) -> Option<KeyedCollectionOperationResult> {
         None
     }
-}
-
-/// Transfer a binary operation over values whose kinds are already known to
-/// be primitive. An object or unknown value declines so the caller can use its
-/// application fallback after evaluating both operands exactly once.
-pub(super) fn binary(
-    op: BinaryOp,
-    left: &Values,
-    right: &Values,
-    mut judgment: AllocationJudgment,
-) -> Option<AllocationValue> {
-    let left_kinds = primitive_kinds(left)?;
-    let right_kinds = primitive_kinds(right)?;
-    let result_kinds = primitive::binary_result(op, left_kinds, right_kinds)?;
-    let may_throw = primitive::binary_throws(op, left_kinds, right_kinds);
-
-    let mut values = Values::new();
-    if result_kinds != PrimKinds::NONE {
-        values.insert(AbstractValue::Value(Value::Prim(result_kinds)));
+    /// Compose a checked operation separately from its allocation result.
+    /// Allocation-only consumers have no whole-body effect channel.
+    fn operation_effects(&mut self, _effects: EffectCoverageFragment) {
+        self.unmodeled_effect_operation();
     }
-    if may_throw || values.is_empty() {
-        judgment = AllocationJudgment::Opaque;
-        values.insert(AbstractValue::Value(Value::Unavailable));
-    }
-    Some(AllocationValue { values, judgment })
-}
-
-fn primitive_kinds(values: &Values) -> Option<PrimKinds> {
-    values.iter().try_fold(PrimKinds::NONE, |kinds, value| {
-        let AbstractValue::Value(Value::Prim(operand)) = value else {
-            return None;
-        };
-        Some(kinds.union(*operand))
-    })
-}
-
-/// Both postfix's old value and prefix's stored value have these numeric
-/// kinds. Exact numbers are outside this domain; object coercion declines.
-pub(super) fn update_result(operand: &Values) -> Option<AllocationValue> {
-    let kinds = primitive_kinds(operand)?;
-    let result = primitive::update(Some(kinds));
-    let mut values = Values::new();
-    if result != PrimKinds::NONE {
-        values.insert(AbstractValue::Value(Value::Prim(result)));
-    }
-    let judgment = if primitive::update_throws(kinds) || values.is_empty() {
-        values.insert(AbstractValue::Value(Value::Unavailable));
-        AllocationJudgment::Opaque
-    } else {
-        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default())
-    };
-    Some(AllocationValue { values, judgment })
 }
 
 /// Transfer the exact zero-argument keyed-collection constructor row. Provider
@@ -147,11 +136,119 @@ pub(super) struct KeyedCollectionOperationResult {
     pub(super) effects: EffectCoverageFragment,
 }
 
-pub(super) fn keyed_collection_new(
+/// The canonical row closes its body only after every actual primitive operand
+/// satisfies its coercions without an abrupt completion. It certifies neither
+/// callee selection nor any caller operation.
+pub(super) fn primitive_native_call_effects(
     row: &'static Row,
-    site: CallSite,
-    dependencies: ProofDependencies,
-) -> Option<KeyedCollectionOperationResult> {
+    arguments: &[Values],
+    dependencies: &ProofDependencies,
+) -> Option<EffectCoverageFragment> {
+    let symbol_registry = row.body_effects == NativeBodyEffects::SymbolRegistryReadWrite;
+    if !matches!(
+        row.body_effects,
+        NativeBodyEffects::NoExteriorAccess | NativeBodyEffects::SymbolRegistryReadWrite
+    ) || row.invocation != [Invocation::Call]
+        || !row.arity.contains(&arguments.len())
+        || !row.invokes.is_empty()
+        || row.allocates.is_some()
+        || !row.mutates.is_empty()
+        || !matches!(row.returns, Return::Prim(_))
+        || row.throws != Throws::Never
+        || arguments
+            .iter()
+            .any(|values| values.is_empty() || !values.iter().all(AbstractValue::is_primitive))
+    {
+        return None;
+    }
+    if symbol_registry
+        && (row.op != IntrinsicOp::SymbolFor
+            || row.family() != Some(NativeIntrinsic::Symbol)
+            || row.requires
+                != [
+                    IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+                    IntrinsicSlot::Static(NativeIntrinsic::Symbol, "for"),
+                ]
+            || row.arity != (0..=1)
+            || row.coerces != [(ArgSel::Arg(0), CoerceOp::ToString)]
+            || row.returns != Return::Prim(PrimKinds::SYMBOL)
+            || arguments.len() != 1
+            || !arguments[0].iter().all(|value| {
+                matches!(value, AbstractValue::Value(Value::Prim(kinds))
+                    if kinds.is_only(PrimKinds::STRING))
+            }))
+    {
+        return None;
+    }
+    for (operand, coercion) in row.coerces {
+        let ArgSel::Arg(index) = operand else {
+            return None;
+        };
+        let admits = match coercion {
+            CoerceOp::ToNumber => {
+                PrimKinds::ANY.without(PrimKinds::BIGINT.union(PrimKinds::SYMBOL))
+            }
+            CoerceOp::ToString => PrimKinds::ANY.without(PrimKinds::SYMBOL),
+            _ => return None,
+        };
+        if let Some(values) = arguments.get(*index)
+            && !values.iter().all(|value| matches!(value, AbstractValue::Value(Value::Prim(kinds)) if kinds.is_only(admits)))
+        {
+            return None;
+        }
+    }
+    let mut effects = EffectCoverageFragment::no_effects();
+    effects.depend_on(dependencies);
+    Some(effects)
+}
+
+/// The original FinalizationRegistry NewTarget has an immutable own data
+/// prototype. Its constructor writes only fresh internal slots and records a
+/// callback, without invoking it (ECMA-262 26.2.1.1 / 26.2.2.1).
+pub(super) fn retained_callback_constructor_kind(row: &Row) -> Option<Kind> {
+    (row.op == IntrinsicOp::FinalizationRegistry
+        && row.family() == Some(NativeIntrinsic::FinalizationRegistry)
+        && row.invocation == [Invocation::Construct]
+        && row.arity == (1..=1)
+        && row.requires == [IntrinsicSlot::Global(NativeIntrinsic::FinalizationRegistry)]
+        && row.coerces.is_empty()
+        && row.invokes.is_empty()
+        && row.allocates == Some(Kind::Registry)
+        && row.mutates == [Mutation::FreshRetains(ArgSel::Arg(0))]
+        && row.returns == Return::Fresh
+        && row.throws == Throws::UnlessCallable(ArgSel::Arg(0)))
+    .then_some(Kind::Registry)
+}
+
+pub(super) fn retained_callback_constructor_effects(
+    row: &Row,
+    arguments: &[Values],
+    dependencies: &ProofDependencies,
+) -> Option<EffectCoverageFragment> {
+    retained_callback_constructor_kind(row)?;
+    let [callbacks] = arguments else {
+        return None;
+    };
+    if callbacks.len() != 1
+        || !matches!(
+            callbacks.first()?,
+            AbstractValue::Closure(..) | AbstractValue::Value(Value::Alloc(Kind::Function, _))
+        )
+    {
+        return None;
+    }
+    // IsCallable cannot throw for this actual source function. The default
+    // HostMakeJobCallback and HTML's operation only capture execution metadata
+    // in the fresh hidden record. The ordinary callback establishes its own
+    // script context when invoked; builtin eval is not an admitted operand.
+    // This scoped proof neither changes the table's general host-effect flag
+    // nor supplies a result shape or discards the retained callback graph.
+    let mut effects = EffectCoverageFragment::no_effects();
+    effects.depend_on(dependencies);
+    Some(effects)
+}
+
+pub(super) fn empty_keyed_collection_kind(row: &Row) -> Option<Kind> {
     let (family, kind) = match row.op {
         IntrinsicOp::Map => (NativeIntrinsic::Map, Kind::Map),
         IntrinsicOp::Set => (NativeIntrinsic::Set, Kind::Set),
@@ -175,7 +272,36 @@ pub(super) fn keyed_collection_new(
     {
         return None;
     }
-    let effects = EffectCoverageFragment::native_operation(&dependencies);
+    Some(kind)
+}
+
+/// Native Set construction from one iterable. The caller must still prove the
+/// exact callee, operand source, and consumed iterator receipt.
+pub(super) fn set_iterable_constructor_kind(row: &Row) -> Option<Kind> {
+    (row.op == IntrinsicOp::Set
+        && row.family() == Some(NativeIntrinsic::Set)
+        && row.invocation == [Invocation::Construct]
+        && row.arity == (0..=1)
+        && row.requires == [IntrinsicSlot::Global(NativeIntrinsic::Set)]
+        && row.coerces == [(ArgSel::Arg(0), CoerceOp::Iterate)]
+        && row.invokes.is_empty()
+        && row.allocates == Some(Kind::Set)
+        && row.mutates.is_empty()
+        && row.returns == Return::Fresh
+        && row.throws == Throws::Never)
+        .then_some(Kind::Set)
+}
+
+pub(super) fn keyed_collection_new(
+    row: &'static Row,
+    site: CallSite,
+    dependencies: ProofDependencies,
+) -> Option<KeyedCollectionOperationResult> {
+    let kind = empty_keyed_collection_kind(row)?;
+    // There are no operand expressions in this operation. Callee selection
+    // remains the adapter's independent identity/GetValue obligation.
+    let mut effects = EffectCoverageFragment::no_effects();
+    effects.depend_on(&dependencies);
     Some(KeyedCollectionOperationResult {
         allocation: AllocationValue {
             values: Values::from([AbstractValue::Value(Value::Alloc(
@@ -191,6 +317,7 @@ pub(super) fn keyed_collection_new(
 /// The real shared allocation store; neither consumer supplies app/native facts.
 pub(super) struct LiteralHeap<'a> {
     pub(super) properties: &'a mut OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    pub(super) private_properties: Option<&'a mut OrdMap<u32, BTreeMap<PrivateFieldId, Values>>>,
     pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
     pub(super) revision: &'a mut u64,
     pub(super) writable_prefix: Option<&'a mut OrdMap<u32, WritablePrefixState>>,
@@ -308,6 +435,29 @@ impl LiteralHeap<'_> {
         }
     }
 
+    /// Private names never enter the ordinary own-property namespace. Like
+    /// public slots, pooled source sites retain every stored value.
+    pub(super) fn write_private_property(
+        &mut self,
+        allocation: u32,
+        property: PrivateFieldId,
+        values: &Values,
+    ) -> Option<()> {
+        let slot = self
+            .private_properties
+            .as_deref_mut()?
+            .entry(allocation)
+            .or_default()
+            .entry(property)
+            .or_default();
+        let before = slot.len();
+        slot.extend(values.iter().cloned());
+        if slot.len() != before {
+            *self.revision = self.revision.wrapping_add(1);
+        }
+        Some(())
+    }
+
     pub(super) fn invalidate_dense_array(&mut self, allocation: u32) {
         if self.arrays.remove(&allocation).is_some() {
             *self.revision = self.revision.wrapping_add(1);
@@ -380,16 +530,55 @@ pub(super) fn transfer(
             ))])
         }
         ValueExpr::New(callee, arguments, site) if context.source_covered() => {
-            context.unmodeled_effect_operation();
-            return context.keyed_collection_new(callee, arguments, *site);
+            let Some(operation) = context.keyed_collection_new(callee, arguments, *site) else {
+                context.unmodeled_effect_operation();
+                return None;
+            };
+            context.operation_effects(operation.effects);
+            return Some(operation.allocation);
         }
         ValueExpr::Undefined => {
-            context.unmodeled_effect_operation();
+            context.noninvoking_operation();
             Values::from([AbstractValue::UNDEFINED])
         }
         ValueExpr::NonCallable(kinds) => {
             context.noninvoking_operation();
             Values::from([AbstractValue::Value(Value::Prim(*kinds))])
+        }
+        ValueExpr::Binary(operator, left, right) => {
+            let left = context.child(left)?;
+            judgment.compose(&left.judgment);
+            if left
+                .values
+                .iter()
+                .all(|value| *value == AbstractValue::Value(Value::Unavailable))
+            {
+                context.unmodeled_effect_operation();
+                return Some(AllocationValue::opaque(Values::from([
+                    AbstractValue::Value(Value::Unavailable),
+                ])));
+            }
+            let right = context.child(right)?;
+            judgment.compose(&right.judgment);
+            return Some(
+                match binary_result(*operator, &left.values, &right.values) {
+                    PrimitiveOperationResult::Covered(values) => {
+                        context.noninvoking_operation();
+                        AllocationValue { values, judgment }
+                    }
+                    PrimitiveOperationResult::MayThrow(values) => {
+                        context.unmodeled_effect_operation();
+                        AllocationValue::opaque(values)
+                    }
+                    PrimitiveOperationResult::CoercionRequired => {
+                        context.unmodeled_effect_operation();
+                        AllocationValue::opaque(Values::from([
+                            AbstractValue::PRIMITIVE,
+                            AbstractValue::Value(Value::Unavailable),
+                        ]))
+                    }
+                },
+            );
         }
         ValueExpr::StrictEquality(left, right) => {
             // Strict comparison accepts opaque values without coercion.
@@ -402,7 +591,8 @@ pub(super) fn transfer(
             );
         }
         ValueExpr::Void(child) => {
-            // GetValue(child) is transferred below before its value is discarded.
+            // GetValue(child) is transferred below. Discarding that value has
+            // no coercion, invocation or abrupt completion of its own.
             context.noninvoking_operation();
             return primitive_operation(
                 context,
@@ -469,7 +659,6 @@ pub(super) fn transfer(
             values
         }
         ValueExpr::ObjectLiteral(allocation, properties) => {
-            context.unmodeled_effect_operation();
             let layout = context.literal_layout(*allocation);
             match layout {
                 LiteralLayout::Record => {
@@ -496,7 +685,7 @@ pub(super) fn transfer(
                     return array(
                         context,
                         *allocation,
-                        elements.iter().map(Some),
+                        elements.iter().map(ArrayElement::Value),
                         judgment,
                         |context, expression| context.child(expression),
                     );
@@ -510,6 +699,95 @@ pub(super) fn transfer(
         }
     };
     Some(AllocationValue { values, judgment })
+}
+
+/// One scalar-operation result shared by ordered execution and value/provider
+/// transfers. Coverage is nonterminal and says nothing about operand accesses.
+pub(super) enum PrimitiveOperationResult {
+    Covered(Values),
+    MayThrow(Values),
+    CoercionRequired,
+}
+
+fn primitive_operand_kinds(values: &Values) -> Option<PrimKinds> {
+    let mut result = PrimKinds::NONE;
+    for value in values {
+        match value {
+            AbstractValue::Value(Value::Prim(kinds)) => result = result.union(*kinds),
+            AbstractValue::Value(Value::Unavailable) => {}
+            _ => return None,
+        }
+    }
+    Some(result)
+}
+
+pub(super) fn update_result(operand: &Values) -> PrimitiveOperationResult {
+    let Some(kinds) = primitive_operand_kinds(operand) else {
+        return PrimitiveOperationResult::CoercionRequired;
+    };
+    let result = crate::facts::abstract_domain::primitive::update(Some(kinds));
+    let mut values = Values::new();
+    if !result.is_empty() {
+        values.insert(AbstractValue::Value(Value::Prim(result)));
+    }
+    if operand.contains(&AbstractValue::Value(Value::Unavailable))
+        || crate::facts::abstract_domain::primitive::update_throws(kinds)
+        || result.is_empty()
+    {
+        values.insert(AbstractValue::Value(Value::Unavailable));
+        PrimitiveOperationResult::MayThrow(values)
+    } else {
+        PrimitiveOperationResult::Covered(values)
+    }
+}
+
+pub(super) fn binary_result(
+    operator: BinaryOp,
+    left: &Values,
+    right: &Values,
+) -> PrimitiveOperationResult {
+    let (Some(left_kinds), Some(right_kinds)) = (
+        primitive_operand_kinds(left),
+        primitive_operand_kinds(right),
+    ) else {
+        return PrimitiveOperationResult::CoercionRequired;
+    };
+    let mut values = Values::new();
+    if left_kinds.is_empty() || right_kinds.is_empty() {
+        values.insert(AbstractValue::Value(Value::Unavailable));
+        return PrimitiveOperationResult::MayThrow(values);
+    }
+    let Some(result) = primitive::binary_result(operator, left_kinds, right_kinds) else {
+        return PrimitiveOperationResult::CoercionRequired;
+    };
+    if !result.is_empty() {
+        values.insert(AbstractValue::Value(Value::Prim(result)));
+    }
+    let may_throw = left.contains(&AbstractValue::Value(Value::Unavailable))
+        || right.contains(&AbstractValue::Value(Value::Unavailable))
+        || crate::facts::abstract_domain::primitive::binary_throws(
+            operator,
+            left_kinds,
+            right_kinds,
+        )
+        || result.is_empty();
+    if may_throw {
+        values.insert(AbstractValue::Value(Value::Unavailable));
+        PrimitiveOperationResult::MayThrow(values)
+    } else {
+        PrimitiveOperationResult::Covered(values)
+    }
+}
+
+/// For primitive operands only, template ToString has the same completion
+/// and result kinds as concatenation with a String. Objects remain refused:
+/// templates use a string hint, whereas addition uses the default hint.
+pub(super) fn template_substitution_result(operand: &Values) -> PrimitiveOperationResult {
+    binary_result(
+        BinaryOp::Add,
+        &Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]),
+        operand,
+    )
 }
 
 /// Source-ordered composition retains every child's effects and possible
@@ -577,8 +855,23 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
     mut judgment: AllocationJudgment,
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
-    context.unmodeled_effect_operation();
     let properties: Vec<_> = properties.into_iter().collect();
+    let covered_creation = context.source_covered()
+        && properties.iter().enumerate().all(|(position, definition)| {
+            context.literal_property_kind(allocation, position) == definition.kind()
+                && definition
+                    .name()
+                    .is_some_and(|name| match definition.kind() {
+                        LiteralPropertyKind::Data => name != "__proto__",
+                        // Static definitions install fresh own descriptors; their
+                        // callable child proves creation without running its body.
+                        LiteralPropertyKind::Method
+                        | LiteralPropertyKind::Getter
+                        | LiteralPropertyKind::Setter => true,
+                        LiteralPropertyKind::Opaque => false,
+                    })
+        });
+    context.literal_creation_operation(covered_creation);
     let mut writable_properties = BTreeSet::new();
     let mut non_writable_properties = BTreeSet::new();
     for definition in &properties {
@@ -640,38 +933,102 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
 pub(super) fn array<'a, C: AllocationContext, E: 'a>(
     context: &mut C,
     allocation: u32,
-    elements: impl IntoIterator<Item = Option<&'a E>>,
+    elements: impl IntoIterator<Item = ArrayElement<'a, E>>,
     mut judgment: AllocationJudgment,
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
-    context.unmodeled_effect_operation();
+    // ArrayCreate and own index/length definitions execute no user code.
+    // Elements compose their effects below; a hole installs no property and
+    // supplies no iterator or inherited-property proof.
     context.heap().begin_literal(allocation);
+    context.array_creation_started(allocation);
+    context.literal_creation_operation(context.source_covered());
     let mut properties = BTreeMap::<Option<String>, Values>::new();
     let mut dense = Vec::new();
     let mut has_hole = false;
+    let mut has_spread = false;
+    let mut primitive_only = true;
+    let mut exact_slots = true;
+    let mut qualitative_spread = false;
+    let mut next_index = Some(0usize);
+    let mut iterable_dependencies = ProofDependencies::default();
     let mut may_throw = false;
     let mut can_complete = true;
-    for (index, element) in elements.into_iter().enumerate() {
+    for element in elements {
         if !can_complete {
             break;
         }
-        let Some(element) = element else {
-            has_hole = true;
-            continue;
-        };
-        let evaluated = child(context, element)?;
-        judgment.compose(&evaluated.judgment);
-        let mut values = evaluated.values;
-        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-        can_complete &= !values.is_empty();
-        properties
-            .entry(None)
-            .or_default()
-            .extend(values.iter().cloned());
-        properties.insert(Some(index.to_string()), values.clone());
-        dense.push(values);
+        match element {
+            ArrayElement::Hole => {
+                has_hole = true;
+                primitive_only = false;
+                next_index = next_index.map(|index| index + 1);
+            }
+            ArrayElement::Value(element) => {
+                let evaluated = child(context, element)?;
+                judgment.compose(&evaluated.judgment);
+                let mut values = evaluated.values;
+                may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+                can_complete &= !values.is_empty();
+                primitive_only &= values.iter().all(AbstractValue::is_primitive);
+                properties
+                    .entry(None)
+                    .or_default()
+                    .extend(values.iter().cloned());
+                if let Some(index) = next_index {
+                    properties.insert(Some(index.to_string()), values.clone());
+                    next_index = Some(index + 1);
+                }
+                dense.push(values);
+            }
+            ArrayElement::Spread(element, span) => {
+                has_spread = true;
+                let evaluated = child(context, element)?;
+                judgment.compose(&evaluated.judgment);
+                let mut operand = evaluated.values;
+                may_throw |= operand.remove(&AbstractValue::Value(Value::Unavailable));
+                can_complete &= !operand.is_empty();
+                if !can_complete {
+                    continue;
+                }
+                let spread = context.array_spread(span, &operand)?;
+                iterable_dependencies.extend(&spread.dependencies);
+                if let AllocationJudgment::CoveredAllocationOnly(dependencies) = &mut judgment {
+                    dependencies.extend(&spread.dependencies);
+                } else {
+                    judgment = AllocationJudgment::Opaque;
+                }
+                match spread.yields {
+                    ArraySpreadYields::ExactSlots(slots) => {
+                        for mut slot in slots {
+                            may_throw |= slot.remove(&AbstractValue::Value(Value::Unavailable));
+                            can_complete &= !slot.is_empty();
+                            primitive_only &= slot.iter().all(AbstractValue::is_primitive);
+                            properties
+                                .entry(None)
+                                .or_default()
+                                .extend(slot.iter().cloned());
+                            if let Some(index) = next_index {
+                                properties.insert(Some(index.to_string()), slot.clone());
+                                next_index = Some(index + 1);
+                            }
+                            dense.push(slot);
+                        }
+                    }
+                    ArraySpreadYields::PrimitiveOnly => {
+                        let primitive =
+                            Values::from([AbstractValue::Value(Value::Prim(PrimKinds::ANY))]);
+                        properties.entry(None).or_default().extend(primitive);
+                        exact_slots = false;
+                        qualitative_spread = true;
+                        next_index = None;
+                    }
+                }
+            }
+        }
     }
     if can_complete {
+        let array_allocation_is_fresh = context.array_allocation_is_fresh(allocation);
         properties.entry(None).or_default();
         properties.insert(
             Some("length".into()),
@@ -679,16 +1036,23 @@ pub(super) fn array<'a, C: AllocationContext, E: 'a>(
         );
         let mut heap = context.heap();
         heap.record(allocation, properties);
-        if !has_hole {
-            // This ordered literal has no spread operands, so dense.len() is
-            // the exact ArrayCreate length for its first uninterrupted run.
-            heap.complete_array(allocation, dense.len());
+        if exact_slots && !has_hole {
+            // A pooled iterable's slot vector can bound several generations;
+            // its length is not necessarily the actual current length.
+            if has_spread {
+                heap.invalidate_writable(allocation);
+            } else {
+                heap.complete_array(allocation, dense.len());
+            }
             heap.dense_array(allocation, dense);
         } else {
             heap.invalidate_writable(allocation);
             heap.invalidate_dense_array(allocation);
         }
         context.array_created(allocation, has_hole);
+        if array_allocation_is_fresh && primitive_only && qualitative_spread && !has_hole {
+            context.primitive_array_created(allocation, &iterable_dependencies);
+        }
     }
     let mut values = Values::new();
     if can_complete {
@@ -708,9 +1072,10 @@ pub(super) fn closed_binding(
 ) -> Option<AllocationValue> {
     let values = environment.get(binding)?;
     if values.is_empty()
-        || !values.iter().all(
-            |value| matches!(value, AbstractValue::SymbolicInput(input) if input.scope == scope),
-        )
+        || !values.iter().all(|value| {
+            matches!(value, AbstractValue::SymbolicInput(input) if input.scope == scope)
+                || matches!(value, AbstractValue::Value(Value::Prim(_)))
+        })
     {
         return None;
     }
@@ -739,6 +1104,7 @@ mod tests {
         {
             let mut heap = LiteralHeap {
                 properties: &mut properties,
+                private_properties: None,
                 arrays: &mut arrays,
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),
@@ -762,6 +1128,7 @@ mod tests {
         {
             let mut heap = LiteralHeap {
                 properties: &mut properties,
+                private_properties: None,
                 arrays: &mut arrays,
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),

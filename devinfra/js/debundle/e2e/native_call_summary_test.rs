@@ -14,6 +14,57 @@ fn split_opts<'a>(source: &'a str, members: &[Member], anonymous: &[&str]) -> Fi
     )
 }
 
+fn registry_execution(fixture: &impl FixtureGraphExt) -> serde_json::Value {
+    let graph = fixture.dependency_graph();
+    let registry = source_unit_for_binding(&graph, "registry");
+    serde_json::to_value(
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.id == registry)
+            .unwrap()
+            .synchronous_execution
+            .as_ref()
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+fn assert_real_reentry_relocation_is_rejected(
+    source: &str,
+    members: &[Member],
+    anonymous: &[&str],
+    original_output: &str,
+    reordered_output: &str,
+) {
+    const PUBLICATION: &str = "globalThis.saved = () => later;";
+    let mut original_anonymous = vec![PUBLICATION];
+    original_anonymous.extend_from_slice(anonymous);
+    let preserved = run_fixture(split_opts(source, members, &original_anonymous));
+    assert_preserved_entry_output(&preserved, original_output);
+    let report = preserved.candidate_relocation_assessment();
+    assert_eq!(report["swapped_pairs"], 0, "{report:#}");
+    assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
+
+    // Publication and initialization now surround the native operation in
+    // source order but share one destination. Neither module order can keep
+    // the callback's original TDZ timing.
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("native/value", members, anonymous),
+                logical_module_with_anon("native/later", &[Member::new("later")], &[PUBLICATION]),
+            ],
+        ),
+        &["--emit-on-rejection"],
+        3,
+    );
+    let report = rejected.candidate_relocation_assessment();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_node_output(&rejected.entry_path(), reordered_output, "");
+}
+
 #[test]
 fn finalization_registry_retains_cleanup_without_invoking_it() {
     let source = r#"const registry = new globalThis.FinalizationRegistry(() => Later);
@@ -38,6 +89,15 @@ console.log(typeof registry);
         .expect("registry source unit");
     let purity = serde_json::to_value(&registry.purity).unwrap();
     assert_eq!(purity["kind"], "not_pure");
+    let execution = registry_execution(&fixture);
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    assert_eq!(
+        authority["receipt"]["calls"][0]["target"]["kind"], "native_construction",
+        "{execution:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
 }
 
 #[test]
@@ -139,30 +199,110 @@ console.log(normalized);
 }
 
 #[test]
-fn finalization_registry_guards_keep_unsupported_calls_conservative() {
-    for source in [
-        "globalThis.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const host = globalThis;\nhost.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "Object.defineProperty(globalThis, 'FinalizationRegistry', { configurable: true, get() { return function(callback) {}; } });\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const globalThis = { FinalizationRegistry: function(callback) {} };\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const FinalizationRegistry = function(callback) {};\nconst registry = new FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const host = globalThis;\nconst registry = new host.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const registry = new globalThis['FinalizationRegistry'](() => Later);\nclass Later {}\n",
-        "const registry = new (globalThis?.FinalizationRegistry)(() => Later);\nclass Later {}\n",
-        "const registry = new globalThis.FinalizationRegistry(...[() => Later]);\nclass Later {}\n",
-        "const registry = new globalThis.FinalizationRegistry({ cleanup: () => Later });\nclass Later {}\n",
+fn finalization_registry_guards_preserve_native_effect_authority() {
+    for (source, native_receipt_allowed, expected_error) in [
+        (
+            "globalThis.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            false,
+            None,
+        ),
+        (
+            "const host = globalThis;\nhost.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            false,
+            None,
+        ),
+        (
+            "Object.defineProperty(globalThis, 'FinalizationRegistry', { configurable: true, get() { return function(callback) {}; } });\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            false,
+            None,
+        ),
+        (
+            "const globalThis = { FinalizationRegistry: function(callback) {} };\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            false,
+            None,
+        ),
+        (
+            "const FinalizationRegistry = function(callback) {};\nconst registry = new FinalizationRegistry(() => Later);\nclass Later {}\n",
+            false,
+            None,
+        ),
+        (
+            "const host = globalThis;\nconst registry = new host.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            true,
+            None,
+        ),
+        (
+            "const registry = new globalThis['FinalizationRegistry'](() => Later);\nclass Later {}\n",
+            true,
+            None,
+        ),
+        (
+            "const registry = new (globalThis?.FinalizationRegistry)(() => Later);\nclass Later {}\n",
+            true,
+            None,
+        ),
+        (
+            "const registry = new globalThis.FinalizationRegistry(...[() => Later]);\nclass Later {}\n",
+            true,
+            None,
+        ),
+        (
+            "const registry = new globalThis.FinalizationRegistry({ cleanup: () => Later });\nclass Later {}\n",
+            false,
+            Some("TypeError"),
+        ),
+        (
+            "class Cleanup {}\nconst registry = new globalThis.FinalizationRegistry(Cleanup);\nclass Later {}\n",
+            false,
+            None,
+        ),
+        (
+            "const registry = new globalThis.FinalizationRegistry(globalThis.cleanup);\nclass Later {}\n",
+            false,
+            Some("TypeError"),
+        ),
+        (
+            "const registry = new globalThis.FinalizationRegistry(eval);\nclass Later {}\n",
+            false,
+            None,
+        ),
     ] {
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                source,
-                vec![
-                    logical_module("registry/value", &[Member::new("registry")]),
-                    logical_module("registry/later", &[Member::new("Later")]),
-                ],
-            ),
-            &["registry/value", "registry/later"],
-            &[],
-        );
+        let outcome = run_fixture_observing_gate(FixtureOpts::new(
+            source,
+            vec![
+                logical_module("registry/value", &[Member::new("registry")]),
+                logical_module("registry/later", &[Member::new("Later")]),
+            ],
+        ));
+        let execution = match outcome {
+            FixtureRunOutcome::Accepted(fixture) => {
+                match expected_error {
+                    Some(error) => assert_preserved_entry_error(&fixture, error),
+                    None => assert_preserved_entry_output(&fixture, ""),
+                }
+                let report = fixture.effect_translation_validation();
+                let execution = registry_execution(&fixture);
+                if report["swapped_pairs"].as_u64().unwrap() > 0 {
+                    assert_eq!(
+                        execution["binding_effect_authority"]["authority"], "operation_receipt",
+                        "{source}: {execution:#}"
+                    );
+                }
+                execution
+            }
+            FixtureRunOutcome::Rejected(fixture) => registry_execution(&fixture),
+        };
+        if !native_receipt_allowed {
+            let calls = &execution["binding_effect_authority"]["receipt"]["calls"];
+            assert!(
+                !calls
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|call| call["target"]["kind"] == "native_construction"),
+                "{source}: {execution:#}"
+            );
+        }
     }
 }
 
@@ -228,17 +368,13 @@ const pattern = new RegExp(argument);
 const later = 42;
 console.log(globalThis.observed, pattern.test("ok"));
 "#;
-    expect_atomic_conflict_rejection(
-        split_opts(
-            source,
-            &[Member::new("argument"), Member::new("pattern")],
-            &["globalThis.saved = () => later;"],
-        ),
-        &["native/value", "native/later"],
+    assert_real_reentry_relocation_is_rejected(
+        source,
+        &[Member::new("argument"), Member::new("pattern")],
         &[],
+        "ReferenceError true\n",
+        "TypeError true\n",
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "ReferenceError true\n");
 }
 
 #[test]
@@ -254,24 +390,19 @@ const pattern = new RegExp("ok");
 const later = 42;
 console.log(globalThis.observed, pattern.test("ok"));
 "#;
-    expect_atomic_conflict_rejection(
-        split_opts(
-            source,
-            &[
-                Member::new("host"),
-                Member::new("Original"),
-                Member::new("pattern"),
-            ],
-            &[
-                "globalThis.saved = () => later;",
-                "host.RegExp = function() { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return new Original('ok'); };",
-            ],
-        ),
-        &["native/value", "native/later"],
-        &[],
+    assert_real_reentry_relocation_is_rejected(
+        source,
+        &[
+            Member::new("host"),
+            Member::new("Original"),
+            Member::new("pattern"),
+        ],
+        &[
+            "host.RegExp = function() { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return new Original('ok'); };",
+        ],
+        "ReferenceError true\n",
+        "TypeError true\n",
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "ReferenceError true\n");
 }
 
 #[test]
@@ -314,17 +445,13 @@ const marker = Symbol(argument);
 const later = 42;
 console.log(globalThis.observed, typeof marker);
 "#;
-    expect_atomic_conflict_rejection(
-        split_opts(
-            source,
-            &[Member::new("argument"), Member::new("marker")],
-            &["globalThis.saved = () => later;"],
-        ),
-        &["native/value", "native/later"],
+    assert_real_reentry_relocation_is_rejected(
+        source,
+        &[Member::new("argument"), Member::new("marker")],
         &[],
+        "ReferenceError symbol\n",
+        "TypeError symbol\n",
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "ReferenceError symbol\n");
 }
 
 #[test]
@@ -340,22 +467,17 @@ const marker = Symbol.for("marker");
 const later = 42;
 console.log(globalThis.observed, typeof marker);
 "#;
-    expect_atomic_conflict_rejection(
-        split_opts(
-            source,
-            &[
-                Member::new("original"),
-                Member::new("symbols"),
-                Member::new("marker"),
-            ],
-            &[
-                "globalThis.saved = () => later;",
-                "symbols.for = () => { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return original('marker'); };",
-            ],
-        ),
-        &["native/value", "native/later"],
-        &[],
+    assert_real_reentry_relocation_is_rejected(
+        source,
+        &[
+            Member::new("original"),
+            Member::new("symbols"),
+            Member::new("marker"),
+        ],
+        &[
+            "symbols.for = () => { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return original('marker'); };",
+        ],
+        "ReferenceError symbol\n",
+        "TypeError symbol\n",
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "ReferenceError symbol\n");
 }
