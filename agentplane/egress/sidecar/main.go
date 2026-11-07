@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"google.golang.org/grpc/credentials"
 )
 
 func main() {
@@ -64,7 +65,8 @@ func (plaintextProxyTransport) dial(ctx context.Context, address string) (net.Co
 }
 
 type tlsProxyTransport struct {
-	security *tls.Config
+	security        *tls.Config
+	grpcCredentials credentials.TransportCredentials
 }
 
 func (transport tlsProxyTransport) dial(ctx context.Context, address string) (net.Conn, error) {
@@ -100,16 +102,22 @@ func newProxyHop(config proxyConfig) (*proxyHop, error) {
 		transport = plaintextProxyTransport{}
 	case tlsProxyTransportConfig:
 		var security *tls.Config
+		var grpcCredentials credentials.TransportCredentials
 		switch configuredAuth := configured.Auth.(type) {
 		case spiffeProxyAuth:
-			var err error
-			security, err = (environment_runtime_transport.Config{
+			client := environment_runtime_transport.Config{
 				CertFile: configuredAuth.CertFile,
 				KeyFile:  configuredAuth.KeyFile,
 				CAFile:   configured.CAFile,
-			}).ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+			}
+			var err error
+			security, err = client.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
 			if err != nil {
 				return nil, fmt.Errorf("configure SPIFFE proxy authentication: %w", err)
+			}
+			grpcCredentials, err = client.ClientCredentials(environment_runtime_transport.EgressProxyURI)
+			if err != nil {
+				return nil, fmt.Errorf("configure SPIFFE gRPC authentication: %w", err)
 			}
 		case kubernetesBearerProxyAuth:
 			var err error
@@ -120,7 +128,7 @@ func newProxyHop(config proxyConfig) (*proxyHop, error) {
 		default:
 			return nil, fmt.Errorf("unsupported proxy authentication type %T", configuredAuth)
 		}
-		transport = tlsProxyTransport{security: security}
+		transport = tlsProxyTransport{security: security, grpcCredentials: grpcCredentials}
 	default:
 		return nil, fmt.Errorf("unsupported proxy transport type %T", configured)
 	}

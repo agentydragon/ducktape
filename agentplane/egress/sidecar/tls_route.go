@@ -3,20 +3,15 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 )
 
-// dialTLSRoute opens a destination TLS connection through the authenticated
-// central proxy hop. The Environment Runtime SVID source is reloadable and is
-// deliberately pinned to the same EgressProxyURI identity as the proxy hop.
-func (s *sidecar) dialTLSRoute(ctx context.Context, target string, security *tls.Config) (net.Conn, error) {
+// dialRouteTunnel opens an authenticated CONNECT tunnel through the central proxy.
+func (s *sidecar) dialRouteTunnel(ctx context.Context, target string) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	connection, err := s.proxyHop.transport.dial(ctx, s.proxyHop.address)
@@ -53,23 +48,18 @@ func (s *sidecar) dialTLSRoute(ctx context.Context, target string, security *tls
 		_ = response.Body.Close()
 		return nil, fmt.Errorf("central proxy refused CONNECT: %s", response.Status)
 	}
-	tracked := &trackedClientConn{Conn: &bufferedTLSRoute{Conn: connection, reader: reader}, sidecar: s}
-	inner, err := environment_runtime_transport.ClientTLSConnection(ctx, tracked, security)
-	if err != nil {
-		return nil, fmt.Errorf("destination TLS: %w", err)
-	}
 	if err := connection.SetDeadline(time.Time{}); err != nil {
-		_ = inner.Close()
 		return nil, err
 	}
+	tracked := &trackedClientConn{Conn: &bufferedRouteConn{Conn: connection, reader: reader}, sidecar: s}
 	s.track(tracked, true)
 	complete = true
-	return inner, nil
+	return tracked, nil
 }
 
-type bufferedTLSRoute struct {
+type bufferedRouteConn struct {
 	net.Conn
 	reader *bufio.Reader
 }
 
-func (c *bufferedTLSRoute) Read(p []byte) (int, error) { return c.reader.Read(p) }
+func (c *bufferedRouteConn) Read(p []byte) (int, error) { return c.reader.Read(p) }

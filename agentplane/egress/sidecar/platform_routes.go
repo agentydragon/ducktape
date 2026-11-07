@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
@@ -56,6 +57,7 @@ func (s *sidecar) bindPlatformRoutesWithKeepalive(
 		clientTarget := config.Upstream
 		var tokenFile string
 		var dialOptions []grpc.DialOption
+		transportCredentials := credentials.TransportCredentials(insecure.NewCredentials())
 		switch transport := config.Transport.(type) {
 		case plaintextRouteTransportConfig:
 			tokenFile = transport.TokenFile
@@ -76,13 +78,16 @@ func (s *sidecar) bindPlatformRoutesWithKeepalive(
 			// Keep the configured authority intact: the central proxy resolves it
 			// after applying its hostname policy and destination TLS identity.
 			clientTarget = "passthrough:///" + config.Upstream
-			security := proxyTransport.security.Clone()
-			security.NextProtos = []string{"h2"}
+			if proxyTransport.grpcCredentials == nil {
+				stopPlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE gRPC credentials", name)
+			}
+			transportCredentials = proxyTransport.grpcCredentials
 			dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
 				if address != config.Upstream {
 					return nil, fmt.Errorf("unexpected platform route destination %q", address)
 				}
-				return s.dialTLSRoute(ctx, address, security)
+				return s.dialRouteTunnel(ctx, address)
 			}))
 		default:
 			stopPlatformRoutes(started)
@@ -95,10 +100,7 @@ func (s *sidecar) bindPlatformRoutesWithKeepalive(
 		}
 		clientOptions := []grpc.DialOption{
 			observability.GRPCClientOption(),
-			// The TLS CONNECT dialer completes and verifies destination TLS before
-			// returning this connection. Insecure gRPC credentials only wrap that
-			// already-encrypted connection; there is no plaintext fallback.
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithTransportCredentials(transportCredentials),
 			grpc.WithKeepaliveParams(keepaliveParameters),
 		}
 		clientOptions = append(clientOptions, dialOptions...)
