@@ -875,56 +875,9 @@ impl LocalExpression {
                 })
             }
             Expr::Assign(assignment) if assignment.op == AssignOp::Assign => {
-                let value = Arc::new(Self::lower(&assignment.right, class_template)?);
-                match &assignment.left {
-                    AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                        Some(Self::Assign {
-                            binding: binding.id.to_id(),
-                            value,
-                            span: assignment.span,
-                        })
-                    }
-                    AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
-                        if class_template && matches!(member.obj.unwrap_parens(), Expr::This(_)) {
-                            return match &member.prop {
-                                MemberProp::PrivateName(private) => {
-                                    Some(Self::AssignPrivateThisField {
-                                        property: private.name.to_string(),
-                                        value,
-                                    })
-                                }
-                                MemberProp::Ident(property) => Some(Self::AssignPublicThisField {
-                                    property: property.sym.to_string(),
-                                    value,
-                                }),
-                                MemberProp::Computed(_) => None,
-                            };
-                        }
-                        let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
-                            return None;
-                        };
-                        let MemberProp::Ident(property) = &member.prop else {
-                            return None;
-                        };
-                        Some(Self::AssignField {
-                            receiver: receiver.to_id(),
-                            property: property.sym.to_string(),
-                            value,
-                            span: assignment.span,
-                        })
-                    }
-                    _ => None,
-                }
+                Self::lower_assignment(assignment, class_template)
             }
-            Expr::Update(update) => {
-                let Expr::Ident(binding) = update.arg.unwrap_parens() else {
-                    return None;
-                };
-                Some(Self::UpdateBinding {
-                    binding: binding.to_id(),
-                    span: update.span,
-                })
-            }
+            Expr::Update(update) => Self::lower_update(update),
             Expr::This(_) => Some(Self::This),
             _ => {
                 let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
@@ -934,6 +887,55 @@ impl LocalExpression {
                     .flatten()
             }
         }
+    }
+
+    fn lower_assignment(assignment: &AssignExpr, class_template: bool) -> Option<Self> {
+        let value = Arc::new(Self::lower(&assignment.right, class_template)?);
+        match &assignment.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => Some(Self::Assign {
+                binding: binding.id.to_id(),
+                value,
+                span: assignment.span,
+            }),
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                if class_template && matches!(member.obj.unwrap_parens(), Expr::This(_)) {
+                    return match &member.prop {
+                        MemberProp::PrivateName(private) => Some(Self::AssignPrivateThisField {
+                            property: private.name.to_string(),
+                            value,
+                        }),
+                        MemberProp::Ident(property) => Some(Self::AssignPublicThisField {
+                            property: property.sym.to_string(),
+                            value,
+                        }),
+                        MemberProp::Computed(_) => None,
+                    };
+                }
+                let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+                    return None;
+                };
+                let MemberProp::Ident(property) = &member.prop else {
+                    return None;
+                };
+                Some(Self::AssignField {
+                    receiver: receiver.to_id(),
+                    property: property.sym.to_string(),
+                    value,
+                    span: assignment.span,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn lower_update(update: &UpdateExpr) -> Option<Self> {
+        let Expr::Ident(binding) = update.arg.unwrap_parens() else {
+            return None;
+        };
+        Some(Self::UpdateBinding {
+            binding: binding.to_id(),
+            span: update.span,
+        })
     }
 
     fn reads(&self, reads: &mut BTreeSet<Id>) {
@@ -1249,12 +1251,47 @@ impl LocalBody {
     }
 
     pub(super) fn from_expression_statement(expression: &Expr) -> Option<Self> {
+        match expression {
+            Expr::Assign(assignment) if assignment.op == AssignOp::Assign => {
+                return Self::from_assignment_expression_statement(assignment);
+            }
+            Expr::Update(update) => return Self::from_update_expression_statement(update),
+            _ => {}
+        }
         let mut body = Self::from_initializer(expression)?;
         let [LocalOperation::Return(Some(value), _)] = body.operations.as_ref() else {
             unreachable!("expression lowering produces one value operation");
         };
         body.operations = Arc::from([LocalOperation::Evaluate(value.clone())]);
         Some(body)
+    }
+
+    /// Retain a lexical assignment as one canonical ordered operation for
+    /// consumers that collect the write through the target walker.
+    pub(super) fn from_assignment_expression_statement(assignment: &AssignExpr) -> Option<Self> {
+        if assignment.op != AssignOp::Assign {
+            return None;
+        }
+        let value = LocalExpression::lower_assignment(assignment, false)?;
+        Some(Self::from_single_evaluation(value, assignment.span))
+    }
+
+    /// Retain a lexical update as one canonical ordered operation for
+    /// consumers that collect the write through the target walker.
+    pub(super) fn from_update_expression_statement(update: &UpdateExpr) -> Option<Self> {
+        let value = LocalExpression::lower_update(update)?;
+        Some(Self::from_single_evaluation(value, update.span))
+    }
+
+    fn from_single_evaluation(value: LocalExpression, span: Span) -> Self {
+        let mut body = Self::from_operations(
+            BTreeMap::new(),
+            Vec::new(),
+            vec![LocalOperation::Evaluate(value)],
+        );
+        body.source_span = Some(span);
+        body.root_expression_span = Some(span);
+        body
     }
 
     pub(super) fn untagged_template_root(&self) -> bool {
