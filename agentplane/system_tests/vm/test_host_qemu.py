@@ -141,10 +141,14 @@ def test_virtiofs_process_snapshot_enforces_count_limits(
     host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() + 2, proc_root=proc)
 
     snapshot = output.getvalue()
+    lines = snapshot.splitlines()
     assert f"HOST_VIRTIOFSD_SCAN_STOPPED reason={marker}" in snapshot
-    assert "HOST_VIRTIOFSD_PID 201\n" not in snapshot
     if limit == "threads":
-        assert "HOST_VIRTIOFSD_HOST_TID 103\n" not in snapshot
+        assert sum(line.startswith("HOST_VIRTIOFSD_HOST_TID ") for line in lines) == 2
+        assert "threads=2" in next(line for line in lines if line.startswith("HOST_VIRTIOFSD_PROCESS_SCAN "))
+    else:
+        assert sum(line.startswith("HOST_VIRTIOFSD_PID ") for line in lines) == 1
+        assert "matching_pod=1" in next(line for line in lines if line.startswith("HOST_VIRTIOFSD_PROCESS_SCAN "))
 
 
 def test_virtiofs_process_snapshot_stops_between_proc_reads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
