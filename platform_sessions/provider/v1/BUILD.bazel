@@ -1,3 +1,4 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
@@ -15,6 +16,16 @@ proto_library(
         "@protobuf//:duration_proto",
         "@protobuf//:timestamp_proto",
     ],
+)
+
+go_proto_library(
+    name = "session_provider_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb",
+    proto = ":session_provider_proto",
 )
 
 py_proto_library_with_mypy_stubs(

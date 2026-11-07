@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "facade",
+    srcs = ["facade.go"],
+    importpath = "github.com/agentydragon/ducktape/platform_sessions/management/facade",
+    deps = [
+        "//agentplane/grpc/facade",
+        "//platform_sessions/management/v1:management_go_proto",
+    ],
+)
+
+go_test(
+    name = "facade_test",
+    srcs = ["facade_test.go"],
+    embed = [":facade"],
+    deps = [
+        "//platform_sessions/management/v1:management_go_proto",
+        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+    ],
+)
