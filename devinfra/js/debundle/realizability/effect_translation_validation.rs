@@ -376,19 +376,65 @@ impl EffectConflictRow<'_> {
     }
 }
 
-fn should_capture_example(examples: &[EffectConflictExample], has_modeled_cells: bool) -> bool {
-    examples.len() < EXAMPLE_LIMIT
-        || (has_modeled_cells && examples.iter().any(|example| example.cell_count == 0))
+#[derive(Debug, Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum EffectConflictExampleRank {
+    ConcreteDataOrObservedControl,
+    PotentialControlOnly,
+    CellFreeHavoc,
 }
 
-fn retain_example(examples: &mut Vec<EffectConflictExample>, example: EffectConflictExample) {
-    if examples.len() < EXAMPLE_LIMIT {
-        examples.push(example);
-    } else if example.cell_count > 0
-        && let Some(last_havoc_only) = examples.iter().rposition(|sample| sample.cell_count == 0)
+struct RankedEffectConflictExample {
+    rank: EffectConflictExampleRank,
+    sweep_order: usize,
+    example: EffectConflictExample,
+}
+
+fn example_rank(conflict: &EffectRelocationConflict<'_>) -> EffectConflictExampleRank {
+    if conflict.cell_count == 0 {
+        return EffectConflictExampleRank::CellFreeHavoc;
+    }
+
+    if conflict
+        .cells
+        .cells
+        .iter()
+        .any(|(cell, observed)| !matches!(cell, EffectCell::ExecutionProgress) || *observed)
     {
-        examples.remove(last_havoc_only);
-        examples.push(example);
+        EffectConflictExampleRank::ConcreteDataOrObservedControl
+    } else {
+        EffectConflictExampleRank::PotentialControlOnly
+    }
+}
+
+fn should_capture_example(
+    examples: &[RankedEffectConflictExample],
+    rank: EffectConflictExampleRank,
+) -> bool {
+    examples.len() < EXAMPLE_LIMIT || examples.iter().any(|example| example.rank > rank)
+}
+
+fn retain_example(
+    examples: &mut Vec<RankedEffectConflictExample>,
+    rank: EffectConflictExampleRank,
+    sweep_order: usize,
+    example: EffectConflictExample,
+) {
+    let candidate = RankedEffectConflictExample {
+        rank,
+        sweep_order,
+        example,
+    };
+    if examples.len() < EXAMPLE_LIMIT {
+        examples.push(candidate);
+    } else if let Some((worst_index, worst_rank)) = examples
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, example)| (example.rank, example.sweep_order))
+        .map(|(index, example)| (index, example.rank))
+        && candidate.rank < worst_rank
+    {
+        examples.remove(worst_index);
+        examples.push(candidate);
     }
 }
 
@@ -476,18 +522,22 @@ pub(crate) fn effect_translation_assess<E>(
     let mut legacy_pairs = legacy.conflict_pairs.clone();
     let mut legacy_comparison = LegacyEdgeComparisonCounts::default();
     let mut examples = Vec::new();
+    let mut conflict_sweep_order = 0;
     let mut diagnostic_visitor = |conflict: &EffectRelocationConflict<'_>| -> Result<(), E> {
+        let sweep_order = conflict_sweep_order;
+        conflict_sweep_order += 1;
         let legacy_edge_conflict = legacy_pairs.remove(&(conflict.first_unit, conflict.later_unit));
         if legacy_edge_conflict {
             legacy_comparison.both_pairs += 1;
         } else {
             legacy_comparison.effect_only_pairs += 1;
         }
-        let capture_example = should_capture_example(&examples, conflict.cell_count > 0);
+        let rank = example_rank(conflict);
+        let capture_example = should_capture_example(&examples, rank);
         if capture_example || visitor.is_some() {
             let row = conflict.report_row(module_path);
             if capture_example {
-                retain_example(&mut examples, row.bounded_example());
+                retain_example(&mut examples, rank, sweep_order, row.bounded_example());
             }
             if let Some(visitor) = &mut visitor {
                 visitor(&EffectConflictDiagnosticRow {
@@ -509,6 +559,11 @@ pub(crate) fn effect_translation_assess<E>(
     )?;
     legacy_comparison.legacy_edge_only_pairs = legacy_pairs.len() as u64;
     let examples_truncated = assessment.counts.pairs > examples.len() as u64;
+    examples.sort_by_key(|example| (example.rank, example.sweep_order));
+    let examples = examples
+        .into_iter()
+        .map(|example| example.example)
+        .collect();
     let report = EffectTranslationValidationReport {
         // Closed domains still contain may-effects and do not establish every
         // runtime property such as heap identity or conditional execution.
@@ -532,7 +587,7 @@ pub(crate) fn effect_translation_assess<E>(
         limitations: vec![
             "Unknown global/property/host coverage remains global Havoc, independently of purity or execution completeness.",
             "Composed heap accesses lack per-access provenance; allocation sites do not prove heap locality.",
-            "Counts cover every conflicting swapped pair; bounded examples prefer modeled-cell rows, then retain the earliest Havoc-only rows. Request --effect-conflicts-jsonl for full rows.",
+            "Counts cover every conflicting swapped pair; bounded examples rank data or observed-control rows first, potential-control-only rows second, and cell-free Havoc rows last, preserving sweep order within each tier. Request --effect-conflicts-jsonl for full rows.",
             "The edge comparison is diagnostic. Final acceptance also requires the same candidate's complete structural placement and rebinding assessment.",
         ],
     };

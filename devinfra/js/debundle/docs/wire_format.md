@@ -341,10 +341,12 @@ artifacts missing it fail to decode, and the normal analysis-engine and source
 provenance checks still apply. `legacy_execution` is a temporary decision for
 owners outside ordered-root execution, not evidence of covered operations.
 
-`examples` retains at most twenty deterministic pairs, preferring rows with
-modeled cells and filling unused slots with the earliest Havoc-only rows. The
-selected pairs retain sweep order and each contains at most twenty conflicting
-cells with their access provenance. Each sampled pair retains its exact
+`examples` retains at most twenty deterministic pairs. It ranks rows with
+non-`execution_progress` data cells or an observed `execution_progress`
+conflict first, potential-control-only rows second, and cell-free Havoc rows
+last; earlier rows win within each tier. Each selected pair contains at most
+twenty conflicting cells with their access provenance. The full JSONL stream
+retains sweep order and every cell. Each sampled pair retains its exact
 `cell_count` and `cells_truncated` marker;
 `examples_truncated` makes omitted pairs explicit. Counts remain exact when
 examples are truncated. `full_detail_export_available` is true: request
