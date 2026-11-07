@@ -43,7 +43,6 @@ type ingressHandler struct {
 	roundTripper    http.RoundTripper
 	baseURL         *url.URL
 	key             string
-	models          map[string]modelConfig
 	attribution     attributionConfig
 	codex           *codexCatalog
 	logBody         bool
@@ -77,10 +76,6 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		}
 		return writeTimeoutConn{Conn: conn, timeout: 60 * time.Second}, nil
 	}
-	models := make(map[string]modelConfig, len(c.Models))
-	for _, item := range c.Models {
-		models[item.Model] = item
-	}
 	var codex *codexCatalog
 	if c.CodexModelCatalogFile != "" {
 		if codex, err = loadCodexCatalog(c.CodexModelCatalogFile); err != nil {
@@ -93,7 +88,6 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		roundTripper:    observability.HTTPTransport(transport),
 		baseURL:         baseURL,
 		key:             c.LiteLLMKey,
-		models:          models,
 		attribution:     c.Attribution,
 		codex:           codex,
 		logBody:         c.LogLLMRequests,
@@ -133,24 +127,6 @@ func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 	}
 	principal, okay := h.authenticate(writer, request)
 	if !okay {
-		return
-	}
-	if request.URL.Path == "/agentplane/model-config" && request.Method == http.MethodGet {
-		query := request.URL.Query()
-		if !query.Has("model") {
-			writer.Header().Set("Content-Type", "application/json")
-			writer.WriteHeader(http.StatusUnprocessableEntity)
-			_, _ = io.WriteString(writer, `{"detail":[{"type":"missing","loc":["query","model"],"msg":"Field required","input":null}]}`)
-			return
-		}
-		model := h.models[query.Get("model")]
-		writer.Header().Set("Content-Type", "application/json")
-		writer.WriteHeader(http.StatusOK)
-		if model.Model == "" {
-			_, _ = io.WriteString(writer, "null")
-			return
-		}
-		_ = json.NewEncoder(writer).Encode(model)
 		return
 	}
 	if request.URL.Path == codexCatalogPath && request.Method == http.MethodGet {

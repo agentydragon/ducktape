@@ -11,11 +11,12 @@ import (
 )
 
 // fixtureModelConfig lets the runtime lifecycle fixtures control a lookup, including holding it
-// open while exercising admission races. The production transport is exercised separately.
+// open while exercising admission races. This private HTTP fixture does not model the production
+// transport, which is exercised separately over gRPC.
 type fixtureModelConfig struct{ endpoint string }
 
 func (f fixtureModelConfig) GetModelConfig(ctx context.Context, request *modelconfigpb.GetModelConfigRequest, _ ...grpc.CallOption) (*modelconfigpb.GetModelConfigResponse, error) {
-	u, err := url.Parse(f.endpoint + "/agentplane/model-config")
+	u, err := url.Parse(f.endpoint + "/test/model-config")
 	if err != nil {
 		return nil, err
 	}

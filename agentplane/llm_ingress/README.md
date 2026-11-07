@@ -63,14 +63,8 @@ The native `agentplane.llm_ingress.v1.ModelConfigService.GetModelConfig` gRPC me
 same configuration to authenticated workloads. The response omits `total_context_budget_tokens`
 for an unknown model; a configured budget is positive. It uses the same Pod-bound TokenReview
 audience and namespace policy as the HTTP listener. Environment Runtime uses this method for
-Claude model budgets. The HTTP endpoint below remains available to older runner images.
-
-The authenticated `GET /agentplane/model-config?model=...` endpoint returns a
-`ModelConfig` record for an exposed route, or JSON `null` (status 200) for a route
-with no configuration, on which the runner uses harness defaults. The ingress retains
-complete records, indexed by their exposed model IDs, rather than reducing them to
-integer budgets. Lookups are answered locally and never forwarded to LiteLLM. Any
-non-200 status, including 404, fails the runner's lookup.
+Claude model budgets. For an unconfigured model, the Runtime uses harness defaults.
+Lookups are answered locally and never forwarded to LiteLLM; a gRPC error fails the lookup.
 
 Configuration is authored as a list in ingress settings, for example:
 

@@ -89,10 +89,9 @@ for fixing the active Codex path.
 
 Agentplane's ingress owns per-model client configuration. Each environment projects
 its selected routes and explicit `RUNNER_CONTEXT_OVERRIDES` into ingress settings;
-the runner looks up the selected model through authenticated
-`GET /agentplane/model-config?model=...`. The shared `ModelConfig` record carries
-`total_context_budget_tokens`, an input-plus-output client budget, not provider
-capacity. The resolved budget is persisted with the session and used when resuming
+the Runtime looks up the selected model through the authenticated gRPC
+`ModelConfigService.GetModelConfig`. `total_context_budget_tokens` is an input-plus-output
+client budget, not provider capacity. The resolved budget is persisted with the session and used when resuming
 its harness. See the [lookup contract](../agentplane/llm_ingress/README.md#per-model-client-configuration)
 for no-override and failure behavior.
 

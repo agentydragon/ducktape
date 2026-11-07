@@ -83,12 +83,11 @@ func workloadToken(t *testing.T, name string) string {
 	return token
 }
 
-func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string, models ...modelConfig) *httptest.Server {
+func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string) *httptest.Server {
 	t.Helper()
 	return newConfiguredIngressTestServer(t, reviews, config{
 		LiteLLMURL: backendURL,
 		LiteLLMKey: testBackendKey,
-		Models:     models,
 	})
 }
 
@@ -418,37 +417,6 @@ func TestAuthenticatedWorkloadWithoutSandboxOwnerIsServedAsItsServiceAccount(t *
 	if len(got) != 1 || json.Unmarshal([]byte(got[0].headers.Get("x-litellm-spend-logs-metadata")), &metadata) != nil ||
 		metadata["agentplane.pod_name"] != pod.Name || metadata["agentplane.service_account"] != "test-unowned" {
 		t.Fatalf("metadata did not follow verified service account: %v", metadata)
-	}
-}
-
-func TestModelConfigLookupIsAuthenticatedAndAnsweredFromConfiguration(t *testing.T) {
-	const model = "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
-	tokenA := workloadToken(t, "test-sandbox-a")
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL, modelConfig{
-		Model: model, TotalContextBudgetTokens: 256 * 1024,
-	})
-	client := testClient()
-	defer client.CloseIdleConnections()
-
-	found, foundBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config?model="+model, "", bearer(tokenA))
-	missing, missingBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config?model=unlisted", "", bearer(tokenA))
-	unauthenticated := doRequest(t, client, ingress.URL+"/agentplane/model-config?model="+model, http.Header{})
-	unauthenticatedBody, _ := io.ReadAll(unauthenticated.Body)
-	_ = unauthenticated.Body.Close()
-	missingParameter, missingParameterBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config", "", bearer(tokenA))
-	if found.StatusCode != http.StatusOK || string(foundBody) != `{"model":"`+model+`","total_context_budget_tokens":262144}`+"\n" ||
-		missing.StatusCode != http.StatusOK || string(missingBody) != "null" ||
-		unauthenticated.StatusCode != http.StatusUnauthorized ||
-		missingParameter.StatusCode != http.StatusUnprocessableEntity ||
-		!strings.Contains(string(missingParameterBody), `"Field required"`) {
-		t.Fatalf("found=%d %s missing=%d %s unauthorized=%d %s no-model=%d %s",
-			found.StatusCode, foundBody, missing.StatusCode, missingBody,
-			unauthenticated.StatusCode, unauthenticatedBody, missingParameter.StatusCode, missingParameterBody)
-	}
-	if got := backend.snapshotRequests(); len(got) != 0 {
-		t.Fatalf("model config lookup reached LiteLLM: %d requests", len(got))
 	}
 }
 
@@ -996,25 +964,21 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	modelResponse, modelBody := request(t, client, http.MethodGet,
-		baseURL+"/agentplane/model-config?model=configured%2Fmodel", "", bearer(tokenA))
-	if modelResponse.StatusCode != http.StatusOK || string(modelBody) != "{\"model\":\"configured/model\",\"total_context_budget_tokens\":8192}\n" {
-		t.Fatalf("configured model response: status=%d body=%s", modelResponse.StatusCode, modelBody)
+	for range 2 {
+		messageResponse, messageBody := request(t, client, http.MethodPost, baseURL+"/v1/messages",
+			`{"messages":[]}`, bearer(tokenA))
+		if messageResponse.StatusCode != 529 || !bytes.Equal(messageBody, anthropicError) {
+			t.Fatalf("binary proxy response: status=%d body=%s", messageResponse.StatusCode, messageBody)
+		}
 	}
-	messageResponse, messageBody := request(t, client, http.MethodPost, baseURL+"/v1/messages",
-		`{"messages":[]}`, bearer(tokenA))
-	if messageResponse.StatusCode != 529 || !bytes.Equal(messageBody, anthropicError) {
-		t.Fatalf("binary proxy response: status=%d body=%s", messageResponse.StatusCode, messageBody)
-	}
-	// Both responses are in, so a second review would already have been counted.
 	if got := reviews.Load(); got != 1 {
 		t.Fatalf("TokenReview calls = %d, want one shared by both requests", got)
 	}
 	backendMu.Lock()
 	gotBackendRequests := backendRequests
 	backendMu.Unlock()
-	if gotBackendRequests != 1 {
-		t.Fatalf("backend requests=%d, want 1", gotBackendRequests)
+	if gotBackendRequests != 2 {
+		t.Fatalf("backend requests=%d, want 2", gotBackendRequests)
 	}
 	if err := stop(); err != nil {
 		t.Fatalf("ingress binary did not shut down cleanly: %v; logs: %s", err, logs.String())
