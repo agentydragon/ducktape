@@ -9,6 +9,8 @@ from agentplane.system_tests.vm.configuration import OOM_TEMPLATE
 
 Kubectl = Callable[..., str]
 _PROFILE_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset"
+BOOT_RCU_OBSERVER_ARG = "agentplane.boot-rcu-observe=1"
+BOOT_RCU_WINDOW_ARG = "agentplane.boot-rcu-observe-window=360"
 
 
 def select_native_profile(objects: list[dict[str, Any]], *, enabled: bool, profile_root: bool) -> None:
@@ -40,6 +42,19 @@ def select_boot_evidence(objects: list[dict[str, Any]], *, enabled: bool) -> Non
     )
     boot = template["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]
     boot["kernelArgs"] += " agentplane.boot-evidence=1"
+
+
+def select_boot_rcu_observer(objects: list[dict[str, Any]], *, enabled: bool) -> None:
+    """Enable a bounded 360-sample boot observer on every test VM template."""
+    if not enabled:
+        return
+    for template in (obj for obj in objects if obj["kind"] == "SandboxTemplate" and "vm" in obj["spec"]):
+        boot = template["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]
+        args = boot["kernelArgs"].split()
+        for argument in (BOOT_RCU_OBSERVER_ARG, BOOT_RCU_WINDOW_ARG):
+            if argument not in args:
+                args.append(argument)
+        boot["kernelArgs"] = " ".join(args)
 
 
 def select_libvirt_monitor_debug(objects: list[dict[str, Any]], *, enabled: bool) -> None:
