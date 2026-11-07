@@ -1320,7 +1320,9 @@ fn assert_caught_binary_throw_receipt(invocation: &StagedInvocation) {
     let receipt = &authority["receipt"];
     assert_eq!(receipt["root_kind"], "binding_initializer", "{receipt:#}");
     assert_eq!(receipt["binding"], "result", "{receipt:#}");
-    let initialize_owner = graph_node_for_binding(&graph, "initialize")["statement_ordinal"];
+    let initialize_owner = graph_node_for_binding(&graph, "initialize")["statement_ordinal"]
+        .as_u64()
+        .expect("initialize statement ordinal");
     let calls = receipt["calls"].as_array().expect("root call receipt");
     assert!(
         calls.iter().any(|call| {
