@@ -13793,6 +13793,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let values = self.evaluate(receiver, env, captures);
         if values.iter().any(|value| {
             matches!(value, AbstractValue::Value(Value::Top))
+                || matches!(value, AbstractValue::Instance(class, _, _)
+                    if !self.instance_properties_are_settled(*class))
                 || matches!(value,
             AbstractValue::Value(Value::Alloc(Kind::Object, object))
                 if !self.state.object_accessors_are_settled(object))
@@ -14029,6 +14031,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             if values.iter().any(|value| {
                 matches!(value, AbstractValue::Value(Value::Top))
+                    || matches!(value, AbstractValue::Instance(class, _, _)
+                        if !self.instance_properties_are_settled(*class))
                     || matches!(value, AbstractValue::Value(Value::Alloc(Kind::RegExp, _)))
                     || matches!(value,
                 AbstractValue::Value(Value::Alloc(Kind::Object, object))
