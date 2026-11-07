@@ -105,8 +105,10 @@ The raw per-cycle artifacts remain in the linked invocation, not this repository
 
 ## Historical target boundary
 
-The earliest verified **post-ACPI, missing-proof, forced-kill** case in the indexed VM
-target history is [October 30, 2026, 22:41 UTC](https://app.buildbuddy.io/invocation/ca76018e-1c98-5b86-9b03-ecba43ed672b)
+An earlier focused branch run on October 28 showed the same post-ACPI, missing-proof,
+forced-kill symptom; see the [wider historical census](historical_census.md).
+
+The earliest verified case in the indexed VM target history is [October 30, 2026, 22:41 UTC](https://app.buildbuddy.io/invocation/ca76018e-1c98-5b86-9b03-ecba43ed672b)
 (`b13094a1ded74565a8f227cdfc986d4a788758e7`). VM 1 logged `acpid: poweroff`
 at 22:45:41.489 UTC and `AGENTPLANE_GUEST_SHUTDOWN_REQUESTED` at 22:45:41.547;
 `/state/workspaces` unmounted at 22:45:44.533, but neither `/state` unmount nor the
