@@ -1601,19 +1601,23 @@ fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering()
 
 #[test]
 fn async_array_iteration_refusal_names_the_first_post_argument_check() {
-    let source = "const entries = [1];\nasync function predicate(value) { return value; }\nconst result = entries.some(predicate);\nconsole.log(result);\n";
+    let source = "const entries = [1];\nasync function predicate(value) { return value; }\nconst before = 0;\nconst result = entries.some(predicate);\nconst after = 1;\nconsole.log(result, before, after);\n";
     let (staged, _fixture) = staged(FixtureOpts::new(
         source,
-        vec![logical_module(
-            "iteration",
-            &[
-                Member::new("entries"),
-                Member::new("predicate"),
-                Member::new("result"),
-            ],
-        )],
+        vec![
+            logical_module(
+                "iteration",
+                &[
+                    Member::new("entries"),
+                    Member::new("predicate"),
+                    Member::new("result"),
+                ],
+            ),
+            logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+        ],
     ));
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "true\n", "");
+    let expected = "true 0 1\n";
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
 
     let direct = staged.run(&["--emit-on-rejection"]);
     save_relocation_reports(
@@ -1637,7 +1641,7 @@ fn async_array_iteration_refusal_names_the_first_post_argument_check() {
     for invocation in [&direct, &saved] {
         assert_node_output(
             &invocation.output_root().join("app/static/app/entry.js"),
-            "true\n",
+            expected,
             "",
         );
         let validation: Value = read_json(
@@ -1647,6 +1651,10 @@ fn async_array_iteration_refusal_names_the_first_post_argument_check() {
         );
         assert_ne!(
             validation["decision"]["status"], "accepted",
+            "{validation:#}"
+        );
+        assert!(
+            validation["swapped_pairs"].as_u64().unwrap() > 0,
             "{validation:#}"
         );
         let graph: Value = read_gzip_json(
@@ -1667,8 +1675,8 @@ fn async_array_iteration_refusal_names_the_first_post_argument_check() {
         assert_eq!(refusal["reason"]["code"], "unsupported_operation");
         let location = refusal["source_location"].clone();
         assert_eq!(location["source_path"], "static/app.js");
-        assert_eq!(location["start_line"], 3);
-        let source_column = source.lines().nth(2).unwrap().find("entries.some").unwrap() + 1;
+        assert_eq!(location["start_line"], 4);
+        let source_column = source.lines().nth(3).unwrap().find("entries.some").unwrap() + 1;
         assert_eq!(location["start_column"], source_column);
         if let Some(expected) = &expected_location {
             assert_eq!(&location, expected);

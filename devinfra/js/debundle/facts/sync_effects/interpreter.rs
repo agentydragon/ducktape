@@ -5882,7 +5882,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         arguments: &[SelectedValue],
         outcome: &mut Outcome,
     ) -> CallTransfer {
-        let refused = |reason| CallTransfer::UnsupportedOperands(reason);
+        let refused = CallTransfer::UnsupportedOperands;
         if call.kind != CallKind::Call {
             return refused(OrderedCallAdmissionRefusal::ArrayIterationCallKindMismatch);
         }
