@@ -41,9 +41,7 @@ fn assert_split(
     assert_all_emitted_js_checks(&fixture);
 }
 
-/// Refused because the native operation itself may run user code: its
-/// source unit's synchronous execution is incomplete.
-fn assert_refused(
+fn assert_unresolved_native(
     mutations: &[&str],
     declaration: &str,
     member: &'static str,
@@ -51,24 +49,25 @@ fn assert_refused(
     stdout: &str,
 ) {
     let source = source(mutations, declaration, output);
-    let rejected = run_rejection_fixture(opts(&source, member, &anonymous(mutations)));
-    assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
-        let claims = conflict["claims"].as_array().expect("conflict claims");
-        ["values/native", "values/later"].iter().all(|module| {
-            claims
-                .iter()
-                .any(|claim| claim["module"].as_str() == Some(*module))
-        })
-    }));
-    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
-    let node = graph["nodes"]
-        .as_array()
-        .unwrap()
+    let fixture = run_fixture(opts(&source, member, &anonymous(mutations)));
+    assert_eq!(
+        fixture.candidate_relocation_assessment()["decision"]["scope"],
+        "no_reordering"
+    );
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
         .iter()
-        .find(|node| node["declared_bindings"][0]["binding"] == member)
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == member)
+        })
         .expect("native source unit");
-    assert_eq!(node["synchronous_execution"]["complete"], false, "{node}");
-    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert!(
+        !node.synchronous_execution.as_ref().unwrap().complete,
+        "{node:#?}"
+    );
     assert_preserved_entry_output(&fixture, stdout);
 }
 
@@ -76,6 +75,10 @@ const MAP: &str = "const collection = new Map();";
 const SAME: &str = "const same = Object.is(1, 1);";
 const SET: &str = "const collection = new Set();";
 const SYMBOL: &str = "const marker = Symbol(\"m\");";
+const GLOBAL_MAP_REPLACEMENT: &[&str] = &[
+    "globalThis.box = globalThis;",
+    "globalThis.box.Map = function Map() { try { globalThis.saved(); return { size: \"ready\" }; } catch (error) { return { size: error.name }; } };",
+];
 
 #[test]
 fn known_key_through_global_slot_value_keeps_other_globals() {
@@ -93,11 +96,8 @@ fn known_key_through_global_slot_value_keeps_other_globals() {
 
 #[test]
 fn same_key_through_global_slot_value_replaces_the_global() {
-    assert_refused(
-        &[
-            "globalThis.box = globalThis;",
-            "globalThis.box.Map = function Map() { try { globalThis.saved(); return { size: \"ready\" }; } catch (error) { return { size: error.name }; } };",
-        ],
+    assert_unresolved_native(
+        GLOBAL_MAP_REPLACEMENT,
         MAP,
         "collection",
         "collection.size",
@@ -106,8 +106,54 @@ fn same_key_through_global_slot_value_replaces_the_global() {
 }
 
 #[test]
+fn unresolved_native_module_cannot_interleave_around_initialization() {
+    let source = source(GLOBAL_MAP_REPLACEMENT, MAP, "collection.size");
+    let mut statements = anonymous(GLOBAL_MAP_REPLACEMENT);
+    statements.push("console.log(collection.size, later);");
+    let rejected = run_rejection_fixture(opts(&source, "collection", &statements));
+    let graph = rejected.dependency_graph();
+    let assessment = rejected.candidate_relocation_assessment();
+    let order = assessment["emitted_order"].as_array().unwrap();
+    let binding_ordinal = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .unwrap()
+            .statement_ordinal
+            .0
+    };
+    let position = |ordinal: usize| {
+        order
+            .iter()
+            .position(|unit| unit.as_u64() == Some(ordinal as u64))
+            .unwrap()
+    };
+    let output = graph
+        .nodes
+        .iter()
+        .map(|node| node.statement_ordinal.0)
+        .max()
+        .unwrap();
+    // The call and output share a module, so one must cross initialization.
+    assert!(
+        !(position(binding_ordinal("collection")) < position(binding_ordinal("later"))
+            && position(binding_ordinal("later")) < position(output)),
+        "{assessment:#}"
+    );
+    assert!(matches!(
+        assessment["decision"]["status"].as_str(),
+        Some("conflict" | "incomplete")
+    ));
+}
+
+#[test]
 fn unknown_key_through_global_slot_value_reaches_every_slot() {
-    assert_refused(
+    assert_unresolved_native(
         &[
             "globalThis.box = Object;",
             "globalThis.box[[\"i\", \"s\"].join(\"\")] = function is() { try { globalThis.saved(); return \"ready\"; } catch (error) { return error.name; } };",
@@ -132,7 +178,7 @@ fn constructor_static_write_keeps_other_statics() {
 
 #[test]
 fn constructor_static_write_replaces_that_static() {
-    assert_refused(
+    assert_unresolved_native(
         &[
             "Object.is = function is() { try { globalThis.saved(); return \"ready\"; } catch (error) { return error.name; } };",
         ],
@@ -145,7 +191,7 @@ fn constructor_static_write_replaces_that_static() {
 
 #[test]
 fn accessor_install_on_the_static_runs_on_read() {
-    assert_refused(
+    assert_unresolved_native(
         &[
             "Object.defineProperty(Object, \"is\", { get() { try { globalThis.saved(); return () => \"ready\"; } catch (error) { return () => error.name; } } });",
         ],
@@ -158,7 +204,7 @@ fn accessor_install_on_the_static_runs_on_read() {
 
 #[test]
 fn rebound_global_object_alias_replaces_a_static() {
-    assert_refused(
+    assert_unresolved_native(
         &[
             "globalThis = Object;",
             "globalThis.is = function is() { try { return String(later); } catch (error) { return error.name; } };",
@@ -172,7 +218,7 @@ fn rebound_global_object_alias_replaces_a_static() {
 
 #[test]
 fn global_object_write_before_rebinding_its_alias_replaces_the_global() {
-    assert_refused(
+    assert_unresolved_native(
         &[
             "globalThis.Map = function Map() { try { return { size: String(later) }; } catch (error) { return { size: error.name }; } };",
             "globalThis = Object;",
@@ -261,7 +307,7 @@ fn affixed_string_keys_reach_slots_they_may_name() {
             "globalThis[`${[\"M\"][0]}ap`] = function Map() { try { globalThis.saved(); return { size: \"ready\" }; } catch (error) { return { size: error.name }; } };",
         ][..],
     ] {
-        assert_refused(
+        assert_unresolved_native(
             mutations,
             MAP,
             "collection",
