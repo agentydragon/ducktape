@@ -903,6 +903,11 @@ abrupt result while its unknown normal result permits argument evaluation.
 That result grants no target selection or effect proof; strict provider queries
 still refuse it. Unknown calls consume evaluated callback capabilities through
 the same bounded opaque-call protocol before the caller is summarized.
+When that protocol consumed the entire call expression statement and no caller
+activation is active, execution stops with its unknown effects and uncovered
+root intact. There is no caller remainder to publish again; the call's argument
+callback policy remains authoritative. Calls inside initializers, callable
+returns or larger expressions retain ordinary remainder fallback.
 An unproved global store retains incomplete execution, an uncovered root
 authority and conservative fallback; global lookup effects remain independent.
 Initial name lists cannot

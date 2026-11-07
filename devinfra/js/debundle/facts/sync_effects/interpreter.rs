@@ -1017,6 +1017,10 @@ pub(super) struct ExecutionState {
     native_operation_input_uses:
         RefCell<BTreeMap<(u32, u32), crate::reports::schema::NativeOperationInputUse>>,
     proof_dependencies: RefCell<ProofDependencies>,
+    /// Exact initializer evidence travels with the prefix through child
+    /// runtime transfers and is consumed by its source owner.
+    native_initializer_candidate: Option<NativeConstructorCandidate>,
+    native_initializer_transfer: Option<NativeConstructorTransfer>,
     inference_uses: RefCell<BTreeSet<crate::analysis_provenance::InferenceUse>>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
     class_superclasses: OrdMap<u32, Values>,
@@ -1363,8 +1367,6 @@ pub(super) struct Executor<'source, 'rule> {
     allocation_judgment: super::super::allocation_transfer::AllocationJudgment,
     source_covered: bool,
     evaluation_effects: EvaluationEffects,
-    native_initializer_candidate: Option<NativeConstructorCandidate>,
-    native_initializer_transfer: Option<NativeConstructorTransfer>,
 }
 
 /// A suspended transfer has handed its state to its child. Keep the remaining
@@ -3068,7 +3070,8 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .covers_retained_losses(&outcome.effects.precision_losses);
         let missing_result = complete && matches!(transfer, CallTransfer::EffectsOnly);
         let admission_refusal = match &transfer {
-            CallTransfer::UnsupportedOperands(refusal) => Some(*refusal),
+            CallTransfer::UnsupportedOperands(refusal)
+            | CallTransfer::SummarizedOpaque(refusal) => Some(*refusal),
             _ => None,
         };
         if (!complete || admission_refusal.is_some())
@@ -3089,6 +3092,39 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         self.outcome.unknown_call |= outcome.unknown_call;
         self.outcome
             .inherit_completeness(outcome.complete, outcome.effects.precision_losses);
+        if matches!(transfer, CallTransfer::SummarizedOpaque(_))
+            && matches!(self.scope, LocalExecutionScope::Root)
+            && self.executor.state.active_cells.is_empty()
+            && self.body.terminal_call_root() == Some(span)
+            && self
+                .outcome
+                .root_effect_identity
+                .as_ref()
+                .is_some_and(|identity| {
+                    matches!(
+                        identity.source,
+                        RootEffectSource::ExpressionStatement { .. }
+                    )
+                })
+        {
+            // The entire expression discards this result. Its opaque call
+            // already summarized the operands under their callback policy;
+            // there is no caller remainder to publish or invoke again.
+            self.outcome.lose_precision(
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::OpaqueExecution,
+                    ordered_field_read_refusal: None,
+                    ordered_call_admission_refusal: admission_refusal,
+                },
+                HavocReach::Global {
+                    cause: GlobalReachCause::UnmodelledOperation,
+                },
+                self.owner,
+                span,
+            );
+            self.outcome.effect_coverage = EffectCoverageFragment::default();
+            return None;
+        }
         if complete
             && let Some(thrown) = outcome.thrown.take()
             && outcome.returns.is_empty()
@@ -3528,8 +3564,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             allocation_judgment: super::super::allocation_transfer::AllocationJudgment::Opaque,
             source_covered: false,
             evaluation_effects: EvaluationEffects::default(),
-            native_initializer_candidate: None,
-            native_initializer_transfer: None,
         }
     }
 
@@ -4868,7 +4902,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         site: CallSite,
         resolution: &NativeCallResolution,
     ) {
-        let Some(candidate) = self.native_initializer_candidate else {
+        let Some(candidate) = self.state.native_initializer_candidate else {
             return;
         };
         let kind = candidate.kind();
@@ -4930,7 +4964,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             let mut dependencies = self.state.proof_dependencies.borrow().clone();
             dependencies.extend(&self.queries.dependencies());
-            self.native_initializer_transfer =
+            self.state.native_initializer_transfer =
                 Some(NativeConstructorTransfer::applied(candidate, dependencies));
         }
     }
@@ -12292,8 +12326,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } else {
             expression
         };
-        self.native_initializer_candidate = source.native_constructor_candidate(expression);
-        self.native_initializer_transfer = None;
+        self.state.native_initializer_candidate = source.native_constructor_candidate(expression);
+        self.state.native_initializer_transfer = None;
         let (values, operation_coverage) = match expression {
             ValueExpr::New(callee, arguments, site)
                 if source.operation_source(expression).is_some() =>
@@ -12304,8 +12338,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             _ => (self.evaluate_transfer(expression, env, captures), None),
         };
-        let transfer = self.native_initializer_transfer.take();
-        self.native_initializer_candidate = None;
+        let transfer = self.state.native_initializer_transfer.take();
+        self.state.native_initializer_candidate = None;
         (
             values,
             self.allocation_judgment.clone(),
@@ -14704,7 +14738,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         outcome.return_selection =
             result_selection.filter(|selection| selection.matches(&result_values));
         if let Some(refusal) = unknown_target_refusal {
-            return CallTransfer::UnsupportedOperands(refusal);
+            return CallTransfer::SummarizedOpaque(refusal);
         }
         CallTransfer::requested(needs_value, || result_values)
     }
@@ -15698,6 +15732,8 @@ pub(crate) fn annotate_synchronous_calls(
         native_integrity_uses: RefCell::default(),
         native_operation_input_uses: RefCell::default(),
         proof_dependencies: RefCell::default(),
+        native_initializer_candidate: None,
+        native_initializer_transfer: None,
         inference_uses: RefCell::default(),
         class_member_effects: BTreeMap::new(),
         class_superclasses: OrdMap::new(),
@@ -16343,7 +16379,7 @@ impl Executor<'_, '_> {
         // preclassify targets or retry its already executed prefix below.
         let mut ordered_native_constructor_transfer = None;
         let mut ordered_root_result = if let Some(root) = ordered_root {
-            self.native_initializer_candidate = ordered_initializer.and_then(|root| {
+            self.state.native_initializer_candidate = ordered_initializer.and_then(|root| {
                 let [(binding, expression)] = assignments.as_slice() else {
                     return None;
                 };
@@ -16355,7 +16391,7 @@ impl Executor<'_, '_> {
                 .then(|| source.native_constructor_candidate(expression))
                 .flatten()
             });
-            self.native_initializer_transfer = None;
+            self.state.native_initializer_transfer = None;
             outcome = self.execute_local_body(
                 &root.body,
                 Context::new(),
@@ -16364,8 +16400,8 @@ impl Executor<'_, '_> {
                 LocalExecutionScope::Root,
                 Some(root.identity.clone()),
             );
-            ordered_native_constructor_transfer = self.native_initializer_transfer.take();
-            self.native_initializer_candidate = None;
+            ordered_native_constructor_transfer = self.state.native_initializer_transfer.take();
+            self.state.native_initializer_candidate = None;
             Some(SelectedValue {
                 values: std::mem::take(&mut outcome.returns),
                 selection: outcome.return_selection.take(),
