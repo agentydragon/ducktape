@@ -26,7 +26,6 @@ from finance.augur.api.calibration_wire import (
     CalibrationRunResponse,
     sanity_band_to_wire,
 )
-from finance.augur.api.casing import plain_json
 from finance.augur.api.catalog import build_calibration_info, build_catalog, build_settings
 from finance.augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
 from finance.augur.api.deployment import DeploymentInfo, build_deployment_info
@@ -164,63 +163,62 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
     route (which fixes the OpenAPI document) acquires no runtime resource. `create_app` binds a
     deployment and the lifespan entering its price clients; `export_schema` passes `lifespan=None`
     and only calls `.openapi()`."""
-    app = FastAPI(title="Augur scenario API", lifespan=lifespan)
     no_store = {"cache-control": "no-store"}
+
+    async def cache_control(response: Response) -> None:
+        response.headers.update(no_store)
+
+    app = FastAPI(title="Augur scenario API", lifespan=lifespan, dependencies=[Depends(cache_control)])
 
     def error(status_code: int, detail: Any) -> JSONResponse:
         return JSONResponse(status_code=status_code, content={"detail": jsonable_encoder(detail)}, headers=no_store)
-
-    def payload(value: Any, *, exclude_none: bool = True) -> JSONResponse:
-        return JSONResponse(content=plain_json(value, exclude_none=exclude_none), headers=no_store)
 
     app.add_exception_handler(RequestValidationError, lambda request, exc: error(422, exc.errors()))
     app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors()))
     app.add_exception_handler(KeyError, lambda request, exc: error(400, str(exc)))
     app.add_exception_handler(ValueError, lambda request, exc: error(400, str(exc)))
 
-    # Routes return a `JSONResponse` directly (custom snake_case + drop-None wire), so FastAPI
-    # passes the Response through untouched. `response_model=` is purely for the OpenAPI document
-    # `augur.api.export_schema` dumps to drive the frontend's Zod/TS codegen.
+    # `response_model` drives the OpenAPI contract and FastAPI validates and serializes each model.
 
-    @app.get("/api/catalog", response_model=CatalogResponse)
-    def catalog_route(services: Services) -> JSONResponse:
-        return payload(services.catalog)
+    @app.get("/api/catalog", response_model=CatalogResponse, response_model_exclude_none=True)
+    def catalog_route(services: Services) -> CatalogResponse:
+        return services.catalog
 
-    @app.get("/api/settings", response_model=SettingsResponse)
-    def settings_route(services: Services) -> JSONResponse:
-        return payload(services.settings)
+    @app.get("/api/settings", response_model=SettingsResponse, response_model_exclude_none=True)
+    def settings_route(services: Services) -> SettingsResponse:
+        return services.settings
 
-    @app.get("/api/calibration", response_model=CalibrationInfo)
-    def calibration_info_route(services: Services) -> JSONResponse:
-        return payload(services.calibration_info)
+    @app.get("/api/calibration", response_model=CalibrationInfo, response_model_exclude_none=True)
+    def calibration_info_route(services: Services) -> CalibrationInfo:
+        return services.calibration_info
 
-    @app.get("/api/deployment", response_model=DeploymentInfo)
-    def deployment(services: Services) -> JSONResponse:
-        return payload(services.deployment_info)
+    @app.get("/api/deployment", response_model=DeploymentInfo, response_model_exclude_none=True)
+    def deployment(services: Services) -> DeploymentInfo:
+        return services.deployment_info
 
-    @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)
-    def product_portfolio_snapshot(services: Services) -> JSONResponse:
-        return payload(
-            product_portfolio_response(
-                snapshot=services.portfolio.snapshot,
-                portfolio=services.portfolio.portfolio,
-                tlh_portfolios=services.portfolio.tlh_portfolios,
-                currency=USD,
-            )
+    @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse, response_model_exclude_none=True)
+    def product_portfolio_snapshot(services: Services) -> ProductPortfolioResponse:
+        return product_portfolio_response(
+            snapshot=services.portfolio.snapshot,
+            portfolio=services.portfolio.portfolio,
+            tlh_portfolios=services.portfolio.tlh_portfolios,
+            currency=USD,
         )
 
-    @app.post("/api/product/projections/summary", response_model=ProductProjectionResponse)
-    def product_projection_summary(request: ProductProjectionRequest, services: Services) -> JSONResponse:
-        return payload(services.product_service.projection_summary(request))
+    @app.post(
+        "/api/product/projections/summary", response_model=ProductProjectionResponse, response_model_exclude_none=True
+    )
+    def product_projection_summary(request: ProductProjectionRequest, services: Services) -> ProductProjectionResponse:
+        return services.product_service.projection_summary(request)
 
-    @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
-    def product_projection_rollout(request: RolloutRequest, services: Services) -> JSONResponse:
-        return payload(services.product_service.rollout(request))
+    @app.post("/api/product/projections/rollout", response_model=RolloutResponse, response_model_exclude_none=True)
+    def product_projection_rollout(request: RolloutRequest, services: Services) -> RolloutResponse:
+        return services.product_service.rollout(request)
 
-    @app.post("/api/calibration/run", response_model=CalibrationRunResponse)
+    @app.post("/api/calibration/run", response_model=CalibrationRunResponse, response_model_exclude_none=True)
     async def calibration_run(
         request: CalibrationRunRequest, services: Services, price_clients: PriceClients
-    ) -> JSONResponse:
+    ) -> CalibrationRunResponse | JSONResponse:
         config = services.config
         loaded = config.calibration_catalog
         if loaded is None:
@@ -329,31 +327,31 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
             if spec is not None
             else []
         )
-        return payload(
-            CalibrationRunResponse(
-                preset_id=preset_id,
-                result=result,
-                mark_fans=mark_fans,
-                valuation_fans=valuation_fans,
-                sanity_bands=sanity_bands,
-            )
+        return CalibrationRunResponse(
+            preset_id=preset_id,
+            result=result,
+            mark_fans=mark_fans,
+            valuation_fans=valuation_fans,
+            sanity_bands=sanity_bands,
         )
 
-    @app.post("/api/budget/snapshot", response_model=BudgetSnapshotResponse)
-    async def budget_snapshot(request: BudgetSnapshotRequest, services: Services) -> JSONResponse:
+    @app.post("/api/budget/snapshot", response_model=BudgetSnapshotResponse, response_model_exclude_none=False)
+    async def budget_snapshot(
+        request: BudgetSnapshotRequest, services: Services
+    ) -> BudgetSnapshotResponse | JSONResponse:
         budget_service = services.config.budget_service
         if budget_service is None:
             return error(400, "no budget config for this deployment")
-        result = await budget_service.build_snapshot(window=request.window)
-        return payload(result, exclude_none=False)
+        return await budget_service.build_snapshot(window=request.window)
 
-    @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse)
-    async def budget_transactions(request: BudgetTransactionsRequest, services: Services) -> JSONResponse:
+    @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse, response_model_exclude_none=False)
+    async def budget_transactions(
+        request: BudgetTransactionsRequest, services: Services
+    ) -> BudgetTransactionsResponse | JSONResponse:
         budget_service = services.config.budget_service
         if budget_service is None:
             return error(400, "no budget config for this deployment")
-        result = await budget_service.list_transactions_in_bucket(bucket_id=request.bucket_id, window=request.window)
-        return payload(result, exclude_none=False)
+        return await budget_service.list_transactions_in_bucket(bucket_id=request.bucket_id, window=request.window)
 
     @app.post("/api/budget/snapshot.csv", include_in_schema=False)
     async def budget_snapshot_csv(request: BudgetSummaryCsvRequest, services: Services) -> Response:

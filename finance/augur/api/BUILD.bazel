@@ -16,25 +16,6 @@ py_library(
 )
 
 py_library(
-    name = "casing",
-    srcs = ["casing.py"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_test(
-    name = "casing_test",
-    srcs = ["casing_test.py"],
-    deps = [
-        ":casing",
-        ":conftest",
-        ":schemas",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "calibration_wire",
     srcs = ["calibration_wire.py"],
     deps = [
@@ -325,7 +306,6 @@ py_library(
     srcs = ["server.py"],
     deps = [
         ":calibration_wire",
-        ":casing",
         ":catalog",
         ":config",
         ":deployment",
@@ -484,4 +464,30 @@ filegroup(
 filegroup(
     name = "public_fixture_properties",
     srcs = ["testdata/properties.json"],
+)
+
+py_test(
+    name = "test_response_serialization",
+    srcs = ["test_response_serialization.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+        "//finance/augur/calibration:example_openai_catalog",
+    ],
+    deps = [
+        ":config",
+        ":conftest",
+        ":server",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:testing",
+        "//finance/budget:schema",
+        "//finance/budget:service",
+        "//finance/budget:wire",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
 )
