@@ -147,7 +147,9 @@ fn unknown() -> Values {
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct Outcome {
-    effects: SynchronousCalls,
+    /// The owned ledger travels through recursive transfers; keep its
+    /// collections and proof carriers off each invocation frame.
+    effects: Box<SynchronousCalls>,
     /// The callable body was entered, rather than only conservatively
     /// summarized by a recursion or invocation-budget fallback.
     body_invoked: bool,
@@ -17568,6 +17570,6 @@ impl Executor<'_, '_> {
             // bool-based path if its receipt or identity is lost.
             outcome.effects.binding_effect_coverage = BindingEffectCoverage::LegacyExecution;
         }
-        outcome.effects
+        *outcome.effects
     }
 }
