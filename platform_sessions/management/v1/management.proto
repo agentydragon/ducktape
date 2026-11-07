@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package platform_sessions.management.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "platform_sessions/provider/v1/session_provider.proto";
+
+// Owner operations on configured remote provider instances. The provider's result messages are
+// used directly so the management API does not invent a second representation of session state.
+service SessionManagement {
+  rpc ListInstances(google.protobuf.Empty) returns (ListInstancesResponse) {
+    option (google.api.http) = {get: "/api/v1/instances"};
+  }
+  rpc GetSession(InstanceRequest) returns (platform_sessions.provider.v1.GetSessionResponse) {
+    option (google.api.http) = {get: "/api/v1/instances/{instance_id}/session"};
+  }
+  rpc Probe(InstanceRequest) returns (platform_sessions.provider.v1.ProbeResponse) {
+    option (google.api.http) = {post: "/api/v1/instances/{instance_id}:probe" body: "*"};
+  }
+  rpc VerifyCandidate(CandidateRequest) returns (platform_sessions.provider.v1.VerifyCandidateResponse) {
+    option (google.api.http) = {post: "/api/v1/instances/{instance_id}:verifyCandidate" body: "*"};
+  }
+  rpc ImportSession(CandidateRequest) returns (platform_sessions.provider.v1.ImportSessionResponse) {
+    option (google.api.http) = {post: "/api/v1/instances/{instance_id}:importSession" body: "*"};
+  }
+}
+
+message InstanceRequest { string instance_id = 1; }
+
+message CandidateRequest {
+  string instance_id = 1;
+  string media_type = 2;
+  string format_version = 3;
+  // Contains credentials. Never log or echo this field. Lost responses must not be replayed.
+  bytes candidate = 4;
+}
+
+message Instance {
+  platform_sessions.provider.v1.InstanceRef ref = 1;
+  // Absent when the provider service could not be reached.
+  platform_sessions.provider.v1.ProviderInstanceInfo info = 2;
+}
+
+message ListInstancesResponse { repeated Instance instances = 1; }
