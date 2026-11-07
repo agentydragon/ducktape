@@ -172,8 +172,8 @@ async def test_go_openapi_tracks_frontend_config_route(http: httpx.AsyncClient) 
     response = await http.get("/openapi.json")
     assert response.status_code == 200, response.text
     document = response.json()
-    paths = document["paths"]
-    schemas = document["components"]["schemas"]
+    paths = document.get("paths") or {}
+    schemas = (document.get("components") or {}).get("schemas") or {}
 
     assert "/frontend-config" not in paths
     assert "FrontendConfig" not in schemas
@@ -220,7 +220,7 @@ async def test_protected_go_routes_reject_requests_without_a_workload_token(app:
 async def test_system_status_uses_generated_appservice_facade(http: httpx.AsyncClient) -> None:
     openapi = await http.get("/openapi.json")
     assert openapi.status_code == 200, openapi.text
-    assert "/system/status" not in openapi.json()["paths"]
+    assert "/system/status" not in openapi.json().get("paths", {})
 
     status = await http.get("/upstream/app/v1/system/status")
     assert status.status_code == 200, status.text

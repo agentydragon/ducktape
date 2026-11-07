@@ -69,14 +69,16 @@ func assertSaneOpenAPI(t *testing.T, encoded []byte) openAPIDocument {
 	if err := json.Unmarshal(encoded, &document); err != nil {
 		t.Fatalf("decode OpenAPI document: %v", err)
 	}
+	// Huma omits paths when there are no handwritten operations. Treat that like an empty
+	// Paths Object so this helper still checks generated routes are absent.
+	if document.Paths == nil {
+		document.Paths = map[string]map[string]json.RawMessage{}
+	}
 	if document.OpenAPI != "3.1.0" {
 		t.Errorf("OpenAPI version = %q, want 3.1.0", document.OpenAPI)
 	}
 	if document.Info.Title == "" || document.Info.Version == "" {
 		t.Errorf("OpenAPI info must have a title and version, got %+v", document.Info)
-	}
-	if len(document.Paths) == 0 {
-		t.Fatal("OpenAPI document has no paths")
 	}
 	for path, pathItem := range document.Paths {
 		for method, rawOperation := range pathItem {
