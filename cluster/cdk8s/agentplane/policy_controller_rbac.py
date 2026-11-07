@@ -51,9 +51,11 @@ class PolicyControllerRbac(Construct):
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource(_GROUP, "policysets")], verbs=["get", "list", "watch"]),
+                RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes")], verbs=["get"]),
                 # Deleting is how a binding expires.
                 RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "policybindings")], verbs=["get", "list", "watch", "delete"]
+                    resources=[custom_resource(_GROUP, "policybindings")],
+                    verbs=["create", "get", "list", "watch", "delete"],
                 ),
                 RolePolicyRule(resources=[custom_resource(_GROUP, "policybindings/status")], verbs=["patch"]),
                 RolePolicyRule(

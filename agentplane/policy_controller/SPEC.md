@@ -39,6 +39,21 @@ recreates it.
   appears. It touches only native bindings carrying its label and its own policy namespace, so
   several Agentplane instances' controllers share a cluster.
 
+`PolicyService.GrantSandboxPolicyBinding` and `RevokeOperatorPolicyBinding` are the operator write
+boundary. Their Pod-bound writer allowlist is configured independently from the workload read/watch
+resolver; an empty `writer_accounts` list denies both methods. Grant requires the exact live Sandbox
+UID, its controller-owned ServiceAccount, and existing unique PolicySet names. It stores the Sandbox
+UID in a non-controller owner reference. Revoke requires the caller's Sandbox UID and observed
+PolicyBinding UID, refuses Flux and Sandbox-controller ownership, and deletes with both Kubernetes
+UID and resourceVersion preconditions.
+
+Kubernetes does not transact a Sandbox read with a PolicyBinding create. Grant checks the exact
+Sandbox and ServiceAccount before and after creation, and attempts UID/resourceVersion-guarded
+cleanup if either identity changed. A replacement between those checks can still see a transient
+name-based ServiceAccount grant before cleanup or owner-reference garbage collection; the owner UID
+prevents that binding from belonging to a later Sandbox incarnation. Revoke's resourceVersion
+precondition prevents deleting a binding edited or replaced after its read.
+
 ## Revocation timing
 
 Expiry takes effect when the controller deletes the `PolicyBinding`, and deletion when it deletes the

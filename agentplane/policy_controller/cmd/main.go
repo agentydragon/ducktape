@@ -27,6 +27,7 @@ import (
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 	policyservice "github.com/agentydragon/ducktape/agentplane/policy_controller/service"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
@@ -54,6 +55,9 @@ func run(c config) error {
 		return err
 	}
 	if err := policyapi.AddToScheme(scheme); err != nil {
+		return err
+	}
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		return err
 	}
 	ours := labels.SelectorFromSet(labels.Set{
@@ -102,23 +106,42 @@ func run(c config) error {
 			namespaces = append(namespaces, account.Namespace)
 		}
 	}
+	writers := make([]auth.Account, 0, len(c.WriterAccounts))
+	writerNamespaces := make([]string, 0, len(c.WriterAccounts))
+	for _, name := range c.WriterAccounts {
+		var account auth.Account
+		if err := account.UnmarshalText([]byte(name)); err != nil {
+			return err
+		}
+		writers = append(writers, account)
+		if !slices.Contains(writerNamespaces, account.Namespace) {
+			writerNamespaces = append(writerNamespaces, account.Namespace)
+		}
+	}
 	kube, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
 	}
-	resolver, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GRPCAudience, namespaces)
+	readResolver, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GRPCAudience, namespaces)
 	if err != nil {
 		return err
+	}
+	writeResolver := readResolver
+	if len(writerNamespaces) > 0 {
+		writeResolver, err = auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GRPCAudience, writerNamespaces)
+		if err != nil {
+			return err
+		}
 	}
 	objects, err := client.NewWithWatch(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return err
 	}
-	api, err := policyservice.New(c.PolicyNamespace, objects, readers)
+	api, err := policyservice.New(c.PolicyNamespace, objects, readers, writers)
 	if err != nil {
 		return err
 	}
-	server := grpc.NewServer(policyservice.Methods(resolver).ServerOptions(0)...)
+	server := grpc.NewServer(api.Methods(readResolver, writeResolver).ServerOptions(0)...)
 	policypb.RegisterPolicyServiceServer(server, api)
 	listener, err := net.Listen("tcp", c.GRPCBindAddress)
 	if err != nil {
