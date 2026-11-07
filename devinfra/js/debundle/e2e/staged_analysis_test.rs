@@ -1278,6 +1278,20 @@ fn provider_targets<'a>(report: &'a Value, field: &str) -> &'a [Value] {
         .unwrap_or_else(|| panic!("provider targets {field} is not an array: {report:#}"))
 }
 
+fn assert_conditional_provider_summary(invocation: &StagedInvocation, imported_local: &str) {
+    let modules: Value = read_json(
+        &invocation
+            .output_root()
+            .join("reports/tree/static/app/modules.json"),
+    );
+    assert!(
+        modules["imported_callables"][imported_local]["conditional_bodies"]
+            .as_array()
+            .is_some_and(|bodies| !bodies.is_empty()),
+        "the fixture must derive a conditional provider body before testing its candidate obligations: {modules:#}"
+    );
+}
+
 fn assert_same_module_cell_address(report_address: &Value, graph_address: &Value) {
     assert_module_cell_address(graph_address);
     assert_eq!(report_address["chunk"], graph_address["chunk"]);
@@ -1666,7 +1680,9 @@ fn mutable_provider_cell_effects_survive_direct_saved_and_candidate_analysis() {
 #[test]
 fn capture_free_conditional_provider_target_survives_moved_wrapper_and_saved_analysis() {
     const PROVIDER: &str = "export function read(record) { return record.value; }\n";
-    const APP: &str = "import { read } from './peer.js';\nfunction wrapper(record) { read(record); }\nwrapper({ value: 1 });\nconsole.log('ok');\n";
+    // The direct literal call supplies a canonical layout demand; the second
+    // use must carry its own obligation out of the moved wrapper's execution.
+    const APP: &str = "import { read } from './peer.js';\nread({ value: 1 });\nfunction wrapper(record) { read(record); }\nwrapper({ value: 1 });\nconsole.log('ok');\n";
     let (staged, _fixture) = staged(
         FixtureOpts::new(APP, vec![logical_module("work", &[Member::new("wrapper")])])
             .with_extra_chunks(&[("static/peer", PROVIDER)])
@@ -1700,6 +1716,7 @@ fn capture_free_conditional_provider_target_survives_moved_wrapper_and_saved_ana
         saved.result.stderr
     );
     for invocation in [&direct, &saved] {
+        assert_conditional_provider_summary(invocation, "read");
         let consumer_root = invocation.output_root().join("app/static/app");
         let report = candidate_relocation_report(invocation, "static/app");
         assert_eq!(
@@ -1712,7 +1729,7 @@ fn capture_free_conditional_provider_target_survives_moved_wrapper_and_saved_ana
         );
         let required = provider_targets(&report, "required_targets");
         let preserved = provider_targets(&report, "preserved_targets");
-        assert_eq!(required.len(), 1, "{report:#}");
+        assert_eq!(required.len(), 2, "{report:#}");
         assert_eq!(preserved, required, "{report:#}");
         assert!(
             provider_targets(&report, "unproved_targets").is_empty(),
@@ -1722,14 +1739,13 @@ fn capture_free_conditional_provider_target_survives_moved_wrapper_and_saved_ana
             report["provider_targets"]["refusal"].is_null(),
             "{report:#}"
         );
-        assert_eq!(required[0]["export"], "read", "{report:#}");
-        assert_eq!(required[0]["local"], "read", "{report:#}");
         assert!(
-            required[0]["defining_module"]
-                .as_str()
-                .unwrap()
-                .contains("peer")
+            required.iter().all(|target| target["export"] == "read"
+                && target["local"] == "read"
+                && target["defining_module"].as_str().unwrap().contains("peer")),
+            "{report:#}"
         );
+        assert_ne!(required[0]["owner"], required[1]["owner"], "{report:#}");
         assert_node_output(&consumer_root.join("entry.js"), "ok\n", "");
     }
 }
@@ -1985,10 +2001,16 @@ fn candidate_module_initialization_checks_output_path_shadowing() {
 #[test]
 fn conditional_provider_target_checks_forwarding_routes_and_shadowing() {
     const PEER: &str = "export function read(record) { return record.value; }\n";
-    const BRIDGE: &str = "export { read } from './peer.js';\n";
+    const NAMED_BRIDGE: &str = "export { read } from './peer.js';\n";
+    const IMPORT_BRIDGE: &str =
+        "import { read as peerRead } from './peer.js';\nexport { peerRead as read };\n";
     const APP: &str = "import { read as foreignRead } from './bridge.js';\nfunction read(record) { return 99; }\nforeignRead({ value: 1 });\nforeignRead({ value: 2 });\nconsole.log('ok');\n";
-    for (layout, target_dir, shadows_provider) in [("nested", "modules", false), ("flat", "", true)]
-    {
+    for (layout, target_dir, shadows_provider, bridge) in [
+        ("named_nested", "modules", false, NAMED_BRIDGE),
+        ("named_flat", "", true, NAMED_BRIDGE),
+        ("import_nested", "modules", false, IMPORT_BRIDGE),
+        ("import_flat", "", true, IMPORT_BRIDGE),
+    ] {
         let (staged, _fixture) = staged(
             FixtureOpts::new(
                 APP,
@@ -1998,7 +2020,7 @@ fn conditional_provider_target_checks_forwarding_routes_and_shadowing() {
                 ],
             )
             .with_target_dir(target_dir)
-            .with_extra_chunks(&[("static/bridge", BRIDGE), ("static/peer", PEER)])
+            .with_extra_chunks(&[("static/bridge", bridge), ("static/peer", PEER)])
             .with_unassigned_mode(unassigned_mode_inline()),
         );
         assert_node_output(&staged.root().join("snapshot/static/app.js"), "ok\n", "");
@@ -2017,6 +2039,7 @@ fn conditional_provider_target_checks_forwarding_routes_and_shadowing() {
                 fs::create_dir_all(destination.parent().unwrap()).unwrap();
                 fs::write(destination, bytes).unwrap();
             }
+            assert_conditional_provider_summary(invocation, "foreignRead");
             let report = candidate_relocation_report(invocation, "static/app");
             assert!(
                 module_initialization_cells(&report, "required_cells").is_empty(),
@@ -2026,7 +2049,13 @@ fn conditional_provider_target_checks_forwarding_routes_and_shadowing() {
             let preserved = provider_targets(&report, "preserved_targets");
             let unproved = provider_targets(&report, "unproved_targets");
             assert_eq!(required.len(), 2, "{layout}: {report:#}");
-            assert!(required.iter().all(|target| target["export"] == "read"));
+            assert!(
+                required.iter().all(|target| target["export"] == "read"
+                    && target["local"] == "read"
+                    && target["source_binding"] == "foreignRead"
+                    && target["defining_module"].as_str().unwrap().contains("peer")),
+                "{report:#}"
+            );
             if shadows_provider {
                 assert!(preserved.is_empty(), "{report:#}");
                 assert_eq!(unproved.len(), 2, "{report:#}");

@@ -2083,6 +2083,13 @@ fn partial_swap_split_uses_summary_of_swapped_export_body() {
         modules["imported_callables"]["object"]["foreign_call"]["replacement_package"],
         "fac"
     );
+    let assessment: Value =
+        read_json(&report_root.join("static/app/candidate_relocation_assessment.json"));
+    assert_eq!(
+        assessment["provider_targets"]["required_targets"],
+        json!([]),
+        "the independently closed foreign body must not consume a conditional specialization: {assessment:#}"
+    );
     let app_root = ws.out_root.join("app");
     install_node_module(&app_root, "fac", "1.0.0", PROVIDER);
     assert_node_output(&app_root.join("static/app/entry.js"), "42\n", "");

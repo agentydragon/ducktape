@@ -847,6 +847,36 @@ fn exported_module_cell(
     None
 }
 
+/// Follow only canonical named export/import records to a local source
+/// binding. This locates a conditional-body query, not an availability proof:
+/// the provider interpreter and each candidate still check their own premises.
+fn conditional_body_provider(
+    mut key: CallableExportKey,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+) -> Option<(CallableExportKey, String)> {
+    let mut visiting = BTreeSet::new();
+    while visiting.insert(key.clone()) {
+        let facts = modules.get(&key.module)?;
+        let target = if let Some(local) = facts.exports.get(&key.export) {
+            match facts.imports.get(local) {
+                Some(target) => {
+                    prepared.get(&key.module)?.imported_binding_id(local)?;
+                    target
+                }
+                None => return Some((key, local.clone())),
+            }
+        } else {
+            facts.reexports.get(&key.export)?
+        };
+        key = CallableExportKey {
+            module: target.module.clone(),
+            export: target.export.clone(),
+        };
+    }
+    None
+}
+
 pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
@@ -1457,6 +1487,9 @@ pub fn resolve_imported_callable_summaries(
     > = BTreeMap::new();
     for (module, facts) in modules {
         for (local, shape) in prepared[module].imported_record_inputs() {
+            if prepared[module].imported_binding_id(&local).is_none() {
+                continue;
+            }
             let Some(target) = facts.imports.get(&local) else {
                 continue;
             };
@@ -1471,22 +1504,26 @@ pub fn resolve_imported_callable_summaries(
     }
     let mut conditional_bodies = Vec::new();
     for (key, shapes) in conditional_demands {
-        let Some(provider) = modules.get(&key.module) else {
+        let Some((provider, local)) = conditional_body_provider(key.clone(), modules, &prepared)
+        else {
             continue;
         };
-        let Some(local) = provider.exports.get(&key.export) else {
-            continue;
-        };
-        let Some(prepared_provider) = prepared.get_mut(&key.module) else {
+        let Some(prepared_provider) = prepared.get_mut(&provider.module) else {
             continue;
         };
         let empty_cells = BTreeMap::new();
-        let provider_cells = module_cells.get(&key.module).unwrap_or(&empty_cells);
+        let provider_cells = module_cells.get(&provider.module).unwrap_or(&empty_cells);
         for shape in shapes {
             if let Some((callable_key, derived)) =
-                prepared_provider.conditional_body(local, shape, provider_cells, &native_integrity)
+                prepared_provider.conditional_body(&local, shape, provider_cells, &native_integrity)
             {
-                conditional_bodies.push((key.clone(), local.clone(), callable_key, derived));
+                conditional_bodies.push((
+                    key.clone(),
+                    provider.clone(),
+                    local.clone(),
+                    callable_key,
+                    derived,
+                ));
             }
         }
     }
@@ -1575,7 +1612,7 @@ pub fn resolve_imported_callable_summaries(
             })
         })
         .unwrap_or_default();
-    for (key, local, callable_key, body) in conditional_bodies {
+    for (key, provider, local, callable_key, body) in conditional_bodies {
         if !body.native_operations.is_subset(&intact_native_operations) {
             continue;
         }
@@ -1584,8 +1621,8 @@ pub fn resolve_imported_callable_summaries(
         summary
             .conditional_bodies
             .push(crate::analysis_inputs::ConditionalForeignBody {
-                defining_module: key.module.clone(),
-                export: key.export.clone(),
+                defining_module: provider.module.clone(),
+                export: provider.export.clone(),
                 local,
                 callable_key,
                 input: body.input,
@@ -1594,9 +1631,9 @@ pub fn resolve_imported_callable_summaries(
                 effects: body.effects,
                 module_cells: body.module_cells,
                 dependencies: dependencies.clone(),
-                replacement_package: modules[&key.module]
+                replacement_package: modules[&provider.module]
                     .replacement_packages
-                    .get(&key.export)
+                    .get(&provider.export)
                     .cloned(),
             });
         export_summaries

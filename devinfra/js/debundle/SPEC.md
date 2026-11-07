@@ -586,6 +586,16 @@ scope, while export-star routes and consumer-generated forwarding identities
 without a tracked binding remain unproved. This target check proves identity
 only; it does not establish provider initialization order or shared-cell
 chronology, which remain the separate `module_initialization` obligation.
+Conditional-body discovery specializes canonical ordinary imported calls with
+literal record layouts. A discovered layout may also serve a later nested
+call, which must check its actual input and retain its own callsite obligation.
+Named import/re-export forwarding is resolved through canonical source facts;
+the derived body retains the ultimate provider identity, while its summary is
+published at the import-facing export. Missing or cyclic routes remain unknown.
+When an ordinary foreign-return summary supplies an independently closed body
+receipt, execution uses that receipt and its dependencies directly; it does not
+apply an unused conditional specialization or attach that specialization's
+candidate obligations. Existing vendor-equivalence premises remain explicit.
 Candidate assessment and normal lowering share one checked projection over the
 retained source-unit layout, whole-statement requests, binding catalogue,
 destructuring and nested-`var` groups, and stable Set intervals. Its maps are

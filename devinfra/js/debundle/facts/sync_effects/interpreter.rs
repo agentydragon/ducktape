@@ -14593,9 +14593,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for values in &mut args {
             values.remove(&AbstractValue::Value(Value::Unavailable));
         }
-        if ordered_operands && !call.has_spread {
-            self.apply_conditional_foreign_body(call, &args, operands_may_throw, outcome);
-        }
         // The provider body runs no other code and writes only its own
         // allocations. The call stays impure for purity and S-chain order.
         if !call.has_spread
@@ -14603,11 +14600,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             self.retain_foreign_arguments(&summary, &args);
             self.record_foreign_call_use(call, &summary);
-            if ordered_operands
-                && let Some(covered) = self.covered_foreign_call_summary(call.kind, &call.callee)
-            {
-                outcome.effect_coverage =
-                    self.foreign_body_effects(call, &covered, operands_may_throw);
+            if ordered_operands {
+                if let Some(covered) = self.covered_foreign_call_summary(call.kind, &call.callee) {
+                    // This independently closed body needs no conditional
+                    // input-layout transfer. Do not attach obligations from a
+                    // specialization whose effects would be overwritten here.
+                    outcome.effect_coverage =
+                        self.foreign_body_effects(call, &covered, operands_may_throw);
+                } else {
+                    self.apply_conditional_foreign_body(call, &args, operands_may_throw, outcome);
+                }
             }
             return CallTransfer::requested(needs_value, || {
                 let mut values = self.foreign_call_result(&summary, &args);
@@ -14616,6 +14618,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 values
             });
+        }
+        if ordered_operands && !call.has_spread {
+            self.apply_conditional_foreign_body(call, &args, operands_may_throw, outcome);
         }
         if call.kind == CallKind::Call
             && !call.has_spread
