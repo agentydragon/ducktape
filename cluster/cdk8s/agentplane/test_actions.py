@@ -71,6 +71,35 @@ def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]
     )
 
 
+def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> None:
+    env = replace(staging.ENV, namespace="agentplane-test")
+    chart = Chart(scratch_app, "actions", disable_resource_name_hashes=True)
+    actions.Actions(
+        chart,
+        "actions",
+        env,
+        database_url=EnvValue.from_value("postgres://unused"),
+        history=history_service.service(env.namespace),
+        history_audience=history_service.TOKEN_AUDIENCE,
+        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+    ).add_platform_resources()
+
+    rule = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "PrometheusRule")
+    assert rule["metadata"]["name"] == f"{actions.NAME}-availability"
+    assert rule["metadata"]["namespace"] == env.namespace
+    alert = one(rule["spec"]["groups"][0]["rules"])
+    assert alert["alert"] == "AgentplaneActionServiceReplicasUnavailable"
+    assert alert["expr"] == (
+        f"max by (cluster, namespace, deployment) "
+        f'(kube_deployment_spec_replicas{{namespace="{env.namespace}", deployment="{actions.NAME}"}}) '
+        f"- max by (cluster, namespace, deployment) "
+        f'(kube_deployment_status_replicas_available{{namespace="{env.namespace}", deployment="{actions.NAME}"}}) > 0'
+    )
+    assert alert["for"] == "10m"
+    assert alert["labels"] == {"severity": "warning"}
+
+
 def _gaffer_approval(manifests: list[dict[str, Any]], action: str) -> dict[str, Any]:
     policy = one(
         doc

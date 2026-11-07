@@ -894,6 +894,7 @@ def agentplane_staging(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     kyverno: Kustomization,
+    monitoring_crds: Kustomization,
     crossplane_keys: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -948,6 +949,12 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(LAYOUT.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno, crossplane_keys
+            agentplane_crds,
+            cert_manager_trust,
+            cnpg,
+            external_secrets_operator,
+            kyverno,
+            monitoring_crds,
+            crossplane_keys,
         ),
     )

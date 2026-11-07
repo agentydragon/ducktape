@@ -7528,6 +7528,26 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  annotations:
+    description: Alerts when the Action Service has fewer available replicas than requested.
+  name: actions-availability
+  namespace: agentplane-staging
+spec:
+  groups:
+    - name: actions
+      rules:
+        - alert: AgentplaneActionServiceReplicasUnavailable
+          annotations:
+            description: Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has {{ $value }} fewer available replicas than requested for 10 minutes. The readiness check uses gRPC health; inspect the Action Service pods and logs.
+            summary: Agentplane Action Service has fewer available replicas than requested
+          expr: max by (cluster, namespace, deployment) (kube_deployment_spec_replicas{namespace="agentplane-staging", deployment="actions"}) - max by (cluster, namespace, deployment) (kube_deployment_status_replicas_available{namespace="agentplane-staging", deployment="actions"}) > 0
+          for: 10m
+          labels:
+            severity: warning
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

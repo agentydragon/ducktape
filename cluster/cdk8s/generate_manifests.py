@@ -1937,6 +1937,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         kyverno_kustomization,
+        monitoring_crds_kustomization,
         litellm_crossplane_keys_kustomization,
     )
     agentplane_staging_delivery_artifact = artifact(

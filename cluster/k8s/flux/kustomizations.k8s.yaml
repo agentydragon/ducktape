@@ -4542,6 +4542,8 @@ spec:
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
     - name: litellm-crossplane-keys
       namespace: ducktape-flux
   healthCheckExprs:
