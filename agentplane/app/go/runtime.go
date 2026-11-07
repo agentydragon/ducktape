@@ -333,7 +333,7 @@ func run(ctx context.Context, config Config) error {
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
-	RegisterOperatorRoutes(server, policies, actionCallbackHTTP, config.ActionFederation.ServiceURL)
+	RegisterOperatorRoutes(server, actionCallbackHTTP, config.ActionFederation.ServiceURL)
 	RegisterStatusRoutes(server, serviceStatus)
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -71,27 +70,6 @@ func TestPolicySetNamesListsEveryKindInNameOrder(t *testing.T) {
 	}
 	if !reflect.DeepEqual(names, []string{"a-policy", "z-policy"}) {
 		t.Fatalf("PolicySetNames() = %v", names)
-	}
-}
-
-func TestActionPolicySetsSortAndExposeOnlyActionRuleRefusals(t *testing.T) {
-	access, _ := newAccess(
-		t,
-		policySet("z-other-kind", 4, policyapi.Rule{Type: "egress", Hosts: []string{"example.test"}}),
-		policySet("b-refused", 7, policyapi.Rule{Type: "action_auto_approve"}),
-		policySet("a-valid", 2, policyapi.Rule{Type: "action_auto_approve", Policy: &policyapi.ActionPolicy{
-			Type: "exact_actions", Actions: map[string]policyapi.ActionNames{"test_group": {"record"}},
-		}}),
-	)
-	views, err := access.ActionPolicySets(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(views) != 3 || views[0].Name != "a-valid" || views[0].Generation != 2 || views[0].Refused != nil ||
-		views[1].Name != "b-refused" || views[1].Generation != 7 || views[1].Refused == nil ||
-		!strings.HasPrefix(*views[1].Refused, "rules[0]: an action_auto_approve rule needs a policy") ||
-		views[2].Name != "z-other-kind" || views[2].Refused != nil {
-		t.Fatalf("ActionPolicySets() = %#v", views)
 	}
 }
 
