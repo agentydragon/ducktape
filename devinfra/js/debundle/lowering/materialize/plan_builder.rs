@@ -60,8 +60,8 @@ fn member_outcome(
 }
 
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
-/// `lower_chunk` + the chunk-report builder need from the plan
-/// construction phase.
+/// `prepare_candidate_emission_plan` and the chunk-report builder need from
+/// the plan construction phase.
 pub(super) struct ChunkPlan {
     pub(super) module_plans: Vec<ModulePlan>,
     pub(super) bindings_catalogue: BindingCatalogue,
@@ -448,8 +448,8 @@ impl ChunkPlanBuilder {
                 // Record it so the pipeline can fail at the end
                 // with the full list across every chunk; meanwhile
                 // keep lowering as if the spec had not claimed the
-                // name (lower_chunk only touches binding ids it can
-                // resolve, so the missing claim is a no-op here).
+                // name (`prepare_candidate_emission_plan` only touches binding
+                // IDs it can resolve, so the missing claim is a no-op here).
                 self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
                     chunk_id: ctx.chunk_id.to_string(),
                     module_path: spec::ModulePath::parse(&request.target_path, "")

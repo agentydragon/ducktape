@@ -2157,12 +2157,12 @@ Pure-lazy I-cycles (no constraining edge inside the SCC) skip
 pass 2's simulator and pass. The simulator and the emitter share
 ONE ordering implementation — `esm_import_order::EsmImportOrder`,
 built from the canonical `ChunkConstrainingEdgeSet` — so the
-import order the gate simulates is structurally the order
-`lowering::lower_chunk` emits: the entry's import list and every
-module's merged intra-chunk import list (cross-module binding
-imports, phantom side-effect imports, and the residual-entry
-import, interleaved by one sort) come from the same two sort
-rules the simulator's DFS uses for its neighbor order. A spec
+import order the gate simulates is structurally the order built by
+`lowering::prepare_candidate_emission_plan` for the entry import list and
+`lowering::module_output::prepare_module_emission` for each module's merged
+intra-chunk import list (cross-module binding imports, phantom side-effect
+imports, and the residual-entry import, interleaved by one sort). Both use the
+same two sort rules the simulator's DFS uses for its neighbor order. A spec
 accepted by the gate is one the emitted ESM bundle actually
 evaluates without TDZ.
 
@@ -2638,14 +2638,14 @@ resulting DFS post-order is `L`. ∎
 above) computes `L` from the constraining-edge subgraph's toposort,
 reversed within each `I ∪ S` SCC so that the cycle dependent is
 imported first and DFS unwinds through the dependency.
-`lowering::lower_chunk` sorts entry's emitted `import` directives
+`lowering::prepare_candidate_emission_plan` sorts entry's emitted `import` directives
 with `sort_entry_imports` and every module's merged intra-chunk
 import list with `sort_module_imports`; the realizability gate's
 evaluation simulator applies the same two sorts to its DFS neighbor
 order, so the simulated linker order and the emitted one cannot
 diverge. The validator rejects any spec the primitive's tightened
 clause-3 rule does not accept, so every spec the materializer
-reaches `lower_chunk` for has an `L` Lemma 2 can realize.
+prepares for emission has an `L` Lemma 2 can realize.
 
 The remaining principled gap is the `(at-init forward, lazy back)`
 shape **where entry itself is a cycle member**. Lemma 2's

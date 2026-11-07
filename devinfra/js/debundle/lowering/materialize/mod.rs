@@ -1,5 +1,6 @@
 //! Per-chunk materialization: assess a concrete spec assignment, run the
-//! chunk through `lower_chunk`, and emit a `MaterializedLogicalChunk` whose
+//! chunk through candidate preparation/emission, and emit a
+//! `MaterializedLogicalChunk` whose
 //! files/applied/report stay separate from the source bundle until the
 //! finalized emit-stage file set is constructed.
 
@@ -22,7 +23,7 @@ use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
 use crate::lower::{
     LowerChunkAst, LowerChunkContext, LowerChunkInputs, LowerChunkPlan, LowerChunkSpecFacts,
-    LoweredChunk, lower_chunk,
+    LoweredChunk, prepare_candidate_emission_plan,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
 use crate::ownership_subset::{OwnershipSubset, SelectedModule};
@@ -748,7 +749,9 @@ pub(super) fn finish_logical_chunk(
         }
     };
 
-    let lowered = lower_chunk(LowerChunkInputs {
+    // Keep candidate preparation after evaluation so rejected candidates keep
+    // their existing diagnostics; it is now a separate value before file emission.
+    let prepared_emission = prepare_candidate_emission_plan(LowerChunkInputs {
         context: LowerChunkContext {
             artifact,
             artifact_indexes,
@@ -777,6 +780,7 @@ pub(super) fn finish_logical_chunk(
             pre_existing_public_export_names: &pre_existing_public_export_names,
         },
     })?;
+    let lowered = prepared_emission.emit();
     let LoweredChunk {
         files,
         file_records,

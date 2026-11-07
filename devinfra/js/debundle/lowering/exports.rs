@@ -377,7 +377,8 @@ pub(super) fn entry_exports_for_moved_bindings(
 pub(super) const AUTO_GROWN_EXPORT_CONTRIBUTOR: &str = "auto-grown residual export";
 
 /// The entry-side facts `auto_grown_residual_exports` consults; see
-/// `LowerChunkSpecFacts` and `lower_chunk` for the field provenance.
+/// `LowerChunkSpecFacts` and `prepare_candidate_emission_plan` for the field
+/// provenance.
 pub(super) struct ExportGrowthFacts<'a> {
     pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
