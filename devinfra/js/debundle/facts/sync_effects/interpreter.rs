@@ -1565,7 +1565,7 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
         self.executor
             .promote_escaped_callbacks(source, &mut outcome);
         self.executor.invoke_possible_callbacks_at(
-            &[source.clone()],
+            std::slice::from_ref(source),
             false,
             Some(span),
             &mut outcome,
@@ -5713,29 +5713,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .get(&key)
                         .is_some_and(|constructor| constructor.own_fields.contains(property))
             })
-    }
-
-    fn ordinary_data_properties(
-        &self,
-        values: &Values,
-    ) -> Option<BTreeMap<Option<String>, Values>> {
-        let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
-            values.iter().collect::<Vec<_>>().as_slice()
-        else {
-            return None;
-        };
-        if !self.state.object_properties_are_settled(object)
-            || self.state.applied_accessors.contains_key(object)
-            || (!self.inputs.index.plain_data_objects.contains(object)
-                && !self.state.ordinary_spread_copies.contains(object))
-        {
-            return None;
-        }
-        let properties = self.state.prefix_object_properties.get(object)?;
-        if properties.contains_key(&None) {
-            return None;
-        }
-        Some(properties.clone())
     }
 
     fn array_intrinsics_intact(&self) -> bool {
