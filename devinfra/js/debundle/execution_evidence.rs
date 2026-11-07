@@ -77,6 +77,28 @@ pub enum OrderedCallAdmissionRefusal {
     NonLocalTarget,
     UnsupportedReceiver,
     UnsupportedNativeOperation,
+    /// First failed check after an array iteration's callee and arguments
+    /// have already been evaluated. These are evidence only; they preserve
+    /// the existing conservative fallback and do not describe GetValue or
+    /// callback-prefix failures.
+    ArrayIterationCallKindMismatch,
+    ArrayIterationCallSiteMismatch,
+    ArrayIterationResultShapeMismatch,
+    ArrayIterationCallbackArityMismatch,
+    ArrayIterationCallbackTargetUnavailable,
+    ArrayIterationGeneratorCallback,
+    ArrayIterationOpaqueCallback,
+    ArrayIterationAsyncCallback,
+    ArrayIterationCallbackParameterUnsupported,
+    ArrayIterationCallbackPlanUnavailable,
+    ArrayIterationCallerUnavailable,
+    ArrayIterationBodyIntrinsicsUnavailable,
+    ArrayIterationReceiverDescriptorUnavailable,
+    ArrayIterationDenseSnapshotUnavailable,
+    ArrayIterationLengthUnrepresentable,
+    ArrayIterationLengthMismatch,
+    ArrayIterationExceedsInvocationLimit,
+    ArrayIterationUnsettledElements,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

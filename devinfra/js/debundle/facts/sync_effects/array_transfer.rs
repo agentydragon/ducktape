@@ -3,6 +3,7 @@
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, CallSite, Values};
 use crate::analysis_inputs::ProofDependencies;
+use crate::execution_evidence::OrderedCallAdmissionRefusal;
 use crate::facts::EffectCell;
 use crate::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IterationResult, IterationRow,
@@ -153,7 +154,7 @@ pub(super) fn select_iteration(
 pub(super) fn iteration_snapshot(
     context: &impl ArrayContext,
     selection: &ArrayIterationSelection,
-) -> Option<(Vec<Values>, ProofDependencies)> {
+) -> Result<(Vec<Values>, ProofDependencies), OrderedCallAdmissionRefusal> {
     let required: Vec<_> = selection
         .row
         .requires
@@ -165,21 +166,27 @@ pub(super) fn iteration_snapshot(
         .copied()
         .collect();
     if !context.array_slots_intact(&required) {
-        return None;
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationBodyIntrinsicsUnavailable);
     }
     let absent = if selection.result.is_some() {
         &["constructor"][..]
     } else {
         &[][..]
     };
-    let length = context.literal_array_length(selection.object, absent)?;
-    let slots = context.dense_array_slots(selection.object)?;
-    if usize::try_from(length).ok()? != slots.len() {
-        return None;
+    let length = context
+        .literal_array_length(selection.object, absent)
+        .ok_or(OrderedCallAdmissionRefusal::ArrayIterationReceiverDescriptorUnavailable)?;
+    let slots = context
+        .dense_array_slots(selection.object)
+        .ok_or(OrderedCallAdmissionRefusal::ArrayIterationDenseSnapshotUnavailable)?;
+    let length = usize::try_from(length)
+        .map_err(|_| OrderedCallAdmissionRefusal::ArrayIterationLengthUnrepresentable)?;
+    if length != slots.len() {
+        return Err(OrderedCallAdmissionRefusal::ArrayIterationLengthMismatch);
     }
     let mut dependencies = selection.dependencies.clone();
     dependencies.extend(&context.array_dependencies());
-    Some((slots, dependencies))
+    Ok((slots, dependencies))
 }
 
 pub(super) struct ArrayPushResult {

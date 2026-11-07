@@ -4704,8 +4704,26 @@ the rest of the body; a result transfer using the already evaluated operands is
 required to continue. A call rejected by the ordered operand path retains its
 `unsupported_operation` / `opaque_execution` reason and may carry the typed
 `ordered_call_admission_refusal`: `unknown_target`, `multiple_targets`,
-`non_local_target`, or `unsupported_receiver`. It names
-the first ordered admission check that refused the already evaluated operands.
+`non_local_target`, `unsupported_receiver`, or `unsupported_native_operation`.
+For selected array iteration, the field instead names the first failed
+post-argument check: `array_iteration_call_kind_mismatch`,
+`array_iteration_call_site_mismatch`, `array_iteration_result_shape_mismatch`,
+`array_iteration_callback_arity_mismatch`,
+`array_iteration_callback_target_unavailable`,
+`array_iteration_generator_callback`, `array_iteration_opaque_callback`,
+`array_iteration_async_callback`,
+`array_iteration_callback_parameter_unsupported`,
+`array_iteration_callback_plan_unavailable`,
+`array_iteration_caller_unavailable`,
+`array_iteration_body_intrinsics_unavailable`,
+`array_iteration_receiver_descriptor_unavailable`,
+`array_iteration_dense_snapshot_unavailable`,
+`array_iteration_length_unrepresentable`, `array_iteration_length_mismatch`,
+`array_iteration_exceeds_invocation_limit`, or
+`array_iteration_unsettled_elements`. These categories retain check order after
+callee and argument evaluation; callback-body result refusals remain
+`unsupported_native_operation`. The reason names the first ordered admission
+check that refused the already evaluated operands.
 Unknown-target classification remains a separate precision loss where the
 existing target rules produce it. Incomplete invocation and missing result
 transfer do not carry this admission reason.

@@ -642,7 +642,7 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
             let _ = writeln!(
                 out,
                 "  loss {} at {}{}",
-                snake_tag(&loss.reason),
+                render_loss_reason(&loss.reason),
                 render_location(loss.source_location.as_ref()),
                 loss.excerpt
                     .as_ref()
@@ -756,6 +756,20 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
             names.join(", ")
         );
         out.push_str(&block);
+    }
+}
+
+fn render_loss_reason(reason: &ExecutionPrecisionLossReason) -> String {
+    if matches!(
+        reason,
+        ExecutionPrecisionLossReason::UnsupportedOperation {
+            ordered_call_admission_refusal: Some(_),
+            ..
+        }
+    ) {
+        reason.to_string()
+    } else {
+        snake_tag(reason)
     }
 }
 

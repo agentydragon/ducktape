@@ -608,14 +608,30 @@ existing target rules.
 
 `dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`
 may include `reason.ordered_call_admission_refusal` for a call whose already
-evaluated operands were declined by the ordered path. The values are
+evaluated operands were declined by the ordered path. General categories are
 `unknown_target`, `multiple_targets`, `non_local_target`,
-and `unsupported_receiver`. The reason retains only the
-first failed admission category, with the existing call source site and
-fallback reach. It does not retain target identities or alter call admission,
-effect promotion, reachability, or gate acceptance. A complete effects-only
-call uses `missing_call_result`; an incomplete invocation does not use this
-field.
+`unsupported_receiver`, and `unsupported_native_operation`. Selected array
+iteration uses first-failure post-argument categories: `array_iteration_call_kind_mismatch`,
+`array_iteration_call_site_mismatch`, `array_iteration_result_shape_mismatch`,
+`array_iteration_callback_arity_mismatch`,
+`array_iteration_callback_target_unavailable`,
+`array_iteration_generator_callback`, `array_iteration_opaque_callback`,
+`array_iteration_async_callback`,
+`array_iteration_callback_parameter_unsupported`,
+`array_iteration_callback_plan_unavailable`,
+`array_iteration_caller_unavailable`,
+`array_iteration_body_intrinsics_unavailable`,
+`array_iteration_receiver_descriptor_unavailable`,
+`array_iteration_dense_snapshot_unavailable`,
+`array_iteration_length_unrepresentable`, `array_iteration_length_mismatch`,
+`array_iteration_exceeds_invocation_limit`, and
+`array_iteration_unsettled_elements`. These new categories identify checks
+after callee and argument evaluation, retain the existing call source site and
+fallback reach, and do not retain target identities or alter call admission,
+effect promotion, reachability, emitted code, or gate acceptance. Callback-body
+result refusals keep the generic `unsupported_native_operation` category. A
+complete effects-only call uses `missing_call_result`; an incomplete invocation
+does not use this field.
 
 ## Ordered local member-read refusal
 

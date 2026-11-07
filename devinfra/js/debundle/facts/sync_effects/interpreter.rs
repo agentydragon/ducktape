@@ -5882,11 +5882,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         arguments: &[SelectedValue],
         outcome: &mut Outcome,
     ) -> CallTransfer {
-        let refused = CallTransfer::UnsupportedOperands(
-            OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
-        );
-        if call.kind != CallKind::Call || selection.site != call.span.into() {
-            return refused;
+        let refused = |reason| CallTransfer::UnsupportedOperands(reason);
+        if call.kind != CallKind::Call {
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationCallKindMismatch);
+        }
+        if selection.site != call.span.into() {
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationCallSiteMismatch);
         }
         let result_shape_valid = match selection.row.result {
             IterationResult::Mapped | IterationResult::Filtered => selection.result.is_some(),
@@ -5894,24 +5895,34 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             _ => false,
         };
         if !result_shape_valid {
-            return refused;
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationResultShapeMismatch);
         }
         let [callback] = arguments else {
-            return refused;
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationCallbackArityMismatch);
         };
         let Some((key, callable)) = self.local_call_target(&callback.values) else {
-            return refused;
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationCallbackTargetUnavailable);
         };
-        if callable.generator
-            || callable.opaque
-            || self.inputs.index.async_callables.contains(&key)
-            || callable
-                .params
-                .iter()
-                .any(|parameter| parameter.binding.is_none())
-            || callable.body_facts.ordered_plan().is_none()
+        if callable.generator {
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationGeneratorCallback);
+        }
+        if callable.opaque {
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationOpaqueCallback);
+        }
+        if self.inputs.index.async_callables.contains(&key) {
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationAsyncCallback);
+        }
+        if callable
+            .params
+            .iter()
+            .any(|parameter| parameter.binding.is_none())
         {
-            return refused;
+            return refused(
+                OrderedCallAdmissionRefusal::ArrayIterationCallbackParameterUnsupported,
+            );
+        }
+        if callable.body_facts.ordered_plan().is_none() {
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationCallbackPlanUnavailable);
         }
         let callback_owner = callable.owner;
         let captured = match callback.values.first() {
@@ -5919,16 +5930,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             _ => None,
         };
         let Some(caller) = self.local_body_identity_for_call(call) else {
-            return refused;
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationCallerUnavailable);
         };
-        let Some((dense, dependencies)) = array_transfer::iteration_snapshot(self, selection)
-        else {
-            return refused;
+        let (dense, dependencies) = match array_transfer::iteration_snapshot(self, selection) {
+            Ok(snapshot) => snapshot,
+            Err(refusal) => return refused(refusal),
         };
-        if dense.len() > MAX_SYNCHRONOUS_INVOCATIONS
-            || !self.array_iteration_values_are_settled(&dense)
-        {
-            return refused;
+        if dense.len() > MAX_SYNCHRONOUS_INVOCATIONS {
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationExceedsInvocationLimit);
+        }
+        if !self.array_iteration_values_are_settled(&dense) {
+            return refused(OrderedCallAdmissionRefusal::ArrayIterationUnsettledElements);
         }
         let source = Values::from([AbstractValue::Value(Value::Alloc(
             Kind::Object,

@@ -1599,6 +1599,106 @@ fn boolean_array_iteration_receipts_survive_saved_analysis_and_real_reordering()
     }
 }
 
+#[test]
+fn async_array_iteration_refusal_names_the_first_post_argument_check() {
+    let source = "const entries = [1];\nasync function predicate(value) { return value; }\nconst result = entries.some(predicate);\nconsole.log(result);\n";
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "iteration",
+            &[
+                Member::new("entries"),
+                Member::new("predicate"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "true\n", "");
+
+    let direct = staged.run(&["--emit-on-rejection"]);
+    save_relocation_reports(
+        &direct.output_root().join("reports/tree"),
+        "static/app",
+        "array-iteration-async-refusal-direct",
+    );
+    let artifact = path(&staged.artifact).to_owned();
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", artifact.as_str()]);
+    save_relocation_reports(
+        &saved.output_root().join("reports/tree"),
+        "static/app",
+        "array-iteration-async-refusal-saved",
+    );
+    assert!(!direct.result.status.success(), "{}", direct.result.stderr);
+    assert!(!saved.result.status.success(), "{}", saved.result.stderr);
+    assert_eq!(direct.result.status.code(), saved.result.status.code());
+    assert_same_invocation_trees(&direct, &saved);
+
+    let mut expected_location = None;
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "true\n",
+            "",
+        );
+        let validation: Value = read_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/effect_translation_validation.json"),
+        );
+        assert_ne!(
+            validation["decision"]["status"], "accepted",
+            "{validation:#}"
+        );
+        let graph: Value = read_gzip_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        let execution = &graph_node_for_binding(&graph, "result")["synchronous_execution"];
+        assert_eq!(execution["complete"], false, "{execution:#}");
+        let refusal = execution["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|loss| {
+                loss["reason"]["ordered_call_admission_refusal"] == "array_iteration_async_callback"
+            })
+            .unwrap_or_else(|| panic!("missing async iteration refusal: {execution:#}"));
+        assert_eq!(refusal["reason"]["code"], "unsupported_operation");
+        let location = refusal["source_location"].clone();
+        assert_eq!(location["source_path"], "static/app.js");
+        assert_eq!(location["start_line"], 3);
+        let source_column = source.lines().nth(2).unwrap().find("entries.some").unwrap() + 1;
+        assert_eq!(location["start_column"], source_column);
+        if let Some(expected) = &expected_location {
+            assert_eq!(&location, expected);
+        } else {
+            expected_location = Some(location);
+        }
+    }
+
+    let graph_path = direct
+        .output_root()
+        .join("reports/tree/static/app/dependency_graph.json.gz");
+    let explanation = command(&[
+        "explain-integrity",
+        "--graph",
+        path(&graph_path),
+        "--id",
+        "result",
+        "--format",
+        "text",
+    ]);
+    assert_ok(&explanation, "explain typed array iteration refusal");
+    assert!(
+        explanation
+            .stdout
+            .contains("ordered_call_admission_refusal: array_iteration_async_callback"),
+        "{}",
+        explanation.stdout
+    );
+}
+
 fn assert_distinct_root_call_receipts(execution: &Value, expected_calls: usize) {
     let calls = execution["binding_effect_authority"]["receipt"]["calls"]
         .as_array()
