@@ -5468,7 +5468,7 @@ spec:
                 - key: "{{ element.command[0] || '' }}"
                   operator: Equals
                   value: /usr/libexec/virtiofsd
-                - key: "{{ contains(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]), element.name) && contains(vmi.spec.domain.devices.filesystems[?virtiofs != null].join('', ['virtiofs-', name]), element.name) }}"
+                - key: "{{ contains((vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]) || `[]`), element.name) && contains((vmi.spec.domain.devices.filesystems[?virtiofs != null].join('', ['virtiofs-', name]) || `[]`), element.name) }}"
                   operator: Equals
                   value: true
       name: keep-virtiofs-through-guest-shutdown
@@ -5534,7 +5534,7 @@ spec:
                   - key: "{{ nativeDaemons[0].command[0] || '' }}"
                     operator: NotEquals
                     value: /usr/libexec/virtiofsd
-            list: vmi.spec.volumes[?persistentVolumeClaim || secret || configMap]
+            list: (vmi.spec.volumes[?persistentVolumeClaim || secret || configMap] || `[]`)
             preconditions:
               all:
                 - key: "{{ contains((vmi.spec.domain.devices.filesystems[?virtiofs != null].name || `[]`), element.name) }}"

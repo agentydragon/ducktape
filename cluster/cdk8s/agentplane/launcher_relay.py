@@ -75,7 +75,13 @@ CONTROLLER_USERNAME = "system:serviceaccount:kubevirt:kubevirt-controller"
 _KUBEVIRT_API_VERSION = "kubevirt.io/v1"
 _SANDBOX_API_VERSION = f"{GROUP}/{VERSION}"
 _FILESYSTEM_NAMES = "(vmi.spec.domain.devices.filesystems[?virtiofs != null].name || `[]`)"
-_ELIGIBLE_VOLUMES = "vmi.spec.volumes[?persistentVolumeClaim || secret || configMap]"
+_ELIGIBLE_VOLUMES = "(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap] || `[]`)"
+_ELIGIBLE_DAEMON_NAMES = (
+    "(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]) || `[]`)"
+)
+_FILESYSTEM_DAEMON_NAMES = (
+    "(vmi.spec.domain.devices.filesystems[?virtiofs != null].join('', ['virtiofs-', name]) || `[]`)"
+)
 
 
 def _controller(kind: str, api_version: str) -> str:
@@ -310,10 +316,10 @@ class LauncherRelayPolicy(ClusterPolicy):
                                         ClusterPolicySpecRulesMutateForeachPreconditionsAll(
                                             key=(
                                                 "{{ contains("
-                                                + _ELIGIBLE_VOLUMES
-                                                + ".join('', ['virtiofs-', name]), element.name) "
-                                                "&& contains(vmi.spec.domain.devices.filesystems[?virtiofs != null]."
-                                                "join('', ['virtiofs-', name]), element.name) }}"
+                                                + _ELIGIBLE_DAEMON_NAMES
+                                                + ", element.name) && contains("
+                                                + _FILESYSTEM_DAEMON_NAMES
+                                                + ", element.name) }}"
                                             ),
                                             operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
                                             value=True,
