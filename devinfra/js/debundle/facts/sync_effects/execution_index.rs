@@ -1134,6 +1134,8 @@ enum CallKind {
     ObjectSpread,
     LocalMemberRead,
     AccessorCalleeLookup,
+    /// Identifier read, ToNumeric and store; flat fallback remains opaque.
+    BindingUpdate,
     OpaqueExecution,
     InProtocol,
     InstanceOfProtocol,
@@ -13610,7 +13612,11 @@ impl Visit for ExecutionIndex {
         // A complete ordered body instead represents this binding read,
         // ToNumeric and store at execution, where values decide coverage.
         self.record_source_protocol(
-            CallKind::OpaqueExecution,
+            if matches!(expression.arg.unwrap_parens(), Expr::Ident(_)) {
+                CallKind::BindingUpdate
+            } else {
+                CallKind::OpaqueExecution
+            },
             ValueExpr::from_expr(&expression.arg),
             expression.span,
         );
