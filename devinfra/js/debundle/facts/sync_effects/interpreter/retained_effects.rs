@@ -2,9 +2,9 @@
 
 use super::{
     AbstractValue, Context, EvaluatedCallee, Executor, Kind, LocalBody, LocalBodyIdentity,
-    LocalCallReceipt, LocalExecutionContext, LocalExecutionMode, LocalExecutionScope,
-    LocalExpression, LocalOperation, LocalValueResult, MAX_SYNCHRONOUS_INVOCATIONS, Outcome,
-    PrimKinds, SelectedValue, Span, Value, ValueExpr, Values,
+    LocalBodyInputs, LocalCallReceipt, LocalExecutionContext, LocalExecutionMode,
+    LocalExecutionScope, LocalExpression, LocalOperation, LocalValueResult,
+    MAX_SYNCHRONOUS_INVOCATIONS, Outcome, PrimKinds, SelectedValue, Span, Value, ValueExpr, Values,
 };
 use crate::facts::sync_effects::local_operations::{LocalCall, LocalCallee, LocalInvocation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -92,7 +92,7 @@ impl Executor<'_, '_> {
             let mut outcome = self.execute_local_body_mode(
                 body,
                 Context::new(),
-                None,
+                LocalBodyInputs::default(),
                 owner,
                 LocalExecutionScope::Callable(current),
                 LocalExecutionMode::Retained(&mut query),
