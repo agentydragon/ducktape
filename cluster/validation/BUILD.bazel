@@ -65,6 +65,7 @@ py_library(
     deps = [
         ":k8s",
         "//cluster/cdk8s:manifest_roots",
+        "@pypi//durationpy",
         "@pypi//pydantic",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
