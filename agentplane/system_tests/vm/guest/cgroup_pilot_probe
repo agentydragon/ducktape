@@ -147,15 +147,28 @@ change_property() {
 	trace_rcu=unavailable
 	if [ "$trace_supported" = yes ]; then
 		printf '0\n' >"$tracefs/tracing_on"
+		trace_lines=$("$busybox" wc -l <"$tracefs/trace")
+		trace_excerpt_limit=48
+		if [ "$trace_lines" -gt "$trace_excerpt_limit" ]; then
+			trace_excerpt_truncated=yes
+			retained_lines=$trace_excerpt_limit
+		else
+			trace_excerpt_truncated=no
+			retained_lines=$trace_lines
+		fi
+		emit "TRACE_EXCERPT step=$step total_lines=$trace_lines retained_lines=$retained_lines truncated=$trace_excerpt_truncated ring_kib=64"
+		line_number=0
+		"$busybox" head -n "$trace_excerpt_limit" "$tracefs/trace" >"$scratch/trace-excerpt"
+		while IFS= read -r trace_line; do
+			line_number=$((line_number + 1))
+			if [ "${#trace_line}" -gt 180 ]; then trace_line_truncated=yes; else trace_line_truncated=no; fi
+			trace_line=$(printf '%s' "$trace_line" | "$busybox" head -c 180)
+			emit "TRACE_LINE step=$step n=$line_number truncated=$trace_line_truncated text=$trace_line"
+		done <"$scratch/trace-excerpt"
 		trace_hits=$("$busybox" grep -c 'cgroup_update_dfl_csses' "$tracefs/trace" || true)
 		trace_lock=$("$busybox" grep -c 'percpu_down_write' "$tracefs/trace" || true)
 		trace_rcu=$("$busybox" grep -c 'rcu_sync_enter' "$tracefs/trace" || true)
 		trace_hits_total=$((trace_hits_total + trace_hits))
-		for symbol in cgroup_subtree_control_write cgroup_update_dfl_csses percpu_down_write rcu_sync_enter; do
-			trace_line=$("$busybox" grep -m 1 "$symbol" "$tracefs/trace" | "$busybox" head -c 180 | "$busybox" tr '\n\r' '  ' || true)
-			[ -n "$trace_line" ] || trace_line=none
-			emit "TRACE step=$step symbol=$symbol first=$trace_line"
-		done
 	fi
 	snapshot "${step}_after"
 	emit "RESULT step=$step value=$value property_status=$property_status trace=$trace_reason update_hits=$trace_hits lock_hits=$trace_lock rcu_hits=$trace_rcu"
