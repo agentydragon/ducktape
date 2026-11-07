@@ -241,7 +241,7 @@ inference and LiteLLM's existing `cheap-experiments` key. It is separate from
 receive both through the deployment's default policies; standing caller bindings
 and static OpenClaw explicitly include `inference-experiments`. Existing per-sandbox
 bindings need an explicit grant update or a new sandbox; changing defaults does not
-rewrite those grants. Read `/v1/rules` for the active
+rewrite those grants. Run `agentplane egress rules` for the active
 hosts, methods, paths, and credential placeholders; send the returned placeholder
 as `Authorization: Bearer ...` through the configured proxy. Override any matching
 `NO_PROXY` entry for these experiment calls (`curl --noproxy ''`), particularly

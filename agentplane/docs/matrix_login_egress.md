@@ -41,7 +41,7 @@ spec:
 ```
 
 Bind this set only to the intended workload identities. The agent discovers the placeholder
-and the `jsonField` target (`METHOD_JSON_FIELD` in `/v1/rules`), then sends `Content-Type: application/json` and a
+and the `jsonField` target (`METHOD_JSON_FIELD` in `agentplane egress rules --json`), then sends `Content-Type: application/json` and a
 login object whose `password` value equals that placeholder. The gateway replaces that value
 only after workload authentication and host/method/path/credential authorization. The same
 placeholder on another otherwise-allowed route is refused, not redeemed or forwarded.

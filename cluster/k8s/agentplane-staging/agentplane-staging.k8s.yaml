@@ -12279,17 +12279,6 @@ spec:
       credentialRef:
         name: agentplane-workload
       hosts:
-        - egress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/rules
-        - /openapi.json
-      type: egress
-    - clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-      hosts:
         - actions.agentplane-staging.svc.cluster.local
       methods:
         - GET
