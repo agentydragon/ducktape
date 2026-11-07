@@ -3820,14 +3820,18 @@ before arguments and retain conservative fallback; they acquire no invocation
 receipt. This does not supply skipped-call coverage or extend assertions scoped
 to ordinary call syntax.
 
-Guarded dense-array `map` captures the native method and receiver before
-arguments execute, then consumes that snapshot and the evaluated callback.
-Its current-prefix array descriptor and native method/species proofs remain
-separate. The shared invocation kernel runs each reached callback with the
-element, numeric index and captured receiver. Callback effects, dependencies,
-normal returns and possible throws compose independently; complete timing
-alone supplies no effect coverage. A known callback throw stops later indices.
-The result retains normal callback values in the common weak array heap.
+Guarded dense-array `forEach`, `map` and `filter` capture the native method
+before arguments execute only when the literal receiver still has its
+original `%Array.prototype%` lookup and no own method override. Receiver
+descriptors and, for result arrays, constructor/species premises are checked
+after the operands. The shared invocation kernel runs each reached callback
+with the element, numeric index and captured receiver.
+Callback effects, dependencies, normal returns and possible throws compose
+independently; complete timing alone supplies no effect coverage. A known
+callback throw stops later indices. `forEach` returns `undefined` and ignores
+callback returns. `map` retains callback results. `filter` retains original
+elements only when the predicate is truthy; abstract primitive truthiness keeps
+the fresh result's contents unknown instead of inventing exact dense slots.
 An invalidated source or unsupported child preserves reached effects and
 returned capabilities for conservative remainder handling, without replaying
 source operands or restarting the native operation. Other iteration rows
@@ -4983,12 +4987,16 @@ writes, coercions and publication are observed effects of the statement.
 - **Early exit.** `some`, `every`, `find` and `findIndex` can stop at any
   element. The analysis still runs the callback for every element: effects
   only join, so the extra invocations add possible effects and remove none.
-- **Results.** `map`, `filter` and `flatMap` return a fresh array that retains
-  the element and callback-result aliases. A `flatMap` result whose positions
-  are unknown keeps its values as contents and is not iterated precisely
-  later. `find` returns an element or `undefined`; `reduce` returns the last
-  accumulator, and on an empty array without an initial value it throws.
-  Iteration and spread of a result do not invoke stored functions.
+- **Results.** `forEach` returns `undefined` and ignores callback returns.
+  `map`, `filter` and `flatMap` return fresh arrays: `map` retains callback
+  results, `filter` retains the original elements whose predicate is truthy,
+  and `flatMap` retains flattened callback results. A filter predicate with
+  abstract truthiness keeps possible elements as unknown contents, not exact
+  dense slots. A `flatMap` result whose positions are unknown likewise keeps
+  its values as contents and is not iterated precisely later. `find` returns
+  an element or `undefined`; `reduce` returns the last accumulator, and on an
+  empty array without an initial value it throws. Iteration and spread of a
+  result do not invoke stored functions.
 - **Constructed class inputs.** A dense input slot may carry a checked local
   base-class construction while its class, receiver and array protocol remain
   untainted and unpublished. This proves the receiver's class kind, not a

@@ -1578,6 +1578,25 @@ impl OwnDataContext for Executor<'_, '_> {
 }
 
 impl ArrayContext for Executor<'_, '_> {
+    fn array_method_selected_from_original_prototype(&self, object: u32, property: &str) -> bool {
+        self.inputs.index.array_elements.contains_key(&object)
+            // Array literals start with the realm's `%Array.prototype%`.
+            // The settled-object witness rejects skipped or opaque writes
+            // that could have replaced that `[[Prototype]]`; argument
+            // evaluation has not begun yet at this point.
+            && self.state.object_properties_are_settled(&object)
+            && self
+                .state
+                .prefix_object_properties
+                .get(&object)
+                .is_some_and(|properties| !properties.contains_key(&Some(property.to_owned())))
+            && !self
+                .state
+                .applied_accessors
+                .get(&object)
+                .is_some_and(|accessors| accessors.contains_key(property))
+    }
+
     fn literal_array_length(&self, object: u32, absent: &[&str]) -> Option<u32> {
         let properties = self.state.prefix_object_properties.get(&object)?;
         if !self.state.object_accessors_are_settled(&object)
@@ -2344,7 +2363,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 receivers,
                 span.into(),
                 proof.row,
-                proof.result?,
+                proof.result,
             )?;
             (ArrayMethodSelection::Iteration(selection), effects)
         };
@@ -5800,12 +5819,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         source: &Values,
         outcome: &mut Outcome,
     ) -> CallTransfer {
+        let Some(result) = selection.result else {
+            outcome.unsupported(ExecutionOperation::ArrayIteration, call.owner, call.span);
+            outcome
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+            return CallTransfer::Values(Values::from([
+                AbstractValue::UNDEFINED,
+                AbstractValue::Value(Value::Unavailable),
+            ]));
+        };
         let callbacks = self.callback_values(source);
-        self.literal_heap()
-            .write_property(selection.result, None, &callbacks);
-        self.literal_heap().invalidate_dense_array(selection.result);
-        self.invalidate_writable_object(selection.result);
-        self.state.tainted_objects.insert(selection.result);
+        self.literal_heap().write_property(result, None, &callbacks);
+        self.literal_heap().invalidate_dense_array(result);
+        self.invalidate_writable_object(result);
+        self.state.tainted_objects.insert(result);
         outcome.unsupported(ExecutionOperation::ArrayIteration, call.owner, call.span);
         outcome
             .effect_coverage
@@ -5813,7 +5841,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Keep completed callback returns reachable by the caller's remainder.
         // It summarizes the unsupported suffix without restarting this operation.
         CallTransfer::Values(Values::from([
-            AbstractValue::Value(Value::Alloc(Kind::Object, selection.result)),
+            AbstractValue::Value(Value::Alloc(Kind::Object, result)),
             AbstractValue::Value(Value::Top),
             AbstractValue::Value(Value::Unavailable),
         ]))
@@ -5830,6 +5858,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
         );
         if call.kind != CallKind::Call || selection.site != call.span.into() {
+            return refused;
+        }
+        if !matches!(
+            selection.row.result,
+            IterationResult::Undefined | IterationResult::Mapped | IterationResult::Filtered
+        ) || (selection.row.result == IterationResult::Undefined && selection.result.is_some())
+            || (selection.row.result != IterationResult::Undefined && selection.result.is_none())
+        {
             return refused;
         }
         let [callback] = arguments else {
@@ -5884,24 +5920,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 target: native.clone(),
                 dependencies: Box::new(dependencies.clone()),
             });
-        for cell in [
+        let mut reads = vec![
             EffectCell::ArrayContents(selection.object),
             EffectCell::ObjectShape(selection.object),
             EffectCell::OwnProperty {
                 origin: selection.object,
                 property: "length".into(),
             },
-            EffectCell::OwnProperty {
+        ];
+        if selection.result.is_some() {
+            reads.push(EffectCell::OwnProperty {
                 origin: selection.object,
                 property: "constructor".into(),
-            },
-        ] {
+            });
+        }
+        for cell in reads {
             outcome
                 .effects
                 .record_heap_read(cell, self.state.assumption.is_none());
         }
-        self.literal_heap().begin_literal(selection.result);
-        let mut mapped = Vec::new();
+        if let Some(result) = selection.result {
+            self.literal_heap().begin_literal(result);
+        }
+        let mut result_slots = Vec::new();
+        let mut possible_filtered_contents = Values::new();
+        let mut filter_truthiness_unknown = false;
         let mut may_throw = false;
         for (index, values) in dense.iter().enumerate() {
             outcome.effects.record_heap_read(
@@ -5953,8 +5996,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.thrown = thrown;
                 return CallTransfer::Values(Values::new());
             }
-            self.literal_heap()
-                .write_property(selection.result, None, &returned);
             if !complete {
                 return self.incomplete_array_iteration_result(call, selection, &source, outcome);
             }
@@ -5965,38 +6006,87 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             if self.settled_dense_array_slots(selection.object).as_ref() != Some(&dense)
                 || !self.array_iteration_values_are_settled(&dense)
-                || !returned
-                    .iter()
-                    .all(|value| self.retainable_iteration_value(value))
+                || (selection.row.result == IterationResult::Mapped
+                    && !returned
+                        .iter()
+                        .all(|value| self.retainable_iteration_value(value)))
             {
                 return self.incomplete_array_iteration_result(call, selection, &source, outcome);
             }
-            mapped.push(returned);
+            match selection.row.result {
+                IterationResult::Mapped => {
+                    let result = selection.result.expect("mapped row has an array result");
+                    self.literal_heap().write_property(result, None, &returned);
+                    result_slots.push(returned);
+                }
+                IterationResult::Filtered => {
+                    let Some(inclusion) = array_transfer::filter_inclusion(&returned) else {
+                        return self
+                            .incomplete_array_iteration_result(call, selection, &source, outcome);
+                    };
+                    match inclusion {
+                        array_transfer::FilterInclusion::Include => {
+                            possible_filtered_contents.extend(values.iter().cloned());
+                            result_slots.push(values.clone());
+                        }
+                        array_transfer::FilterInclusion::Exclude => {}
+                        array_transfer::FilterInclusion::Maybe => {
+                            filter_truthiness_unknown = true;
+                            possible_filtered_contents.extend(values.iter().cloned());
+                        }
+                    }
+                }
+                IterationResult::Undefined => {}
+                _ => return refused,
+            }
         }
-        let length = mapped.len();
-        self.retain_dense_array(selection.result, mapped);
-        self.literal_heap().complete_array(selection.result, length);
-        for cell in [
-            EffectCell::ArrayContents(selection.result),
-            EffectCell::ObjectShape(selection.result),
-            EffectCell::OwnProperty {
-                origin: selection.result,
-                property: "length".into(),
-            },
-        ]
-        .into_iter()
-        .chain((0..length).map(|index| EffectCell::OwnProperty {
-            origin: selection.result,
-            property: index.to_string(),
-        })) {
-            outcome
-                .effects
-                .record_heap_write(cell, self.state.assumption.is_none());
-        }
-        let mut values = Values::from([AbstractValue::Value(Value::Alloc(
-            Kind::Object,
-            selection.result,
-        ))]);
+        let mut values = match selection.row.result {
+            IterationResult::Undefined => Values::from([AbstractValue::UNDEFINED]),
+            IterationResult::Mapped | IterationResult::Filtered => {
+                let result = selection.result.expect("array row has an array result");
+                if selection.row.result == IterationResult::Filtered && filter_truthiness_unknown {
+                    self.literal_heap()
+                        .write_property(result, None, &possible_filtered_contents);
+                    self.literal_heap().invalidate_dense_array(result);
+                    if self.state.unknown_array_contents.insert(result) {
+                        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                    }
+                    self.invalidate_writable_object(result);
+                } else {
+                    let length = result_slots.len();
+                    self.retain_dense_array(result, result_slots);
+                    self.literal_heap().complete_array(result, length);
+                }
+
+                let mut writes = vec![
+                    EffectCell::ArrayContents(result),
+                    EffectCell::ObjectShape(result),
+                    EffectCell::OwnProperty {
+                        origin: result,
+                        property: "length".into(),
+                    },
+                ];
+                if !(selection.row.result == IterationResult::Filtered && filter_truthiness_unknown)
+                {
+                    let length = self
+                        .state
+                        .dense_arrays
+                        .get(&result)
+                        .map_or(0, |array| array.slots.len());
+                    writes.extend((0..length).map(|index| EffectCell::OwnProperty {
+                        origin: result,
+                        property: index.to_string(),
+                    }));
+                }
+                for cell in writes {
+                    outcome
+                        .effects
+                        .record_heap_write(cell, self.state.assumption.is_none());
+                }
+                Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, result))])
+            }
+            _ => return refused,
+        };
         if may_throw {
             values.insert(AbstractValue::Value(Value::Unavailable));
         }
@@ -6140,6 +6230,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .as_ref()
             .map(|initial| self.evaluate(initial, env, captures));
         let mut slots = Some(Vec::new());
+        let mut possible_filtered_contents = Values::new();
         for values in &dense.slots {
             if row.result == IterationResult::Accumulated && accumulator.is_none() {
                 accumulator = Some(values.clone());
@@ -6156,13 +6247,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let previous_unsupported = self.state.array_iteration_unsupported;
             self.state.array_iteration_unsupported = false;
             self.state.array_iteration_depth += 1;
-            let nested = self.invoke(key, arguments, captured.clone(), false);
+            let mut nested = self.invoke(key, arguments, captured.clone(), false);
             self.state.array_iteration_depth -= 1;
             let unsupported = self.state.array_iteration_unsupported;
             self.state.array_iteration_unsupported |= previous_unsupported;
-            let returned = nested.returns.clone();
+            let known_throw = nested.body_invoked
+                && nested.complete
+                && !nested.unknown_call
+                && nested.thrown.is_some()
+                && nested.returns == Values::from([AbstractValue::Value(Value::Unavailable)])
+                && nested.effect_coverage.known_abrupt_dependencies().is_some();
+            let thrown = known_throw.then(|| nested.thrown.take()).flatten();
+            let mut returned = nested.returns.clone();
+            returned.remove(&AbstractValue::Value(Value::Unavailable));
             let callback_executed_completely = nested.body_invoked && nested.complete;
             self.merge_array_effects(outcome, nested);
+            if known_throw {
+                outcome.thrown = thrown;
+                return true;
+            }
+            if returned.is_empty() {
+                return false;
+            }
             let current_source = self.evaluate(&proof.source, env, captures);
             let current_source = self.dense_array_iteration_transfer(&current_source, || {
                 self.array_slots_intact(row.requires)
@@ -6198,14 +6304,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     },
                     |this| this.promote_lazy_owner(callback_owner, effect_owner, outcome),
                 );
-                self.state.tainted_objects.insert(result);
-                self.state
-                    .prefix_object_properties
-                    .entry(result)
-                    .or_default()
-                    .entry(None)
-                    .or_default()
-                    .extend(original_callbacks.iter().cloned());
+                if row.result != IterationResult::Undefined {
+                    self.state.tainted_objects.insert(result);
+                    self.state
+                        .prefix_object_properties
+                        .entry(result)
+                        .or_default()
+                        .entry(None)
+                        .or_default()
+                        .extend(original_callbacks.iter().cloned());
+                }
                 if row.result == IterationResult::Accumulated {
                     let mut retained = original_callbacks.clone();
                     retained.extend(self.callback_values(&returned));
@@ -6274,8 +6382,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
                 IterationResult::Filtered => {
-                    if let Some(slots) = &mut slots {
-                        slots.push(values.clone());
+                    let Some(inclusion) = array_transfer::filter_inclusion(&returned) else {
+                        slots = None;
+                        possible_filtered_contents.extend(values.iter().cloned());
+                        continue;
+                    };
+                    match inclusion {
+                        array_transfer::FilterInclusion::Include => {
+                            possible_filtered_contents.extend(values.iter().cloned());
+                            if let Some(slots) = &mut slots {
+                                slots.push(values.clone());
+                            }
+                        }
+                        array_transfer::FilterInclusion::Exclude => {}
+                        array_transfer::FilterInclusion::Maybe => {
+                            slots = None;
+                            possible_filtered_contents.extend(values.iter().cloned());
+                        }
                     }
                 }
                 IterationResult::FlatMapped => {
@@ -6329,11 +6452,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     Some(slots) => self.retain_dense_array(result, slots),
                     None => {
                         self.literal_heap().invalidate_dense_array(result);
-                        let primitive_removed =
-                            self.state.primitive_arrays.remove(&result).is_some();
-                        let newly_tainted = self.state.tainted_objects.insert(result);
-                        if primitive_removed || newly_tainted {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                        if row.result == IterationResult::Filtered {
+                            self.literal_heap().write_property(
+                                result,
+                                None,
+                                &possible_filtered_contents,
+                            );
+                            if self.state.unknown_array_contents.insert(result) {
+                                self.state.prefix_revision =
+                                    self.state.prefix_revision.wrapping_add(1);
+                            }
+                            self.invalidate_writable_object(result);
+                        } else {
+                            let primitive_removed =
+                                self.state.primitive_arrays.remove(&result).is_some();
+                            let newly_tainted = self.state.tainted_objects.insert(result);
+                            if primitive_removed || newly_tainted {
+                                self.state.prefix_revision =
+                                    self.state.prefix_revision.wrapping_add(1);
+                            }
                         }
                     }
                 }

@@ -1466,6 +1466,44 @@ fn assert_lexical_authority_staged_parity(
     }
 }
 
+#[test]
+fn filtered_array_iteration_receipt_survives_saved_analysis() {
+    let source = "const entries = [{ id: 'a', keep: false }, { id: 'b', keep: true }];\nconst selected = entries.filter(entry => entry.keep);\nconsole.log(selected.length, selected[0].id);\n";
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("entries", &[Member::new("entries")]),
+            logical_module("selected", &[Member::new("selected")]),
+        ],
+    ));
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct filtered-array run");
+    let direct_graph: Value = read_gzip_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let direct_execution =
+        &graph_node_for_binding(&direct_graph, "selected")["synchronous_execution"];
+    assert_eq!(direct_execution["complete"], true, "{direct_execution:#}");
+    assert_eq!(
+        direct_execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{direct_execution:#}"
+    );
+
+    let artifact = path(&staged.artifact).to_owned();
+    let loaded = staged.run(&["--analysis", artifact.as_str()]);
+    assert_ok(&loaded.result, "filtered-array run from saved analysis");
+    assert_same_invocation_trees(&direct, &loaded);
+    for run in [&direct, &loaded] {
+        assert_node_output(
+            &run.output_root().join("app/static/app/entry.js"),
+            "1 b\n",
+            "",
+        );
+    }
+}
+
 fn assert_distinct_root_call_receipts(execution: &Value, expected_calls: usize) {
     let calls = execution["binding_effect_authority"]["receipt"]["calls"]
         .as_array()

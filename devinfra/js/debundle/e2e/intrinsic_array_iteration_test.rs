@@ -3,7 +3,8 @@ use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffe
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
-fn assert_selected_map_receipt(fixture: &Fixture, binding: &str) {
+fn assert_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &str) {
+    let expected = format!("prototype.{method}");
     let graph = fixture.dependency_graph();
     let owner = source_unit_for_binding(&graph, binding);
     let execution = graph
@@ -18,14 +19,43 @@ fn assert_selected_map_receipt(fixture: &Fixture, binding: &str) {
     let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
         &execution.binding_effect_authority
     else {
-        panic!("selected map must compose its actual operation receipt: {execution:#?}");
+        panic!("selected {method} must compose its operation receipt: {execution:#?}");
     };
     assert!(
         receipt.calls.iter().any(|call| matches!(&call.target,
         LexicalBindingEffectBody::Native { property: Some(property), .. }
-            if property == "prototype.map")),
+            if property == &expected)),
         "{receipt:#?}"
     );
+}
+
+fn assert_selected_map_receipt(fixture: &Fixture, binding: &str) {
+    assert_selected_iteration_receipt(fixture, binding, "map");
+}
+
+fn assert_no_selected_iteration_receipt(fixture: &Fixture, binding: &str, method: &str) {
+    let expected = format!("prototype.{method}");
+    let graph = fixture.dependency_graph();
+    let owner = source_unit_for_binding(&graph, binding);
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == owner)
+        .unwrap()
+        .synchronous_execution
+        .as_ref()
+        .unwrap();
+    let has_receipt = match &execution.binding_effect_authority {
+        Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) => {
+            receipt.calls.iter().any(|call| {
+                matches!(&call.target,
+                LexicalBindingEffectBody::Native { property: Some(property), .. }
+                    if property == &expected)
+            })
+        }
+        _ => false,
+    };
+    assert!(!has_receipt, "{execution:#?}");
 }
 
 #[test]
@@ -100,6 +130,50 @@ fn ordered_map_known_throw_stops_before_the_next_index() {
 }
 
 #[test]
+fn for_each_returns_undefined_keeps_callback_order_and_defers_stored_functions() {
+    let source = "let later = 0;\nlet visits = 0;\nlet trace = 0;\nlet executor_calls = 0;\nconst entries = [{ id: 'a', order: 1, executor: () => { executor_calls++; return later; } }, { id: 'b', order: 2, executor: () => { executor_calls++; return later; } }];\nconst result = entries.forEach(entry => { visits++; trace = entry.order; return entry.executor; });\nconst copy = trace;\nlater = 42;\nconsole.log(result === undefined, visits, copy, executor_calls, entries[0].executor(), executor_calls);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "registry",
+                &[
+                    Member::new("entries"),
+                    Member::new("result"),
+                    Member::new("trace"),
+                    Member::new("visits"),
+                    Member::new("executor_calls"),
+                ],
+                &[
+                    "const result = entries.forEach(entry => { visits++; trace = entry.order; return entry.executor; });",
+                ],
+            ),
+            logical_module("readers", &[Member::new("copy")]),
+            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "true 2 2 0 42 1\n");
+    assert_selected_iteration_receipt(&fixture, "result", "forEach");
+}
+
+#[test]
+fn filter_uses_predicate_truth_at_runtime_without_faking_exact_slots() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const entries = [{ id: 'a' }, { id: 'b' }];\nconst excluded = entries.filter(() => false);\nconst included = entries.filter(() => true);\nconst mapped = included.map(entry => entry.id);\nconsole.log(excluded.length, included.length, mapped.join(','));\n",
+        vec![
+            logical_module("entries", &[Member::new("entries")]),
+            logical_module("excluded", &[Member::new("excluded")]),
+            logical_module("included", &[Member::new("included")]),
+            logical_module("mapped", &[Member::new("mapped")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0 2 a,b\n");
+    assert_selected_iteration_receipt(&fixture, "excluded", "filter");
+    assert_selected_iteration_receipt(&fixture, "included", "filter");
+    assert_no_selected_iteration_receipt(&fixture, "mapped", "map");
+}
+
+#[test]
 fn argument_time_method_replacement_keeps_the_original_runtime_selection() {
     let fixture = run_fixture(FixtureOpts::new(
         "let selections = 0;\nconst entries = [1];\nfunction choose() { selections++; Array.prototype.map = () => ['changed']; return value => value + 1; }\nconst mapped = entries.map(choose());\nconsole.log(selections, mapped.join(','), entries.map(() => 0).join(','));\n",
@@ -125,6 +199,18 @@ fn argument_time_method_replacement_keeps_the_original_runtime_selection() {
         ),
         "{execution:#?}"
     );
+}
+
+#[test]
+fn argument_time_prototype_restore_does_not_replace_the_captured_custom_method() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "let custom_calls = 0;\nlet callback_calls = 0;\nconst entries = [1];\nconst custom = { forEach(callback) { custom_calls++; callback(entries[0]); return 'custom'; } };\nObject.setPrototypeOf(entries, custom);\nconst result = entries.forEach((Object.setPrototypeOf(entries, Array.prototype), value => { callback_calls++; }));\nconsole.log(result, custom_calls, callback_calls);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "custom 1 1\n");
+    // GetValue captured the custom method before the argument restored the
+    // array's prototype. The built-in iteration row must not claim this call.
+    assert_no_selected_iteration_receipt(&fixture, "result", "forEach");
 }
 
 fn assert_early_iteration_rejected(
@@ -269,6 +355,12 @@ fn writes_reaching_a_row_slot_keep_real_effects() {
             "",
             "Array.prototype.some = function () { observed = later; return false; };",
             "entries.some(() => false)",
+            &[][..],
+        ),
+        (
+            "",
+            "Array.prototype.forEach = function () { observed = later; };",
+            "entries.forEach(() => {})",
             &[][..],
         ),
         (

@@ -12,6 +12,11 @@ use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 
 pub(super) trait ArrayContext {
+    /// Whether this array still gets `property` from its original
+    /// `%Array.prototype%` at the method GetValue prefix. This witness is
+    /// checked before arguments, independently of the later receiver-shape
+    /// and species checks.
+    fn array_method_selected_from_original_prototype(&self, object: u32, property: &str) -> bool;
     /// Exact length, writable own length, extensibility, original prototype,
     /// and no named own overrides. Reused allocation sites and descriptor changes lose
     /// this witness even if their pooled element values are still available.
@@ -35,8 +40,67 @@ pub(super) struct ArrayIterationSelection {
     pub(super) object: u32,
     pub(super) site: CallSite,
     pub(super) row: &'static IterationRow,
-    pub(super) result: u32,
+    /// Fresh result identity, present only for rows that create an array.
+    pub(super) result: Option<u32>,
     pub(super) dependencies: ProofDependencies,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FilterInclusion {
+    Include,
+    Exclude,
+    Maybe,
+}
+
+/// Classify only truthiness that follows from the abstract value's runtime
+/// kind. Primitive type summaries do not retain literal booleans, numbers or
+/// strings, so those kinds may be either truthy or falsy. Unsupported carriers
+/// likewise preserve both outcomes instead of manufacturing dense slots.
+pub(super) fn filter_inclusion(values: &Values) -> Option<FilterInclusion> {
+    let mut may_be_truthy = false;
+    let mut may_be_falsy = false;
+    let maybe_truthy_primitive = PrimKinds::BOOLEAN
+        .union(PrimKinds::NUMBER)
+        .union(PrimKinds::BIGINT)
+        .union(PrimKinds::STRING);
+    let maybe_falsy_primitive = maybe_truthy_primitive
+        .union(PrimKinds::NULL)
+        .union(PrimKinds::UNDEFINED);
+
+    for value in values {
+        match value {
+            AbstractValue::Value(Value::Prim(kinds)) => {
+                may_be_truthy |= kinds.intersects(maybe_truthy_primitive.union(PrimKinds::SYMBOL));
+                may_be_falsy |= kinds.intersects(maybe_falsy_primitive);
+            }
+            AbstractValue::Value(Value::Alloc(_, _))
+            | AbstractValue::Closure(_, _)
+            | AbstractValue::ClassMembers(_)
+            | AbstractValue::Instance(_, _, _)
+            | AbstractValue::ArrayIntrinsic
+            | AbstractValue::GlobalObject
+            | AbstractValue::ObjectAssign => may_be_truthy = true,
+            AbstractValue::Value(Value::Unavailable) => return None,
+            AbstractValue::Value(Value::Top)
+            | AbstractValue::SymbolicInput(_)
+            | AbstractValue::CallbackFactory
+            | AbstractValue::InlineCallbackFactory
+            | AbstractValue::DeferredCallbacks(_)
+            | AbstractValue::AuditedRetainedResult(_, _)
+            | AbstractValue::OwnDescriptorMap(_)
+            | AbstractValue::ForeignDeferredRecord => {
+                may_be_truthy = true;
+                may_be_falsy = true;
+            }
+        }
+    }
+
+    match (may_be_truthy, may_be_falsy) {
+        (true, false) => Some(FilterInclusion::Include),
+        (false, true) => Some(FilterInclusion::Exclude),
+        (true, true) => Some(FilterInclusion::Maybe),
+        (false, false) => None,
+    }
 }
 
 #[derive(Clone)]
@@ -85,21 +149,44 @@ pub(super) fn select_iteration(
     receivers: &Values,
     site: CallSite,
     row: &'static IterationRow,
-    result: u32,
+    result: Option<u32>,
 ) -> Option<(ArrayIterationSelection, EffectCoverageFragment)> {
     let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
         receivers.iter().collect::<Vec<_>>().as_slice()
     else {
         return None;
     };
-    if row.result != IterationResult::Mapped
-        || !matches!(row.invokes, ArgSel::Arg(0))
+    if !matches!(
+        row.result,
+        IterationResult::Undefined | IterationResult::Mapped | IterationResult::Filtered
+    ) || !matches!(row.invokes, ArgSel::Arg(0))
         || !row.arity.contains(&1)
-        || !context.array_slots_intact(row.requires)
     {
         return None;
     }
-    context.literal_array_length(*object, &[row.member, "constructor"])?;
+    // The method and own-property shadow check happen before its arguments.
+    // Receiver descriptors and result-array species are body premises and
+    // are rechecked by `iteration_snapshot` after operand evaluation.
+    let method_slots: Vec<_> = row
+        .requires
+        .iter()
+        .filter(|slot| {
+            matches!(slot,
+                IntrinsicSlot::PrototypeProperty(_, member) if *member == row.member)
+        })
+        .copied()
+        .collect();
+    if method_slots.is_empty() || !context.array_slots_intact(&method_slots) {
+        return None;
+    }
+    if !context.array_method_selected_from_original_prototype(*object, row.member) {
+        return None;
+    }
+    let result = match row.result {
+        IterationResult::Mapped | IterationResult::Filtered => Some(result?),
+        IterationResult::Undefined => None,
+        _ => return None,
+    };
     let dependencies = context.array_dependencies();
     let mut effects = EffectCoverageFragment::no_effects();
     effects.depend_on(&dependencies);
@@ -134,7 +221,12 @@ pub(super) fn iteration_snapshot(
     if !context.array_slots_intact(&required) {
         return None;
     }
-    let length = context.literal_array_length(selection.object, &["constructor"])?;
+    let absent = if selection.result.is_some() {
+        &["constructor"][..]
+    } else {
+        &[][..]
+    };
+    let length = context.literal_array_length(selection.object, absent)?;
     let slots = context.dense_array_slots(selection.object)?;
     if usize::try_from(length).ok()? != slots.len() {
         return None;
