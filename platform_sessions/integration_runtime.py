@@ -5,16 +5,20 @@ from __future__ import annotations
 import asyncio
 import datetime
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any
 
 import httpx2
 from starlette.concurrency import run_in_threadpool
 
 from platform_sessions.host import IntegrationError
-from platform_sessions.probe import probe_session
+from platform_sessions.probe import ProbeResult, probe_session
+from platform_sessions.probe_types import ProbeOutcome, ProbeSource
 from platform_sessions.registry import IntegrationInstance
 from platform_sessions.session_store import ProviderSessionStore
+
+if TYPE_CHECKING:
+    from platform_sessions.probe_types import ProbeReporter
 
 
 @dataclass
@@ -27,12 +31,21 @@ class IntegrationRuntime[T](ABC):
     observation: dict = field(default_factory=lambda: {"outcome": "not_checked"})
     observation_generation: int | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _probe_reporter: ProbeReporter | None = field(default=None, init=False, repr=False)
 
-    async def refresh(self, transport=None, *, source="verify"):
+    def bind_probe_reporter(self, reporter: ProbeReporter) -> None:
+        """Bind the reporter scoped by the host to this configured instance."""
+        self._probe_reporter = reporter
+
+    def _report_probe(self, result: ProbeResult) -> None:
+        if self._probe_reporter is not None:
+            self._probe_reporter.completed(result.outcome, result.source, completed_at=result.checked_at)
+
+    async def refresh(self, transport=None, *, source: ProbeSource = ProbeSource.VERIFY):
         async with self.lock:
             try:
                 before = await run_in_threadpool(self.store.snapshot)
-                observation = await run_in_threadpool(
+                result = await run_in_threadpool(
                     probe_session,
                     self.store,
                     transport=transport,
@@ -43,18 +56,39 @@ class IntegrationRuntime[T](ABC):
                 )
                 after = await run_in_threadpool(self.store.snapshot)
             except OSError, ValueError:
-                self.observation = {"outcome": "storage_error"}
                 try:
                     self.observation_generation = self.store.path.stat().st_mtime_ns
                 except OSError:
                     self.observation_generation = None
+                result = ProbeResult(self.config.type, self.config.id, ProbeOutcome.STORAGE_ERROR, source)
+                self.observation = result.as_event()
+                self._report_probe(result)
                 return
+            except Exception:
+                result = ProbeResult(
+                    self.config.type,
+                    self.config.id,
+                    ProbeOutcome.INTERNAL_ERROR,
+                    source,
+                    datetime.datetime.now(datetime.UTC),
+                )
+                self._report_probe(result)
+                raise
             if before != after:
-                self.observation = {"outcome": "superseded"}
+                result = replace(
+                    result,
+                    outcome=ProbeOutcome.SUPERSEDED,
+                    checked_at=None,
+                    imported_at=None,
+                    age_seconds=None,
+                    upstream_status=None,
+                )
+                self.observation = result.as_event()
                 self.observation_generation = None
             else:
-                self.observation = observation
+                self.observation = result.as_event()
                 self.observation_generation = after[1]
+            self._report_probe(result)
 
     async def status(self):
         try:
