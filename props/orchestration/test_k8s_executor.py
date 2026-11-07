@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import (
+    ApiException,
     V1ContainerState,
     V1ContainerStateTerminated,
     V1ContainerStatus,
+    V1ObjectMeta,
     V1Pod,
     V1PodStatus,
 )
@@ -22,6 +25,7 @@ from props.orchestration.k8s_executor import K8sExecutor, K8sPodHandle, _extract
 def _make_pod(phase: str, exit_code: int = 0) -> V1Pod:
     """Create a V1Pod with the given phase and exit code."""
     return V1Pod(
+        metadata=V1ObjectMeta(resource_version="42"),
         status=V1PodStatus(
             phase=phase,
             container_statuses=[
@@ -34,7 +38,7 @@ def _make_pod(phase: str, exit_code: int = 0) -> V1Pod:
                     state=V1ContainerState(terminated=V1ContainerStateTerminated(exit_code=exit_code)),
                 )
             ],
-        )
+        ),
     )
 
 
@@ -108,13 +112,98 @@ async def test_run_container_with_image_pull_secret():
     assert pod.spec.image_pull_secrets[0].name == "registry-creds"
 
 
-async def test_wait_succeeded_pod(mocked_executor: MockedExecutor):
+def _watch_events(monkeypatch: pytest.MonkeyPatch, *streams: list[object]) -> list[dict]:
+    requests: list[dict] = []
+    remaining = iter(streams)
+
+    class FakeWatch:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        def stream(self, _func, **kwargs):
+            requests.append(kwargs)
+            return self
+
+        async def __aiter__(self):
+            for event in next(remaining):
+                if isinstance(event, Exception):
+                    raise event
+                yield event
+
+    monkeypatch.setattr("props.orchestration.k8s_executor.watch.Watch", FakeWatch)
+    return requests
+
+
+async def test_wait_consumes_kubernetes_watch_stream(mocked_executor: MockedExecutor):
+    """Use the real watch decoder to consume a Kubernetes event after the initial read."""
+    running = _make_pod("Running")
+    terminal = _make_pod("Succeeded")
+    mocked_executor.core_v1.read_namespaced_pod = AsyncMock(side_effect=[running, terminal])
+    mocked_executor.core_v1.read_namespaced_pod_log = AsyncMock(return_value="done")
+    response = SimpleNamespace(
+        content=SimpleNamespace(
+            readline=AsyncMock(
+                return_value=b'{"type":"MODIFIED","object":{"metadata":{"name":"agent-test","resourceVersion":"43"},"status":{"phase":"Succeeded"}}}\n'
+            )
+        ),
+        release=Mock(),
+    )
+
+    async def list_pods(**kwargs):
+        """:rtype: V1PodList"""
+        assert kwargs["resource_version"] == "42"
+        assert kwargs["watch"] is True
+        return response
+
+    mocked_executor.core_v1.list_namespaced_pod = list_pods
+    result = await K8sPodHandle(name="agent-test", namespace="test-ns", core_v1=mocked_executor.core_v1).wait(
+        timeout_seconds=60
+    )
+    assert result.exit == Exited(exit_code=0)
+    response.release.assert_called_once()
+
+
+async def test_wait_restarts_watch_after_expired_resource_version(
+    mocked_executor: MockedExecutor, monkeypatch: pytest.MonkeyPatch
+):
+    running = _make_pod("Running")
+    terminal = _make_pod("Succeeded")
+    mocked_executor.core_v1.read_namespaced_pod = AsyncMock(side_effect=[running, running, terminal])
+    mocked_executor.core_v1.read_namespaced_pod_log = AsyncMock(return_value="done")
+    requests = _watch_events(monkeypatch, [ApiException(status=410)], [{"type": "MODIFIED", "object": terminal}])
+
+    result = await K8sPodHandle(name="agent-test", namespace="test-ns", core_v1=mocked_executor.core_v1).wait(
+        timeout_seconds=60
+    )
+
+    assert result.exit == Exited(exit_code=0)
+    assert len(requests) == 2
+    assert all(
+        req["resource_version"] == "42" and req["field_selector"] == "metadata.name=agent-test" for req in requests
+    )
+
+
+async def test_wait_reports_pod_deletion(mocked_executor: MockedExecutor, monkeypatch: pytest.MonkeyPatch):
+    running = _make_pod("Running")
+    mocked_executor.core_v1.read_namespaced_pod = AsyncMock(return_value=running)
+    _watch_events(monkeypatch, [{"type": "DELETED", "object": running}])
+
+    with pytest.raises(ApiException) as error:
+        await K8sPodHandle(name="agent-test", namespace="test-ns", core_v1=mocked_executor.core_v1).wait(
+            timeout_seconds=60
+        )
+    assert error.value.status == 404
+
+
+async def test_wait_succeeded_pod(mocked_executor: MockedExecutor, monkeypatch: pytest.MonkeyPatch):
     """wait returns exit code 0 for a pod that succeeds."""
-    # First call returns Running, second returns Succeeded (in poll loop),
-    # third returns Succeeded again (for exit code extraction after logs).
     running_pod = _make_pod("Running")
     succeeded_pod = _make_pod("Succeeded", exit_code=0)
-    mocked_executor.core_v1.read_namespaced_pod = AsyncMock(side_effect=[running_pod, succeeded_pod, succeeded_pod])
+    mocked_executor.core_v1.read_namespaced_pod = AsyncMock(side_effect=[running_pod, succeeded_pod])
+    _watch_events(monkeypatch, [{"type": "MODIFIED", "object": succeeded_pod}])
     mocked_executor.core_v1.read_namespaced_pod_log = AsyncMock(return_value="agent output here")
 
     handle = K8sPodHandle(name="agent-test", namespace="test-ns", core_v1=mocked_executor.core_v1)

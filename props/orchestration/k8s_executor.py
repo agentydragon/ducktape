@@ -11,7 +11,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from kubernetes_asyncio import client
+from kubernetes_asyncio import client, watch
 from kubernetes_asyncio.client import (
     ApiClient,
     ApiException,
@@ -49,13 +49,34 @@ class K8sPodHandle:
         v1 = self.core_v1
 
         async def _wait_for_terminal() -> str:
-            """Poll pod status until Succeeded or Failed. Returns phase."""
+            """Read once, then follow changes without missing a terminal transition."""
             while True:
                 pod = await v1.read_namespaced_pod(name=self.name, namespace=self.namespace)
                 phase = pod.status.phase
                 if phase in ("Succeeded", "Failed"):
                     return str(phase)
-                await asyncio.sleep(2)
+                if pod.metadata is None or not pod.metadata.resource_version:
+                    raise ValueError(f"Pod {self.name} has no resource version")
+                try:
+                    async with watch.Watch() as watcher:
+                        async for event in watcher.stream(
+                            v1.list_namespaced_pod,
+                            namespace=self.namespace,
+                            field_selector=f"metadata.name={self.name}",
+                            resource_version=pod.metadata.resource_version,
+                            timeout_seconds=60,
+                        ):
+                            if event["type"] == "DELETED":
+                                raise ApiException(status=404, reason=f"Pod {self.name} was deleted")
+                            if event["type"] not in ("ADDED", "MODIFIED"):
+                                continue
+                            phase = event["object"].status.phase
+                            if phase in ("Succeeded", "Failed"):
+                                return str(phase)
+                except ApiException as exc:
+                    # A compacted resource version requires a fresh read and watch.
+                    if exc.status != 410:
+                        raise
 
         try:
             if timeout_seconds is not None:
