@@ -519,3 +519,60 @@ pub enum ExecutionOperation {
     CallableInputs,
     ArrayIteration,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ArrayIterationElementSettlementCheck, ExecutionOperation, ExecutionPrecisionLossReason,
+        OrderedCallAdmissionRefusal,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn array_iteration_unsettled_refusal_keeps_legacy_and_detailed_wire_shapes() {
+        let legacy = OrderedCallAdmissionRefusal::ArrayIterationUnsettledElements;
+        let legacy_json = json!("array_iteration_unsettled_elements");
+        assert_eq!(serde_json::to_value(legacy).unwrap(), legacy_json);
+        assert_eq!(
+            serde_json::from_value::<OrderedCallAdmissionRefusal>(legacy_json).unwrap(),
+            legacy
+        );
+        assert_eq!(
+            legacy.array_iteration_phase(),
+            Some("post-argument body admission")
+        );
+
+        let detailed = OrderedCallAdmissionRefusal::ArrayIterationUnsettledElementsDetail {
+            slot_index: 1,
+            check: ArrayIterationElementSettlementCheck::ObjectUnsettled,
+        };
+        let detailed_json = json!({
+            "array_iteration_unsettled_elements_detail": {
+                "slot_index": 1,
+                "check": "object_unsettled"
+            }
+        });
+        assert_eq!(serde_json::to_value(detailed).unwrap(), detailed_json);
+        assert_eq!(
+            serde_json::from_value::<OrderedCallAdmissionRefusal>(detailed_json).unwrap(),
+            detailed
+        );
+        assert_eq!(
+            detailed.to_string(),
+            "array_iteration_unsettled_elements (slot 1, check object_unsettled)"
+        );
+        assert_eq!(
+            detailed.array_iteration_phase(),
+            Some("post-argument body admission")
+        );
+
+        let reason = ExecutionPrecisionLossReason::UnsupportedOperation {
+            operation: ExecutionOperation::ArrayIteration,
+            ordered_field_read_refusal: None,
+            ordered_call_admission_refusal: Some(detailed),
+        };
+        assert!(reason.to_string().contains(
+            "ordered_call_admission_refusal: array_iteration_unsettled_elements (slot 1, check object_unsettled) (post-argument body admission)"
+        ));
+    }
+}
