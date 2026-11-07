@@ -19,6 +19,9 @@ calls and no automatic retries. A failed or lost import, candidate verification 
 may mean the provider changed upstream credentials; check session state before attempting another
 operation.
 
-The provider data plane remains HTTP and is governed by the gateway's route grants. Its endpoints
-and provider-specific OpenAPI documents are independent of this management contract. The existing
-in-process service retains its legacy owner UI until provider migration is complete.
+The provider data plane remains HTTP and is governed by the gateway's route grants. Providers
+enforce their own upstream header policies. A provider may advertise an OpenAPI document path in
+its control information; the gateway fetches the document from that provider over authenticated
+TLS and exposes it with the provider's proxy URL. Provider documents remain in provider images.
+The shared gateway image is built and published by Ducktape CI. The existing in-process service
+retains its legacy owner UI until provider migration is complete.
