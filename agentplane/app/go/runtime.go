@@ -16,6 +16,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
@@ -115,10 +116,6 @@ func run(ctx context.Context, config Config) error {
 	}
 
 	baseClient := &http.Client{Timeout: 10 * time.Second, Transport: observability.HTTPTransport(http.DefaultTransport)}
-	actionCallbackHTTP, err := proxy.NewUpstreamProxy(baseClient, config.ActionFederation.ServiceURL)
-	if err != nil {
-		return fmt.Errorf("configure Action Service callback HTTP client: %w", err)
-	}
 	connectionTarget, err := grpcTargetFromHTTPURL(config.ConnectionServiceURL)
 	if err != nil {
 		return fmt.Errorf("configure Connection Service gRPC client: %w", err)
@@ -236,6 +233,13 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Action Service gRPC client: %w", err)
 	}
+	actionConnection, err := grpc.NewClient(actionTarget,
+		observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
+	if err != nil {
+		return fmt.Errorf("configure Action Service linkage gRPC client: %w", err)
+	}
+	defer closeConnections([]*grpc.ClientConn{actionConnection})
+	linkageClient := linkage_servicepb.NewLinkageServiceClient(actionConnection)
 	facadeContext, stopFacades := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacades()
 	actionFacade, err := facade.NewHandler(
@@ -330,7 +334,7 @@ func run(ctx context.Context, config Config) error {
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
-	RegisterOperatorRoutes(server, actionCallbackHTTP, config.ActionFederation.ServiceURL)
+	RegisterOperatorRoutes(server, linkageClient)
 	if err := RegisterStatusRoutes(server, app); err != nil {
 		return fmt.Errorf("register System status facade: %w", err)
 	}
