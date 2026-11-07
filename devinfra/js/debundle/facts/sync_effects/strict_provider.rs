@@ -1514,6 +1514,11 @@ mod tests {
                 ("class make { field; }", BTreeSet::new()),
                 ("class make { #field = 1; }", BTreeSet::new()),
                 ("class make { #field; }", BTreeSet::new()),
+                ("class make { field = this; }", BTreeSet::new()),
+                (
+                    "class make { field; constructor() { this.field = this; } }",
+                    BTreeSet::new(),
+                ),
                 ("class make { constructor(value) {} }", BTreeSet::new()),
                 (
                     "class make { #field; constructor(value) { this.#field = value; } }",
@@ -1612,23 +1617,17 @@ mod tests {
     }
 
     #[test]
-    fn constructor_missing_child_operation_effects_stay_uncovered() {
+    fn constructor_hoisted_var_operation_effects_stay_uncovered() {
         js_ast::with_swc_globals(|| {
-            for source in [
-                "class make { constructor() { var value = 1; return value; } }",
-                "class make { field = this; }",
-                "class make { field; constructor() { this.field = this; } }",
-            ] {
-                let summary =
-                    derive_source(source).expect("allocation projection remains separate");
-                assert!(
-                    summary
-                        .body_effects
-                        .as_ref()
-                        .is_some_and(|effects| !effects.has_closed_effects()),
-                    "{source}"
-                );
-            }
+            let source = "class make { constructor() { var value = 1; return value; } }";
+            let summary = derive_source(source).expect("allocation projection remains separate");
+            assert!(
+                summary
+                    .body_effects
+                    .as_ref()
+                    .is_some_and(|effects| !effects.has_closed_effects()),
+                "{source}"
+            );
         });
     }
 
