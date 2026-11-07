@@ -1238,10 +1238,19 @@ def test_cgroup_stress_resident_condition_matches_guest_boot_arg_and_probe_scrip
         resident_name = next(
             line.strip().removeprefix("unit=") for line in branch.splitlines() if line.strip().startswith("unit=")
         )
+        slice_name = next(
+            line.strip().removeprefix("slice_unit=")
+            for line in branch.splitlines()
+            if line.strip().startswith("slice_unit=")
+        )
         resident = (guest_dir / resident_name).read_text()
         assert f"ConditionKernelCommandLine={kernel_arg}" in resident.splitlines()
-        assert "Slice=pilot.slice" in resident.splitlines()
+        assert f"Slice={slice_name}" in resident.splitlines()
         assert "ExecStart=/usr/bin/busybox sleep 120" in resident.splitlines()
+        slice_unit = (guest_dir / slice_name).read_text()
+        assert f"ConditionKernelCommandLine={kernel_arg}" in slice_unit.splitlines()
+        assert "IOAccounting=no" in slice_unit.splitlines()
+        assert "slice=/sys/fs/cgroup/$slice_unit" in script.splitlines()
         if mode == "stress":
             for name in ("agentplane-cgroup-stress-probe.service", "agentplane-cgroup-stress-probe.timer"):
                 assert f"ConditionKernelCommandLine={kernel_arg}" in (guest_dir / name).read_text().splitlines()
