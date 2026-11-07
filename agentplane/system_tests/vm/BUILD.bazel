@@ -226,6 +226,7 @@ py_library(
     srcs = ["runtime.py"],
     deps = [
         ":block_storage",
+        ":boot_rcu",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -240,6 +241,7 @@ py_test(
     name = "test_runtime",
     srcs = ["test_runtime.py"],
     deps = [
+        ":boot_rcu",
         ":host_qemu",
         ":infrastructure",
         ":runtime",
