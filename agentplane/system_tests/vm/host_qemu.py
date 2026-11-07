@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -10,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TextIO
+from typing import Protocol, TextIO
 
 from agentplane.system_tests.vm import guest_logs
 
@@ -28,6 +29,13 @@ VIRTIOFSD_BUDGET_SECONDS = 0.75
 VIRTIOFSD_QEMU_RESERVE_SECONDS = 7.0
 VIRTIOFSD_MAX_PROCESSES = 6
 VIRTIOFSD_MAX_THREADS = 48
+VIRTIOFSD_TIMELINE_ENV = "AGENTPLANE_VM_VIRTIOFSD_TIMELINE"
+VIRTIOFSD_TIMELINE_INTERVAL_SECONDS = 2.0
+VIRTIOFSD_TIMELINE_MAX_SAMPLES = 18
+VIRTIOFSD_TIMELINE_MAX_SECONDS = 36.0
+VIRTIOFSD_TIMELINE_WAIT_SECONDS = 600.0
+VIRTIOFSD_TIMELINE_MAX_BYTES = 512 * 1024
+VIRTIOFSD_TIMELINE_TARGET = "virtiofsd-timeline-target.json"
 POLL_SECONDS = 0.1
 
 LIBVIRT_URI = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
@@ -43,6 +51,11 @@ QEMU_PROBES = (
 
 
 Kubectl = Callable[..., str]
+
+
+def virtiofsd_timeline_enabled() -> bool:
+    """Return whether the explicit diagnostic run requested passive virtiofsd sampling."""
+    return os.environ.get(VIRTIOFSD_TIMELINE_ENV) == "1"
 
 
 def _exact_line(data: bytes, marker: bytes) -> bool:
@@ -96,7 +109,40 @@ def _pod_uid_in_cgroup(cgroup: str, pod_uid: str) -> bool:
     )
 
 
-def _read_proc_field(output: TextIO, path: Path, field: str) -> None:
+def virtiofs_container_names_by_id(pod_status: dict[str, object]) -> dict[str, str]:
+    """Return sanitized names for virtiofs container IDs in either Pod status list."""
+    result: dict[str, str] = {}
+    for field in ("containerStatuses", "initContainerStatuses"):
+        statuses = pod_status.get(field)
+        if not isinstance(statuses, list):
+            continue
+        for status in statuses:
+            if not isinstance(status, dict):
+                continue
+            name = status.get("name")
+            container_id = status.get("containerID")
+            if not isinstance(name, str) or not re.fullmatch(r"virtiofs-[a-z0-9][a-z0-9-]{0,62}", name):
+                continue
+            if not isinstance(container_id, str):
+                continue
+            match = re.fullmatch(r"[a-z][a-z0-9+.-]*://([a-fA-F0-9]{32,128})", container_id)
+            if match is not None:
+                result[match.group(1).lower()] = name
+    return result
+
+
+def _container_ids_in_cgroup(cgroup: str) -> set[str]:
+    """Extract full hexadecimal runtime IDs without retaining unrelated cgroup paths."""
+    return {match.lower() for match in re.findall(r"(?<![A-Fa-f0-9])[A-Fa-f0-9]{32,128}(?![A-Fa-f0-9])", cgroup)}
+
+
+class _TextWriter(Protocol):
+    def write(self, value: str, /) -> int: ...
+
+    def flush(self) -> None: ...
+
+
+def _read_proc_field(output: _TextWriter, path: Path, field: str) -> None:
     try:
         value = path.read_bytes().replace(b"\x00", b" ").decode(errors="replace")
     except OSError as error:
@@ -150,14 +196,20 @@ def _snapshot_host_qemu(
 
 
 def _snapshot_host_virtiofsd(
-    output: TextIO, pod_uid: str, stop: threading.Event, deadline: float, *, proc_root: Path = Path("/proc")
-) -> None:
+    output: _TextWriter,
+    pod_uid: str,
+    stop: threading.Event,
+    deadline: float,
+    *,
+    proc_root: Path = Path("/proc"),
+    container_names_by_id: dict[str, str] | None = None,
+) -> tuple[int, bool]:
     found = scanned = threads = 0
     uncertain = False
     stopped_reason: str | None = None
     if stop.is_set() or time.monotonic() >= deadline:
         output.write("HOST_VIRTIOFSD_SKIPPED budget-or-stop\n")
-        return
+        return 0, False
 
     for comm in sorted(proc_root.glob("[0-9]*/comm"), key=lambda path: int(path.parent.name)):
         if stop.is_set() or time.monotonic() >= deadline:
@@ -182,7 +234,16 @@ def _snapshot_host_virtiofsd(
             continue
 
         found += 1
-        output.write(f"HOST_VIRTIOFSD_PID {process.name}\n")
+        container_ids = _container_ids_in_cgroup(cgroup)
+        if len(container_ids) == 1:
+            container_id = next(iter(container_ids))
+            container_name = (container_names_by_id or {}).get(container_id, "unmapped")
+            identity = f"container_id={container_id} container_name={container_name}"
+        elif not container_ids:
+            identity = "container_id=unavailable container_name=unmapped"
+        else:
+            identity = "container_id=ambiguous container_name=unmapped"
+        output.write(f"HOST_VIRTIOFSD_PID {process.name} {identity}\n")
         for field in ("comm", "status", "wchan", "syscall", "stack"):
             if stop.is_set() or time.monotonic() >= deadline:
                 stopped_reason = "budget-or-stop"
@@ -217,6 +278,322 @@ def _snapshot_host_virtiofsd(
     elif found == 0:
         output.write(f"HOST_VIRTIOFSD_PROCESS_{'MATCH_UNCERTAIN' if uncertain else 'MATCH_NONE'} pod_uid={pod_uid}\n")
     output.flush()
+    return found, stopped_reason is None and not uncertain
+
+
+class _BoundedTextWriter:
+    """Cap one retained timeline sample, including its header and truncation marker."""
+
+    _MARKER = "\nHOST_VIRTIOFSD_OUTPUT_TRUNCATED\n"
+
+    def __init__(self, output: TextIO, max_bytes: int) -> None:
+        self.output = output
+        self.remaining = max_bytes - len(self._MARKER.encode())
+        self.truncated = False
+
+    def write(self, value: str) -> int:
+        if self.truncated:
+            return len(value)
+        encoded = value.encode()
+        if len(encoded) <= self.remaining:
+            self.output.write(value)
+            self.remaining -= len(encoded)
+            return len(value)
+        prefix = encoded[: max(self.remaining, 0)].decode(errors="ignore")
+        if prefix:
+            self.output.write(prefix)
+        self.output.write(self._MARKER)
+        self.remaining = 0
+        self.truncated = True
+        return len(value)
+
+    def flush(self) -> None:
+        self.output.flush()
+
+
+def record_virtiofsd_ready_baseline(
+    artifact_root: Path, namespace: str, pod: str, pod_uid: str, container_names_by_id: dict[str, str] | None = None
+) -> bool:
+    """Take one bounded pre-ACPI sample and arm later samples for this exact launcher Pod UID."""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*", namespace):
+        raise ValueError(f"invalid Kubernetes namespace: {namespace!r}")
+    if not re.fullmatch(r"virt-launcher-[a-z0-9][a-z0-9.-]*", pod):
+        raise ValueError(f"invalid KubeVirt launcher Pod name: {pod!r}")
+    if not re.fullmatch(r"[A-Za-z0-9-]+", pod_uid):
+        raise ValueError(f"invalid Kubernetes Pod UID: {pod_uid!r}")
+
+    launcher_name = f"{namespace}_{pod}_{pod_uid}"
+    root = artifact_root / "host-qemu"
+    directory = root / launcher_name
+    target = root / VIRTIOFSD_TIMELINE_TARGET
+    if target.exists():
+        raise RuntimeError("the VM artifact set already has a virtiofsd timeline target")
+
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        sample_path = directory / f"virtiofsd-baseline-{time.time_ns()}.txt"
+        with sample_path.open("w") as raw_output:
+            output = _BoundedTextWriter(raw_output, VIRTIOFSD_TIMELINE_MAX_BYTES)
+            output.write(
+                f"HOST_VIRTIOFSD_SNAPSHOT phase=ready-baseline timestamp={datetime.now(UTC).isoformat(timespec='milliseconds')}\n"
+                f"launcher={launcher_name} pod={pod} pod_uid={pod_uid}\n"
+                "observer=local-proc-only qmp=disabled\n"
+            )
+            container_names_by_id = container_names_by_id or {}
+            output.write(
+                "HOST_VIRTIOFSD_CONTAINER_MAP "
+                + json.dumps(
+                    [
+                        {"container_id": container_id, "container_name": container_name}
+                        for container_id, container_name in sorted(container_names_by_id.items())
+                    ],
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            found, complete = _snapshot_host_virtiofsd(
+                output,
+                pod_uid,
+                threading.Event(),
+                time.monotonic() + VIRTIOFSD_BUDGET_SECONDS,
+                container_names_by_id=container_names_by_id,
+            )
+            complete = complete and not output.truncated
+            output.write(f"BASELINE_MATCHING_PROCESSES={found} BASELINE_SCAN_COMPLETE={str(complete).lower()}\n")
+            output.flush()
+
+        target_tmp = target.with_suffix(".tmp")
+        target_tmp.write_text(
+            json.dumps(
+                {
+                    "namespace": namespace,
+                    "pod": pod,
+                    "pod_uid": pod_uid,
+                    "launcher": launcher_name,
+                    "baseline": sample_path.name,
+                    "container_names_by_id": container_names_by_id,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        target_tmp.replace(target)
+        return True
+    except Exception as error:
+        _record_collector_error(root / launcher_name, error)
+        return False
+
+
+def _take_virtiofsd_timeline_sample(
+    artifact_root: Path,
+    launcher: Path,
+    sample: int,
+    stop: threading.Event,
+    *,
+    phase: str,
+    container_names_by_id: dict[str, str] | None = None,
+) -> tuple[int, bool]:
+    namespace = launcher.name.split("_", 1)[0]
+    pod_uid = _launcher_pod_uid(launcher, namespace)
+    directory = artifact_root / "host-qemu" / launcher.name
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"virtiofsd-{phase}-{sample:02d}-{time.time_ns()}.txt"
+    with path.open("w") as raw_output:
+        output = _BoundedTextWriter(raw_output, VIRTIOFSD_TIMELINE_MAX_BYTES)
+        output.write(
+            f"HOST_VIRTIOFSD_SNAPSHOT phase={phase} sample={sample} timestamp={datetime.now(UTC).isoformat(timespec='milliseconds')}\n"
+            f"launcher={launcher.name} pod_uid={pod_uid}\n"
+            "observer=local-proc-only qmp=disabled\n"
+        )
+        result = _snapshot_host_virtiofsd(
+            output,
+            pod_uid,
+            stop,
+            time.monotonic() + VIRTIOFSD_BUDGET_SECONDS,
+            container_names_by_id=container_names_by_id,
+        )
+        result = (result[0], result[1] and not output.truncated)
+        output.flush()
+    return result
+
+
+def _write_virtiofsd_timeline_summary(
+    root: Path, *, launcher: str | None, pod_uid: str | None, sample_count: int, stop_reason: str, started: float
+) -> None:
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "virtiofsd-timeline-summary.txt").write_text(
+            f"launcher={launcher or 'unknown'}\npod_uid={pod_uid or 'unknown'}\n"
+            f"post_acpi_samples={sample_count}\nstop_reason={stop_reason}\n"
+            f"elapsed_seconds={time.monotonic() - started:.3f}\n"
+            "observer=local-proc-only qmp=disabled\n"
+            "A matching process snapshot does not establish that virtiofsd was servicing guest requests.\n"
+        )
+    except OSError as error:
+        _record_collector_error(root, error)
+
+
+def _observe_virtiofsd_timeline(artifact_root: Path, namespace: str, stop: threading.Event) -> None:
+    root = artifact_root / "host-qemu"
+    target = root / VIRTIOFSD_TIMELINE_TARGET
+    started = time.monotonic()
+    target_deadline = started + VIRTIOFSD_TIMELINE_WAIT_SECONDS
+    while not stop.is_set() and not target.exists() and time.monotonic() < target_deadline:
+        stop.wait(min(POLL_SECONDS, target_deadline - time.monotonic()))
+    if stop.is_set():
+        _write_virtiofsd_timeline_summary(
+            root,
+            launcher=None,
+            pod_uid=None,
+            sample_count=0,
+            stop_reason="capture-teardown-before-ready-baseline",
+            started=started,
+        )
+        return
+    if not target.exists():
+        _write_virtiofsd_timeline_summary(
+            root, launcher=None, pod_uid=None, sample_count=0, stop_reason="ready-baseline-timeout", started=started
+        )
+        return
+
+    try:
+        identity = json.loads(target.read_text())
+        if not isinstance(identity, dict) or identity.get("namespace") != namespace:
+            raise ValueError("timeline target namespace does not match the active test")
+        pod = identity.get("pod")
+        pod_uid = identity.get("pod_uid")
+        container_names_by_id = identity.get("container_names_by_id", {})
+        if not isinstance(pod, str) or not isinstance(pod_uid, str):
+            raise ValueError("timeline target lacks launcher Pod identity")
+        if not isinstance(container_names_by_id, dict) or any(
+            not isinstance(container_id, str)
+            or not re.fullmatch(r"[a-f0-9]{32,128}", container_id)
+            or not isinstance(container_name, str)
+            or not re.fullmatch(r"virtiofs-[a-z0-9][a-z0-9-]{0,62}", container_name)
+            for container_id, container_name in container_names_by_id.items()
+        ):
+            raise ValueError("timeline target contains an invalid sanitized container map")
+        launcher = artifact_root / "serial" / str(identity.get("launcher"))
+        if not launcher.name.startswith(f"{namespace}_virt-launcher-"):
+            raise ValueError("timeline launcher path does not match its namespace")
+        if launcher.name != f"{namespace}_{pod}_{pod_uid}":
+            raise ValueError("timeline launcher path does not match its Pod name")
+    except Exception as error:
+        _record_collector_error(root, error)
+        return
+
+    while not stop.is_set() and time.monotonic() < target_deadline and not launcher.is_dir():
+        stop.wait(min(POLL_SECONDS, target_deadline - time.monotonic()))
+    if stop.is_set():
+        _write_virtiofsd_timeline_summary(
+            root,
+            launcher=launcher.name,
+            pod_uid=pod_uid,
+            sample_count=0,
+            stop_reason="capture-teardown-before-serial",
+            started=started,
+        )
+        return
+    if not launcher.is_dir():
+        _write_virtiofsd_timeline_summary(
+            root,
+            launcher=launcher.name,
+            pod_uid=pod_uid,
+            sample_count=0,
+            stop_reason="serial-directory-timeout",
+            started=started,
+        )
+        return
+    try:
+        if _launcher_pod_uid(launcher, namespace) != pod_uid:
+            raise ValueError("timeline launcher path UID does not match its target")
+    except Exception as error:
+        _record_collector_error(root / launcher.name, error)
+        return
+
+    requested = False
+    while not stop.is_set() and not requested and time.monotonic() < target_deadline:
+        try:
+            requested, _ = _launcher_markers(launcher, stop)
+        except OSError as error:
+            _record_collector_error(root / launcher.name, error)
+            return
+        if not requested:
+            stop.wait(POLL_SECONDS)
+    if stop.is_set():
+        _write_virtiofsd_timeline_summary(
+            root,
+            launcher=launcher.name,
+            pod_uid=pod_uid,
+            sample_count=0,
+            stop_reason="capture-teardown-before-acpi",
+            started=started,
+        )
+        return
+    if not requested:
+        _write_virtiofsd_timeline_summary(
+            root,
+            launcher=launcher.name,
+            pod_uid=pod_uid,
+            sample_count=0,
+            stop_reason="acpi-request-timeout",
+            started=started,
+        )
+        return
+
+    first_request = time.monotonic()
+    next_sample = first_request
+    sample_count = 0
+    absent_after_proof = 0
+    stop_reason = "sample-limit"
+    while not stop.is_set() and sample_count < VIRTIOFSD_TIMELINE_MAX_SAMPLES:
+        now = time.monotonic()
+        if now - first_request >= VIRTIOFSD_TIMELINE_MAX_SECONDS:
+            stop_reason = "time-limit"
+            break
+        if now < next_sample:
+            stop.wait(min(POLL_SECONDS, next_sample - now))
+            continue
+        try:
+            found, complete = _take_virtiofsd_timeline_sample(
+                artifact_root,
+                launcher,
+                sample_count,
+                stop,
+                phase="shutdown",
+                container_names_by_id=container_names_by_id,
+            )
+        except Exception as error:
+            _record_collector_error(root / launcher.name, error)
+            stop_reason = "sample-error"
+            break
+        sample_count += 1
+        try:
+            _, proof = _launcher_markers(launcher, stop)
+        except OSError as error:
+            _record_collector_error(root / launcher.name, error)
+            stop_reason = "serial-read-error"
+            break
+        if proof and complete and found == 0:
+            absent_after_proof += 1
+            if absent_after_proof >= 2:
+                stop_reason = "proof-and-daemon-absent"
+                break
+        else:
+            absent_after_proof = 0
+        next_sample += VIRTIOFSD_TIMELINE_INTERVAL_SECONDS
+
+    if stop.is_set() and sample_count < VIRTIOFSD_TIMELINE_MAX_SAMPLES and stop_reason == "sample-limit":
+        stop_reason = "capture-teardown"
+
+    _write_virtiofsd_timeline_summary(
+        root / launcher.name,
+        launcher=launcher.name,
+        pod_uid=pod_uid,
+        sample_count=sample_count,
+        stop_reason=stop_reason,
+        started=first_request,
+    )
 
 
 def _remaining(deadline: float, stop: threading.Event) -> float | None:
@@ -553,11 +930,16 @@ def _observe(kubectl: Kubectl, namespace: str, artifact_root: Path, stop: thread
 
 
 @contextmanager
-def capture(kubectl: Kubectl, namespace: str, artifact_root: Path) -> Iterator[None]:
-    """Collect at most two bounded host/QEMU samples while shutdown proof is pending."""
+def capture(
+    kubectl: Kubectl, namespace: str, artifact_root: Path, *, passive_virtiofsd_timeline: bool = False
+) -> Iterator[None]:
+    """Collect existing QMP snapshots or an explicitly selected passive virtiofsd timeline."""
     stop = threading.Event()
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="vm-host-qemu") as executor:
-        observing = executor.submit(_observe, kubectl, namespace, artifact_root, stop)
+        if passive_virtiofsd_timeline:
+            observing = executor.submit(_observe_virtiofsd_timeline, artifact_root, namespace, stop)
+        else:
+            observing = executor.submit(_observe, kubectl, namespace, artifact_root, stop)
         try:
             yield
         finally:

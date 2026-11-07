@@ -82,6 +82,7 @@ class VmRuntime:
     @contextmanager
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> Iterator[None]:
         artifacts = undeclared_outputs_dir() / "vm-artifacts"
+        passive_virtiofsd_timeline = host_qemu.virtiofsd_timeline_enabled()
         with (
             guest_logs.capture(
                 log_root=Path("/var/log/pods"),
@@ -94,12 +95,13 @@ class VmRuntime:
                 require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
                 record_shutdown_diagnostic=os.environ.get("AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC") == "1",
             ),
-            host_qemu.capture(k3s.kubectl, namespace, artifacts),
+            host_qemu.capture(k3s.kubectl, namespace, artifacts, passive_virtiofsd_timeline=passive_virtiofsd_timeline),
         ):
             yield
 
     def report(self, k3s: K3s, namespace: str) -> str:
-        host_qemu.snapshot_pending(k3s.kubectl, namespace, undeclared_outputs_dir() / "vm-artifacts")
+        if not host_qemu.virtiofsd_timeline_enabled():
+            host_qemu.snapshot_pending(k3s.kubectl, namespace, undeclared_outputs_dir() / "vm-artifacts")
         return vm_sandboxes.report(k3s.kubectl, namespace)
 
     def clean(self, k3s: K3s) -> None:

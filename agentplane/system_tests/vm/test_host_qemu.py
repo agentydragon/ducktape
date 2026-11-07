@@ -5,6 +5,7 @@ import json
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -111,11 +112,11 @@ def test_virtiofs_processes_match_exact_pod_uid_and_multiple_daemons(tmp_path: P
     host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() + 2, proc_root=proc)
 
     snapshot = output.getvalue()
-    assert "HOST_VIRTIOFSD_PID 101\n" in snapshot
-    assert "HOST_VIRTIOFSD_PID 201\n" in snapshot
-    assert "HOST_VIRTIOFSD_PID 301\n" not in snapshot
-    assert "HOST_VIRTIOFSD_PID 401\n" not in snapshot
-    assert "HOST_VIRTIOFSD_PID 501\n" not in snapshot
+    assert any(line.startswith("HOST_VIRTIOFSD_PID 101 ") for line in snapshot.splitlines())
+    assert any(line.startswith("HOST_VIRTIOFSD_PID 201 ") for line in snapshot.splitlines())
+    assert not any(line.startswith("HOST_VIRTIOFSD_PID 301 ") for line in snapshot.splitlines())
+    assert not any(line.startswith("HOST_VIRTIOFSD_PID 401 ") for line in snapshot.splitlines())
+    assert not any(line.startswith("HOST_VIRTIOFSD_PID 501 ") for line in snapshot.splitlines())
     assert "HOST_VIRTIOFSD_HOST_TID 102\n" in snapshot
     assert "NSpid:\t101\t1" in snapshot
     assert "WCHAN: request_wait_answer" in snapshot
@@ -167,7 +168,7 @@ def test_virtiofs_process_snapshot_stops_between_proc_reads(tmp_path: Path, monk
     host_qemu._snapshot_host_virtiofsd(output, uid, stop, time.monotonic() + 2, proc_root=proc)
 
     snapshot = output.getvalue()
-    assert "HOST_VIRTIOFSD_PID 101\n" in snapshot
+    assert any(line.startswith("HOST_VIRTIOFSD_PID 101 ") for line in snapshot.splitlines())
     assert "HOST_VIRTIOFSD_SCAN_STOPPED reason=budget-or-stop" in snapshot
     assert "STATUS:" not in snapshot
     assert "HOST_VIRTIOFSD_HOST_TID" not in snapshot
@@ -202,7 +203,7 @@ def test_virtiofs_process_snapshot_distinguishes_absence_permission_and_budget(
     monkeypatch.setattr(Path, "read_bytes", restricted_bytes)
     output = io.StringIO()
     host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() + 2, proc_root=proc)
-    assert "HOST_VIRTIOFSD_PID 101\n" in output.getvalue()
+    assert any(line.startswith("HOST_VIRTIOFSD_PID 101 ") for line in output.getvalue().splitlines())
     assert "STACK_ERROR PermissionError" in output.getvalue()
     monkeypatch.setattr(Path, "read_bytes", read_bytes)
 
@@ -215,6 +216,181 @@ def test_virtiofs_process_snapshot_distinguishes_absence_permission_and_budget(
     output = io.StringIO()
     host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() - 1, proc_root=proc)
     assert output.getvalue() == "HOST_VIRTIOFSD_SKIPPED budget-or-stop\n"
+
+
+def test_ready_baseline_is_bounded_and_arms_exact_projected_pod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+    container_id = "a" * 64
+    container_names_by_id = {container_id: "virtiofs-state"}
+
+    def record(
+        output: Any, pod_uid: str, stop: threading.Event, deadline: float, *, container_names_by_id: dict[str, str]
+    ) -> tuple[int, bool]:
+        assert pod_uid == uid
+        assert container_names_by_id == {container_id: "virtiofs-state"}
+        output.write("HOST_VIRTIOFSD_PROCESS_SCAN scanned=3 matching_pod=3 threads=24\n")
+        return 3, True
+
+    monkeypatch.setattr(host_qemu, "_snapshot_host_virtiofsd", record)
+    artifacts = tmp_path / "vm-artifacts"
+    assert host_qemu.record_virtiofsd_ready_baseline(
+        artifacts, "systest", "virt-launcher-agentplane-vm-123", uid, container_names_by_id
+    )
+
+    root = artifacts / "host-qemu"
+    target = json.loads((root / host_qemu.VIRTIOFSD_TIMELINE_TARGET).read_text())
+    expected_launcher = f"systest_virt-launcher-agentplane-vm-123_{uid}"
+    assert target == {
+        "baseline": next((root / expected_launcher).glob("virtiofsd-baseline-*.txt")).name,
+        "launcher": expected_launcher,
+        "namespace": "systest",
+        "pod": "virt-launcher-agentplane-vm-123",
+        "pod_uid": uid,
+        "container_names_by_id": container_names_by_id,
+    }
+    baseline = root / expected_launcher / target["baseline"]
+    assert baseline.stat().st_size <= host_qemu.VIRTIOFSD_TIMELINE_MAX_BYTES
+    assert "phase=ready-baseline" in baseline.read_text()
+    assert "matching_pod=3" in baseline.read_text()
+    assert "qmp=disabled" in baseline.read_text()
+
+
+def test_virtiofs_container_map_includes_regular_and_restartable_init_containers() -> None:
+    state = "a" * 64
+    trust = "b" * 64
+    tls = "c" * 64
+    assert host_qemu.virtiofs_container_names_by_id(
+        {
+            "containerStatuses": [
+                {"name": "virtiofs-trust", "containerID": f"containerd://{trust}"},
+                {"name": "compute", "containerID": f"containerd://{'d' * 64}"},
+            ],
+            "initContainerStatuses": [
+                {"name": "virtiofs-state", "containerID": f"containerd://{state}"},
+                {"name": "virtiofs-tls", "containerID": f"containerd://{tls}"},
+                {"name": "virtiofs-invalid", "containerID": "containerd://short"},
+            ],
+        }
+    ) == {state: "virtiofs-state", trust: "virtiofs-trust", tls: "virtiofs-tls"}
+
+
+def test_virtiofs_snapshot_labels_pid_with_exact_cgroup_container_id(tmp_path: Path) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    container_id = "a" * 64
+    proc = tmp_path / "proc"
+    _fake_virtiofs_process(proc, 101, f"0::/kubepods/pod{uid}/cri-containerd-{container_id}.scope")
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(
+        output,
+        uid,
+        threading.Event(),
+        time.monotonic() + 2,
+        proc_root=proc,
+        container_names_by_id={container_id: "virtiofs-state"},
+    )
+    assert f"HOST_VIRTIOFSD_PID 101 container_id={container_id} container_name=virtiofs-state" in output.getvalue()
+
+
+def test_virtiofs_snapshot_labels_unmapped_and_ambiguous_container_ids(tmp_path: Path) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    proc = tmp_path / "proc"
+    _fake_virtiofs_process(proc, 101, f"0::/kubepods/pod{uid}/container")
+    _fake_virtiofs_process(proc, 201, f"0::/kubepods/pod{uid}/{'a' * 64}/{'b' * 64}")
+    output = io.StringIO()
+    host_qemu._snapshot_host_virtiofsd(output, uid, threading.Event(), time.monotonic() + 2, proc_root=proc)
+    assert "HOST_VIRTIOFSD_PID 101 container_id=unavailable container_name=unmapped" in output.getvalue()
+    assert "HOST_VIRTIOFSD_PID 201 container_id=ambiguous container_name=unmapped" in output.getvalue()
+
+
+def test_virtiofs_timeline_requires_complete_absence_and_stops_after_proof(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    artifacts = tmp_path / "vm-artifacts"
+
+    def baseline(output: Any, *_args: Any, **_kwargs: Any) -> tuple[int, bool]:
+        output.write("baseline\n")
+        return 1, True
+
+    monkeypatch.setattr(host_qemu, "_snapshot_host_virtiofsd", baseline)
+    assert host_qemu.record_virtiofsd_ready_baseline(artifacts, "systest", "virt-launcher-agentplane-vm-123", uid)
+    launcher = artifacts / "serial" / f"systest_virt-launcher-agentplane-vm-123_{uid}" / "vmi"
+    launcher.mkdir(parents=True)
+    (launcher / "serial.log").write_bytes(host_qemu.SHUTDOWN_REQUESTED + b"\n" + host_qemu.SHUTDOWN_COMPLETE + b"\n")
+    monkeypatch.setattr(host_qemu, "VIRTIOFSD_TIMELINE_INTERVAL_SECONDS", 0.001)
+    monkeypatch.setattr(host_qemu, "VIRTIOFSD_TIMELINE_MAX_SECONDS", 0.1)
+    samples = iter(((2, True), (0, True), (0, True)))
+    observed: list[int] = []
+
+    def take(_artifacts: Path, _launcher: Path, index: int, *_args: object, **_kwargs: object) -> tuple[int, bool]:
+        observed.append(index)
+        return next(samples)
+
+    monkeypatch.setattr(host_qemu, "_take_virtiofsd_timeline_sample", take)
+    host_qemu._observe_virtiofsd_timeline(artifacts, "systest", threading.Event())
+
+    summary = (artifacts / "host-qemu" / launcher.parent.name / "virtiofsd-timeline-summary.txt").read_text()
+    assert observed == [0, 1, 2]
+    assert "post_acpi_samples=3" in summary
+    assert "stop_reason=proof-and-daemon-absent" in summary
+
+
+def test_virtiofs_timeline_does_not_claim_absence_from_incomplete_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    artifacts = tmp_path / "vm-artifacts"
+    monkeypatch.setattr(host_qemu, "_snapshot_host_virtiofsd", lambda output, *_args, **_kwargs: (1, True))
+    assert host_qemu.record_virtiofsd_ready_baseline(artifacts, "systest", "virt-launcher-agentplane-vm-123", uid)
+    launcher_dir = artifacts / "serial" / f"systest_virt-launcher-agentplane-vm-123_{uid}"
+    serial = launcher_dir / "vmi" / "serial.log"
+    serial.parent.mkdir(parents=True)
+    serial.write_bytes(host_qemu.SHUTDOWN_REQUESTED + b"\n" + host_qemu.SHUTDOWN_COMPLETE + b"\n")
+    monkeypatch.setattr(host_qemu, "VIRTIOFSD_TIMELINE_MAX_SAMPLES", 2)
+    monkeypatch.setattr(host_qemu, "_take_virtiofsd_timeline_sample", lambda *_args, **_kwargs: (0, False))
+
+    host_qemu._observe_virtiofsd_timeline(artifacts, "systest", threading.Event())
+
+    summary = (artifacts / "host-qemu" / launcher_dir.name / "virtiofsd-timeline-summary.txt").read_text()
+    assert "post_acpi_samples=2" in summary
+    assert "stop_reason=sample-limit" in summary
+
+
+def test_virtiofs_timeline_labels_capture_teardown_separately(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    artifacts = tmp_path / "vm-artifacts"
+    monkeypatch.setattr(host_qemu, "_snapshot_host_virtiofsd", lambda *_args, **_kwargs: (1, True))
+    assert host_qemu.record_virtiofsd_ready_baseline(artifacts, "systest", "virt-launcher-agentplane-vm-123", uid)
+    launcher_dir = artifacts / "serial" / f"systest_virt-launcher-agentplane-vm-123_{uid}"
+    serial = launcher_dir / "vmi" / "serial.log"
+    serial.parent.mkdir(parents=True)
+    serial.write_bytes(host_qemu.SHUTDOWN_REQUESTED + b"\n")
+    stop = threading.Event()
+
+    def take(*_args: Any, **_kwargs: Any) -> tuple[int, bool]:
+        stop.set()
+        return 1, False
+
+    monkeypatch.setattr(host_qemu, "_take_virtiofsd_timeline_sample", take)
+    host_qemu._observe_virtiofsd_timeline(artifacts, "systest", stop)
+
+    summary = (artifacts / "host-qemu" / launcher_dir.name / "virtiofsd-timeline-summary.txt").read_text()
+    assert "post_acpi_samples=1" in summary
+    assert "stop_reason=capture-teardown" in summary
+
+
+def test_capture_selects_passive_timeline_without_invoking_qmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(host_qemu, "_observe", lambda *_args: calls.append("qmp"))
+    monkeypatch.setattr(host_qemu, "_observe_virtiofsd_timeline", lambda *_args: calls.append("timeline"))
+
+    with host_qemu.capture(lambda *_args, **_kwargs: "", "systest", tmp_path, passive_virtiofsd_timeline=True):
+        pass
+
+    assert calls == ["timeline"]
 
 
 class _FakeK3s:
