@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { ServiceAccountSchema } from "../../../proto/identity_pb";
 import { PolicyBindingSchema } from "../../../policy/v1/policy_service_pb";
 import { CallerGrants } from "./caller_grants";
 
@@ -15,6 +16,7 @@ vi.mock("../policy/watch", () => ({ usePolicyResources: watch }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
+const account = create(ServiceAccountSchema, { namespace: "external", name: "caller" });
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
@@ -27,7 +29,7 @@ async function render(): Promise<void> {
     root.render(
       <MantineProvider env="test">
         <MemoryRouter>
-          <CallerGrants account={{ namespace: "external", name: "caller" }} />
+          <CallerGrants account={account} />
         </MemoryRouter>
       </MantineProvider>
     )
@@ -36,7 +38,7 @@ async function render(): Promise<void> {
 it("watches the selected subject and displays empty grants without mutation controls", async () => {
   watch.mockReturnValue({ resources: { bindings: [], sets: [] }, error: null });
   await render();
-  expect(watch).toHaveBeenCalledWith({ namespace: "external", name: "caller" }, undefined);
+  expect(watch).toHaveBeenCalledWith(account, undefined);
   expect(container.textContent).toContain("No binding names this ServiceAccount");
   expect(container.textContent).not.toContain("Revoke");
 });
