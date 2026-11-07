@@ -129,6 +129,7 @@ def _deployment(chart: Chart) -> None:
                             ports=[
                                 k8s.ContainerPort(name="http", container_port=8080),
                                 k8s.ContainerPort(name="metrics", container_port=9090),
+                                k8s.ContainerPort(name="blueshield-mon", container_port=9091),
                             ],
                             readiness_probe=health,
                             liveness_probe=health,
@@ -248,7 +249,10 @@ def chart(app: App) -> Chart:
         "monitor",
         metadata=ApiObjectMetadata(name="platform-sessions-quest", namespace=NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels={"app": NAME}),
-        pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")],
+        pod_metrics_endpoints=[
+            PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m"),
+            PodMonitorSpecPodMetricsEndpoints(port="blueshield-mon", path="/metrics", interval="1m"),
+        ],
     )
     return chart
 
