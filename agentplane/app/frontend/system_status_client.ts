@@ -21,9 +21,9 @@ function isJsonValue(value: unknown): value is JsonValue {
 
 function stateName(state: SystemComponentState): SystemComponentStatus["state"] {
   switch (state) {
-    case SystemComponentState.SYSTEM_COMPONENT_STATE_OK:
+    case SystemComponentState.OK:
       return "ok";
-    case SystemComponentState.SYSTEM_COMPONENT_STATE_DOWN:
+    case SystemComponentState.DOWN:
       return "down";
     default:
       throw new Error(`App status returned an unknown system component state (${state}).`);
