@@ -254,8 +254,6 @@ spec:
               value: agentplane-staging
             - name: AGENTPLANE_RUNNER_GATEWAY_LISTEN_ADDRESS
               value: 0.0.0.0:8080
-            - name: AGENTPLANE_RUNNER_GATEWAY_HTTP_LISTEN_ADDRESS
-              value: 0.0.0.0:8081
             - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_TOKEN_FILE
               value: /var/run/secrets/agentplane-runner-gateway/token
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE
@@ -303,9 +301,6 @@ spec:
           ports:
             - containerPort: 8080
               name: grpc
-              protocol: TCP
-            - containerPort: 8081
-              name: http
               protocol: TCP
           readinessProbe:
             failureThreshold: 3
@@ -639,8 +634,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-            - port: "8081"
-              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: notifications
@@ -649,8 +642,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-            - port: "8081"
-              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: actions
@@ -658,6 +649,4 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-            - port: "8081"
               protocol: TCP

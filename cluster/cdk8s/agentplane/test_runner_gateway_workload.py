@@ -80,13 +80,11 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert not pod.get("initContainers")
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
     assert pod["serviceAccountName"] == runner_gateway.NAME
-    http = session_dispatcher.http_service(staging.ENV.namespace)
     listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
     settings = _gateway_settings(docs, container)
     assert settings["listen_address"].startswith("0.0.0.0:")
-    assert settings["http_listen_address"].startswith("0.0.0.0:")
+    assert "http_listen_address" not in settings
     assert int(settings["listen_address"].rsplit(":", 1)[1]) == listener_ports["grpc"]
-    assert int(settings["http_listen_address"].rsplit(":", 1)[1]) == listener_ports["http"]
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
     assert settings["runner_security"] == {
@@ -117,7 +115,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     gateway_service = _resource(root_docs, "Service", runner_gateway.NAME)["spec"]
     assert one(gateway_service["ports"])["port"] == 8080
     dispatcher_service = _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]
-    assert one(port for port in dispatcher_service["ports"] if port["name"] == "http")["targetPort"] == http.pod_port
+    assert {port["name"] for port in dispatcher_service["ports"]} == {"grpc"}
     policy = _resource(docs, "CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
     ingress = {
         (endpoint["matchLabels"].get("app.kubernetes.io/name"), port["port"])
@@ -126,9 +124,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         for port in rule.get("toPorts", [{}])[0].get("ports", [])
     }
     assert (app.NAME, "8080") in ingress
-    assert (app.NAME, str(http.pod_port)) in ingress
     assert (notifications.NAME, "8080") in ingress
-    assert (notifications.NAME, str(http.pod_port)) in ingress
     assert (runner_gateway.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
     runner_label = environment_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]

@@ -2415,10 +2415,6 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
-    - name: http
-      port: 8081
-      protocol: TCP
-      targetPort: 8081
   selector:
     app.kubernetes.io/name: runner-gateway
 ---
@@ -4452,14 +4448,6 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8081"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
