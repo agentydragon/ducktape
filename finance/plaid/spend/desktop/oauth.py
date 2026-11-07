@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import hmac
 import html
-import secrets
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
+import httpx2
 from aiohttp import web
+from authlib.common.security import generate_token
+from authlib.integrations.base_client.errors import OAuthError
+from authlib.integrations.httpx_client import AsyncOAuth2Client
 
 from .credentials import SecretServiceTokenStore
 
@@ -22,14 +23,6 @@ CALLBACK_HOST = "127.0.0.1"
 CALLBACK_PORT = 43821
 CALLBACK_PATH = "/callback"
 REDIRECT_URI = f"http://{CALLBACK_HOST}:{CALLBACK_PORT}{CALLBACK_PATH}"
-
-
-def _b64url(value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
-
-
-def _random_urlsafe(byte_count: int = 32) -> str:
-    return _b64url(secrets.token_bytes(byte_count))
 
 
 @dataclass(frozen=True)
@@ -70,6 +63,13 @@ def _format_callback_error(callback: CallbackResult) -> str:
     if error == "invalid_request":
         message += ". Check that the Authentik provider allows the authorization_code grant"
     return message
+
+
+def _validate_token_response(response: httpx2.Response) -> httpx2.Response:
+    response.raise_for_status()
+    if not isinstance(response.json(), dict):
+        raise RuntimeError("Authentik returned an invalid token response")
+    return response
 
 
 def _callback_response(status: HTTPStatus, message: str) -> web.Response:
@@ -138,6 +138,18 @@ class Authenticator:
         self.access_token_expires_at = 0.0
         self._discovery: dict[str, str] | None = None
 
+    def _oauth_client(self) -> AsyncOAuth2Client:
+        client = AsyncOAuth2Client(
+            client_id=self.config.client_id,
+            redirect_uri=REDIRECT_URI,
+            token_endpoint_auth_method="none",
+            code_challenge_method="S256",
+            timeout=httpx2.Timeout(connect=15, read=15, write=15, pool=15),
+            follow_redirects=False,
+        )
+        client.register_compliance_hook("access_token_response", _validate_token_response)
+        return client
+
     async def _metadata(self) -> dict[str, str]:
         if self._discovery is None:
             response = await self.http.get(self.config.discovery_url)
@@ -154,9 +166,8 @@ class Authenticator:
 
     async def login(self) -> None:
         metadata = await self._metadata()
-        state = _random_urlsafe()
-        verifier = _random_urlsafe(48)
-        challenge = _b64url(hashlib.sha256(verifier.encode("ascii")).digest())
+        state = generate_token(48)
+        verifier = generate_token(48)
         callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
         runner = web.AppRunner(_callback_app(state, callback_future), access_log=None)
         try:
@@ -167,16 +178,13 @@ class Authenticator:
             except OSError as exc:
                 raise RuntimeError(f"could not listen on the Plaid Spend sign-in callback at {REDIRECT_URI}") from exc
 
-            authorization_params = {
-                "response_type": "code",
-                "client_id": self.config.client_id,
-                "redirect_uri": REDIRECT_URI,
-                "scope": "openid offline_access",
-                "state": state,
-                "code_challenge": challenge,
-                "code_challenge_method": "S256",
-            }
-            authorization_url = f"{metadata['authorization_endpoint']}?{urlencode(authorization_params)}"
+            async with self._oauth_client() as oauth:
+                authorization_url, _ = oauth.create_authorization_url(
+                    metadata["authorization_endpoint"],
+                    state=state,
+                    code_verifier=verifier,
+                    scope="openid offline_access",
+                )
             process = await asyncio.create_subprocess_exec(
                 "xdg-open", authorization_url, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
             )
@@ -192,15 +200,12 @@ class Authenticator:
         if callback.code is None:
             raise RuntimeError("Authentik sign-in did not return a code")
 
-        token_response = await self._token_request(
+        token_response = await self._fetch_token(
             metadata["token_endpoint"],
-            {
-                "grant_type": "authorization_code",
-                "client_id": self.config.client_id,
-                "code": callback.code,
-                "redirect_uri": REDIRECT_URI,
-                "code_verifier": verifier,
-            },
+            grant_type="authorization_code",
+            code=callback.code,
+            redirect_uri=REDIRECT_URI,
+            code_verifier=verifier,
         )
         refresh_token = token_response.get("refresh_token")
         if not isinstance(refresh_token, str) or not refresh_token:
@@ -222,11 +227,10 @@ class Authenticator:
 
         metadata = await self._metadata()
         try:
-            token_response = await self._token_request(
-                metadata["token_endpoint"],
-                {"grant_type": "refresh_token", "client_id": self.config.client_id, "refresh_token": refresh_token},
+            token_response = await self._fetch_token(
+                metadata["token_endpoint"], grant_type="refresh_token", refresh_token=refresh_token
             )
-        except httpx.HTTPStatusError as exc:
+        except httpx2.HTTPStatusError as exc:
             if exc.response.status_code in (400, 401):
                 await self.token_store.clear()
                 self.access_token = None
@@ -242,10 +246,12 @@ class Authenticator:
             raise RuntimeError("Authentik token response did not contain an access token")
         return self.access_token
 
-    async def _token_request(self, endpoint: str, form: dict[str, str]) -> dict[str, object]:
-        response = await self.http.post(endpoint, data=form)
-        response.raise_for_status()
-        token_response = response.json()
+    async def _fetch_token(self, endpoint: str, **grant_parameters: str) -> dict[str, object]:
+        try:
+            async with self._oauth_client() as oauth:
+                token_response = await oauth.fetch_token(endpoint, **grant_parameters)
+        except OAuthError:
+            raise RuntimeError("Authentik rejected the token request") from None
         if not isinstance(token_response, dict):
             raise RuntimeError("Authentik returned an invalid token response")
         return token_response
