@@ -1303,6 +1303,8 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "bounded_callback_fallback_heap_test")
 
+debundle_e2e_test(name = "callback_future_availability_test")
+
 debundle_e2e_test(
     name = "explain_integrity_cli_test",
     deps = [

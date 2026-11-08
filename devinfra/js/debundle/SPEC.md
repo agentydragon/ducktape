@@ -1971,6 +1971,16 @@ reachability follows those same synchronous prefixes, so a value first read
 after a definite `await` does not expose its callback body through that path
 during chunk initialization.
 
+An opaque-call read closure retains a read of an uninitialized local binding
+and its TDZ obligation. When that binding is the sole direct `let`/`const`
+declaration at its only declaration site, the read alone does not expose
+callbacks from its future initializer. Created callback and executed-owner
+roots remain available immediately, including during their own initializer.
+Deferred targets are reconsidered on later traversal after initialization;
+initializing the binding alone does not execute its callback effects. Imports,
+`var`, hoisted functions, repeated declarations and incomplete reachability
+retain their conservative treatment.
+
 Prefix write coverage includes assignments, updates, destructuring and loop
 targets. A write whose target or value evaluation contains an `await` may still
 be retained conservatively. Deferred writes continue to require co-location
