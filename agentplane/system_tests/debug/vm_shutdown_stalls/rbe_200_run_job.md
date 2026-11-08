@@ -1,5 +1,8 @@
 # 200-run serial RBE experiment
 
+The observed guest, infrastructure and setup failures, with invocation and
+execution IDs, are catalogued in [rbe_200_flakiness.md](rbe_200_flakiness.md).
+
 On 2026-11-08 UTC, a one-off Kubernetes Job was created in `agentplane-staging`
 to drive 200 uncached repetitions of `//agentplane/system_tests/suites:test_vm`
 using BuildBuddy remote execution. It pins source commit
