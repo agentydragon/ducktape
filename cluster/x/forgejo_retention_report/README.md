@@ -37,6 +37,10 @@ image/version. Old ReplicaSets, Jobs, CronJobs, VM and sandbox templates contrib
 live references. External consumers and additional custom resource kinds still
 need an inventory before deletion could be considered.
 
+The report also lists every version the policy can never select (other owners, non-`devel-*` tag schemes,
+upload sessions, internal records) grouped by owner/type/tag shape, with exclusively-held bytes. A tag
+matching no known scheme is flagged `UNRECOGNIZED` rather than silently retained.
+
 Package accounting reads Forgejo's `package*` tables in a repeatable-read,
 read-only transaction with a 30-second statement timeout. A schema change fails
 the collection. Queries read package metadata, not S3 object contents or a bucket
