@@ -250,6 +250,8 @@ pub(super) trait LocalContext: OwnDataContext {
     /// Both binary operands have completed in source order, but at least one
     /// may be an object or unknown value whose coercion can execute user code.
     fn binary_fallback(&mut self, _frame: &LocalFrame, _reached: &Values, _span: Span) {}
+    fn refused_spread(&mut self, _frame: &LocalFrame, _source: &Values, _span: Span) {}
+    fn spread_copy_recorded(&mut self, _allocation: u32) {}
 }
 
 struct LocalValueContext<'a, C> {
@@ -294,6 +296,33 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     }
     fn heap(&mut self) -> LiteralHeap<'_> {
         self.context.heap()
+    }
+    fn ordinary_record_shape(
+        &self,
+        allocation: u32,
+    ) -> Option<super::value_model::OwnPropertyShape> {
+        self.context.ordinary_record_shape(allocation).cloned()
+    }
+    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+        self.context.object_properties_are_settled(allocation)
+    }
+    fn property_values(&self, allocation: u32, property: &str) -> Option<Values> {
+        self.context.property_values(allocation, property).cloned()
+    }
+    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+        self.context.property_is_accessor(allocation, property)
+    }
+    fn has_dynamic_properties(&self, allocation: u32) -> bool {
+        self.context.has_dynamic_properties(allocation)
+    }
+    fn record_property_read(&mut self, cell: crate::facts::EffectCell) {
+        self.context.record_property_read(cell);
+    }
+    fn refused_spread(&mut self, source: &Values, span: Span) {
+        self.context.refused_spread(self.frame, source, span);
+    }
+    fn spread_copy_recorded(&mut self, allocation: u32) {
+        self.context.spread_copy_recorded(allocation);
     }
     fn keyed_collection_new(
         &mut self,
@@ -663,10 +692,13 @@ fn record_expression(
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
-    frame
-        .effect_coverage
-        .compose(&EffectCoverageFragment::default());
-    if !matches!(context.literal_layout(*allocation), LiteralLayout::Record) {
+    let layout = context.literal_layout(*allocation);
+    if !matches!(&layout, LiteralLayout::SpreadCopy) {
+        frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
+    }
+    if !matches!(&layout, LiteralLayout::Record | LiteralLayout::SpreadCopy) {
         return None;
     }
     let mut new_record = !context.heap().properties.contains_key(allocation);

@@ -14,6 +14,16 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "own_data_object_spread_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "compressed_graph_reports_test",
     deps = [
         ":graph_support",

@@ -5,10 +5,12 @@
 
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{
-    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PropertyDefinition,
-    ProviderScopeId, ValueExpr, Values,
+    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, OwnPropertyDescriptorSyntax,
+    OwnPropertyShape, PropertyDefinition, ProviderScopeId, ValueExpr, Values,
+    ordered_own_property_names,
 };
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
+use crate::facts::EffectCell;
 use crate::facts::abstract_domain::builtins::{
     ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
 };
@@ -54,6 +56,8 @@ impl AllocationValue {
 
 pub(super) enum LiteralLayout {
     Record,
+    /// Exactly one object-literal spread. Mixed records remain unsupported.
+    SpreadCopy,
     DenseArray(Vec<ValueExpr>),
     Unsupported,
 }
@@ -72,6 +76,30 @@ pub(super) trait AllocationContext {
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
     fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind;
+    /// Runtime and syntax evidence for one ordinary own-data source. The
+    /// shared spread transfer still checks settlement, descriptors, and all
+    /// payload slots before copying.
+    fn ordinary_record_shape(&self, _allocation: u32) -> Option<OwnPropertyShape> {
+        None
+    }
+    fn object_properties_are_settled(&self, _allocation: u32) -> bool {
+        false
+    }
+    fn property_values(&self, _allocation: u32, _property: &str) -> Option<Values> {
+        None
+    }
+    fn property_is_accessor(&self, _allocation: u32, _property: &str) -> bool {
+        true
+    }
+    fn has_dynamic_properties(&self, _allocation: u32) -> bool {
+        true
+    }
+    fn record_property_read(&mut self, _cell: EffectCell) {}
+    /// Application execution uses the normal conservative fallback after the
+    /// spread operand has already been evaluated. Strict queries simply
+    /// decline this application-specific path.
+    fn refused_spread(&mut self, _source: &Values, _span: swc_common::Span) {}
+    fn spread_copy_recorded(&mut self, _allocation: u32) {}
     fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
     fn heap(&mut self) -> LiteralHeap<'_>;
     /// The adapter proves original constructor identity for this canonical New
@@ -194,6 +222,10 @@ pub(super) struct LiteralHeap<'a> {
     pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
     pub(super) revision: &'a mut u64,
     pub(super) writable_prefix: Option<&'a mut OrdMap<u32, WritablePrefixState>>,
+    pub(super) spread_shapes: Option<&'a mut OrdMap<u32, OwnPropertyShape>>,
+    pub(super) unknown_enumerability: Option<&'a mut BTreeSet<u32>>,
+    pub(super) static_shapes: Option<&'a BTreeMap<u32, OwnPropertyShape>>,
+    pub(super) exact_spread_allocations: Option<&'a BTreeSet<u32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +237,100 @@ pub(super) enum WritablePrefixState {
 }
 
 impl LiteralHeap<'_> {
+    /// A descriptor/order writer not modeled by the ordinary literal kernel
+    /// permanently revokes exact enumeration evidence for this pooled object.
+    pub(super) fn mark_unknown_enumerability(&mut self, allocation: u32) {
+        let already_unknown = self
+            .unknown_enumerability
+            .as_deref()
+            .is_some_and(|unknown| unknown.contains(&allocation));
+        let has_static_shape = self
+            .static_shapes
+            .is_none_or(|shapes| shapes.contains_key(&allocation));
+        let has_runtime_shape = self
+            .spread_shapes
+            .as_deref()
+            .is_some_and(|shapes| shapes.contains_key(&allocation));
+        let is_spread_allocation = self
+            .exact_spread_allocations
+            .is_some_and(|allocations| allocations.contains(&allocation));
+        if !(already_unknown || has_static_shape || has_runtime_shape || is_spread_allocation) {
+            return;
+        }
+        let Some(unknown) = self.unknown_enumerability.as_deref_mut() else {
+            return;
+        };
+        let shape_removed = self
+            .spread_shapes
+            .as_deref_mut()
+            .is_some_and(|shapes| shapes.remove(&allocation).is_some());
+        if unknown.insert(allocation) || shape_removed {
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// Stores one proven spread copy. Repeated pooled executions retain exact
+    /// order only while every observed source has the same complete shape.
+    pub(super) fn record_spread_copy(
+        &mut self,
+        allocation: u32,
+        shape: OwnPropertyShape,
+        copied_properties: BTreeMap<Option<String>, Values>,
+    ) -> bool {
+        if self.spread_shapes.is_none() {
+            return false;
+        }
+        if self
+            .unknown_enumerability
+            .as_deref()
+            .is_some_and(|unknown| unknown.contains(&allocation))
+        {
+            return false;
+        }
+        let existing_shape = self
+            .spread_shapes
+            .as_deref()
+            .and_then(|shapes| shapes.get(&allocation))
+            .cloned();
+        if existing_shape
+            .as_ref()
+            .is_some_and(|previous| previous != &shape)
+        {
+            self.mark_unknown_enumerability(allocation);
+            return false;
+        }
+        if existing_shape.is_none()
+            && self
+                .properties
+                .get(&allocation)
+                .is_some_and(|properties| !properties.is_empty())
+        {
+            // A legacy or earlier opaque execution already pooled this site;
+            // its previous key order cannot be reconstructed safely.
+            self.mark_unknown_enumerability(allocation);
+            return false;
+        }
+        let mut changed = false;
+        let current = self.properties.entry(allocation).or_default();
+        for (property, values) in copied_properties {
+            let slot = current.entry(property).or_default();
+            let before = slot.len();
+            slot.extend(values);
+            changed |= slot.len() != before;
+        }
+        if existing_shape.is_none() {
+            self.spread_shapes
+                .as_deref_mut()
+                .expect("spread shape storage was checked")
+                .insert(allocation, shape);
+            changed = true;
+        }
+        if changed {
+            *self.revision = self.revision.wrapping_add(1);
+        }
+        true
+    }
+
     /// A source allocation site can seed writability only on its first
     /// execution and only while its pooled heap has no prior object state.
     /// Reentry, a prior value, or any later execution permanently loses the
@@ -295,6 +421,7 @@ impl LiteralHeap<'_> {
         property: Option<String>,
         values: &Values,
     ) {
+        self.mark_unknown_enumerability(allocation);
         let slot = self
             .properties
             .entry(allocation)
@@ -577,8 +704,12 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
     mut judgment: AllocationJudgment,
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
-    context.unmodeled_effect_operation();
     let properties: Vec<_> = properties.into_iter().collect();
+    if matches!(properties.as_slice(), [PropertyDefinition::Spread { .. }]) {
+        context.noninvoking_operation();
+    } else {
+        context.unmodeled_effect_operation();
+    }
     let mut writable_properties = BTreeSet::new();
     let mut non_writable_properties = BTreeSet::new();
     for definition in &properties {
@@ -610,11 +741,101 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
         if !can_complete {
             break;
         }
+        if matches!(definition, PropertyDefinition::Spread { .. }) && properties.len() != 1 {
+            // Mixed literals stay on the indexed effect fallback. Preserve an
+            // opaque value in the allocation heap without evaluating the spread
+            // operand here; its source operation is handled once by the legacy
+            // call path, in source order.
+            judgment = AllocationJudgment::Opaque;
+            evaluated
+                .entry(None)
+                .or_default()
+                .insert(AbstractValue::Value(Value::Top));
+            continue;
+        }
         let child = child(context, *definition.value())?;
+        let child_covered = matches!(
+            &child.judgment,
+            AllocationJudgment::CoveredAllocationOnly(_)
+        );
         judgment.compose(&child.judgment);
         let mut values = child.values;
         may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
         can_complete &= !values.is_empty();
+        if let PropertyDefinition::Spread { span, .. } = definition {
+            if properties.len() != 1 || !child_covered || !can_complete || may_throw {
+                refuse_spread(context, allocation, &values, *span);
+                return None;
+            }
+            let [AbstractValue::Value(Value::Alloc(Kind::Object, source))] =
+                values.iter().collect::<Vec<_>>().as_slice()
+            else {
+                refuse_spread(context, allocation, &values, *span);
+                return None;
+            };
+            let Some(source_shape) = context.ordinary_record_shape(*source) else {
+                refuse_spread(context, allocation, &values, *span);
+                return None;
+            };
+            if !context.object_properties_are_settled(*source)
+                || context.has_dynamic_properties(*source)
+                || source_shape
+                    .properties
+                    .values()
+                    .any(|descriptor| !matches!(descriptor, OwnPropertyDescriptorSyntax::Data))
+            {
+                refuse_spread(context, allocation, &values, *span);
+                return None;
+            }
+            let source_order = ordered_own_property_names(&source_shape.creation_order);
+            if source_order.len() != source_shape.properties.len() {
+                refuse_spread(context, allocation, &values, *span);
+                return None;
+            }
+            let mut copied_properties = BTreeMap::new();
+            for property in &source_order {
+                if context.property_is_accessor(*source, property) {
+                    refuse_spread(context, allocation, &values, *span);
+                    return None;
+                }
+                let Some(property_values) = context.property_values(*source, property) else {
+                    refuse_spread(context, allocation, &values, *span);
+                    return None;
+                };
+                if property_values.is_empty()
+                    || property_values.contains(&AbstractValue::Value(Value::Unavailable))
+                {
+                    refuse_spread(context, allocation, &values, *span);
+                    return None;
+                }
+                copied_properties.insert(Some(property.clone()), property_values);
+            }
+            context.record_property_read(EffectCell::ObjectShape(*source));
+            for property in &source_order {
+                context.record_property_read(EffectCell::OwnProperty {
+                    origin: *source,
+                    property: property.clone(),
+                });
+            }
+            let copied_shape = OwnPropertyShape {
+                properties: source_order
+                    .iter()
+                    .cloned()
+                    .map(|property| (property, OwnPropertyDescriptorSyntax::Data))
+                    .collect(),
+                creation_order: source_order,
+            };
+            if !context
+                .heap()
+                .record_spread_copy(allocation, copied_shape, copied_properties)
+            {
+                refuse_spread(context, allocation, &values, *span);
+                return None;
+            }
+            writable_properties.extend(source_order.iter().cloned());
+            context.spread_copy_recorded(allocation);
+            continue;
+        }
         // This is descriptor payload containment. Its ordinary-data eligibility
         // remains guarded by the canonical descriptor tag at every read.
         evaluated.entry(property).or_default().extend(values);
@@ -633,6 +854,20 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
         values.insert(AbstractValue::Value(Value::Unavailable));
     }
     Some(AllocationValue { values, judgment })
+}
+
+fn refuse_spread(
+    context: &mut impl AllocationContext,
+    allocation: u32,
+    source: &Values,
+    span: swc_common::Span,
+) {
+    {
+        let mut heap = context.heap();
+        heap.mark_unknown_enumerability(allocation);
+        heap.invalidate_writable(allocation);
+    }
+    context.refused_spread(source, span);
 }
 
 /// No-spread array creation shares ordered child transfer with local execution.
@@ -742,6 +977,10 @@ mod tests {
                 arrays: &mut arrays,
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),
+                spread_shapes: None,
+                unknown_enumerability: None,
+                static_shapes: None,
+                exact_spread_allocations: None,
             };
             heap.begin_literal(allocation);
             assert_eq!(
@@ -765,6 +1004,10 @@ mod tests {
                 arrays: &mut arrays,
                 revision: &mut revision,
                 writable_prefix: Some(&mut writable_prefix),
+                spread_shapes: None,
+                unknown_enumerability: None,
+                static_shapes: None,
+                exact_spread_allocations: None,
             };
             heap.begin_literal(allocation);
             assert_eq!(

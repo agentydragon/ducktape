@@ -448,6 +448,9 @@ pub(super) enum LiteralPropertyKind {
     Getter,
     Setter,
     Opaque,
+    /// One canonical object-literal spread. Other mixed/spread shapes remain
+    /// outside the ordered allocation subset.
+    Spread,
 }
 
 #[derive(Debug, Clone)]
@@ -457,6 +460,7 @@ pub(super) enum PropertyDefinition<T> {
     Getter { name: Option<String>, value: T },
     Setter { name: Option<String>, value: T },
     Opaque { name: Option<String>, value: T },
+    Spread { value: T, span: Span },
 }
 
 impl<T> PropertyDefinition<T> {
@@ -467,6 +471,7 @@ impl<T> PropertyDefinition<T> {
             Self::Getter { .. } => LiteralPropertyKind::Getter,
             Self::Setter { .. } => LiteralPropertyKind::Setter,
             Self::Opaque { .. } => LiteralPropertyKind::Opaque,
+            Self::Spread { .. } => LiteralPropertyKind::Spread,
         }
     }
     pub(super) fn new(kind: LiteralPropertyKind, name: Option<String>, value: T) -> Self {
@@ -476,6 +481,10 @@ impl<T> PropertyDefinition<T> {
             LiteralPropertyKind::Getter => Self::Getter { name, value },
             LiteralPropertyKind::Setter => Self::Setter { name, value },
             LiteralPropertyKind::Opaque => Self::Opaque { name, value },
+            LiteralPropertyKind::Spread => Self::Spread {
+                value,
+                span: swc_common::DUMMY_SP,
+            },
         }
     }
     pub(super) fn name(&self) -> Option<&str> {
@@ -485,6 +494,7 @@ impl<T> PropertyDefinition<T> {
             | Self::Getter { name, .. }
             | Self::Setter { name, .. }
             | Self::Opaque { name, .. } => name.as_deref(),
+            Self::Spread { .. } => None,
         }
     }
     pub(super) fn value(&self) -> &T {
@@ -493,7 +503,8 @@ impl<T> PropertyDefinition<T> {
             | Self::Method { value, .. }
             | Self::Getter { value, .. }
             | Self::Setter { value, .. }
-            | Self::Opaque { value, .. } => value,
+            | Self::Opaque { value, .. }
+            | Self::Spread { value, .. } => value,
         }
     }
     pub(super) fn map<'a, U>(&'a self, map: impl FnOnce(&'a T) -> U) -> PropertyDefinition<U> {
@@ -517,6 +528,10 @@ impl<T> PropertyDefinition<T> {
             Self::Opaque { name, value } => PropertyDefinition::Opaque {
                 name: name.clone(),
                 value: map(value),
+            },
+            Self::Spread { value, span } => PropertyDefinition::Spread {
+                value: map(value),
+                span: *span,
             },
         }
     }

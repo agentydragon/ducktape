@@ -2339,6 +2339,41 @@ reaches none. A11 remains an author obligation for hidden
 native-alias paths, including a descriptor method called through an alias.
 Key precision grants no call, purity, throw or return summary.
 
+### Single-spread ordinary object copies
+
+The shared ordered literal transfer can copy one spread property when an
+existing ordered root initializer or local body admits the containing record.
+The record must contain exactly one property, `...source`. The selected source
+must be one settled ordinary object with a complete own-property shape, no
+dynamic keys, data descriptors only, and a nonempty abstract value without an
+abrupt alternative for every own enumerable property. This transfer does not
+accept mixed literals, accessors, opaque or escaped objects, or uncertain
+source completion. Other
+spread expressions retain the generic conservative path. A root initializer
+still passes the existing canonical initialization and ordered-root admission;
+spread syntax adds no authority or acceptance rule.
+
+The copy records a non-assumed `ObjectShape` read and a read of each copied
+`OwnProperty`. Integer-index keys retain JavaScript's numeric ordering before
+other string keys, and a computed own data key `"__proto__"` remains a copied
+data property. Copied values retain their identities, including functions;
+the transfer never invokes them. Later own-data reads can use the destination's
+runtime shape and copied values.
+
+Allocation sites are pooled across executions. Exact destination shape remains
+available only while every observed copy has the same full key order and no
+earlier opaque state. A conflicting shape or any unmodeled write, delete,
+descriptor change, escape, or taint permanently marks enumerable membership
+unknown for that pooled site. The existing prefix revision advances when this
+metadata changes, even if all stored property Values stay equal. Descriptor-map
+application revokes this proof because its enumerable bits are not represented
+in the ordinary value heap; generic `Object.defineProperty` and other opaque
+mutations keep their existing taint fallback. Mixed/accessor/unknown sources
+preserve generic callback and completion handling without acquiring exact
+spread reads. When compatibility execution retains a dynamic-write receiver
+only as syntax, a direct binding revokes that object's shape; other receiver
+expressions are not re-evaluated and conservatively revoke known record shapes.
+
 ## Captured ordinary-object values
 
 `chunk_analysis_options.<defining chunk>.value_inputs` can attach a typed

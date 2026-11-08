@@ -1071,6 +1071,14 @@ fn linkage_export_effects_survive_saved_analysis() {
     );
 }
 
+#[test]
+fn own_data_object_spread_survives_saved_analysis_and_emitted_runtime() {
+    let source = "const source = { 10: 10, 2: 2, alpha: 3 };\nconst copied = { ...source };\nconsole.log(Object.keys(copied).join(\",\"), copied.alpha);\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "2,10,alpha 3\n");
+    assert_staged_run_matches(FixtureOpts::new(source, vec![]), &[]);
+}
+
 fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
     let (staged, _fixture) = staged(opts);
     let direct = staged.run(run_args);

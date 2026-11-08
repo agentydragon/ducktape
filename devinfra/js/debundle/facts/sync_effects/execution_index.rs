@@ -6550,7 +6550,7 @@ impl ExecutionIndex {
     ) -> super::allocation_transfer::LiteralLayout {
         use super::allocation_transfer::LiteralLayout;
         if self.exact_object_spread_copies.contains(&allocation) {
-            return LiteralLayout::Unsupported;
+            return LiteralLayout::SpreadCopy;
         }
         if let Some(elements) = self.array_elements.get(&allocation) {
             return elements
@@ -11714,7 +11714,7 @@ impl Visit for ExecutionIndex {
                     }
                     _ => (LiteralPropertyKind::Opaque, None),
                 },
-                _ => (LiteralPropertyKind::Opaque, None),
+                PropOrSpread::Spread(_) => (LiteralPropertyKind::Spread, None),
             };
             definition_kinds.push(kind);
             if let Some(callable) = callable {
@@ -11753,7 +11753,9 @@ impl Visit for ExecutionIndex {
                     let Some(name) = static_property_name(&pair.key) else {
                         return false;
                     };
-                    if name == "__proto__" || descriptor_shape.contains_key(&name) {
+                    if (name == "__proto__" && !matches!(&pair.key, PropName::Computed(_)))
+                        || descriptor_shape.contains_key(&name)
+                    {
                         return false;
                     }
                     descriptor_creation_order.push(name.clone());
@@ -11863,11 +11865,13 @@ impl Visit for ExecutionIndex {
             PropOrSpread::Prop(property) => match property.as_ref() {
                 Prop::KeyValue(pair) => match static_property_name(&pair.key).as_deref() {
                     Some("__proto__")
-                        if matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
+                        if !matches!(&pair.key, PropName::Computed(_))
+                            && matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))) =>
                     {
                         null_prototype += 1;
                         true
                     }
+                    Some("__proto__") if matches!(&pair.key, PropName::Computed(_)) => true,
                     Some("__proto__") | None => false,
                     Some(_) => true,
                 },

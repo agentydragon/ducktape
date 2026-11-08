@@ -480,6 +480,8 @@ struct CallbackPoolObservation {
     prefix_revision: u64,
     reachability_revision: u64,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    runtime_spread_shapes: OrdMap<u32, OwnPropertyShape>,
+    unknown_enumerability: BTreeSet<u32>,
     dense_arrays: OrdMap<u32, DenseArray>,
     primitive_arrays: OrdMap<u32, ProofDependencies>,
     accumulated_values: OrdMap<u32, Values>,
@@ -506,6 +508,8 @@ impl PartialEq for CallbackPoolObservation {
                 &self.prefix_object_properties,
                 &other.prefix_object_properties,
             )
+            && same(&self.runtime_spread_shapes, &other.runtime_spread_shapes)
+            && self.unknown_enumerability == other.unknown_enumerability
             && same(&self.dense_arrays, &other.dense_arrays)
             && same(&self.primitive_arrays, &other.primitive_arrays)
             && same(&self.accumulated_values, &other.accumulated_values)
@@ -801,6 +805,7 @@ pub(super) struct ExecutionInputs<'source> {
 pub(super) struct OwnPropertyQuery {
     source_object: u32,
     source_values: Values,
+    shape: OwnPropertyShape,
     prefix_properties: BTreeMap<Option<String>, Values>,
     tainted: bool,
     request: OwnPropertyRequest,
@@ -948,7 +953,7 @@ impl ExecutionInputs<'_> {
         infer_own_property_projection(
             query.source_object,
             &query.source_values,
-            self.index.own_descriptor_shapes.get(&query.source_object)?,
+            &query.shape,
             &query.prefix_properties,
             query.tainted,
             self.index.semantic_facts.as_deref()?,
@@ -1019,6 +1024,11 @@ pub(super) struct ExecutionState {
     top_env: Context,
     top_captures: Context,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    /// Exact own-data shapes produced by the shared single-spread transfer.
+    runtime_spread_shapes: OrdMap<u32, OwnPropertyShape>,
+    /// Sticky loss of exact enumerable membership/order after an unmodeled
+    /// writer or escape. This is separate from value payload retention.
+    unknown_enumerability: BTreeSet<u32>,
     writable_prefix: OrdMap<u32, super::super::allocation_transfer::WritablePrefixState>,
     own_descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
@@ -1294,6 +1304,7 @@ impl ExecutionState {
         self.object_accessors_are_settled(object)
             && !self.unknown_array_contents.contains(object)
             && !self.primitive_arrays.contains_key(object)
+            && !self.unknown_enumerability.contains(object)
     }
 
     fn object_accessors_are_settled(&self, object: &u32) -> bool {
@@ -1433,7 +1444,13 @@ struct LocalExecutionContext<'a, 'source, 'rule> {
 
 impl OwnDataContext for Executor<'_, '_> {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
-        self.inputs.index.ordinary_record_shape(allocation)
+        if self.state.unknown_enumerability.contains(&allocation) {
+            return None;
+        }
+        self.state
+            .runtime_spread_shapes
+            .get(&allocation)
+            .or_else(|| self.inputs.index.ordinary_record_shape(allocation))
     }
 
     fn object_properties_are_settled(&self, allocation: u32) -> bool {
@@ -1469,6 +1486,13 @@ impl OwnDataContext for Executor<'_, '_> {
                 .applied_accessors
                 .get(&allocation)
                 .is_some_and(|properties| properties.contains_key(property))
+    }
+
+    fn has_dynamic_properties(&self, allocation: u32) -> bool {
+        self.state
+            .prefix_object_properties
+            .get(&allocation)
+            .is_some_and(|properties| properties.contains_key(&None))
     }
 
     fn first_generation_dense_array_length(&self, allocation: u32) -> Option<u32> {
@@ -1546,6 +1570,10 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
         self.executor.property_is_writable(allocation, property)
+    }
+
+    fn has_dynamic_properties(&self, allocation: u32) -> bool {
+        self.executor.has_dynamic_properties(allocation)
     }
 }
 
@@ -1730,6 +1758,55 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             },
             span,
         );
+    }
+
+    fn refused_spread(&mut self, frame: &LocalFrame, source: &Values, span: Span) {
+        if self.executor.state.array_iteration_depth > 0 {
+            self.executor.state.array_iteration_unsupported = true;
+        }
+        let call = self
+            .calls()
+            .iter()
+            .find(|call| call.kind == CallKind::ObjectSpread && call.span == span);
+        if let Some(call) = call {
+            self.executor.note_unknown_call(call);
+        } else {
+            self.executor.note_unknown_execution(self.owner);
+        }
+        self.executor.taint_objects(source);
+        self.executor
+            .promote_escaped_callbacks(source, self.outcome);
+        self.executor.invoke_possible_callbacks_at(
+            &[source.clone()],
+            false,
+            Some(span),
+            self.outcome,
+        );
+        self.outcome
+            .unsupported(ExecutionOperation::ObjectSpread, self.owner, span);
+        self.outcome.unknown_call = true;
+        self.fallback(
+            frame,
+            source.clone(),
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::ObjectSpread,
+                ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
+            },
+            span,
+        );
+    }
+
+    fn spread_copy_recorded(&mut self, allocation: u32) {
+        if self
+            .executor
+            .state
+            .ordinary_spread_copies
+            .insert(allocation)
+        {
+            self.executor.state.prefix_revision =
+                self.executor.state.prefix_revision.wrapping_add(1);
+        }
     }
 
     fn array_created(&mut self, allocation: u32, sparse: bool) {
@@ -2982,10 +3059,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if values.len() != 1 {
             return None;
         }
+        let shape = self.ordinary_record_shape(*object)?.clone();
         let properties = self.state.prefix_object_properties.get(object)?;
         self.queries.project_own_property(OwnPropertyQuery {
             source_object: *object,
             source_values: values.clone(),
+            shape,
             prefix_properties: properties.clone(),
             tainted: !self.state.object_properties_are_settled(object),
             request,
@@ -3114,6 +3193,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         };
         self.invalidate_writable_object(*target);
+        // Descriptor maps do not retain the enumerable bit in this heap
+        // model. Revoke exact spread order even when property Values compare
+        // equal before and after this operation.
+        self.invalidate_enumerability_object(*target);
         let Some(map) = self
             .state
             .own_descriptor_maps
@@ -4021,6 +4104,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// the result of reading their property. Only a data-tagged lookup may
     /// project that payload into an expression value.
     fn payload_lookup_is_data(&self, object: u32, property: Option<&str>) -> bool {
+        if self.state.unknown_enumerability.contains(&object) {
+            return false;
+        }
         if self
             .state
             .applied_accessors
@@ -4031,7 +4117,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        if let Some(shape) = self.inputs.index.ordinary_record_shape(object) {
+        if let Some(shape) = self.ordinary_record_shape(object) {
             return match property {
                 Some(property) => !matches!(
                     shape.properties.get(property),
@@ -4264,6 +4350,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             arrays: &mut state.dense_arrays,
             revision: &mut state.prefix_revision,
             writable_prefix: Some(&mut state.writable_prefix),
+            spread_shapes: Some(&mut state.runtime_spread_shapes),
+            unknown_enumerability: Some(&mut state.unknown_enumerability),
+            static_shapes: Some(&self.inputs.index.own_descriptor_shapes),
+            exact_spread_allocations: Some(&self.inputs.index.exact_object_spread_copies),
         }
     }
 
@@ -7568,7 +7658,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic
                 )
             });
-        let mut changed = false;
         if global_root
             || receivers
                 .iter()
@@ -7598,20 +7687,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if let AbstractValue::Value(Value::Alloc(kind, object)) = receiver
                 && kind.tracks_prefix_own_properties()
             {
-                let stored = self
-                    .state
-                    .prefix_object_properties
-                    .entry(*object)
-                    .or_default()
-                    .entry(write.property.clone())
-                    .or_default();
-                let before = stored.len();
-                stored.extend(values.iter().cloned());
-                changed |= stored.len() != before;
+                self.literal_heap()
+                    .write_property(*object, Some(write.property.clone()), &values);
             }
-        }
-        if changed {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
     }
 
@@ -7816,6 +7894,57 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().invalidate_writable(object);
     }
 
+    fn invalidate_enumerability_object(&mut self, object: u32) {
+        self.literal_heap().mark_unknown_enumerability(object);
+    }
+
+    fn invalidate_enumerability_values(&mut self, values: &Values) {
+        for value in values {
+            if let AbstractValue::Value(Value::Alloc(kind, object)) = value
+                && kind.tracks_prefix_own_properties()
+            {
+                self.invalidate_enumerability_object(*object);
+            }
+        }
+    }
+
+    fn invalidate_enumerability_after_dynamic_writes(
+        &mut self,
+        receivers: &[ValueExpr],
+        env: &Context,
+        captures: &Context,
+    ) {
+        let mut invalidate_all_candidates = false;
+        for receiver in receivers {
+            if matches!(receiver, ValueExpr::Binding(_)) {
+                // Binding lookup is a value read, so this does not replay the
+                // receiver expression or its effects.
+                let values = self.evaluate(receiver, env, captures);
+                self.invalidate_enumerability_values(&values);
+            } else {
+                // The compatibility lane retained only an expression, not the
+                // receiver value selected when the write ran. Avoid replaying
+                // a member/call expression; conservatively revoke known record
+                // shapes that it could have reached.
+                invalidate_all_candidates = true;
+            }
+        }
+        if invalidate_all_candidates {
+            let mut objects: BTreeSet<_> = self
+                .state
+                .prefix_object_properties
+                .keys()
+                .copied()
+                .collect();
+            objects.extend(self.inputs.index.own_descriptor_shapes.keys().copied());
+            objects.extend(self.inputs.index.exact_object_spread_copies.iter().copied());
+            objects.extend(self.state.runtime_spread_shapes.keys().copied());
+            for object in objects {
+                self.invalidate_enumerability_object(object);
+            }
+        }
+    }
+
     fn invalidate_writable_values(&mut self, values: &Values) {
         let objects: BTreeSet<_> = values
             .iter()
@@ -7862,6 +7991,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     changed |= self.state.unsettled_objects.insert(*object);
                     self.invalidate_writable_object(*object);
+                    self.invalidate_enumerability_object(*object);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
@@ -7910,6 +8040,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if kind.tracks_prefix_own_properties() =>
                 {
                     self.invalidate_writable_object(*object);
+                    self.invalidate_enumerability_object(*object);
                     if !self.state.tainted_objects.insert(*object) {
                         expand_stored_references = false;
                     }
@@ -9000,6 +9131,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             prefix_revision: state.prefix_revision,
             reachability_revision: state.reachability.revision,
             prefix_object_properties: state.prefix_object_properties.clone(),
+            runtime_spread_shapes: state.runtime_spread_shapes.clone(),
+            unknown_enumerability: state.unknown_enumerability.clone(),
             dense_arrays: state.dense_arrays.clone(),
             primitive_arrays: state.primitive_arrays.clone(),
             accumulated_values: state.accumulated_values.clone(),
@@ -10165,15 +10298,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
                         self.state.ordinary_spread_copies.insert(*key);
+                        self.invalidate_enumerability_object(*key);
                         return Values::from([AbstractValue::Value(Value::Alloc(
                             Kind::Object,
                             *key,
                         ))]);
                     }
                     self.state.tainted_objects.insert(*key);
+                    self.invalidate_enumerability_object(*key);
                     if self.state.array_iteration_depth > 0 {
                         self.state.array_iteration_unsupported = true;
                     }
+                    // The selected shared spread kernel lives on the ordered
+                    // local path. This legacy value-only lane has already
+                    // evaluated the source and keeps its prior opaque object
+                    // result; do not feed the spread back through the exact
+                    // record transfer or replay its operand.
+                    return Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, *key))]);
                 }
                 if self.inputs.index.array_elements.contains_key(key) {
                     return self.evaluate_array(*key, env, captures);
@@ -11227,6 +11368,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &env,
             &certified_data_receivers,
             false,
+        );
+        self.invalidate_enumerability_after_dynamic_writes(
+            &callable.dynamic_property_receivers,
+            &env,
+            &env,
         );
         // local_constructor checked every assignment as a static property
         // write to a fresh `this`, with a safe right-hand value and no
@@ -13555,6 +13701,8 @@ pub(crate) fn annotate_synchronous_calls(
         top_env: Context::new(),
         top_captures: Context::new(),
         prefix_object_properties: OrdMap::new(),
+        runtime_spread_shapes: OrdMap::new(),
+        unknown_enumerability: BTreeSet::new(),
         writable_prefix: OrdMap::new(),
         own_descriptor_maps: OrdMap::new(),
         applied_accessors: OrdMap::new(),
@@ -14010,60 +14158,80 @@ impl Executor<'_, '_> {
                         .is_some_and(|identity| identity.matches(owner, binding, span))
                 })
             });
-        let ordered_initializer = ((initializer_source.is_none() || checked_split_binding_copy)
-            && matches!(fact.kind, StatementKind::VarDecl)
-            && fact.declared.len() == 1
-            && matches!(assignments.as_slice(), [(binding, _)]
+        let checked_spread_copy = matches!(assignments.as_slice(),
+            [(binding, ValueExpr::ObjectLiteral(allocation, properties))]
+                if fact.declared.contains(binding)
+                    && index.top_definite_initializers[owner.0].contains(binding)
+                    && index.exact_object_spread_copies.contains(allocation)
+                    && matches!(properties.as_ref(), [(None, ValueExpr::Binding(source))]
+                        if matches!(calls.as_slice(), [call]
+                            if call.kind == CallKind::ObjectSpread
+                                && call.owner == owner
+                                && call.caller.is_none()
+                                && matches!(call.args.as_slice(), [ValueExpr::Binding(argument)]
+                                    if argument == source)))
+                    && index.ordered_initializers.get(&owner)
+                        .and_then(|body| body.initializer_span())
+                        .is_some_and(|span| index.initialization_source_identities
+                            .get(&owner)
+                            .is_some_and(|identity| identity.matches(owner, binding, span)))
+        );
+        let ordered_initializer =
+            ((initializer_source.is_none() || checked_split_binding_copy || checked_spread_copy)
+                && matches!(fact.kind, StatementKind::VarDecl)
+                && fact.declared.len() == 1
+                && matches!(assignments.as_slice(), [(binding, _)]
                 if fact.declared.contains(binding)
                     && index.top_definite_initializers[owner.0].contains(binding))
-            && fact.rebinds.eager.is_empty()
-            && fact.global_writes.is_empty()
-            && !inputs.exported_owners.contains(&owner)
-            && index.dynamic_scope_owners.is_empty()
-            && !index.opaque_top.contains(&owner)
-            && index.top_property_writes[owner.0].is_empty()
-            && index.top_member_value_writes[owner.0].is_empty()
-            && index.top_callback_result_writes[owner.0].is_empty()
-            && index.top_exported_values[owner.0].is_empty())
-        .then(|| index.ordered_initializers.get(&owner))
-        .flatten()
-        .filter(|body| {
-            !body.requires_keyed_collection_new()
-                && body.captured_writes().is_empty()
-                && self.ordered_root_calls_are_local(calls)
-                && (calls
-                    .iter()
-                    .filter(|call| call.kind == CallKind::Call)
-                    .nth(1)
-                    .is_some()
-                    || (calls.iter().any(|call| call.kind == CallKind::Call)
-                        && calls
-                            .iter()
-                            .any(|call| call.kind == CallKind::LocalMemberRead))
-                    || body
-                        .single_identifier_call_initializer()
-                        .is_some_and(|span| {
-                            matches!(calls.as_slice(), [call]
+                && fact.rebinds.eager.is_empty()
+                && fact.global_writes.is_empty()
+                && !inputs.exported_owners.contains(&owner)
+                && index.dynamic_scope_owners.is_empty()
+                && !index.opaque_top.contains(&owner)
+                && index.top_property_writes[owner.0].is_empty()
+                && index.top_member_value_writes[owner.0].is_empty()
+                && index.top_callback_result_writes[owner.0].is_empty()
+                && index.top_exported_values[owner.0].is_empty())
+            .then(|| index.ordered_initializers.get(&owner))
+            .flatten()
+            .filter(|body| {
+                !body.requires_keyed_collection_new()
+                    && body.captured_writes().is_empty()
+                    && self.ordered_root_calls_are_local(calls)
+                    && (calls
+                        .iter()
+                        .filter(|call| call.kind == CallKind::Call)
+                        .nth(1)
+                        .is_some()
+                        || (calls.iter().any(|call| call.kind == CallKind::Call)
+                            && calls
+                                .iter()
+                                .any(|call| call.kind == CallKind::LocalMemberRead))
+                        || body
+                            .single_identifier_call_initializer()
+                            .is_some_and(|span| {
+                                matches!(calls.as_slice(), [call]
                             if call.kind == CallKind::Call
                                 && call.span == span
                                 && !call.has_spread
                                 && call.args.is_empty()
                                 && matches!(call.callee, ValueExpr::Binding(_)))
-                        })
-                    || checked_split_binding_copy
-                    || calls.iter().any(|call| {
-                        call.kind == CallKind::LocalMemberRead
-                            && call.owner == owner
-                            && call.caller.is_none()
-                            && body.initializer_span() == Some(call.span)
-                            && object_own_data_read_property(&call.callee, |id| {
-                                inputs.flow.is_declared(id)
-                                    || inputs.shadowed.contains(id.0.as_ref())
                             })
-                            .is_some()
-                            && index.native_own_data_read_premise(call.span).is_some()
-                    }))
-        });
+                        || checked_split_binding_copy
+                        || checked_spread_copy
+                        || calls.iter().any(|call| {
+                            call.kind == CallKind::LocalMemberRead
+                                && call.owner == owner
+                                && call.caller.is_none()
+                                && body.initializer_span() == Some(call.span)
+                                && object_own_data_read_property(&call.callee, |id| {
+                                    inputs.flow.is_declared(id)
+                                        || inputs.shadowed.contains(id.0.as_ref())
+                                })
+                                .is_some()
+                                && index.native_own_data_read_premise(call.span).is_some()
+                        }))
+            });
         // Canonical source identity is independent of leaf/value admission.
         // Retain the exact selected body span, not a lowered-value guess.
         let effect_initializer_source = ordered_initializer
@@ -14202,6 +14370,40 @@ impl Executor<'_, '_> {
                     fact.ordinal,
                     &mut outcome,
                 );
+            }
+        }
+        // The legacy visitor lane records deletes and other unmodeled member
+        // mutations separately from value writes. Invalidate exact spread
+        // shape after this owner so later owners cannot reuse old enumerable
+        // membership even when the pooled property Values are unchanged.
+        for (receiver, _) in &index.top_property_writes[fact.ordinal.0] {
+            if let Some(binding) = receiver {
+                let values = top_env
+                    .get(binding)
+                    .or_else(|| self.state.prefix_values.get(binding))
+                    .cloned()
+                    .unwrap_or_default();
+                self.invalidate_enumerability_values(&values);
+            }
+        }
+        for receiver in &index.top_dynamic_property_receivers[fact.ordinal.0] {
+            if let ValueExpr::Binding(binding) = receiver {
+                let values = top_env
+                    .get(binding)
+                    .or_else(|| self.state.prefix_values.get(binding))
+                    .cloned()
+                    .unwrap_or_default();
+                self.invalidate_enumerability_values(&values);
+            } else {
+                let objects: Vec<_> = self
+                    .state
+                    .prefix_object_properties
+                    .keys()
+                    .copied()
+                    .collect();
+                for object in objects {
+                    self.invalidate_enumerability_object(object);
+                }
             }
         }
         let mut fallback = std::mem::take(&mut self.state.fallback_outcome);

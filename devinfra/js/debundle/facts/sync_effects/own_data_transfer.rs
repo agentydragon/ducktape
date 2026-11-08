@@ -15,6 +15,9 @@ pub(super) trait OwnDataContext {
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values>;
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool;
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool;
+    fn has_dynamic_properties(&self, _allocation: u32) -> bool {
+        false
+    }
 
     /// Only an application prefix with the first uninterrupted dense array
     /// literal execution provides this current length.

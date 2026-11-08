@@ -288,7 +288,7 @@ fn lower_simple_var_declaration(
 fn literal_definition_name(name: &PropName) -> Option<String> {
     matches!(
         name,
-        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::Computed(_)
     )
     .then(|| object_data_property_name(name))
     .flatten()
@@ -342,7 +342,17 @@ impl LocalExpression {
                     .iter()
                     .map(|property| {
                         let PropOrSpread::Prop(property) = property else {
-                            return None;
+                            let PropOrSpread::Spread(spread) = property else {
+                                unreachable!()
+                            };
+                            return Some(PropertyDefinition::Spread {
+                                value: Self::lower_with_binary(
+                                    &spread.expr,
+                                    class_template,
+                                    allow_binary,
+                                )?,
+                                span: spread.expr.span(),
+                            });
                         };
                         match property.as_ref() {
                             Prop::Shorthand(binding) => Some(PropertyDefinition::Data {
@@ -409,6 +419,12 @@ impl LocalExpression {
                         }
                     })
                     .collect::<Option<Arc<[_]>>>()?;
+                if properties.iter().any(|property| {
+                    property.kind() == super::value_model::LiteralPropertyKind::Spread
+                }) && properties.len() != 1
+                {
+                    return None;
+                }
                 Some(Self::Record {
                     allocation: object.span.lo.0,
                     properties,

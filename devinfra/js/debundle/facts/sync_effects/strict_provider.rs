@@ -69,6 +69,10 @@ impl AllocationContext for ProviderContext<'_> {
             arrays: &mut self.arrays,
             revision: &mut self.revision,
             writable_prefix: None,
+            spread_shapes: None,
+            unknown_enumerability: None,
+            static_shapes: Some(&self.index.own_descriptor_shapes),
+            exact_spread_allocations: Some(&self.index.exact_object_spread_copies),
         }
     }
     fn keyed_collection_new(
