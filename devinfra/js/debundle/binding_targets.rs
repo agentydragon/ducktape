@@ -289,8 +289,8 @@ pub fn member_root_sym(expr: &Expr) -> Option<&Atom> {
 }
 
 /// TypeScript type-erasure wrappers do not change the runtime value. Follow
-/// only these forms when finding a member chain's root binding; leave all
-/// other expressions conservative.
+/// only these forms when recording target expressions and finding member
+/// roots; leave all other expressions conservative.
 fn type_erased_expr(expr: &Expr) -> &Expr {
     match expr {
         Expr::TsAs(wrapper) => type_erased_expr(&wrapper.expr),

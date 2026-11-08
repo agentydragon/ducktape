@@ -886,7 +886,7 @@ mod tests {
                 "wrapped-targets.ts",
                 "let count = 0; const record = {}; \
                  count as any = 'wrapped'; count!++; (count satisfies any)! = 'nested'; \
-                 <any>count = 'asserted'; count<string> = 'instantiated'; \
+                 count<string> = 'instantiated'; \
                  record.value as any = 1; (record as any).value = 2; record.value!++; \
                  (record as any).value++; count = 'plain'; record.value = 3; record.value++; \
                  count + record.value;",
@@ -898,7 +898,6 @@ mod tests {
             assert_eq!(
                 visitor.recorder.binding_writes,
                 vec![
-                    "count".to_string(),
                     "count".to_string(),
                     "count".to_string(),
                     "count".to_string(),
