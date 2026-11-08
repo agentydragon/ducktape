@@ -1,13 +1,13 @@
-# tofu-controller Stale State Locks After Controller Restart
+# tofu-controller Kubernetes Lease State Locks After Controller Restart (2026-03-18)
 
 **Date**: 2026-03-18
-**Status**: Unresolved (stale locks require manual cleanup)
+**Status**: Historical. This incident used the Kubernetes backend and Lease locks. Current Terraform state uses PostgreSQL ([backend declaration](../../cdk8s/terraform.py)); for current PostgreSQL advisory-lock recovery, see [the July incident](2026_07_11_tofu_pg_orphaned_session_lock.md).
 
 ## Root Cause
 
-When the tofu-controller deployment is restarted (via `kubectl rollout restart` or any
-pod template change), runner pods that are mid-plan hold terraform state locks stored as
-`coordination.k8s.io/v1 Lease` objects. These locks are never released because:
+During this incident, restarting the tofu-controller deployment (via `kubectl rollout
+restart` or a pod template change) left runner pods mid-plan holding Terraform state locks
+stored as `coordination.k8s.io/v1 Lease` objects. Those locks were not released because:
 
 1. **Runner pods have no `ownerReferences`** — they are standalone pods, not owned by
    the controller deployment. They survive controller restarts as orphans.
@@ -22,8 +22,8 @@ pod template change), runner pods that are mid-plan hold terraform state locks s
    lock-holding pod (identified by `Who: runner@xxx-tf-runner` in the Lease annotation)
    still exists. It never invokes `tofu force-unlock`.
 
-The result is a permanent deadlock: new runners can't acquire the lock, the controller
-keeps retrying every 15s, and the lock persists until manually cleared.
+At the time, new runners could not acquire the lock, the controller retried every 15s, and
+the lock persisted until manually cleared.
 
 ## Incident Timeline (2026-03-12 → 2026-03-18)
 
@@ -97,7 +97,9 @@ kubectl get pods -n flux-system -l app.kubernetes.io/name=tf-runner --no-headers
 # Current runners are NEW pods that fail against the stale lock — not the original holders
 ```
 
-## Resolution
+## Historical resolution (March 2026 Kubernetes backend only)
+
+The Lease cleanup below records how this incident was recovered. It does not apply to the current PostgreSQL backend; use the July incident's diagnosis before taking action on a current lock.
 
 Delete the stale lock Leases. The underlying tfstate secrets and Vault data are
 unaffected — the runners just need to successfully run `tofu plan` once.
@@ -128,9 +130,11 @@ kubectl annotate terraform -n flux-system --all \
   reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 ```
 
-## Prevention
+## Historical prevention advice
 
-### Do not `kubectl rollout restart` the tofu-controller
+The restart advice below addressed the March TLS-cache and Kubernetes-Lease failure mode. It is not a current restart or lock-recovery procedure; see the July incident linked above for the PostgreSQL-backed behavior.
+
+### March 2026 advice: avoid restarting tofu-controller during an in-flight plan
 
 The restart is the trigger. If a restart is genuinely needed:
 
@@ -141,7 +145,7 @@ The restart is the trigger. If a restart is genuinely needed:
 5. Unsuspend Terraform resources
 
 ```bash
-# Safe restart procedure
+# Historical restart procedure for the March 2026 Kubernetes-backend incident
 kubectl get terraform -n flux-system -o name | \
   xargs -I {} kubectl patch {} -p '{"spec":{"suspend":true}}' --type=merge
 kubectl delete pods -n flux-system -l app.kubernetes.io/name=tf-runner --wait=true
