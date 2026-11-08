@@ -831,7 +831,7 @@ mod tests {
         TargetAccessRecorder, member_root_sym, record_assign_target, record_update_target,
     };
     use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
-    use swc_ecma_ast::{AssignTarget, SimpleAssignTarget};
+    use swc_ecma_ast::{AssignExpr, AssignTarget, Id, SimpleAssignTarget, UpdateExpr};
     use swc_ecma_visit::Visit;
 
     #[derive(Default)]
