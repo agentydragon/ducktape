@@ -30,13 +30,8 @@ pub fn emit_browser_harness(
     let layout = DebundleOutputLayout::new(&browser.out_dir);
     let app_root = layout.app_root();
     layout.prepare()?;
-    let materialized = materialize_accepted_scripts(
-        plan,
-        &app_root,
-        &layout.tree_root(),
-        decomposition_by_chunk,
-        excluded_chunk_ids,
-    )?;
+    let materialized =
+        materialize_accepted_scripts(plan, &app_root, &layout.tree_root(), decomposition_by_chunk)?;
     let copied_assets =
         copy_snapshot_assets(&browser.snapshot_root, &app_root, &browser.asset_paths)?;
 
