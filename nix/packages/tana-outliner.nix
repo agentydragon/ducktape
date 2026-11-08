@@ -8,7 +8,7 @@
   pkgs,
 }:
 let
-  version = "1.529.0";
+  version = "1.531.0";
 in
 pkgs.stdenv.mkDerivation {
   pname = "tana-outliner";
@@ -16,7 +16,7 @@ pkgs.stdenv.mkDerivation {
 
   src = pkgs.fetchurl {
     url = "https://github.com/tanainc/tana-desktop-releases/releases/download/v${version}/tana-outliner_${version}_amd64.deb";
-    hash = "sha256-o3RB0pf8s2//JCGQPjmJd8mS2wh0gFscBo39Dkjkok0=";
+    hash = "sha256-FV/iOkQLuCZHUVdO002426xRpu1tDif4jLH0ASIFS8I=";
   };
 
   nativeBuildInputs = with pkgs; [
