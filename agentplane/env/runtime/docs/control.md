@@ -157,6 +157,21 @@ budget remains authoritative across all of its native services.
   at once (see Teardown quiesce), and `ListSessions` waits for it. A lost connection drops
   the answers of calls in flight, never an operation halfway through.
 
+## Firecracker admission pause
+
+- The Sandbox controller first persists a suspension attempt that fences Gateway dispatch. It then calls
+  `PrepareSuspend` with a positive, increasing generation and the Runtime's exact `idle_since` timestamp.
+  The Runtime checks current aggregate blockers and admission counts under its admission lock and closes a
+  separate in-memory gate only while still idle. This gate refuses new Session, Execution and native work with
+  retryable `UNAVAILABLE`; it does not seal journals, stop processes or change lifecycle mode. Work accepted
+  before the gate finishes normally. A repeat for the same prepared generation and timestamp succeeds.
+- The gate survives a Firecracker RAM checkpoint and a same-incarnation `WatchState` reconnect. After the
+  launcher has actually checkpointed and restored the guest, the controller calls `ResumeAdmission` through
+  the newly verified connection. The generation remains as a tombstone: a delayed old prepare cannot pause
+  a resumed Runtime, and an old resume cannot release a newer pause. A rejected prepare is also invalidated
+  with `ResumeAdmission` before Gateway dispatch is reopened. Lost RPC replies are retried with the same
+  generation while the persisted attempt keeps dispatch fenced.
+
 ## Teardown quiesce
 
 - `Quiesce` is for Sandbox teardown only. The Environment Runtime first records, durably, that the Sandbox is in

@@ -40,6 +40,11 @@ func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context) (runt
 		return runtimeTransitionOutcome{}, status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
 	}
 	r.admissionOpen = false
+	// Teardown supersedes a RAM-preserving suspend. Retire its separate gate
+	// only after lifecycle admission is closed under this same lock; native
+	// cleanup may now use the ordinary Quiesce path without opening new work.
+	r.suspendPrepared = false
+	r.suspendIdleSinceMicros = 0
 	if err := r.state.EnterLameduck(); err != nil {
 		r.mu.Unlock()
 		r.fail(err)

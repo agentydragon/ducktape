@@ -73,6 +73,7 @@ K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
+_FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/deployment:rendered/public-litellm.json"
 _CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
 _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
@@ -136,6 +137,11 @@ _VM_RUNNER_DISK_IMAGE = {
     "//agentplane/system_tests/vm:test_runner_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
 }
 
+_FIRECRACKER_GUEST_IMAGES = {
+    "//agentplane/firecracker:image": "git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher:unset",
+    "//agentplane/system_tests/firecracker:boot_image": "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset",
+}
+
 def _merge_image_maps(*groups):
     images = {}
     for group in groups:
@@ -148,11 +154,12 @@ def _merge_image_maps(*groups):
 # Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
 # uses the pod preset in a dedicated suite because it mutates shared controller Deployments.
 _STACKS = {
-    "pod": struct(fixture = _FIXTURE, vm = False, real_model = False, images = _HARNESSES_IMAGES),
-    "deletion": struct(fixture = _FIXTURE, vm = False, real_model = False, images = _HARNESSES_IMAGES),
-    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_IMAGES)),
-    "vm": struct(fixture = _VM_FIXTURE, vm = True, real_model = False, images = {}),
-    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = _HARNESSES_IMAGES),
+    "pod": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "deletion": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_IMAGES)),
+    "vm": struct(fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
+    "firecracker": struct(fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
+    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
 }
 
 def _image_manifest_impl(ctx):
@@ -184,8 +191,6 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     """Run one suite with fresh fixture state and the selected executor lifecycle."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
-    if require_kvm and stack != "vm":
-        fail("require_kvm requires the VM stack")
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
     if boot_evidence and stack != "vm":
@@ -193,6 +198,10 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     if shutdown_diagnostic and stack != "vm":
         fail("shutdown_diagnostic requires the VM stack")
     config = _STACKS[stack]
+    if require_kvm and not (config.vm or config.firecracker):
+        fail("require_kvm requires the VM or Firecracker stack")
+    if config.firecracker and not require_kvm:
+        fail("the Firecracker stack requires require_kvm = True")
     runner_disk_image = _DELETION_TEST_DISK_IMAGE if stack == "deletion" else _VM_RUNNER_DISK_IMAGE if config.vm else _RUNNER_DISK_IMAGE
     fixture_images = _merge_image_maps(_SERVICE_IMAGES, config.images, runner_disk_image)
     images = {"fixture": fixture_images, "pki": _PKI_IMAGES, "vm": {}, "guest": {}}
@@ -202,16 +211,19 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-        "PYTEST_PLUGINS": "agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ""),
+        "PYTEST_PLUGINS": "agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
-    if config.vm:
-        # Three 1.5 GiB guests boot alongside k3s services; request eight estimated compute units.
+    if config.vm or config.firecracker:
+        # A guest runs alongside k3s services; reserve the VM lane's larger worker budget.
         properties["EstimatedComputeUnits"] = "8"
         images["vm"] = _VM_IMAGES
-        guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE
-        images["guest"] = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, guest_root_image)
+        if config.vm:
+            guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE
+            images["guest"] = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, guest_root_image)
+        else:
+            images["guest"] = _FIRECRACKER_GUEST_IMAGES
         data += ["@kubevirt_operator_bundle//file", "@kyverno_install//file"]
         env |= {
             "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
@@ -248,7 +260,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         tags = suite_tags,
         deps = deps + [
             "//agentplane/system_tests/deployment:system_test_target",
-        ] + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else []),
+        ] + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/firecracker:pytest_plugin"] if config.firecracker else []),
     )
 
 def k3s_tcg_vm_image_manifest(name):

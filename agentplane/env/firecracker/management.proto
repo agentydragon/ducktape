@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package agentplane.env.firecracker;
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb";
+
+service GuestManagement {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc Synchronize(SynchronizeRequest) returns (SynchronizeResponse);
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  string boot_id = 1;
+}
+
+message SynchronizeRequest {
+  int64 unix_nano = 1;
+  string expected_boot_id = 5;
+}
+
+message SynchronizeResponse {
+  string boot_id = 1;
+}

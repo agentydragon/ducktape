@@ -87,6 +87,7 @@ func TestPhaseFollowsControllerModeIncarnationAndDeletionProgress(t *testing.T) 
 		{name: "running", mode: sandboxapi.OperatingModeRunning, incarnated: true, want: environmentpb.SandboxPhase_SANDBOX_PHASE_RUNNING},
 		{name: "suspending", mode: sandboxapi.OperatingModeSuspended, incarnated: true, want: environmentpb.SandboxPhase_SANDBOX_PHASE_SUSPENDING},
 		{name: "suspended", mode: sandboxapi.OperatingModeSuspended, want: environmentpb.SandboxPhase_SANDBOX_PHASE_SUSPENDED},
+		{name: "RAM suspended with retained launcher", mode: sandboxapi.OperatingModeSuspended, incarnated: true, stopStage: sandboxapi.StopStageStopped, want: environmentpb.SandboxPhase_SANDBOX_PHASE_SUSPENDED},
 		{name: "quiescing suspension", mode: sandboxapi.OperatingModeSuspended, incarnated: true, stopStage: sandboxapi.StopStageQuiescing, want: environmentpb.SandboxPhase_SANDBOX_PHASE_QUIESCING},
 		{name: "quiescing deletion", deleting: true, want: environmentpb.SandboxPhase_SANDBOX_PHASE_QUIESCING},
 		{name: "sealed deletion", deleting: true, sealed: true, want: environmentpb.SandboxPhase_SANDBOX_PHASE_TEARING_DOWN},

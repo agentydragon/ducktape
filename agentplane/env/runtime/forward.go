@@ -29,7 +29,9 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 	err := r.control.Admit(ctx, func(epoch *runtimecontrol.Epoch) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.closing || r.failed || r.executionOwner.recovering() || (r.desired.Mode != lifecycle.Running && r.desired.Mode != lifecycle.Quiescing) {
+		if r.closing || r.failed || r.suspendPrepared || r.executionOwner.recovering() ||
+			(r.desired.Mode != lifecycle.Running && r.desired.Mode != lifecycle.Quiescing) ||
+			(r.desired.Mode == lifecycle.Running && !r.admissionOpen) {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
 		progress, found, err := r.readSessionStatus(ctx)
@@ -54,6 +56,7 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 			return err
 		}
 		r.activeExecutionCalls++
+		r.idleSince = nil
 		r.changedLocked()
 		admitted = true
 		return nil
@@ -154,6 +157,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		streamID = r.execStreamID
 		r.execStreams[streamID] = cancel
 		r.activeExecutionCalls++
+		r.idleSince = nil
 		r.changedLocked()
 		return nil
 	})

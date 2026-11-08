@@ -6,6 +6,7 @@ load("//devinfra/python:defs.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "firecracker_guest_contract.json",
     "home_prepare",
     "vm_guest_contract.json",
 ])
@@ -16,6 +17,7 @@ pkg_tar(
     name = "disk_bin",
     srcs = [
         "//agentplane/cli:agentplane",
+        "//agentplane/env/firecracker/cmd:agentplane-firecracker-thaw-agent",
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
         "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
     ],

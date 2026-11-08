@@ -8,8 +8,42 @@ or prove Runtime readiness. Add production-guest coverage that waits for Runtime
 verifies the serial console shows a login prompt when `console_autologin` is disabled and a root
 shell when it is enabled.
 
+## Reduce Firecracker checkpoint and restore disk I/O
+
+The production-guest acceptance captured RAM in seconds but spent minutes copying and hashing
+the backing disks, including the 8.5 GiB root image. Sparse copies already preserve holes; bulk
+content hashes have since been removed from local checkpoints. Restore now copies every backing
+disk from the committed generation, without hashing or reusing live contents. The
+[storage probe](../debug/2026_11_04_firecracker_storage_probe.md) measured the worker's I/O and
+built and booted a variant without the pre-commit bundle, reducing closure bytes by 67.2%, with
+reduced tool availability. The separate Bazel-built CI guest now passes RAM-resume acceptance
+with a 733 MB root disk; production remains unchanged. Measure remaining populated-disk copy/sync
+latency, including the writes from unconditional restore. Establish required tools before selecting a smaller production guest;
+consider keeping heavy tools in an immutable disk. In every case,
+preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
+[system-test scenario](../system_tests/scenarios/firecracker.py) exercises the current CI guest. The
+[production Nix guest probe](../debug/2026_11_04_firecracker_storage_probe.md) records its separate
+image measurements and reduced-tool experiment.
+
+## Explore keeping control services outside Firecracker guests
+
+Consider keeping the runner/Environment Runtime, Codex exec-server and other control services
+outside Firecracker, with the guest limited to workload execution and its filesystem environment.
+Map process ownership and choose a minimal guest agent and gRPC/vsock boundary; determine which
+parts of Codex exec-server can move given its current ownership of native sessions and processes.
+Preserve RAM-resumable guest processes, host/guest state coordination, identity fencing and no
+replay, with explicit session parking, reattachment and terminal cleanup.
+Probe thaw without reattachment for longer than Codex's 30-second detached-session grace;
+define parking and durable terminal release before promising indefinite process retention.
+
 ## Simplify Environment Runtime reconciliation and coordination
 
+- Map lifecycle transitions and mutation ownership across Sandbox Controller, Gateway, launcher,
+  Runtime and native executor: admission, checkpoint/thaw, connection replacement and terminal
+  cleanup. Include `PrepareSuspend`/`ResumeAdmission` generations, lost replies, controller restart,
+  concurrent wake and deletion. Then simplify one coordination path under the race tests,
+  preserving identity fencing, cleanup ownership and no replay. Use this map to evaluate the
+  control-services-outside-Firecracker proposal above.
 - Systemd observations are typed; process start, exit and stop still use a revision wakeup and
   process-owned result slots. A start-fact prototype retained the live worker slot and required
   additional reads to reconcile COSI observations with completion and teardown. Revisit when a

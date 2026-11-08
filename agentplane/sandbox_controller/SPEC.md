@@ -1,9 +1,9 @@
 # Sandbox Controller
 
-Reconciles Agentplane's own `Sandbox` (`agentplane/crds/manifests/crd-sandboxes.yaml`) into Pods or
-a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or not; an
-**incarnation** is one Pod, or one run of the VM. Its `SandboxTemplate` sets its kind: `pod` or
-`vm`, exactly one.
+Reconciles Agentplane's own `Sandbox` (`agentplane/crds/manifests/crd-sandboxes.yaml`) into Pods,
+a KubeVirt VirtualMachine, or a Firecracker launcher Pod, and the state PVC. A Sandbox is its state,
+running or not; an **incarnation** is one Pod, or one run of the VM. Its `SandboxTemplate` sets
+exactly one of `pod`, `vm`, or `firecracker`.
 
 ## Deployment settings
 
@@ -19,10 +19,11 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 
 - Every Sandbox gets one PVC, `<sandbox>-state`, created from its `SandboxTemplate`'s claim when
   the Sandbox is created, whether or not it is running.
-- `stateVolume.layout` is required and accepts only `DirectoryTree` on a `Filesystem` claim.
+- `stateVolume.layout` is required and accepts `DirectoryTree` for Pod and VM templates, or
+  `RawDiskImage` with `ext4` for Firecracker; both use a `Filesystem` claim.
   It records the layout on the PVC and pins the claim's name, UID and layout in
   `status.volumes.state` before attaching it. An existing PVC without a creation record is rejected, including a controller-owned claim.
-  A missing or changed claim, foreign PVC, lost or unsupported record, or changed UID blocks workload
+  A missing or changed claim, foreign PVC, lost or unsupported record, changed layout, or changed UID blocks workload
   start without replacing the retained PVC.
 - The Sandbox is the PVC's controller owner, without `blockOwnerDeletion`, so the Pod going away or
   stopping never removes it, and foreground propagation or namespace deletion cannot remove it
@@ -36,15 +37,18 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 - `status.operatingMode` (`Running` or `Suspended`) is whether the controller runs the Sandbox, and what
   the rest of this section calls running: `spec.running`, unless the controller suspended the Sandbox
   for idleness (`status.suspendedBy: Idle`) and `spec.wakeGeneration` still equals
-  `status.suspendedAtWakeGeneration`. Readers of `spec.running` read the mode instead.
+  `status.suspendedAtWakeGeneration`. A pending `status.firecrackerSuspension` also keeps the mode
+  Suspended through admission preparation, checkpoint and thaw, even if a wake arrives. Readers of
+  `spec.running` read the mode instead.
 - `status.suspendedBy` says why a Sandbox is suspended and is absent while it runs: `Requested` when
   `spec.running` is clear, `Idle` when the controller suspended it for idleness. A requester that
   clears `spec.running` of an idle-suspended Sandbox replaces `Idle` with `Requested`.
   `status.suspendedAtWakeGeneration` is set exactly with `Idle`.
-- While `spec.running` is set, the Sandbox has exactly one Pod, named after it and controlled by
-  it, with the template's state volume backed by the PVC. A Pod that goes away or ends while the
-  Sandbox is running is replaced by a new incarnation on the same PVC.
-- Clearing `spec.running` deletes the Pod, once the runner that connected from it has sealed every
+- While `spec.running` is set, a Pod or Firecracker Sandbox has one Pod, named after it and controlled
+  by it, with the template's state volume backed by the PVC. A plain Pod that goes away or ends while
+  running is replaced by a new incarnation on the same PVC. A Firecracker launcher is held for
+  recovery if it disappears or ends, because its retained state may contain a RAM checkpoint.
+- Clearing `spec.running` deletes a plain Pod, once the runner that connected from it has sealed every
   Session (`status.quiescedIncarnation` names the sealed Pod). A Pod whose runner never connected has
   nothing to seal. The Sandbox stays held, with `status.stopStage: Quiescing`, while the quiesce fails or
   the ingress has not acknowledged it. The controller persists the last request time and runner Pod
@@ -57,8 +61,16 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 - Optional `spec.idleSuspendAfter`, a duration of at least one minute, suspends an idle Sandbox. Unset,
   the controller never suspends it for idleness. Once the runner has been idle that long, timed on
   the controller's clock from when it first saw that idle period, the controller asks the runner to
-  quiesce only if it is still idle since then, and the Sandbox is suspended as for a cleared
-  `spec.running`. A runner that is busy again, or idle since another instant, refuses, and the wait
+  quiesce only if it is still idle since then for Pod and VM templates. A Firecracker Sandbox first
+  persists a `Preparing` attempt with a monotonically increasing generation and the observed idle
+  timestamp. This fences Gateway dispatch before `PrepareSuspend` atomically checks Runtime idleness
+  and closes new admission without sealing Sessions. A busy Runtime refuses; `ResumeAdmission`
+  invalidates the attempt before dispatch reopens. An acknowledged attempt progresses through
+  `Checkpointing` and `Resuming`, retaining its identity across lost replies and controller restarts.
+  Even a concurrent wake waits for an actual checkpoint before thaw. Only after the launcher reports
+  running does `ResumeAdmission` release the Runtime gate and the controller mark the attempt
+  `Released`; the generation remains to distinguish delayed calls from the next attempt.
+  A runner that is busy again, or idle since another instant, refuses, and the wait
   starts over; a controller restart also restarts it. Terminals and background processes do not
   count as work. Idleness never deletes a Sandbox.
 - `status.idleSuspendAt` reports the next suspension attempt time while this controller has seen an
@@ -72,8 +84,8 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   no Session. It is empty when autosuspend is off or no current reason is reported. The controller publishes these only from
   a live Runner Gateway Lease for the current incarnation, and clears them when that connection is
   absent, expired or belongs to another incarnation.
-- A wake that lands while an idle suspension is being recorded replaces the incarnation: the runner is
-  already sealed to new work, and the Sandbox is to run.
+- A wake that lands while a Pod or VM idle suspension is being recorded replaces the incarnation:
+  that runner is already sealed to new work. A Firecracker wake resumes the same incarnation.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
   either never changes a running Pod or VM, its kind included.
 - Runner control always uses the runner as an mTLS server and the Runner Gateway as its client. The
@@ -114,7 +126,7 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   authentication rollout must wait until legacy runners are stopped.
 - Each Pod and VM carries the spec rendered from the template when it started
   (`agentplane.allegedly.works/rendered-spec`), for diffing against what the template renders now.
-- A template that does not exist, sets neither or both kinds, sets a workspace volume without `vm`, or
+- A template that does not exist, sets none or multiple kinds, has an incompatible workspace layout, or
   defines the state volume or its workspace volume itself, starts nothing.
 
 ## VMs
@@ -146,9 +158,9 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   volumes naming it follow. Those disks belong to the VM: they outlive stops and go with the VM.
 - Optional `workspaceVolume` declares a retained workspace's name, claim and required layout:
   `DirectoryTree`, `RawDiskImage` or `BlockFilesystem`. Directory trees mount in Pods or reach VMs
-  through virtiofs; disk layouts attach only as VM disks and require explicit `ext4`. The layout
-  and claim mode must agree. The state PVC remains `DirectoryTree` until a separate accepting code
-  and template rollout supports another layout.
+  through virtiofs; disk layouts attach to VMs or Firecracker launchers and require explicit `ext4`.
+  The layout and claim mode must agree. Pod and VM state PVCs remain `DirectoryTree`; Firecracker
+  state PVCs use an ext4 `RawDiskImage`.
 - The Sandbox owns `<sandbox>-workspace`, which survives suspension and compatible kind changes.
   The PVC's creation record persists its layout and claim declaration, and `status.volumes.workspace`
   pins its name, UID and layout. A restart recovers a recorded claim, never adopts unrecorded contents.
@@ -160,6 +172,34 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 - The VM, its VMI and its virt-launcher Pod carry the Sandbox label. The controller does not set
   the launcher's ServiceAccount: KubeVirt sets one only from a volume the guest could read, so the
   namespace's launcher admission sets the Sandbox's.
+
+## Firecracker
+
+- The `firecracker` arm carries a launcher Pod template, immutable boot and runner image references,
+  vCPU count, and memory size. It requires an ext4 `RawDiskImage` state PVC and a retained workspace
+  using either ext4 `RawDiskImage` on a Filesystem claim or ext4 `BlockFilesystem` on a Block claim.
+  An existing PVC with another layout is refused; the controller never reformats or converts it.
+- The controller mounts the boot image at `/images/boot`, the runner image at `/images/runner`, and
+  the state PVC at `/var/lib/agentplane/state` in only the `environment-runtime` launcher container.
+  It mounts a raw workspace at `/var/lib/agentplane/workspace`, or exposes a block workspace at
+  `/dev/agentplane-workspace`. The template supplies the other containers and network mounts.
+- The Pod annotation `agentplane.allegedly.works/firecracker-running` is projected as
+  `/run/agentplane/firecracker-intent/running`. The launcher alone owns guest freeze, checkpoint,
+  kill, restore, and resume. The controller changes this intent through the Kubernetes API and
+  reads the launcher's `GET :9092/state` through the read-only `pods/proxy` API. A status response
+  is accepted only when its `pod_uid` matches the current launcher Pod UID. Unknown, failed, stale,
+  or unavailable status never marks a suspend complete or a resume ready.
+- Suspension keeps the same Pod, Pod UID, ServiceAccount, and runner credential. It does not quiesce
+  the runner or seal Sessions. `status.stopStage` becomes `Stopped` only after the supervisor reports
+  `suspended`; resuming waits for `running`. The launcher Pod also records the Gateway Lease epoch
+  at suspension. Its old idle fact cannot trigger another autosuspend after wake: a newer connection
+  epoch and a fresh full idle timer are required. A missing or ended launcher is held for recovery rather
+  than cold booted on top of a possible checkpoint. Final deletion wakes a suspended launcher,
+  quiesces the runner normally, and then deletes the Pod and retained claims.
+- The new template arm is an API addition. Existing staging templates remain Pod/VM until changed;
+  rollback before enabling Firecracker templates leaves them untouched. Once a Firecracker Sandbox
+  has checkpointed state, rollback must preserve its launcher and PVC until a controller that
+  understands the Firecracker arm can resume or delete it safely.
 
 ## Identity
 
@@ -182,7 +222,7 @@ A foreign same-name Service blocks new workload starts.
 ## Launch
 
 - Every Sandbox gets a ConfigMap `<sandbox>-launch`, owned by it, holding its namespace, name, UID
-  and `spec.bootstrap` as `launch.json`. A Pod mounts it read-only into its `runner` container; a VM
+  and `spec.bootstrap` as `launch.json`. A Pod mounts it read-only into its `environment-runtime` container; a VM
   gets it as a virtio disk of serial `agentplane-launch`. A template without a `runner` container,
   or that defines the launch volume itself, starts nothing.
 - A changed `spec.bootstrap` reaches the Sandbox's next incarnation only.
@@ -228,7 +268,8 @@ dispatch on typed status fields.
 `status.stopStage` is how far the controller has taken stopping the workload, absent while it runs or
 starts: `Quiescing` while it seals the current incarnation's Sessions before stopping or deleting it,
 `Deleting` while a deleted Sandbox with nothing left to seal has its workload and runner credentials
-removed, and `Stopped` once no Pod or VM runs and the state volume is kept. Credential and certificate pending
+removed, and `Stopped` once no plain Pod or VM runs, or a Firecracker launcher has checkpointed RAM
+while keeping its Pod, and the state volume is kept. Credential and certificate pending
 reasons requeue while cert-manager provisions or cleans up generation-specific resources; conflicts
 keep the workload from starting until resolved. `SuspendPending` holds a suspend while the runner's bootstrap
 or a Session's setup is still running, so the suspend never interrupts it; a delete does not wait.

@@ -235,7 +235,13 @@ def _egress_sidecar(
             *telemetry_env,
             *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if disable_otel_sdk else []),
         ],
-        security_context=workload_security_context(),
+        security_context=k8s.SecurityContext(
+            allow_privilege_escalation=False,
+            capabilities=k8s.Capabilities(drop=["ALL"]),
+            run_as_user=1000,
+            run_as_group=1000,
+            run_as_non_root=True,
+        ),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(
                 path=sidecar_config.READINESS_PATH, port=k8s.IntOrString.from_number(sidecar_config.READINESS_PORT)
@@ -297,6 +303,8 @@ def pod_spec(
     keep_sidecar_until_workload_exit: bool = False,
     sidecar_token_projections: Sequence[k8s.ServiceAccountTokenProjection] = (),
     sidecar_mounts: Sequence[k8s.VolumeMount] = (),
+    security_context: k8s.PodSecurityContext | None = None,
+    restart_policy: str = "Always",
 ) -> k8s.PodSpec:
     """`workload` and additional workloads as uid 1000, with no automatically mounted ServiceAccount
     token: when present, projected tokens are mounted by the egress sidecar alone, which keeps an
@@ -348,7 +356,7 @@ def pod_spec(
         init_containers=[sidecar] if sidecar is not None and keep_sidecar_until_workload_exit else None,
         automount_service_account_token=False,
         # Container restarts create a fresh PID namespace for the isolated Codex executor.
-        restart_policy="Always",
+        restart_policy=restart_policy,
         image_pull_secrets=(
             [k8s.LocalObjectReference(name=image_pull_secret_name)] if image_pull_secret_name is not None else None
         ),
@@ -356,7 +364,8 @@ def pod_spec(
         # Do not let a runner or command process inspect another container's processes.
         share_process_namespace=False,
         termination_grace_period_seconds=60,
-        security_context=k8s.PodSecurityContext(
+        security_context=security_context
+        or k8s.PodSecurityContext(
             run_as_non_root=True,
             run_as_user=1000,
             run_as_group=1000,

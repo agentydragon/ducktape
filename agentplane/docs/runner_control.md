@@ -7,8 +7,9 @@ ingress remains a separate outbound platform route.
 
 Runner configuration requires `control.listen_address` and `control.security.mode`; the Gateway
 requires the matching `runner_security.mode`. Each explicitly selects `mtls` or `insecure`. `mtls`
-requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths. `insecure` rejects a
-TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
+requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths, or a local
+`workload_api_socket` Unix URI. Firecracker Runtime selects the Workload API; the Gateway uses
+projected files. Source forms cannot be mixed. `insecure` rejects a TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
 The service definitions are `runner/environment_runtime.proto` and `env/runtime/execution/executor.proto`;
 `proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
 
@@ -294,9 +295,12 @@ are not identity evidence.
 
 cert-manager owns leaf renewal through the namespaced runner Issuer, whose intermediate CA is
 signed by the cluster internal CA. trust-manager distributes the cluster internal root bundle.
-Pods use projected credential files; guests use a mounted Secret filesystem. Both ends verify the
-peer with go-spiffe against the mounted roots and authorize exactly the expected SPIFFE ID and EKU.
-A replaced certificate, key or root file is reloaded at the next TLS handshake. Every control call
+Pods use projected credential files; KubeVirt guests use a mounted Secret filesystem. Firecracker
+launchers stream the same material through the host-initiated vsock Workload API to the root guest
+agent, which serves Runtime through its restricted Unix socket. Runtime retains pinned credential
+snapshots shared by its control server and History client until joined shutdown. Both ends verify
+the peer with go-spiffe against their current roots and authorize exactly the expected SPIFFE ID
+and EKU. Replaced files and streamed updates provide credentials for subsequent TLS handshakes. Every control call
 and observation snapshot rechecks the peer leaf's validity period. Established gRPC connections close
 when either selected leaf expires, so a persistent channel reconnects with rotated credentials. A
 connection keeps the roots it was verified with until it closes. Workload deletion or replacement is
@@ -362,7 +366,9 @@ For the standard runner Pod, the controller mounts one projected Secret and the 
 into the Environment Runtime and egress sidecar; workload and executor containers do not mount it.
 Custom runtime-only templates remain supported and receive the projection only in Runtime. For KubeVirt, the guest Runtime reads the same
 Secret from its existing root-only virtiofs mount, while the launcher relay gets a projection of that
-Secret into its own sidecar mount.
+Secret into its own sidecar mount. For Firecracker, the launcher and relay receive the projection;
+the guest Runtime receives the streamed Workload API source, and workload programs cannot read
+either the host projection or the root-only guest socket.
 Kyverno checks the live Sandbox status binding against the VM annotation, current VMI UID and
 credential label before injection. Its admission controller has a namespace-scoped Role granting
 only `get` on Sandboxes for that lookup; it does not read the Secret. A missing accepted credential

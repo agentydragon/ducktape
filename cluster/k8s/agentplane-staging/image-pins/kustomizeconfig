@@ -1,6 +1,16 @@
 # Kustomize transformer configuration, not a Kubernetes manifest: teaches `images:` where to find
 # image fields in custom resources, which the transformer does not reach by default.
 images:
+  - path: spec/firecracker/bootImage
+    kind: SandboxTemplate
+  - path: spec/firecracker/runnerImage
+    kind: SandboxTemplate
+  - path: spec/firecracker/pod/spec/containers[]/image
+    kind: SandboxTemplate
+  - path: spec/firecracker/pod/spec/initContainers[]/image
+    kind: SandboxTemplate
+  - path: spec/firecracker/pod/spec/volumes[]/image/reference
+    kind: SandboxTemplate
   - path: spec/pod/spec/containers[]/image
     kind: SandboxTemplate
   - path: spec/vm/template/spec/volumes[]/containerDisk/image

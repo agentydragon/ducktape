@@ -1,0 +1,44 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/system_tests/firecracker:__pkg__"],
+)
+
+py_library(
+    name = "build_boot_files",
+    srcs = ["build_boot_files.py"],
+    deps = ["//agentplane/system_tests/vm/guest:boot_files"],
+)
+
+py_binary(
+    name = "build_boot_files_bin",
+    main_module = "agentplane.system_tests.firecracker.kernel.build_boot_files",
+    deps = [":build_boot_files"],
+)
+
+genrule(
+    name = "boot_files",
+    srcs = [
+        "initramfs_init",
+        "@trixie_vm_guest//busybox-static:data",
+        "@vm_guest_kernel_deb//file",
+    ],
+    outs = [
+        "vmlinux",
+        "initramfs.cpio",
+        "debian_kernel.config",
+    ],
+    # Firecracker v1.17 accepts x86_64 bzImage directly. Keep this artifact's
+    # `vmlinux` name for the existing boot image layout; its contents are bzImage.
+    cmd = " ".join([
+        "$(execpath :build_boot_files_bin)",
+        "$(execpath @vm_guest_kernel_deb//file)",
+        "$(execpath @trixie_vm_guest//busybox-static:data)",
+        "$(execpath initramfs_init)",
+        "\"$(@D)/vmlinux\"",
+        "\"$(@D)/initramfs.cpio\"",
+        "\"$(@D)/debian_kernel.config\"",
+    ]),
+    tools = [":build_boot_files_bin"],
+)

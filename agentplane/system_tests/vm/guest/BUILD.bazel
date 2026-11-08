@@ -10,7 +10,11 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(
     default_testonly = True,
-    default_visibility = ["//agentplane/system_tests/vm:__subpackages__"],
+    default_visibility = [
+        "//agentplane/system_tests/firecracker/guest:__pkg__",
+        "//agentplane/system_tests/firecracker/kernel:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
 )
 
 py_library(
