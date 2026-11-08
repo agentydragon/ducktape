@@ -12,28 +12,20 @@ const POLL_INTERVAL_MS = 5_000;
 /** Relative times move between polls, so tick them like a clock. */
 const TICK_MS = 1_000;
 
-function SyncPage(): JSX.Element {
-  const [status, setStatus] = useState<SyncStatus | null>(null);
-  const [error, setError] = useState<{ title: string; message: string } | null>(null);
+type StatusError = { title: string; message: string };
+
+function SyncPage({
+  status,
+  setStatus,
+  setError,
+  refresh,
+}: {
+  status: SyncStatus | null;
+  setStatus: (status: SyncStatus) => void;
+  setError: (error: StatusError | null) => void;
+  refresh: () => Promise<void>;
+}): JSX.Element {
   const [now, setNow] = useState(() => Date.now());
-
-  const refresh = useCallback(async (): Promise<void> => {
-    try {
-      setStatus(await getStatus());
-      setError(null);
-    } catch (reason) {
-      setError({
-        title: "Sync status unavailable",
-        message: reason instanceof ApiError || reason instanceof Error ? reason.message : "Could not load the status.",
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    const poll = globalThis.setInterval(() => void refresh(), POLL_INTERVAL_MS);
-    return () => globalThis.clearInterval(poll);
-  }, [refresh]);
 
   useEffect(() => {
     const tick = globalThis.setInterval(() => setNow(Date.now()), TICK_MS);
@@ -54,13 +46,8 @@ function SyncPage(): JSX.Element {
 
   return (
     <Stack gap="md">
-      {error !== null && (
-        <Alert color="red" role="alert" title={error.title}>
-          {error.message}
-        </Alert>
-      )}
       {status === null ? (
-        error === null && <Text>Loading…</Text>
+        <Text>Loading…</Text>
       ) : (
         <>
           <Overview status={status} now={now} onSyncNow={() => void requestSync()} />
@@ -75,6 +62,40 @@ type AppProps = { pathname?: string };
 
 export function App({ pathname = window.location.pathname }: AppProps = {}): JSX.Element {
   const page = pathname === "/sync" ? "sync" : "sessions";
+  const [status, setStatus] = useState<SyncStatus | null>(null);
+  const [error, setError] = useState<StatusError | null>(null);
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      setStatus(await getStatus());
+      setError(null);
+    } catch (reason) {
+      setError({
+        title: "Sync status unavailable",
+        message: reason instanceof ApiError || reason instanceof Error ? reason.message : "Could not load the status.",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const poll = globalThis.setInterval(() => void refresh(), POLL_INTERVAL_MS);
+    return () => globalThis.clearInterval(poll);
+  }, [refresh]);
+
+  const notice =
+    error !== null ? (
+      <Alert color="red" role="alert" title={error.title}>
+        {error.message}
+      </Alert>
+    ) : status?.state === "unpaired" ? (
+      <Alert color="yellow" role="alert" title="Claude is not paired">
+        New sessions are not syncing. <a href="/sync">Pair with Claude</a> to start syncing.
+      </Alert>
+    ) : status?.last_failure != null ? (
+      <Alert color="red" role="alert" title="Session sync is failing">
+        New sessions may be out of date. <a href="/sync">Check sync status</a> for details.
+      </Alert>
+    ) : null;
   const header = (
     <Group component="header" justify="space-between" align="center" gap="md" wrap="wrap">
       <Title order={1} size={page === "sessions" ? "h4" : "h1"}>
@@ -108,8 +129,9 @@ export function App({ pathname = window.location.pathname }: AppProps = {}): JSX
       <Container size="xl" py="xl">
         <Stack gap="md">
           {header}
+          {notice}
           <main>
-            <SyncPage />
+            <SyncPage status={status} setStatus={setStatus} setError={setError} refresh={refresh} />
           </main>
         </Stack>
       </Container>
@@ -125,6 +147,7 @@ export function App({ pathname = window.location.pathname }: AppProps = {}): JSX
     >
       <Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
         {header}
+        {notice}
         <main style={{ display: "flex", flex: 1, minHeight: 0, minWidth: 0 }}>
           <SessionViewer />
         </main>
