@@ -4316,8 +4316,18 @@ the recording or merge point; other premises, including program and
 native-input premises, may still have been consumed. Each cell set reports its
 unique count and a stable sample of at most eight exact cells. The existing
 opaque bit has no per-operation provenance; exact escaped cells remain
-independent evidence alongside it. This diagnostic does not prove heap
-locality and changes no ordering or gate verdict.
+independent evidence alongside it.
+
+The source-covered `MemberValueWrite` transfer also records a possible
+`own_property` write when its already-evaluated receiver is exactly one ordinary
+object allocation and its key is static (except `__proto__`). The cell uses the
+same receiver snapshot as the heap mutation; it does not re-evaluate the source
+binding. This is a may-write footprint, not proof that the write definitely
+runs, targets a writable own data descriptor, or completes the source owner.
+The existing `member_write_or_alias` opacity and conservative fallback remain
+in force, including for dynamic or non-singleton receivers. Recorded cells feed
+the existing heap ordering and shared-cell premise checks; the report itself
+grants no locality or completion authority.
 
 The explanation is retained when the dependency graph is built
 (`dependency_graph.json.gz` `edges[].sequenced_cause` for `sequenced` edges; the

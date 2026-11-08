@@ -1,5 +1,6 @@
 use analysis::{
-    DependencyGraphReport, EffectCellReport, reports::schema::BindingEffectAuthorityReport,
+    DependencyGraphReport, EffectCellReport, KnownConflict, PremiseVerdict,
+    reports::schema::BindingEffectAuthorityReport,
 };
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
@@ -36,6 +37,79 @@ fn assert_property_frontier(
         "property ordering {later} -> {earlier}: {:#?}",
         graph.edges
     );
+}
+
+fn assert_property_shared_cell_premise(
+    graph: &DependencyGraphReport,
+    later: usize,
+    earlier: usize,
+    property: &str,
+) {
+    let unit = |ordinal| {
+        &graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == ordinal)
+            .unwrap()
+            .id
+    };
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && &edge.source == unit(later)
+                && &edge.target == unit(earlier)
+                && matches!(
+                    &edge.premise_verdict,
+                    Some(PremiseVerdict::Known {
+                        conflict: KnownConflict::SharedCell {
+                            cell: EffectCellReport::OwnProperty {
+                                property: observed,
+                                ..
+                            }
+                        }
+                    }) if observed == property
+                )
+        }),
+        "property shared-cell premise {later} -> {earlier}: {:#?}",
+        graph.edges
+    );
+}
+
+fn assert_non_assumed_own_property_read(
+    graph: &DependencyGraphReport,
+    binding: &str,
+    property: &str,
+) -> u32 {
+    let source = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("missing {binding} source unit: {graph:#?}"));
+    let execution = source
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} execution evidence: {source:#?}"));
+    let heap = execution
+        .heap_frontier
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing {binding} heap evidence: {execution:#?}"));
+    let reads = &heap.non_assumed_heap_accesses.reads;
+    assert_eq!(reads.count, reads.sample.len(), "{reads:#?}");
+    reads
+        .sample
+        .iter()
+        .find_map(|cell| match cell {
+            EffectCellReport::OwnProperty {
+                origin,
+                property: observed,
+            } if observed == property => Some(*origin),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{binding} lacks an own-property read of {property}: {reads:#?}"))
 }
 
 fn assert_non_assumed_length_read(graph: &DependencyGraphReport, binding: &str) -> u32 {
@@ -290,6 +364,60 @@ fn root_reads_stay_on_both_sides_of_an_alias_write() {
     assert_property_frontier(&graph, 3, 2, "value");
     assert_sequenced_order(&graph, 4, 3);
     assert_preserved_entry_output(&fixture, "7 42\n");
+    let coverage = fixture.effect_translation_validation();
+    assert!(
+        coverage["coverage"]["unknown_coverage"]["general_heap"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+}
+
+#[test]
+fn root_ordinary_object_write_is_a_typed_shared_cell_premise_fact() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const record = { value: 7 };\nconst before = record.value;\nrecord.value = 42;\nconst after = record.value;\nconsole.log(before, after);\n",
+        vec![
+            logical_module("record", &[Member::new("record")]),
+            logical_module("before", &[Member::new("before")]),
+            logical_module_with_anon("write", &[], &["record.value = 42;"]),
+            logical_module("after", &[Member::new("after")]),
+            logical_module_with_anon("observe", &[], &["console.log(before, after);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "7 42\n");
+
+    let graph = fixture.dependency_graph();
+    let origin = assert_non_assumed_own_property_read(&graph, "after", "value");
+    let writer = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 2)
+        .unwrap_or_else(|| panic!("missing member-write source unit: {graph:#?}"));
+    let execution = writer
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing member-write execution evidence: {writer:#?}"));
+    let heap = execution
+        .heap_frontier
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing member-write heap evidence: {execution:#?}"));
+    let writes = &heap.non_assumed_heap_accesses.writes;
+    assert_eq!(writes.count, writes.sample.len(), "{writes:#?}");
+    assert!(
+        writes.sample.iter().any(|cell| matches!(
+            cell,
+            EffectCellReport::OwnProperty {
+                origin: observed_origin,
+                property,
+            } if *observed_origin == origin && property == "value"
+        )),
+        "the source-covered member write must retain its possible own-property cell: {writes:#?}"
+    );
+    assert_property_shared_cell_premise(&graph, 3, 2, "value");
+
+    // Exact own-cell evidence supplements the established source opacity; it
+    // does not certify all possible effects of a member write.
     let coverage = fixture.effect_translation_validation();
     assert!(
         coverage["coverage"]["unknown_coverage"]["general_heap"]

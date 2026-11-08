@@ -5,6 +5,7 @@ use super::super::value_model::{CallSite, Context, ValueExpr, Values};
 use super::CallKind;
 use super::MemberValueWrite;
 use super::interpreter::{Executor, NativeCallResolution};
+use crate::facts::EffectCell;
 use std::collections::BTreeSet;
 use swc_common::Span;
 
@@ -87,6 +88,7 @@ pub(super) enum HeapOperation {
 
 pub(super) enum HeapResult {
     Updated,
+    MemberWrites(BTreeSet<EffectCell>),
     Iteration(Box<Option<NativeIterableReceipt>>),
     Native(Box<Option<NativeCallResolution>>),
 }
@@ -104,14 +106,14 @@ impl HeapOperation {
                 certified_data_receivers,
                 deferred_global_write,
             } => {
-                executor.apply_member_value_writes_transfer(
+                let writes = executor.apply_member_value_writes_transfer(
                     &writes,
                     &environment,
                     &captures,
                     &certified_data_receivers,
                     deferred_global_write,
                 );
-                HeapResult::Updated
+                HeapResult::MemberWrites(writes)
             }
             Self::ApplyDescriptors { arguments } => {
                 executor.apply_own_descriptor_map_transfer(&arguments);

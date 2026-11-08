@@ -7337,11 +7337,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captures: &Context,
         certified_data_receivers: &BTreeSet<u32>,
         deferred_global_write: bool,
+        outcome: &mut Outcome,
     ) {
         if writes.is_empty() {
             return;
         }
-        let RuntimeValue::Heap(HeapResult::Updated) =
+        let RuntimeValue::Heap(HeapResult::MemberWrites(writes)) =
             self.request(RuntimeOperation::Heap(HeapOperation::WriteMembers {
                 writes: writes.to_vec(),
                 environment: env.clone(),
@@ -7352,6 +7353,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             unreachable!("member writes produce a successor heap");
         };
+        for cell in writes {
+            outcome
+                .effects
+                .record_heap_write(cell, self.state.assumption.is_none());
+        }
     }
 
     pub(super) fn apply_member_value_writes_transfer(
@@ -7361,7 +7367,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captures: &Context,
         certified_data_receivers: &BTreeSet<u32>,
         deferred_global_write: bool,
-    ) {
+    ) -> BTreeSet<crate::facts::EffectCell> {
+        let mut own_property_writes = BTreeSet::new();
         for write in writes {
             let MemberValueWrite {
                 receiver,
@@ -7371,6 +7378,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             } = write;
             let receivers = self.evaluate(&ValueExpr::Binding(receiver.clone()), env, captures);
             let values = self.evaluate(expression, env, captures);
+            if values
+                .iter()
+                .any(|value| !matches!(value, AbstractValue::Value(Value::Unavailable)))
+                && receivers.len() == 1
+                && let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) =
+                    receivers.first()
+                && let Some(property) = property
+                    .as_ref()
+                    .filter(|property| property.as_str() != "__proto__")
+            {
+                own_property_writes.insert(crate::facts::EffectCell::OwnProperty {
+                    origin: *object,
+                    property: property.clone(),
+                });
+            }
             for receiver in receivers {
                 match receiver {
                     AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic => {
@@ -7462,6 +7484,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+        own_property_writes
     }
 
     fn promote_callback_result_writes(
@@ -11227,6 +11250,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &env,
             &certified_data_receivers,
             false,
+            &mut outcome,
         );
         // local_constructor checked every assignment as a static property
         // write to a fresh `this`, with a safe right-hand value and no
@@ -14162,6 +14186,7 @@ impl Executor<'_, '_> {
                 &top_captures,
                 &BTreeSet::new(),
                 certified_deferred_write,
+                &mut outcome,
             );
             if !certified_deferred_write {
                 self.promote_callback_result_writes(
