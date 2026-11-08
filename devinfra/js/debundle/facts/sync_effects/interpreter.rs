@@ -7688,7 +7688,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 && kind.tracks_prefix_own_properties()
             {
                 self.literal_heap()
-                    .write_property(*object, Some(write.property.clone()), &values);
+                    .write_property(*object, write.property.clone(), &values);
             }
         }
     }
