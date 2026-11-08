@@ -13,7 +13,7 @@ Deletion first has the runner seal every
 Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../runner_gateway/README.md)'s
 [runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
-`status.quiescedIncarnation`. `runner_gateway_target` and `runner_gateway_token_file` are required settings.
+`status.quiescedIncarnation`. `runner_gateway_target` and `runner_gateway_token_file` are required settings in the mounted YAML file.
 Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
 
 `runner_certificate_issuer` names the cert-manager Issuer used for per-incarnation `Certificate`
@@ -61,15 +61,14 @@ retain their creation records and are never reapplied from a changed template.
 ## Running
 
 Every Agentplane environment runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which
-also holds its RBAC; its runner `SandboxTemplate`s are in `environment_sandbox.py`.
-Its settings are `AGENTPLANE_SANDBOX_CONTROLLER_*` environment variables, named by the fields of
-[`settings.py`](settings.py). Locally:
+also holds its RBAC; its runner `SandboxTemplate`s are in `environment_sandbox.py`. The Controller
+reads its required, strict YAML settings file from the path named by
+`AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`. Static settings are authored in
+[`settings.py`](settings.py); the projected Runner Gateway token remains a separate read-only file.
+Locally:
 
 ```bash
-AGENTPLANE_SANDBOX_CONTROLLER_NAMESPACE=<namespace> \
-  AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TARGET=<target> \
-  AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TOKEN_FILE=<token file> \
-  AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_CERTIFICATE_ISSUER=<issuer> \
+AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE=<settings.yaml> \
   bb run //agentplane/sandbox_controller/cmd:sandbox-controller
 ```
 

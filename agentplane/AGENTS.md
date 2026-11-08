@@ -20,6 +20,15 @@ The integration app is a client of the backend services, never their dependency
 Service settings reject unknown keys, and the cdk8s manifests set them: add a setting in code before
 a manifest sets it; remove one from the manifests first and the field after rollout.
 
+New or migrated deployment settings use a typed `Settings` model; `yaml_config` and `SettingsFile`
+render static settings as a required, read-only YAML file. The config-file path is the only bootstrap
+environment variable, with no generic per-setting environment or CLI override layer. A service may
+declare narrow runtime Secret inputs separately when its contract needs them; keep rotating credential
+material in its existing projected or Secret files. Startup validates the completed settings after the
+file and those explicit runtime inputs are combined. SDK and infrastructure environment such as OTEL
+and Downward API values are outside service-owned settings. This is the target for new and migrated
+contracts; existing services retain their current sources until migrated.
+
 ## Database migrations
 
 PostgreSQL services embed Goose migrations in their serving binary and run the shared

@@ -5939,6 +5939,21 @@ spec:
               protocol: TCP
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-controller-settings
+  namespace: agentplane-staging
+data:
+  config.yaml: |
+    namespace: agentplane-staging
+    metrics_bind_address: :8080
+    health_probe_bind_address: :8081
+    runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
+    runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
+    runner_certificate_issuer: agentplane-runner-ca
+immutable: false
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: sandbox-controller
@@ -5976,18 +5991,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_SANDBOX_CONTROLLER_NAMESPACE
-              value: agentplane-staging
-            - name: AGENTPLANE_SANDBOX_CONTROLLER_METRICS_BIND_ADDRESS
-              value: :8080
-            - name: AGENTPLANE_SANDBOX_CONTROLLER_HEALTH_PROBE_BIND_ADDRESS
-              value: :8081
-            - name: AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TARGET
-              value: "{sandbox}-control.{namespace}.svc:8080"
-            - name: AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TOKEN_FILE
-              value: /var/run/secrets/agentplane-runner-gateway/token
-            - name: AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_CERTIFICATE_ISSUER
-              value: agentplane-runner-ca
             - name: OTEL_SERVICE_NAME
               value: sandbox-controller
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -6000,6 +6003,8 @@ spec:
               value: http://alloy.monitoring.svc.cluster.local:4317
             - name: OTEL_TRACES_SAMPLER
               value: parentbased_always_on
+            - name: AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE
+              value: /etc/agentplane-sandbox-controller/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -6041,6 +6046,9 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
+            - mountPath: /etc/agentplane-sandbox-controller
+              name: configmap-sandbox-controller-settings
+              readOnly: true
             - mountPath: /var/run/secrets/agentplane-runner-gateway
               name: runner-gateway-token
               readOnly: true
@@ -6064,6 +6072,9 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
       volumes:
+        - configMap:
+            name: sandbox-controller-settings
+          name: configmap-sandbox-controller-settings
         - name: runner-gateway-token
           projected:
             sources:

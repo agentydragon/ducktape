@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class Settings(BaseSettings):
-    """Fields are `AGENTPLANE_SANDBOX_CONTROLLER_*` environment variables. Keep them in sync with the keys of
-    `cmd/config.go`."""
+class Settings(BaseModel):
+    """Static deployment configuration read from the Controller's required YAML file."""
 
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_SANDBOX_CONTROLLER_")
+    config_file_env: ClassVar[str] = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
+    model_config = ConfigDict(extra="forbid")
 
     namespace: str = Field(
         min_length=1, description="Namespace where the Sandboxes, their templates, Pods and state PVCs live."
