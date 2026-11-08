@@ -36,8 +36,6 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 NAME = NAMESPACE = "session-backup"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 HOSTNAME = "ai-session-backups.allegedly.works"
-_DATA_CLAIM = "session-backup-data"
-_STORAGE_CLASS = "piraeus-ssd-2-autodiskful"
 _HDD_CLAIM = "session-backup-data-hdd"
 REST_SERVER_AUTH_SECRET = "session-backup-rest-server-auth"
 IMPORTER_CREDENTIALS_SECRET = "session-backup-importer-credentials"
@@ -55,18 +53,6 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.DISABLED)
 
-    PersistentVolumeClaim(
-        chart,
-        "data-claim",
-        metadata=ApiObjectMetadata(
-            name=_DATA_CLAIM, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
-        storage_class_name=_STORAGE_CLASS,
-        storage=Size.gibibytes(100),
-    )
-
-    # Retain the SSD claim until the migrated repository has been verified.
     hdd_claim = PersistentVolumeClaim(
         chart,
         "hdd-data-claim",

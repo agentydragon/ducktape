@@ -11,22 +11,6 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: session-backup-data
-  namespace: session-backup
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 100Gi
-  storageClassName: piraeus-ssd-2-autodiskful
-  volumeMode: Filesystem
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
   name: session-backup-data-hdd
   namespace: session-backup
 spec:
