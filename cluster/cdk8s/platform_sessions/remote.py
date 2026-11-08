@@ -334,7 +334,7 @@ def _provider_workload(chart: Chart, instance: str) -> None:
     PodMonitor(
         chart,
         f"{name}-monitor",
-        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=f"{name}-provider" if instance == "quest" else name, namespace=NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels={"app": name}),
         pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
         + (
