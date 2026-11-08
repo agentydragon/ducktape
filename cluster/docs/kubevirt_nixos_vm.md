@@ -28,7 +28,7 @@ not a current deployment recipe.
 
 ## Caveats
 
-VMs that use `local-path-ovh-hdd` (or any local-path class) are tied to one node
+VMs that use node-local storage are tied to one node
 and are not live-migratable; node loss means availability loss. For durable
 VMs, use a CSI backend with RWX/block support and `VolumeSnapshotClass` before
 relying on KubeVirt migration, snapshots, or node-failure recovery.
