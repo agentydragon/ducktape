@@ -27,15 +27,16 @@
 
 ## Storage
 
-| StorageClass          | Provisioner            | Region    | Notes                                                                                          |
-| --------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------------------------- |
-| `seaweedfs-ovh-ssd`   | SeaweedFS CSI          | `hil-ovh` | NVMe SeaweedFS (`diskType: ssd`), Forgejo git hot tier                                         |
-| `piraeus-ssd-local`   | Piraeus (LINSTOR)      | `hil-ovh` | One copy on the consuming node's SSD pool; replicated apps and node-pinned SSD data            |
-| `piraeus-hdd-local`   | Piraeus (LINSTOR)      | `hil-ovh` | One copy on the consuming node's HDD pool; SeaweedFS `hdd` volume servers, bulk data           |
-| `local-path-proxmox`  | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned Proxmox app data                                          |
-| `local-path-home-ssd` | local-path-provisioner | `home`    | OptiPlex NVMe: LAN/hardware-pinned home state (Home Assistant); VolSync copies it to SeaweedFS |
-| `lvm-proxmox-ssd`     | OpenEBS LVM CSI        | `proxmox` | NVMe thin; nodes with VG `openebs-proxmox-ssd`                                                 |
-| `lvm-proxmox-hdd`     | OpenEBS LVM CSI        | `proxmox` | HDD thin; nodes with VG `openebs-proxmox-hdd`                                                  |
+| StorageClass                | Provisioner       | Placement and use                             |
+| --------------------------- | ----------------- | --------------------------------------------- |
+| `seaweedfs-ovh-ssd`         | SeaweedFS CSI     | OVH SSD SeaweedFS; Forgejo git hot tier       |
+| `piraeus-ssd-local`         | Piraeus (LINSTOR) | One local SSD copy on a node with an SSD pool |
+| `piraeus-hdd-local`         | Piraeus (LINSTOR) | One local HDD copy on a node with an HDD pool |
+| `piraeus-ssd-2-autodiskful` | Piraeus (LINSTOR) | Two OVH SSD copies with autodiskful placement |
+| `piraeus-hdd-2`             | Piraeus (LINSTOR) | Two OVH HDD copies with autodiskful placement |
+
+See <piraeus.md> and <../cdk8s/piraeus.py> for storage pools, placement and
+recovery constraints. Existing PVCs can retain older classes during migrations.
 
 ## Failure modes
 

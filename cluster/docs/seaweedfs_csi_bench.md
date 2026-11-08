@@ -51,7 +51,6 @@ Tana's profile fsyncs Cookies / DIPS-wal / IndexedDB sqlite on every change.
 A FUSE-over-network filesystem fundamentally can't serve SQLite-style
 sync writes the way a local filesystem can.
 
-The CSI driver is kept installed for blob-shaped workloads where SeaweedFS
-is the right tool (large, mostly-append, no fsync-per-update). Tana stays
-on `local-path-ovh`, with a periodic Volsync backup _into_ seaweedfs (which
-plays to the backend's strengths).
+The CSI driver is kept installed for workloads suited to SeaweedFS. Tana now uses
+`emptyDir` for its re-derivable profile rather than the local-path PVC and VolSync
+backup described at the time of this test; see <../cdk8s/tana_mcp.py>.

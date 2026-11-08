@@ -291,10 +291,9 @@ The revised replica-1 handoff preserved the serving master's Pod UID:
    its temporary hold. Recheck native roles, link, offsets, master Pod UID and
    unchanged Pod template after reconciliation resumes.
 
-The shared StatefulSet claim template still selects local-path. Pod recreation
-reuses the replica's pre-created Piraeus claim; PVC deletion loses that override.
-Record it for recovery until a separately reviewed immutable-template handoff
-changes the shared default.
+The shared StatefulSet claim template selects `piraeus-ssd-local`. Pod recreation
+reuses the existing claim; deleting a PVC does not guarantee its data will be
+reattached. Follow the cold-copy and native replication checks above.
 
 For a primary on the target node, use native coordinated `FAILOVER TO <replica-IP>
 6379 TIMEOUT 5000` without `FORCE`, accepting the caught-up converted primary
