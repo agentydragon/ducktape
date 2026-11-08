@@ -24,7 +24,7 @@ class HttpSessionTransport:
         headers = list(request.headers) + list(self.session_headers(session))
         url = request.url + ("?" + request.query.decode("ascii") if request.query else "")
         with (
-            httpx2.Client(transport=self.transport, trust_env=False, follow_redirects=False, timeout=20) as client,
+            httpx2.Client(transport=self.transport, trust_env=True, follow_redirects=False, timeout=20) as client,
             client.stream(request.method, url, headers=headers, content=request.body) as response,
         ):
             # Preserve raw compressed bytes alongside the upstream encoding header.
