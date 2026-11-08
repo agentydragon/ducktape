@@ -1227,3 +1227,38 @@ fn assign_target_pat_has_member_target(pat: &AssignTargetPat) -> bool {
         AssignTargetPat::Invalid(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn collect_global_property_accesses(source: &str) -> StatementFactsCollector {
+        let module = crate::js_ast::with_swc_globals(|| {
+            crate::js_ast::parse_js_module_ast("wrapped-global-writes.ts", source)
+                .expect("global property write source should parse")
+        });
+        let items = top_level_item_views(&module.body);
+        let global_object_names = unshadowed_global_object_aliases(&items);
+        let mut collector = StatementFactsCollector::new(
+            global_object_names,
+            BTreeSet::new(),
+            /*promise_global_unshadowed=*/ false,
+        );
+        module.visit_with(&mut collector);
+        collector
+    }
+
+    #[test]
+    fn type_erased_global_member_targets_keep_global_property_write_cells() {
+        let unwrapped =
+            collect_global_property_accesses("globalThis.count = 1; globalThis.size++;");
+        let wrapped =
+            collect_global_property_accesses("(globalThis.count as any) = 1; globalThis.size!++;");
+
+        let expected_writes = BTreeSet::from(["count".to_owned(), "size".to_owned()]);
+        assert_eq!(unwrapped.global_writes, expected_writes);
+        assert_eq!(wrapped.global_writes, unwrapped.global_writes);
+        assert_eq!(wrapped.global_reads, unwrapped.global_reads);
+        assert!(wrapped.havoc.is_empty());
+    }
+}
