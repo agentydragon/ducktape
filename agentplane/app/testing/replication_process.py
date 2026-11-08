@@ -21,7 +21,6 @@ import httpx
 import uvicorn
 import yaml
 from playwright.async_api import Page
-from pydantic import AnyHttpUrl
 from python.runfiles import Runfiles
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -525,8 +524,8 @@ async def app_process(
             if electric_url is not None:
                 settings["electric_url"] = electric_url
             oidc = OIDCSettings(
-                issuer=AnyHttpUrl(issuer),
-                public_base_url=AnyHttpUrl(certificate.url if certificate is not None else f"http://127.0.0.1:{port}"),
+                issuer=issuer,
+                public_base_url=certificate.url if certificate is not None else f"http://127.0.0.1:{port}",
             )
             oidc_secrets = OIDCSecretInputs(
                 client_id="test-agentplane", client_secret="test-secret", session_secret="test-session-secret"
@@ -548,7 +547,7 @@ async def app_process(
             async with spawn_go_app(
                 configured, oidc=oidc, oidc_secrets=oidc_secrets, env={"SSL_CERT_FILE": str(ca)}, listener=listener
             ) as app:
-                app.public_url = str(oidc.public_base_url)
+                app.public_url = oidc.public_base_url
                 app.login_ca = ssl.create_default_context(cafile=str(ca))
                 app.oidc_issuer = issuer
                 if certificate is None:

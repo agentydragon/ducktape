@@ -3996,7 +3996,7 @@ data:
       - system:serviceaccount:agentplane-staging:agentplane-agent
     oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging/
-      public_base_url: https://agentplane-staging.allegedly.works/
+      public_base_url: https://agentplane-staging.allegedly.works
       session_max_seconds: 604800
       session_idle_seconds: 86400
       session_activity_step_seconds: 300

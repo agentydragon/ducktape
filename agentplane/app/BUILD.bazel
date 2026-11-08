@@ -265,10 +265,7 @@ py_library(
         "//agentplane/system_tests:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
-    deps = [
-        "//util:urls",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_test(

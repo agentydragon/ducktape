@@ -83,8 +83,8 @@ def config(
     connection_service_url: HttpEndpointUrl,
     runtime: Catalog | None = None,
     central_sampler_enabled: bool = False,
-    app_origin: HttpEndpointUrl,
-    oidc_issuer: HttpEndpointUrl,
+    app_origin: str,
+    oidc_issuer: str,
     electric_url: HttpEndpointUrl,
 ) -> Settings:
     if runtime is None:

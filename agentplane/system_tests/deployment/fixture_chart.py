@@ -241,7 +241,7 @@ def environment(
             listen_address="0.0.0.0:8080",
             token_subjects=frozenset({f"system:serviceaccount:{NAMESPACE}:agentplane-agent"}),
             log_levels={},
-            oidc=OIDCSettings(issuer=AnyHttpUrl(DEX_ISSUER), public_base_url=AnyHttpUrl(app_origin)),
+            oidc=OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin),
             action_federation=dex.action_federation(operator_oidc),
             frontend_config=FrontendConfig(
                 trace_search=TraceSearchSettings(

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from util.urls import HttpEndpointUrl, HttpsEndpointUrl
-
 SECURE_COOKIE = "__Host-agentplane_session"
 INSECURE_COOKIE = "agentplane_session"
 
@@ -15,8 +13,9 @@ class OIDCSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    issuer: HttpsEndpointUrl = Field(description="Per-provider HTTPS issuer URL.")
-    public_base_url: HttpEndpointUrl = Field(description="The app's public origin used to build the redirect URI.")
+    # URL normalization must not add or remove a slash from an OIDC issuer identifier.
+    issuer: str = Field(min_length=1, description="The provider's exact HTTPS issuer identifier.")
+    public_base_url: str = Field(min_length=1, description="The app's public origin used to build the redirect URI.")
     session_max_seconds: int = Field(
         default=604800, gt=0, description="How long a login lasts at most, however it is used."
     )
