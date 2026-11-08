@@ -4,34 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Platform sessions</title>
-    <script src="/status.js" defer></script>
-    <link rel="stylesheet" href="/status.css" />
+    <link rel="stylesheet" href="/main.css" />
   </head>
   <body>
-    <main>
-      <header>
-        <div>
-          <h1>Platform sessions</h1>
-          <p class="muted">Browser sessions for your connected services.</p>
-        </div>
-        <form action="/auth/logout" method="post"><button type="submit">Sign out</button></form>
-      </header>
-      <p id="integrations-error" role="status"></p>
-      <div class="providers" id="integrations"></div>
-      <section class="card import-card" aria-labelledby="import-heading">
-        <h2 id="import-heading">Import a session</h2>
-        <p>Open an integration’s export instructions above, copy its session, then paste it here.</p>
-        <form id="session-form">
-          <label for="session">Session export</label>
-          <textarea id="session" rows="3" required autocomplete="off" spellcheck="false"></textarea>
-          <p id="import-provider" class="muted" aria-live="polite">The provider is detected from the export.</p>
-          <label id="instance-label" for="instance" hidden>Choose an integration</label>
-          <select id="instance" hidden></select>
-          <button type="submit" id="import-session">Verify and import</button>
-          <p id="result" role="status"></p>
-        </form>
-        <p class="muted">Treat session exports like passwords. Clear the clipboard after importing.</p>
-      </section>
-    </main>
+    <div id="root"></div>
+    <script type="module" src="/main.js"></script>
   </body>
 </html>

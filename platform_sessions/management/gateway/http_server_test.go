@@ -20,12 +20,26 @@ func TestGeneratedHTTPRequiresOwnerAndSameOriginForBrowserMutations(t *testing.T
 		t.Fatal(err)
 	}
 	bearer := strings.Repeat("o", 40)
-	handler, err := HTTPServer(context.Background(), service, HTTPConfig{Owner: testOwnerConfig(), Bearers: []Bearer{{Token: bearer, Owner: true}}, Assets: map[string][]byte{"status.html": []byte("<body>test</body>")}})
+	handler, err := HTTPServer(context.Background(), service, HTTPConfig{
+		Owner:   testOwnerConfig(),
+		Bearers: []Bearer{{Token: bearer, Owner: true}},
+		Assets: map[string][]byte{
+			"status.html": []byte("<body>test</body>"),
+			"main.css":    []byte("body { color: red; }"),
+			"main.js":     []byte("console.log('test');"),
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest("GET", "https://sessions.invalid/api/v1/instances", nil)
+	request := httptest.NewRequest("GET", "https://sessions.invalid/main.js", nil)
 	result := httptest.NewRecorder()
+	handler.ServeHTTP(result, request)
+	if result.Code != http.StatusSeeOther || result.Header().Get("Location") != "/auth/login" {
+		t.Fatalf("unauthenticated script: status=%d location=%q", result.Code, result.Header().Get("Location"))
+	}
+	request = httptest.NewRequest("GET", "https://sessions.invalid/api/v1/instances", nil)
+	result = httptest.NewRecorder()
 	handler.ServeHTTP(result, request)
 	if result.Code != 401 {
 		t.Fatalf("unauthenticated: %d", result.Code)
@@ -59,6 +73,24 @@ func TestGeneratedHTTPRequiresOwnerAndSameOriginForBrowserMutations(t *testing.T
 	handler.ServeHTTP(result, request)
 	if result.Code != 200 || result.Body.String() != "<body>test</body>" {
 		t.Fatalf("owner UI: %d %q", result.Code, result.Body)
+	}
+	const csp = "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	if result.Header().Get("Content-Security-Policy") != csp {
+		t.Fatalf("owner UI CSP: %q", result.Header().Get("Content-Security-Policy"))
+	}
+	for _, asset := range []struct {
+		path, contentType, body string
+	}{
+		{"main.css", "text/css", "body { color: red; }"},
+		{"main.js", "application/javascript", "console.log('test');"},
+	} {
+		request = httptest.NewRequest("GET", "https://sessions.invalid/"+asset.path, nil)
+		request.AddCookie(&http.Cookie{Name: ownerCookie, Value: good})
+		result = httptest.NewRecorder()
+		handler.ServeHTTP(result, request)
+		if result.Code != http.StatusOK || result.Header().Get("Content-Type") != asset.contentType || result.Body.String() != asset.body {
+			t.Fatalf("owner UI asset %s: status=%d content-type=%q body=%q", asset.path, result.Code, result.Header().Get("Content-Type"), result.Body.String())
+		}
 	}
 	request = httptest.NewRequest("GET", "https://sessions.invalid/api/v1/instances", nil)
 	request.AddCookie(&http.Cookie{Name: ownerCookie, Value: good})

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/platform_sessions/frontend"
 	"github.com/agentydragon/ducktape/platform_sessions/management/gateway"
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/v1/providerpb"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -148,7 +150,18 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	handler, err := gateway.HTTPServer(ctx, service, gateway.HTTPConfig{Owner: gateway.OwnerConfig{Issuer: os.Getenv("PLATFORM_SESSIONS_ISSUER"), ClientID: os.Getenv("PLATFORM_SESSIONS_CLIENT_ID"), ClientSecret: os.Getenv("PLATFORM_SESSIONS_CLIENT_SECRET"), SessionSecret: os.Getenv("PLATFORM_SESSIONS_SESSION_SECRET"), PublicBaseURL: os.Getenv("PLATFORM_SESSIONS_PUBLIC_BASE_URL"), AllowedSubject: os.Getenv("PLATFORM_SESSIONS_ALLOWED_SUBJECT")}, Providers: providers, Bearers: bearers, Assets: map[string][]byte{"status.html": frontend.HTML, "status.css": frontend.CSS, "status.js": frontend.JavaScript}, ManagementDocument: managementDoc})
+	frontendDirectory := os.Getenv("PLATFORM_SESSIONS_FRONTEND_DIR")
+	if frontendDirectory == "" {
+		frontendDirectory, err = runfiles.Rlocation("ducktape/platform_sessions/frontend/dist")
+		if err != nil {
+			return fmt.Errorf("locate platform sessions frontend runfiles: %w", err)
+		}
+	}
+	frontendAssets, err := frontend.Load(filepath.Clean(frontendDirectory))
+	if err != nil {
+		return err
+	}
+	handler, err := gateway.HTTPServer(ctx, service, gateway.HTTPConfig{Owner: gateway.OwnerConfig{Issuer: os.Getenv("PLATFORM_SESSIONS_ISSUER"), ClientID: os.Getenv("PLATFORM_SESSIONS_CLIENT_ID"), ClientSecret: os.Getenv("PLATFORM_SESSIONS_CLIENT_SECRET"), SessionSecret: os.Getenv("PLATFORM_SESSIONS_SESSION_SECRET"), PublicBaseURL: os.Getenv("PLATFORM_SESSIONS_PUBLIC_BASE_URL"), AllowedSubject: os.Getenv("PLATFORM_SESSIONS_ALLOWED_SUBJECT")}, Providers: providers, Bearers: bearers, Assets: frontendAssets, ManagementDocument: managementDoc})
 	if err != nil {
 		return err
 	}
