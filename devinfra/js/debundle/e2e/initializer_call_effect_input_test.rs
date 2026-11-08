@@ -1,6 +1,8 @@
 //! One exact audited initializer call can remove its own operation-domain
 //! barrier while unrelated heap writes and retained callback use remain live.
 
+use analysis::analysis_provenance::InferenceRule;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use sha2::{Digest, Sha256};
 use spec::{
@@ -25,6 +27,12 @@ export { first, second, neighbor };\n";
 const PROVIDER: &str = "export function wrap(callback) {\n\
   const record = { callback };\n\
   return { invoke() { return record.callback(); } };\n\
+}\n";
+// Both branches allocate a fresh wrapper, but the conditional/metadata read
+// leaves this provider outside the straight-line imported-call result summary.
+const PROVIDER_WITHOUT_RESULT_SUMMARY: &str = "export function wrap(callback) {\n\
+  if (callback.length === 0) return { invoke() { return callback(); } };\n\
+  return { invoke() { return callback(); } };\n\
 }\n";
 const SOURCE_COMMA: &str = "import { wrap } from './peer.js';\n\
 const neighbor = ['initial'];\n\
@@ -201,19 +209,64 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         "callback timing and provider purity do not cover the initializer operation"
     );
 
-    let missing_factory = [ChunkExportPurityBuilder::new("static/peer")
+    let source_inferred = [ChunkExportPurityBuilder::new("static/peer")
         .with_pure_exports(&["wrap"])
         .build()];
-    let without_factory = run_rejection_fixture(opts(&missing_factory, 2));
-    assert!(
-        !without_factory.cycles().is_empty(),
-        "the operation input and purity cannot invent a returned callback carrier"
-    );
+    let without_factory = run_fixture(opts(&source_inferred, 2));
+    assert_preserved_entry_output(&without_factory, "initial later 2\n");
+    let inferred_graph = without_factory.dependency_graph();
+    for binding in ["first", "second"] {
+        let owner_id = source_unit_for_binding(&inferred_graph, binding);
+        let owner = inferred_graph
+            .nodes
+            .iter()
+            .find(|node| node.id == owner_id)
+            .expect("source-inferred wrapper owner");
+        assert!(
+            owner
+                .synchronous_execution
+                .as_ref()
+                .expect("wrapper execution evidence")
+                .inference_uses
+                .iter()
+                .any(|usage| usage.conclusion == InferenceRule::ForeignCallSummary),
+            "{binding} needs independent source-derived result evidence"
+        );
+    }
     let without_factory_report = without_factory.effect_translation_validation();
     assert_eq!(
         without_factory_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+        ]),
+        "source-derived result evidence may independently complete both selected calls"
+    );
+
+    let opaque_provider = [("static/peer", PROVIDER_WITHOUT_RESULT_SUMMARY)];
+    let mut opaque_inputs = vec![
+        input(SOURCE, "first", FIRST),
+        input(SOURCE, "second", SECOND),
+    ];
+    for entry in &mut opaque_inputs {
+        entry.audited_provider_sha256 = digest(PROVIDER_WITHOUT_RESULT_SUMMARY);
+    }
+    let without_result_evidence = run_rejection_fixture(
+        FixtureOpts::new(SOURCE, modules())
+            .with_extra_chunks(&opaque_provider)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_chunk_export_purity(&source_inferred)
+            .with_initializer_call_effect_inputs("static/app", opaque_inputs),
+    );
+    assert!(
+        !without_result_evidence.cycles().is_empty(),
+        "operation and purity inputs cannot invent a result for an opaque provider"
+    );
+    let without_result_report = without_result_evidence.effect_translation_validation();
+    assert_eq!(
+        without_result_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
         serde_json::Value::Null,
-        "no callback-factory result evidence may consume the operation inputs"
+        "a provider without result evidence must not consume the operation inputs"
     );
 
     let no_initializer_purity = vec![

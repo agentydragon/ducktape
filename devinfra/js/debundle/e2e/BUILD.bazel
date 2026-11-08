@@ -429,6 +429,8 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "initializer_call_effect_input_test",
     deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
