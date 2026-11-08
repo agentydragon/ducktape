@@ -1,5 +1,5 @@
 """The Attic Nix binary cache (`cache.allegedly.works`): the server and its Postgres,
-the SeaweedFS IAM resources pending cleanup, the cache bootstrap Job, and hourly JWT rotation.
+the cache bootstrap Job, and hourly JWT rotation.
 
 cdk8s writes the directory Kustomization and the typed rotator roster. The native
 `server.toml`, SOPS Secrets, and `image-pins/kustomization.yaml` remain hand-written beside
