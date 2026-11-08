@@ -1,6 +1,20 @@
 # gazelle:ignore
 
+load("@image_pins//:pins.bzl", "MITMPROXY_12_2_3_REFERENCE")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+oci_layout_py(
+    name = "busybox_image",
+    testonly = True,
+    image = "@busybox_1_38_linux_amd64",
+)
+
+oci_layout_py(
+    name = "mitmproxy_image",
+    testonly = True,
+    image = "@mitmproxy_12_2_3_linux_amd64",
+)
 
 py_library(
     name = "app",
@@ -21,6 +35,7 @@ py_library(
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/cert_manager:cluster_ca",
+        "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
@@ -46,6 +61,29 @@ py_test(
         ":app",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_recorder_integration",
+    srcs = ["test_recorder_integration.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "MITMPROXY_TEST_IMAGE_REFERENCE": MITMPROXY_12_2_3_REFERENCE,
+    },
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":busybox_image",
+        ":mitmproxy_image",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//cdk8s",
+        "@pypi//cryptography",
+        "@pypi//docker",
+        "@pypi//mitmproxy",
         "@pypi//pytest_bazel",
     ],
 )

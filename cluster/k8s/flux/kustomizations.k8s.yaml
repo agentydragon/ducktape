@@ -3755,6 +3755,8 @@ spec:
       namespace: ducktape-flux
     - name: flux-image-automation-forgejo
       namespace: ducktape-flux
+    - name: piraeus-cluster
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/platform-sessions-remote
   prune: false

@@ -13,6 +13,25 @@ The remote Kustomization does not wait for resource health, so its readiness onl
 means the manifests were applied. The PVCs are protected from Flux pruning, and the
 Kustomization uses `deletionPolicy: Orphan`. Providers run in zone `hil-ovh`.
 
+## Upstream traffic recording
+
+`RECORD_UPSTREAM_TRAFFIC` in `cluster/cdk8s/platform_sessions/config.py` enables a
+local mitmproxy sidecar for every provider. It is enabled for a session-rotation
+soak through at least January 2027. Each sidecar writes full, unredacted upstream
+exchanges to daily `.mitm` files on its own `piraeus-hdd-local` PVC. These files
+include session credentials and can include private financial, medical and
+conversation data; access them as secrets. A single HDD copy is not a backup.
+
+Disabling the toggle removes proxy routing and sidecars while retaining the capture
+PVCs. The sidecar appends to the day's file after a restart. A failed capture write
+stops mitmproxy and interrupts upstream requests until recording is restored.
+TODO: implement retention and deletion of old capture files. There is currently
+no automatic cleanup; monitor PVC capacity throughout the soak.
+
+Before enabling recording, all provider images must include the proxy and browser
+CA support and the shared provider transport change. Verify those images have been
+published and their pins reconciled before merging the enablement.
+
 ## Cutover from the legacy service
 
 The new providers start with empty state. Existing upstream logins are not transferred;

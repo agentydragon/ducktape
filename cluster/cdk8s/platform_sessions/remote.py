@@ -26,6 +26,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
+from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -54,6 +55,11 @@ _GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
 _GATEWAY_DNS = f"{GATEWAY}.{NAMESPACE}.svc"
 _TRUST = "/var/run/provider-trust/ca.crt"
 _TOKEN_DIR = "/var/run/provider-credentials"
+_RECORD_CA_SECRET = "platform-sessions-recorder-ca"
+_RECORD_BUNDLE = "platform-sessions-recorder-trust"
+_RECORD_CA_DIR = "/var/run/session-recorder-ca"
+_RECORD_TRUST_DIR = "/var/run/session-recorder-trust"
+_RECORD_PORT = 18080
 
 
 def _provider_name(instance: str) -> str:
@@ -150,6 +156,7 @@ def _deployment(
     volumes: list[k8s.Volume],
     *,
     node_selector: dict[str, str] | None = None,
+    init_containers: list[k8s.Container] | None = None,
 ) -> None:
     deployment = k8s.KubeDeployment(
         chart,
@@ -167,6 +174,7 @@ def _deployment(
                     node_selector=node_selector,
                     security_context=_security(),
                     containers=[container],
+                    init_containers=init_containers,
                     volumes=volumes,
                 ),
             ),
@@ -226,6 +234,20 @@ def _add_provider(chart: Chart, instance: str) -> None:
         ),
     )
 
+    # Keep the capture PVC even when recording is disabled; it contains user data.
+    k8s.KubePersistentVolumeClaim(
+        chart,
+        f"{name}-captures",
+        metadata=k8s.ObjectMeta(
+            name=f"{name}-captures", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+        ),
+        spec=k8s.PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            storage_class_name="piraeus-hdd-local",
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
+        ),
+    )
+
 
 def _image_policy(chart: Chart, name: str) -> None:
     # Provider images are built by gaffer-private and use main-* tags.
@@ -249,7 +271,7 @@ def _image_policy(chart: Chart, name: str) -> None:
     )
 
 
-def _provider_workload(chart: Chart, instance: str) -> None:
+def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: bool) -> None:
     name = _provider_name(instance)
     provider_credentials = k8s.Volume(
         name="provider-credentials",
@@ -262,6 +284,105 @@ def _provider_workload(chart: Chart, instance: str) -> None:
     tmp = k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource())
     provider_health = k8s.Probe(
         http_get=k8s.HttpGetAction(path="/healthz", scheme="HTTPS", port=k8s.IntOrString.from_string("https"))
+    )
+    recorder_env = (
+        [
+            k8s.EnvVar(name="HTTP_PROXY", value=f"http://127.0.0.1:{_RECORD_PORT}"),
+            k8s.EnvVar(name="HTTPS_PROXY", value=f"http://127.0.0.1:{_RECORD_PORT}"),
+            k8s.EnvVar(name="NO_PROXY", value="localhost,127.0.0.1,.svc,.svc.cluster.local"),
+            k8s.EnvVar(name="SSL_CERT_FILE", value=f"{_RECORD_TRUST_DIR}/ca-certificates.crt"),
+            k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="true"),
+            k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_CA_FILE", value=f"{_RECORD_CA_DIR}/tls.crt"),
+        ]
+        if record_upstream_traffic
+        else []
+    )
+    recorder_mounts = (
+        [
+            k8s.VolumeMount(name="recorder-ca-public", mount_path=_RECORD_CA_DIR, read_only=True),
+            k8s.VolumeMount(name="recorder-trust", mount_path=_RECORD_TRUST_DIR, read_only=True),
+        ]
+        if record_upstream_traffic
+        else []
+    )
+    recorder_volumes = (
+        [
+            k8s.Volume(
+                name="captures",
+                persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=f"{name}-captures"),
+            ),
+            k8s.Volume(name="recorder-ca", secret=k8s.SecretVolumeSource(secret_name=_RECORD_CA_SECRET)),
+            k8s.Volume(
+                name="recorder-ca-public",
+                secret=k8s.SecretVolumeSource(
+                    secret_name=_RECORD_CA_SECRET, items=[k8s.KeyToPath(key="tls.crt", path="tls.crt")]
+                ),
+            ),
+            k8s.Volume(name="recorder-trust", config_map=k8s.ConfigMapVolumeSource(name=_RECORD_BUNDLE)),
+            k8s.Volume(name="recorder-config", empty_dir=k8s.EmptyDirVolumeSource()),
+        ]
+        if record_upstream_traffic
+        else []
+    )
+    recorder_init = (
+        [
+            k8s.Container(
+                name="recorder-ca-init",
+                image="busybox:1.38",
+                command=["sh", "-c", "umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
+                volume_mounts=[
+                    k8s.VolumeMount(name="recorder-ca", mount_path="/ca", read_only=True),
+                    k8s.VolumeMount(name="recorder-config", mount_path="/config"),
+                ],
+                security_context=_container_security(),
+                resources=_resources(),
+            )
+        ]
+        if record_upstream_traffic
+        else []
+    )
+    recorder_sidecars = (
+        [
+            k8s.Container(
+                name="upstream-recorder",
+                image="mitmproxy/mitmproxy:12.2.3",
+                # Start the recorder before providers dispatch their first probe.
+                restart_policy="Always",
+                command=[
+                    "sh",
+                    "-c",
+                    "umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
+                ],
+                readiness_probe=k8s.Probe(
+                    exec=k8s.ExecAction(
+                        command=[
+                            "python",
+                            "-c",
+                            "import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()",
+                        ]
+                    )
+                ),
+                startup_probe=k8s.Probe(
+                    exec=k8s.ExecAction(
+                        command=[
+                            "python",
+                            "-c",
+                            "import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()",
+                        ]
+                    ),
+                    period_seconds=2,
+                    failure_threshold=30,
+                ),
+                volume_mounts=[
+                    k8s.VolumeMount(name="recorder-config", mount_path="/config"),
+                    k8s.VolumeMount(name="captures", mount_path="/captures"),
+                ],
+                security_context=_container_security(),
+                resources=_resources(),
+            )
+        ]
+        if record_upstream_traffic
+        else []
     )
     _deployment(
         chart,
@@ -294,7 +415,7 @@ def _provider_workload(chart: Chart, instance: str) -> None:
             + (
                 [] if instance == "blueshield" else ["--route-grants", f"/etc/platform-sessions/{instance}-routes.json"]
             ),
-            env=[k8s.EnvVar(name="HOME", value="/tmp")],
+            env=[k8s.EnvVar(name="HOME", value="/tmp"), *recorder_env],
             ports=[
                 k8s.ContainerPort(name="https", container_port=8443),
                 k8s.ContainerPort(name="grpc", container_port=8444),
@@ -311,6 +432,7 @@ def _provider_workload(chart: Chart, instance: str) -> None:
                 k8s.VolumeMount(name="tls", mount_path="/var/run/provider-tls", read_only=True),
                 k8s.VolumeMount(name="data", mount_path="/data"),
                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
+                *recorder_mounts,
             ],
         ),
         [
@@ -319,8 +441,10 @@ def _provider_workload(chart: Chart, instance: str) -> None:
             k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=f"{name}-tls")),
             k8s.Volume(name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=name)),
             tmp,
+            *recorder_volumes,
         ],
         node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        init_containers=[*recorder_init, *recorder_sidecars],
     )
     _service(
         chart,
@@ -345,10 +469,20 @@ def _provider_workload(chart: Chart, instance: str) -> None:
     )
 
 
-def add_resources(chart: Chart) -> None:
+def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
+    if record_upstream_traffic:
+        interception_root_ca(
+            chart,
+            name="platform-sessions-recorder-root-ca",
+            namespace=NAMESPACE,
+            secret_name=_RECORD_CA_SECRET,
+            bundle_name=_RECORD_BUNDLE,
+            description="Trust bundle for platform-session upstream recording",
+            target_namespaces=(NAMESPACE,),
+        )
     for instance in PROVIDERS:
         _add_provider(chart, instance)
-        _provider_workload(chart, instance)
+        _provider_workload(chart, instance, record_upstream_traffic=record_upstream_traffic)
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
     Certificate(
@@ -431,9 +565,9 @@ def add_resources(chart: Chart) -> None:
     )
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, *, record_upstream_traffic: bool = config.RECORD_UPSTREAM_TRAFFIC) -> Chart:
     result = Chart(app, NAME, disable_resource_name_hashes=True)
-    add_resources(result)
+    add_resources(result, record_upstream_traffic=record_upstream_traffic)
     return result
 
 
@@ -443,6 +577,7 @@ def platform_sessions_remote(
     legacy: Kustomization,
     cert_manager_environment: Kustomization,
     image_automation: Kustomization,
+    piraeus: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -455,5 +590,5 @@ def platform_sessions_remote(
         prune=False,
         wait=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(legacy, cert_manager_environment, image_automation),
+        depends_on=flux_kustomization_depends_on_many(legacy, cert_manager_environment, image_automation, piraeus),
     )
