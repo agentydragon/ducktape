@@ -1222,6 +1222,11 @@ needs its own `initializer_purity: pure` assertion to exclude provider throws;
 known operand throws, mixed/unknown callees and later callback use remain
 conservative. A source-known original provider write still contradicts the
 operation input before any carrier transfer can be consumed.
+For this exact selected root, creating the fresh function argument has no
+effect from syntax in its deferred body. An opaque callback body therefore
+does not make the creation step opaque. The existing activation and captured
+cell checks still apply, and invocation or escape of the retained callback
+continues through the ordinary conservative transfer.
 
 This does not assert purity or freedom from throws, and it does not complete
 coverage of shared-heap effects, foreign registry or configuration access,

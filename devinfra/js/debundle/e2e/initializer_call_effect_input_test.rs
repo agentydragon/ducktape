@@ -17,6 +17,17 @@ const FIRST: &str = "const first = wrap(function () { return neighbor[0]; });";
 const SECOND: &str = "const second = wrap(function () { return neighbor[1]; });";
 const FIRST_COMMA: &str = "const before = 1, first = wrap(function () { return neighbor[0]; });";
 const SECOND_COMMA: &str = "const second = wrap(function () { return neighbor[1]; }), after = 2;";
+const FIRST_DEFERRED_OPAQUE: &str = "const first = wrap(function () { return neighbor?.[0]; });";
+const SECOND_DEFERRED_OPAQUE: &str = "const second = wrap(function () { return neighbor?.[1]; });";
+// Optional chaining marks only the deferred callback body opaque. Creating
+// either fresh function still executes no body code at module initialization.
+const SOURCE_DEFERRED_OPAQUE: &str = "import { wrap } from './peer.js';\n\
+const neighbor = ['initial'];\n\
+const first = wrap(function () { return neighbor?.[0]; });\n\
+neighbor.push('later');\n\
+const second = wrap(function () { return neighbor?.[1]; });\n\
+console.log(first.invoke(), second.invoke(), neighbor.length);\n\
+export { first, second, neighbor };\n";
 const SOURCE: &str = "import { wrap } from './peer.js';\n\
 const neighbor = ['initial'];\n\
 const first = wrap(function () { return neighbor[0]; });\n\
@@ -27,6 +38,10 @@ export { first, second, neighbor };\n";
 const PROVIDER: &str = "export function wrap(callback) {\n\
   const record = { callback };\n\
   return { invoke() { return record.callback(); } };\n\
+}\n";
+const EAGER_PROVIDER: &str = "export function wrap(callback) {\n\
+  const result = callback();\n\
+  return { invoke() { return result; } };\n\
 }\n";
 // Both branches allocate a fresh wrapper, but the conditional/metadata read
 // leaves this provider outside the straight-line imported-call result summary.
@@ -52,6 +67,7 @@ const PROVIDER_INLINE_FACTORY: &str = "export function wrap(callback) {\n\
   return function () { return callback(); };\n\
 }\n";
 const EXTRA_CHUNKS: &[(&str, &str)] = &[("static/peer", PROVIDER)];
+const EAGER_CHUNKS: &[(&str, &str)] = &[("static/peer", EAGER_PROVIDER)];
 const EFFECTIVE_BUNDLE: &str = "const bundleWrap = callback => {\n\
   const record = { callback };\n\
   return { invoke() { return record.callback(); } };\n\
@@ -191,6 +207,70 @@ fn exact_initializer_call_effect_inputs_break_only_selected_operation_cycles() {
             {"defining_chunk": "static/app", "input_index": 1},
         ]),
         "completed owner coverage must identify both author inputs: {report:#}"
+    );
+}
+
+#[test]
+fn deferred_opaque_callback_body_does_not_poison_fresh_function_creation() {
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_pure_exports(&["wrap"])
+        .with_callback_factories(&["wrap"])
+        .build()];
+    let fixture_opts = || {
+        FixtureOpts::new(SOURCE_DEFERRED_OPAQUE, modules())
+            .with_extra_chunks(EXTRA_CHUNKS)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_chunk_export_purity(&purity)
+    };
+    let no_input = run_rejection_fixture(fixture_opts());
+    assert!(
+        !no_input.cycles().is_empty(),
+        "callback timing and purity alone do not cover the wrapper operation"
+    );
+
+    let inputs = vec![
+        input(SOURCE_DEFERRED_OPAQUE, "first", FIRST_DEFERRED_OPAQUE),
+        input(SOURCE_DEFERRED_OPAQUE, "second", SECOND_DEFERRED_OPAQUE),
+    ];
+    let fixture =
+        run_fixture(fixture_opts().with_initializer_call_effect_inputs("static/app", inputs));
+    assert_preserved_entry_output(&fixture, "initial later 2\n");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+        ]),
+        "both exact operation inputs need completed owner receipts: {report:#}"
+    );
+}
+
+#[test]
+fn exact_wrapper_effect_input_does_not_cover_eager_callback_body() {
+    // The exact operation input does not defer a callback. This provider
+    // invokes it during initialization; its optional-chain body must retain
+    // its own effects and uncertainty, independently of the wrapper input.
+    let eager_purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_pure_exports(&["wrap"])
+        .build()];
+    let mut eager_inputs = vec![
+        input(SOURCE_DEFERRED_OPAQUE, "first", FIRST_DEFERRED_OPAQUE),
+        input(SOURCE_DEFERRED_OPAQUE, "second", SECOND_DEFERRED_OPAQUE),
+    ];
+    for input in &mut eager_inputs {
+        input.audited_provider_sha256 = digest(EAGER_PROVIDER);
+    }
+    let eager = run_rejection_fixture(
+        FixtureOpts::new(SOURCE_DEFERRED_OPAQUE, modules())
+            .with_extra_chunks(EAGER_CHUNKS)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_chunk_export_purity(&eager_purity)
+            .with_initializer_call_effect_inputs("static/app", eager_inputs),
+    );
+    assert!(
+        !eager.cycles().is_empty(),
+        "actual eager callback effects must remain after the wrapper input"
     );
 }
 
