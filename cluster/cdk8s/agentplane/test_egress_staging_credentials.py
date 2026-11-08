@@ -142,7 +142,7 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
         "toEndpoints": [
             {
                 "matchLabels": {
-                    "app": "platform-sessions-gateway",
+                    "app": "platform-sessions",
                     "k8s:io.kubernetes.pod.namespace": "platform-sessions",
                 }
             }

@@ -12529,7 +12529,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app: platform-sessions-gateway
+            app: platform-sessions
             k8s:io.kubernetes.pod.namespace: platform-sessions
       toPorts:
         - ports:

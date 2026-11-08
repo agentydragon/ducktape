@@ -71,7 +71,7 @@ THRIVE_READ_POLICY = "thrive-read"
 PLATFORM_SESSIONS_API = ServiceRef(
     name="platform-sessions",
     port=Port(name="http", number=8080),
-    pods=Pods(namespace="platform-sessions", labels=(("app", "platform-sessions-gateway"),)),
+    pods=Pods(namespace="platform-sessions", labels=(("app", "platform-sessions"),)),
 )
 PLAID_PGWEB_CREDENTIAL = "plaid-pgweb"
 # Credentials whose egress rules ride in the Action PolicySets that approve the same system's
