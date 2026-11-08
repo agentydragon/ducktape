@@ -25,7 +25,6 @@ py_library(
         ":cluster",
         "//cluster/cdk8s/providers/cnpg:objectstore",
         "//cluster/cdk8s/providers/cnpg:scheduledbackup",
-        "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//constructs",
