@@ -8,6 +8,8 @@ metadata and a replicated Piraeus volume for NAR chunk storage. Manifests in
 
 - **Server**: `attic-next`, pinned to the previous server's image digest
 - **Database**: database `attic_local` in CNPG cluster `attic-db` (3 instances on OVH Piraeus SSD)
+- **Recovery**: the database is not backed up. Bootstrap recreates cache identities using
+  stored signing keys, but rediscovery of existing chunks after database loss is unverified.
 - **Cache storage**: `attic-local-storage`, a 100 GiB `piraeus-hdd-2` volume with two synchronous copies in OVH
 - **Caches** (priority 41, ED25519 keypairs supplied from SOPS — see Bootstrap):
   - `main` — private; ducktape CI's general-purpose cache (flake outputs)
@@ -53,10 +55,9 @@ DB they'd otherwise live in exclusively.
 
 ## Bootstrap
 
-The bootstrap Job in `cluster/k8s/nix-cache/` runs on every Flux
-reconcile of the `nix-cache` Kustomization (`job.yaml`'s
-`kustomize.toolkit.fluxcd.io/force: enabled` recreates it on every change so it
-always re-runs). It mints a 5-minute admin JWT via `kubectl exec deploy/attic-next
+The bootstrap Job is generated in `cluster/k8s/nix-cache/nix-cache.k8s.yaml` with
+`kustomize.toolkit.fluxcd.io/force: enabled` so Flux can recreate it when its
+immutable template changes. It mints a 5-minute admin JWT via `kubectl exec deploy/attic-next
 -- atticadm`, then for each `--cache`/`--public-cache` arg
 (`cluster/rotators/attic_jwt_rotation/rotate.py`'s `bootstrap-caches`
 subcommand — the previous shell-script implementation this doc used to
