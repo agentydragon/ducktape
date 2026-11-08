@@ -328,7 +328,13 @@ mod tests {
         let removed = index.remove_dominated(&EffectCell::ArrayContents(9));
         assert_eq!(removed.len(), 3);
         assert!(index.overlapping(&EffectCell::ArrayContents(9)).is_empty());
-        assert_eq!(index.overlapping(&EffectCell::ArrayContents(10)).len(), 2);
+        let other_origin_overlaps = index.overlapping(&EffectCell::ArrayContents(10));
+        assert_eq!(other_origin_overlaps.len(), 1);
+        assert_eq!(other_origin_overlaps[0].0.left(), &own_property(10, "0"));
+        assert_eq!(
+            other_origin_overlaps[0].0.law(),
+            CellOverlapLaw::ArrayContentsIndexOrLength
+        );
     }
 
     #[test]
