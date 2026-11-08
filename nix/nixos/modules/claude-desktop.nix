@@ -2,7 +2,7 @@
 # image + a virtiofsd bundled inside the app). Before starting a VM it gates on
 # a presence check that probes three hard-coded Debian paths:
 #
-#   qemuPath       -> `qemu-system-x86_64` on PATH
+#   qemuPath       -> /usr/bin/qemu-system-x86_64
 #   firmwarePath   -> /usr/share/OVMF/OVMF_CODE_4M.fd, then OVMF_CODE.fd
 #   virtiofsdPath  -> /usr/libexec/virtiofsd, then /usr/bin/virtiofsd
 #
@@ -16,7 +16,8 @@
 #
 # This module satisfies the firmware + virtiofsd checks by symlinking those
 # exact /usr paths into the nix store via tmpfiles. qemu-system-x86_64 is put on
-# PATH by the claude-desktop package wrapper (see packages/claude-desktop.nix).
+# PATH by the claude-desktop package wrapper (see packages/claude-desktop.nix);
+# envfs resolves the absolute /usr/bin probe through that PATH.
 # /dev/kvm access is host-dependent; on hosts where it is 0666 (default NixOS
 # GNOME) no group setup is needed.
 {
