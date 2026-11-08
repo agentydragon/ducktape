@@ -338,8 +338,6 @@ def claude_session_sync(
         directory,
         description="Mirror of every Claude Code cloud session's events into a CNPG database, and its pairing page.",
         timeout="10m",
-        # Keep reconciling while the database is hibernated for its storage handoff.
-        wait=False,
         # Owns the database and the credential volume.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(cnpg_operator, external_secrets_operator, seaweedfs_operator),
