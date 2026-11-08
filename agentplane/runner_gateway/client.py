@@ -3,6 +3,7 @@
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+import grpc
 from google.protobuf.message import Message
 
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
@@ -25,11 +26,21 @@ class SandboxControlClient:
     control Service, each on a connection dialed for that call alone: a replica that no longer holds
     it refuses with UNAVAILABLE, and the caller's retry resolves the control Service again."""
 
-    def __init__(self, *, control_target: str, token_file: Path, request_timeout_s: float) -> None:
+    def __init__(
+        self,
+        *,
+        control_target: str,
+        token_file: Path,
+        request_timeout_s: float,
+        channel_credentials: grpc.ChannelCredentials | None = None,
+        server_name: str | None = None,
+    ) -> None:
         # A template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
         self.control_target = control_target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
+        self.channel_credentials = channel_credentials
+        self.server_name = server_name
 
     def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return SandboxRunner(self, destination)
@@ -44,7 +55,9 @@ class SandboxControlClient:
     ) -> T:
         """Call a Runner RPC through its control Service, fenced to the expected Sandbox identity."""
         async with dial(
-            self.control_target.format(sandbox=destination.target.name, namespace=destination.target.namespace)
+            self.control_target.format(sandbox=destination.target.name, namespace=destination.target.namespace),
+            channel_credentials=self.channel_credentials,
+            server_name=self.server_name,
         ) as channel:
             runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
                 environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)

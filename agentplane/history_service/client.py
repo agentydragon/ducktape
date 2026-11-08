@@ -13,8 +13,7 @@ from uuid import UUID
 import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc.calls import bearer, raise_status
-from agentplane.grpc.options import LARGE_EVENT_RECEIVE_OPTIONS
+from agentplane.grpc.calls import bearer, dial, raise_status
 from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
 
 
@@ -26,10 +25,20 @@ class SessionRecorded:
 
 
 class HistoryServiceClient:
-    def __init__(self, target: str, *, token_file: Path, request_timeout_s: float) -> None:
+    def __init__(
+        self,
+        target: str,
+        *,
+        token_file: Path,
+        request_timeout_s: float,
+        channel_credentials: grpc.ChannelCredentials | None = None,
+        server_name: str | None = None,
+    ) -> None:
         self.target = target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
+        self.channel_credentials = channel_credentials
+        self.server_name = server_name
         self._channel: grpc.aio.Channel | None = None
         self._stub: history_service_pb2_grpc.HistoryServiceAsyncStub | None = None
 
@@ -38,8 +47,8 @@ class HistoryServiceClient:
         if self._stub is None:
             # A local subchannel pool makes a channel after `redial()` dial anew; from the process-wide
             # pool it would inherit the closed channel's connection.
-            self._channel = grpc.aio.insecure_channel(
-                self.target, options=(*LARGE_EVENT_RECEIVE_OPTIONS, ("grpc.use_local_subchannel_pool", 1))
+            self._channel = dial(
+                self.target, channel_credentials=self.channel_credentials, server_name=self.server_name
             )
             self._stub = history_service_pb2_grpc.HistoryServiceStub(self._channel)
         return self._stub
@@ -52,7 +61,13 @@ class HistoryServiceClient:
 
     def new_client(self) -> HistoryServiceClient:
         """Create an independent channel with this client's endpoint and credentials."""
-        return HistoryServiceClient(self.target, token_file=self.token_file, request_timeout_s=self.request_timeout_s)
+        return HistoryServiceClient(
+            self.target,
+            token_file=self.token_file,
+            request_timeout_s=self.request_timeout_s,
+            channel_credentials=self.channel_credentials,
+            server_name=self.server_name,
+        )
 
     async def read_session_events(
         self, session_id: str, *, after_cursor: int = 0, limit: int = 128
