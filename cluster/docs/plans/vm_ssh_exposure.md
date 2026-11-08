@@ -1,10 +1,11 @@
 # VM SSH Exposure — Scaling Past One Backend
 
-**Status**: Plan, not yet implemented (2026-05-30).
+**Status**: Historical plan from 2026-05-30, not implemented. Gecko is parked
+and its Flux Kustomizations are suspended; this is not a current SSH endpoint.
 
-## Current State
+## Former implementation
 
-Gecko's SSH is reachable at `ssh agentydragon@gecko.allegedly.works:22` via a
+Gecko's SSH was reachable at `ssh agentydragon@gecko.allegedly.works:22` via a
 hand-written `CiliumEnvoyConfig` in <../../parked/gecko/app/ciliumenvoyconfig.yaml>.
 The CEC binds `0.0.0.0:22` on every hil hostNetwork Envoy node and forwards
 to `gecko-ssh:22`.
@@ -119,7 +120,7 @@ comes first.
 
 ## Decision Triggers
 
-- **Stay on CEC-per-port (current)**: ≤ 2 SSH-exposed VMs.
+- **Use CEC-per-port**: ≤ 2 SSH-exposed VMs, if this approach is revived.
 - **Move to Option A (TLSRoute + ProxyCommand)**: ≥ 3 VMs, OR first time a
   new VM forces a non-canonical port.
 - **Reconsider Options B/C**: never for SSH alone; only if we adopt the
@@ -127,9 +128,7 @@ comes first.
 
 ## Related
 
-- <../../parked/gecko/app/ciliumenvoyconfig.yaml> — current implementation.
+- <../../parked/gecko/app/ciliumenvoyconfig.yaml> — former implementation.
 - <../kubevirt_nixos_vm.md> "Exposing SSH Publicly" — runbook reference.
 - <../../cdk8s/gateway.py> — where a new `tls-passthrough-vms`
   listener would live for Option A.
-- <../../generated/kube-api-proxy/tlsroute.yaml> — existing TLSRoute (v1) example
-  in the cluster, suitable as a template.
