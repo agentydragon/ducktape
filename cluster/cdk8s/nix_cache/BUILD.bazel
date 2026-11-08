@@ -36,7 +36,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
