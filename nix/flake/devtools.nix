@@ -17,9 +17,6 @@ let
 
   # All hooks in .pre-commit-config.yaml use this shared Nix tool environment.
   preCommitPackages = [
-    # Keep the shell's Git ahead of pre-commit's older propagated gitMinimal.
-    # Git 2.54 loses the auto-maintenance lock when detaching.
-    pkgsUnstable.gitMinimal
     buildBuddyRunnerPackages.bb
     ducktapePkgs.bbr
     ducktapePkgs.ducktape-git-hooks

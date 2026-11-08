@@ -410,7 +410,14 @@
         default = pkgs.mkShell {
           # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
           dontAddPythonPath = "1";
-          packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
+          # Git 2.54 loses its auto-maintenance lock when detaching. Prepend
+          # the fixed Git ahead of the older gitMinimal propagated by hooks.
+          packages = [
+            pkgsUnstable.gitMinimal
+          ]
+          ++ devToolPackages
+          ++ localOnlyPackages
+          ++ systemLibs.packages;
           inherit (systemLibs) buildInputs;
           LD_LIBRARY_PATH = systemLibs.libraryPath;
         };
