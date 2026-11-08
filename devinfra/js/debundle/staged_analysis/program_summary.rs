@@ -597,7 +597,7 @@ pub fn collect_program_summary(
         indexes,
         &static_requests,
         &modules.keys().cloned().collect(),
-        &projection.host_behavior,
+        projection.host_behavior,
     );
     let initializer_call_effect_inputs = resolve_initializer_call_effect_inputs(
         artifact,
