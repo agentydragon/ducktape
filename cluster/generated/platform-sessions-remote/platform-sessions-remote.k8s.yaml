@@ -1477,7 +1477,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: platform-sessions-quest
+  name: platform-sessions-quest-provider
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
