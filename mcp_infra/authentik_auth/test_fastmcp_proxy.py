@@ -102,7 +102,9 @@ def _failures(outcome: str) -> float:
 @pytest.mark.parametrize(
     ("upstream_error", "outcome"),
     [
-        pytest.param(_invalid_grant_from(_http_error(503)), "transient", id="upstream-503"),
+        pytest.param(_invalid_grant_from(_http_error(503)), "transient", id="wrapped-upstream-503"),
+        pytest.param(_http_error(503), "transient", id="raw-upstream-503"),
+        pytest.param(httpx2.ConnectError("temporary DNS failure"), "transient", id="raw-dns-failure"),
         pytest.param(
             _invalid_grant_from(httpx2.ConnectError("[Errno -3] Temporary failure in name resolution")),
             "transient",
@@ -130,8 +132,8 @@ async def test_exhausted_refresh_failures_become_retryable_503(
 
 @pytest.mark.parametrize(
     "first_error",
-    [_invalid_grant_from(_http_error(503)), GlideTimeoutError("timed out")],
-    ids=["upstream-503", "state-store-timeout"],
+    [_invalid_grant_from(_http_error(503)), _http_error(503), GlideTimeoutError("timed out")],
+    ids=["wrapped-upstream-503", "raw-upstream-503", "state-store-timeout"],
 )
 async def test_retryable_refresh_proxy_retries_then_succeeds(
     proxy: RetryableRefreshOIDCProxy, first_error: Exception

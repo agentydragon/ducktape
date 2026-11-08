@@ -8,12 +8,12 @@
 }:
 python3Packages.buildPythonPackage rec {
   pname = "mcp-types";
-  version = "2.2.0";
+  version = "2.3.0";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://files.pythonhosted.org/packages/8f/d7/6ffba5d8cd5dd9b8a19478875c50e04945314ba5074e84d749283f27f62d/mcp_types-2.2.0-py3-none-any.whl";
-    hash = "sha256-6kdrc+6GcJq1q8lFI4XtNswFkH5YI1ViLilFlcmgTxM=";
+    url = "https://files.pythonhosted.org/packages/ce/48/32583066b155bb5d4507e7887dc88ee23118cc4de8e2a12870c49719e2a8/mcp_types-2.3.0-py3-none-any.whl";
+    hash = "sha256-lo79va7fqwatrkDTeKNDlfEJDFkh1L48nN4oOq922R0=";
   };
 
   dependencies = with python3Packages; [

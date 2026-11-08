@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from types import SimpleNamespace
 from typing import Any, cast
@@ -13,7 +14,7 @@ import pytest_bazel
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from joserfc.errors import JoseError
-from mcp.server.auth.provider import RefreshToken, TokenError
+from mcp.server.auth.provider import RefreshToken
 
 
 def _bare_proxy() -> OAuthProxy:
@@ -127,7 +128,7 @@ async def test_multi_auth_treats_verifier_exceptions_as_non_matches() -> None:
     validated = await auth.verify_token("bearer")
 
     assert validated is not None
-    assert validated.client_id == "fallback"
+    assert json.loads(validated.client_id)[1] == "fallback"
 
 
 async def test_external_consent_bypasses_fastmcp_consent_page() -> None:
@@ -159,7 +160,7 @@ async def test_external_consent_bypasses_fastmcp_consent_page() -> None:
     state._build_upstream_authorize_url.assert_called_once()
 
 
-async def test_fastmcp_refresh_preserves_upstream_transport_error_as_cause() -> None:
+async def test_fastmcp_refresh_exposes_upstream_transport_error() -> None:
     proxy = _bare_proxy()
     state = cast(Any, proxy)
     upstream_url = "https://auth.example.test/application/o/token/"
@@ -177,7 +178,7 @@ async def test_fastmcp_refresh_preserves_upstream_transport_error_as_cause() -> 
     upstream_client.aclose = AsyncMock()
     state._create_upstream_oauth_client = Mock(return_value=upstream_client)
 
-    with pytest.raises(TokenError) as exc_info:
+    with pytest.raises(httpx.ConnectError) as exc_info:
         await OAuthProxy.exchange_refresh_token(
             proxy,
             cast(Any, SimpleNamespace(client_id="dcr-client")),
@@ -185,8 +186,7 @@ async def test_fastmcp_refresh_preserves_upstream_transport_error_as_cause() -> 
             ["openid"],
         )
 
-    assert exc_info.value.error == "invalid_grant"
-    assert exc_info.value.__cause__ is upstream_failure
+    assert exc_info.value is upstream_failure
 
 
 async def test_public_access_token_revocation_does_not_delete_token_family() -> None:

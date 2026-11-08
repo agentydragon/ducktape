@@ -6,8 +6,8 @@
   artifacts,
 }:
 let
-  # The MCP tools are built against `fastmcp==4.0.3` /
-  # `mcp==2.2.0` (see requirements_bazel.txt). The pinned nixpkgs revision predates
+  # The MCP tools are built against `fastmcp==4.1.6` /
+  # `mcp==2.3.0` (see requirements_bazel.txt). The pinned nixpkgs revision predates
   # both mcp-sdk v2 (nixpkgs still ships mcp 1.26.0) and mcp v2's new transitive
   # deps (mcp-types, httpx2/httpcore2 -- all three postdate the pin entirely), and
   # py-key-value-aio is older than FastMCP's floor. Package those deltas against
@@ -127,7 +127,6 @@ let
                 typing-extensions
                 aiofile
                 anyio
-                keyring
                 cachetools
                 pathvalidate
               ];
@@ -138,6 +137,12 @@ let
             });
         uncalled-for = pkgs.callPackage ./uncalled-for.nix {
           python314Packages = pyfinal;
+        };
+        certifi = pkgs.callPackage ./certifi.nix {
+          python3Packages = pyfinal;
+        };
+        openapi-pydantic = pkgs.callPackage ./openapi-pydantic.nix {
+          python3Packages = pyfinal;
         };
         idna = pkgs.callPackage ./idna.nix {
           python3Packages = pyfinal;

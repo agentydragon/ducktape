@@ -11,7 +11,7 @@
   fetchurl,
 }:
 let
-  version = "4.0.3";
+  version = "4.1.6";
 
   fastmcp-slim = python314Packages.buildPythonPackage {
     pname = "fastmcp-slim";
@@ -19,8 +19,8 @@ let
     format = "wheel";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/43/4b/6b31820d87f56d5773538860878c8634b618cd1e9044b3bfbd8a78380a0f/fastmcp_slim-4.0.3-py3-none-any.whl";
-      hash = "sha256-N1btS9n4L0Ctr1GXS3zdFGOra59HnPababJpKWkxK4c=";
+      url = "https://files.pythonhosted.org/packages/0e/eb/708b5816058f72970f7ec79d3e6847ceda0f44ab38a7430cd9216ca25dd1/fastmcp_slim-4.1.6-py3-none-any.whl";
+      hash = "sha256-0laRrnCn8rnYGX1iYb3Q9Ln/MwZAh801wgU5sLSLsco=";
     };
 
     dependencies =
@@ -42,6 +42,7 @@ let
         starlette
 
         authlib
+        certifi
         cyclopts
         jsonref
         jsonschema-path
@@ -83,8 +84,8 @@ let
     format = "wheel";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/e4/cb/66600db497b3be21cf141f01296308169859d48ed9b1bc8ba7c9d83279b7/fastmcp-4.0.3-py3-none-any.whl";
-      hash = "sha256-90P0MZPh2vYG5kl6nd26W7qtffeVepj9CTcW7PRFi5k=";
+      url = "https://files.pythonhosted.org/packages/ed/66/c9281ada4033818d800870dbbd865a629ee871cdf0b8e74ffc598027689a/fastmcp-4.1.6-py3-none-any.whl";
+      hash = "sha256-9UNn/co9GjfFMWTr+GT7JGGs3ZKp2d9zGiRAeMAzKSY=";
     };
 
     dependencies = [ fastmcp-slim ];

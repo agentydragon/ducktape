@@ -1,4 +1,5 @@
-# The pinned nixpkgs revision carries 1.7.2; the Plaid Spend wheel requires 1.8.0.
+# The pinned nixpkgs revision carries 1.7.2; the MCP and Plaid Spend closures
+# need the same 1.9.5 security fixes as the Bazel-built environment.
 {
   lib,
   fetchurl,
@@ -6,12 +7,12 @@
 }:
 python3Packages.buildPythonPackage {
   pname = "authlib";
-  version = "1.8.0";
+  version = "1.9.5";
   pyproject = true;
 
   src = fetchurl {
-    url = "https://files.pythonhosted.org/packages/f1/51/bc1729d3cfdc214b4935f4e886e4dd443c3065fd8e1e66423fe84b490f81/authlib-1.8.0.tar.gz";
-    hash = "sha256-8+zV8dpzcmL7U78aTZXE6hrZ3VCTFlh6JVyZqxg4pPA=";
+    url = "https://files.pythonhosted.org/packages/04/96/6e7ed72bb49762a9b65d51c4cb235d793f0485cd8d6f7e9404ce955a4808/authlib-1.9.5.tar.gz";
+    hash = "sha256-PwMdXptkhgiekej38baPNidfMVHGZGDWUPyQ1CBUX9c=";
   };
 
   build-system = [ python3Packages.setuptools ];
