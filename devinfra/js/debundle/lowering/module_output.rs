@@ -266,8 +266,10 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     let pending_import_renames = import_ledger.pending_renames(&RenameScope::Module(module));
     let mut import_capture_probe =
         RenameCaptureProbe::new(&pending_import_renames, unresolved_context);
-    for item in &body {
-        item.visit_with(&mut import_capture_probe);
+    if !pending_import_renames.is_empty() {
+        for item in &body {
+            item.visit_with(&mut import_capture_probe);
+        }
     }
     let module_import_renames = import_ledger
         .seal(&SealValidation {

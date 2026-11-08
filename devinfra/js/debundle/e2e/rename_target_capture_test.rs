@@ -218,9 +218,10 @@ export { source_value, read };
 /// spelling is renamed by its exact Id. The resolved references remain bound
 /// to their original values after JavaScript emission.
 #[test]
-fn module_member_swap_preserves_resolved_target_references() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const alpha = "A";
+fn chunk_rename_swap_preserves_resolved_target_references() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const alpha = "A";
 const beta = "B";
 function read() {
   return alpha + beta;
@@ -228,15 +229,14 @@ function read() {
 console.log(read());
 export { alpha, beta, read };
 "#,
-        vec![logical_module(
-            "swapped",
-            &[
-                Member::renamed("beta", "alpha"),
-                Member::renamed("alpha", "beta"),
-                Member::new("read"),
-            ],
-        )],
-    ));
+            vec![],
+        )
+        .with_chunk_renames(chunk_renames(&[
+            ChunkRenameEntry::new("beta", "alpha"),
+            ChunkRenameEntry::new("alpha", "beta"),
+        ]))
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
     assert_preserved_entry_output(&fixture, "AB\n");
 }
 
