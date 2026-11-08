@@ -45,17 +45,17 @@ One Go package per concern:
 
 Also here:
 
-- `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. It reads the Pod's
-  tagged `proxy.transport.auth` on each HTTP request or CONNECT and forwards it as
-  `Proxy-Authorization`. `proxy` contains one `address` and a tagged `transport`: plaintext only
-  accepts a required Kubernetes bearer token file; TLS requires its CA file and accepts either
-  that bearer token or a Runtime SVID certificate and key. This makes TLS independent from hop
-  authentication while keeping SPIFFE authentication from being configured without TLS. The
-  sidecar validates the bearer token at startup and rereads it per request. Its projected
-  workload-audience token remains separate in `audience_token_files` as destination context; it
-  never authenticates the proxy hop.
-  It also hosts direct generic gRPC routes to Agentplane services, replacing authorization with
-  that service's projected token on every call. The runtime uses no Python interpreter. Its
+- `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. Its tagged
+  `proxy.transport.auth` selects hop authentication: `spiffe` presents the sidecar-held SVID in the
+  TLS handshake, while `kubernetes_bearer` sends the Pod-bound token as `Proxy-Authorization`.
+  Plaintext proxy transport supports only bearer auth; TLS verifies the proxy's certificate trust
+  and fixed SPIFFE identity, `spiffe://agentplane/egress-proxy`, with either auth mode. The sidecar
+  validates a bearer token at startup and rereads it for each request. Its
+  projected Kubernetes-audience tokens in `audience_token_files` remain separate destination
+  credentials for central egress-rule substitution; they never authenticate the proxy hop.
+  It also hosts local generic gRPC routes to Agentplane services, each with an explicit transport:
+  `plaintext`, `tls_connect` with the sidecar SVID, or `tls_bearer_connect` with a route-specific
+  bearer token. The runtime uses no Python interpreter. Its
   settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
   refuses to start without; it reads no per-setting env and accepts no flags.
 - Workload HTTP routes carry only the upstream authority and exact service URI. Their destination

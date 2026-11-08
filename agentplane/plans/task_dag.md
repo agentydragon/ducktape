@@ -3041,7 +3041,6 @@ flowchart LR
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
-    HAKU_ACTION_NATIVE_CLIENT[Ready: migrate existing Haku Action HTTP client]
     WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
@@ -3062,17 +3061,6 @@ the policy protobuf follow. No reader changes. **Exit:** the CRDs install on the
 admission rejects a Kubernetes rule in a `PolicySet` and a binding with no identity, and existing
 tests of untouched kinds still pass.
 
-### `HAKU_ACTION_NATIVE_CLIENT` — migrate the existing Haku Action client
-
-**Ready; independent of the identity/SVID design.** Haku UI's `ActionClient` still calls the
-retired Action HTTP facade. Migrate that client to native Action gRPC through its credential-holding
-sidecar, retaining its existing Pod-bound bearer and method authorization until the shared identity
-cutover. Do not restore the removed facade, expose the token to the UI workload or have the proxy
-assert the caller. Keep idempotent submission, operator approval and result/error behavior.
-**Exit:** Haku's existing tool-call path submits and receives a receipt through the current service
-API, and unauthorized/expired credentials fail before admission. This existing client/API drift is
-separate from the proxy hop migration and does not wait on the shared identity design.
-
 ### `WORKLOAD_IDENTITY_LIFECYCLE_DESIGN` — choose shared identity and SVID management
 
 **Design ready; operator direction, 2026-11-08.** Manage identities and SVID issuance independently
@@ -3091,8 +3079,9 @@ contract covering Sandbox and non-Sandbox caller lifecycles, with an explicit mi
 active workload/proxy caller to it. Until then, keep the proxy's explicit `kubernetes_bearer` mode and the
 non-Sandbox sidecars' Pod-bound projections; Sandbox templates use SVIDs and do not project the
 hop bearer. Keep the shared TLS listener and service-owned verification, without proxy identity
-assertions or insecure transport fallback. Inventory the actual native service clients; `HAKU_ACTION_NATIVE_CLIENT` separately owns Haku's
-existing HTTP-client migration. **Exit:** k3s proves
+assertions or insecure transport fallback. Inventory the actual native service clients; Haku's
+separate ActionClient migration remains deferred in the [task freezer](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client).
+**Exit:** k3s proves
 Sandbox and non-Sandbox egress and platform calls, rotation/revocation and unchanged subject/rule
 isolation; then remove the proxy bearer configuration, workload projections and unused sidecar token
 transport together. Backend bearer/delegation policies and the sampler's delegated path retain
