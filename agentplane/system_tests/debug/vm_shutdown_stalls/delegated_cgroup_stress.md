@@ -78,3 +78,11 @@ per-CPU sizes; treating all non-numeric output as an unavailable trace facility 
 incorrect. The follow-up uses a disposable tracefs instance for the trace buffer and removes
 it during cleanup. The function-graph filters remain global kernel controls; the probe checks
 they are empty before use and resets them during cleanup.
+
+The [first private-instance smoke](https://app.buildbuddy.io/invocation/f65257e4-fb14-4919-9d97-56bdd519fb57)
+at `706bc24fcd129c36bf45b25cede1225a12730ad1` reached the fixture and stopped at
+`preexisting_or_unsupported_filter_set_ftrace_notrace`. The guest's actual filter content was
+not captured, but [Linux 6.12](https://github.com/torvalds/linux/blob/v6.12/kernel/trace/ftrace.c)
+represents an empty exclusion list as `#### no functions disabled ####`, which the probe did
+not accept. Its VMI UID was `423775af-6f1b-4232-9342-1229971e7958`; cleanup reported success.
+The follow-up accepts that exact sentinel but continues to reject nonempty filter lists.
