@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -44,6 +44,7 @@ afterEach(async () => {
     container.remove();
     client.clear();
   }
+  focusManager.setFocused(undefined);
   vi.useRealTimers();
   vi.resetAllMocks();
 });
@@ -89,6 +90,7 @@ it("polls only the active tab, retains failed refresh data, and cancels an inact
   const { container, client } = await mountSettings();
   await vi.waitFor(() => expect(container.textContent).toContain("Claude Desktop"));
   expect(fetchDeploymentInfo).not.toHaveBeenCalled();
+  focusManager.setFocused(false);
   await act(async () => vi.advanceTimersByTimeAsync(30_000));
   await vi.waitFor(() => expect(container.textContent).toContain("Failed to refresh Agents: offline"));
   expect(container.textContent).toContain("Claude Desktop");

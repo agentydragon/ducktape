@@ -5,6 +5,7 @@ export function createConsoleQueryClient(): QueryClient {
     defaultOptions: {
       queries: {
         retry: false,
+        refetchIntervalInBackground: true,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
         networkMode: "always",
