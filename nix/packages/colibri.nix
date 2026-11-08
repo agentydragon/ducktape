@@ -11,13 +11,13 @@
 
 stdenv.mkDerivation {
   pname = "colibri";
-  version = "2.0.0";
+  version = "2.1.0";
 
   src = fetchFromGitHub {
     owner = "JustVugg";
     repo = "colibri";
-    rev = "bf2442915d6e3dd4cdfd2eb9c2a3d2aa44a25850";
-    hash = "sha256-VCrRKi0Dn7S+y/48ZlPaHckZpRx59urYQwbeSyfAJBM=";
+    rev = "v2.1.0";
+    hash = "sha256-tprKSVSem+Jt/2wl54hh1qAQ9hmWxsY+ZQiVQCT9+tI=";
   };
 
   nativeBuildInputs = [
