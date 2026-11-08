@@ -228,6 +228,7 @@ fn resolved_static_dependency_graph(
     indexes: &ArtifactIndexes,
     requests: &BTreeMap<String, (ChunkId, String, Vec<StaticModuleRequest>)>,
     analyzed_modules: &BTreeSet<String>,
+    host_behavior: &spec::HostBehavior,
 ) -> ResolvedStaticDependencies {
     let mut dependencies = BTreeMap::new();
     let mut ordinary_dependencies = BTreeMap::new();
@@ -246,6 +247,13 @@ fn resolved_static_dependency_graph(
                 entry_file,
                 &artifact.chunk_table,
             ) else {
+                if request.mode == StaticModuleRequestMode::OrdinaryEsm
+                    && host_behavior
+                        .reentry_free_module(&request.specifier)
+                        .is_some()
+                {
+                    continue;
+                }
                 is_complete = false;
                 continue;
             };
@@ -589,6 +597,7 @@ pub fn collect_program_summary(
         indexes,
         &static_requests,
         &modules.keys().cloned().collect(),
+        projection.host_behavior,
     );
     let initializer_call_effect_inputs = resolve_initializer_call_effect_inputs(
         artifact,

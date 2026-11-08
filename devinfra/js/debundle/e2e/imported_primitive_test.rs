@@ -182,6 +182,76 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
 }
 
 #[test]
+fn imported_primitive_read_uses_only_admitted_builtin_provider_closures() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  const before = 0;\n\
+                  function add() { return bytes + 256; }\n\
+                  const computed = add();\n\
+                  const after = 1;\n\
+                  console.log(before, computed, after);\n";
+    let peer = "import 'path';\nexport const limit = 2;\n";
+    let peers = [("static/peer", peer)];
+    let modules = vec![
+        logical_module("compute", &[Member::new("add"), Member::new("computed")]),
+        logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+    ];
+
+    let admitted = run_fixture(
+        FixtureOpts::new(source, modules.clone())
+            .with_extra_chunks(&peers)
+            .with_host_behavior(HostBehavior {
+                reentry_free_builtin_modules: [NodeBuiltinModule::Path].into_iter().collect(),
+                ..HostBehavior::default()
+            }),
+    );
+    assert_preserved_entry_output(&admitted, "0 258 1\n");
+    let admitted_assessment = admitted.effect_translation_validation();
+    assert_eq!(
+        admitted_assessment["decision"]["status"], "accepted",
+        "{admitted_assessment:#}"
+    );
+    assert!(
+        admitted_assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the admitted imported primitive read should retain its inversion: {admitted_assessment:#}"
+    );
+    assert_called_operation_receipt(&admitted, "computed", "add");
+
+    let conservative = run_fixture(FixtureOpts::new(source, modules).with_extra_chunks(&peers));
+    assert_preserved_entry_output(&conservative, "0 258 1\n");
+    let conservative_assessment = conservative.effect_translation_validation();
+    assert_eq!(
+        conservative_assessment["decision"]["status"], "incomplete",
+        "without admission, the unresolved provider closure must not supply a complete imported primitive-read capability: {conservative_assessment:#}"
+    );
+    assert_eq!(
+        conservative_assessment["decision"]["uncovered_havoc"], true,
+        "the effect assessment must retain uncovered havoc without the primitive-read proof: {conservative_assessment:#}"
+    );
+    let graph = conservative.dependency_graph();
+    let computed = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, "computed"))
+        .expect("computed owner");
+    let execution = computed
+        .synchronous_execution
+        .as_ref()
+        .expect("computed owner execution report");
+    assert!(
+        !execution.complete,
+        "the unadmitted primitive read must leave this exact owner incomplete: {execution:#?}"
+    );
+    assert!(
+        !matches!(
+            execution.binding_effect_authority.as_ref(),
+            Some(BindingEffectAuthorityReport::OperationReceipt { receipt })
+                if receipt.binding == "computed" && receipt.owner == computed.statement_ordinal
+        ),
+        "the computed owner must not receive an operation receipt without the admitted provider closure: {execution:#?}"
+    );
+}
+
+#[test]
 fn called_primitive_binary_return_has_a_receipt_for_an_actual_inversion() {
     let source = "import { limit as bytes } from './peer.js';\n\
                   const before = 0;\n\

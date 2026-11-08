@@ -226,6 +226,14 @@ to one exact source/spec pair and held to the interactive budget in
   inspected. Add a bounded program-level summary with each processed chunk's
   outcome, rejection class, exact totals and report paths. Mark unprocessed
   chunks explicitly; the first fatal error is not the full inventory.
+- **F4 — Explain rejected provider initialization closures.** The imported-array
+  input diagnostic says only `complete acyclic ordinary static initialization
+closure`, conflating unresolved host requests, missing captured chunks,
+  top-level await, and real source cycles. Include a bounded witness with the
+  first failing chunk/request or cycle path and the relevant host-admission
+  decision. Preserve conservative rejection; do not suggest admitting an
+  unknown package as a builtin. Close with neutral examples covering an
+  unlisted Node builtin, an unknown package, and a real module cycle.
 - **Distinguish uninitialized observations from lexical direct reads.** The
   graph keeps promoted uninitialized observations under its non-droppable
   `Direct` edge role, and `gate describe` labels them `direct at-init read`.
