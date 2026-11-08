@@ -2,6 +2,8 @@
 
 The latest manual BuildBuddy review and repeatable collection steps are in
 [offline_failure_watch.md](offline_failure_watch.md).
+The one-off 200-run serial RBE experiment and its progress commands are in
+[rbe_200_run_job.md](rbe_200_run_job.md).
 For a smaller direct-QEMU software-emulation experiment and its retained logs, see
 [tcg_reproduction.md](tcg_reproduction.md). It does not run the full KubeVirt stack.
 [libvirt_monitor/README.md](libvirt_monitor/README.md) describes opt-in per-VM QMP logs.
