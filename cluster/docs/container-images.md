@@ -48,7 +48,12 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
 
    For images not deployed in-cluster, pin the tag in the consuming BUILD.bazel.
 
-4. **GitHub Actions path** (when Bazel isn't viable):
+4. **Nix path** (a flake `dockerTools` image or KubeVirt containerDisk): add it to
+   <../../devinfra/ci/nix_images.json> and its input paths to the triggers of
+   <../../.github/workflows/nix-images.yml>, which builds every changed Nix image on one runner,
+   smoke-tests it on PRs and publishes it from devel.
+
+5. **GitHub Actions path** (when neither Bazel nor Nix is viable):
    - Workflow in `.github/workflows/<name>-image.yml`
    - Use `docker/build-push-action` with `packages: write` permission
 

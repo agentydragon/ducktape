@@ -172,6 +172,14 @@ py_library(
 )
 
 py_library(
+    name = "nix_images",
+    srcs = ["nix_images.py"],
+    data = ["nix_images.json"],
+    visibility = ["//:__subpackages__"],
+    deps = [":push_image"],
+)
+
+py_library(
     name = "push_image",
     srcs = ["push_image.py"],
     visibility = ["//:__subpackages__"],
@@ -330,6 +338,19 @@ py_test(
         ":image_registry",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_nix_images",
+    srcs = ["test_nix_images.py"],
+    data = ["//:.github/workflows/nix-images.yml"],
+    deps = [
+        ":nix_images",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 

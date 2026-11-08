@@ -7,8 +7,8 @@ CPAP gateway and Agentplane runner images:
 
 - Build recipes: <../../cpap/gateway/container-disk.nix> and
   <../../agentplane/env/images/container-disk.nix>.
-- Publishing workflows: <../../.github/workflows/cpap-gateway-image.yml> and
-  <../../.github/workflows/agentplane-environment-vm-image.yml>.
+- Publishing workflow: <../../.github/workflows/nix-images.yml>, from the roster in
+  <../../devinfra/ci/nix_images.json>.
 - KubeVirt definitions: <../cdk8s/cpap_sync.py> and the Agentplane staging
   SandboxTemplate in <../cdk8s/agentplane/staging.py>.
 
