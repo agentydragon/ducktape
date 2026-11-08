@@ -234,9 +234,11 @@ fn nonempty_imported_spread_keeps_callback_effects_and_later_provider_mutation()
         &["const merged", "inputLeft", "inputRight"],
         &[],
     );
-    assert_source_file(
-        &fixture.entry_path,
-        &["inputLeft.push", "callbackCalls++"],
+    assert_source_file(&fixture.entry_path, &["inputLeft.push"], &[]);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/callbacks/effects.js",
+        &["callbackCalls++"],
         &[],
     );
     let graph = fixture.dependency_graph();

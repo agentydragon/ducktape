@@ -1391,7 +1391,7 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
         let judgment =
             if self.executor.source_covered && self.executor.initialized_local_binding(binding) {
                 super::super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(
-                    ProofDependencies::default(),
+                    Box::default(),
                 )
             } else {
                 super::super::allocation_transfer::AllocationJudgment::Opaque
@@ -2658,7 +2658,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.source_covered = true;
         self.allocation_judgment =
             super::super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(
-                ProofDependencies::default(),
+                Box::default(),
             );
     }
 
@@ -4062,12 +4062,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut own_property_projection: Option<OwnPropertyProof>,
     ) -> Values {
         if args.is_empty()
-            && super::super::allocation_transfer::keyed_collection_new(
-                row,
-                site,
-                ProofDependencies::default(),
-            )
-            .is_some()
+            && super::super::allocation_transfer::keyed_collection_new(row, site, Box::default())
+                .is_some()
         {
             // The operation kernel proves the row's fresh empty-construction
             // semantics. This interpreter has no keyed-collection heap lane,

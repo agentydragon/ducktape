@@ -714,7 +714,9 @@ impl OriginalInitializer {
             return None;
         }
         let mut dependencies = match judgment {
-            AllocationJudgment::CoveredAllocationOnly(dependencies) => dependencies.clone(),
+            AllocationJudgment::CoveredAllocationOnly(dependencies) => {
+                dependencies.as_ref().clone()
+            }
             AllocationJudgment::Opaque => ProofDependencies::default(),
         };
         if let Some(transfer) = native_constructor_transfer {
