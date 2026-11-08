@@ -86,3 +86,13 @@ not captured, but [Linux 6.12](https://github.com/torvalds/linux/blob/v6.12/kern
 represents an empty exclusion list as `#### no functions disabled ####`, which the probe did
 not accept. Its VMI UID was `423775af-6f1b-4232-9342-1229971e7958`; cleanup reported success.
 The follow-up accepts that exact sentinel but continues to reject nonempty filter lists.
+
+The [next smoke](https://app.buildbuddy.io/invocation/3b82e516-d013-4c77-aa79-2dee2068edde)
+at `8c4e6163b5d8d9f8cc501e0d5b00eb789b2c712e` reached the private trace and the first
+controller write, then stopped with `trace_overrun_or_incomplete_stats`. The console did not
+retain the before/after counters, so this does not distinguish lost events from a stats-check
+problem. Its VMI UID was `e6490a39-d99a-4d1e-b8b5-d806e4b6a076`. Neither the collected
+serial nor the sampled console contained a probe cleanup-complete marker; the retained host
+summary does not prove why, and the test did not request measured ACPI shutdown. The next
+diagnostic records per-CPU before/after counters and trace size on failure and adds cleanup
+progress markers.

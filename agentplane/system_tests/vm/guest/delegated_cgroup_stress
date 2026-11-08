@@ -157,6 +157,20 @@ trace_integrity() {
 	[ "$found" = yes ]
 }
 
+emit_trace_integrity_diagnostics() {
+	for before_file in "$scratch"/trace-stats-before-cpu*; do
+		[ -f "$before_file" ] || continue
+		cpu=${before_file##*trace-stats-before-}
+		after_file=$scratch/trace-stats-after-$cpu
+		before=$("$busybox" cat "$before_file") || before=unavailable
+		after=$("$busybox" cat "$after_file" 2>/dev/null) || after=unavailable
+		emit "TRACE_STATS cpu=$cpu before=$before after=$after"
+	done
+	trace_bytes=$("$busybox" wc -c <"$tracefs/trace") || trace_bytes=unavailable
+	trace_lines=$("$busybox" wc -l <"$tracefs/trace") || trace_lines=unavailable
+	emit "TRACE_SIZE bytes=$trace_bytes lines=$trace_lines"
+}
+
 trace_buffers_empty() {
 	found=no
 	for stats_file in "$tracefs"/per_cpu/cpu*/stats; do
@@ -270,11 +284,13 @@ finish() {
 	rc=$?
 	trap - EXIT
 	set +e
+	emit "CLEANUP_BEGIN"
 	if [ -n "$resident_pid" ] && [ -d "/proc/$resident_pid" ]; then
 		kill "$resident_pid" 2>/dev/null
 		wait "$resident_pid" 2>/dev/null
 	fi
 	trace_cleanup || cleanup_ok=no
+	emit "CLEANUP_TRACE result=$cleanup_ok"
 	if [ -n "$delegated_parent" ] && [ -d "$delegated_parent" ]; then
 		if has_io "$delegated_parent/cgroup.subtree_control"; then
 			if manager_is_empty; then
@@ -501,7 +517,10 @@ has_io "$delegated_parent/cgroup.subtree_control" || unexercised proof_transitio
 has_io "$payload/cgroup.controllers" || unexercised proof_transition_not_visible_to_payload
 verify_live_fixture || unexercised proof_fixture_lost_after_transition
 capture_trace_stats after || unexercised trace_stats_unavailable_after_witness
-trace_integrity || unexercised trace_overrun_or_incomplete_stats
+if ! trace_integrity; then
+	emit_trace_integrity_diagnostics
+	unexercised trace_overrun_or_incomplete_stats
+fi
 trace_bytes=$("$busybox" wc -c <"$tracefs/trace")
 trace_lines=$("$busybox" wc -l <"$tracefs/trace")
 [ "$trace_bytes" -lt "$trace_byte_limit" ] || unexercised trace_byte_limit
