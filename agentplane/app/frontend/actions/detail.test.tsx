@@ -224,43 +224,45 @@ it("shares a pending detail read between observers", async () => {
   expect(sent).toHaveLength(1);
 });
 
-it.each([ActionState.DECISION_PENDING, ActionState.ALLOWED])(
-  "keeps a newer watch version when an older detail read finishes (state %s)",
-  async (state) => {
-    const response = deferred<ActionRequest>();
-    const sent = answerApi(({ method, path }) => {
-      if (path.endsWith("/action-groups")) return [];
-      if (method === "POST") return Response.json({ detail: "decision was rejected" }, { status: 409 });
-      return response.promise;
-    });
-    const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
-    expect(fetched(sent)).toBe(true);
-    const newer = {
-      ...(state === ActionState.DECISION_PENDING ? ROW : decided(state)),
-      version: 9_007_199_254_740_993n,
-    };
-    await act(async () => {
-      TestNdjsonWatch.current!.sendUpsertFrames([actionRequestUpsertProtoJson(newer)]);
-    });
-    await act(async () => response.resolve(ROW));
+async function finishOlderReadAfterWatch(newer: ActionRequest): Promise<{ container: HTMLDivElement; sent: Sent[] }> {
+  const response = deferred<ActionRequest>();
+  const sent = answerApi(({ method, path }) => {
+    if (path.endsWith("/action-groups")) return [];
+    if (method === "POST") return Response.json({ detail: "decision was rejected" }, { status: 409 });
+    return response.promise;
+  });
+  const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
+  await act(async () => {
+    TestNdjsonWatch.current!.sendUpsertFrames([actionRequestUpsertProtoJson(newer)]);
+  });
+  await act(async () => response.resolve(ROW));
+  return { container, sent };
+}
 
-    if (state === ActionState.DECISION_PENDING) {
-      const approve = await vi.waitFor(() => {
-        const button = container.querySelector<HTMLButtonElement>('button[aria-label="Approve"]');
-        if (!button) throw new Error("missing Approve button");
-        return button;
-      });
-      await act(async () => approve.click());
-      await vi.waitFor(() => expect(container.textContent).toContain("decision was rejected"));
-      const decisions = sent.filter(({ method }) => method === "POST");
-      expect(decisions).toHaveLength(1);
-      expect(decisions[0]?.body).toMatchObject({ expectedVersion: "9007199254740993" });
-    } else {
-      await vi.waitFor(() => expect(container.textContent).toContain("Allowed"));
-      expect(container.querySelector('button[aria-label="Approve"]')).toBeNull();
-    }
-  }
-);
+it("uses a newer watch version for a decision after an older detail read finishes", async () => {
+  const { container, sent } = await finishOlderReadAfterWatch({ ...ROW, version: 9_007_199_254_740_993n });
+  expect(fetched(sent)).toBe(true);
+  const approve = await vi.waitFor(() => {
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Approve"]');
+    if (!button) throw new Error("missing Approve button");
+    return button;
+  });
+  await act(async () => approve.click());
+  await vi.waitFor(() => expect(container.textContent).toContain("decision was rejected"));
+  const decisions = sent.filter(({ method }) => method === "POST");
+  expect(decisions).toHaveLength(1);
+  expect(decisions[0]?.body).toMatchObject({ expectedVersion: "9007199254740993" });
+});
+
+it("keeps a newer terminal watch receipt when an older pending detail read finishes", async () => {
+  const { container, sent } = await finishOlderReadAfterWatch({
+    ...decided(ActionState.ALLOWED),
+    version: 9_007_199_254_740_993n,
+  });
+  expect(fetched(sent)).toBe(true);
+  await vi.waitFor(() => expect(container.textContent).toContain("Allowed"));
+  expect(container.querySelector('button[aria-label="Approve"]')).toBeNull();
+});
 
 it("shows a failed detail read without retrying and accepts a later watch update", async () => {
   const sent = answerApi(() => Response.json({ detail: "detail unavailable" }, { status: 503 }));
