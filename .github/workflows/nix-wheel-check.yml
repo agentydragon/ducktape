@@ -205,13 +205,6 @@ jobs:
             ${{ steps.inputs.outputs.nix_checks }} > "$RUNNER_TEMP/artifact-check-paths"
           cat "$RUNNER_TEMP/artifact-check-paths"
 
-      # Publish the source-override results: ordinary pinned-artifact builds can
-      # have different store paths even when they contain the same wheel bytes.
-      # The watcher may still be uploading; this push covers the markers' full
-      # closures before the job ends.
-      - name: Cache source artifact checks in Attic
-        if: github.event_name != 'pull_request_target'
-        run: |
-          mapfile -t checks < "$RUNNER_TEMP/artifact-check-paths"
-          test "${#checks[@]}" -gt 0
-          attic push ducktape:main "${checks[@]}"
+      - name: Finish Attic upload
+        if: always() && github.event_name != 'pull_request_target'
+        uses: ./.github/actions/finish-attic-upload

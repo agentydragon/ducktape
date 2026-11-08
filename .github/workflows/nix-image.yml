@@ -106,7 +106,6 @@ jobs:
             "docker-archive:$(readlink -f result)" "docker://$ref"
           echo "pushed \`$ref\` as \`$IMAGE@$(cat "$RUNNER_TEMP/digest")\`" >> "$GITHUB_STEP_SUMMARY"
 
-      # watch-store may still be uploading; this covers the image's full closure.
-      - name: Push to Attic
-        if: inputs.attic && github.event_name != 'pull_request_target'
-        run: attic push ducktape:main result
+      - name: Finish Attic upload
+        if: always() && inputs.attic && github.event_name != 'pull_request_target'
+        uses: ./.github/actions/finish-attic-upload

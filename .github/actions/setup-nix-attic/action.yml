@@ -8,7 +8,8 @@ inputs:
   upload:
     description: >-
       Upload every path added to the store to ducktape:main as it lands (`attic watch-store`),
-      so a failed or timed-out cold build still caches its finished paths. Requires a writer token.
+      so a failed or timed-out cold build still caches its finished paths. Requires a writer token;
+      end the job with finish-attic-upload.
     required: false
     default: "false"
 
@@ -52,4 +53,6 @@ runs:
       run: |
         nix profile install nixpkgs#attic-client
         attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+        # finish-attic-upload pushes whatever was added after this snapshot.
+        nix path-info --all | LC_ALL=C sort > "$RUNNER_TEMP/attic-store-paths-before"
         nohup attic watch-store ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &
