@@ -106,6 +106,7 @@ export default function RunDetail({
   const runQuery = useQuery({
     queryKey: ["props", "run-detail", runId],
     queryFn: ({ signal }) => fetchRun(runId, signal),
+    enabled: !hasSeededRun,
     initialData: hasSeededRun ? initialRun : undefined,
   });
   const run = runQuery.data;
@@ -134,7 +135,10 @@ export default function RunDetail({
   const snapshotSlug = criticConfig?.example.snapshot_slug;
   const exampleKind = criticConfig?.example.kind ?? null;
   const filesHash = criticConfig?.example.kind === "file_set" ? criticConfig.example.files_hash : null;
-  const shouldLoadSnapshot = Boolean(criticRun && criticRun.details.reported_issues.length > 0 && snapshotSlug);
+  const hasSeededSnapshotDetail = hasSeededRun && initialSnapshotDetail?.slug === snapshotSlug;
+  const shouldLoadSnapshot = Boolean(
+    !hasSeededRun && criticRun && criticRun.details.reported_issues.length > 0 && snapshotSlug
+  );
   const snapshotDetailQuery = useQuery({
     queryKey: snapshotSlug
       ? snapshotDetailQueryKey(snapshotSlug, exampleKind, filesHash)
@@ -145,7 +149,7 @@ export default function RunDetail({
       return fetchSnapshotDetail(snapshotSlug, exampleKind ?? undefined, filesHash ?? undefined, signal);
     },
     enabled: shouldLoadSnapshot,
-    initialData: hasSeededRun ? initialSnapshotDetail : undefined,
+    initialData: hasSeededSnapshotDetail ? initialSnapshotDetail : undefined,
   });
   const snapshotDetail = snapshotDetailQuery.data ?? null;
   const filePaths = useMemo(() => {
@@ -172,7 +176,7 @@ export default function RunDetail({
     },
     enabled: shouldLoadSnapshot && filePaths.length > 0,
     initialData:
-      !hasSeededRun || initialFileContents === undefined
+      !hasSeededSnapshotDetail || initialFileContents === undefined
         ? undefined
         : { files: Array.from(initialFileContents.values()), missing: [] },
   });
@@ -213,7 +217,7 @@ export default function RunDetail({
   const selectLogTab = (tab: LogTab) => {
     if (activeLogTab === tab) {
       if (tab === "logs") void logsQuery.refetch();
-      else if (!hasSeededRun) void llmRequestsQuery.refetch();
+      else void llmRequestsQuery.refetch();
     }
     setActiveLogTab(tab);
   };
