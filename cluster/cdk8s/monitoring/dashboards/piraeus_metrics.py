@@ -39,8 +39,8 @@ def samples() -> str:
             {"node": node, "namespace": "example", "persistentvolumeclaim": f"data-{i}"},
             capacity * used / 3,
         )
-    for node, tier in (("storage-a", "hdd"), ("storage-b", "ssd"), ("storage-mixed", "hdd")):
-        add("kube_node_labels", {"node": node, "label_storage_allegedly_works_tier": tier}, 1)
+    for node in ("storage-a", "storage-b", "storage-mixed"):
+        add("kube_node_info", {"node": node}, 1)
 
     lines: list[str] = []
     for name, series in metrics.items():

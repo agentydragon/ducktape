@@ -55,10 +55,21 @@ async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestO
                     await expect(
                         page.get_by_text("Piraeus thin-pool accounting by storage node", exact=True)
                     ).to_be_visible()
-                    await expect(page.get_by_text("9 TiB", exact=True).first).to_be_visible()
+                    capacity = page.get_by_role("region", name="Physical pool capacity")
+                    await expect(capacity.get_by_text("6 TiB", exact=True)).to_be_visible()
+                    await expect(capacity.get_by_text("3 TiB", exact=True)).to_be_visible()
                     record_stage("capturing full dashboard")
                     await capture_dashboard(view)
                     assert await page.get_by_text("No data", exact=True).count() == 0
+                    await asyncio.gather(*checks)
+                    assert not query_errors, query_errors
+                    record_stage("checking tier selection on mixed-pool node")
+                    for tier, expected_capacity in (("hdd", "2 TiB"), ("ssd", "1 TiB")):
+                        await page.goto(
+                            url.replace("var-node=All", f"var-node=storage-mixed&var-storage_tier={tier}"),
+                            wait_until="domcontentloaded",
+                        )
+                        await expect(capacity.get_by_text(expected_capacity, exact=True)).to_be_visible()
                     await asyncio.gather(*checks)
                     assert not query_errors, query_errors
                     record_stage("captures complete")
