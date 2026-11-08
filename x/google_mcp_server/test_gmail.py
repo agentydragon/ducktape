@@ -69,13 +69,19 @@ async def test_generated_read_round_trip(gmail: Mock, client):
     gmail.service.users.return_value.threads.assert_called_once_with()
 
 
-async def test_read_rejects_unknown_argument(client):
-    # generated schema has additionalProperties: False, so the server never reaches the tool body
-    # and returns an error result with no structured content. The mcp-sdk client revalidates every
-    # result against the tool's declared output schema and raises directly on that mismatch --
-    # unconditionally, before FastMCP's own is_error/raise_on_error handling ever sees the result.
-    with pytest.raises(RuntimeError, match="did not return structured content"):
-        await client.call_tool("threads_list", {"q": "x", "unexpected": True})
+@pytest.mark.parametrize(
+    ("arguments", "invalid_field"),
+    [
+        ({"q": "x", "unexpected": True}, "unexpected"),
+        ({"userId": "someone-else@example.com"}, "userId"),
+        ({"maxResults": "5"}, "maxResults"),
+    ],
+)
+async def test_read_rejects_invalid_arguments(gmail: Mock, client, arguments, invalid_field):
+    result = await client.call_tool("threads_list", arguments, raise_on_error=False)
+    assert result.is_error
+    assert invalid_field in result.content[0].text
+    gmail.service.users.assert_not_called()
 
 
 # --- hand-written writes: unchanged (GmailToolsClient, friendly args) ---

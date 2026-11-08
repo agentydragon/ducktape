@@ -40,6 +40,7 @@ py_library(
     deps = [
         "@pypi//fastmcp_slim",
         "@pypi//google_api_python_client",  # keep: discovery docs loaded via importlib.resources (no import stmt)
+        "@pypi//jsonschema",
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//pydantic",
