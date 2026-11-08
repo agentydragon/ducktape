@@ -222,10 +222,11 @@ agentic coding") was **wrong**. The updated picture:
    The lack of thinking is a side effect of their divergent post-training pipelines,
    not the cause of the performance difference.
 
-**Bottom line**: The best local model for agentic coding at this scale is likely
+**January 2026 conclusion (historical)**: The best local model for agentic coding at this scale was assessed as likely
 **gpt-oss-20b at high reasoning** (60.7% SWE-Bench, reasoning + tools, ~16 GB).
 Qwen3-Coder is second (51.6%, no reasoning, ~18 GB FP8). The combination of
-reasoning + agent training wins over agent training alone.
+reasoning + agent training wins over agent training alone. For the current
+working baseline and pending evaluations, see <PLAN.md>.
 
 ## Sources
 
