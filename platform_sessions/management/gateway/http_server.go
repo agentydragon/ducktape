@@ -116,7 +116,7 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(document)
 	})
-	for _, entry := range []struct{ path, asset, contentType string }{{"/", "status.html", "text/html; charset=utf-8"}, {"/status.css", "status.css", "text/css"}, {"/status.js", "status.js", "application/javascript"}} {
+	for _, entry := range []struct{ path, asset, contentType string }{{"/", "status.html", "text/html; charset=utf-8"}, {"/main.css", "main.css", "text/css"}, {"/main.js", "main.js", "application/javascript"}} {
 		entry := entry
 		pattern := "GET " + entry.path
 		if entry.path == "/" {
