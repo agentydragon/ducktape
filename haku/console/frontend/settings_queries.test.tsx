@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { focusManager, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -45,6 +45,7 @@ afterEach(async () => {
     client.clear();
   }
   focusManager.setFocused(undefined);
+  onlineManager.setOnline(true);
   vi.useRealTimers();
   vi.resetAllMocks();
 });
@@ -120,6 +121,7 @@ it("keeps a successful profile edit when an older poll settles", async () => {
   const { container, client } = await mountSettings();
   await vi.waitFor(() => expect(container.textContent).toContain("Claude Desktop"));
   await click(button(container, "Refresh"));
+  onlineManager.setOnline(false);
   const select = container.querySelector<HTMLInputElement>('input[aria-label="Access profile for Claude Desktop"]')!;
   await click(select);
   const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(

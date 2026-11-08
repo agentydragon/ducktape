@@ -310,6 +310,8 @@ export function SettingsPanel(): JSX.Element {
     window.history.replaceState(null, "", url);
   }
   const accessProfileMutation = useMutation({
+    networkMode: "always",
+    retry: false,
     mutationFn: ({ agent, accessProfileId }: { agent: AgentView; accessProfileId: string }) =>
       updateAgentAccessProfile(agent.agent_id, accessProfileId),
     onSuccess: async (updated) => {
