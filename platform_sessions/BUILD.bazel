@@ -73,59 +73,16 @@ py_library(
 py_library(
     name = "host",
     srcs = ["host.py"],
-    data = ["//platform_sessions/frontend:assets"],
     deps = [
-        ":auth",
-        ":limits",
         ":probe_types",
         ":registry",
-        "@pypi//fastapi",
-    ],
-)
-
-py_test(
-    name = "host_test",
-    srcs = ["host_test.py"],
-    deps = [
-        ":auth",
-        ":host",
-        ":probe_types",
-        ":registry",
-        "//:conftest",
-        "@pypi//fastapi",
-        "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
-    deps = [
-        ":auth",
-        ":routes",
-        "@pypi//fastapi",
-        "@pypi//starlette",
-    ],
-)
-
-py_test(
-    name = "proxy_test",
-    srcs = ["proxy_test.py"],
-    deps = [
-        ":auth",
-        ":host",
-        ":proxy",
-        ":registry",
-        ":routes",
-        "//:conftest",
-        "@pypi//fastapi",
-        "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
-        "@pypi//pydantic",
-        "@pypi//pytest_bazel",
-    ],
+    deps = [":routes"],
 )
 
 py_library(
@@ -179,11 +136,8 @@ py_library(
     name = "proxy_support",
     srcs = ["proxy_support.py"],
     deps = [
-        ":auth",
-        ":http_types",
         ":proxy",
         "@pypi//httpx2",
-        "@pypi//pydantic",
         "@pypi//starlette",
     ],
 )

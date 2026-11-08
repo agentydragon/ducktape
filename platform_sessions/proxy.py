@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence, Set
+from collections.abc import Sequence, Set
 from dataclasses import dataclass, field
 from typing import Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
-from fastapi import FastAPI, Request
-from starlette.responses import JSONResponse, Response
-from starlette.types import Receive, Scope, Send
-
-from platform_sessions.auth import BearerAuth
-from platform_sessions.routes import _encoded_path, _segments, authorize_route
+from platform_sessions.routes import _encoded_path, _segments
 
 # The transport owns upstream authentication and session rotation. These are
 # always removed regardless of the additional provider-configured rules.
@@ -131,85 +126,3 @@ def _relative_location(location: bytes, upstream_url: str, base_url: str) -> byt
         return urlunsplit(("", "", suffix, target.query, target.fragment)).encode("ascii")
     except (UnicodeError, ValueError) as exc:
         raise ValueError("Redirect cannot be mapped") from exc
-
-
-def _rewrite_location(location: bytes, upstream_url: str, base_url: str, instance_id: str) -> bytes:
-    return f"/proxy/{instance_id}".encode("ascii") + _relative_location(location, upstream_url, base_url)
-
-
-class _Proxy:
-    def __init__(self, instances: Mapping[str, ProxyInstance], auth: BearerAuth):
-        if any(key != instance.config.id for key, instance in instances.items()):
-            raise ValueError("Proxy instance ID mismatch")
-        self.instances = instances
-        self.auth = auth
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            return
-        request = Request(scope, receive=receive)
-        response = await self._request(request)
-        await response(scope, receive, send)
-
-    async def _request(self, request: Request) -> Response:
-        principal = self.auth.authenticate(request)
-        if principal is None:
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
-        raw_path = request.scope.get("raw_path", b"")
-        parts = raw_path.split(b"/", 3)
-        if len(parts) != 4 or parts[1] != b"proxy":
-            return JSONResponse({"error": "not_found"}, status_code=404)
-        try:
-            instance_id = parts[2].decode("ascii")
-            path = b"/" + parts[3]
-            raw_path_text = path.decode("ascii")
-        except UnicodeError:
-            return JSONResponse({"error": "invalid_path"}, status_code=400)
-        instance = self.instances.get(instance_id)
-        if instance is None or not instance.config.enabled:
-            return JSONResponse({"error": "not_found"}, status_code=404)
-        try:
-            mapped = authorize_route(
-                request.method,
-                raw_path_text,
-                instance.config.upstream_base_url,
-                None if principal.owner else principal.routes.get(instance_id, ()),
-            )
-        except ValueError:
-            return JSONResponse({"error": "invalid_path"}, status_code=400)
-        if mapped is None:
-            return JSONResponse({"error": "forbidden"}, status_code=403)
-        try:
-            # TODO: add streaming when a consumer needs it.
-            result = await instance.transport.request(
-                ProxyRequest(
-                    method=request.method,
-                    url=mapped.upstream_url,
-                    query=request.scope.get("query_string", b""),
-                    headers=_filter_headers(request.scope["headers"], _REQUEST_PRIVATE, instance.headers.request),
-                    body=await request.body(),
-                    owner=principal.owner,
-                )
-            )
-            headers = _filter_headers(
-                result.headers, _RESPONSE_PRIVATE | {b"content-length"}, instance.headers.response
-            )
-            if 300 <= result.status < 400:
-                locations = [value for name, value in headers if name == b"location"]
-                if len(locations) > 1:
-                    raise ValueError("Multiple redirect locations")
-                if locations:
-                    location = _rewrite_location(
-                        locations[0], mapped.upstream_url, instance.config.upstream_base_url, instance_id
-                    )
-                    headers = tuple((name, location if name == b"location" else value) for name, value in headers)
-            response = Response(content=result.body, status_code=result.status)
-            response.raw_headers.extend(headers)
-            return response
-        except Exception:
-            return JSONResponse({"error": "upstream_unavailable"}, status_code=502)
-
-
-def install_proxy(app: FastAPI, instances: Mapping[str, ProxyInstance], auth: BearerAuth) -> None:
-    """Mount the proxy; applications must leave this path to bearer authentication."""
-    app.mount("/proxy", _Proxy(instances, auth))
