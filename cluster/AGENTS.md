@@ -86,6 +86,13 @@ Guide: <docs/container-images.md>.
 
 ## Storage Selection
 
+**One replication layer per data copy.** When a workload replicates the same data at the
+application layer, use single-copy storage for each application replica and place those
+replicas in distinct failure domains. Do not also replicate each replica's volume through
+DRBD, SeaweedFS, or another storage layer. Check the StorageClass's actual replica count and
+placement, not just its name. A single-instance workload may use replicated storage because
+it has no application replica. CNPG details and an incident example: <docs/cnpg_conventions.md> § R3.
+
 Choose app PVC storage for the workload. `seaweedfs-ovh-ssd` provides distributed
 SeaweedFS CSI storage in OVH. Use `local-path-*` only for:
 
