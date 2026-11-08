@@ -90,7 +90,7 @@ class CentralSampler(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{central_sampler.NAME}-settings", namespace=namespace),
-            content=json_config(settings),
+            content=json_config(settings.model_dump(mode="json", exclude_none=True)),
             path=_CONFIG_PATH,
         )
         settings_volume = Volume.from_config_map(

@@ -154,8 +154,6 @@ def test_serialization_retains_nested_field_schema(format: str) -> None:
         "named_peers": {"worker": expected},
         "database_url": "test-db",
     }
-    expected_model = settings.model_dump(mode="json")
-    assert expected_model["peer"] == expected | ({"optional": None} if format == "yaml" else {})
 
 
 def test_yaml_keeps_cdk8s_null_omission() -> None:

@@ -2811,14 +2811,12 @@ metadata:
 data:
   settings.json: |
     {
-      "database_url": null,
       "listen": "0.0.0.0:8080",
       "connections": {
         "llm-ingress": {
           "base_url": "http://llm-ingress.agentplane-staging.svc:8080",
           "auth": {
             "type": "bearer",
-            "credential": null,
             "credential_file": "/var/run/secrets/central-sampler/llm"
           }
         },
@@ -2826,7 +2824,6 @@ data:
           "base_url": "https://api.anthropic.com",
           "auth": {
             "type": "anthropic_api_key",
-            "credential": null,
             "credential_file": "/var/run/secrets/central-sampler-anthropic/api-key"
           }
         }
@@ -2839,7 +2836,6 @@ data:
           "responses": {
             "dialect": "lite"
           },
-          "anthropic_messages": null,
           "exec_encoding": "freeform",
           "reasoning_efforts": [
             "",
@@ -2857,7 +2853,6 @@ data:
           "responses": {
             "dialect": "lite"
           },
-          "anthropic_messages": null,
           "exec_encoding": "freeform",
           "reasoning_efforts": [
             "",
@@ -2875,7 +2870,6 @@ data:
           "responses": {
             "dialect": "lite"
           },
-          "anthropic_messages": null,
           "exec_encoding": "freeform",
           "reasoning_efforts": [
             "",
@@ -2893,7 +2887,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             "",
@@ -2910,7 +2903,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             "",
@@ -2927,7 +2919,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             "",
@@ -2944,7 +2935,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             "",
@@ -2961,7 +2951,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             "",
@@ -2977,7 +2966,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             "",
@@ -2993,7 +2981,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             ""
@@ -3006,7 +2993,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             ""
@@ -3019,7 +3005,6 @@ data:
           "responses": {
             "dialect": "standard"
           },
-          "anthropic_messages": null,
           "exec_encoding": "json",
           "reasoning_efforts": [
             ""
@@ -3029,12 +3014,10 @@ data:
           "connection": "anthropic-api",
           "provider_model": "claude-opus-5-5",
           "api": "anthropic_messages",
-          "responses": null,
           "anthropic_messages": {
             "max_tokens": 32768,
             "thinking": {
               "type": "adaptive",
-              "budget_tokens": null,
               "block_binding": {
                 "prefix_mismatch_behavior": "error"
               }
@@ -3065,12 +3048,10 @@ data:
           "connection": "anthropic-api",
           "provider_model": "claude-sonnet-5-5",
           "api": "anthropic_messages",
-          "responses": null,
           "anthropic_messages": {
             "max_tokens": 32768,
             "thinking": {
               "type": "adaptive",
-              "budget_tokens": null,
               "block_binding": {
                 "prefix_mismatch_behavior": "error"
               }
@@ -3101,12 +3082,10 @@ data:
           "connection": "anthropic-api",
           "provider_model": "claude-haiku-5-5",
           "api": "anthropic_messages",
-          "responses": null,
           "anthropic_messages": {
             "max_tokens": 32768,
             "thinking": {
               "type": "adaptive",
-              "budget_tokens": null,
               "block_binding": {
                 "prefix_mismatch_behavior": "error"
               }
@@ -3137,12 +3116,10 @@ data:
           "connection": "anthropic-api",
           "provider_model": "claude-fable-5-1",
           "api": "anthropic_messages",
-          "responses": null,
           "anthropic_messages": {
             "max_tokens": 32768,
             "thinking": {
               "type": "adaptive",
-              "budget_tokens": null,
               "block_binding": {
                 "prefix_mismatch_behavior": "error"
               }
@@ -3182,7 +3159,6 @@ data:
       "history_token_file": "/var/run/secrets/central-sampler/history",
       "gateway_target": "{sandbox}-control.{namespace}.svc:8080",
       "gateway_token_file": "/var/run/secrets/central-sampler/gateway",
-      "direct_executor_target": null,
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
       "turn_timeout_seconds": 3600,
@@ -3190,9 +3166,7 @@ data:
       "executor_initialize_timeout_seconds": 30,
       "shutdown_drain_seconds": 40,
       "shutdown_budget_seconds": 55,
-      "lease_seconds": 60,
-      "auto_compact_tokens": null,
-      "kubeconfig": null
+      "lease_seconds": 60
     }
 immutable: false
 ---
