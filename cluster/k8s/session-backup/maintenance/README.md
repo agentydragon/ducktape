@@ -56,6 +56,9 @@ the operator shell, set the selected host and read credentials directly into env
 variables (do not enable `set -x`):
 
 ```sh
+set +x
+set -o pipefail
+umask 077
 backup_host=wyrm2
 export RESTIC_REPOSITORY="rest:http://127.0.0.1:18000/$backup_host"
 export RESTIC_REST_USERNAME="$(sops -d --extract "[\"restic_rest_username_$backup_host\"]" secrets/shared/session-backup.yaml)"
