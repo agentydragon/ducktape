@@ -6,6 +6,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecReclaimPolicy
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, session_backup
 from cluster.cdk8s.cnpg import backup, cluster
@@ -67,7 +68,13 @@ def _database(chart: Chart) -> None:
     )
     # Keep the existing backup resources until WAL archiving has stopped; then retire the bucket.
     backup.CnpgBackup(
-        chart, "archive-database-backup", ref=DATABASE, retention="30d", cadence=None, adopt_existing=False
+        chart,
+        "archive-database-backup",
+        ref=DATABASE,
+        retention="30d",
+        cadence=None,
+        adopt_existing=False,
+        bucket_reclaim_policy=BucketSpecReclaimPolicy.DELETE,
     )
 
 
