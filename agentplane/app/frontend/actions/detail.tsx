@@ -1,9 +1,11 @@
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
+import { useQuery } from "@tanstack/react-query";
 import { IconArrowLeft } from "../icons";
 import { type JSX, useContext, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 
-import { ActionRequestsContext, PendingActionCard } from "./requests";
+import { actionRequestQuery, ActionRequestsContext, PendingActionCard } from "./requests";
+import { displayableError } from "../client";
 import { ActionHistoryCard } from "./history";
 import { ActionState, ExecutorKind } from "../../../action_service/action_service_pb";
 import { actionIdentity } from "./presentation";
@@ -36,53 +38,32 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const navigate = useNavigate();
   const location = useLocation();
   const actions = useContext(ActionRequestsContext);
+  if (actions === null) throw new Error("Action details require an ActionRequestsProvider.");
+  const detail = useQuery(actionRequestQuery(requestId), actions.queryClient);
   const [executorKind, setExecutorKind] = useState<ExecutorKind | null>(null);
   const [returnAfterDecision, setReturnAfterDecision] = useState<{ requestId: string; version: bigint } | null>(null);
   const historyState = location.state as { returnTo?: unknown } | null;
   const returnTo = inAppReturnTo(historyState?.returnTo);
-  const liveRequest = actions?.requests.find((item) => item.id === requestId);
-  const cachedRequest = actions?.knownRequests.get(requestId);
-  const request = liveRequest ?? cachedRequest;
+  const request = detail.data;
   const detailRequestId = request?.id;
   const detailRequestState = request?.state;
   const detailActionGroup = request === undefined ? undefined : actionIdentity(request).group;
-  const stalePendingRequest =
-    liveRequest === undefined &&
-    cachedRequest?.state === ActionState.DECISION_PENDING &&
-    actions?.staleRequestIds.has(requestId);
-  const loading = actions?.detailLoadingIds.has(requestId) ?? false;
-  const error = actions?.detailErrors.get(requestId) ?? null;
-  const knownRequests = actions?.knownRequests;
-  const staleRequestIds = actions?.staleRequestIds;
-  const loadDetail = actions?.loadDetail;
-
-  useEffect(() => {
-    if (
-      knownRequests === undefined ||
-      staleRequestIds === undefined ||
-      loadDetail === undefined ||
-      liveRequest !== undefined
-    ) {
-      return;
-    }
-    const cached = knownRequests.get(requestId);
-    const refresh = cached !== undefined && staleRequestIds.has(requestId);
-    if (cached !== undefined && !refresh) return;
-    void loadDetail(requestId, refresh).catch(() => undefined);
-  }, [knownRequests, loadDetail, liveRequest, requestId, staleRequestIds]);
+  const stalePendingRequest = request?.state === ActionState.DECISION_PENDING && detail.isStale;
+  const loading = detail.isFetching;
+  const error = detail.error === null ? null : displayableError(detail.error);
 
   useEffect(() => {
     if (returnAfterDecision === null || returnTo === null) return;
-    const decided = actions?.knownRequests.get(returnAfterDecision.requestId);
     if (
-      decided === undefined ||
-      decided.state === ActionState.DECISION_PENDING ||
-      decided.version <= returnAfterDecision.version
+      request === undefined ||
+      request.id !== returnAfterDecision.requestId ||
+      request.state === ActionState.DECISION_PENDING ||
+      request.version <= returnAfterDecision.version
     ) {
       return;
     }
     void navigate(returnTo, { replace: true });
-  }, [actions?.knownRequests, navigate, returnAfterDecision, returnTo]);
+  }, [request, navigate, returnAfterDecision, returnTo]);
 
   useEffect(() => {
     if (detailRequestId === undefined || detailRequestState === ActionState.DECISION_PENDING) {
@@ -132,16 +113,15 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
       )}
       {!loading && !stalePendingRequest && error === null && request?.state === ActionState.DECISION_PENDING && (
         <Stack>
-          {actions?.error !== null && actions?.error !== undefined && (
+          {actions.error !== null && (
             <Alert color="red" title="Action update failed">
               {actions.error}
             </Alert>
           )}
           <PendingActionCard
             request={request}
-            deciding={actions?.deciding === request.id}
+            deciding={actions.deciding === request.id}
             onDecide={(row, verdict) => {
-              if (actions === null) return;
               setReturnAfterDecision({ requestId: row.id, version: row.version });
               actions.decide(row, verdict);
             }}

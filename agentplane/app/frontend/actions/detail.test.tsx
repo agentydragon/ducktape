@@ -4,6 +4,7 @@ import { type JSX, act } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { clone, create } from "@bufbuild/protobuf";
+import { deferred } from "../../../../util/frontend/testing/deferred";
 
 import { ActionRequestDetail } from "./detail";
 import {
@@ -14,7 +15,8 @@ import {
 } from "../../../action_service/action_service_pb";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { answerApi, mount, request, send, unmountLast, type Sent } from "./testing/harness";
+import { answerApi, mount, request, send, TestNdjsonWatch, unmountLast, type Sent } from "./testing/harness";
+import { actionRequestUpsertProtoJson } from "./testing/proto_fixtures";
 
 const ROW = request(ActionState.DECISION_PENDING, 21);
 ROW.action = create(ActionIdentitySchema, { group: "ssh", name: "exec" });
@@ -201,6 +203,73 @@ it("refreshes the durable receipt when a watch snapshot removes an action that w
   await vi.waitFor(() => expect(fetched(sent)).toBe(true));
   await vi.waitFor(() => expect(container.querySelector('button[aria-label="Approve"]')).toBeNull());
   expect(container.querySelector('button[aria-label="Deny"]')).toBeNull();
+});
+
+it("shares a pending detail read between observers", async () => {
+  const response = deferred<ActionRequest>();
+  const sent = answerApi(() => response.promise);
+  const container = await mount(
+    <MemoryRouter>
+      <ActionRequestsProvider>
+        <ActionRequestDetail requestId={ROW.id} />
+        <ActionRequestDetail requestId={ROW.id} />
+      </ActionRequestsProvider>
+    </MemoryRouter>
+  );
+  expect(sent).toHaveLength(1);
+  expect(container.querySelectorAll('[role="status"]')).toHaveLength(2);
+
+  await act(async () => response.resolve(ROW));
+  await vi.waitFor(() => expect(container.querySelectorAll('button[aria-label="Approve"]')).toHaveLength(2));
+  expect(sent).toHaveLength(1);
+});
+
+it.each([ActionState.DECISION_PENDING, ActionState.ALLOWED])(
+  "keeps a newer watch version when an older detail read finishes (state %s)",
+  async (state) => {
+    const response = deferred<ActionRequest>();
+    const sent = answerApi(({ method, path }) => {
+      if (path.endsWith("/action-groups")) return [];
+      if (method === "POST") return Response.json({ detail: "decision was rejected" }, { status: 409 });
+      return response.promise;
+    });
+    const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
+    expect(fetched(sent)).toBe(true);
+    const newer = {
+      ...(state === ActionState.DECISION_PENDING ? ROW : decided(state)),
+      version: 9_007_199_254_740_993n,
+    };
+    await act(async () => {
+      TestNdjsonWatch.current!.sendUpsertFrames([actionRequestUpsertProtoJson(newer)]);
+    });
+    await act(async () => response.resolve(ROW));
+
+    if (state === ActionState.DECISION_PENDING) {
+      const approve = await vi.waitFor(() => {
+        const button = container.querySelector<HTMLButtonElement>('button[aria-label="Approve"]');
+        if (!button) throw new Error("missing Approve button");
+        return button;
+      });
+      await act(async () => approve.click());
+      await vi.waitFor(() => expect(container.textContent).toContain("decision was rejected"));
+      const decisions = sent.filter(({ method }) => method === "POST");
+      expect(decisions).toHaveLength(1);
+      expect(decisions[0]?.body).toMatchObject({ expectedVersion: "9007199254740993" });
+    } else {
+      await vi.waitFor(() => expect(container.textContent).toContain("Allowed"));
+      expect(container.querySelector('button[aria-label="Approve"]')).toBeNull();
+    }
+  }
+);
+
+it("shows a failed detail read without retrying and accepts a later watch update", async () => {
+  const sent = answerApi(() => Response.json({ detail: "detail unavailable" }, { status: 503 }));
+  const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
+  await vi.waitFor(() => expect(container.textContent).toContain("detail unavailable"));
+  await send([ROW]);
+  await vi.waitFor(() => expect(container.querySelector('button[aria-label="Approve"]')).not.toBeNull());
+  expect(container.textContent).not.toContain("detail unavailable");
+  expect(sent).toHaveLength(1);
 });
 
 afterEach(async () => {

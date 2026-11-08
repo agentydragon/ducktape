@@ -1,4 +1,5 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { QueryClient, queryOptions } from "@tanstack/react-query";
 import { IconCheck, IconX } from "../icons";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
@@ -9,6 +10,13 @@ import { ActionCall } from "./call";
 import { ActionState, Verdict, type ActionRequest } from "../../../action_service/action_service_pb";
 import { timestampText } from "./presentation";
 import { decideAction, followActionRequests, getAction } from "./client";
+
+export function actionRequestQuery(requestId: string): ReturnType<typeof queryOptions<ActionRequest>> {
+  return queryOptions<ActionRequest>({
+    queryKey: ["action-request", requestId],
+    queryFn: () => getAction(requestId),
+  });
+}
 
 export function stateLabel(state: ActionState): string {
   switch (state) {
@@ -85,132 +93,70 @@ export function useActionRequests(enabled = true): {
   loading: boolean;
   deciding: string | null;
   decide: (request: ActionRequest, verdict: Verdict) => void;
-  knownRequests: ReadonlyMap<string, ActionRequest>;
-  staleRequestIds: ReadonlySet<string>;
-  detailLoadingIds: ReadonlySet<string>;
-  detailErrors: ReadonlyMap<string, string>;
-  loadDetail: (requestId: string, forceRefresh?: boolean) => Promise<ActionRequest>;
+  queryClient: QueryClient;
 } {
   const [requests, setRequests] = useState<ActionRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
-  const [knownRequests, setKnownRequests] = useState<ReadonlyMap<string, ActionRequest>>(() => new Map());
-  const [staleRequestIds, setStaleRequestIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [detailLoadingIds, setDetailLoadingIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [detailErrors, setDetailErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: Infinity,
+            gcTime: Infinity,
+            retry: false,
+            refetchOnWindowFocus: false,
+            refetchOnReconnect: false,
+            networkMode: "always",
+            // This cache holds only ActionRequests. Fence both HTTP and watch writes by version;
+            // protobuf messages contain bigints and do not use JSON structural sharing.
+            structuralSharing: (previous, incoming) => {
+              const current = previous as ActionRequest | undefined;
+              const next = incoming as ActionRequest;
+              return current !== undefined &&
+                (current.version > next.version || (current.version === next.version && current.state === next.state))
+                ? current
+                : next;
+            },
+          },
+        },
+      })
+  );
   const requestsRef = useRef<ActionRequest[]>([]);
-  const knownRequestsRef = useRef(new Map<string, ActionRequest>());
-  const staleRequestIdsRef = useRef(new Set<string>());
-  const detailLoadsRef = useRef(new Map<string, Promise<ActionRequest>>());
   useOptionalStreamStatus("Actions", connection);
 
-  const rememberRequests = useCallback((rows: readonly ActionRequest[]): void => {
-    let next = knownRequestsRef.current;
-    let changed = false;
-    for (const request of rows) {
-      const previous = next.get(request.id);
-      if (
-        previous !== undefined &&
-        (previous.version > request.version ||
-          (previous.version === request.version && previous.state === request.state))
-      ) {
-        continue;
-      }
-      if (!changed) next = new Map(next);
-      next.set(request.id, request);
-      changed = true;
-    }
-    if (changed) {
-      knownRequestsRef.current = next;
-      setKnownRequests(next);
-    }
+  useEffect(() => () => queryClient.clear(), [queryClient]);
 
-    const freshIds = rows.filter((request) => staleRequestIdsRef.current.has(request.id)).map((request) => request.id);
-    if (freshIds.length > 0) {
-      const fresh = new Set(staleRequestIdsRef.current);
-      for (const requestId of freshIds) fresh.delete(requestId);
-      staleRequestIdsRef.current = fresh;
-      setStaleRequestIds(fresh);
-    }
-
-    setDetailErrors((current) => {
-      if (!rows.some((request) => current.has(request.id))) return current;
-      const next = new Map(current);
+  const rememberRequests = useCallback(
+    (rows: readonly ActionRequest[]): void => {
       for (const request of rows) {
-        next.delete(request.id);
+        queryClient.setQueryData(actionRequestQuery(request.id).queryKey, request);
       }
-      return next;
-    });
-  }, []);
+    },
+    [queryClient]
+  );
 
   const storePendingSnapshot = useCallback(
     (rows: ActionRequest[]): void => {
       const nextIds = new Set(rows.map((request) => request.id));
-      const stale = new Set(staleRequestIdsRef.current);
       for (const previous of requestsRef.current) {
+        const queryKey = actionRequestQuery(previous.id).queryKey;
         if (
           previous.state === ActionState.DECISION_PENDING &&
           !nextIds.has(previous.id) &&
-          knownRequestsRef.current.get(previous.id)?.state === ActionState.DECISION_PENDING
+          queryClient.getQueryData(queryKey)?.state === ActionState.DECISION_PENDING
         ) {
-          stale.add(previous.id);
+          void queryClient.invalidateQueries({ queryKey, exact: true }, { cancelRefetch: false });
         }
-      }
-      for (const requestId of nextIds) stale.delete(requestId);
-      if (
-        stale.size !== staleRequestIdsRef.current.size ||
-        [...stale].some((id) => !staleRequestIdsRef.current.has(id))
-      ) {
-        staleRequestIdsRef.current = stale;
-        setStaleRequestIds(stale);
       }
       requestsRef.current = rows;
       setRequests(rows);
       rememberRequests(rows);
     },
-    [rememberRequests]
-  );
-
-  const loadDetail = useCallback(
-    (requestId: string, forceRefresh = false): Promise<ActionRequest> => {
-      const cached = knownRequestsRef.current.get(requestId);
-      if (!forceRefresh && !staleRequestIdsRef.current.has(requestId) && cached !== undefined) {
-        return Promise.resolve(cached);
-      }
-      const inFlight = detailLoadsRef.current.get(requestId);
-      if (inFlight !== undefined) return inFlight;
-      setDetailLoadingIds((current) => new Set(current).add(requestId));
-      setDetailErrors((current) => {
-        if (!current.has(requestId)) return current;
-        const next = new Map(current);
-        next.delete(requestId);
-        return next;
-      });
-      const request = Promise.resolve()
-        .then(() => getAction(requestId))
-        .then((loaded) => {
-          rememberRequests([loaded]);
-          return loaded;
-        })
-        .catch((failure: unknown) => {
-          setDetailErrors((current) => new Map(current).set(requestId, displayableError(failure)));
-          throw failure;
-        })
-        .finally(() => {
-          detailLoadsRef.current.delete(requestId);
-          setDetailLoadingIds((current) => {
-            if (!current.has(requestId)) return current;
-            const next = new Set(current);
-            next.delete(requestId);
-            return next;
-          });
-        });
-      detailLoadsRef.current.set(requestId, request);
-      return request;
-    },
-    [rememberRequests]
+    [queryClient, rememberRequests]
   );
 
   useEffect(() => {
@@ -284,11 +230,7 @@ export function useActionRequests(enabled = true): {
     loading,
     deciding,
     decide: (request, verdict) => void decideRequest(request, verdict),
-    knownRequests,
-    staleRequestIds,
-    detailLoadingIds,
-    detailErrors,
-    loadDetail,
+    queryClient,
   };
 }
 
