@@ -7,6 +7,12 @@
     "image": "ghcr.io/agentydragon/buildbuddy-remote-runner",
     "digest": "sha256:1e49b1d42882af77e580ee14cf2b6e5a4c90ca7cb327cfba4abe644484d26eeb"
   },
+  "busybox_1_38": {
+    "image": "mirror.gcr.io/library/busybox",
+    "digest": "sha256:f97baa533a26513c453a362be331a43eb60214302f449c16571b23cea141dce4",
+    "tag": "1.38",
+    "platforms": ["linux/amd64"]
+  },
   "k3s_test_node": {
     "image": "docker.io/rancher/k3s",
     "digest": "sha256:b032bfb68a10fee30ab60c160d32a6b3af7ea33620e9f7a29d59890e42ceefed",
@@ -26,6 +32,12 @@
   "blackbox_exporter": {
     "image": "quay.io/prometheus/blackbox-exporter",
     "digest": "sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc",
+    "platforms": ["linux/amd64"]
+  },
+  "mitmproxy_12_2_3": {
+    "image": "mirror.gcr.io/mitmproxy/mitmproxy",
+    "digest": "sha256:68afa70d7b6ac9d269b88f88534f9ffceb363b4ce31703a78702341fba82e831",
+    "tag": "12.2.3",
     "platforms": ["linux/amd64"]
   },
   "registry_3": {

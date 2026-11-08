@@ -169,6 +169,7 @@ use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "de
 image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
 use_repo(image_pins, "blackbox_exporter", "blackbox_exporter_linux_amd64", "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", "cert_manager_controller", "cert_manager_controller_linux_amd64", "cert_manager_webhook", "cert_manager_webhook_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins", "k3s_test_node", "k3s_test_node_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "trust_manager", "trust_manager_linux_amd64")
+use_repo(image_pins, "busybox_1_38", "busybox_1_38_linux_amd64", "mitmproxy_12_2_3", "mitmproxy_12_2_3_linux_amd64")
 
 # Hermetic deb packages for container images (rules_distroless).
 # Replaces Dockerfile apt-get with snapshot-pinned deb extraction.
