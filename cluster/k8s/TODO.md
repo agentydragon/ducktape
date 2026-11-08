@@ -191,6 +191,16 @@ Options to consider:
       ahead of `cache.allegedly.works`, or as a fallback) so a degraded
       attic doesn't block local rebuilds.
 
+## Attic cache retention
+
+- [ ] 2026-11-08: Set `default-retention-period` in `nix-cache/server-local.toml` (or per
+      cache via `attic cache configure --retention-period`). Unset means paths never expire;
+      the 30-day `[garbage-collection] interval` only reclaims unreferenced chunks. Since
+      #15012, same-repo PRs also upload, including multi-GB image results (VM and
+      Firecracker disks, kernels), onto the 100 GiB `attic-local-storage` volume. Paths
+      `devel` still uses get re-pushed and refreshed. Alternatively send PR uploads to a
+      short-retention `ducktape:pr` cache that CI also substitutes from.
+
 ## Slim down `authentik-jwt-rotation` image
 
 - [ ] 2026-06-18: Revisit `authentik-jwt-rotation` image contents. It still
