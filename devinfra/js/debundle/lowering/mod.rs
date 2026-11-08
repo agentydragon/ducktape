@@ -559,6 +559,7 @@ pub fn materialize_logical_modules(
                 &projection,
                 program_summary::ProgramSummaryOptions {
                     graph_provenance: options.graph_provenance.as_ref(),
+                    vendor_plan: Some(vendor_plan),
                     replacement_packages: &vendor_plan.replacement_packages(),
                 },
                 Some(&program_summary_chunk_closure),

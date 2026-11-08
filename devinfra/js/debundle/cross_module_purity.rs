@@ -562,6 +562,20 @@ pub struct ResolvedCallableSummaries {
     /// the purity oracle's census of the same body takes instead of solving
     /// again.
     pub(crate) structural_flows: BTreeMap<SourceModuleKey, ChunkValueFlow>,
+    /// Negative facts from the already prepared original provider callables.
+    /// Missing entries are unknown, not proof that a provider is effect free.
+    known_original_external_writes: BTreeMap<SourceModuleKey, BTreeMap<String, String>>,
+}
+
+impl ResolvedCallableSummaries {
+    /// A source-known contradiction for one requested original export. No
+    /// result means this bounded negative check found no contradiction.
+    pub fn known_original_external_write(&self, module: &str, export: &str) -> Option<&str> {
+        self.known_original_external_writes
+            .get(module)?
+            .get(export)
+            .map(String::as_str)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -718,6 +732,8 @@ fn solve_callable_import_projections(
 /// The author inputs and host claims `resolve_imported_callable_summaries`
 /// checks the providers against.
 pub struct CallableSummaryInputs<'a> {
+    /// Exact original exports selected by audited initializer call inputs.
+    pub requested_original_provider_exports: &'a BTreeSet<(SourceModuleKey, String)>,
     pub selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
     pub selected_native_operation_inputs:
         &'a BTreeMap<SourceModuleKey, Vec<SelectedNativeOperationInput>>,
@@ -740,6 +756,7 @@ pub fn resolve_imported_callable_summaries(
     inputs: CallableSummaryInputs<'_>,
 ) -> Result<ResolvedCallableSummaries> {
     let CallableSummaryInputs {
+        requested_original_provider_exports,
         selected_value_inputs,
         selected_native_operation_inputs,
         argument_inputs,
@@ -897,6 +914,41 @@ pub fn resolve_imported_callable_summaries(
                 resolved_value_inputs,
                 resolved_native_operation_inputs,
             ) = prepare(&bundle_globals)?;
+        }
+    }
+    let mut requested_original_exports = (*requested_original_provider_exports).clone();
+    let mut pending = requested_original_exports
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    while let Some((module, export)) = pending.pop() {
+        let Some(local) = modules
+            .get(&module)
+            .and_then(|facts| facts.exports.get(&export))
+        else {
+            continue;
+        };
+        let Some(target) = modules[&module].imports.get(local) else {
+            continue;
+        };
+        let next = (target.module.clone(), target.export.clone());
+        if requested_original_exports.insert(next.clone()) {
+            pending.push(next);
+        }
+    }
+    let mut known_original_external_writes = BTreeMap::new();
+    for (module, export) in requested_original_exports {
+        let Some(index) = prepared.get(&module) else {
+            continue;
+        };
+        let Some(local) = modules[&module].exports.get(&export) else {
+            continue;
+        };
+        if let Some(reason) = index.known_external_write_for_local(local) {
+            known_original_external_writes
+                .entry(module)
+                .or_insert_with(BTreeMap::new)
+                .insert(export, reason);
         }
     }
     for input in selected_native_operation_inputs
@@ -1565,6 +1617,7 @@ pub fn resolve_imported_callable_summaries(
         inferred_set_constructions,
         argument_inputs: argument_inputs.clone(),
         structural_flows,
+        known_original_external_writes,
     })
 }
 
@@ -2326,6 +2379,7 @@ mod tests {
             &asserted,
             &BTreeMap::new(),
             CallableSummaryInputs {
+                requested_original_provider_exports: &BTreeSet::new(),
                 selected_value_inputs: &BTreeMap::new(),
                 selected_native_operation_inputs: &BTreeMap::new(),
                 argument_inputs: &BTreeMap::new(),

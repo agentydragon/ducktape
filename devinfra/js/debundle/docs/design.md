@@ -140,6 +140,19 @@ The first certifies selected initializer operations; the second certifies only
 the original callee at a selected direct call in a top-level function body or
 at the zero-argument Set constructor in a checked private class field.
 Both retain exact-site evidence separately from inferred native integrity.
+`initializer_call_effect_inputs` is a separate AUTHOR operation-domain input
+for one direct imported-call initializer with one fresh anonymous ordinary
+function argument. The program summary binds its importer and original
+provider parser digests, exact named import and acyclic static provider closure.
+For a selected bundled partial vendor swap, it also matches the effective
+export mapping and captured bundle digest through the existing vendor plan and
+graph provenance. Its proof reference travels through saved staged facts and
+`ProofDependencies`; it does not become an inferred callable summary or a
+family-wide purity flag. The ordered root still evaluates the callee and
+argument, composes their effects, and needs separate purity, callback timing,
+retained-carrier and normal-completion evidence before sealing
+`CompletedInitialization`. The legacy heap-frontier opacity report is not the
+positive operation-domain receipt (SPEC § Exact initializer call effect inputs).
 The `Object.freeze` call-identity input uses the shared typed
 slot census rejects known global `Object` or constructor `freeze` writes across
 the analyzed program, while opaque and sibling write witnesses remain visible

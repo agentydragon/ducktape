@@ -4,6 +4,7 @@
 //! can themselves depend on author contracts in their defining chunks.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -414,6 +415,45 @@ pub struct DescriptorCopyAuthorRef {
     pub spec_location: String,
 }
 
+/// One audited exact imported-call initializer in the importer chunk.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct InitializerCallEffectInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// Author premise admitted only after source, provider, import, and call-site
+/// checks. The source binding and call span are session-local; the reference
+/// remains stable in saved effect proofs and reports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedInitializerCallEffectInput {
+    pub reference: InitializerCallEffectInputRef,
+    pub binding: Id,
+    pub callee: Id,
+    pub call_span: Span,
+    pub source_sha256: String,
+    pub provider_chunk: String,
+    pub provider_export: String,
+    pub provider_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_replacement: Option<EffectiveInitializerCallReplacement>,
+    /// Complete ordinary static dependency closure that evaluated before the
+    /// importer, with no path back to it. This proves the direct import read.
+    pub provider_dependency_closure: BTreeSet<String>,
+}
+
+/// Effective bundled implementation actually emitted for a swapped export.
+/// The independent original provider digest remains on the parent evidence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffectiveInitializerCallReplacement {
+    pub package: String,
+    pub bundle_path: PathBuf,
+    pub bundle_export: String,
+    pub symbol_kind: spec::PartialSwapKind,
+    pub upstream_export: Option<String>,
+    pub bundle_sha256: String,
+}
+
 /// Additional captured-value assertions required by an inferred proof.
 /// Structural source evidence stays on the proof's existing source identity.
 /// Empty dependencies add no captured-value premise; the analysis's baseline
@@ -424,6 +464,8 @@ pub struct ProofDependencies {
     pub value_inputs: BTreeSet<ValueInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub native_operation_inputs: BTreeSet<NativeOperationInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub initializer_call_effect_inputs: BTreeSet<InitializerCallEffectInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub descriptor_copy_authors: BTreeSet<DescriptorCopyAuthorRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -529,6 +571,7 @@ impl ProofDependencies {
     pub fn is_empty(&self) -> bool {
         self.value_inputs.is_empty()
             && self.native_operation_inputs.is_empty()
+            && self.initializer_call_effect_inputs.is_empty()
             && self.descriptor_copy_authors.is_empty()
             && self.argument_inputs.is_empty()
             && self.host_behavior.is_empty()
@@ -543,6 +586,8 @@ impl ProofDependencies {
         self.value_inputs.extend(other.value_inputs.iter().cloned());
         self.native_operation_inputs
             .extend(other.native_operation_inputs.iter().cloned());
+        self.initializer_call_effect_inputs
+            .extend(other.initializer_call_effect_inputs.iter().cloned());
         self.descriptor_copy_authors
             .extend(other.descriptor_copy_authors.iter().cloned());
         self.argument_inputs
@@ -858,6 +903,9 @@ pub struct AnalysisAssumptions {
     /// Source-resolved author premises for exact native operation call sites.
     /// They are not native integrity guards or inferred identity facts.
     pub native_operation_inputs: Vec<ResolvedNativeOperationInput>,
+    /// Exact source-selected author call-effect premises. These cover the
+    /// provider invocation's nonlexical effects only, never its operands.
+    pub initializer_call_effect_inputs: Vec<ResolvedInitializerCallEffectInput>,
     /// Source-selected author premises for one exact local helper parameter.
     pub argument_inputs: Vec<ResolvedArgumentInput>,
     /// Host operations the author audited as unable to run application code

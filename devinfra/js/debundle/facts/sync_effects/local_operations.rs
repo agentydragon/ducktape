@@ -831,6 +831,32 @@ impl LocalBody {
         }
     }
 
+    /// Exact root syntax admitted by a source-validated initializer call
+    /// effect input. Selection alone grants no operation or completion proof.
+    pub(super) fn single_identifier_call_with_function_argument_initializer(
+        &self,
+    ) -> Option<(&Id, Span)> {
+        self.initializer_span?;
+        match self.operations.as_ref() {
+            [
+                LocalOperation::Return(Some(LocalExpression::Call {
+                    callee: LocalCallee::Binding(callee),
+                    arguments,
+                    span,
+                })),
+            ] if matches!(
+                arguments.as_ref(),
+                [LocalExpression::Closure(
+                    DeferredCallableCreation::Function(_)
+                )]
+            ) =>
+            {
+                Some((callee, *span))
+            }
+            _ => None,
+        }
+    }
+
     /// Called by the canonical function collector. Unsupported syntax discards
     /// the entire candidate; the ordinary conservative lanes remain available.
     pub(super) fn lower<'a>(

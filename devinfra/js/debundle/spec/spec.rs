@@ -518,6 +518,7 @@ impl TransformSpec {
             .filter(|(_, options)| {
                 !options.value_inputs.is_empty()
                     || !options.native_operation_inputs.is_empty()
+                    || !options.initializer_call_effect_inputs.is_empty()
                     || !options.native_call_identity_inputs.is_empty()
                     || !options.argument_inputs.is_empty()
                     || !options.no_accessor_install_callables.is_empty()
@@ -739,6 +740,11 @@ pub struct DependencyGraphOptions {
     /// docs/purity_soundness.md.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_operation_inputs: Vec<NativeOperationInputContract>,
+    /// Exact direct imported-call initializers whose provider invocation has
+    /// author-audited allocation-only nonlexical effects. This is independent
+    /// of call timing, result shape, purity, and callback retention contracts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initializer_call_effect_inputs: Vec<InitializerCallEffectInputContract>,
     /// Author-certified pairs of this chunk's source units whose synchronous
     /// initialization effects are order-independent. Each endpoint selects
     /// exactly one source unit; the pair is resolved and validated when the
@@ -881,6 +887,42 @@ pub struct NativeOperationInputContract {
     /// YAML-only author rationale. It does not strengthen the premise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// One source-selected provider invocation, with both parser inputs pinned.
+/// The author certifies that the selected call body reads no mutable
+/// application/global/host state, invokes no host operation, and writes only
+/// its fresh per-call wrapper/record allocations. Native metadata and
+/// inherited/provider slots used by that body remain as audited through
+/// every admitted synchronous initialization schedule. Callee and argument
+/// evaluation, completion, lexical effects, callback timing/retention, and
+/// later use of the returned value are separate obligations.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct InitializerCallEffectInputContract {
+    pub source_match: SourceMatchClaim,
+    pub audited_source_sha256: String,
+    pub provider_chunk: String,
+    pub provider_export: String,
+    pub audited_provider_sha256: String,
+    /// Required when this exact export is emitted from a bundled partial
+    /// vendor swap. Pins the effective replacement independently of the
+    /// original provider parser input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_replacement: Option<InitializerCallEffectiveReplacement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct InitializerCallEffectiveReplacement {
+    pub package: String,
+    pub bundle_export: String,
+    pub symbol_kind: PartialSwapKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_export: Option<String>,
+    pub audited_bundle_sha256: String,
 }
 
 /// Author premise that two source units of one chunk commute: neither

@@ -41,6 +41,7 @@ use super::{
 };
 use crate::analysis_inputs::{
     AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, ProofDependencies,
+    ResolvedInitializerCallEffectInput,
 };
 use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::{
@@ -765,6 +766,8 @@ pub(super) struct ExecutionInputs<'source> {
     shadowed: &'source BTreeSet<&'static str>,
     imported_values: &'source BTreeMap<String, Value>,
     imported_primitive_reads: &'source BTreeMap<String, ImportedPrimitiveRead>,
+    initializer_call_effect_inputs: &'source [ResolvedInitializerCallEffectInput],
+    declared_pure_initializers: &'source BTreeSet<String>,
     /// First-order pre-await body cells of each callable.
     callable_heap_contents: &'source BTreeMap<u32, HeapContentCells>,
     /// Hashed: effect promotion tests every lazy read of every promoted
@@ -819,6 +822,21 @@ impl ExecutionInputs<'_> {
             && !read.source_cells.is_empty()
             && self.imported_values.get(binding.0.as_ref()) == Some(&Value::Prim(read.kinds)))
         .then_some(read)
+    }
+
+    fn initializer_call_effect_input(
+        &self,
+        owner: SourceUnitOrdinal,
+        root_binding: &Id,
+        callee: &Id,
+        call_span: Span,
+    ) -> Option<&ResolvedInitializerCallEffectInput> {
+        self.initializer_call_effect_inputs.iter().find(|input| {
+            input.binding == *root_binding
+                && input.callee == *callee
+                && input.call_span == call_span
+                && self.binding_owner.get(root_binding) == Some(&owner)
+        })
     }
 
     fn synchronous_effects(
@@ -2092,6 +2110,42 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             selection,
         })
     }
+    fn read_call_callee(
+        &mut self,
+        binding: &Id,
+        call_span: Span,
+        frame: &mut LocalFrame,
+    ) -> Option<LocalValueResult> {
+        let mut result = self.read_binding(binding, frame)?;
+        let selected = matches!(self.scope, LocalExecutionScope::RootInitializer)
+            && self
+                .outcome
+                .root_binding_effect_identity
+                .as_ref()
+                .is_some_and(|identity| {
+                    identity.owner == self.owner
+                        && self
+                            .executor
+                            .inputs
+                            .initializer_call_effect_input(
+                                self.owner,
+                                &identity.binding,
+                                binding,
+                                call_span,
+                            )
+                            .is_some()
+                });
+        if selected
+            && !result.allocation.values.is_empty()
+            && !result
+                .allocation
+                .values
+                .contains(&AbstractValue::Value(Value::Unavailable))
+        {
+            result.effects = EffectCoverageFragment::initialized_module_read();
+        }
+        Some(result)
+    }
     fn call(
         &mut self,
         frame: &mut LocalFrame,
@@ -2179,6 +2233,22 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             .find(|call| call.kind == CallKind::Call && call.span == span)
             .expect("a source-covered call has its canonical call record")
             .clone();
+        let audited_input =
+            self.outcome
+                .root_binding_effect_identity
+                .as_ref()
+                .filter(|identity| {
+                    matches!(self.scope, LocalExecutionScope::RootInitializer)
+                        && identity.owner == self.owner
+                })
+                .and_then(|identity| match &call.callee {
+                    ValueExpr::Binding(callee) => self
+                        .executor
+                        .inputs
+                        .initializer_call_effect_input(self.owner, &identity.binding, callee, span),
+                    _ => None,
+                })
+                .map(|input| input.reference.clone());
         let result = self.executor.request(RuntimeOperation::Call {
             call,
             environment: frame.environment.clone(),
@@ -2207,6 +2277,8 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             unreachable!("call transfers return effects and their result together");
         };
         let complete = outcome.complete && !outcome.unknown_call;
+        let no_child_losses = outcome.effects.precision_losses.is_empty()
+            && outcome.effects.uninitialized_reads.is_empty();
         let missing_result = complete && matches!(transfer, CallTransfer::EffectsOnly);
         let admission_refusal = match &transfer {
             CallTransfer::UnsupportedOperands(refusal) => Some(*refusal),
@@ -2237,9 +2309,38 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .extend(self.executor.reachable_objects(&values));
             if complete {
                 // A complete call is not an allocation-only certificate.
+                let normal_value = !values.is_empty()
+                    && !values.contains(&AbstractValue::Value(Value::Unavailable))
+                    && !values.contains(&AbstractValue::Value(Value::Top));
+                let pure_initializer = self
+                    .outcome
+                    .root_binding_effect_identity
+                    .as_ref()
+                    .is_some_and(|identity| {
+                        self.executor
+                            .inputs
+                            .declared_pure_initializers
+                            .contains(identity.binding.0.as_ref())
+                    });
+                let effects = if no_child_losses
+                    && normal_value
+                    && pure_initializer
+                    && let Some(reference) = audited_input
+                {
+                    let mut effects = outcome.effect_coverage.audited_initializer_call_domains(
+                        &ProofDependencies {
+                            initializer_call_effect_inputs: BTreeSet::from([reference]),
+                            ..ProofDependencies::default()
+                        },
+                    );
+                    effects.normal_completion_from_pure_initializer();
+                    effects
+                } else {
+                    outcome.effect_coverage
+                };
                 return Some(LocalValueResult {
                     allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
-                    effects: outcome.effect_coverage,
+                    effects,
                     selection: outcome.return_selection,
                 });
             }
@@ -13475,6 +13576,8 @@ pub(crate) fn annotate_synchronous_calls(
         shadowed,
         imported_values: &hints.imported_values,
         imported_primitive_reads: &hints.imported_primitive_reads,
+        initializer_call_effect_inputs: &hints.assumptions.initializer_call_effect_inputs,
+        declared_pure_initializers: &hints.assumptions.declared_pure_initializers,
         callable_heap_contents: proofs.callable_heap_contents,
         top_bindings,
         binding_owner: facts
@@ -14010,7 +14113,33 @@ impl Executor<'_, '_> {
                         .is_some_and(|identity| identity.matches(owner, binding, span))
                 })
             });
-        let ordered_initializer = ((initializer_source.is_none() || checked_split_binding_copy)
+        let selected_audited_initializer =
+            index.ordered_initializers.get(&owner).and_then(|body| {
+                let [(binding, _)] = assignments.as_slice() else {
+                    return None;
+                };
+                let (callee, span) =
+                    body.single_identifier_call_with_function_argument_initializer()?;
+                let source = index.initialization_source_identities.get(&owner)?;
+                if !source.matches(owner, binding, body.initializer_span()?) {
+                    return None;
+                }
+                let [call] = calls.as_slice() else {
+                    return None;
+                };
+                if call.kind != CallKind::Call
+                    || call.span != span
+                    || call.has_spread
+                    || call.args.len() != 1
+                    || !matches!(&call.callee, ValueExpr::Binding(actual) if actual == callee)
+                {
+                    return None;
+                }
+                inputs.initializer_call_effect_input(owner, binding, callee, span)
+            });
+        let ordered_initializer = ((initializer_source.is_none()
+            || checked_split_binding_copy
+            || selected_audited_initializer.is_some())
             && matches!(fact.kind, StatementKind::VarDecl)
             && fact.declared.len() == 1
             && matches!(assignments.as_slice(), [(binding, _)]
@@ -14030,7 +14159,8 @@ impl Executor<'_, '_> {
         .filter(|body| {
             !body.requires_keyed_collection_new()
                 && body.captured_writes().is_empty()
-                && self.ordered_root_calls_are_local(calls)
+                && (self.ordered_root_calls_are_local(calls)
+                    || selected_audited_initializer.is_some())
                 && (calls
                     .iter()
                     .filter(|call| call.kind == CallKind::Call)
@@ -14051,6 +14181,7 @@ impl Executor<'_, '_> {
                                 && matches!(call.callee, ValueExpr::Binding(_)))
                         })
                     || checked_split_binding_copy
+                    || selected_audited_initializer.is_some()
                     || calls.iter().any(|call| {
                         call.kind == CallKind::LocalMemberRead
                             && call.owner == owner

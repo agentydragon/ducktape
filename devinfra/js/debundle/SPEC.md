@@ -1375,6 +1375,67 @@ callbacks retained for future use remain subject to their ordinary analysis.
 observable effects and cannot throw. Neither contract applies to later uses of
 its value.
 
+## Exact initializer call effect inputs
+
+`chunk_analysis_options.<importer>.initializer_call_effect_inputs[]` is an
+explicit author assertion for one source-selected top-level variable
+initializer. It covers the **invoked provider operation's** global-property,
+general-heap, and host-effect domains: under the audited native/inherited
+metadata and provider-slot lifetime, the operation reads no mutable
+application/global/host state, invokes no host operation, and writes only
+fresh allocations made for this call's wrapper or data records. It excludes
+provider-private writes and any broader `Object` or `Function` integrity
+claim. The assertion is independent of `pure_exports`, callback factory
+assertions, and `initializer_binding_effects`.
+
+Each entry has `source_match` with exactly one `bindings[]` name,
+`audited_source_sha256`, `provider_chunk`, `provider_export`, and
+`audited_provider_sha256`; `note` is optional rationale. The two SHA-256
+values pin the parser input bytes of the importer and original provider.
+The selected binding must have one direct initializer call to a bare named
+ESM import of that exact provider export, with exactly one freshly written,
+anonymous, ordinary `function` expression argument. Spreads, other arities,
+named/async/generator callbacks, mutated or indirect callees, and ambiguous
+selectors are rejected. Prepared comma-list declarations may select one
+declarator; sibling declarators gain no assertion. The provider's resolved
+ordinary static dependency closure must finish before the importer, without
+an importer backedge or ambiguous/nonordinary request.
+
+If that export is emitted through `bundled_partial_swap`, the same entry must
+also contain `effective_replacement` with `package`, `bundle_export`,
+`symbol_kind` (the existing vendor symbol-kind enum), optional
+`upstream_export`, and `audited_bundle_sha256`. These fields must match the
+selected export's `VendorResolutionPlan` mapping. The plan's bundle path is
+resolved against the captured source/absolute `GraphProvenance` file and its
+digest is checked separately from the original provider digest. Missing,
+stale, ambiguous, or differently mapped effective bundles are rejected;
+other swap levels are unsupported for this assertion. Vendor swap equivalence
+remains its own author obligation.
+
+The analyzed original provider's already prepared callable facts are checked
+for a source-known write to an identified module/global binding,
+including writes reached through uniquely resolved direct local helpers and
+named re-exports. Such a contradiction rejects the input even when
+`pure_exports` asserts the provider pure. Unknown aliases and calls remain
+within the exact author audit; this check does not infer general absence of
+effects. Effective replacement behavior is likewise author audited against
+the pinned bundle bytes and export mapping, not inferred from the original
+provider's callable facts.
+
+The assertion grants no normal completion, result shape, lexical coverage,
+callback nonpublication or invocation timing, carrier lifetime, operand/callee
+purity, or later-use effect. Actual operand evaluation and known effects
+compose in order. An independent `initializer_purity: pure` assertion and
+normal ordered execution with no precision loss are required before the
+selected operation coverage can contribute to the usual
+`CompletedInitialization` receipt. Existing callback timing and retained
+carrier evidence must establish their separate domains. Reports list the
+selected author input under
+`coverage.covered_owner_dependencies.initializer_call_effect_inputs` when
+normal owner coverage consumes it. The legacy graph's
+`heap_frontier.own_at_init.opaque` and lexical
+`ordered_root_initializer_uncovered` fields may remain conservative.
+
 ## Static-import and host-loader queries
 
 `static-imports` is a read-only query over the original parsed source chunks.

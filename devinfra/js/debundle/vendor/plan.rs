@@ -81,7 +81,34 @@ pub struct VendorResolutionPlan {
     pub(crate) suppressed: BTreeSet<ChunkId>,
 }
 
+/// Effective emitted identity of one selected bundled replacement export.
+/// The original provider's parsed source remains a separate input.
+pub struct BundledReplacementExportIdentity {
+    pub package: String,
+    pub bundle_path: PathBuf,
+    pub bundle_export: String,
+    pub symbol_kind: PartialSwapKind,
+    pub upstream_export: Option<String>,
+}
+
 impl VendorResolutionPlan {
+    pub fn bundled_replacement_export(
+        &self,
+        chunk: ChunkId,
+        export: &str,
+    ) -> Option<BundledReplacementExportIdentity> {
+        let swap = self.bundled_partial_swaps.get(&chunk)?;
+        let symbol = swap.symbols.get(export)?;
+        let package = swap.resolution.packages.get(&symbol.package)?;
+        Some(BundledReplacementExportIdentity {
+            package: symbol.package.clone(),
+            bundle_path: PathBuf::from(&swap.resolution.bundle.source_path),
+            bundle_export: package.bundle_export.clone(),
+            symbol_kind: symbol.kind,
+            upstream_export: symbol.upstream_export.clone(),
+        })
+    }
+
     pub fn has_boundary_renames(&self) -> bool {
         !self.boundary_renames.is_empty()
     }
