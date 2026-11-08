@@ -1347,6 +1347,55 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
 }
 
 #[test]
+fn partial_swap_proto_shorthand_preserves_data_property_and_shadowing() {
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => \"VENDOR\";\n",
+        caller_source: "import { e6 as __proto__ } from \"../megachunk/entry.js\";\n\
+                        const value = { __proto__ };\n\
+                        const originalPrototype = Object.getPrototypeOf(value);\n\
+                        function shadow(__proto__) { return { __proto__ }; }\n\
+                        const shadowed = shadow(() => \"LOCAL\");\n\
+                        export function inspect() { return [\n\
+                          Object.prototype.hasOwnProperty.call(value, \"__proto__\"),\n\
+                          originalPrototype === Object.prototype,\n\
+                          Object.getPrototypeOf(value) === originalPrototype,\n\
+                          value.__proto__(),\n\
+                          Object.prototype.hasOwnProperty.call(shadowed, \"__proto__\"),\n\
+                          Object.getPrototypeOf(shadowed) === Object.prototype,\n\
+                          shadowed.__proto__(),\n\
+                        ].join(\"|\"); }\n",
+        upstream_source: "export const boolean = () => \"UPSTREAM\";\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert_success(&fixture.result);
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "[\"__proto__\"]: z.boolean",
+            "function shadow(__proto__)",
+            "return { __proto__ }",
+        ],
+        &[],
+    );
+
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => \"UPSTREAM\";\n",
+    );
+    let probe_path = app_root.join("__run_proto_shorthand.mjs");
+    write_text_file(
+        &probe_path,
+        "const { inspect } = await import(\"./static/app/entry.js\");\nconsole.log(inspect());\n",
+    );
+    assert_node_output(&probe_path, "true|true|true|UPSTREAM|true|true|LOCAL\n", "");
+}
+
+#[test]
 fn partial_swap_namespace_kind_replaces_whole_import() {
     // Caller has `import { a as React } from "../megachunk/entry.js"`
     // where the chunk export `a` is the package's whole namespace

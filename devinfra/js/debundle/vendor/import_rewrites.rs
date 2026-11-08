@@ -278,7 +278,20 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
         // read. Keep the original key and hygiene-bearing value identifier,
         // then route the value through the same expression rewrite path.
         let ident = ident.clone();
-        let key = PropName::Ident(IdentName::new(ident.sym.clone(), ident.span));
+        let key = if ident.sym.as_ref() == "__proto__" {
+            // `{ __proto__ }` creates an own data property, but the
+            // noncomputed `{ __proto__: value }` form sets the prototype.
+            PropName::Computed(ComputedPropName {
+                span: ident.span,
+                expr: Box::new(Expr::Lit(Lit::Str(Str {
+                    span: ident.span,
+                    value: ident.sym.clone(),
+                    raw: None,
+                }))),
+            })
+        } else {
+            PropName::Ident(IdentName::new(ident.sym.clone(), ident.span))
+        };
         let mut value = Expr::Ident(ident);
         self.visit_mut_expr(&mut value);
         *prop = Prop::KeyValue(KeyValueProp {
