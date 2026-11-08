@@ -28,7 +28,7 @@ def run(*args: str, cwd: Path | None = None) -> str:
 
 
 def test_stages_and_verifies_only_projection(repository: Path, tmp_path: Path, runfiles: Runfiles) -> None:
-    module_path = runfiles.root() / "ducktape/cluster/k8s/session-backup/rewrite_thread_history.py"
+    module_path = runfiles.root() / "ducktape/cluster/session_backup_maintenance/rewrite_thread_history.py"
     spec = importlib.util.spec_from_file_location("rewrite_thread_history", module_path)
     assert spec is not None
     assert spec.loader is not None
@@ -71,7 +71,7 @@ def test_stages_and_verifies_only_projection(repository: Path, tmp_path: Path, r
 
 
 def test_rejects_a_rewrite_with_unrelated_deletions(repository: Path, tmp_path: Path, runfiles: Runfiles) -> None:
-    module_path = runfiles.root() / "ducktape/cluster/k8s/session-backup/rewrite_thread_history.py"
+    module_path = runfiles.root() / "ducktape/cluster/session_backup_maintenance/rewrite_thread_history.py"
     spec = importlib.util.spec_from_file_location("rewrite_thread_history", module_path)
     assert spec is not None
     assert spec.loader is not None

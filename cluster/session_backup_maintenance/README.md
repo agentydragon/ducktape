@@ -46,7 +46,7 @@ template if those no longer match. Do not suspend Flux or modify the normal serv
 
 ```sh
 export MAINTENANCE_NODE="$(kubectl -n session-backup get pod -l app.kubernetes.io/name=session-backup -o jsonpath='{.items[0].spec.nodeName}')"
-envsubst '$MAINTENANCE_NODE' < cluster/k8s/session-backup/maintenance/rest-server.yaml | kubectl apply -f -
+envsubst '$MAINTENANCE_NODE' < cluster/session_backup_maintenance/rest-server.yaml | kubectl apply -f -
 kubectl -n session-backup wait --for=condition=Ready pod/session-backup-maintenance --timeout=120s
 kubectl -n session-backup port-forward --address 127.0.0.1 pod/session-backup-maintenance 18000:8000
 ```
@@ -102,9 +102,9 @@ the stage may be rerun after interruption; it keeps all original snapshots. A ch
 repository identity or missing original stops it.
 
 ```sh
-python cluster/k8s/session-backup/rewrite_thread_history.py plan "$maintenance_dir/plan.json" | tee "$maintenance_dir/preview.txt"
-python cluster/k8s/session-backup/rewrite_thread_history.py stage "$maintenance_dir/plan.json" | tee "$maintenance_dir/stage.txt"
-python cluster/k8s/session-backup/rewrite_thread_history.py verify "$maintenance_dir/plan.json" "$maintenance_dir/verified.json"
+python cluster/session_backup_maintenance/rewrite_thread_history.py plan "$maintenance_dir/plan.json" | tee "$maintenance_dir/preview.txt"
+python cluster/session_backup_maintenance/rewrite_thread_history.py stage "$maintenance_dir/plan.json" | tee "$maintenance_dir/stage.txt"
+python cluster/session_backup_maintenance/rewrite_thread_history.py verify "$maintenance_dir/plan.json" "$maintenance_dir/verified.json"
 ```
 
 Verification checks each replacement's identity, selected snapshot metadata and tags,
