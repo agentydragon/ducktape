@@ -73,6 +73,10 @@ pub(super) struct CallOperands {
     pub(super) callee: EvaluatedCallee,
     pub(super) arguments: Vec<Values>,
     pub(super) argument_selections: Vec<Option<CallableSelection>>,
+    /// The exact root has independent pure-initializer and operation inputs.
+    /// This only admits an existing callback-factory result transfer; the
+    /// ordered caller still checks the operation domains.
+    pub(super) selected_pure_initializer_call: bool,
 }
 
 pub(super) enum CallTransfer {

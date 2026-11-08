@@ -2249,6 +2249,17 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     _ => None,
                 })
                 .map(|input| input.reference.clone());
+        let pure_initializer = audited_input.is_some()
+            && self
+                .outcome
+                .root_binding_effect_identity
+                .as_ref()
+                .is_some_and(|identity| {
+                    self.executor
+                        .inputs
+                        .declared_pure_initializers
+                        .contains(identity.binding.0.as_ref())
+                });
         let result = self.executor.request(RuntimeOperation::Call {
             call,
             environment: frame.environment.clone(),
@@ -2267,6 +2278,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     .iter()
                     .map(|argument| argument.selection.clone())
                     .collect(),
+                selected_pure_initializer_call: pure_initializer,
             })),
         });
         let RuntimeValue::Call {
@@ -2312,16 +2324,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 let normal_value = !values.is_empty()
                     && !values.contains(&AbstractValue::Value(Value::Unavailable))
                     && !values.contains(&AbstractValue::Value(Value::Top));
-                let pure_initializer = self
-                    .outcome
-                    .root_binding_effect_identity
-                    .as_ref()
-                    .is_some_and(|identity| {
-                        self.executor
-                            .inputs
-                            .declared_pure_initializers
-                            .contains(identity.binding.0.as_ref())
-                    });
                 let effects = if no_child_losses
                     && normal_value
                     && pure_initializer
@@ -11526,6 +11528,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operands: Option<CallOperands>,
     ) -> CallTransfer {
         let needs_value = operands.is_some();
+        let selected_pure_initializer_call = operands
+            .as_ref()
+            .is_some_and(|operands| operands.selected_pure_initializer_call);
         let selected_member_dependencies =
             operands
                 .as_ref()
@@ -12170,6 +12175,48 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let prepared_receiver_unused = prepared_receiver
             .as_ref()
             .map(|_| self.method_receiver_is_unused(&targets));
+        // The callback-factory evidence supplies a fresh ordinary carrier
+        // retaining this callback. The exact root's separate purity premise
+        // excludes provider throws. Keep the carrier opaque and use the
+        // already evaluated callee and argument without replaying either.
+        if selected_pure_initializer_call
+            && needs_value
+            && call.kind == CallKind::Call
+            && !call.has_spread
+            && !operands_may_throw
+            && prepared_receiver.is_none()
+            && matches!(&call.callee, ValueExpr::Binding(_))
+            && let [ValueExpr::Alloc(Kind::Function, source)] = call.args.as_slice()
+            && targets.len() == 1
+            && targets.iter().all(|target| {
+                matches!(
+                    target,
+                    AbstractValue::CallbackFactory | AbstractValue::InlineCallbackFactory
+                )
+            })
+            && matches!(args.as_slice(), [values] if values.len() == 1
+            && values.iter().all(|value| matches!(
+                value,
+                    AbstractValue::Value(Value::Alloc(Kind::Function, actual))
+                        | AbstractValue::Closure(actual, _)
+                        if actual == source
+            )))
+        {
+            if targets.contains(&AbstractValue::CallbackFactory)
+                && let ValueExpr::Binding(binding) = &call.callee
+            {
+                for kind in [
+                    CallbackFactoryUseKind::CallTiming,
+                    CallbackFactoryUseKind::ReturnShape,
+                ] {
+                    self.record_callback_factory_use(binding, kind, call.owner, call.span);
+                }
+            }
+            let callbacks = self.callback_values(&args[0]);
+            return CallTransfer::Values(Values::from([
+                self.audited_retained_result(RetainedResultKind::Factory, callbacks)
+            ]));
+        }
         if needs_value {
             // Publication can change properties and captured state, but cannot
             // replace an ordinary source function's [[Call]]. Invocation reads

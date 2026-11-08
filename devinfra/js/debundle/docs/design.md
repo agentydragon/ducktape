@@ -153,6 +153,14 @@ argument, composes their effects, and needs separate purity, callback timing,
 retained-carrier and normal-completion evidence before sealing
 `CompletedInitialization`. The legacy heap-frontier opacity report is not the
 positive operation-domain receipt (SPEC § Exact initializer call effect inputs).
+For the exact selected root, an existing direct-import callback-factory or
+inline-callback-factory capability can transfer its audited opaque retained
+result through the ordered value path after one fresh function operand has
+actually been evaluated. A separate pure-initializer assertion excludes
+provider throws. The operation input still supplies only its stated effect
+domains; it does not manufacture the carrier, callback timing, or lexical
+coverage. Unknown or mixed callee targets and abrupt operands remain outside
+this transfer, and later use of the retained callback stays live.
 The `Object.freeze` call-identity input uses the shared typed
 slot census rejects known global `Object` or constructor `freeze` writes across
 the analyzed program, while opaque and sibling write witnesses remain visible

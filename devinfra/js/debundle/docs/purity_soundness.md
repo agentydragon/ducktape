@@ -1183,6 +1183,14 @@ lexical effects, abrupt paths, callback timing and retention, result shape,
 and later use remain independent. The normal root can consume the operation
 domains only after separate `initializer_purity: pure` and settled ordered
 execution evidence. See SPEC § Exact initializer call effect inputs.
+At the selected ordered root, existing callback-factory evidence may transfer
+an opaque fresh carrier from the actual single function argument. It is a
+separate result and callback-retention premise, not a consequence of the
+operation-domain assertion or `pure_exports`. The selected initializer also
+needs its own `initializer_purity: pure` assertion to exclude provider throws;
+known operand throws, mixed/unknown callees and later callback use remain
+conservative. A source-known original provider write still contradicts the
+operation input before any carrier transfer can be consumed.
 
 This does not assert purity or freedom from throws, and it does not complete
 coverage of shared-heap effects, foreign registry or configuration access,
