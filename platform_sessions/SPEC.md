@@ -29,5 +29,7 @@ their upstream base; the gateway prefixes those paths with the instance proxy ro
 advertise an OpenAPI document path in
 its control information; the gateway fetches the document from that provider over authenticated
 TLS and exposes it with the provider's proxy URL. Provider documents remain in provider images.
-The shared gateway image is built and published by Ducktape CI. The existing in-process service
-retains its legacy owner UI until provider migration is complete.
+The shared gateway image is built and published by Ducktape CI. New source checkouts no longer
+include the Python in-process service assembly or its owner-login wiring. This source removal does
+not replace an already-built image; a running legacy monolith remains active until deployment
+explicitly moves to provider processes and the Go gateway.
