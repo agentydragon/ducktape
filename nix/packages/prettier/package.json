@@ -1,8 +1,8 @@
 {
   "name": "prettier-with-plugins",
-  "version": "3.9.6",
+  "version": "3.9.10",
   "private": true,
   "dependencies": {
-    "prettier": "3.9.6"
+    "prettier": "3.9.10"
   }
 }
