@@ -622,7 +622,7 @@ pub fn materialize_logical_modules(
                 FinishedLogicalChunk::Assessed {
                     chunk_id,
                     assessment,
-                } => Ok((chunk_id, assessment)),
+                } => Ok((chunk_id, *assessment)),
                 FinishedLogicalChunk::Lowered(_) => {
                     bail!("assessment-only materialization unexpectedly lowered a chunk")
                 }
@@ -633,7 +633,7 @@ pub fn materialize_logical_modules(
     let chunk_results = chunk_results
         .into_iter()
         .map(|result| match result {
-            FinishedLogicalChunk::Lowered(chunk) => Ok(chunk),
+            FinishedLogicalChunk::Lowered(chunk) => Ok(*chunk),
             FinishedLogicalChunk::Assessed { .. } => {
                 bail!("normal materialization unexpectedly returned an assessment")
             }

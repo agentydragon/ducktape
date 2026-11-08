@@ -132,7 +132,7 @@ pub(super) enum RuntimeValue {
     Values(Values),
     Initializer {
         values: Values,
-        evaluated: Option<EvaluatedInitializer>,
+        evaluated: Option<Box<EvaluatedInitializer>>,
         operation_coverage: Option<Box<EffectCoverageFragment>>,
         refusal: Option<OwnerInitializationCoverageRefusalReason>,
     },
@@ -563,7 +563,7 @@ impl RuntimeRules<'_, '_> {
                     .then_some(OwnerInitializationCoverageRefusalReason::InitializerResultUnproved);
                 RuntimeValue::Initializer {
                     values,
-                    evaluated,
+                    evaluated: evaluated.map(Box::new),
                     operation_coverage: operation_coverage
                         .filter(|_| covered_operation)
                         .map(Box::new),

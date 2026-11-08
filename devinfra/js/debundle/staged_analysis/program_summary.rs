@@ -583,9 +583,11 @@ pub fn collect_program_summary(
         &modules,
         chunk_analysis_inputs,
         &projection.source_sites,
-        graph_provenance,
-        vendor_plan,
-        replacement_packages,
+        ProgramSummaryOptions {
+            graph_provenance,
+            vendor_plan,
+            replacement_packages,
+        },
         &static_dependencies,
     )?;
     let primitive_reads: BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>> = modules
@@ -947,11 +949,14 @@ fn resolve_initializer_call_effect_inputs(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, ChunkAnalysisInputs>,
     sites: &analysis_projection::AnalysisSourceSites,
-    provenance: Option<&GraphProvenance>,
-    vendor_plan: Option<&VendorResolutionPlan>,
-    replacement_packages: &BTreeMap<ChunkId, BTreeMap<String, String>>,
+    summary_options: ProgramSummaryOptions<'_>,
     dependencies: &ResolvedStaticDependencies,
 ) -> Result<BTreeMap<String, Vec<ResolvedInitializerCallEffectInput>>> {
+    let ProgramSummaryOptions {
+        graph_provenance: provenance,
+        vendor_plan,
+        replacement_packages,
+    } = summary_options;
     let mut resolved = BTreeMap::new();
     for (chunk, options) in options {
         if options.initializer_call_effect_inputs.is_empty() {

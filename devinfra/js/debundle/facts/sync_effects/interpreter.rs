@@ -14442,7 +14442,7 @@ impl Executor<'_, '_> {
                 else {
                     unreachable!("checked initializer transfers produce initializer results");
                 };
-                evaluated_initializer = evaluated;
+                evaluated_initializer = evaluated.map(|evaluated| *evaluated);
                 if let Some(coverage) = operation_coverage {
                     outcome.effect_coverage = *coverage;
                 }

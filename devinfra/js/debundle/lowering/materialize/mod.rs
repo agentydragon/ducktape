@@ -135,10 +135,10 @@ pub(super) struct MaterializedLogicalChunk {
 }
 
 pub(super) enum FinishedLogicalChunk {
-    Lowered(MaterializedLogicalChunk),
+    Lowered(Box<MaterializedLogicalChunk>),
     Assessed {
         chunk_id: String,
-        assessment: gate::CandidateRelocationAssessmentReport,
+        assessment: Box<gate::CandidateRelocationAssessmentReport>,
     },
 }
 
@@ -689,7 +689,7 @@ pub(super) fn finish_logical_chunk(
         let assessment = evaluation.candidate_assessment().report();
         return Ok(FinishedLogicalChunk::Assessed {
             chunk_id: chunk_id.to_string(),
-            assessment,
+            assessment: Box::new(assessment),
         });
     }
     // Select only full-detail sinks. Facts, graph construction, emitted order
@@ -830,20 +830,22 @@ pub(super) fn finish_logical_chunk(
         imported_callables,
         redundant_purity_hints,
     };
-    Ok(FinishedLogicalChunk::Lowered(MaterializedLogicalChunk {
-        chunk_id: chunk_id_interned,
-        unmatched_spec_claims,
-        target_file,
-        source_path,
-        files,
-        file_records,
-        applied,
-        directory_dependency_facts,
-        validation,
-        report,
-        vendor_reference_rewrites,
-        gate_rejection,
-    }))
+    Ok(FinishedLogicalChunk::Lowered(Box::new(
+        MaterializedLogicalChunk {
+            chunk_id: chunk_id_interned,
+            unmatched_spec_claims,
+            target_file,
+            source_path,
+            files,
+            file_records,
+            applied,
+            directory_dependency_facts,
+            validation,
+            report,
+            vendor_reference_rewrites,
+            gate_rejection,
+        },
+    )))
 }
 
 /// `// …` lines announcing a gate-rejected chunk at the top of its entry file.
