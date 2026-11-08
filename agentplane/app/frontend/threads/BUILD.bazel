@@ -516,6 +516,7 @@ agentplane_vitest_test(
     name = "thread_evidence_test",
     srcs = ["thread_evidence.test.tsx"],
     deps = [
+        ":chronological_debug",
         ":thread_evidence",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tanstack/react-query",

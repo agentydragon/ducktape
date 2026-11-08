@@ -7,6 +7,7 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
+import { ChronologicalDebugProvider } from "./chronological_debug";
 import { createAppQueryClient } from "../query";
 import { testItem } from "./testing/entity";
 import { ItemKind } from "../../../proto/event_pb";
@@ -126,8 +127,10 @@ async function mountEvidence(threadId: string) {
         <QueryClientProvider client={client}>
           <MantineProvider env="test">
             <RetainedDisclosureProvider>
-              <EvidenceToggle entity={entity} />
-              <EvidencePanel threadId={id} entity={entity} />
+              <ChronologicalDebugProvider threadId={id}>
+                <EvidenceToggle entity={entity} />
+                <EvidencePanel threadId={id} entity={entity} />
+              </ChronologicalDebugProvider>
             </RetainedDisclosureProvider>
           </MantineProvider>
         </QueryClientProvider>
