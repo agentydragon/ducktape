@@ -20,7 +20,7 @@ spec:
       database: ai_session_archive
       owner: ai_session_archive
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
-  instances: 4
+  instances: 5
   monitoring:
     enablePodMonitor: true
   plugins:

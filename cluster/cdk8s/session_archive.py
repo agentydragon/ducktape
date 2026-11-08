@@ -60,8 +60,8 @@ def _database(chart: Chart) -> None:
         profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="100Gi",
         resize_in_use_volumes=False,
-        # Keep the existing instances while an additional HDD replica catches up.
-        instances=4,
+        # Keep both SSD instances until three HDD replicas have caught up.
+        instances=5,
         # The default 5s replication timeouts disconnect the HDD standby during
         # observed multi-second storage and network stalls.
         postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
