@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -28,5 +28,22 @@ py_library(
         "@pypi//grpcio",
         "@pypi//grpcio_health_checking",
         "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_calls",
+    srcs = ["test_calls.py"],
+    deps = [
+        ":calls",
+        ":serving",
+        "//:conftest",
+        "//agentplane/testing:tls",
+        "@pypi//grpcio",
+        "@pypi//grpcio_health_checking",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )

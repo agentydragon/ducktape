@@ -28,9 +28,17 @@ class SessionDispatcherClient:
 
     @classmethod
     @asynccontextmanager
-    async def connect(cls, target: str, *, token_file: Path, request_timeout_s: float) -> AsyncIterator[Self]:
+    async def connect(
+        cls,
+        target: str,
+        *,
+        token_file: Path,
+        request_timeout_s: float,
+        channel_credentials: grpc.ChannelCredentials | None = None,
+        server_name: str | None = None,
+    ) -> AsyncIterator[Self]:
         """Own the channel for this client's lifetime; callers select credentials and deadline."""
-        async with dial(target) as channel:
+        async with dial(target, channel_credentials=channel_credentials, server_name=server_name) as channel:
             yield cls(channel, token_file=token_file, request_timeout_s=request_timeout_s)
 
     async def unary[ResponseT: Message](self, call: Callable[..., Awaitable[ResponseT]], request: Message) -> ResponseT:

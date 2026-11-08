@@ -30,7 +30,6 @@ py_library(
     ],
     deps = [
         "//agentplane/grpc:calls",
-        "//agentplane/grpc:options",
         "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service:history_service_pb2_grpc",
         "@pypi//grpcio",
