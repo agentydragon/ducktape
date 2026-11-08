@@ -127,3 +127,28 @@ parser expected exactly one. Running the actual retained console through the par
 the rejection, while normalizing that space made the same console pass. The parser now checks
 the individual cleanup fields regardless of whitespace, and still rejects a missing or failed
 restoration field. This run exercises the probe but does not validate normal VM shutdown.
+
+## Successful delegated-cgroup smoke
+
+The uncached [one-guest smoke](https://app.buildbuddy.io/invocation/6bb926b5-b040-4761-9ced-eceb01a579e5)
+at `66483602ffdcabf1a6caf032c52271b1ccc72019` passed with one Bazel test attempt and one
+TestRunner execution. Its VMI UID was `8b1fd037-b034-4e2c-ae37-1d4fdab3b642`, launcher Pod
+UID `860679d1-ef8e-4148-a634-e5dcb818fdcc`. QMP reported `enabled: false` for KVM and the
+domain was `type='qemu'`.
+
+After one membership wait, writer PID 518 was the sole manager member. The probe recorded a
+closed, PID-matched `cgroup_subtree_control_write > cgroup_update_dfl_csses >
+percpu_down_write > rcu_sync_enter` tree with clean trace integrity, 132,993 bytes and 1,988
+lines. With tracing disabled, it recorded all 20 on/off pairs, then successful trace and
+service-controller restoration and owned-child cleanup. The host accepted the receipt,
+requested VMI shutdown, and observed ordered guest shutdown proof and `reboot: Power down`.
+UID-correlated virt-handler evidence reported `Shutoff reason Shutdown`, without a recorded
+grace-expiry, forced domain destruction, or launcher kill; the lifecycle ended in
+`sandbox_deleted`.
+
+The run used `//agentplane/system_tests/vm:test_tcg_vmi_shutdown` with
+`--test_tag_filters=manual --nocache_test_results --flaky_test_attempts=1`, one cycle,
+`AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER=1`, and
+`AGENTPLANE_TCG_VMI_DELEGATED_CGROUP_STRESS=1`. This proves the reduced probe and normal
+shutdown were exercised once; it does not reproduce or resolve the historical full-stack
+shutdown stall.
