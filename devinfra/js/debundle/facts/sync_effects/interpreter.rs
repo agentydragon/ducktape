@@ -97,7 +97,7 @@ use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
@@ -448,6 +448,7 @@ struct ReachabilityState {
     incomplete: bool,
     revision: u64,
     expanded: BTreeSet<SourceUnitOrdinal>,
+    deferred: BTreeMap<Id, SourceUnitOrdinal>,
     owners: BTreeSet<SourceUnitOrdinal>,
 }
 
@@ -457,6 +458,7 @@ struct ReachabilityState {
 #[derive(Clone, Default)]
 struct CallbackFallbackSummary {
     expanded: BTreeSet<SourceUnitOrdinal>,
+    deferred: BTreeMap<Id, SourceUnitOrdinal>,
     incomplete_expanded: bool,
     reads: BTreeSet<Id>,
     rebinds: BTreeSet<Id>,
@@ -776,6 +778,9 @@ pub(super) struct ExecutionInputs<'source> {
     binding_owner: BTreeMap<Id, SourceUnitOrdinal>,
     source_unit_read_closure: SourceUnitReadClosure,
     synchronous_owner_adjacency: Vec<Vec<SourceUnitOrdinal>>,
+    /// The only declaration in this owner is one direct lexical binding,
+    /// with no other declaration site. Only its incoming read edge may wait.
+    deferred_read_binding: Vec<Option<Id>>,
     synchronous_owner_effects: Vec<Option<&'source CallablePrefixEffects>>,
     exported_owners: BTreeSet<SourceUnitOrdinal>,
     /// The exports code that reenters the module during its evaluation can
@@ -849,6 +854,60 @@ impl ExecutionInputs<'_> {
         }
         let fact = &self.facts[owner.0];
         (&fact.reads.lazy, &fact.rebinds.lazy)
+    }
+
+    /// Expand actual roots immediately. A read of a future sole lexical
+    /// declaration retains the read at its source, but cannot execute the
+    /// declaration's deferred callable bodies until that binding initializes.
+    fn extend_available_source_units(
+        &self,
+        roots: impl IntoIterator<Item = SourceUnitOrdinal>,
+        initialized: &BTreeSet<Id>,
+        incomplete_reachability: bool,
+        expanded: &mut BTreeSet<SourceUnitOrdinal>,
+        deferred: &mut BTreeMap<Id, SourceUnitOrdinal>,
+    ) -> Vec<SourceUnitOrdinal> {
+        let ready: Vec<_> = deferred
+            .iter()
+            .filter(|(binding, _)| incomplete_reachability || initialized.contains(*binding))
+            .map(|(binding, owner)| (binding.clone(), *owner))
+            .collect();
+        let mut pending = VecDeque::new();
+        let mut reached = Vec::new();
+        for (binding, owner) in ready {
+            deferred.remove(&binding);
+            if expanded.insert(owner) {
+                reached.push(owner);
+                pending.push_back(owner);
+            }
+        }
+        for root in roots {
+            if root.0 < self.synchronous_owner_adjacency.len() && expanded.insert(root) {
+                if let Some(binding) = &self.deferred_read_binding[root.0] {
+                    deferred.remove(binding);
+                }
+                reached.push(root);
+                pending.push_back(root);
+            }
+        }
+        while let Some(source) = pending.pop_front() {
+            for &target in &self.synchronous_owner_adjacency[source.0] {
+                if expanded.contains(&target) {
+                    continue;
+                }
+                if !incomplete_reachability
+                    && let Some(binding) = &self.deferred_read_binding[target.0]
+                    && !initialized.contains(binding)
+                {
+                    deferred.insert(binding.clone(), target);
+                    continue;
+                }
+                expanded.insert(target);
+                reached.push(target);
+                pending.push_back(target);
+            }
+        }
+        reached
     }
 
     /// The purity transfer at `owner`'s program point, `state` being the
@@ -1077,6 +1136,7 @@ pub(super) struct ExecutionState {
     assumption: Option<AssumedEffectReason>,
     fallback_callback_sizes: Option<(usize, usize)>,
     fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
+    fallback_local_deferred: BTreeMap<Id, SourceUnitOrdinal>,
     /// Returned callable source closures are static within one top-level
     /// initialization prefix. Incomplete reachability requires a fresh raw
     /// closure even when the precise prefix was already summarized.
@@ -6429,10 +6489,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // chunk is initializing. In particular, a binding used after a
         // definite await cannot make the body of its future value executable
         // during an opaque call at this prefix.
-        let reached = SourceUnitReadClosure::extend_synchronous_source_units(
-            &self.inputs.synchronous_owner_adjacency,
+        let state = &mut *self.state;
+        let reached = self.inputs.extend_available_source_units(
             roots,
-            &mut self.state.reachability.expanded,
+            &state.initialized_bindings,
+            state.reachability.incomplete,
+            &mut state.reachability.expanded,
+            &mut state.reachability.deferred,
         );
         self.state
             .reachability
@@ -9585,10 +9648,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }),
         );
         self.extend_reachable_owners(roots.iter().copied().chain([owner]));
-        let mut reached = SourceUnitReadClosure::extend_synchronous_source_units(
-            &self.inputs.synchronous_owner_adjacency,
+        let state = &mut *self.state;
+        let mut reached = self.inputs.extend_available_source_units(
             roots.iter().copied(),
-            &mut self.state.callback_fallback.expanded,
+            &state.initialized_bindings,
+            state.reachability.incomplete,
+            &mut state.callback_fallback.expanded,
+            &mut state.callback_fallback.deferred,
         );
         if self.state.reachability.incomplete {
             // Dynamic lexical scope defeats the normal binding-read closure.
@@ -9657,10 +9723,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // persistent callback cache. Expand each local owner once per source
         // statement; earlier promotions remain in fallback_outcome.
         if !self.state.callback_fallback.expanded.contains(&owner) {
-            let reached = SourceUnitReadClosure::extend_synchronous_source_units(
-                &self.inputs.synchronous_owner_adjacency,
+            let state = &mut *self.state;
+            let reached = self.inputs.extend_available_source_units(
                 [owner],
-                &mut self.state.fallback_local_owners,
+                &state.initialized_bindings,
+                state.reachability.incomplete,
+                &mut state.fallback_local_owners,
+                &mut state.fallback_local_deferred,
             );
             for reached_owner in reached {
                 let (reads, rebinds) = self
@@ -13650,6 +13719,29 @@ pub(crate) fn annotate_synchronous_calls(
             .map(|effects| effects.map(|effects| &effects.reads))
             .collect::<Vec<_>>(),
     );
+    let mut declaration_counts = BTreeMap::<Id, usize>::new();
+    for binding in facts.iter().flat_map(|fact| &fact.declared) {
+        *declaration_counts.entry(binding.clone()).or_default() += 1;
+    }
+    let deferred_read_binding = index
+        .single_top_lexical_binding
+        .iter()
+        .enumerate()
+        .map(|(ordinal, binding)| {
+            binding
+                .as_ref()
+                .filter(|binding| {
+                    declaration_counts.get(*binding) == Some(&1)
+                        && facts[ordinal].declared.len() == 1
+                        && facts[ordinal].declared.contains(*binding)
+                        && index.top_definite_initializers[ordinal].contains(*binding)
+                        && !index.imported_bindings.contains(*binding)
+                        && !index.hoisted_bindings.contains_key(*binding)
+                        && !facts[ordinal].var_declared.contains(*binding)
+                })
+                .cloned()
+        })
+        .collect();
     let (reentry_bindings, reentry_default) = match export_reentry_policy {
         ExportReentryPolicy::Conservative => (index.exported_bindings.clone(), true),
         ExportReentryPolicy::NoStaticImporterReentry => (BTreeSet::new(), false),
@@ -13727,6 +13819,7 @@ pub(crate) fn annotate_synchronous_calls(
             .collect(),
         source_unit_read_closure,
         synchronous_owner_adjacency,
+        deferred_read_binding,
         synchronous_owner_effects: prefix_effects,
         exported_owners,
         reentry_bindings,
@@ -13833,6 +13926,7 @@ pub(crate) fn annotate_synchronous_calls(
         assumption: None,
         fallback_callback_sizes: None,
         fallback_local_owners: BTreeSet::new(),
+        fallback_local_deferred: BTreeMap::new(),
         returned_callback_owners: BTreeSet::new(),
         capture_contexts: CaptureInterner::default(),
         lexical_cells: LexicalCells::default(),
@@ -14104,6 +14198,7 @@ impl Executor<'_, '_> {
         self.state.fallback_outcome = Outcome::default();
         self.state.fallback_callback_sizes = None;
         self.state.fallback_local_owners.clear();
+        self.state.fallback_local_deferred.clear();
         self.state.returned_callback_owners.clear();
         *self.state.record_factory_prototype_premises.borrow_mut() = Default::default();
         let (annotated_record_factory, mut record_factory_rejection) =
@@ -14722,6 +14817,7 @@ impl Executor<'_, '_> {
         self.state.fallback_outcome = Outcome::default();
         self.state.fallback_callback_sizes = None;
         self.state.fallback_local_owners.clear();
+        self.state.fallback_local_deferred.clear();
         for key in std::mem::take(&mut self.state.statement_invoked_callables) {
             if let Some(cells) = inputs.callable_heap_contents.get(&key) {
                 outcome.effects.heap_contents.extend(cells);

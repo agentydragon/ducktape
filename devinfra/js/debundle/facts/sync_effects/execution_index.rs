@@ -6094,6 +6094,9 @@ struct ExecutionIndex {
     noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
     initialization_coverage_refusals: Vec<Option<OwnerInitializationCoverageRefusalReason>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
+    /// The sole direct top-level `let`/`const` identifier declared by an owner.
+    /// A lexical read of it before this owner runs cannot create its initializer's callbacks.
+    single_top_lexical_binding: Vec<Option<Id>>,
     const_call_owners: BTreeSet<SourceUnitOrdinal>,
     top_member_value_writes: Vec<Vec<MemberValueWrite>>,
     top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
@@ -6287,6 +6290,7 @@ impl Default for ExecutionIndex {
             noninvoking_initializers: BTreeMap::new(),
             initialization_coverage_refusals: Vec::new(),
             top_definite_initializers: Vec::new(),
+            single_top_lexical_binding: Vec::new(),
             const_call_owners: BTreeSet::new(),
             top_member_value_writes: Vec::new(),
             top_callback_result_writes: Vec::new(),
@@ -9277,6 +9281,7 @@ impl ExecutionIndex {
             initialization_source_identities: BTreeMap::new(),
             initialization_coverage_refusals: vec![None; body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
+            single_top_lexical_binding: vec![None; body.len()],
             top_member_value_writes: vec![Vec::new(); body.len()],
             top_callback_result_writes: vec![Vec::new(); body.len()],
             top_exported_values: vec![Vec::new(); body.len()],
@@ -11008,6 +11013,13 @@ impl ExecutionIndex {
         let Some(declaration) = var_decl_of_item(item) else {
             return;
         };
+        if matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
+            && !declaration.declare
+            && let [declarator] = declaration.decls.as_slice()
+            && let Pat::Ident(binding) = &declarator.name
+        {
+            self.single_top_lexical_binding[self.owner.0] = Some(binding.id.to_id());
+        }
         if declaration.kind == VarDeclKind::Const
             && matches!(declaration.decls.as_slice(), [declarator]
                 if matches!(declarator.init.as_deref().map(Expr::unwrap_parens), Some(Expr::Call(call))

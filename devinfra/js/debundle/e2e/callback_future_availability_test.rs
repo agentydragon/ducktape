@@ -42,23 +42,55 @@ fn source(callback_setup: &str, callback: &str, tail: &str) -> String {
 
 #[test]
 fn future_initializer_callback_does_not_add_a_style_read_to_fallback() {
-    let input = source(
-        "function wrap(callback) { return callback; }\n\
+    for declaration in ["const", "let"] {
+        let input = source(
+            "function wrap(callback) { return callback; }\n\
          function readFuture() { return future(); }",
+            "readFuture",
+            &format!(
+                "{declaration} future = wrap(function () {{ return styles.value; }});\n\
+         const styles = {{ value: 'ready' }};\n\
+         console.log(observations[0], future());\n"
+            ),
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &input,
+                vec![logical_module("values/styles", &[Member::new("styles")])],
+            )
+            .with_extra_chunks(&PEER)
+            .with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, "ReferenceError ready\n");
+    }
+}
+
+#[test]
+fn later_hoisted_function_keeps_its_real_style_tdz_dependency() {
+    let input = source(
+        "function readFuture() { return future(); }",
         "readFuture",
-        "const future = wrap(function () { return styles.value; });\n\
+        "function future() { return styles.value; }\n\
          const styles = { value: 'ready' };\n\
          console.log(observations[0], future());\n",
     );
-    let fixture = run_fixture(
+    let colocated = run_fixture(
+        FixtureOpts::new(&input, Vec::new())
+            .with_extra_chunks(&PEER)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "ReferenceError ready\n");
+
+    expect_atomic_conflict_rejection(
         FixtureOpts::new(
             &input,
             vec![logical_module("values/styles", &[Member::new("styles")])],
         )
         .with_extra_chunks(&PEER)
         .with_unassigned_mode(unassigned_mode_inline()),
+        &["values/styles"],
+        &[],
     );
-    assert_preserved_entry_output(&fixture, "ReferenceError ready\n");
 }
 
 #[test]
