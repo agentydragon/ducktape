@@ -16,12 +16,16 @@ Only these CNPG cluster profiles are permitted:
 
 | Profile             | Instances | Pin                                      | Storage                                            | Anti-affinity                      |
 | ------------------- | --------- | ---------------------------------------- | -------------------------------------------------- | ---------------------------------- |
-| **OVH-HA**          | 2         | `topology.kubernetes.io/zone: hil-ovh`   | HDD: `piraeus-hdd-local`; SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
+| **OVH-HA**          | 2 or 3    | `topology.kubernetes.io/zone: hil-ovh`   | HDD: `piraeus-hdd-local`; SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
+| **OVH-single**      | 1         | `topology.kubernetes.io/zone: hil-ovh`   | `piraeus-hdd-2`                                    | n/a                                |
 | **Proxmox-single**  | 1         | `topology.kubernetes.io/region: proxmox` | `piraeus-ssd-local`                                | n/a                                |
 | **Optiplex-single** | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                                | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
-nodes. Two instances on separate nodes.
+nodes. Instances run on separate nodes.
+
+**OVH-single**: The disposable session archive uses one CNPG instance on a
+two-copy HDD volume; there is no second PostgreSQL replica.
 
 **Placement** (callers choose a `cluster.ClusterPlacement` preset): pod
 anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
@@ -64,6 +68,16 @@ host). The selected `ClusterPlacement` keeps the node pin, storage class, and
 control-plane tolerance explicit as one choice; changing storage topology
 requires reviewing that profile and the bound PVs together.
 
+For a multi-instance CNPG Cluster, each instance's Piraeus volume must have one diskful
+copy (`placementCount: 1`), with instances on distinct nodes. Do not put the same
+PostgreSQL replicas on a replicated StorageClass: `claude-session-sync-db` used
+`piraeus-hdd-2` for one of three instances, producing four diskful copies for three
+PostgreSQL instances ([#14932](https://github.com/agentydragon/ducktape/issues/14932)).
+Use `piraeus-hdd-local` or `piraeus-ssd-local`, and verify actual LINSTOR placement as
+well as the class. Changing the Cluster's StorageClass does not migrate existing PVCs;
+replace instances safely, one at a time, while preserving recoverability. A singleton may
+use replicated storage because it does not also replicate through CNPG.
+
 ### R4: `initdb.secret` must exist before the Cluster resource
 
 CNPG reads `bootstrap.initdb.secret` only at cluster creation time to set
@@ -99,10 +113,8 @@ sweep them with:
 grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
 ```
 
-Active Clusters are 2-instance OVH-HA on `piraeus-ssd-local`, except
-`attic-db` (`nix-cache/`) and `study-casino-db` (`generated/study-casino/`),
-which run 3 instances to tolerate one node loss without quorum or primary
-impact.
+Live instance counts and bound PVCs can differ from the declared configuration
+during migrations; inspect both before changing storage.
 
 Parked clusters (retained in Git; R2/R3 bind again on revival):
 
