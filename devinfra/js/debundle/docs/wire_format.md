@@ -23,12 +23,15 @@ full diagnostic evidence and effect-conflict JSONL.
 
 For an ownership-subset run, `graph_summary.json` and `modules.json` include
 `ownership_subset` as an array of `{ "module": <chunk-local path>,
-"bindings": [<readable member names>] }` objects. A missing `bindings` field
-means all claims in that module were retained; an empty array means only its
-anonymous-statement claims were retained. An empty `ownership_subset` array
-means no explicit module was selected. This records the requested ownership
-selection, while final module contents show any bindings co-located by the
-ordinary placement rules.
+"bindings": [<readable member names>], "anonymous_statements": [<zero-based authored selector indices>] }`
+objects. The two optional include lists are independent: a missing `bindings`
+field retains every named claim and `[]` retains none; a missing
+`anonymous_statements` field retains every authored anonymous claim and `[]`
+retains none. Anonymous selector indices refer to the original module's
+`anonymous_statements` list, before source resolution. An empty
+`ownership_subset` array means no explicit module was selected. This records the
+requested ownership selection, while final module contents show any bindings
+co-located by ordinary placement rules.
 
 The staged per-chunk `SynchronousCalls` fact now carries
 `non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content

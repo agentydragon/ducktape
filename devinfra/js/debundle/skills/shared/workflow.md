@@ -231,7 +231,9 @@ member/export names from the native `bindings list` catalogue or the YAML
 claims, not minified `binding_names` or names adopted only by the emitted
 report. An omitted list keeps every claim; `"bindings": []` keeps anonymous
 statement claims, including the bindings those statements declare. Identify
-source units by `(chunk_id, unit:N)` when combining chunk reports. The
+source units by `(chunk_id, unit:N)` when combining chunk reports. To retain only
+some anonymous claims, use their zero-based positions in the authored
+`anonymous_statements` list; an empty list retains none. The
 [CLI contract](../../docs/cli.md#ownership-subsets-with-full-selector-context)
 and [spec contract](../../SPEC.md#ownership-subsets) describe the input and
 limits. Keep full selectors, assertions, anchors and matching analysis in

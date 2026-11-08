@@ -3165,9 +3165,14 @@ whole statement sequence. Explicit anonymous claims keep their specified
 destination; the realizability gate rejects any remaining invalid order.
 
 Ownership subsets filter explicit plans only after the full joint selector and
-premise solve, duplicate checks, resolved anchors and anonymous claims. Residual
-routing runs afterwards for every omitted source unit under the configured
-inline, catchall, per-atomic or coarse policy. If an explicit module at the
+premise solve, duplicate checks, resolved anchors and anonymous claims. Per
+selected module, optional zero-based indices can retain only entries from its
+authored `anonymous_statements` selector list; omission retains all, and an
+empty list retains none. This is independent of the optional named-binding
+include list. Bindings adopted only from anonymous statements follow the
+retained whole-statement claims. Residual routing runs afterwards for every
+omitted source unit under the configured inline, catchall, per-atomic or coarse
+policy. If an explicit module at the
 catchall path is omitted, ordinary catchall routing recreates that destination
 without the omitted claim's names or annotations. Empty selections are valid;
 the resulting ordinary assignment still needs to pass the gate and acceptance

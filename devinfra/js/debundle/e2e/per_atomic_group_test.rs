@@ -250,7 +250,7 @@ fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
             &["--ownership-subset", subset_path],
             1,
         );
-        assert!(rejected.stderr.contains("selector"), "{}", rejected.stderr);
+        assert!(rejected.stderr.contains("no_match"), "{}", rejected.stderr);
 
         let duplicate_claim = FixtureOpts::new(
             SUBSET_SOURCE,
@@ -459,6 +459,203 @@ fn catchall_subset_still_rejects_a_real_nonmonotone_assignment_cycle() {
         "{}",
         rejected.stderr
     );
+}
+
+#[test]
+fn ownership_subset_selects_anonymous_claims_by_authored_index() {
+    let options = || {
+        FixtureOpts::new(
+            r#"const first = console.log("first");
+console.log("claimed early");
+const middle = console.log("middle");
+console.log("claimed late");
+export const styles = (console.log("styles"), {});
+"#,
+            vec![logical_module_with_anon(
+                "features/styles",
+                &[Member::new("styles")],
+                &[
+                    "console.log(\"claimed early\");",
+                    "console.log(\"claimed late\");",
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_catchall_file(None))
+    };
+
+    let retain_all =
+        write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/styles"}]}"#);
+    let rejected = run_rejection_fixture_without_graphs_with_args(
+        options(),
+        &["--ownership-subset", retain_all.path().to_str().unwrap()],
+        1,
+    );
+    assert!(
+        rejected.stderr.contains("unrealizable")
+            || rejected.stderr.contains("atomic-group conflict"),
+        "{}",
+        rejected.stderr
+    );
+
+    let retain_late = write_subset(
+        r#"{"modules":[{"chunk":"static/app","module":"features/styles","anonymous_statements":[1]}]}"#,
+    );
+    let fixture = run_fixture_without_graphs_with_args(
+        options(),
+        &["--ownership-subset", retain_late.path().to_str().unwrap()],
+    );
+    assert_entry_output(
+        &fixture,
+        "first\nclaimed early\nmiddle\nclaimed late\nstyles\n",
+    );
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    assert_eq!(
+        report["ownership_subset"][0]["anonymous_statements"],
+        serde_json::json!([1])
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/features/styles.js",
+        &["claimed late", "const styles"],
+        &["claimed early", "const middle"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const first", "claimed early", "const middle"],
+        &["claimed late", "const styles"],
+    );
+}
+
+#[test]
+fn ownership_subset_anonymous_index_controls_adopted_declarations() {
+    let options = || {
+        FixtureOpts::new(
+            "if (true) { var adopted = 41; }\nexport const selected = \"selected\";\nconsole.log(selected, adopted);\n",
+            vec![logical_module_with_anon(
+                "features/owner",
+                &[Member::new("selected")],
+                &["if (true) { var adopted = 41; }"]
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_catchall_file(None))
+    };
+
+    let retain_statement = write_subset(
+        r#"{"modules":[{"chunk":"static/app","module":"features/owner","bindings":["selected"],"anonymous_statements":[0]}]}"#,
+    );
+    let retained = run_fixture_without_graphs_with_args(
+        options(),
+        &[
+            "--ownership-subset",
+            retain_statement.path().to_str().unwrap(),
+        ],
+    );
+    assert_entry_output(&retained, "selected 41\n");
+    assert_module_exports(
+        &retained.out_root,
+        "static/app/modules/features/owner.js",
+        &["selected", "adopted"],
+        &[],
+    );
+    assert_module_source(
+        &retained.out_root,
+        "static/app/modules/features/owner.js",
+        &["if (true)", "var adopted"],
+        &[],
+    );
+
+    let release_statement = write_subset(
+        r#"{"modules":[{"chunk":"static/app","module":"features/owner","bindings":["selected"],"anonymous_statements":[]}]}"#,
+    );
+    let released = run_fixture_without_graphs_with_args(
+        options(),
+        &[
+            "--ownership-subset",
+            release_statement.path().to_str().unwrap(),
+        ],
+    );
+    assert_entry_output(&released, "selected 41\n");
+    assert_module_exports(
+        &released.out_root,
+        "static/app/modules/features/owner.js",
+        &["selected"],
+        &["adopted"],
+    );
+    assert_module_source(
+        &released.out_root,
+        "static/app/modules/features/owner.js",
+        &["selected"],
+        &["if (true)", "adopted"],
+    );
+    let report: serde_json::Value =
+        read_json(&released.report_root.join("static/app/modules.json"));
+    assert_eq!(
+        report["ownership_subset"][0]["anonymous_statements"],
+        serde_json::json!([])
+    );
+    assert_module_exports(
+        &released.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["adopted"],
+        &["selected"],
+    );
+    assert_module_source(
+        &released.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["if (true)", "var adopted"],
+        &["selected"],
+    );
+}
+
+#[test]
+fn ownership_subset_rejects_invalid_anonymous_indices_without_hiding_full_selectors() {
+    let options = || {
+        FixtureOpts::new(
+            "console.log(\"present\");\nexport const selected = 1;\n",
+            vec![logical_module_with_anon(
+                "features/owner",
+                &[Member::new("selected")],
+                &["console.log(\"present\");"],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_catchall_file(None))
+    };
+
+    for (indices, expected_error) in [("[0,0]", "repeats"), ("[1]", "unknown")] {
+        let subset = write_subset(&format!(
+            r#"{{"modules":[{{"chunk":"static/app","module":"features/owner","anonymous_statements":{indices}}}]}}"#
+        ));
+        let rejected = run_rejection_fixture_without_graphs_with_args(
+            options(),
+            &["--ownership-subset", subset.path().to_str().unwrap()],
+            1,
+        );
+        assert!(
+            rejected.stderr.contains(expected_error),
+            "expected {expected_error:?} in:\n{}",
+            rejected.stderr
+        );
+    }
+
+    let invalid_full_spec = FixtureOpts::new(
+        "console.log(\"present\");\nexport const selected = 1;\n",
+        vec![logical_module_with_anon(
+            "features/owner",
+            &[Member::new("selected")],
+            &["console.log(\"present\");", "console.log(\"missing\");"],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_catchall_file(None));
+    let subset = write_subset(
+        r#"{"modules":[{"chunk":"static/app","module":"features/owner","anonymous_statements":[0]}]}"#,
+    );
+    let rejected = run_rejection_fixture_without_graphs_with_args(
+        invalid_full_spec,
+        &["--ownership-subset", subset.path().to_str().unwrap()],
+        1,
+    );
+    assert!(rejected.stderr.contains("selector"), "{}", rejected.stderr);
 }
 
 #[test]

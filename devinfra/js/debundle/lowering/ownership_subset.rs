@@ -16,6 +16,10 @@ pub struct RetainedModule {
     /// Final readable member names. Omission keeps every member claim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bindings: Option<Vec<String>>,
+    /// Zero-based indices into the module's authored `anonymous_statements`
+    /// selector list. Omission keeps every anonymous claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anonymous_statements: Option<Vec<usize>>,
 }
 
 /// Per-chunk ownership choice recorded in ordinary reports.
@@ -24,6 +28,8 @@ pub struct SelectedModule {
     pub module: ModulePath,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bindings: Option<BTreeSet<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anonymous_statements: Option<BTreeSet<usize>>,
 }
 
 /// A normal run's retained ownership claims, independent of analysis inputs.
@@ -89,6 +95,24 @@ impl OwnershipSubset {
                 entry.chunk,
                 entry.module
             );
+            if let Some(anonymous_statements) = &entry.anonymous_statements {
+                let mut selected_indices = BTreeSet::new();
+                for &index in anonymous_statements {
+                    ensure!(
+                        selected_indices.insert(index),
+                        "ownership subset repeats anonymous statement selector index {index} in {}::{}",
+                        entry.chunk,
+                        entry.module
+                    );
+                    ensure!(
+                        index < module.anonymous_statements.len(),
+                        "ownership subset names unknown anonymous statement selector index {index} in {}::{} (module has {} selectors)",
+                        entry.chunk,
+                        entry.module,
+                        module.anonymous_statements.len()
+                    );
+                }
+            }
             if let Some(bindings) = &entry.bindings {
                 let request_id = format!("{}::{}", entry.chunk, entry.module);
                 let known_names = build_members(
@@ -130,6 +154,10 @@ impl OwnershipSubset {
                     .bindings
                     .as_ref()
                     .map(|names| names.iter().cloned().collect()),
+                anonymous_statements: entry
+                    .anonymous_statements
+                    .as_ref()
+                    .map(|indices| indices.iter().copied().collect()),
             })
             .collect()
     }

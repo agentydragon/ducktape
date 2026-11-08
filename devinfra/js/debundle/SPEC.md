@@ -170,9 +170,11 @@ policy. An omitted explicit claim at the catchall path loses its authored
 renames and annotations; ordinary residual routing can recreate that destination.
 Full graph export remains unsupported with this option.
 Each chunk's graph summary and module report records its retained module paths
-and optional binding lists in `ownership_subset`, including empty lists.
-Acceptance is for that selected
-assignment only; it does not establish acceptance of the full canonical
+and optional `bindings` and `anonymous_statements` selector-index lists in
+`ownership_subset`, preserving omitted fields versus empty lists. Named and
+anonymous claims are filtered independently; declarations adopted only from a
+filtered anonymous claim return to ordinary residual routing. Acceptance is for
+that selected assignment only; it does not establish acceptance of the full canonical
 assignment or complete effect coverage. Reusing analysis still requires the
 normal matching engine, source and full-projection checks.
 
