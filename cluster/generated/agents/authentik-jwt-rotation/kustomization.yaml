@@ -13,6 +13,7 @@ configMapGenerator:
           - name: claude-web-k8s
             provider_slug: kubectl-sandbox-client-credentials
             scopes: openid profile email groups
+            credential_mode: client_secret
             credentials_dir: /var/run/secrets/authentik/claude-web-k8s
             sops_file: secrets/claude-web-k8s-jwt.yaml
             token_field: jwt
@@ -42,11 +43,15 @@ configMapGenerator:
               path: cluster/k8s/haku/mailbox/haku-mail-token.sops.yaml
               name: haku-mail-token
               namespace: flux-system
+              token_key: jwt
+              exp_key: token-exp
             probe:
               url: https://haku-mailbox.allegedly.works/jmap/session
+              method: GET
           - name: alloy-otlp
             provider_slug: alloy-otlp-client-credentials
             scopes: openid profile email
+            credential_mode: client_secret
             credentials_dir: /var/run/secrets/authentik/alloy-otlp
             sops_file: secrets/alloy-otlp-bearer-token.yaml
             token_field: token
@@ -56,6 +61,12 @@ configMapGenerator:
               name: alloy-otlp-bearer
               namespace: flux-system
               token_key: token
+              exp_key: token-exp
             probe:
               url: https://alloy-otlp.allegedly.works/v1/metrics
               method: POST
+        rotate_below_hours: 24
+        github_repo: agentydragon/ducktape
+        sops_config: .sops.yaml
+        git_author_name: authentik-jwt-rotation
+        git_author_email: noreply@allegedly.works

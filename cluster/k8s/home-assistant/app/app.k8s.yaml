@@ -166,6 +166,7 @@ data:
         archive_path: "*/custom_components/dreo"
         install_dir: dreo
         manifest_domain: dreo
+        config_files: []
       - version: 1.1.1
         url: https://github.com/christiaangoossens/hass-oidc-auth/releases/download/v1.1.1/hass-oidc-auth.zip
         sha256: 9ce9e6153f80c781e360b93e097ff7d87d09235430fc48e7a67d97dda5fc3322
