@@ -204,6 +204,7 @@ ts_library(
     srcs = ["testing/deferred.ts"],
     tsconfig = ":tsconfig",
     visibility = [
+        "//agentplane/app/frontend/actions:__pkg__",
         "//finance/augur/frontend:__pkg__",
         "//finance/plaid/spend/ui:__pkg__",
         "//props/frontend/src/components:__pkg__",
