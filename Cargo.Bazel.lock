@@ -1,5 +1,5 @@
 {
-  "checksum": "3594ccb96e91ee1898e9fc3c468218850b26b718af7ba6429cb60bf62a277864",
+  "checksum": "beee59baa78c0266e5c389d5c2ca8fba856084a4a428b75017ff58e3d30eb592",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -39929,6 +39929,12 @@
       "package_url": "https://github.com/swc-project/swc.git",
       "repository": {
         "Http": {
+          "patch_args": [
+            "-p1"
+          ],
+          "patches": [
+            "@@//patches:swc_ecma_transforms_base_49_0_1.patch"
+          ],
           "sha256": "9c5b5b6a31a512d23854cb6fabc9347596bde4106cd3a65dc4f9072bbb0514b4",
           "url": "https://static.crates.io/crates/swc_ecma_transforms_base/49.0.1/download"
         }
