@@ -10,4 +10,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/platform-sessions-quest
     newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-quest:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-providers
-    newTag: unset # {"$imagepolicy": "flux-system:platform-sessions-providers:tag"}
+    newTag: main-20261108063957-e128fab # {"$imagepolicy": "flux-system:platform-sessions-providers:tag"}
