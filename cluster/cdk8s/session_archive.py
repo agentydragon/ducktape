@@ -50,7 +50,10 @@ def _database(chart: Chart) -> None:
         chart,
         "archive-database",
         ref=DATABASE,
-        annotations={"description": "Disposable, Restic-derived view of workstation AI session history."},
+        annotations={
+            "description": "Disposable, Restic-derived view of workstation AI session history.",
+            "cnpg.io/skipWalArchiving": "enabled",
+        },
         profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="100Gi",
         resize_in_use_volumes=False,
@@ -59,16 +62,12 @@ def _database(chart: Chart) -> None:
         # observed multi-second storage and network stalls.
         postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
         initdb=cluster.same_owner_initdb("ai_session_archive"),
-        wal_archive=True,
+        # The Restic snapshots are the durable backup; this database is a rebuildable projection.
+        wal_archive=False,
     )
-    # Backups are a recovery convenience; retained Restic snapshots are the source of truth.
+    # Keep the existing backup resources until WAL archiving has stopped; then retire the bucket.
     backup.CnpgBackup(
-        chart,
-        "archive-database-backup",
-        ref=DATABASE,
-        retention="30d",
-        cadence=backup.Cadence.WEEKLY,
-        adopt_existing=False,
+        chart, "archive-database-backup", ref=DATABASE, retention="30d", cadence=None, adopt_existing=False
     )
 
 
