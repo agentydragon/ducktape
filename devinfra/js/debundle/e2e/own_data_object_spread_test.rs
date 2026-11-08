@@ -121,13 +121,12 @@ fn settled_single_spread_reads_shape_and_properties_and_preserves_order_and_iden
 #[test]
 fn candidate_that_moves_source_write_before_spread_is_typed_as_conflicting() {
     let source = "const source = { alpha: 3 };\nconst copied = { ...source };\nconst observed = helper();\nfunction helper() { return 1; }\nsource.alpha = 4;\n";
-    // The eager helper call makes `a_copy` import `b_writer`; the own-property
-    // frontier makes `b_writer` import `a_copy`. The concrete ESM cycle is
-    // entered at `a_copy`, so it executes the writer before the spread.
+    // Keep `copied` in the entry. Its static imports execute first: importing
+    // `helper` reaches the writer module, which imports the source provider
+    // and writes alpha before the entry evaluates the spread.
     let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
         source,
         vec![
-            logical_module("a_copy", &[Member::new("copied"), Member::new("observed")]),
             logical_module_with_anon("b_writer", &[Member::new("helper")], &["source.alpha = 4;"]),
             logical_module("z_source", &[Member::new("source")]),
         ],

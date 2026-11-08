@@ -45,6 +45,13 @@ pub(super) struct AllocationValue {
     pub(super) judgment: AllocationJudgment,
 }
 
+#[derive(Clone)]
+pub(super) struct OwnDataSpreadSource {
+    pub(super) shape: OwnPropertyShape,
+    pub(super) properties: BTreeMap<Option<String>, Values>,
+    pub(super) enumerability_settled: bool,
+}
+
 impl AllocationValue {
     pub(super) fn opaque(values: Values) -> Self {
         Self {
@@ -82,6 +89,11 @@ pub(super) trait AllocationContext {
     fn ordinary_record_shape(&self, _allocation: u32) -> Option<OwnPropertyShape> {
         None
     }
+    /// A source-backed own-data payload proof, independent of the child
+    /// expression's effect-coverage judgment and exact enumerable order.
+    fn own_data_spread_source(&self, _allocation: u32) -> Option<OwnDataSpreadSource> {
+        None
+    }
     fn object_properties_are_settled(&self, _allocation: u32) -> bool {
         false
     }
@@ -99,6 +111,11 @@ pub(super) trait AllocationContext {
     /// spread operand has already been evaluated. Strict queries simply
     /// decline this application-specific path.
     fn refused_spread(&mut self, _source: &Values, _span: swc_common::Span) {}
+    /// Retain a proven noninvoking data-copy result while recording that its
+    /// owner cannot receive complete spread evidence.
+    fn incomplete_own_data_spread(&mut self, source: &Values, span: swc_common::Span) {
+        self.refused_spread(source, span);
+    }
     fn spread_copy_recorded(&mut self, _allocation: u32) {}
     fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
     fn heap(&mut self) -> LiteralHeap<'_>;
@@ -239,6 +256,8 @@ pub(super) enum WritablePrefixState {
 impl LiteralHeap<'_> {
     /// A descriptor/order writer not modeled by the ordinary literal kernel
     /// permanently revokes exact enumeration evidence for this pooled object.
+    /// Retained own-data shape metadata may still support named property reads;
+    /// callers that enumerate keys must check this marker separately.
     pub(super) fn mark_unknown_enumerability(&mut self, allocation: u32) {
         let already_unknown = self
             .unknown_enumerability
@@ -260,11 +279,7 @@ impl LiteralHeap<'_> {
         let Some(unknown) = self.unknown_enumerability.as_deref_mut() else {
             return;
         };
-        let shape_removed = self
-            .spread_shapes
-            .as_deref_mut()
-            .is_some_and(|shapes| shapes.remove(&allocation).is_some());
-        if unknown.insert(allocation) || shape_removed {
+        if unknown.insert(allocation) {
             *self.revision = self.revision.wrapping_add(1);
         }
     }
@@ -763,7 +778,7 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
         may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
         can_complete &= !values.is_empty();
         if let PropertyDefinition::Spread { span, .. } = definition {
-            if properties.len() != 1 || !child_covered || !can_complete || may_throw {
+            if properties.len() != 1 || !can_complete || may_throw {
                 refuse_spread(context, allocation, &values, *span);
                 return None;
             }
@@ -773,10 +788,11 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
                 refuse_spread(context, allocation, &values, *span);
                 return None;
             };
-            let Some(source_shape) = context.ordinary_record_shape(*source) else {
+            let Some(source_proof) = context.own_data_spread_source(*source) else {
                 refuse_spread(context, allocation, &values, *span);
                 return None;
             };
+            let source_shape = &source_proof.shape;
             if !context.object_properties_are_settled(*source)
                 || context.has_dynamic_properties(*source)
                 || source_shape
@@ -786,6 +802,17 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
             {
                 refuse_spread(context, allocation, &values, *span);
                 return None;
+            }
+            if !source_proof.enumerability_settled {
+                let payload = source_proof
+                    .properties
+                    .values()
+                    .flatten()
+                    .cloned()
+                    .collect();
+                retain_incomplete_spread_payload(context, allocation, &values, payload, *span);
+                judgment = AllocationJudgment::Opaque;
+                continue;
             }
             let source_order = ordered_own_property_names(&source_shape.creation_order);
             if source_order.len() != source_shape.properties.len() {
@@ -798,7 +825,8 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
                     refuse_spread(context, allocation, &values, *span);
                     return None;
                 }
-                let Some(property_values) = context.property_values(*source, property) else {
+                let Some(property_values) = source_proof.properties.get(&Some(property.clone()))
+                else {
                     refuse_spread(context, allocation, &values, *span);
                     return None;
                 };
@@ -808,7 +836,7 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
                     refuse_spread(context, allocation, &values, *span);
                     return None;
                 }
-                copied_properties.insert(Some(property.clone()), property_values);
+                copied_properties.insert(Some(property.clone()), property_values.clone());
             }
             context.record_property_read(EffectCell::ObjectShape(*source));
             for property in &source_order {
@@ -829,11 +857,22 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
                 .heap()
                 .record_spread_copy(allocation, copied_shape, copied_properties)
             {
-                refuse_spread(context, allocation, &values, *span);
-                return None;
+                let payload = source_proof
+                    .properties
+                    .values()
+                    .flatten()
+                    .cloned()
+                    .collect();
+                retain_incomplete_spread_payload(context, allocation, &values, payload, *span);
+                judgment = AllocationJudgment::Opaque;
+                continue;
             }
             writable_properties.extend(source_order.iter().cloned());
             context.spread_copy_recorded(allocation);
+            if !child_covered {
+                context.incomplete_own_data_spread(&values, *span);
+                judgment = AllocationJudgment::Opaque;
+            }
             continue;
         }
         // This is descriptor payload containment. Its ordinary-data eligibility
@@ -868,6 +907,23 @@ fn refuse_spread(
         heap.invalidate_writable(allocation);
     }
     context.refused_spread(source, span);
+}
+
+fn retain_incomplete_spread_payload(
+    context: &mut impl AllocationContext,
+    allocation: u32,
+    source: &Values,
+    payload: Values,
+    span: swc_common::Span,
+) {
+    {
+        let mut heap = context.heap();
+        heap.mark_unknown_enumerability(allocation);
+        heap.invalidate_writable(allocation);
+        heap.record(allocation, BTreeMap::from([(None, payload)]));
+    }
+    context.spread_copy_recorded(allocation);
+    context.incomplete_own_data_spread(source, span);
 }
 
 /// No-spread array creation shares ordered child transfer with local execution.

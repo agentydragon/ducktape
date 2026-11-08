@@ -1,6 +1,6 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
-use super::super::allocation_transfer::AllocationContext;
+use super::super::allocation_transfer::{AllocationContext, OwnDataSpreadSource};
 use super::super::array_transfer::{self, ArrayContext, ArrayPushSelection};
 use super::super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
@@ -1299,12 +1299,16 @@ impl ExecutionState {
     }
 
     /// Skipped local code can change descriptors or prototypes even when no
-    /// escape to foreign code was observed. Neither set permits prefix reads.
+    /// escape to foreign code was observed. Those losses block named reads;
+    /// enumerable-membership loss is tracked separately for key projections.
     fn object_properties_are_settled(&self, object: &u32) -> bool {
         self.object_accessors_are_settled(object)
             && !self.unknown_array_contents.contains(object)
             && !self.primitive_arrays.contains_key(object)
-            && !self.unknown_enumerability.contains(object)
+    }
+
+    fn object_enumerability_is_settled(&self, object: &u32) -> bool {
+        !self.unknown_enumerability.contains(object)
     }
 
     fn object_accessors_are_settled(&self, object: &u32) -> bool {
@@ -1444,9 +1448,6 @@ struct LocalExecutionContext<'a, 'source, 'rule> {
 
 impl OwnDataContext for Executor<'_, '_> {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
-        if self.state.unknown_enumerability.contains(&allocation) {
-            return None;
-        }
         self.state
             .runtime_spread_shapes
             .get(&allocation)
@@ -1747,6 +1748,10 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 }
 
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
+    fn own_data_spread_source(&self, allocation: u32) -> Option<OwnDataSpreadSource> {
+        self.executor.own_data_spread_source(allocation)
+    }
+
     fn binary_fallback(&mut self, frame: &LocalFrame, reached: &Values, span: Span) {
         self.fallback(
             frame,
@@ -1795,6 +1800,19 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             },
             span,
         );
+    }
+
+    fn incomplete_own_data_spread(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _source: &Values,
+        span: Span,
+    ) {
+        // The source's own-data copy was modeled without invoking a getter or
+        // callback, but this path lacks the complete child evidence required
+        // for an owner receipt. Keep executing the actual suffix in order.
+        self.outcome
+            .unsupported(ExecutionOperation::ObjectSpread, self.owner, span);
     }
 
     fn spread_copy_recorded(&mut self, allocation: u32) {
@@ -2163,8 +2181,30 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .filter(|selection| selection.matches(&values))
                 .cloned()
         };
+        let allocation = if normal
+            && self.executor.state.assumption.is_none()
+            && self.executor.initialized_local_binding(binding)
+            && !self
+                .executor
+                .inputs
+                .captured_local_bindings
+                .contains(binding)
+            && !self.executor.state.active_cells.contains_key(binding)
+        {
+            // This proves only the canonical module-cell value read. Any
+            // object payload used by spread is checked independently below.
+            super::super::allocation_transfer::AllocationValue {
+                values,
+                judgment:
+                    super::super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(
+                        self.executor.settled_prefix_dependencies(),
+                    ),
+            }
+        } else {
+            super::super::allocation_transfer::AllocationValue::opaque(values)
+        };
         Some(LocalValueResult {
-            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+            allocation,
             effects,
             selection,
         })
@@ -3059,6 +3099,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if values.len() != 1 {
             return None;
         }
+        if !self.state.object_enumerability_is_settled(*object) {
+            return None;
+        }
         let shape = self.ordinary_record_shape(*object)?.clone();
         let properties = self.state.prefix_object_properties.get(object)?;
         self.queries.project_own_property(OwnPropertyQuery {
@@ -3465,6 +3508,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             [AbstractValue::Value(Value::Alloc(Kind::Object, object))]
                                 if self.inputs.index.plain_data_objects.contains(object)
                                     && self.state.object_properties_are_settled(object)
+                                    && self.state.object_enumerability_is_settled(object)
                                     && self.state.prefix_object_properties.get(object)
                                         .is_some_and(BTreeMap::is_empty)
                                     && !self.state.applied_accessors.contains_key(object))
@@ -4066,6 +4110,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || Self::standard_object_prototype_property(property)
             || !self.inputs.index.plain_data_objects.contains(&object)
             || !self.state.object_properties_are_settled(&object)
+            || !self.state.object_enumerability_is_settled(&object)
             || !self.input_field_prototype_absent(object, property)
         {
             return false;
@@ -4104,7 +4149,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// the result of reading their property. Only a data-tagged lookup may
     /// project that payload into an expression value.
     fn payload_lookup_is_data(&self, object: u32, property: Option<&str>) -> bool {
-        if self.state.unknown_enumerability.contains(&object) {
+        if property.is_none() && !self.state.object_enumerability_is_settled(&object) {
             return false;
         }
         if self
@@ -4222,6 +4267,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         if !self.state.object_properties_are_settled(object)
+            || !self.state.object_enumerability_is_settled(object)
             || self.state.applied_accessors.contains_key(object)
             || (!self.inputs.index.plain_data_objects.contains(object)
                 && !self.state.ordinary_spread_copies.contains(object))
@@ -4233,6 +4279,53 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         Some(properties.clone())
+    }
+
+    /// Source-backed own-data facts are independent of the child expression's
+    /// effect-coverage judgment. The allocation must still identify an
+    /// ordinary literal or prior ordinary copy with a complete named payload;
+    /// exact enumerable membership is carried separately for the spread gate.
+    fn own_data_spread_source(&self, allocation: u32) -> Option<OwnDataSpreadSource> {
+        if self.inputs.index.array_elements.contains_key(&allocation)
+            || (!self.inputs.index.plain_data_objects.contains(&allocation)
+                && !self.state.ordinary_spread_copies.contains(&allocation))
+            || !self.state.object_properties_are_settled(&allocation)
+            || self.state.applied_accessors.contains_key(&allocation)
+        {
+            return None;
+        }
+        let shape = self.ordinary_record_shape(allocation)?.clone();
+        if shape.properties.values().any(|descriptor| {
+            !matches!(
+                descriptor,
+                super::super::value_model::OwnPropertyDescriptorSyntax::Data
+            )
+        }) {
+            return None;
+        }
+        let properties = self
+            .state
+            .prefix_object_properties
+            .get(&allocation)?
+            .clone();
+        let expected: BTreeSet<_> = shape.properties.keys().cloned().collect();
+        let actual: BTreeSet<_> = properties
+            .keys()
+            .filter_map(|property| property.as_ref().cloned())
+            .collect();
+        if properties.contains_key(&None)
+            || actual != expected
+            || properties.values().any(|values| {
+                values.is_empty() || values.contains(&AbstractValue::Value(Value::Unavailable))
+            })
+        {
+            return None;
+        }
+        Some(OwnDataSpreadSource {
+            shape,
+            properties,
+            enumerability_settled: self.state.object_enumerability_is_settled(&allocation),
+        })
     }
 
     fn array_intrinsics_intact(&self) -> bool {
@@ -6155,6 +6248,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         literal
             && self.state.object_properties_are_settled(&object)
+            && self.state.object_enumerability_is_settled(&object)
             && self.state.prefix_values.get(binding).is_some_and(|values| {
                 values.len() == 1
                     && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Object, object)))
@@ -7898,7 +7992,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().mark_unknown_enumerability(object);
     }
 
-    fn invalidate_all_enumerability_candidates(&mut self) {
+    fn unsettle_all_enumerability_candidates(&mut self) {
         let mut objects: BTreeSet<_> = self
             .state
             .prefix_object_properties
@@ -7908,8 +8002,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         objects.extend(self.inputs.index.own_descriptor_shapes.keys().copied());
         objects.extend(self.inputs.index.exact_object_spread_copies.iter().copied());
         objects.extend(self.state.runtime_spread_shapes.keys().copied());
+        let mut changed = false;
         for object in objects {
             self.invalidate_enumerability_object(object);
+            self.invalidate_writable_object(object);
+            changed |= self.state.unsettled_objects.insert(object);
+        }
+        if changed {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
     }
 
@@ -7933,7 +8033,33 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         if unresolved_receiver {
-            self.invalidate_all_enumerability_candidates();
+            self.unsettle_all_enumerability_candidates();
+        }
+    }
+
+    fn invalidate_dynamic_enumerability_values(&mut self, values: &Values) {
+        self.invalidate_enumerability_values(values);
+        let mut unresolved_receiver = values.is_empty();
+        let mut changed = false;
+        for value in values {
+            match value {
+                AbstractValue::Value(Value::Prim(_))
+                | AbstractValue::GlobalObject
+                | AbstractValue::ArrayIntrinsic => {}
+                AbstractValue::Value(Value::Alloc(kind, object)) => {
+                    if kind.tracks_prefix_own_properties() {
+                        changed |= self.state.unsettled_objects.insert(*object);
+                        self.invalidate_writable_object(*object);
+                    }
+                }
+                _ => unresolved_receiver = true,
+            }
+        }
+        if changed {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
+        if unresolved_receiver {
+            self.unsettle_all_enumerability_candidates();
         }
     }
 
@@ -7949,7 +8075,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // Binding lookup is a value read, so this does not replay the
                 // receiver expression or its effects.
                 let values = self.evaluate(receiver, env, captures);
-                self.invalidate_enumerability_values(&values);
+                self.invalidate_dynamic_enumerability_values(&values);
             } else {
                 // The compatibility lane retained only an expression, not the
                 // receiver value selected when the write ran. Avoid replaying
@@ -7959,7 +8085,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         if invalidate_all_candidates {
-            self.invalidate_all_enumerability_candidates();
+            self.unsettle_all_enumerability_candidates();
         }
     }
 
@@ -13888,6 +14014,7 @@ impl Executor<'_, '_> {
                     };
                     if !inputs.index.plain_data_objects.contains(object)
                         || !self.state.object_properties_are_settled(object)
+                        || !self.state.object_enumerability_is_settled(object)
                         || self.state.applied_accessors.contains_key(object)
                         || self.state.dense_arrays.contains_key(object)
                         || others.contains(element)
@@ -14411,17 +14538,9 @@ impl Executor<'_, '_> {
                     .or_else(|| self.state.prefix_values.get(binding))
                     .cloned()
                     .unwrap_or_default();
-                self.invalidate_enumerability_values(&values);
+                self.invalidate_dynamic_enumerability_values(&values);
             } else {
-                let objects: Vec<_> = self
-                    .state
-                    .prefix_object_properties
-                    .keys()
-                    .copied()
-                    .collect();
-                for object in objects {
-                    self.invalidate_enumerability_object(object);
-                }
+                self.unsettle_all_enumerability_candidates();
             }
         }
         let mut fallback = std::mem::take(&mut self.state.fallback_outcome);

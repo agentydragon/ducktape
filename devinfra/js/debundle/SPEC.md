@@ -2343,15 +2343,19 @@ Key precision grants no call, purity, throw or return summary.
 
 The shared ordered literal transfer can copy one spread property when an
 existing ordered root initializer or local body admits the containing record.
-The record must contain exactly one property, `...source`. The selected source
-must be one settled ordinary object with a complete own-property shape, no
-dynamic keys, data descriptors only, and a nonempty abstract value without an
-abrupt alternative for every own enumerable property. This transfer does not
-accept mixed literals, accessors, opaque or escaped objects, or uncertain
-source completion. Other
-spread expressions retain the generic conservative path. A root initializer
-still passes the existing canonical initialization and ordered-root admission;
-spread syntax adds no authority or acceptance rule.
+The record must contain exactly one property, `...source`. Its value proof is
+independent of the child's effect-coverage judgment: the selected allocation
+must be one settled ordinary literal or previously proven ordinary copy with a
+complete named payload, no dynamic keys, data descriptors only, and a
+nonempty abstract value without an abrupt alternative for every property.
+This does not cover the child's missing effects or grant an owner receipt. If
+the child lacks complete coverage but the value and exact enumeration are
+proven, the reached shape and property reads are retained, the result remains
+incomplete, and the actual suffix continues in order. Mixed literals,
+accessors, opaque or unsettled objects, and uncertain source completion keep
+the generic conservative path. A root initializer still passes the existing
+canonical initialization and ordered-root admission; spread syntax adds no
+authority or acceptance rule.
 
 The copy records a non-assumed `ObjectShape` read and a read of each copied
 `OwnProperty`. Integer-index keys retain JavaScript's numeric ordering before
@@ -2362,17 +2366,23 @@ runtime shape and copied values.
 
 Allocation sites are pooled across executions. Exact destination shape remains
 available only while every observed copy has the same full key order and no
-earlier opaque state. A conflicting shape or any unmodeled write, delete,
-descriptor change, escape, or taint permanently marks enumerable membership
-unknown for that pooled site. The existing prefix revision advances when this
-metadata changes, even if all stored property Values stay equal. Descriptor-map
-application revokes this proof because its enumerable bits are not represented
-in the ordinary value heap; generic `Object.defineProperty` and other opaque
-mutations keep their existing taint fallback. Mixed/accessor/unknown sources
-preserve generic callback and completion handling without acquiring exact
-spread reads. When compatibility execution retains a dynamic-write receiver
-only as syntax, a direct binding revokes that object's shape; other receiver
-expressions are not re-evaluated and conservatively revoke known record shapes.
+earlier opaque state. Exact enumerable membership is tracked separately from
+named data payloads: a modeled descriptor-map change or unknown-enumerability
+copy can keep proven named values available without certifying the copied key
+set. Such a copy retains the possible payload under an unknown key, claims no
+exact shape/read receipt or certified normal completion, and does not invoke
+stored data callbacks merely because enumeration is uncertain. A conflicting shape or
+unmodeled write, delete, escape, or taint permanently revokes the applicable
+prefix proof. The prefix revision advances when enumeration changes even if
+stored Values stay equal. Descriptor-map application revokes exact enumeration
+because its enumerable bits are not represented in the ordinary value heap;
+generic `Object.defineProperty` and other opaque mutations keep their existing
+taint fallback. A dynamic or unresolved receiver also invalidates named-value
+settlement for every possible target, while a concretely tracked static value
+write updates its payload and still invalidates exact enumeration. Compatibility
+execution retains a dynamic-write receiver only as syntax, so it never
+reevaluates that receiver and instead conservatively invalidates all candidate
+records.
 
 ## Captured ordinary-object values
 

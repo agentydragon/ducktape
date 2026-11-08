@@ -155,6 +155,12 @@ pub(super) trait LocalContext: OwnDataContext {
     fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
     fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult>;
+    fn own_data_spread_source(
+        &self,
+        _allocation: u32,
+    ) -> Option<super::allocation_transfer::OwnDataSpreadSource> {
+        None
+    }
     /// Whether this exact evaluated receiver came from an initialized,
     /// non-imported module binding at the current prefix. Strict provider
     /// queries keep the default false and require fresh-local ownership.
@@ -251,6 +257,13 @@ pub(super) trait LocalContext: OwnDataContext {
     /// may be an object or unknown value whose coercion can execute user code.
     fn binary_fallback(&mut self, _frame: &LocalFrame, _reached: &Values, _span: Span) {}
     fn refused_spread(&mut self, _frame: &LocalFrame, _source: &Values, _span: Span) {}
+    fn incomplete_own_data_spread(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _source: &Values,
+        _span: Span,
+    ) {
+    }
     fn spread_copy_recorded(&mut self, _allocation: u32) {}
 }
 
@@ -303,6 +316,12 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     ) -> Option<super::value_model::OwnPropertyShape> {
         self.context.ordinary_record_shape(allocation).cloned()
     }
+    fn own_data_spread_source(
+        &self,
+        allocation: u32,
+    ) -> Option<super::allocation_transfer::OwnDataSpreadSource> {
+        self.context.own_data_spread_source(allocation)
+    }
     fn object_properties_are_settled(&self, allocation: u32) -> bool {
         self.context.object_properties_are_settled(allocation)
     }
@@ -320,6 +339,13 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     }
     fn refused_spread(&mut self, source: &Values, span: Span) {
         self.context.refused_spread(self.frame, source, span);
+    }
+    fn incomplete_own_data_spread(&mut self, source: &Values, span: Span) {
+        self.frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
+        self.context
+            .incomplete_own_data_spread(self.frame, source, span);
     }
     fn spread_copy_recorded(&mut self, allocation: u32) {
         self.context.spread_copy_recorded(allocation);
