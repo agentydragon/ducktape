@@ -157,9 +157,9 @@ discrimination.
 
 1. **BigCodeBench (Complete) at N=164** — the immediate follow-on
    for less-saturated discrimination. See <../../TODO.md>.
-2. **SWE-bench pilot** — agentic coding eval, started at
-   <../2026-04-29_swebench_pilot_gpt20/> as a 1-problem smoke test
-   for tool-call reliability before any larger run.
+2. **SWE-bench pilot** — agentic coding eval, started as a 1-problem
+   smoke test for tool-call reliability before any larger run; see the
+   [historical pilot record](https://github.com/agentydragon/ducktape/blob/2c01f4ba449f3aa3468b08f33e87c45183914535/cluster/docs/inference/runs/2026-04-29_swebench_pilot_gpt20/README.md).
 3. **Failure-mode breakdown** — parse `eval_logs/<effort>/*.eval` to
    classify each fail as timeout / exception / wrong logic and
    identify problem overlap across efforts. Low priority at this
