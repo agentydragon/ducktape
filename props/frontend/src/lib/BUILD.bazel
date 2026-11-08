@@ -139,6 +139,19 @@ ts_library(
 )
 
 ts_library(
+    name = "queryClient",
+    srcs = ["queryClient.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = ["//:node_modules/@tanstack/react-query"],
+)
+
+ts_library(
+    name = "queryKeys",
+    srcs = ["queryKeys.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+)
+
+ts_library(
     name = "toast",
     srcs = ["toast.ts"],
     tsconfig = "//props/frontend:tsconfig",
