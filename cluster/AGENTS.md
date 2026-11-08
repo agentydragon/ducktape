@@ -43,7 +43,7 @@ Getting these wrong is destructive or silently corrupting.
 ## Key files (`terraform/main/`)
 
 `ovh-nodes.tf` (OVH bare metal), `home-nodes.tf` (home Talos workers), `proxmox-nodes.tf`
-(Proxmox VMs), `talos-machine-secrets.tf` (ephemeral), `cilium.tf`, `infrastructure.tf`
+(Proxmox VMs), `talos-machine-secrets.tf` (persistent), `cilium.tf`, `infrastructure.tf`
 (firewall, Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
 `nebula.tf` (per-node config + endpoint drift check).
 
