@@ -96,3 +96,20 @@ serial nor the sampled console contained a probe cleanup-complete marker; the re
 summary does not prove why, and the test did not request measured ACPI shutdown. The next
 diagnostic records per-CPU before/after counters and trace size on failure and adds cleanup
 progress markers.
+
+The [instrumented 64 KiB run](https://app.buildbuddy.io/invocation/d8e0c954-c3f3-4d7f-983d-8a3bf61c9e1a)
+at `49d9ab11b0de89966024c45324a8d43c8e18be70` reported CPU 0 counters unchanged at
+`0 0 0`, while CPU 1's overrun counter increased from 0 to 1,839; its commit-overrun and
+dropped-event counters stayed at 0. The retained 55,583-byte trace had 1,096 lines. This
+establishes a ring overrun in that run, so the probe now uses the 1 MiB per-CPU ring and
+bounded 20,000-line scan established by the [earlier cgroup pilot](standalone_kubevirt/cgroup_two_pair_pilot.md).
+
+The [1 MiB smoke](https://app.buildbuddy.io/invocation/2bc92fed-5a81-4454-86f1-be7b2a6c3cde)
+at `a693016ff7ed6bccabf27ad8d431056696ee2cd6` passed trace integrity but reported
+`complete_writer_pid_trace_path_not_proven`. Its VMI UID was
+`5a8a6ada-bc1c-4e47-9d82-c957a1ecab19`. Cleanup started, but the retained early capture did
+not contain its completion marker. The parser requires the writer PID in graph lines;
+Linux's function-graph tracer does not show the process by default. The probe now temporarily
+enables `funcgraph-proc`, restores its initial value, and records bounded root lines if the
+witness still fails. The failed smoke did not retain trace lines, so the missing PID label is
+a hypothesis rather than a proven explanation for that specific run.

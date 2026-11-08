@@ -36,6 +36,7 @@ trace_mounted=no
 trace_owned=no
 trace_on_initial=
 trace_buffer_initial=
+trace_proc_initial=
 trace_configured=no
 trace_recording_stopped=no
 cleanup_ok=yes
@@ -62,10 +63,18 @@ unexercised() {
 	exit 1
 }
 
+restore_graph_proc() {
+	[ -n "$trace_proc_initial" ] || return 0
+	printf '%s\n' "$trace_proc_initial" >"$tracefs/options/funcgraph-proc" || return 1
+	[ "$("$busybox" cat "$tracefs/options/funcgraph-proc")" = "$trace_proc_initial" ] || return 1
+	trace_proc_initial=
+}
+
 trace_cleanup() {
 	[ "$trace_owned" = yes ] || return 0
 	if [ "$trace_configured" = yes ]; then
 		printf '0\n' >"$tracefs/tracing_on" || return 1
+		restore_graph_proc || return 1
 		printf 'nop\n' >"$tracefs/current_tracer" || return 1
 		printf '\n' >"$tracefs/set_ftrace_pid" || return 1
 		printf '\n' >"$tracefs/set_ftrace_notrace_pid" || return 1
@@ -197,6 +206,7 @@ trace_events_disabled() {
 
 disable_trace_for_stress() {
 	printf '0\n' >"$tracefs/tracing_on"
+	restore_graph_proc
 	printf 'nop\n' >"$tracefs/current_tracer"
 	printf '\n' >"$tracefs/set_ftrace_pid"
 	printf '\n' >"$tracefs/set_ftrace_notrace_pid"
@@ -508,6 +518,10 @@ printf '%s\n' "$trace_buffer_kib" >"$tracefs/buffer_size_kb"
 printf 'cgroup_subtree_control_write\n' >"$trace_root/set_graph_function"
 printf '%s\n' "$$" >"$tracefs/set_ftrace_pid"
 printf 'function_graph\n' >"$tracefs/current_tracer"
+trace_proc_value=$("$busybox" cat "$tracefs/options/funcgraph-proc") || unexercised graph_proc_option_unavailable
+case $trace_proc_value in 0 | 1) trace_proc_initial=$trace_proc_value ;; *) unexercised graph_proc_option_unavailable ;; esac
+printf '1\n' >"$tracefs/options/funcgraph-proc" || unexercised graph_proc_option_write_failed
+[ "$("$busybox" cat "$tracefs/options/funcgraph-proc")" = 1 ] || unexercised graph_proc_option_not_enabled
 capture_trace_stats before || unexercised trace_stats_unavailable
 printf '\n' >"$tracefs/trace"
 printf '1\n' >"$tracefs/tracing_on"
@@ -535,7 +549,12 @@ fi
 trace_chain=$("$busybox" head -n 1 "$scratch/trace-chain")
 case $trace_chain in
 	"status=proven "*) ;;
-	*) unexercised "complete_writer_pid_trace_path_not_proven" ;;
+	*)
+		emit "TRACE_WITNESS_UNPROVEN $trace_chain"
+		"$busybox" grep 'cgroup_subtree_control_write' "$scratch/trace" | "$busybox" head -n 3 |
+			while IFS= read -r trace_root_line; do emit "TRACE_ROOT $trace_root_line"; done
+		unexercised "complete_writer_pid_trace_path_not_proven"
+		;;
 esac
 disable_trace_for_stress || unexercised trace_disable_failed
 emit "TRACE_PROOF step=proof_on io=yes verified=yes writer_pid=$$ pid_match=yes trace_integrity=clean "\
