@@ -10,14 +10,12 @@ virtio-mem not yet available — Bugzilla #2949). Any static RAM split between a
 worker and a desktop VM is constraining: the worker is over-provisioned when idle,
 the desktop starves during heavy use, or vice versa.
 
-A single VM eliminates the split entirely — one VM gets ~28GB (leaving ~4GB for
-Proxmox host + lightweight Talos CP VM).
+A single VM eliminates the split between desktop and worker. Its Terraform
+configuration allocates 96 GiB to wyrm2 and leaves the remainder to the host.
 
-| VM    | Role                     | RAM   | GPUs    | OS    |
-| ----- | ------------------------ | ----- | ------- | ----- |
-| wyrm2 | K8s GPU worker + desktop | ~28GB | 2x 5090 | NixOS |
-
-The Talos control plane VM on Proxmox stays unchanged (lightweight, ~4GB).
+| VM    | Role                     | RAM    | GPUs    | OS    |
+| ----- | ------------------------ | ------ | ------- | ----- |
+| wyrm2 | K8s GPU worker + desktop | 96 GiB | 2x 5090 | NixOS |
 
 ## GPU Mode Switching
 
@@ -26,20 +24,23 @@ kubelet is claiming them for cluster workloads or they're free for desktop/gamin
 
 ### Light switch: taint toggle (no kubelet restart)
 
-Keeps the node in the cluster. DaemonSets (Cilium, Promtail, etc.) keep running.
-Only GPU-consuming pods are affected.
+Keeps the node in the cluster. A `NoExecute` taint evicts **every** pod on the
+node that lacks the matching toleration, including non-GPU workloads. First inspect
+all pods and tolerations, prove disruption and placement safety, and get approval
+for the exact eviction. A drain similarly affects the node's other workloads.
 
 ```bash
 # "Gaming mode" — evict GPU workloads
-kubectl taint nodes gpu-node nvidia.com/gpu=true:NoExecute --overwrite
+kubectl taint nodes wyrm2 nvidia.com/gpu=true:NoExecute --overwrite
 
 # "Cluster mode" — allow GPU workloads
-kubectl taint nodes gpu-node nvidia.com/gpu=true:PreferNoSchedule --overwrite
+kubectl taint nodes wyrm2 nvidia.com/gpu:NoExecute-
+kubectl taint nodes wyrm2 nvidia.com/gpu=true:PreferNoSchedule --overwrite
 ```
 
 GPU-consuming pods (Ollama) must tolerate `PreferNoSchedule` but not `NoExecute`.
-When the taint flips to `NoExecute`, the scheduler evicts them. When it flips back,
-they reschedule.
+The two effects are distinct taints: adding `PreferNoSchedule` does not remove
+`NoExecute`. Once the latter is removed, the controller can schedule workloads again.
 
 ### Heavy switch: drain + stop kubelet
 
@@ -47,19 +48,18 @@ For full GPU release (no device plugin, no container runtime holding GPU context
 
 ```bash
 # Enter gaming mode
-kubectl drain gpu-node --ignore-daemonsets --delete-emptydir-data
+kubectl drain wyrm2 --ignore-daemonsets --delete-emptydir-data
 sudo systemctl stop kubelet
 
 # Exit gaming mode
 sudo systemctl start kubelet
-kubectl uncordon gpu-node
+kubectl uncordon wyrm2
 ```
 
 ### Which to use?
 
-- **Taint toggle**: Fast (~seconds), keeps node healthy in cluster, sufficient when
-  the device plugin doesn't hold GPU memory (it doesn't — it only advertises the
-  resource). Good enough for most cases.
+- **Taint toggle**: Keeps the node in the cluster, but evicts all pods that do not
+  tolerate the taint. Check device-plugin and other workload behavior before use.
 - **Drain + stop**: Full cleanup. Use if something holds a GPU context that interferes
   with gaming (e.g., a CUDA process that didn't exit cleanly).
 
@@ -70,12 +70,12 @@ A desktop script/shortcut can automate either workflow.
 Built on the `k8s-worker` NixOS module (`nix/nixos/modules/k8s-worker.nix`) with
 `enableNvidiaRuntime = true`:
 
-- **NVIDIA drivers**: `hardware.nvidia` with open kernel modules (driver 580.119.02)
+- **NVIDIA drivers**: `hardware.nvidia` with open kernel modules
 - **CDI spec generation**: `hardware.nvidia-container-toolkit` generates CDI specs at
   `/var/run/cdi/` on boot (maps NixOS nix-store paths to FHS paths inside containers)
 - **Containerd runtime**: `nvidia-container-runtime.cdi` registered as a named runtime
   (`pkgs.nvidia-container-toolkit.tools`), with CDI enabled and spec dirs configured
-- **RuntimeClass**: `nvidia` RuntimeClass in `helmrelease.yaml` maps to the containerd runtime
+- **RuntimeClass**: `nvidia` in `cluster/cdk8s/nvidia_runtimeclass.py` maps to the containerd runtime
 - **Device plugin**: NVIDIA device plugin Helm chart with `runtimeClassName: nvidia` and
   default `envvar` device list strategy (no internal CDI spec generation — avoids
   NixOS FHS path incompatibility in `tryResolveLibrary`)
