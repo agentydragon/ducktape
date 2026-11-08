@@ -233,6 +233,23 @@ to one exact source/spec pair and held to the interactive budget in
   Retain an explicit diagnostic discriminator through graph/report and gate
   explanations while preserving the current ordering and projection rules.
 
+- **F4 — Explain callback-fallback read provenance.** A pool-limit report names
+  the pool size and promoted read without a path from an actual callback seed
+  through the static source-owner closure. Add a bounded predecessor witness
+  with callable creation/initialization availability and the first cache
+  contribution's source owner. A later initializer may consume an earlier
+  cached read; distinguish those locations. Preserve actual TDZ observations
+  and conservative effects; an unavailable future function body is a diagnosis
+  hypothesis until a neutral failing fixture establishes it.
+- **F5 — Reuse canonical selectors for exact operation inputs.** Authoring
+  exact initializer operation contracts currently duplicates full function
+  selectors from module YAML into configuration, adding thousands of lines
+  for a modest extraction. Allow the operation input to reference the
+  canonical resolved binding through shared selector resolution. Preserve
+  exactly-one selection, importer/provider/effective-bundle digests, direct
+  import and fresh-argument checks, and source-known contradiction rejection.
+  Replace the owned input format atomically; add no legacy-format fallback.
+
 ### Pipeline performance and architecture cleanup
 
 Proposer-gate, `debundle run` (report opt-out, chunk-level incremental
