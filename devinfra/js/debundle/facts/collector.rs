@@ -1233,8 +1233,8 @@ mod tests {
     use super::*;
 
     fn collect_global_property_accesses(source: &str) -> StatementFactsCollector {
-        let module = crate::js_ast::with_swc_globals(|| {
-            crate::js_ast::parse_js_module_ast("wrapped-global-writes.ts", source)
+        let module = js_ast::with_swc_globals(|| {
+            js_ast::parse_js_module_ast("wrapped-global-writes.ts", source)
                 .expect("global property write source should parse")
         });
         let items = top_level_item_views(&module.body);
