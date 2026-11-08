@@ -285,7 +285,7 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
                 span: ident.span,
                 expr: Box::new(Expr::Lit(Lit::Str(Str {
                     span: ident.span,
-                    value: ident.sym.clone(),
+                    value: "__proto__".into(),
                     raw: None,
                 }))),
             })
