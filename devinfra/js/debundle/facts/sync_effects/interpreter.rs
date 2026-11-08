@@ -1782,7 +1782,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         self.executor
             .promote_escaped_callbacks(source, self.outcome);
         self.executor.invoke_possible_callbacks_at(
-            &[source.clone()],
+            std::slice::from_ref(source),
             false,
             Some(span),
             self.outcome,
