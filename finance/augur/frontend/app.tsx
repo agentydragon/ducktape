@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { fetchAugurCalibrationInfo, fetchAugurCatalog, fetchAugurDeployment, fetchAugurSettings } from "./client";
 
@@ -304,10 +305,13 @@ function ProductProjectionAppShell() {
 }
 
 export default function AugurApp() {
+  const [queryClient] = useState(() => new QueryClient());
   return (
-    <MantineProvider defaultColorScheme="auto">
-      <Notifications position="top-right" />
-      <ProductProjectionAppShell />
-    </MantineProvider>
+    <QueryClientProvider client={queryClient}>
+      <MantineProvider defaultColorScheme="auto">
+        <Notifications position="top-right" />
+        <ProductProjectionAppShell />
+      </MantineProvider>
+    </QueryClientProvider>
   );
 }
