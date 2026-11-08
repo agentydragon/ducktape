@@ -83,12 +83,6 @@ pub(super) trait AllocationContext {
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
     fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind;
-    /// Runtime and syntax evidence for one ordinary own-data source. The
-    /// shared spread transfer still checks settlement, descriptors, and all
-    /// payload slots before copying.
-    fn ordinary_record_shape(&self, _allocation: u32) -> Option<OwnPropertyShape> {
-        None
-    }
     /// A source-backed own-data payload proof, independent of the child
     /// expression's effect-coverage judgment and exact enumerable order.
     fn own_data_spread_source(&self, _allocation: u32) -> Option<OwnDataSpreadSource> {

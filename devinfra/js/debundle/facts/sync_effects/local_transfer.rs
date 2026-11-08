@@ -310,12 +310,6 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     fn heap(&mut self) -> LiteralHeap<'_> {
         self.context.heap()
     }
-    fn ordinary_record_shape(
-        &self,
-        allocation: u32,
-    ) -> Option<super::value_model::OwnPropertyShape> {
-        self.context.ordinary_record_shape(allocation).cloned()
-    }
     fn own_data_spread_source(
         &self,
         allocation: u32,

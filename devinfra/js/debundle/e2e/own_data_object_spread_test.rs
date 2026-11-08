@@ -1,4 +1,4 @@
-use analysis::{DependencyGraphReport, EffectCellReport};
+use analysis::{DependencyGraphReport, EffectCellReport, KnownConflict, PremiseVerdict};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
@@ -76,6 +76,7 @@ fn assert_property_frontier(
     graph: &DependencyGraphReport,
     later: usize,
     earlier: usize,
+    origin: u32,
     property: &str,
 ) {
     let unit = |ordinal| {
@@ -91,14 +92,18 @@ fn assert_property_frontier(
             edge.edge_kind == DepKind::Sequenced
                 && &edge.source == unit(later)
                 && &edge.target == unit(earlier)
-                && serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
-                    .as_array()
-                    .is_some_and(|conflicts| {
-                        conflicts.iter().any(|conflict| {
-                            conflict["cell"]["kind"] == "own_property"
-                                && conflict["cell"]["property"] == property
-                        })
-                    })
+                && edge.constrains_init_order
+                && matches!(
+                    &edge.premise_verdict,
+                    Some(PremiseVerdict::Known {
+                        conflict: KnownConflict::SharedCell {
+                            cell: EffectCellReport::OwnProperty {
+                                origin: actual_origin,
+                                property: actual_property,
+                            }
+                        }
+                    }) if *actual_origin == origin && actual_property == property
+                )
         }),
         "spread read/write inversion for {property:?} was not blocked: {:#?}",
         graph.edges
@@ -112,10 +117,10 @@ fn settled_single_spread_reads_shape_and_properties_and_preserves_order_and_iden
     assert_preserved_entry_output(&fixture, "2,10,alpha,__proto__ true 42\n");
 
     let graph = fixture.dependency_graph();
-    assert_exact_spread_reads(&graph, "copied", &["2", "10", "alpha", "__proto__"]);
+    let origin = assert_exact_spread_reads(&graph, "copied", &["2", "10", "alpha", "__proto__"]);
     // Moving the later write before the spread would change the copied
     // function value. The exact cell edge is the concrete inversion guard.
-    assert_property_frontier(&graph, 4, 3, "alpha");
+    assert_property_frontier(&graph, 4, 3, origin, "alpha");
 }
 
 #[test]
@@ -146,7 +151,8 @@ fn candidate_that_moves_source_write_before_spread_is_typed_as_conflicting() {
     );
 
     let graph = rejected.dependency_graph();
-    assert_property_frontier(&graph, 4, 1, "alpha");
+    let origin = assert_exact_spread_reads(&graph, "copied", &["alpha"]);
+    assert_property_frontier(&graph, 4, 1, origin, "alpha");
     let report = rejected.candidate_relocation_assessment();
     let unit_id = |ordinal| {
         graph
