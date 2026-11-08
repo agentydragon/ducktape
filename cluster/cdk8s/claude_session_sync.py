@@ -75,13 +75,14 @@ def _database(chart: Chart) -> None:
             "description": (
                 "Events of every Claude Code cloud session, mirrored by claude-session-sync. Once the sessions "
                 "age out of Anthropic's API this may be the only copy."
-            )
+            ),
+            "cnpg.io/reconciliationLoop": "disabled",
         },
-        # Existing SSD claims remain attached while a local HDD replica joins.
+        # Pause CNPG while the last SSD standby is detached and retained.
         profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-local", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="40Gi",
         resize_in_use_volumes=False,
-        instances=3,
+        instances=2,
         initdb=cluster.same_owner_initdb("claude_sessions"),
         wal_archive=True,
         # Most of this Cluster's WAL is full-page images of the append-only events table.
