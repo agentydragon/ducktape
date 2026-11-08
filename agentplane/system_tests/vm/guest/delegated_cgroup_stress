@@ -4,6 +4,7 @@ set -eu
 umask 077
 
 busybox=/usr/bin/busybox
+. /usr/sbin/agentplane-delegated-cgroup-stress-helpers
 unit=agentplane-delegated-cgroup-stress.service
 marker=AGENTPLANE_DELEGATED_CGROUP_STRESS
 cg_root=/sys/fs/cgroup
@@ -412,9 +413,21 @@ if has_io "$delegated_parent/cgroup.subtree_control"; then
 fi
 [ -w "$delegated_parent/cgroup.subtree_control" ] || unexercised "delegated_parent_not_writable"
 [ ! -e "$driver" ] && [ ! -e "$payload" ] || unexercised "owned_cgroup_name_already_exists"
-[ "$("$busybox" wc -l <"$delegated_parent/cgroup.procs")" -eq 1 ] ||
+if ! cgroup_has_only_pid "$delegated_parent/cgroup.procs" "$$"; then
+	emit "MEMBERSHIP writer_pid=$$ count=$cgroup_member_count pids=${cgroup_members:-none}"
+	# The snapshot above uses only shell builtins. These later child processes
+	# may themselves enter the cgroup, so inspect only the PIDs in that snapshot.
+	old_ifs=$IFS
+	IFS=,
+	for member_pid in $cgroup_members; do
+		case $member_pid in '' | *[!0-9]*) continue ;; esac
+		member_comm=$("$busybox" cat "/proc/$member_pid/comm" 2>/dev/null) || member_comm=gone
+		emit "MEMBER pid=$member_pid comm=$member_comm"
+	done
+	IFS=$old_ifs
 	unexercised "delegate_subgroup_did_not_contain_only_writer"
-"$busybox" grep -qx "$$" "$delegated_parent/cgroup.procs" || unexercised "writer_not_in_delegate_subgroup"
+fi
+emit "MEMBERSHIP writer_pid=$$ count=$cgroup_member_count pids=$cgroup_members"
 
 emit "BEGIN pairs=$pairs direct_root_writes=none delegated_parent=systemd_service_child max_active_seconds=$active_budget_seconds"
 [ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] || unexercised "service_parent_populated_before_propagation"

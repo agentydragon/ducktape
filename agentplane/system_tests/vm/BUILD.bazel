@@ -554,10 +554,12 @@ py_test(
         "//agentplane/system_tests/vm/guest:agentplane-delegated-cgroup-stress.service",
         "//agentplane/system_tests/vm/guest:agentplane-delegated-cgroup-stress.timer",
         "//agentplane/system_tests/vm/guest:delegated_cgroup_stress",
+        "//agentplane/system_tests/vm/guest:delegated_cgroup_stress_helpers",
         "@trixie_vm_guest//busybox-static:data",
     ],
     env = {
         "DELEGATED_CGROUP_STRESS_SCRIPT_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:delegated_cgroup_stress)",
+        "DELEGATED_CGROUP_STRESS_HELPERS_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:delegated_cgroup_stress_helpers)",
         "DELEGATED_CGROUP_STRESS_SERVICE_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:agentplane-delegated-cgroup-stress.service)",
         "DELEGATED_CGROUP_STRESS_TIMER_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:agentplane-delegated-cgroup-stress.timer)",
         "DELEGATED_CGROUP_STRESS_BUSYBOX_RLOCATION": "$(rlocationpath @trixie_vm_guest//busybox-static:data)",
