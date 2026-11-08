@@ -682,7 +682,7 @@ fn wrapped_global_property_write_conflict_is_reported_not_proposed() {
                     })
                 })
         }),
-        "{rejected_candidates:#}"
+        "{rejected_candidates:?}"
     );
 }
 
