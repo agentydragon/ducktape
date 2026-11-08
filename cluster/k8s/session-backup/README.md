@@ -35,17 +35,27 @@ The Claude root's `session-env/`, `.tmp/`, `cache/`, `.cache/`, `plugins/cache/`
 backup and SQLite discovery. The [Claude hook](../../../devinfra/claude/claude_hook/main.rs)
 (`home_session_dir`, `write_session_bazelrc`) writes per-session runtime configuration
 and Bazel output under `session-env/`. Codex's diagnostic `logs_2.sqlite` and its
-sidecars are excluded too, along with the Claude daemon log and the known Claude and
-Codex model, statistics, authentication-status, and plugin-directory cache files.
+sidecars are excluded too, along with its `thread_history_1.sqlite` projection and
+sidecars, the Claude daemon log, and the known Claude and Codex model, statistics,
+authentication-status, and plugin-directory cache files.
 Claude's `paste-cache/` remains included because it can contain user-authored input.
 Previously staged SQLite images from these paths are also
 excluded from new snapshots; existing archived snapshots remain.
+
+Codex's [paginated history writer][codex-history-writer] calls SQLite a rebuildable
+view and projects it after flushing the durable rollout JSONL. We retain the journals
+and other databases, including `state_5.sqlite` and `memories_1.sqlite`, rather than
+repeatedly backing up that projection. Codex's paginated reads do not establish a
+complete automatic rebuild procedure; recovering the projection from retained journals
+may require additional work.
+
+[codex-history-writer]: https://github.com/openai/codex/blob/092d3acd6bec3e3a14bdc7e7a2810ab628ab759d/codex-rs/thread-store/src/local/live_writer.rs#L327-L365
 
 The client also scans the included trees for SQLite file headers, regardless of filename or
 subdirectory, and uses SQLite's online backup API to create consistent database images
 under `${XDG_STATE_HOME}/ducktape/ai-session-backup-sqlite`. Each image is a consistent
 copy of one database; the complete directory capture is not an atomic filesystem
-snapshot. Original database files and WALs remain included as raw files and may be
+snapshot. Original files and WALs for included databases are backed up as raw files and may be
 inconsistent when captured during writes. The supplemental images provide the
 consistent database restore path.
 
@@ -59,7 +69,7 @@ consistent database backup.
 
 ### Why Codex session files remain included
 
-Preserve `sessions/**/*.jsonl` alongside SQLite originals and consistent images.
+Preserve `sessions/**/*.jsonl` alongside the other included SQLite originals and consistent images.
 The SQLite history is a projection of the journal, and cannot replace it for complete
 archival. Checked on wyrm2 with Codex CLI 0.162.1 on 2026-10-25 using read-only schema
 inspection and a record-type/field comparison of one completed paginated session.

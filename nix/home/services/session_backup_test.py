@@ -86,7 +86,7 @@ def test_restores_raw_tree_and_live_wal_database(harness: Harness, tmp_path: Pat
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
     (harness.claude / "link").symlink_to(".credentials.json")
-    database = harness.codex / "thread_history_1.sqlite"
+    database = harness.codex / "state_5.sqlite"
     with closing(sqlite3.connect(database)) as writer, writer:
         writer.execute("PRAGMA journal_mode=WAL")
         writer.execute("PRAGMA wal_autocheckpoint=0")
@@ -102,8 +102,8 @@ def test_restores_raw_tree_and_live_wal_database(harness: Harness, tmp_path: Pat
             assert (restored / path.relative_to(harness.home)).read_bytes() == content
         assert (restored / ".claude/link").is_symlink()
         assert (restored / ".claude/link").readlink() == Path(".credentials.json")
-        assert (restored / ".codex/thread_history_1.sqlite").is_file()
-        assert (restored / ".codex/thread_history_1.sqlite-wal").is_file()
+        assert (restored / ".codex/state_5.sqlite").is_file()
+        assert (restored / ".codex/state_5.sqlite-wal").is_file()
         restored_staging = restored / harness.staging.relative_to(harness.home)
         manifest = json.loads((restored_staging / "manifest.json").read_text())
         entry = next(entry for entry in manifest["databases"] if entry["source"] == str(database))
@@ -204,6 +204,45 @@ def test_excludes_disposable_files_and_previously_staged_images(harness: Harness
     assert (restored / memory.relative_to(harness.home)).is_file()
     manifest = json.loads((restored / harness.staging.relative_to(harness.home) / "manifest.json").read_text())
     assert [entry["source"] for entry in manifest["databases"]] == [str(memory)]
+
+
+def test_excludes_thread_history_projection_but_preserves_journals_and_memory(harness: Harness, tmp_path: Path) -> None:
+    projection = harness.codex / "thread_history_1.sqlite"
+    journal = harness.codex / "sessions/2026/rollout.jsonl"
+    journal.parent.mkdir(parents=True)
+    journal.write_text('{"message":"keep"}\n')
+    memory = harness.codex / "memories_1.sqlite"
+    with closing(sqlite3.connect(memory)) as database, database:
+        database.execute("CREATE TABLE memories (value TEXT)")
+        database.execute("INSERT INTO memories VALUES ('remembered')")
+    stale = harness.staging / "images/codex/old-root/thread_history_1.sqlite"
+    stale.parent.mkdir(parents=True)
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        Path(str(stale) + suffix).write_bytes(b"previously staged projection")
+
+    with closing(sqlite3.connect(projection)) as writer, writer:
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        writer.execute("CREATE TABLE projected (value TEXT)")
+        writer.execute("INSERT INTO projected VALUES ('derived')")
+        writer.commit()
+        assert Path(str(projection) + "-wal").stat().st_size > 0
+        assert Path(str(projection) + "-shm").exists()
+        Path(str(projection) + "-journal").write_bytes(b"old journal")
+
+        harness.backup()
+        restored = tmp_path / "restored"
+        harness.restic("restore", harness.snapshot_ids()[0], "--target", str(restored))
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            assert not (restored / ".codex" / (projection.name + suffix)).exists()
+            assert not (restored / stale.relative_to(harness.home).parent / (stale.name + suffix)).exists()
+        assert (restored / journal.relative_to(harness.home)).read_text() == journal.read_text()
+        assert (restored / memory.relative_to(harness.home)).exists()
+        staged = restored / harness.staging.relative_to(harness.home)
+        manifest = json.loads((staged / "manifest.json").read_text())
+        assert [entry["source"] for entry in manifest["databases"]] == [str(memory)]
+        with closing(sqlite3.connect(staged / manifest["databases"][0]["image"])) as database:
+            assert database.execute("SELECT value FROM memories").fetchone() == ("remembered",)
 
 
 if __name__ == "__main__":

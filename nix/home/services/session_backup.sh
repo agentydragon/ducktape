@@ -43,8 +43,14 @@ done
 exclude_file "$codex_home" codex models_cache.json
 # This SQLite database contains diagnostic logs, not conversation history.
 exclude_file "$codex_home" codex logs_2.sqlite
-backup_excludes+=(--exclude "$codex_home/logs_2.sqlite-wal" --exclude "$codex_home/logs_2.sqlite-shm"
-  --exclude "$codex_home/logs_2.sqlite-journal")
+# Codex projects paginated history from the durable rollout JSONL:
+# https://github.com/openai/codex/blob/092d3acd6bec3e3a14bdc7e7a2810ab628ab759d/codex-rs/thread-store/src/local/live_writer.rs#L349-L364
+exclude_file "$codex_home" codex thread_history_1.sqlite
+for database in logs_2.sqlite thread_history_1.sqlite; do
+  for suffix in -wal -shm -journal; do
+    backup_excludes+=(--exclude "$codex_home/$database$suffix" --exclude "$staging_dir/images/codex/*/$database$suffix")
+  done
+done
 
 "$python" "$snapshot_script" --output "$staging_dir" \
   --root claude "$claude_home" --root codex "$codex_home" \
