@@ -50,7 +50,7 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=repository,
         chart="cloudnative-pg",
-        version="0.29.0",
+        version="0.29.1",
         interval="30m",
         install=HelmReleaseSpecInstall(
             crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
