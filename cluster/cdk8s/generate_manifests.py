@@ -1565,18 +1565,10 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
-    platform_sessions_artifact = artifact(
-        "platform-sessions", platform_sessions_app.OUTPUT_DIR, platform_sessions_app.PINS_DIR
-    )
+    platform_sessions_artifact = artifact("platform-sessions", platform_sessions_app.OUTPUT_DIR)
     platform_sessions_kustomization = platform_sessions_app.platform_sessions(
         flux_chart,
-        write_directory(
-            root,
-            platform_sessions_artifact,
-            platform_sessions_app.chart,
-            components=[posixpath.relpath(platform_sessions_app.PINS_DIR, platform_sessions_app.OUTPUT_DIR)],
-            config_map_generator=[platform_sessions_app.CONFIG],
-        ),
+        write_directory(root, platform_sessions_artifact, platform_sessions_app.chart),
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         flux_image_automation_ghcr_kustomization,
