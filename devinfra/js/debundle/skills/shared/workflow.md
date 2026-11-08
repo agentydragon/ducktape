@@ -59,11 +59,18 @@ For each snapshot-backed lane worker, also supply:
   provenance, and the spec tree/version they describe;
 - the copied engine path, copied graph and spec/source roots, tree config,
   modules path, relocated graph package-root map, and the exact regeneration
-  `argv`; record the working directory used for every command;
+  `argv`; record the working directory, environment entry command, and local or
+  remote execution boundary for every preflight and regeneration command;
 - the worker's permitted YAML subtree and exact commands for the proposed
   assignment, regeneration and runtime checks, plus CI when applicable. Keep
   baseline pipeline, proposed-assignment, post-edit, runtime and CI results
   distinct; mark an inapplicable check with its reason.
+
+For an eligibility comparison, freeze the exact source, spec, graph and provider
+inputs. State the expected input schema and row count, and check both before
+comparing eligibility. Even a read-only query may trigger repository devshell
+setup writes and need shell escalation; use the project's environment rather
+than per-tool workarounds.
 
 Name the command that establishes selector uniqueness, including when the full
 pipeline already covers it. Capture pre-edit verification's actual result and
@@ -380,6 +387,17 @@ bypass validation. Narrow coverage and annotations can remain the right
 solutions. Graduate them to broader inference when demonstrated reuse,
 repeated audit cost or maintenance justifies it, then remove redundant rules
 or stale assertions without silently expanding the promised scope.
+
+After a recognizer or audited operation succeeds, consider a full census of the
+remaining authored keys for that same category and provider before adding
+semantic prerequisites for a narrow failed or near-complete-owner cohort. Include
+fully unselected and partially selected owners: owner- or function-level filters
+can hide eligible binding-level progress. Keep physical implicit placement
+separate from explicit canonical claims; unrestricted `bindings` can still leave
+explicit `anonymous_statements` excluded, so it is not full owner extraction.
+Treat template initializer shape as a lead only. Source and provenance, native
+guards and author premises determine eligibility; retain the combined ordinary
+gate and retention checks on the actual candidate.
 
 ### Keep the iteration loop cheap and informative
 
