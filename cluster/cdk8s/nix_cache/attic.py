@@ -24,7 +24,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling
-from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.flux import ConfigMapArgs
@@ -164,13 +164,13 @@ def _database(scope: Construct) -> None:
         resize_in_use_volumes=True,
         instances=3,
         initdb=cluster.same_owner_initdb("attic"),
-        wal_archive=True,
+        # Cache metadata is rebuildable, so this cluster is not backed up.
+        wal_archive=False,
         # Attic autocommits several statements per ~64 KiB chunk. With a commit per fsync on the HDD
         # tier, a large upload saturated the disk until Attic's 10-connection pool timed out (a 500).
         # A crash loses under a second of commits: cache rows a client re-pushes.
         postgresql=ClusterSpecPostgresql(parameters={"synchronous_commit": "off"}),
     )
-    backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _service(scope: Construct) -> None:
@@ -192,7 +192,6 @@ def _service(scope: Construct) -> None:
 
 
 def _local_server(scope: Construct) -> None:
-    # CNPG backs up the entire cluster, including this separately owned database.
     Database(
         scope,
         "local-database",
