@@ -57,7 +57,7 @@ func TestGeneratedHTTPRequiresOwnerAndSameOriginForBrowserMutations(t *testing.T
 	request.AddCookie(&http.Cookie{Name: ownerCookie, Value: good})
 	result = httptest.NewRecorder()
 	handler.ServeHTTP(result, request)
-	if result.Code != 200 || !strings.Contains(result.Body.String(), `data-management="grpc"`) {
+	if result.Code != 200 || result.Body.String() != "<body>test</body>" {
 		t.Fatalf("owner UI: %d %q", result.Code, result.Body)
 	}
 	request = httptest.NewRequest("GET", "https://sessions.invalid/api/v1/instances", nil)

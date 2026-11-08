@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 )
 
 // HTTPConfig supplies gateway configuration and the generated owner UI.
@@ -138,7 +137,6 @@ func HTTPServer(ctx context.Context, service *Service, config HTTPConfig) (http.
 				return
 			}
 			if entry.asset == "status.html" {
-				data = []byte(strings.Replace(string(data), "<body>", `<body data-management="grpc">`, 1))
 				w.Header().Set("Referrer-Policy", "no-referrer")
 				w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 			}

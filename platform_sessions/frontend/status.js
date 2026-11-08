@@ -8,7 +8,6 @@ const importResult = document.getElementById("result");
 const detectedProvider = document.getElementById("import-provider");
 let integrations = [];
 let importing = false;
-const grpcManagement = document.body?.dataset.management === "grpc";
 
 function signedOut(response) {
   if (response.status !== 401) return false;
@@ -23,7 +22,7 @@ function element(tag, text) {
 }
 
 function endpoint(id) {
-  return grpcManagement ? `/api/v1/instances/${encodeURIComponent(id)}` : `/api/integrations/${encodeURIComponent(id)}`;
+  return `/api/v1/instances/${encodeURIComponent(id)}`;
 }
 
 function identifyExport(value) {
@@ -93,18 +92,6 @@ function formatDetail(item) {
   return String(item.value);
 }
 
-const outcomeLabels = {
-  success: "Session verified",
-  uninitialized: "No session configured",
-  not_checked: "Not checked yet",
-  reauth_required: "Session needs reauthentication",
-  upstream_http_error: "Provider could not verify the session",
-  network_error: "Could not reach provider",
-  invalid_response: "Provider returned an unexpected response",
-  storage_error: "Could not read the session",
-  superseded: "Session changed during check; check again",
-};
-
 const detailLabels = {
   imported_at: "Imported",
   age_seconds: "Age at check",
@@ -128,24 +115,6 @@ const importErrorMessages = {
   invalid_response: "The provider returned an unexpected response. Check the session status before retrying.",
   storage_error: "Could not access session storage. Check the session status and service logs before retrying.",
 };
-
-function importErrorMessage(data, status) {
-  const code = data && typeof data === "object" ? data.error : undefined;
-  if (typeof code === "string") {
-    if (Object.hasOwn(importErrorMessages, code)) return importErrorMessages[code];
-    const unknownHttpStatus = /^outcome_unknown_http_([1-5]\d{2})$/.exec(code)?.[1];
-    if (unknownHttpStatus) {
-      return `The provider returned HTTP ${unknownHttpStatus}. The import outcome is unknown; check the session status before retrying.`;
-    }
-    const upstreamStatus = /^upstream_http_([1-5]\d{2})$/.exec(code)?.[1];
-    if (upstreamStatus) {
-      return `The provider returned HTTP ${upstreamStatus}. Check the session status before retrying.`;
-    }
-  }
-  return status >= 500
-    ? "Import outcome is unknown; check status before retrying."
-    : "Could not verify the session. Check the session status before retrying.";
-}
 
 // The management API returns provider protobuf messages directly. Render them here rather than
 // maintaining a second server-side status schema.
@@ -246,17 +215,15 @@ function setupIntegration(info) {
   async function refresh() {
     const sequence = ++refreshSequence;
     try {
-      const response = await fetch(grpcManagement ? `${endpoint(info.id)}/session` : endpoint(info.id), {
+      const response = await fetch(`${endpoint(info.id)}/session`, {
         credentials: "same-origin",
         cache: "no-store",
       });
       if (signedOut(response)) return;
       if (!response.ok) throw new Error("Status unavailable");
-      let data = await response.json();
-      if (grpcManagement) data = protobufStatus(data);
+      const data = protobufStatus(await response.json());
       if (sequence !== refreshSequence || importing) return;
-      state.textContent =
-        typeof data.message === "string" ? data.message : (outcomeLabels[data.outcome] ?? "Status unavailable");
+      state.textContent = typeof data.message === "string" ? data.message : "Status unavailable";
       state.dataset.state = typeof data.state === "string" ? data.state : "unavailable";
       help.textContent = typeof data.help === "string" ? data.help : "";
       details.replaceChildren();
@@ -279,7 +246,7 @@ function setupIntegration(info) {
     if (importing) return;
     verify.disabled = true;
     try {
-      const response = await fetch(grpcManagement ? `${endpoint(info.id)}:probe` : `${endpoint(info.id)}/verify`, {
+      const response = await fetch(`${endpoint(info.id)}:probe`, {
         method: "POST",
         credentials: "same-origin",
         cache: "no-store",
@@ -298,21 +265,18 @@ function setupIntegration(info) {
 
 async function initialize() {
   try {
-    const response = await fetch(grpcManagement ? "/api/v1/instances" : "/api/integrations", {
+    const response = await fetch("/api/v1/instances", {
       credentials: "same-origin",
       cache: "no-store",
     });
     if (signedOut(response)) return;
     if (!response.ok) throw new Error("Integrations unavailable");
     const data = await response.json();
-    const entries = grpcManagement
-      ? (data.instances ?? []).map((item) => ({
-          id: item.ref.instanceId,
-          type: item.ref.providerId,
-          instructions: item.info?.instructions ?? [],
-          candidate_verification: item.info?.supportsCandidateVerification ?? false,
-        }))
-      : data;
+    const entries = (data.instances ?? []).map((item) => ({
+      id: item.ref.instanceId,
+      type: item.ref.providerId,
+      instructions: item.info?.instructions ?? [],
+    }));
     if (!Array.isArray(entries)) throw new Error("Invalid integrations");
     integrations = entries.map(setupIntegration);
     await Promise.all(integrations.map((integration) => integration.refresh()));
@@ -346,25 +310,21 @@ document.getElementById("session-form").addEventListener("submit", async (event)
   importButton.disabled = true;
   try {
     importResult.textContent = `Verifying the ${selected.id} session…`;
-    const response = await fetch(
-      grpcManagement ? `${endpoint(selected.id)}:importSession` : `${endpoint(selected.id)}/session`,
-      {
-        method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(grpcManagement ? protobufCandidate(payload) : payload),
-      }
-    );
+    const response = await fetch(`${endpoint(selected.id)}:importSession`, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(protobufCandidate(payload)),
+    });
     if (signedOut(response)) return;
     const data = await response.json();
-    if (response.ok && (!grpcManagement || data.outcome === "IMPORT_OUTCOME_INSTALLED")) {
+    if (response.ok && data.outcome === "IMPORT_OUTCOME_INSTALLED") {
       sessionInput.value = "";
       updateSelection();
       importResult.textContent = `${selected.id} session imported.`;
     } else {
-      importResult.textContent =
-        grpcManagement && response.ok ? protobufImportMessage(data) : importErrorMessage(data, response.status);
+      importResult.textContent = protobufImportMessage(data);
     }
   } catch {
     importResult.textContent = "The connection was interrupted. Check the session status before trying again.";

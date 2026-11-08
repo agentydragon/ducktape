@@ -1,20 +1,11 @@
-"""Reusable configuration and HTTP transport for the session proxy."""
+"""HTTP transport for provider-owned sessions."""
 
-from collections.abc import Callable, Set
+from collections.abc import Callable
 
 import httpx2
-from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
-from platform_sessions.auth import BearerAuth
-from platform_sessions.http_types import HttpToken
-from platform_sessions.proxy import HeaderPolicy, ProxyInstance, ProxyResponse
-
-
-class HeaderConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    request: Set[HttpToken] = Field(default_factory=set)
-    response: Set[HttpToken] = Field(default_factory=set)
+from platform_sessions.proxy import ProxyResponse
 
 
 class HttpSessionTransport:
@@ -39,15 +30,3 @@ class HttpSessionTransport:
             # Preserve raw compressed bytes alongside the upstream encoding header.
             body = b"".join(response.iter_raw())
             return ProxyResponse(response.status_code, tuple(response.headers.raw), body)
-
-
-def create_proxy(runtimes, configs, header_configs, adapter_factory):
-    instances = {}
-    for runtime in runtimes:
-        adapter, policy = adapter_factory(runtime)
-        extra = header_configs.get(runtime.config.id, HeaderConfig())
-        policy = HeaderPolicy(request=policy.request | extra.request, response=policy.response | extra.response)
-        instances[runtime.config.id] = ProxyInstance(runtime.config, adapter, policy)
-    if set(header_configs) - instances.keys():
-        raise ValueError("Proxy headers reference an unknown or disabled integration")
-    return instances, BearerAuth.from_config(configs, instances=instances.keys())
