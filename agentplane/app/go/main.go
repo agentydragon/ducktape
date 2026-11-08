@@ -32,7 +32,11 @@ func main() {
 		}
 		return
 	}
-	config, err := loadConfigWithArgs(os.Args[1:])
+	if len(os.Args) != 1 {
+		slog.Error("invalid Agentplane app command line", "error", "only --migrate-only is supported")
+		os.Exit(1)
+	}
+	config, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid Agentplane app configuration", "error", err)
 		os.Exit(1)

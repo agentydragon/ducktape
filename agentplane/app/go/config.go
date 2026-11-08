@@ -1,27 +1,26 @@
 package main
 
 import (
+	"bytes"
 	"errors"
-	"flag"
 	"fmt"
-	"maps"
+	"io"
 	"math"
 	"net/url"
 	"os"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
-// Config mirrors the deployed integration app's AGENTPLANE_* and YAML settings contract.
-// OIDC relying-party settings are loaded separately by the auth package from AGENTPLANE_OIDC_*.
+// Config is the app's complete deployment-authored settings file plus explicit runtime Secret inputs.
 type Config struct {
 	Models                              runtimeconfig.ModelCatalog `mapstructure:"models"`
 	ThreadPresets                       map[string]ThreadPreset    `mapstructure:"thread_presets"`
@@ -30,6 +29,8 @@ type Config struct {
 	EgressAdminURL                      string                     `mapstructure:"egress_admin_url"`
 	ConnectionServiceURL                string                     `mapstructure:"connection_service_url"`
 	ActionFederation                    ActionFederationConfig     `mapstructure:"action_federation"`
+	OIDCSettings                        *auth.OIDCSettings         `mapstructure:"oidc"`
+	OIDC                                *auth.OIDCConfig           `mapstructure:"-"`
 	FrontendConfig                      FrontendConfig             `mapstructure:"frontend_config"`
 	SandboxNamespace                    string                     `mapstructure:"sandbox_namespace"`
 	RunnerGatewayTarget                 string                     `mapstructure:"runner_gateway_target"`
@@ -51,7 +52,7 @@ type Config struct {
 	LogLevels                           map[string]string          `mapstructure:"log_levels"`
 	ListenAddress                       string                     `mapstructure:"listen_address"`
 	Kubeconfig                          string                     `mapstructure:"kubeconfig"`
-	DatabaseURL                         string                     `mapstructure:"database_url"`
+	DatabaseURL                         string                     `mapstructure:"-"`
 	ElectricURL                         string                     `mapstructure:"electric_url"`
 	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
 	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
@@ -197,63 +198,38 @@ func defaultConfig() Config {
 	}
 }
 
-func loadConfigWithArgs(args []string) (Config, error) {
+func loadConfig() (Config, error) {
 	c := defaultConfig()
 	var sandboxPresetOrder []string
-	settings := viper.NewWithOptions(viper.ExperimentalBindStruct())
-	settings.SetEnvPrefix("AGENTPLANE")
-	settings.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	settings.AutomaticEnv()
+	path := os.Getenv("AGENTPLANE_CONFIG_FILE")
+	if path == "" {
+		return Config{}, errors.New("AGENTPLANE_CONFIG_FILE is required")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("could not read app settings file: %w", err)
+	}
+	settings := viper.New()
+	settings.SetConfigType("yaml")
+	if err := settings.ReadConfig(bytes.NewReader(contents)); err != nil {
+		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(contents))
 	var rawSettings map[string]any
-	if path := os.Getenv("AGENTPLANE_CONFIG_FILE"); path != "" {
-		settings.SetConfigFile(path)
-		settings.SetConfigType("yaml")
-		if err := settings.ReadInConfig(); err != nil {
-			return Config{}, fmt.Errorf("could not read app settings file: %w", err)
-		}
-		contents, err := os.ReadFile(path)
-		if err != nil {
-			return Config{}, fmt.Errorf("could not read app settings file: %w", err)
-		}
-		if err := yaml.Unmarshal(contents, &rawSettings); err != nil {
-			return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
-		}
-		sandboxPresetOrder = yamlMappingKeys(contents, "sandbox_presets")
+	if err := decoder.Decode(&rawSettings); err != nil {
+		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
 	}
-	for _, key := range []string{"models", "thread_presets", "sandbox_presets", "new_sandbox_defaults", "frontend_config"} {
-		if value, ok := os.LookupEnv("AGENTPLANE_" + strings.ToUpper(key)); ok {
-			var decoded any
-			if err := yaml.Unmarshal([]byte(value), &decoded); err != nil {
-				return Config{}, fmt.Errorf("could not decode AGENTPLANE_%s: %w", strings.ToUpper(key), err)
-			}
-			if rawSettings == nil {
-				rawSettings = map[string]any{}
-			}
-			rawSettings[key] = decoded
-			if key == "frontend_config" {
-				settings.Set(key, decoded)
-			}
-			if key == "sandbox_presets" {
-				sandboxPresetOrder = yamlMappingKeys([]byte(value), "")
-			}
-		}
+	var trailingDocument any
+	if err := decoder.Decode(&trailingDocument); err == nil {
+		return Config{}, errors.New("app settings file must contain exactly one YAML document")
+	} else if !errors.Is(err, io.EOF) {
+		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
 	}
+	sandboxPresetOrder = yamlMappingKeys(contents, "sandbox_presets")
 	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
 		return Config{}, fmt.Errorf("invalid app settings: %w", err)
 	}
-	for _, configured := range []struct {
-		key    string
-		target *[]string
-	}{
-		{key: "token_subjects", target: &c.TokenSubjects},
-	} {
-		name := "AGENTPLANE_" + strings.ToUpper(configured.key)
-		if value, ok := os.LookupEnv(name); ok {
-			if err := yaml.Unmarshal([]byte(value), configured.target); err != nil {
-				return Config{}, fmt.Errorf("could not decode %s: %w", name, err)
-			}
-		}
-	}
+	c.DatabaseURL = os.Getenv("AGENTPLANE_DATABASE_URL")
 	if c.LogLevels == nil {
 		c.LogLevels = map[string]string{}
 	}
@@ -265,97 +241,16 @@ func loadConfigWithArgs(args []string) (Config, error) {
 	if err := c.decodeCaseSensitiveSettings(rawSettings); err != nil {
 		return Config{}, err
 	}
-	cliSettings, cliSandboxPresetOrder, err := applyCommandLineOverrides(&c, args)
+	c.OIDC, err = auth.LoadOIDC(c.OIDCSettings)
 	if err != nil {
-		return Config{}, err
-	}
-	if len(cliSettings) != 0 {
-		if rawSettings == nil {
-			rawSettings = map[string]any{}
-		}
-		maps.Copy(rawSettings, cliSettings)
-		if err := c.decodeCaseSensitiveSettings(rawSettings); err != nil {
-			return Config{}, err
-		}
+		return Config{}, fmt.Errorf("invalid OIDC settings: %w", err)
 	}
 	c.applyDefaults(rawSettings)
 	if err := c.validate(); err != nil {
 		return Config{}, err
 	}
-	if len(cliSandboxPresetOrder) != 0 {
-		sandboxPresetOrder = cliSandboxPresetOrder
-	}
 	c.sandboxPresetOrder = sandboxPresetOrder
 	return c, nil
-}
-
-// applyCommandLineOverrides accepts the kebab-case flag for every exported Config field. Values
-// are literal for strings and YAML scalars or JSON/YAML objects for other field types.
-// Call it after YAML and environment decoding so CLI values have the highest precedence.
-func applyCommandLineOverrides(c *Config, args []string) (map[string]any, []string, error) {
-	flags := flag.NewFlagSet("agentplane-app", flag.ContinueOnError)
-	type configFlag struct {
-		name  string
-		key   string
-		index int
-		value *string
-	}
-	configType := reflect.TypeOf(*c)
-	configFlags := make([]configFlag, 0, configType.NumField())
-	for index := 0; index < configType.NumField(); index++ {
-		field := configType.Field(index)
-		if field.PkgPath != "" { // Ignore internal bookkeeping fields.
-			continue
-		}
-		key, ok := field.Tag.Lookup("mapstructure")
-		if !ok || key == "" || key == "-" {
-			continue
-		}
-		name := strings.ReplaceAll(key, "_", "-")
-		value := new(string)
-		flags.StringVar(value, name, "", "Override "+key+" from YAML or AGENTPLANE_* configuration.")
-		configFlags = append(configFlags, configFlag{name: name, key: key, index: index, value: value})
-	}
-	if err := flags.Parse(args); err != nil {
-		return nil, nil, fmt.Errorf("invalid app command line: %w", err)
-	}
-	if flags.NArg() != 0 {
-		return nil, nil, fmt.Errorf("unexpected app command line arguments: %v", flags.Args())
-	}
-	set := make(map[string]struct{})
-	flags.Visit(func(parsed *flag.Flag) { set[parsed.Name] = struct{}{} })
-	configValue := reflect.ValueOf(c).Elem()
-	cliSettings := make(map[string]any)
-	var sandboxPresetOrder []string
-	for _, configured := range configFlags {
-		if _, present := set[configured.name]; !present {
-			continue
-		}
-		var decoded any
-		if configType.Field(configured.index).Type.Kind() == reflect.String {
-			decoded = *configured.value
-		} else if err := yaml.Unmarshal([]byte(*configured.value), &decoded); err != nil {
-			return nil, nil, fmt.Errorf("invalid --%s value: %w", configured.name, err)
-		}
-		cliSettings[configured.key] = decoded
-		if configured.key == "sandbox_presets" {
-			sandboxPresetOrder = yamlMappingKeys([]byte(*configured.value), "")
-		}
-		target := reflect.New(configType.Field(configured.index).Type)
-		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-			Result: target.Interface(), TagName: "mapstructure", WeaklyTypedInput: true,
-			ErrorUnused: true,
-			DecodeHook:  mapstructure.TextUnmarshallerHookFunc(),
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("configure --%s decoder: %w", configured.name, err)
-		}
-		if err := decoder.Decode(decoded); err != nil {
-			return nil, nil, fmt.Errorf("invalid --%s value: %w", configured.name, err)
-		}
-		configValue.Field(configured.index).Set(target.Elem())
-	}
-	return cliSettings, sandboxPresetOrder, nil
 }
 
 func yamlMappingKeys(contents []byte, section string) []string {

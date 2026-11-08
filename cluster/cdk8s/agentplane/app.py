@@ -4,7 +4,6 @@ HTTPRoute, NetworkPolicy, and the agent and app ServiceAccounts.
 
 from __future__ import annotations
 
-import json
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -25,7 +24,6 @@ from cdk8s_plus_34 import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
-from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import cilium, node_scheduling
@@ -52,7 +50,6 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, cli_args, env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "app"
@@ -91,7 +88,6 @@ class App(Construct):
         database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        runner_control_target: str | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
@@ -100,20 +96,16 @@ class App(Construct):
         self.database_url = database_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
-        self.runner_control_target = runner_control_target or runner_gateway.control_target(env.namespace)
         self.memory_limit = memory_limit
         self.service = service(env.namespace)
         self.oidc = oidc_secret(env.namespace)
 
         self._add_agent_service_account()
-        content = env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"})
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name="app-config", namespace=env.namespace),
-            # The endpoint is delivered as an env var: an older app image ignores unknown env vars
-            # while this manifest reaches the cluster before image automation publishes the new image.
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(env.app_config),
             path="/etc/agentplane/config.yaml",
         )
         workload = self._add_workload(config)
@@ -183,35 +175,17 @@ class App(Construct):
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
-        token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            env_name(Settings, "database_url"): self.database_url,
-            **(
-                {env_name(Settings, "electric_url"): EnvValue.from_value(self.electric.url)}
-                if self.electric is not None
-                else {}
-            ),
-            env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
-            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(self.env.app.origin),
-            env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
-            env_name(OIDCSettings, "client_secret"): self.oidc.key("client-secret").env_value(
-                self, "oidc-client-secret-ref"
-            ),
-            env_name(OIDCSettings, "session_secret"): SecretRef(
-                namespace=namespace, name=self.env.app.oidc_session_secret_name
-            )
+            "AGENTPLANE_DATABASE_URL": self.database_url,
+            "AGENTPLANE_OIDC_CLIENT_ID": self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
+            "AGENTPLANE_OIDC_CLIENT_SECRET": self.oidc.key("client-secret").env_value(self, "oidc-client-secret-ref"),
+            "AGENTPLANE_OIDC_SESSION_SECRET": SecretRef(namespace=namespace, name=self.env.app.oidc_session_secret_name)
             .key("session-secret")
             .env_value(self, "oidc-session-secret-ref"),
-            env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
-            env_name(Settings, "connection_service_url"): EnvValue.from_value(
-                str(checked_value(Settings, "connection_service_url", self.env.app_config.connection_service_url))
-            ),
         }
 
     def _add_workload(self, config: SettingsFile) -> ServiceWorkload:
-        namespace = self.env.namespace
         env = self._container_env()
-        control_target = EnvValue.from_value(self.runner_control_target)
         oidc_secret_reload = self.oidc.name
         if self.env.app.oidc_session_secret_name != self.oidc.name:
             oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
@@ -221,25 +195,8 @@ class App(Construct):
             serves=[self.service],
             container="app",
             image=f"{_APP_IMAGE}:{_PLACEHOLDER_TAG}",
-            args=cli_args(
-                Settings,
-                # TODO: a separate Sandbox namespace, holding the Sandboxes, their
-                # templates, and the ServiceAccounts the controller mints for them.
-                sandbox_namespace=namespace,
-                runner_gateway_target=runner_gateway.target(namespace),
-                runner_gateway_token_file="/var/run/secrets/agentplane-runner-gateway/token",
-                history_service_target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
-                session_dispatcher_target=(
-                    f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
-                ),
-                policy_service_target=f"{policy_controller.service(namespace).fqdn}:{policy_controller.service(namespace).port.number}",
-                notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
-                notifications_token_file="/var/run/secrets/agentplane-notifications/token",
-                listen_address=f"0.0.0.0:{self.service.pod_port}",
-            ),
             env_variables={
                 **env,
-                env_name(Settings, "runner_gateway_control_target"): control_target,
                 "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": EnvValue.from_value(telemetry.OTLP_HTTP_ENDPOINT + "/v1/traces"),
                 "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": EnvValue.from_value("http/protobuf"),
             },
@@ -252,7 +209,7 @@ class App(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
             ),
-            # The Go HTTP/SSE drain is bounded by --shutdown-timeout (5s by default); the rest
+            # The Go HTTP/SSE drain is bounded by shutdown_timeout (5s by default); the rest
             # of the grace period allows background workers and stores to close cleanly.
             termination_grace=Duration.seconds(60),
             placement=self.placement,

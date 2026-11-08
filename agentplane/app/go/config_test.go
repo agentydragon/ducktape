@@ -9,14 +9,67 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 )
 
+const validSettingsYAML = `
+models:
+  models:
+    - model: model-a
+      display_name: Model A
+      reasoning_efforts: [low]
+  harnesses:
+    HARNESS_CLAUDE: [model-a]
+    HARNESS_CODEX: []
+thread_presets:
+  DefaultThread:
+    title: Default
+    harness: HARNESS_CLAUDE
+    model: model-a
+sandbox_presets:
+  Work Space:
+    title: Work
+    template: linux
+    thread_preset: DefaultThread
+  Alpha:
+    title: Alpha
+    template: linux
+    thread_preset: DefaultThread
+egress_admin_url: http://egress:8080
+connection_service_url: http://connection:8080
+action_federation:
+  mode: direct
+  service_url: https://actions.example.test
+  login_jwks_uri: https://login.example.test/jwks
+  target:
+    issuer: https://actions.example.test
+    audience: agentplane
+    jwks_uri: https://actions.example.test/jwks
+  scope: actions:operator
+sandbox_namespace: sandboxes
+runner_gateway_target: runner-gateway:9090
+runner_gateway_control_target: '{sandbox}-control.{namespace}.svc:8080'
+session_dispatcher_target: session-dispatcher:9090
+history_service_target: history:9090
+notifications_url: http://notifications:9090
+listen_address: 0.0.0.0:8080
+token_subjects: [system:serviceaccount:sandboxes:agentplane-agent]
+log_levels: {}
+`
+
+func writeConfig(t *testing.T, contents string) string {
+	t.Helper()
+	path := t.TempDir() + "/app.yaml"
+	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENTPLANE_CONFIG_FILE", path)
+	t.Setenv("AGENTPLANE_DATABASE_URL", "postgresql://app@postgres/agentplane")
+	return path
+}
+
 func validTestConfig() Config {
 	return Config{
 		Models: runtimeconfig.ModelCatalog{
-			Models: []runtimeconfig.ModelOption{{Model: "model-a", DisplayName: "Model A", ReasoningEfforts: []string{"low", "high"}}},
-			Harnesses: map[string][]string{
-				"HARNESS_CLAUDE": {"model-a"},
-				"HARNESS_CODEX":  {"model-a"},
-			},
+			Models:    []runtimeconfig.ModelOption{{Model: "model-a", DisplayName: "Model A", ReasoningEfforts: []string{"low", "high"}}},
+			Harnesses: map[string][]string{"HARNESS_CLAUDE": {"model-a"}, "HARNESS_CODEX": {"model-a"}},
 		},
 		ThreadPresets: map[string]ThreadPreset{
 			"default": {Title: "Default", Harness: "HARNESS_CODEX", Model: "model-a", ReasoningEffort: stringPtr("low")},
@@ -62,290 +115,107 @@ func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	}
 }
 
-func TestConfigRequiresPolicyService(t *testing.T) {
+func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
+	t.Run("path required", func(t *testing.T) {
+		t.Setenv("AGENTPLANE_CONFIG_FILE", "")
+		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "AGENTPLANE_CONFIG_FILE is required") {
+			t.Fatalf("missing config path error = %v", err)
+		}
+	})
+	t.Run("valid file and runtime secret", func(t *testing.T) {
+		writeConfig(t, validSettingsYAML)
+		t.Setenv("AGENTPLANE_LISTEN_ADDRESS", "127.0.0.1:9999")
+		t.Setenv("AGENTPLANE_TOKEN_SUBJECTS", `[]`)
+		c, err := loadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ListenAddress != "0.0.0.0:8080" {
+			t.Fatalf("static environment override was applied: %q", c.ListenAddress)
+		}
+		if !reflect.DeepEqual(c.TokenSubjects, []string{"system:serviceaccount:sandboxes:agentplane-agent"}) {
+			t.Fatalf("token subjects were not loaded from YAML: %#v", c.TokenSubjects)
+		}
+		if c.DatabaseURL != "postgresql://app@postgres/agentplane" {
+			t.Fatalf("database Secret input = %q", c.DatabaseURL)
+		}
+		if c.NotificationsRequestTimeoutSeconds != 5 || c.RunnerGatewayLifecycleTimeoutSecs != 310 {
+			t.Fatalf("omitted defaults changed: notifications=%v lifecycle=%v", c.NotificationsRequestTimeoutSeconds, c.RunnerGatewayLifecycleTimeoutSecs)
+		}
+		views := c.PresetViews()
+		if len(views) != 2 || views[0].Name != "Work Space" || views[1].Name != "Alpha" || views[0].SessionDefaults.CWD != "/state/workspaces/{session_id}" {
+			t.Fatalf("unexpected browser preset views: %+v", views)
+		}
+		if c.ActionFederation.LoginTokenProfile != "authentik" || c.ActionFederation.Target.TokenProfile != "authentik" {
+			t.Fatalf("unexpected federation profile defaults: %+v", c.ActionFederation)
+		}
+	})
 	for _, test := range []struct {
-		name  string
-		clear func(*Config)
+		name string
+		yaml string
+		want string
 	}{
-		{"policy_service_target", func(c *Config) { c.PolicyServiceTarget = "" }},
-		{"policy_service_token_file", func(c *Config) { c.PolicyServiceTokenFile = "" }},
+		{name: "unknown key", yaml: validSettingsYAML + "unknown_setting: true\n", want: "unknown_setting"},
+		{name: "database secret in file", yaml: validSettingsYAML + "database_url: postgresql://app@postgres/agentplane\n", want: "database_url"},
+		{name: "second document", yaml: validSettingsYAML + "---\nmodels: {}\n", want: "exactly one YAML document"},
+		{name: "malformed YAML", yaml: validSettingsYAML + "thread_presets: [\n", want: "could not decode app settings file"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			config := validTestConfig()
-			test.clear(&config)
-			if err := config.validate(); err == nil || !strings.Contains(err.Error(), test.name) {
-				t.Fatalf("validation error = %v, want %s required", err, test.name)
+			writeConfig(t, test.yaml)
+			if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("load error = %v, want %q", err, test.want)
 			}
 		})
 	}
 }
 
-func TestListenAddressConfig(t *testing.T) {
-	for _, address := range []string{"127.0.0.1:8080", "[::1]:8080", "fd:7"} {
-		config := validTestConfig()
-		if _, _, err := applyCommandLineOverrides(&config, []string{"--listen-address=" + address}); err != nil {
-			t.Fatal(err)
-		}
-		if config.ListenAddress != address {
-			t.Fatalf("listen address = %q, want %q", config.ListenAddress, address)
-		}
-		if err := config.validate(); err != nil {
-			t.Fatal(err)
-		}
+func TestLoadConfigReadsOIDCStaticSettingsFromFileAndSecretInputs(t *testing.T) {
+	configPath := writeConfig(t, validSettingsYAML+`oidc:
+  issuer: https://auth.example.test/application/o/agentplane/
+  public_base_url: https://app.example.test
+`)
+	t.Setenv("AGENTPLANE_OIDC_CLIENT_ID", "client")
+	t.Setenv("AGENTPLANE_OIDC_CLIENT_SECRET", "client-secret")
+	t.Setenv("AGENTPLANE_OIDC_SESSION_SECRET", "session-secret")
+	// Former static values are ignored; the file is authoritative.
+	t.Setenv("AGENTPLANE_OIDC_ISSUER", "https://ignored.example.test")
+	t.Setenv("AGENTPLANE_OIDC_TOKEN_RENEW_BEFORE_SECONDS", "0")
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
 	}
-	config := validTestConfig()
-	config.ListenAddress = ""
-	if err := config.validate(); err == nil || !strings.Contains(err.Error(), "listen_address") {
-		t.Fatalf("empty listener validation = %v, want rejection", err)
+	if c.OIDC == nil || c.OIDC.Issuer != "https://auth.example.test/application/o/agentplane/" ||
+		c.OIDC.SessionMaxSeconds != 604800 || c.OIDC.SessionIdleSeconds != 86400 ||
+		c.OIDC.SessionActivityStepSeconds != 300 || c.OIDC.TokenRenewBeforeSeconds != 30 {
+		t.Fatalf("unexpected OIDC settings: %+v", c.OIDC)
+	}
+	if err := os.WriteFile(configPath, []byte(validSettingsYAML+`oidc:
+  issuer: https://auth.example.test/application/o/agentplane/
+  public_base_url: https://app.example.test
+  token_renew_before_seconds: 0
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err = loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OIDC == nil || c.OIDC.TokenRenewBeforeSeconds != 0 {
+		t.Fatalf("explicit zero token renew setting was not retained: %+v", c.OIDC)
 	}
 }
 
-func TestConfigValidateRejectsTooShortNewSandboxIdleSuspendDefault(t *testing.T) {
-	seconds := int64(59)
-	config := validTestConfig()
-	config.NewSandboxDefaults.IdleSuspendAfterSeconds = &seconds
-	if err := config.validate(); err == nil || !strings.Contains(err.Error(), "new_sandbox_defaults.idle_suspend_after_seconds") {
-		t.Fatalf("invalid new Sandbox idle suspend default error = %v", err)
-	}
-}
-
-func TestLoadConfigAppliesPresetDefaultsAndRequiredSettings(t *testing.T) {
-	path := t.TempDir() + "/app.yaml"
-	contents := `
-models:
-  models:
-    - model: model-a
-      display_name: Model A
-      reasoning_efforts: []
-  harnesses:
-    HARNESS_CLAUDE: [model-a]
-    HARNESS_CODEX: []
-thread_presets:
-  DefaultThread:
-    title: Default
-    harness: HARNESS_CLAUDE
-    model: model-a
-sandbox_presets:
-  Work Space:
-    title: Work
-    template: linux
-    thread_preset: DefaultThread
-  Alpha:
-    title: Alpha
-    template: linux
-    thread_preset: DefaultThread
-new_sandbox_defaults:
-  wake_on_send: true
-  idle_suspend_after_seconds: 900
-frontend_config:
-  trace_search:
-    grafana_base_url: https://grafana.example.test/
-    tempo_datasource_uid: fixture-tempo
-    deployment_environment: fixture
-  langfuse_search:
-    base_url: https://langfuse.example.test/
-    project_id: fixture-project
-    sandbox_namespace_metadata_key: sandbox_namespace
-    sandbox_service_account_metadata_key: sandbox_service_account
-egress_admin_url: http://egress:8080
-connection_service_url: http://connection:8080
-action_federation:
-  mode: direct
-  service_url: https://actions.example.test
-  login_jwks_uri: https://login.example.test/jwks
-  target:
-    issuer: https://actions.example.test
-    audience: agentplane
-    jwks_uri: https://actions.example.test/jwks
-  scope: actions:operator
-sandbox_namespace: sandboxes
-runner_gateway_target: runner-gateway:9090
-session_dispatcher_target: session-dispatcher:9090
-runner_gateway_control_target: '{sandbox}-control.{namespace}.svc:8080'
-history_service_target: history:9090
-notifications_url: http://notifications:9090
-database_url: postgresql://app@postgres/agentplane
-`
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("AGENTPLANE_CONFIG_FILE", path)
-	t.Setenv("AGENTPLANE_TOKEN_SUBJECTS", `["system:serviceaccount:sandboxes:agentplane-agent"]`)
-	c, err := loadConfigWithArgs(nil)
+func TestLoadConfigRetainsCaseSensitivePresetNames(t *testing.T) {
+	writeConfig(t, validSettingsYAML)
+	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	thread := c.ThreadPresets["DefaultThread"]
-	if thread.CWD != "/state/workspaces/{session_id}" || thread.Instructions != "" || thread.SetupScript != "" {
-		t.Fatalf("unexpected ThreadPreset defaults: %+v", thread)
+	if _, ok := c.SandboxPresets["Work Space"]; !ok {
+		t.Fatalf("sandbox preset name lost case or spacing: %#v", c.SandboxPresets)
 	}
-	sandbox := c.SandboxPresets["Work Space"]
-	if sandbox.PolicySets == nil || sandbox.InboxTags == nil {
-		t.Fatalf("omitted SandboxPreset lists must be empty arrays: %+v", sandbox)
-	}
-	views := c.PresetViews()
-	if len(views) != 2 || views[0].Name != "Work Space" || views[1].Name != "Alpha" || views[0].SessionDefaults.CWD != "/state/workspaces/{session_id}" || views[0].Bootstrap != "" {
-		t.Fatalf("unexpected browser preset views: %+v", views)
-	}
-	if c.Models.Harnesses["HARNESS_CODEX"] == nil || c.Models.Models[0].ReasoningEfforts == nil {
-		t.Fatalf("empty model catalog lists must be empty arrays: %+v", c.Models)
-	}
-	if c.ActionFederation.LoginTokenProfile != "authentik" || c.ActionFederation.Target.TokenProfile != "authentik" {
-		t.Fatalf("unexpected federation profile defaults: %+v", c.ActionFederation)
-	}
-	if !c.NewSandboxDefaults.WakeOnSend || c.NewSandboxDefaults.IdleSuspendAfterSeconds == nil || *c.NewSandboxDefaults.IdleSuspendAfterSeconds != 900 {
-		t.Fatalf("unexpected new Sandbox defaults: %+v", c.NewSandboxDefaults)
-	}
-	if c.RunnerGatewayControlTarget != "{sandbox}-control.{namespace}.svc:8080" {
-		t.Fatalf("runner gateway control target was not loaded from YAML: %q", c.RunnerGatewayControlTarget)
-	}
-	if c.LogLevels == nil || len(c.LogLevels) != 0 {
-		t.Fatalf("omitted log_levels must default to an empty map, got %#v", c.LogLevels)
-	}
-	if c.FrontendConfig.TraceSearch == nil || c.FrontendConfig.TraceSearch.TempoDatasourceUID != "fixture-tempo" ||
-		c.FrontendConfig.LangfuseSearch == nil || c.FrontendConfig.LangfuseSearch.ProjectID != "fixture-project" {
-		t.Fatalf("frontend config was not loaded from YAML: %+v", c.FrontendConfig)
-	}
-	if key := c.FrontendConfig.LangfuseSearch.SessionMetadataKey; key != "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id" {
-		t.Fatalf("default Langfuse Session filter key = %q", key)
-	}
-	t.Setenv("AGENTPLANE_FRONTEND_CONFIG", `{"trace_search":{"grafana_base_url":"https://grafana.example.test/","tempo_datasource_uid":"env-tempo","deployment_environment":"env"}}`)
-	c, err = loadConfigWithArgs(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.FrontendConfig.TraceSearch == nil || c.FrontendConfig.TraceSearch.TempoDatasourceUID != "env-tempo" || c.FrontendConfig.LangfuseSearch != nil {
-		t.Fatalf("frontend config environment override = %+v", c.FrontendConfig)
-	}
-	c, err = loadConfigWithArgs([]string{`--frontend-config={"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"cli-project","session_metadata_key":"session","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.FrontendConfig.TraceSearch != nil || c.FrontendConfig.LangfuseSearch == nil || c.FrontendConfig.LangfuseSearch.ProjectID != "cli-project" || c.FrontendConfig.LangfuseSearch.SessionMetadataKey != "session" {
-		t.Fatalf("frontend config CLI override = %+v", c.FrontendConfig)
-	}
-	for _, invalid := range []string{
-		`{"trace_search":{}}`,
-		`{"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"partial"}}`,
-		`{"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"project","session_metadata_key":"","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`,
-		`{"unknown":"refused"}`,
-	} {
-		if _, err := loadConfigWithArgs([]string{"--frontend-config=" + invalid}); err == nil {
-			t.Errorf("accepted invalid frontend config: %s", invalid)
-		}
-	}
-	if !reflect.DeepEqual(c.TokenSubjects, []string{"system:serviceaccount:sandboxes:agentplane-agent"}) {
-		t.Fatalf("token subjects environment override = %#v", c.TokenSubjects)
-	}
-	c, err = loadConfigWithArgs([]string{`--models={"models":[{"model":"model-a","display_name":"Model A","reasoning_efforts":[]}],"harnesses":{"HARNESS_CLAUDE":["model-a"],"HARNESS_CODEX":[],"HARNESS_CENTRAL_SAMPLER":["model-a"]}}`})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(c.Models.Harnesses["HARNESS_CENTRAL_SAMPLER"]) != 1 {
-		t.Fatalf("central sampler catalog = %+v", c.Models)
-	}
-}
-
-func TestRuntimeCLIOverridesEnvironmentAndYAML(t *testing.T) {
-	path := t.TempDir() + "/app.yaml"
-	contents := `
-models:
-  models:
-    - model: model-a
-      display_name: Model A
-      reasoning_efforts: []
-  harnesses:
-    HARNESS_CLAUDE: [model-a]
-    HARNESS_CODEX: []
-thread_presets: {}
-sandbox_presets: {}
-egress_admin_url: http://egress:8080
-connection_service_url: http://connection:8080/
-action_federation:
-  mode: direct
-  service_url: https://actions.example.test
-  login_jwks_uri: https://login.example.test/jwks
-  target:
-    issuer: https://actions.example.test
-    audience: agentplane
-    jwks_uri: https://actions.example.test/jwks
-  scope: actions:operator
-sandbox_namespace: yaml-sandboxes
-runner_gateway_target: yaml-runner:9090
-runner_gateway_control_target: 'yaml-{sandbox}-control.{namespace}.svc:8080'
-runner_gateway_token_file: /yaml/runner-token
-history_service_target: yaml-history:9090
-session_dispatcher_target: yaml-dispatcher:9090
-notifications_url: http://yaml-notifications:9090
-notifications_token_file: /yaml/notifications-token
-listen_address: 127.0.0.1:8080
-database_url: postgresql://app@postgres/agentplane
-log_levels: {}
-`
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("AGENTPLANE_CONFIG_FILE", path)
-	t.Setenv("AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE", "/env/runner-token")
-	t.Setenv("AGENTPLANE_SESSION_DISPATCHER_TARGET", "env-dispatcher:9090")
-	t.Setenv("AGENTPLANE_NOTIFICATIONS_TOKEN_FILE", "/env/notifications-token")
-
-	c, err := loadConfigWithArgs([]string{
-		"--sandbox-namespace=cli-sandboxes",
-		`--models={"models":[{"model":"cli-model","display_name":"CLI Model","reasoning_efforts":["high"]}],"harnesses":{"HARNESS_CLAUDE":["cli-model"],"HARNESS_CODEX":["cli-model"]}}`,
-		`--thread-presets={"cli-thread":{"title":"CLI Thread","harness":"HARNESS_CLAUDE","model":"cli-model"}}`,
-		`--sandbox-presets={"CLI Sandbox":{"title":"CLI Sandbox","template":"linux","thread_preset":"cli-thread"}}`,
-		`--token-subjects=["system:serviceaccount:app:worker"]`,
-		"--runner-gateway-target", "cli-runner:9090",
-		"--runner-gateway-token-file=/cli/runner-token",
-		"--history-service-target=cli-history:9090",
-		"--session-dispatcher-target=cli-dispatcher:9090",
-		"--notifications-url=http://cli-notifications:9090",
-		"--notifications-token-file=/cli/notifications-token",
-		"--listen-address=0.0.0.0:9091",
-		"--shutdown-timeout=7",
-	})
-	if err != nil {
-		t.Fatalf("load config with runtime CLI overrides: %v", err)
-	}
-	if c.SandboxNamespace != "cli-sandboxes" || c.RunnerGatewayTarget != "cli-runner:9090" || c.HistoryServiceTarget != "cli-history:9090" {
-		t.Fatalf("CLI runtime values were not applied: %+v", c)
-	}
-	if c.RunnerGatewayControlTarget != "yaml-{sandbox}-control.{namespace}.svc:8080" {
-		t.Fatalf("Runner Gateway control target was not retained from YAML: %q", c.RunnerGatewayControlTarget)
-	}
-	if len(c.Models.Models) != 1 || c.Models.Models[0].Model != "cli-model" ||
-		!reflect.DeepEqual(c.TokenSubjects, []string{"system:serviceaccount:app:worker"}) {
-		t.Fatalf("structured CLI settings were not applied: %+v", c)
-	}
-	if thread := c.ThreadPresets["cli-thread"]; thread.CWD != "/state/workspaces/{session_id}" || thread.Instructions != "" || thread.SetupScript != "" {
-		t.Fatalf("CLI ThreadPreset defaults were not applied: %+v", thread)
-	}
-	if views := c.PresetViews(); len(views) != 1 || views[0].Name != "CLI Sandbox" || views[0].SessionDefaults.Harness != "HARNESS_CLAUDE" {
-		t.Fatalf("CLI SandboxPreset order/defaults were not applied: %+v", views)
-	}
-	if c.SessionDispatcherTarget != "cli-dispatcher:9090" {
-		t.Fatalf("CLI Session Dispatcher values were not applied: %+v", c)
-	}
-	if c.NotificationsURL != "http://cli-notifications:9090" || c.NotificationsTokenFile != "/cli/notifications-token" {
-		t.Fatalf("CLI Notification values were not applied: %+v", c)
-	}
-	if c.RunnerGatewayTokenFile != "/cli/runner-token" {
-		t.Fatalf("CLI should override environment and YAML: %q", c.RunnerGatewayTokenFile)
-	}
-	if c.ListenAddress != "0.0.0.0:9091" {
-		t.Fatalf("CLI listen address was not applied: %q", c.ListenAddress)
-	}
-	if c.ShutdownTimeoutSeconds != 7 {
-		t.Fatalf("CLI shutdown timeout was not applied: %d", c.ShutdownTimeoutSeconds)
-	}
-
-	envWins, err := loadConfigWithArgs([]string{"--listen-address=0.0.0.0:8080"})
-	if err != nil {
-		t.Fatalf("load config with environment override: %v", err)
-	}
-	if envWins.RunnerGatewayTokenFile != "/env/runner-token" || envWins.NotificationsTokenFile != "/env/notifications-token" {
-		t.Fatalf("environment should override YAML when CLI omits a value: runner=%q notifications=%q", envWins.RunnerGatewayTokenFile, envWins.NotificationsTokenFile)
+	if _, ok := c.SandboxPresets["work space"]; ok {
+		t.Fatalf("sandbox preset name was case-folded: %#v", c.SandboxPresets)
 	}
 }
 

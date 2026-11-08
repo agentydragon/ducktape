@@ -14,7 +14,6 @@ from pydantic import AnyHttpUrl
 from python.runfiles import Runfiles
 
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
-from agentplane.app.settings import Settings as AppSettings
 from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
 from agentplane.env.runtime.harness import Harness
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
@@ -131,9 +130,9 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     )
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     app_env = {entry["name"]: entry for entry in app_container["env"]}
-    assert AnyHttpUrl(app_env[env_name(AppSettings, "connection_service_url")]["value"]) == AnyHttpUrl(
-        fixture_chart.MCP_EDGE_SERVICE.url
-    )
+    app_settings = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert AnyHttpUrl(app_settings["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
+    assert "AGENTPLANE_CONNECTION_SERVICE_URL" not in app_env
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
     edge_database_env_name = env_name(McpEdgeSettings, "database_url")
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]

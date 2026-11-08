@@ -73,6 +73,8 @@ py_library(
         "@pypi//httpx",
         "@pypi//playwright",
         "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
         "@pypi//starlette",
         "@pypi//tenacity",
         "@pypi//uvicorn",

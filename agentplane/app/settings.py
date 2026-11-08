@@ -1,4 +1,4 @@
-"""Agentplane app settings and deployment-authored configuration contract."""
+"""Agentplane app's deployment-authored settings file contract."""
 
 from __future__ import annotations
 
@@ -6,15 +6,14 @@ from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_settings import SettingsConfigDict
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
+from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.log_levels import LogLevels
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
-from util.urls import HttpEndpointUrl, HttpsEndpointUrl
-from util.yaml_file_settings import YamlFileSettings
+from util.urls import HttpEndpointUrl
 
 
 class TraceSearchSettings(BaseModel):
@@ -22,7 +21,7 @@ class TraceSearchSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    grafana_base_url: HttpsEndpointUrl = Field(description="Grafana base URL, without query or fragment.")
+    grafana_base_url: HttpEndpointUrl = Field(description="Grafana base URL, without query or fragment.")
     tempo_datasource_uid: str = Field(min_length=1, description="UID of the Grafana Tempo datasource.")
     deployment_environment: str = Field(
         min_length=1, description="Value of the spans' deployment environment resource."
@@ -34,7 +33,7 @@ class LangfuseSearchSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    base_url: HttpsEndpointUrl = Field(description="Langfuse base URL, without query or fragment.")
+    base_url: HttpEndpointUrl = Field(description="Langfuse base URL, without query or fragment.")
     project_id: str = Field(min_length=1, description="Langfuse project ID containing the traces.")
     session_metadata_key: str = Field(
         default="attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
@@ -63,20 +62,18 @@ class FrontendConfig(BaseModel):
     )
 
 
-class AppSettingsConfig(YamlFileSettings):
-    """Deployment-authored app settings, before runtime-only inputs arrive.
+class Settings(BaseModel):
+    """Complete non-secret runtime settings, authored in the mounted YAML file.
 
-    The runtime `Settings` model extends this, so cdk8s can construct this typed fragment
-    without fabricating the app's namespace or database URL.
+    Runtime database and OIDC credentials are supplied separately from Secrets. The service reads
+    only `AGENTPLANE_CONFIG_FILE` plus those explicitly named credential inputs.
     """
 
     config_file_env: ClassVar[str] = "AGENTPLANE_CONFIG_FILE"
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
+    model_config = ConfigDict(extra="forbid")
 
     models: ModelCatalog = Field(
-        description="Every model Agentplane can create a Session with and which harnesses accept it, as JSON: "
-        '{"models": [{"model": "...", "display_name": "...", "reasoning_efforts": [...]}], '
-        '"harnesses": {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}}.'
+        description="Deployment-authored model catalog: model choices and the harnesses that accept each model."
     )
     thread_presets: dict[str, ThreadPreset] = Field(
         default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
@@ -100,18 +97,9 @@ class AppSettingsConfig(YamlFileSettings):
         description="Browser-safe settings exposed by `GET /upstream/app-config/v1/frontend-config`.",
     )
 
-
-class Settings(AppSettingsConfig):
-    """The app's complete runtime configuration.
-
-    Each field is a `--flag`, an `AGENTPLANE_*` environment variable, and a key of the YAML file
-    `AGENTPLANE_CONFIG_FILE` names, in that order of precedence; the staging Deployment keeps the model
-    catalog in that file.
-    """
-
     sandbox_namespace: str = Field(
-        description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
-        "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
+        min_length=1,
+        description="Namespace whose Sandbox inventory the app observes. Separate from the app's own namespace.",
     )
     runner_gateway_target: str = Field(
         min_length=1, description="The Runner Gateway's gRPC host:port, used by the health-status probe."
@@ -132,10 +120,11 @@ class Settings(AppSettingsConfig):
     notifications_url: HttpEndpointUrl = Field(
         description="The Notification Service's endpoint; its host and port serve the operator gRPC API."
     )
-    notifications_token_file: Path
+    notifications_token_file: Path = Path("/var/run/secrets/agentplane-notifications/token")
     notifications_request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
     runner_gateway_token_file: Path = Field(
-        description="The rotating projected ServiceAccount token for the Runner Gateway audience."
+        default=Path("/var/run/secrets/agentplane-runner-gateway/token"),
+        description="The rotating projected ServiceAccount token for the Runner Gateway audience.",
     )
     session_dispatcher_token_file: Path = Field(
         default=Path("/var/run/secrets/agentplane-session-dispatcher/token"),
@@ -152,27 +141,29 @@ class Settings(AppSettingsConfig):
         default="127.0.0.1:8080", min_length=1, description="HTTP TCP bind address or inherited listening socket fd:N."
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
-    database_url: str = Field(description="PostgreSQL connection URI of the thread store.")
     electric_url: HttpEndpointUrl | None = Field(
         default=None,
         description="Electric replicating the History Service fold; omit to disable authenticated thread-sync routes.",
     )
     egress_admin_token_file: Path = Path("/var/run/secrets/agentplane-egress-admin/token")
     egress_admin_timeout: float = Field(
-        default=5, gt=0, description="Seconds to wait for the proxy's initial decision snapshot."
+        default=5, gt=0, allow_inf_nan=False, description="Seconds to wait for the proxy's initial decision snapshot."
     )
     shutdown_timeout: int = Field(
         default=5,
+        ge=0,
         description="Seconds the HTTP server waits after SIGTERM for open requests and streams before cancelling "
         "them; the rest of the Deployment's grace period stops Session creation and closes the database.",
     )
     token_audience: str = Field(
         default="agentplane",
+        min_length=1,
         description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",
     )
     token_subjects: frozenset[str] = Field(
-        default=frozenset(),
-        description="The Kubernetes usernames a token caller may present, as JSON: "
-        '["system:serviceaccount:ns:sa"]. A token for any other subject is refused however it was '
-        "minted, and the default accepts none at all, leaving an OIDC session the only way in.",
+        default_factory=frozenset,
+        description="Kubernetes usernames accepted by TokenReview; an empty set accepts none.",
+    )
+    oidc: OIDCSettings | None = Field(
+        default=None, description="Static OIDC relying-party settings; credentials arrive through Secret inputs."
     )

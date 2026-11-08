@@ -97,7 +97,8 @@ async def federation_review(
                     },
                     "scope": "openid actions",
                     "token_endpoint": token_endpoint,
-                }
+                },
+                "oidc": {"token_renew_before_seconds": token_renew_before_seconds},
             }
 
         async with app_process(
@@ -107,7 +108,6 @@ async def federation_review(
             gateway=None,
             oidc_provider_options=provider,
             config_for_oidc_issuer=action_federation,
-            oidc_env={"AGENTPLANE_OIDC_TOKEN_RENEW_BEFORE_SECONDS": str(token_renew_before_seconds)},
         ) as app:
             assert app.oidc_issuer is not None
             yield FederationReview(app, service, provider, app.oidc_issuer)
