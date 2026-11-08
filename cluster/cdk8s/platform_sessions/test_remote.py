@@ -1,4 +1,4 @@
-"""The staged remote workloads must agree without taking over live sessions."""
+"""The gateway and provider workloads agree on their connections and storage."""
 
 import json
 from urllib.parse import urlsplit
@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting
 
-from cluster.cdk8s.platform_sessions import config, remote
+from cluster.cdk8s.platform_sessions import app, config, remote
 
 
 def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: App) -> None:
@@ -16,10 +16,14 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         return next(item for item in objects if item["kind"] == kind and item["metadata"]["name"] == name)
 
     gateway = resource("Deployment", remote.GATEWAY)["spec"]
-    assert gateway["replicas"] == 0
     assert gateway["strategy"]["type"] == "Recreate"
     gateway_pod = gateway["template"]["spec"]
     assert all("persistentVolumeClaim" not in volume for volume in gateway_pod["volumes"])
+    public_objects = Cdk8sTesting.synth(app.chart(scratch_app))
+    public_service = next(
+        obj for obj in public_objects if obj["kind"] == "Service" and obj["metadata"]["name"] == app.NAME
+    )
+    assert public_service["spec"]["selector"] == gateway["template"]["metadata"]["labels"]
 
     assert remote.CONFIG.data is not None
     connections = json.loads(remote.CONFIG.data["connections.json"])
@@ -41,7 +45,6 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     for instance, connection in connections.items():
         name = f"platform-sessions-{instance}"
         provider = resource("Deployment", name)["spec"]
-        assert provider["replicas"] == 0
         assert provider["strategy"]["type"] == "Recreate"
         provider_pod = provider["template"]["spec"]
         expected_image = remote._provider_image(instance)

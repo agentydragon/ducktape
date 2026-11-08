@@ -1,4 +1,4 @@
-"""Staged remote gateway and providers; the legacy service owns live sessions."""
+"""Gateway and separate providers for Platform Sessions."""
 
 from __future__ import annotations
 
@@ -156,8 +156,7 @@ def _deployment(
         f"{name}-deployment",
         metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE),
         spec=k8s.DeploymentSpec(
-            # The legacy service owns all real sessions until an explicit, verified handoff.
-            replicas=0,
+            replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels={"app": name}),
             template=k8s.PodTemplateSpec(
@@ -449,7 +448,7 @@ def platform_sessions_remote(
         chart,
         NAME,
         directory,
-        description="Staged remote session gateway and providers; scale only after a verified ownership handoff.",
+        description="Platform Sessions gateway and separate providers.",
         suspend=False,
         wait=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

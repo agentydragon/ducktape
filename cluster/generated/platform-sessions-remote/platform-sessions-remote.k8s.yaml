@@ -137,7 +137,7 @@ metadata:
   name: platform-sessions-openai
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-openai
@@ -435,7 +435,7 @@ metadata:
   name: platform-sessions-anthropic
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-anthropic
@@ -733,7 +733,7 @@ metadata:
   name: platform-sessions-chatgpt
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-chatgpt
@@ -1031,7 +1031,7 @@ metadata:
   name: platform-sessions-blueshield
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-blueshield
@@ -1327,7 +1327,7 @@ metadata:
   name: platform-sessions-quest
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-quest
@@ -1630,7 +1630,7 @@ metadata:
   name: platform-sessions-thrive
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-thrive
@@ -1908,7 +1908,7 @@ metadata:
   name: platform-sessions-gateway
   namespace: platform-sessions
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: platform-sessions-gateway

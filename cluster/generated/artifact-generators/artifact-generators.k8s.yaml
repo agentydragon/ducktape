@@ -491,8 +491,6 @@ spec:
     - copy:
         - from: "@repo/cluster/generated/platform-sessions/**"
           to: "@artifact/cluster/generated/platform-sessions/"
-        - from: "@repo/cluster/k8s/platform-sessions-image-pins/**"
-          to: "@artifact/cluster/k8s/platform-sessions-image-pins/"
       name: platform-sessions
       originRevision: "@repo"
     - copy:
