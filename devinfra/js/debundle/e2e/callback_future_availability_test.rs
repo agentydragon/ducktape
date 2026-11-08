@@ -46,7 +46,7 @@ fn future_initializer_callback_does_not_add_a_style_read_to_fallback() {
         "function wrap(callback) { return callback; }\n\
          function readFuture() { return future(); }",
         "readFuture",
-        "const future = wrap(function styleReader() { return styles.value; });\n\
+        "const future = wrap(function () { return styles.value; });\n\
          const styles = { value: 'ready' };\n\
          console.log(observations[0], future());\n",
     );
@@ -93,7 +93,7 @@ fn future_binding_tdz_remains_when_future_itself_is_moved() {
     let input = source(
         "function readFuture() { return future(); }",
         "readFuture",
-        "const future = function futureReader() { return 'ready'; };\n\
+        "const future = function () { return 'ready'; };\n\
          console.log(observations[0]);\n",
     );
     let colocated = run_fixture(
@@ -111,6 +111,63 @@ fn future_binding_tdz_remains_when_future_itself_is_moved() {
         .with_extra_chunks(&PEER)
         .with_unassigned_mode(unassigned_mode_inline()),
         &["values/future"],
+        &[],
+    );
+}
+
+#[test]
+fn fallback_revisits_future_callback_after_its_binding_initializes() {
+    let input = source(
+        "function wrap(callback) { return callback; }\n\
+         function readFuture() { return future(); }",
+        "readFuture",
+        "const future = wrap(function () { return styles.value; });\n\
+         const laterObservations = host(readFuture);\n\
+         const styles = { value: 'ready' };\n\
+         console.log(observations[0], laterObservations[0], future());\n",
+    );
+    let colocated = run_fixture(
+        FixtureOpts::new(&input, Vec::new())
+            .with_extra_chunks(&PEER)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "ReferenceError ReferenceError ready\n");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &input,
+            vec![logical_module("values/styles", &[Member::new("styles")])],
+        )
+        .with_extra_chunks(&PEER)
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["values/styles"],
+        &[],
+    );
+}
+
+#[test]
+fn callback_created_in_current_initializer_keeps_its_style_tdz_dependency() {
+    let input = source(
+        "",
+        "function () { return styles.value; }",
+        "const styles = { value: 'ready' };\n\
+         console.log(observations[0], styles.value);\n",
+    );
+    let colocated = run_fixture(
+        FixtureOpts::new(&input, Vec::new())
+            .with_extra_chunks(&PEER)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "ReferenceError ready\n");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &input,
+            vec![logical_module("values/styles", &[Member::new("styles")])],
+        )
+        .with_extra_chunks(&PEER)
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["values/styles"],
         &[],
     );
 }
