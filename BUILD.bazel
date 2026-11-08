@@ -20,6 +20,8 @@
 # gazelle:exclude cluster/debug/sqlite_storage_bench
 # gazelle:exclude nix/debug/wyrm2
 # gazelle:exclude nix/nixos
+# Nix install check uses the packaged, locally patched LiteRT wheel closure.
+# gazelle:exclude nix/packages/litert-lm-serve-check.py
 # gazelle:exclude tgarchive
 # gazelle:exclude x/domains
 # gazelle:exclude x/local_llm

@@ -108,6 +108,14 @@ python314Packages.buildPythonApplication rec {
     "litert_lm_cli.commands.serve.util"
   ];
 
+  doInstallCheck = true;
+  installCheckPhase = ''
+    runHook preInstallCheck
+    PYTHONPATH="$out/${python314Packages.python.sitePackages}:$PYTHONPATH" \
+      ${python314Packages.python.interpreter} ${./litert-lm-serve-check.py}
+    runHook postInstallCheck
+  '';
+
   # Dawn opens Vulkan with dlopen, which autoPatchelfHook cannot discover.
   makeWrapperArgs = [
     "--prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ vulkan-loader ]}"
