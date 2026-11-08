@@ -8,6 +8,7 @@ go_binary(
     name = "platform_sessions_gateway",
     srcs = ["main.go"],
     importpath = "github.com/agentydragon/ducktape/platform_sessions/management/gateway/cmd",
+    pure = "on",
     deps = [
         "//platform_sessions/frontend",
         "//platform_sessions/management/gateway",
