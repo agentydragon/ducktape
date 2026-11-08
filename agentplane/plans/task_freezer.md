@@ -34,6 +34,20 @@ Backend tokens for LLM ingress and Action Service retain the `agentplane-egress`
 longer verifies this audience. Revisit the name for the remaining backend consumers; any rename
 must coordinate those verifiers and their projected tokens.
 
+## Haku
+
+### `HAKU_ACTION_NATIVE_CLIENT` — migrate the existing Haku Action client
+
+**Explicitly deferred by operator, 2026-11-08; revisit before Haku next needs Action tool
+execution.** Haku UI's `ActionClient` still calls the retired Action HTTP facade. Migrate that
+client to native Action gRPC through its credential-holding sidecar, retaining its existing
+Pod-bound bearer and method authorization until the shared identity cutover. Do not restore the
+removed facade, expose the token to the UI workload or have the proxy assert the caller. Keep
+idempotent submission, operator approval and result/error behavior. **When promoted, confirm**
+Haku's existing tool-call path submits and receives a receipt through the current service API, and
+unauthorized or expired credentials fail before admission. This client/API drift is separate from
+the proxy hop migration and does not wait on the shared identity design.
+
 ## Notifications and operations
 
 Revisit on a concrete latency, cost, delivery or new-source need; not a release checklist.

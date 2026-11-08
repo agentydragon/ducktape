@@ -36,9 +36,11 @@ the declared staging deployment contract.
 - Authentik discovery/JWKS/token traffic uses the existing TLS-SNI-bounded egress to
   `auth.allegedly.works`. No forward-auth outpost is inserted into MCP streaming. The public
   hostname uses the existing wildcard DNS record and Gateway wildcard certificate.
-- Hosted Sandboxes use the generated Actions RPC/facade through egress. The proxy substitutes the
-  Pod-bound workload token for the inert placeholder; a workload does not authenticate to `/mcp`
-  and receives no operator or OAuth-management authority. See the [Action Service caller
+- Hosted Sandboxes call native Action gRPC through the credential-holding sidecar. The sidecar
+  presents the Sandbox runner SVID to Action Service through an opaque CONNECT tunnel, and the
+  service resolves it against live Sandbox state. This route uses no HTTP facade, bearer-token
+  substitution or proxy caller assertion. A workload does not authenticate to `/mcp` and receives
+  no operator or OAuth-management authority. See the [Action Service caller
   contract](../../agentplane/action_service/SPEC.md#caller-admission-and-connection-authority).
 
 The upstream provider includes `offline_access`, which Authentik requires alongside the requested
@@ -65,9 +67,11 @@ Use these deployment acceptance checks after the image and route changes reconci
    recovery of existing receipts. Unbind the Connection and confirm old access/refresh credentials
    no longer authorize new work; immutable history remains and already-claimed execution is not
    killed.
-5. From a hosted Sandbox, run the CLI catalog and harmless submission/receipt flow through the
-   generated Actions RPC/facade. Verify egress substitutes the workload token for the placeholder.
-   This requires no DCR and must not acquire operator authority.
+5. From a hosted Sandbox, run the CLI catalog and harmless submission/receipt flow over native
+   Action gRPC through the credential-holding sidecar. Confirm Action Service admits the runner
+   SVID, while central egress carries service TLS opaquely through CONNECT without bearer-token
+   substitution or a proxy caller assertion. This requires no DCR and must not acquire operator
+   authority.
 
 The app supports explicit Connection rebind and confirmed reconnect during consent. Policy editing,
 upstream credentialed tool migration, and Haku retirement remain outside this deployment check.
