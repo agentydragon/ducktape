@@ -7586,8 +7586,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if deferred_global_write && receiver == AbstractValue::GlobalObject {
                             continue;
                         }
-                        self.state.array_intrinsic_mutated |=
-                            receiver == AbstractValue::ArrayIntrinsic;
+                        if receiver == AbstractValue::ArrayIntrinsic {
+                            self.invalidate_all_heap_candidates();
+                        } else {
+                            // A global binding write can replace an intrinsic;
+                            // no native-identity premise survives it.
+                            self.widen_native_effects();
+                        }
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
                         self.insert_escaped_callback_values(
@@ -7603,6 +7608,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         let may_be_published = self.state.tainted_objects.contains(&object)
                             || self.state.unsettled_objects.contains(&object);
                         if !certified_data_receivers.contains(&object) {
+                            self.invalidate_object_heap_proofs(object);
                             self.state.tainted_objects.insert(object);
                         }
                         // RegExp slots share this heap only for callback
@@ -7620,6 +7626,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     AbstractValue::Instance(key, captured, _) => {
                         self.state.tainted_classes.insert(key);
+                        self.invalidate_object_heap_proofs(key);
                         self.taint_objects(&captured.values);
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
@@ -7645,6 +7652,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     | AbstractValue::DeferredCallbacks(_)
                     | AbstractValue::AuditedRetainedResult(_, _)
                     | AbstractValue::ForeignDeferredRecord => {
+                        self.invalidate_all_heap_candidates();
                         self.taint_objects(&values);
                         // A write through an untracked object may publish the
                         // callback through that object before it is passed to
@@ -7656,6 +7664,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             Some(write.site.source_span()),
                             None,
                         );
+                    }
+                    AbstractValue::Value(Value::Alloc(Kind::Set, site)) => {
+                        self.invalidate_set_heap_proofs(site);
+                        self.taint_objects(&values);
                     }
                     _ => {}
                 }
@@ -8032,17 +8044,299 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Retire every precise proof attached to this pooled allocation origin.
+    /// Keep joined property values for reachability, but never use them as a
+    /// settled post-mutation snapshot.
+    fn invalidate_object_heap_proofs(&mut self, object: u32) {
+        self.invalidate_object_heap_state(object);
+        self.invalidate_untracked_projection_caches();
+    }
+
+    fn invalidate_object_heap_state(&mut self, object: u32) {
+        let revision_before = self.state.prefix_revision;
+        let mut changed = self.state.unsettled_objects.insert(object);
+        self.invalidate_writable_object(object);
+        changed |= self.state.parameter_initialized_objects.remove(&object);
+        if self
+            .state
+            .array_iteration_protected_objects
+            .contains(&object)
+            && !self.state.array_iteration_unsupported
+        {
+            self.state.array_iteration_unsupported = true;
+            changed = true;
+        }
+
+        // A mutation can replace an accessor with data or vice versa. The old
+        // dispatch table is no longer exact, but its callbacks stay reachable.
+        if let Some(accessors) = self.state.applied_accessors.remove(&object) {
+            changed = true;
+            for (property, accessor) in accessors {
+                let values = self
+                    .state
+                    .prefix_object_properties
+                    .entry(object)
+                    .or_default()
+                    .entry(Some(property))
+                    .or_default();
+                values.insert(AbstractValue::Value(Value::Top));
+                values.extend(accessor.getter);
+                values.extend(accessor.setter);
+            }
+        }
+
+        let array_candidate = self.inputs.index.array_elements.contains_key(&object)
+            || self.inputs.index.dense_array_literals.contains_key(&object)
+            || self.inputs.index.map_entry_arrays.contains(&object)
+            || self.state.dense_arrays.contains_key(&object)
+            || self.state.primitive_arrays.contains_key(&object)
+            || self.state.unknown_array_contents.contains(&object);
+        if array_candidate {
+            changed |= self.state.unknown_array_contents.insert(object);
+            let had_dense_array = self.state.dense_arrays.contains_key(&object);
+            self.literal_heap().invalidate_dense_array(object);
+            changed |= had_dense_array;
+            if self.state.primitive_arrays.remove(&object).is_some() {
+                changed = true;
+            }
+        }
+
+        if changed && self.state.prefix_revision == revision_before {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
+    }
+
+    fn invalidate_untracked_projection_caches(&mut self) {
+        // These results carry no origin dependency, so a heap mutation must
+        // widen them instead of guessing which generation they observed.
+        let accumulated_sites: Vec<_> = self.state.accumulated_values.keys().copied().collect();
+        for site in accumulated_sites {
+            let changed = self
+                .state
+                .accumulated_values
+                .get_mut(&site)
+                .is_some_and(|values| values.insert(AbstractValue::Value(Value::Top)));
+            if changed {
+                self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            }
+        }
+    }
+
+    fn invalidate_set_heap_proofs(&mut self, site: u32) {
+        if self.state.tainted_native_sets.insert(site) {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
+    }
+
+    /// A global or unresolved receiver can alias any pooled proof candidate.
+    /// Candidate IDs include source sites that have not executed yet: pooled
+    /// IDs can later alias a different runtime allocation at the same site.
+    fn invalidate_all_heap_candidates(&mut self) {
+        let revision_before = self.state.prefix_revision;
+        let mut objects = BTreeSet::new();
+        objects.extend(self.state.prefix_object_properties.keys().copied());
+        objects.extend(self.state.writable_prefix.keys().copied());
+        objects.extend(self.state.applied_accessors.keys().copied());
+        objects.extend(self.state.dense_arrays.keys().copied());
+        objects.extend(self.state.primitive_arrays.keys().copied());
+        objects.extend(self.state.ordinary_spread_copies.iter().copied());
+        objects.extend(self.state.descriptor_copy_results.iter().copied());
+        objects.extend(self.state.unknown_array_contents.iter().copied());
+        objects.extend(self.state.parameter_initialized_objects.iter().copied());
+        objects.extend(self.state.array_iteration_protected_objects.iter().copied());
+        objects.extend(self.state.tainted_objects.iter().copied());
+        objects.extend(self.state.unsettled_objects.iter().copied());
+        objects.extend(self.inputs.index.plain_data_objects.iter().copied());
+        objects.extend(self.inputs.index.own_descriptor_shapes.keys().copied());
+        objects.extend(self.inputs.index.exact_object_spread_copies.iter().copied());
+        objects.extend(self.inputs.index.array_elements.keys().copied());
+        objects.extend(self.inputs.index.dense_array_literals.keys().copied());
+        objects.extend(self.inputs.index.map_entry_arrays.iter().copied());
+        objects.extend(self.inputs.index.literal_property_kinds.keys().copied());
+        objects.extend(
+            self.inputs
+                .index
+                .descriptor_copy_calls
+                .keys()
+                .map(|site| site.allocation_id()),
+        );
+        objects.extend(
+            self.inputs
+                .index
+                .from_entries_map_calls
+                .keys()
+                .chain(self.inputs.index.mapped_array_map_calls.keys())
+                .map(|site| site.allocation_id()),
+        );
+        objects.extend(
+            self.inputs
+                .index
+                .array_iterations
+                .values()
+                .filter_map(|iteration| iteration.result),
+        );
+        objects.extend(
+            self.inputs
+                .index
+                .top_calls
+                .iter()
+                .flatten()
+                .chain(
+                    self.inputs
+                        .index
+                        .callables
+                        .values()
+                        .flat_map(|callable| callable.calls.iter()),
+                )
+                .map(|call| CallSite::from(call.span).allocation_id()),
+        );
+        objects.extend(self.inputs.index.local_constructors.keys().copied());
+        objects.extend(self.inputs.index.class_values.keys().copied());
+        objects.extend(
+            self.state
+                .own_descriptor_maps
+                .values()
+                .filter(|map| map.valid)
+                .map(|map| map.source_object),
+        );
+
+        let sets: Vec<_> = self
+            .inputs
+            .flow
+            .native_set_allocations()
+            .keys()
+            .copied()
+            .chain(self.state.tainted_native_sets.iter().copied())
+            .collect();
+        let descriptor_maps: Vec<_> = self
+            .state
+            .own_descriptor_maps
+            .iter()
+            .filter_map(|(site, map)| map.valid.then_some(*site))
+            .collect();
+
+        for object in objects {
+            self.invalidate_object_heap_state(object);
+        }
+        for site in sets {
+            self.invalidate_set_heap_proofs(site);
+        }
+        for site in descriptor_maps {
+            self.invalidate_own_descriptor_map(site);
+        }
+        self.state
+            .tainted_classes
+            .extend(self.inputs.index.class_values.keys().copied());
+        self.state
+            .tainted_classes
+            .extend(self.inputs.index.local_constructors.keys().copied());
+        self.state.array_intrinsic_mutated = true;
+        if self.state.array_iteration_depth > 0 {
+            self.state.array_iteration_unsupported = true;
+        }
+        self.widen_native_effects();
+        self.invalidate_untracked_projection_caches();
+        if self.state.prefix_revision == revision_before {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
+    }
+
+    /// Static known-key stores retain their new values in the heap transfer.
+    /// They still revoke writability; receivers that may change descriptors or
+    /// shape are separately retired by the transfer that performs the write.
+    fn invalidate_enumerability_values(&mut self, values: &Values) {
+        let mut unresolved_receiver = values.is_empty();
+        for value in values {
+            match value {
+                AbstractValue::Value(Value::Prim(_)) => {}
+                AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic => {
+                    self.invalidate_all_heap_candidates();
+                }
+                AbstractValue::Value(Value::Alloc(kind, object)) => {
+                    if kind.tracks_prefix_own_properties() {
+                        self.invalidate_writable_object(*object);
+                    } else {
+                        unresolved_receiver = true;
+                    }
+                }
+                _ => unresolved_receiver = true,
+            }
+        }
+        if unresolved_receiver {
+            self.invalidate_all_heap_candidates();
+        }
+    }
+
+    fn invalidate_dynamic_enumerability_values(&mut self, values: &Values) {
+        let mut unresolved_receiver = values.is_empty();
+        for value in values {
+            match value {
+                AbstractValue::Value(Value::Prim(_)) => {}
+                AbstractValue::GlobalObject | AbstractValue::ArrayIntrinsic => {
+                    self.invalidate_all_heap_candidates();
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Set, site)) => {
+                    self.invalidate_set_heap_proofs(*site);
+                }
+                AbstractValue::Value(Value::Alloc(kind, object)) => {
+                    if kind.tracks_prefix_own_properties() {
+                        self.invalidate_object_heap_proofs(*object);
+                    } else {
+                        unresolved_receiver = true;
+                    }
+                }
+                _ => unresolved_receiver = true,
+            }
+        }
+        if unresolved_receiver {
+            self.invalidate_all_heap_candidates();
+        }
+    }
+
+    fn top_write_receiver_values(&mut self, binding: &Id, env: &Context) -> Values {
+        if let Some(values) = env
+            .get(binding)
+            .or_else(|| self.state.prefix_values.get(binding))
+        {
+            return values.clone();
+        }
+        self.evaluate_binding(binding, env)
+    }
+
+    fn invalidate_enumerability_after_dynamic_writes(
+        &mut self,
+        receivers: &[ValueExpr],
+        env: &Context,
+        captures: &Context,
+    ) {
+        let mut invalidate_all_candidates = false;
+        for receiver in receivers {
+            if matches!(receiver, ValueExpr::Binding(_)) {
+                // Binding lookup does not replay receiver side effects.
+                let values = self.evaluate(receiver, env, captures);
+                self.invalidate_dynamic_enumerability_values(&values);
+            } else {
+                // The compatibility lane did not retain the receiver value at
+                // the write site. Do not reevaluate an expression with effects.
+                invalidate_all_candidates = true;
+            }
+        }
+        if invalidate_all_candidates {
+            self.invalidate_all_heap_candidates();
+        }
+    }
+
     /// Code the interpreter did not run may have reached `values`: every
     /// object they reach, through stored references or through what a
     /// reachable body reads, may since hold anything.
     fn unsettle(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = FxHashSet::default();
+        let mut invalidated_global_heap = false;
         // This pass does not change prefix values. Distinct closure contexts
         // still expand their own captures below, but share each binding's
         // identical prefix expansion. A later pass starts with an empty set.
         let mut expanded_prefix_reads = FxHashSet::default();
-        let mut changed = false;
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
                 continue;
@@ -8059,8 +8353,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if kind.tracks_prefix_own_properties() =>
                 {
-                    changed |= self.state.unsettled_objects.insert(*object);
-                    self.invalidate_writable_object(*object);
+                    self.invalidate_object_heap_proofs(*object);
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Set, site)) => {
+                    self.invalidate_set_heap_proofs(*site);
+                }
+                AbstractValue::OwnDescriptorMap(site) => {
+                    // The map is mutable; the source object's copied snapshot
+                    // remains independent and is not invalidated here.
+                    self.invalidate_own_descriptor_map(*site);
+                }
+                AbstractValue::Instance(class, _, _) => {
+                    if self.state.tainted_classes.insert(*class) {
+                        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                    }
+                    self.invalidate_object_heap_proofs(*class);
+                }
+                AbstractValue::GlobalObject
+                | AbstractValue::ArrayIntrinsic
+                | AbstractValue::ForeignDeferredRecord
+                | AbstractValue::Value(Value::Top) => {
+                    if !invalidated_global_heap {
+                        self.invalidate_all_heap_candidates();
+                        invalidated_global_heap = true;
+                    }
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
@@ -8082,16 +8398,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 pending.push(reference.clone());
             });
         }
-        if changed {
-            // Invocation memos must not reuse property proofs from before
-            // a bounded callback made these objects unknown.
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-        }
     }
 
     fn taint_objects(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
         let mut visited = BTreeSet::new();
+        let mut invalidated_global_heap = false;
+        let mut changed = false;
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
                 continue;
@@ -8103,23 +8416,40 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.revoke_audited_result(captured);
                 }
                 AbstractValue::ArrayIntrinsic => {
-                    self.state.array_intrinsic_mutated = true;
+                    if !invalidated_global_heap {
+                        self.invalidate_all_heap_candidates();
+                        invalidated_global_heap = true;
+                    }
+                }
+                AbstractValue::GlobalObject => {
+                    if !invalidated_global_heap {
+                        self.invalidate_all_heap_candidates();
+                        invalidated_global_heap = true;
+                    }
                 }
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if kind.tracks_prefix_own_properties() =>
                 {
-                    self.invalidate_writable_object(*object);
+                    self.invalidate_object_heap_proofs(*object);
                     if !self.state.tainted_objects.insert(*object) {
                         expand_stored_references = false;
                     }
                 }
-                AbstractValue::Value(Value::Alloc(Kind::Set, site))
-                    if !self.state.tainted_native_sets.insert(*site) =>
-                {
-                    expand_stored_references = false;
+                AbstractValue::Value(Value::Alloc(Kind::Set, site)) => {
+                    self.invalidate_set_heap_proofs(*site);
                 }
                 AbstractValue::OwnDescriptorMap(site) => {
                     self.invalidate_own_descriptor_map(*site);
+                }
+                AbstractValue::Instance(class, _, _) => {
+                    changed |= self.state.tainted_classes.insert(*class);
+                    self.invalidate_object_heap_proofs(*class);
+                }
+                AbstractValue::Value(Value::Top) | AbstractValue::ForeignDeferredRecord => {
+                    if !invalidated_global_heap {
+                        self.invalidate_all_heap_candidates();
+                        invalidated_global_heap = true;
+                    }
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
                     self.state.tainted_functions.insert(*key);
@@ -8136,6 +8466,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     pending.push(reference.clone());
                 });
             }
+        }
+        if changed {
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
     }
 
@@ -9429,6 +9762,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } = diagnostics;
         let captured = &captured;
         let effect_owner = self.state.current_top_owner.unwrap_or(owner);
+        if matches!(&reach, HavocReach::Global { .. }) {
+            self.invalidate_all_heap_candidates();
+        }
         if self.state.array_iteration_depth > 0 {
             self.state.array_iteration_unsupported = true;
         }
@@ -11427,6 +11763,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &certified_data_receivers,
             false,
         );
+        self.invalidate_enumerability_after_dynamic_writes(
+            &callable.dynamic_property_receivers,
+            &env,
+            &env,
+        );
         // local_constructor checked every assignment as a static property
         // write to a fresh `this`, with a safe right-hand value and no
         // prototype getter collision. That receiver cannot publish a stored
@@ -11586,6 +11927,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.unsettle(&reached);
         }
         let transfer_complete = outcome.complete;
+        if !transfer_complete
+            && outcome.effects.precision_losses.iter().any(|loss| {
+                loss.span == call.span && matches!(&loss.reach, HavocReach::Global { .. })
+            })
+        {
+            self.invalidate_all_heap_candidates();
+        }
         outcome.complete &= complete_before;
         transfer_complete
     }
@@ -14479,6 +14827,22 @@ impl Executor<'_, '_> {
                     fact.ordinal,
                     &mut outcome,
                 );
+            }
+            for (receiver, _) in &index.top_property_writes[fact.ordinal.0] {
+                if let Some(binding) = receiver {
+                    let values = self.top_write_receiver_values(binding, &top_env);
+                    self.invalidate_enumerability_values(&values);
+                } else {
+                    self.invalidate_all_heap_candidates();
+                }
+            }
+            for receiver in &index.top_dynamic_property_receivers[fact.ordinal.0] {
+                if let ValueExpr::Binding(binding) = receiver {
+                    let values = self.top_write_receiver_values(binding, &top_env);
+                    self.invalidate_dynamic_enumerability_values(&values);
+                } else {
+                    self.invalidate_all_heap_candidates();
+                }
             }
         }
         let mut fallback = std::mem::take(&mut self.state.fallback_outcome);

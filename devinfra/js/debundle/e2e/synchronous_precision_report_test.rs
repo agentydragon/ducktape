@@ -51,6 +51,67 @@ fn complete_execution_has_no_precision_loss() {
 }
 
 #[test]
+fn source_object_mutation_keeps_captured_descriptor_snapshot() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const record = { value: "before" };
+const descriptors = Object.getOwnPropertyDescriptors(record);
+record.value = "after";
+const applied = Object.defineProperties({}, descriptors);
+console.log(record.value, applied.value);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "after before\n");
+    assert_eq!(execution(&fixture, "applied")["complete"], true);
+}
+
+#[test]
+fn opaque_dynamic_writer_retires_reachable_pooled_heap_proofs() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const record = { value: "before" };
+const descriptors = Object.getOwnPropertyDescriptors(record);
+const seed = new Set(["before"]);
+const before = [...seed];
+const oldValue = record.value;
+eval("record.value = 'after'; descriptors.value.value = 'captured'; seed.clear()");
+const observed = record.value;
+const applied = Object.defineProperties({}, descriptors);
+const after = [...seed];
+console.log(oldValue, before.length, observed, applied.value, after.length);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "before 1 after captured 0\n");
+
+    let before = execution(&fixture, "before");
+    assert!(
+        before["inference_uses"].as_array().is_some_and(|uses| uses
+            .iter()
+            .any(|usage| { usage["conclusion"] == "primitive_set_iteration" })),
+        "the pre-write Set projection is a positive control: {before}"
+    );
+    let descriptors = execution(&fixture, "descriptors");
+    assert_eq!(descriptors["complete"], true, "{descriptors}");
+    assert_eq!(
+        descriptors["binding_effect_authority"]["authority"], "operation_receipt",
+        "the pre-write descriptor snapshot is a positive control: {descriptors}"
+    );
+
+    let observed = execution(&fixture, "observed");
+    assert_eq!(observed["complete"], false, "{observed}");
+    let applied = execution(&fixture, "applied");
+    assert_eq!(applied["complete"], false, "{applied}");
+
+    let after = execution(&fixture, "after");
+    assert!(
+        !after["inference_uses"].as_array().is_some_and(|uses| uses
+            .iter()
+            .any(|usage| { usage["conclusion"] == "primitive_set_iteration" })),
+        "the post-write Set projection must not reuse the earlier proof: {after}"
+    );
+}
+
+#[test]
 fn incomplete_local_call_preserves_unrelated_own_data_reads() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const record = { name: "ready" };
