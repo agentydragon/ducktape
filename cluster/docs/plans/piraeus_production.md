@@ -12,8 +12,9 @@ Remove completed work from this plan as it lands. The deployed design is in
 - **LINSTOR recovery:** export LINSTOR metadata off-cluster and rehearse a
   controller restore; establish a volume backup/restore path for strict-local
   claims whose application has no replica.
-- **Alerts:** degraded or diskless-only resources and stalled resync, once the
-  replicated class carries production data. Thin data/metadata alerts exist.
+- **Alerts:** add coverage for degraded or diskless-only resources and stalled
+  resync. The replicated class already carries production data, including Matrix
+  media. Thin data/metadata alerts exist.
 - **Thin-pool exhaustion:** production DRBD-pool and metadata exhaustion
   recovery has not been exercised; only disposable canaries have.
 
