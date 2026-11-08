@@ -37,19 +37,19 @@ let
     };
   };
 
-  # Nixpkgs 26.05's copilot-lua 2.0.4 expects
-  # sha256-+hQ4Og0ZZS/tvs4z5733qRu5+W4D24HgHHPIL5vd0Eo=, but the fetched source
-  # yields sha256-05f76OeWBlFmlUh90tH4XMMKfNI1jnhuIJDqYPPQokA=. Retire this
-  # override once our locked nixpkgs pin has a valid source/hash pair for this
-  # plugin and this Neovim profile builds.
-  copilotLua = pkgs.vimPlugins.copilot-lua.overrideAttrs (_old: {
-    src = pkgs.fetchFromGitHub {
-      owner = "zbirenbaum";
-      repo = "copilot.lua";
-      rev = "b1482409cefe8b201f89122c682189fabf0436da";
-      hash = "sha256-05f76OeWBlFmlUh90tH4XMMKfNI1jnhuIJDqYPPQokA=";
-    };
-  });
+  # Pin the current upstream release until the locked nixpkgs package catches up.
+  copilotLua = pkgs.vimPlugins.copilot-lua.overrideAttrs (
+    final: _old: {
+      version = "3.2.3";
+      name = "vimplugin-${final.pname}-${final.version}";
+      src = pkgs.fetchFromGitHub {
+        owner = "zbirenbaum";
+        repo = "copilot.lua";
+        rev = "v3.2.3";
+        hash = "sha256-mbI0DKcmw1QAPwVoYQwyZY3/lPsGnW+xkxK7Rg2+kJw=";
+      };
+    }
+  );
 in
 {
   programs.neovim = {
@@ -153,6 +153,8 @@ in
         type = "lua";
         config = ''
           require("copilot").setup({
+            -- Native server downloads are not patched for NixOS.
+            server = { type = "nodejs" },
             suggestion = { enabled = true, auto_trigger = true },
             panel = { enabled = false },
             filetypes = {
