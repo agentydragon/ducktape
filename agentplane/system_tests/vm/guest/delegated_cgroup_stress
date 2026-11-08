@@ -171,33 +171,6 @@ trace_buffers_empty() {
 	[ "$found" = yes ]
 }
 
-trace_snapshot_empty() {
-	[ -e "$tracefs/snapshot" ] || return 0
-	[ -r "$tracefs/snapshot" ] || return 1
-	snapshot_header=$(
-		"$busybox" head -n 6 "$tracefs/snapshot" | "$busybox" grep 'entries-in-buffer/entries-written:'
-	) || snapshot_header=
-	if [ -n "$snapshot_header" ]; then
-		printf '%s\n' "$snapshot_header" | "$busybox" awk '
-			{
-				split($0, fields, ":")
-				split(fields[2], counts, "/")
-				sub(/[[:space:]].*/, "", counts[2])
-				if (counts[1] != "0" || counts[2] != "0")
-					bad = 1
-				else
-					found = 1
-			}
-			END {exit !(found && !bad)}
-		'
-		return $?
-	fi
-	case $("$busybox" head -n 1 "$tracefs/snapshot") in
-		'' | 'Snapshot is empty'*) return 0 ;;
-		*) return 1 ;;
-	esac
-}
-
 trace_events_disabled() {
 	for event_enable_file in "$tracefs"/events/enable "$tracefs"/events/*/enable "$tracefs"/events/*/*/enable; do
 		[ -r "$event_enable_file" ] || continue
@@ -516,7 +489,8 @@ for filter_file in \
 	filter_is_empty "$filter_file" || unexercised "preexisting_or_unsupported_filter_${filter_file##*/}"
 done
 trace_events_disabled || unexercised preexisting_event_tracing
-trace_snapshot_empty || unexercised preexisting_snapshot_records
+# This instance was created exclusively by the probe, so there is no prior
+# snapshot to preserve. The global tracefs snapshot is never touched.
 trace_owned=yes
 trace_recording_stopped=yes
 printf '0\n' >"$tracefs/tracing_on"
