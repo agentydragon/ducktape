@@ -48,19 +48,19 @@ pub use atomic_groups::{
 pub use execution_evidence::SourceLocation;
 pub use facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
-    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, PositionBucketed, StatementEffectSummary,
-    StatementFacts, StatementKind, StructuralChunkAnalysis, StructuralStatementFacts,
-    analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy, analyze_vendor_prune_chunk,
-    local_namespace_iife_target,
+    CellOverlap, CellOverlapIndex, CellOverlapLaw, ChunkFactAnalysis, DataflowOpacityCause,
+    EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts, StatementKind,
+    StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk, analyze_chunk_structural,
+    analyze_chunk_with_policy, analyze_vendor_prune_chunk, local_namespace_iife_target,
 };
 pub use graph::{
-    BindingTimelineOrder, CellConflict, CellEffectClass, ChunkConstrainingEdgeSet,
-    CommutingStatementsDiagnostic, DependencyEdge, DependencyEdgeId, DependencyGraph,
-    DependencyGraphBuildError, DependencyGraphInput, DuplicateTopLevelDeclaration, EdgeReason,
-    EdgeRole, EffectCellReport, GraphOptions, HeapBarrierCause, KnownConflict, ModuleQuotient,
-    PremiseVerdict, SequencedCause, SourceUnit, SourceUnitClass, UnresolvedDependencyEdgeEndpoint,
-    build_dependency_graph_with, build_module_quotient, chunk_constraining_module_edges,
-    position_lookup,
+    BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport,
+    ChunkConstrainingEdgeSet, CommutingStatementsDiagnostic, DependencyEdge, DependencyEdgeId,
+    DependencyGraph, DependencyGraphBuildError, DependencyGraphInput, DuplicateTopLevelDeclaration,
+    EdgeReason, EdgeRole, EffectCellReport, GraphOptions, HeapBarrierCause, KnownConflict,
+    ModuleQuotient, PremiseVerdict, SequencedCause, SourceUnit, SourceUnitClass,
+    UnresolvedDependencyEdgeEndpoint, build_dependency_graph_with, build_module_quotient,
+    chunk_constraining_module_edges, position_lookup,
 };
 pub use ids::{
     BindingCatalogue, BindingId, BindingKind, BindingScopeError, EntryDestination, LocalBindings,

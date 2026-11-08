@@ -127,6 +127,11 @@ fn cut_names_the_written_cell_and_both_summarized_endpoints() {
                 && conflicts(sequenced_cause(edge)).contains(&json!({
                     "kind": "write_after_write",
                     "cell": tag_cell,
+                    "overlap": {
+                        "left": { "kind": "global_prop", "key": "tag" },
+                        "right": { "kind": "global_prop", "key": "tag" },
+                        "law": "exact_cell",
+                    },
                 }))
         })
         .unwrap_or_else(|| panic!("no write-after-write cut edge on `tag`: {cycles:#?}"));

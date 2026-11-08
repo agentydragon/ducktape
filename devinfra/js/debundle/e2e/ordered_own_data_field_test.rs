@@ -642,6 +642,61 @@ fn root_array_index_read_records_its_exact_slot_and_stays_before_a_write() {
 }
 
 #[test]
+fn push_conflicts_with_a_prior_exact_array_index_read() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const values = [7];\nconst before = values[0];\nconst length = values.push(42);\nconsole.log(before, length, values[1]);\n",
+            vec![
+                logical_module("values", &[Member::new("values")]),
+                logical_module("before", &[Member::new("before").with_initializer_purity()]),
+                logical_module("append", &[Member::new("length")]),
+                logical_module_with_anon("observe", &[], &["console.log(before, length, values[1]);"]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_preserved_entry_output(&fixture, "7 2 42\n");
+    let graph = fixture.dependency_graph();
+    assert_non_assumed_index_read(&graph, "before");
+    let unit = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .unwrap_or_else(|| panic!("missing source unit for {binding}: {graph:#?}"))
+            .id
+            .clone()
+    };
+    let earlier = unit("before");
+    let later = unit("length");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && edge.source == later
+                && edge.target == earlier
+                && serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
+                    .as_array()
+                    .is_some_and(|conflicts| {
+                        conflicts.iter().any(|conflict| {
+                            conflict["kind"] == "write_after_read"
+                                && conflict["cell"]["kind"] == "array_contents"
+                                && conflict["overlap"]["law"] == "array_contents_index_or_length"
+                                && conflict["overlap"]["left"]["kind"] == "own_property"
+                                && conflict["overlap"]["left"]["property"] == "0"
+                                && conflict["overlap"]["right"]["kind"] == "array_contents"
+                        })
+                    })
+        }),
+        "push should retain the exact index reader as an overlapping dependency: {:#?}",
+        graph.edges
+    );
+}
+
+#[test]
 fn root_array_index_read_refuses_absent_or_unsettled_slots() {
     for (source, output) in [
         (

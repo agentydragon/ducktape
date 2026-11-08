@@ -38,8 +38,8 @@ pub use dependency_graph::{
     UnresolvedDependencyEdgeEndpoint,
 };
 pub use edge::{
-    BindingTimelineOrder, CellConflict, CellEffectClass, DependencyEdge, DependencyEdgeId,
-    EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
+    BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
+    DependencyEdgeId, EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
 };
 pub use input::DependencyGraphInput;
 pub use linker_order::{
