@@ -8,15 +8,16 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, btree_map};
 use std::ops::Bound::{Excluded, Unbounded};
 
+use analysis::DependencyGraph;
 use analysis::analysis_inputs::{CommutingStatementsRef, ProofDependencies};
 use analysis::facts::{
-    InitializationEffectEvidence, InitializationEffects, OwnerInitializationCoverageRefusal,
-    OwnerInitializationCoverageRefusalReason, StatementFacts, UnknownEffectCoverage,
+    CellOverlap, CellOverlapIndex, InitializationEffectEvidence, InitializationEffects,
+    OwnerInitializationCoverageRefusal, OwnerInitializationCoverageRefusalReason, StatementFacts,
+    UnknownEffectCoverage,
 };
-use analysis::graph::{AppliedCommutingPremise, EffectCellReport};
+use analysis::graph::{AppliedCommutingPremise, CellOverlapReport, EffectCellReport};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{DependencyGraph, EffectCell};
 use serde::{Serialize, Serializer, ser::SerializeSeq};
 use source_identity::SourceUnitId;
 use source_identity::SourceUnitOrdinal;
@@ -149,7 +150,10 @@ pub enum EffectConflictDisposition {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EffectConflictCell<Evidence = InitializationEffectEvidence> {
+    /// The later statement's footprint, kept as the stable primary cell.
     pub cell: EffectCellReport,
+    /// The earlier and later footprints and the law that joined them.
+    pub overlap: CellOverlapReport,
     pub first_read: Option<Evidence>,
     pub first_write: Option<Evidence>,
     pub later_read: Option<Evidence>,
@@ -165,6 +169,7 @@ impl<Evidence> EffectConflictCell<Evidence> {
     ) -> EffectConflictCell<Next> {
         EffectConflictCell {
             cell: self.cell,
+            overlap: self.overlap,
             first_read: self.first_read.map(&mut project),
             first_write: self.first_write.map(&mut project),
             later_read: self.later_read.map(&mut project),
@@ -308,7 +313,7 @@ impl<'a> From<&'a InitializationEffects<'_>> for EffectOpacity<'a> {
 }
 
 struct EffectConflictCells<'a> {
-    cells: &'a BTreeMap<EffectCell, bool>,
+    cells: &'a BTreeMap<CellOverlap, bool>,
     first: &'a InitializationEffects<'a>,
     later: &'a InitializationEffects<'a>,
 }
@@ -317,14 +322,15 @@ impl EffectConflictCells<'_> {
     fn iter(&self) -> impl Iterator<Item = EffectConflictCell<&InitializationEffectEvidence>> + '_ {
         self.cells
             .iter()
-            .map(|(cell, observed)| EffectConflictCell {
-                cell: EffectCellReport::from(cell),
-                first_read: self.first.reads.get(cell),
-                first_write: self.first.writes.get(cell),
-                later_read: self.later.reads.get(cell),
-                later_write: self.later.writes.get(cell),
-                allocation_involved: self.first.allocates.contains(cell)
-                    || self.later.allocates.contains(cell),
+            .map(|(overlap, observed)| EffectConflictCell {
+                cell: EffectCellReport::from(overlap.right()),
+                overlap: CellOverlapReport::from(overlap),
+                first_read: self.first.reads.get(overlap.left()),
+                first_write: self.first.writes.get(overlap.left()),
+                later_read: self.later.reads.get(overlap.right()),
+                later_write: self.later.writes.get(overlap.right()),
+                allocation_involved: self.first.allocates.contains(overlap.left())
+                    || self.later.allocates.contains(overlap.right()),
                 observed_conflict: *observed,
             })
     }
@@ -384,15 +390,17 @@ impl Serialize for EffectConflictCells<'_> {
     }
 }
 
+type CellParticipants = BTreeMap<SourceUnitOrdinal, SourceUnitId>;
+
 #[derive(Default)]
-struct CellParticipants {
-    readers: BTreeMap<SourceUnitOrdinal, SourceUnitId>,
-    writers: BTreeMap<SourceUnitOrdinal, SourceUnitId>,
+struct CellParticipantIndexes {
+    readers: CellOverlapIndex<CellParticipants>,
+    writers: CellOverlapIndex<CellParticipants>,
 }
 
 #[derive(Default)]
 struct PairConflict {
-    cells: BTreeMap<EffectCell, bool>,
+    cells: BTreeMap<CellOverlap, bool>,
     havoc: bool,
 }
 
@@ -613,7 +621,7 @@ fn assess_effect_relocation<E>(
             .or_default()
             .push(premise);
     }
-    let mut cells: BTreeMap<EffectCell, CellParticipants> = BTreeMap::new();
+    let mut cells = CellParticipantIndexes::default();
     let mut nonempty: BTreeMap<SourceUnitOrdinal, SourceUnitId> = BTreeMap::new();
     let mut havoc: BTreeMap<SourceUnitOrdinal, SourceUnitId> = BTreeMap::new();
     for (_, ordinal, unit) in emitted.iter().copied() {
@@ -630,22 +638,23 @@ fn assess_effect_relocation<E>(
             .chain(&current.allocates)
             .collect::<BTreeSet<_>>()
         {
-            let Some(participants) = cells.get(cell) else {
-                continue;
-            };
-            push_range(
-                &mut ranges,
-                &mut pending,
-                Some(cell),
-                participants.writers.range((Excluded(ordinal), Unbounded)),
-            );
-            if current.writes.contains_key(cell) || current.allocates.contains(cell) {
+            for (overlap, participants) in cells.writers.overlapping(cell) {
                 push_range(
                     &mut ranges,
                     &mut pending,
-                    Some(cell),
-                    participants.readers.range((Excluded(ordinal), Unbounded)),
+                    Some(overlap),
+                    participants.range((Excluded(ordinal), Unbounded)),
                 );
+            }
+            if current.writes.contains_key(cell) || current.allocates.contains(cell) {
+                for (overlap, participants) in cells.readers.overlapping(cell) {
+                    push_range(
+                        &mut ranges,
+                        &mut pending,
+                        Some(overlap),
+                        participants.range((Excluded(ordinal), Unbounded)),
+                    );
+                }
             }
         }
         if !current.is_empty() {
@@ -739,11 +748,11 @@ fn assess_effect_relocation<E>(
                 emit_pair(previous, conflict)?;
             }
             let (_, conflict) = active.get_or_insert_with(|| (partner, PairConflict::default()));
-            if let Some(cell) = ranges[cursor].0 {
-                let observed = observed_conflict(current, &effects[&partner], cell);
+            if let Some(overlap) = &ranges[cursor].0 {
+                let observed = observed_conflict(&effects[&partner], current, overlap);
                 conflict
                     .cells
-                    .entry(cell.clone())
+                    .entry(overlap.clone())
                     .and_modify(|known| *known |= observed)
                     .or_insert(observed);
             } else {
@@ -761,16 +770,14 @@ fn assess_effect_relocation<E>(
         // itself. No pair-premise decision mutates these participants.
         for cell in current.reads.keys() {
             cells
-                .entry(cell.clone())
-                .or_default()
                 .readers
+                .get_or_default(cell.clone())
                 .insert(ordinal, unit);
         }
         for cell in current.writes.keys().chain(&current.allocates) {
             cells
-                .entry(cell.clone())
-                .or_default()
                 .writers
+                .get_or_default(cell.clone())
                 .insert(ordinal, unit);
         }
         if !current.is_empty() {
@@ -848,27 +855,28 @@ fn units_in_inversions(
 fn observed_conflict(
     a: &InitializationEffects<'_>,
     b: &InitializationEffects<'_>,
-    cell: &EffectCell,
+    overlap: &CellOverlap,
 ) -> bool {
     let observed = |value: Option<&InitializationEffectEvidence>| {
         value.is_some_and(InitializationEffectEvidence::is_observed)
     };
-    (observed(a.writes.get(cell)) && (observed(b.reads.get(cell)) || observed(b.writes.get(cell))))
-        || (observed(b.writes.get(cell)) && observed(a.reads.get(cell)))
+    (observed(a.writes.get(overlap.left()))
+        && (observed(b.reads.get(overlap.right())) || observed(b.writes.get(overlap.right()))))
+        || (observed(b.writes.get(overlap.right())) && observed(a.reads.get(overlap.left())))
 }
 
 type ParticipantRange<'a> = btree_map::Range<'a, SourceUnitOrdinal, SourceUnitId>;
 type PendingParticipant = Reverse<(SourceUnitOrdinal, SourceUnitId, usize)>;
 
-fn push_range<'cell, 'participants>(
-    ranges: &mut Vec<(Option<&'cell EffectCell>, ParticipantRange<'participants>)>,
+fn push_range<'participants>(
+    ranges: &mut Vec<(Option<CellOverlap>, ParticipantRange<'participants>)>,
     pending: &mut BinaryHeap<PendingParticipant>,
-    cell: Option<&'cell EffectCell>,
+    overlap: Option<CellOverlap>,
     mut range: ParticipantRange<'participants>,
 ) {
     if let Some((&ordinal, &partner)) = range.next() {
         let cursor = ranges.len();
-        ranges.push((cell, range));
+        ranges.push((overlap, range));
         pending.push(Reverse((ordinal, partner, cursor)));
     }
 }

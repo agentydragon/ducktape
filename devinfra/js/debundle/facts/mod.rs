@@ -52,6 +52,7 @@ mod at_init_fallback;
 #[cfg(test)]
 mod at_init_fallback_tests;
 mod callable_inference;
+mod cell_overlap;
 mod collector;
 mod dynamic_scope;
 mod evaluation_effects;
@@ -81,6 +82,8 @@ mod value_set_tests;
 // crate-internal items through `use super::*;`, which sees these globs.
 pub(crate) use array_spreads::StableArraySpreadShapes;
 pub(crate) use at_init_fallback::*;
+pub use cell_overlap::{CellOverlap, CellOverlapIndex, CellOverlapLaw};
+pub(crate) use cell_overlap::{may_conflict, may_overlap};
 pub(crate) use collector::*;
 pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;

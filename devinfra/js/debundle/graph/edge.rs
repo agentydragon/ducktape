@@ -10,7 +10,7 @@ use swc_ecma_ast::Id;
 use crate::ModuleId;
 use crate::analysis_inputs::CommutingStatementsRef;
 use crate::execution_evidence::AssumedEffectReason;
-use crate::facts::{DataflowOpacityCause, EffectCell};
+use crate::facts::{CellOverlap, CellOverlapLaw, DataflowOpacityCause, EffectCell};
 
 use super::build::PremiseVerdict;
 
@@ -281,14 +281,26 @@ pub enum HeapBarrierCause {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CellConflict {
-    /// `from` reads `cell`; `to` was its last writer.
-    ReadAfterWrite { cell: EffectCellReport },
-    /// `from` writes `cell`; `to` was its last writer.
-    WriteAfterWrite { cell: EffectCellReport },
-    /// `from` writes `cell`; `to` read it since its last write.
-    WriteAfterRead { cell: EffectCellReport },
-    /// `from` reads or writes `cell`; `to` allocated it.
-    UseAfterAllocation { cell: EffectCellReport },
+    /// `from` reads `cell`; `to` was the last writer to an overlapping footprint.
+    ReadAfterWrite {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
+    /// `from` writes `cell`; `to` was the last writer to an overlapping footprint.
+    WriteAfterWrite {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
+    /// `from` writes `cell`; `to` read an overlapping footprint since its last write.
+    WriteAfterRead {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
+    /// `from` reads or writes `cell`; `to` allocated an overlapping footprint.
+    UseAfterAllocation {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
     /// `to` is the opaque barrier in force when `from` runs.
     AfterBarrier,
     /// `from` is an opaque barrier; `to` is a prior impure source unit.
@@ -310,6 +322,24 @@ pub enum EffectCellReport {
     SetContents { origin: u32 },
     ObjectShape { origin: u32 },
     OwnProperty { origin: u32, property: String },
+}
+
+/// The two access footprints and the address law that joined them.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct CellOverlapReport {
+    pub left: EffectCellReport,
+    pub right: EffectCellReport,
+    pub law: CellOverlapLaw,
+}
+
+impl From<&CellOverlap> for CellOverlapReport {
+    fn from(overlap: &CellOverlap) -> Self {
+        Self {
+            left: EffectCellReport::from(overlap.left()),
+            right: EffectCellReport::from(overlap.right()),
+            law: overlap.law(),
+        }
+    }
 }
 
 impl From<&EffectCell> for EffectCellReport {
@@ -342,6 +372,12 @@ impl fmt::Display for EffectCellReport {
                 write!(f, "own property `{property}` of allocation #{origin}")
             }
         }
+    }
+}
+
+impl fmt::Display for CellOverlapReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} overlaps {} ({:?})", self.left, self.right, self.law)
     }
 }
 
@@ -395,10 +431,26 @@ impl HeapBarrierCause {
 impl fmt::Display for CellConflict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ReadAfterWrite { cell } => write!(f, "reads {cell} last written by target"),
-            Self::WriteAfterWrite { cell } => write!(f, "writes {cell} last written by target"),
-            Self::WriteAfterRead { cell } => write!(f, "writes {cell} read by target"),
-            Self::UseAfterAllocation { cell } => write!(f, "uses {cell} allocated by target"),
+            Self::ReadAfterWrite { overlap, .. } => write!(
+                f,
+                "reads {} overlapping target write {}",
+                overlap.right, overlap.left
+            ),
+            Self::WriteAfterWrite { overlap, .. } => write!(
+                f,
+                "writes {} overlapping target write {}",
+                overlap.right, overlap.left
+            ),
+            Self::WriteAfterRead { overlap, .. } => write!(
+                f,
+                "writes {} overlapping target read {}",
+                overlap.right, overlap.left
+            ),
+            Self::UseAfterAllocation { overlap, .. } => write!(
+                f,
+                "uses {} overlapping target allocation {}",
+                overlap.right, overlap.left
+            ),
             Self::AfterBarrier => f.write_str("target is the opaque barrier in force"),
             Self::BarrierAfterPrior => f.write_str("source is an opaque barrier after target"),
             Self::FrontierAfterCell { cell } => write!(f, "heap barrier after target's {cell}"),

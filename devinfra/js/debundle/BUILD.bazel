@@ -614,6 +614,7 @@ rust_library(
         "facts/at_init_fallback.rs",
         "facts/at_init_fallback_tests.rs",
         "facts/callable_inference.rs",
+        "facts/cell_overlap.rs",
         "facts/collector.rs",
         "facts/dynamic_scope.rs",
         "facts/evaluation_effects.rs",

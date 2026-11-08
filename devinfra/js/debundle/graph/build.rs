@@ -10,8 +10,10 @@ use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::execution_evidence::SourceLocation;
-use crate::facts::heap_contents::is_array_index;
-use crate::facts::{EffectCell, HeapContentCells, SourceUnitReadClosure};
+use crate::facts::{
+    CellOverlap, CellOverlapIndex, EffectCell, HeapContentCells, SourceUnitReadClosure,
+    may_conflict, may_overlap,
+};
 use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
 /// The per-chunk options dependency-graph construction reads.
@@ -23,8 +25,9 @@ pub struct GraphOptions {
 
 use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit};
 use super::edge::{
-    BindingTimelineOrder, CellConflict, CellEffectClass, DependencyEdge, DependencyEdgeId,
-    EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause, SequencedCause,
+    BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
+    DependencyEdgeId, EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause,
+    SequencedCause,
 };
 use crate::execution_evidence::AssumedEffectReason;
 use crate::facts::DataflowOpacityCause;
@@ -111,9 +114,12 @@ pub enum KnownConflict {
     /// endpoints' recorded effects (a cell relation, a binding timeline, a
     /// shared `var`, an uninitialized observation).
     Sequenced(SequencedCause),
-    /// The two summaries share `cell` with at least one write, whatever
+    /// The two summaries have overlapping cell footprints with at least one write, whatever
     /// rule emitted the edge between them.
-    SharedCell { cell: EffectCellReport },
+    SharedCell {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
     /// Both source units declare the shared `var` `binding`.
     CoDeclaration { binding: swc_atoms::Atom },
     /// A `Sequenced` edge without a retained cause (never produced by this
@@ -125,7 +131,10 @@ impl fmt::Display for KnownConflict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Sequenced(cause) => cause.fmt(f),
-            Self::SharedCell { cell } => write!(f, "both summaries touch {cell}, one writing it"),
+            Self::SharedCell { overlap, .. } => write!(
+                f,
+                "both summaries have an overlapping cell effect: {overlap}"
+            ),
             Self::CoDeclaration { binding } => {
                 write!(f, "both declare shared `var` `{binding}`")
             }
@@ -872,9 +881,10 @@ fn premise_verdict(
     Some(
         conflicting_cell(&premise_effects[&edge.from], &premise_effects[&edge.to]).map_or(
             verdict,
-            |cell| {
+            |overlap| {
                 known(KnownConflict::SharedCell {
-                    cell: EffectCellReport::from(&cell),
+                    cell: EffectCellReport::from(overlap.right()),
+                    overlap: CellOverlapReport::from(&overlap),
                 })
             },
         ),
@@ -895,13 +905,37 @@ fn retain_premise_verdicts(
     }
 }
 
-/// A cell one summary writes and the other reads or writes, if any.
-fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> Option<EffectCell> {
-    a.writes
-        .iter()
-        .find(|cell| b.writes.contains(cell) || b.reads.contains(cell))
-        .or_else(|| b.writes.iter().find(|cell| a.reads.contains(cell)))
-        .cloned()
+/// An overlapping cell footprint where one summary writes and the other reads
+/// or writes, if any.
+fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> Option<CellOverlap> {
+    let mut b_reads = CellOverlapIndex::<()>::default();
+    let mut b_writes = CellOverlapIndex::<()>::default();
+    for cell in &b.reads {
+        b_reads.get_or_default(cell.clone());
+    }
+    for cell in &b.writes {
+        b_writes.get_or_default(cell.clone());
+    }
+    for left in &a.writes {
+        for (overlap, _) in b_writes.overlapping(left) {
+            if let Some(conflict) = may_conflict(left, true, overlap.left(), true) {
+                return Some(conflict);
+            }
+        }
+        for (overlap, _) in b_reads.overlapping(left) {
+            if let Some(conflict) = may_conflict(left, true, overlap.left(), false) {
+                return Some(conflict);
+            }
+        }
+    }
+    for left in &a.reads {
+        for (overlap, _) in b_writes.overlapping(left) {
+            if let Some(conflict) = may_conflict(left, false, overlap.left(), true) {
+                return Some(conflict);
+            }
+        }
+    }
+    None
 }
 
 /// Apply the chunk's `commuting_statements` premises (SPEC.md § Commuting
@@ -944,13 +978,14 @@ fn apply_commuting_statements(
         // A pair may first acquire a direct edge during order preservation.
         // Its explicit cells still contradict commutation even before then.
         if conflicts.is_empty()
-            && let Some(cell) = conflicting_cell(&premise_effects[&a], &premise_effects[&b])
+            && let Some(overlap) = conflicting_cell(&premise_effects[&a], &premise_effects[&b])
         {
             conflicts.push(ContradictingEdge {
                 from: premise.a.source_unit,
                 to: premise.b.source_unit,
                 conflict: KnownConflict::SharedCell {
-                    cell: EffectCellReport::from(&cell),
+                    cell: EffectCellReport::from(overlap.right()),
+                    overlap: CellOverlapReport::from(&overlap),
                 },
             });
         }
@@ -1452,12 +1487,11 @@ fn emit_cell_order_events(
     sequence_pairs: &mut BTreeSet<(SourceUnitId, SourceUnitId)>,
     unique_eager_allocations: Option<&OneShotEagerAllocations>,
 ) {
-    let mut last_writer: BTreeMap<EffectCell, SourceUnitId> = BTreeMap::new();
-    let mut readers_since_last_write: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> =
-        BTreeMap::new();
+    let mut last_writer = CellOverlapIndex::<SourceUnitId>::default();
+    let mut readers_since_last_write = CellOverlapIndex::<BTreeSet<SourceUnitId>>::default();
     let mut prior_source_units: Vec<SourceUnitId> = Vec::new();
     let mut opaque_barrier: Option<SourceUnitId> = None;
-    let mut pending_allocations: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> = BTreeMap::new();
+    let mut pending_allocations = CellOverlapIndex::<BTreeSet<SourceUnitId>>::default();
     let mut born_after_barrier = BTreeSet::new();
     // Classification of every source unit seen so far, for the `to` side
     // of retained causes. A source unit's content event (summarized or
@@ -1481,7 +1515,7 @@ fn emit_cell_order_events(
                 {
                     born_after_barrier.insert(cell.clone());
                 }
-                pending_allocations.entry(cell).or_default().insert(from);
+                pending_allocations.get_or_default(cell).insert(from);
             }
             class_of.entry(from).or_insert(from_class);
             continue;
@@ -1494,39 +1528,44 @@ fn emit_cell_order_events(
                 .map(|cell| (cell, false))
                 .chain(effects.writes.iter().map(|cell| (cell, true)))
             {
-                let report = EffectCellReport::from(cell);
-                if let Some(allocations) = pending_allocations.get(cell) {
+                for (overlap, allocations) in pending_allocations.overlapping(cell) {
                     for &to in allocations {
                         depend(
                             &mut targets,
                             to,
                             CellConflict::UseAfterAllocation {
-                                cell: report.clone(),
+                                cell: EffectCellReport::from(cell),
+                                overlap: CellOverlapReport::from(&overlap),
                             },
                         );
                     }
                 }
-                if let Some(&to) = last_writer.get(cell) {
+                for (overlap, &to) in last_writer.overlapping(cell) {
                     let conflict = if is_write {
                         CellConflict::WriteAfterWrite {
-                            cell: report.clone(),
+                            cell: EffectCellReport::from(cell),
+                            overlap: CellOverlapReport::from(&overlap),
                         }
                     } else {
                         CellConflict::ReadAfterWrite {
-                            cell: report.clone(),
+                            cell: EffectCellReport::from(cell),
+                            overlap: CellOverlapReport::from(&overlap),
                         }
                     };
                     depend(&mut targets, to, conflict);
                 }
-                if is_write && let Some(readers) = readers_since_last_write.get(cell) {
-                    for &to in readers {
-                        depend(
-                            &mut targets,
-                            to,
-                            CellConflict::WriteAfterRead {
-                                cell: report.clone(),
-                            },
-                        );
+                if is_write {
+                    for (overlap, readers) in readers_since_last_write.overlapping(cell) {
+                        for &to in readers {
+                            depend(
+                                &mut targets,
+                                to,
+                                CellConflict::WriteAfterRead {
+                                    cell: EffectCellReport::from(cell),
+                                    overlap: CellOverlapReport::from(&overlap),
+                                },
+                            );
+                        }
                     }
                 }
             }
@@ -1538,10 +1577,13 @@ fn emit_cell_order_events(
                     || effects.reads.iter().chain(&effects.writes).any(|cell| {
                         !born_after_barrier.contains(cell)
                             && !matches!(cell,
-                                    EffectCell::OwnProperty { origin, property }
-                                        if (property == "length" || is_array_index(property))
-                                            && born_after_barrier.contains(
-                                                &EffectCell::ArrayContents(*origin)))
+                                    EffectCell::OwnProperty { origin, .. }
+                                        if born_after_barrier.contains(
+                                            &EffectCell::ArrayContents(*origin))
+                                            && may_overlap(
+                                                cell,
+                                                &EffectCell::ArrayContents(*origin),
+                                            ).is_some())
                     }))
             {
                 depend(&mut targets, barrier, CellConflict::AfterBarrier);
@@ -1560,7 +1602,7 @@ fn emit_cell_order_events(
             // Every earlier read/write is either on that frontier or already
             // constrained before a frontier event. Reset the per-cell state
             // so later observations depend on the opaque operation itself.
-            for (cell, allocations) in &pending_allocations {
+            for (cell, allocations) in pending_allocations.iter() {
                 for &to in allocations {
                     depend(
                         &mut targets,
@@ -1570,14 +1612,14 @@ fn emit_cell_order_events(
                 }
             }
             pending_allocations.clear();
-            for (cell, &to) in &last_writer {
+            for (cell, &to) in last_writer.iter() {
                 depend(
                     &mut targets,
                     to,
                     CellConflict::FrontierAfterCell { cell: cell.into() },
                 );
             }
-            for (cell, readers) in &readers_since_last_write {
+            for (cell, readers) in readers_since_last_write.iter() {
                 for &to in readers {
                     depend(
                         &mut targets,
@@ -1613,14 +1655,12 @@ fn emit_cell_order_events(
         }
         if barrier_mode == CellOrderBarrier::None {
             for cell in effects.writes {
-                readers_since_last_write.remove(&cell);
+                readers_since_last_write.remove_dominated(&cell);
+                last_writer.remove_dominated(&cell);
                 last_writer.insert(cell, from);
             }
             for cell in effects.reads {
-                readers_since_last_write
-                    .entry(cell)
-                    .or_default()
-                    .insert(from);
+                readers_since_last_write.get_or_default(cell).insert(from);
             }
         }
         class_of.insert(from, from_class);
@@ -2473,6 +2513,64 @@ mod array_heap_frontier_tests {
             },
             barrier,
         )
+    }
+
+    fn cell_event(
+        ordinal: usize,
+        reads: &[EffectCell],
+        writes: &[EffectCell],
+    ) -> (
+        SourceUnitId,
+        SourceUnitOrdinal,
+        crate::StatementEffectSummary,
+        CellOrderBarrier,
+    ) {
+        (
+            SourceUnitId(ordinal),
+            SourceUnitOrdinal(ordinal),
+            crate::StatementEffectSummary {
+                reads: reads.iter().cloned().collect(),
+                writes: writes.iter().cloned().collect(),
+            },
+            CellOrderBarrier::None,
+        )
+    }
+
+    fn own_property(origin: u32, property: &str) -> EffectCell {
+        EffectCell::OwnProperty {
+            origin,
+            property: property.into(),
+        }
+    }
+
+    #[test]
+    fn narrow_array_write_keeps_broad_writer_live_for_later_index_read() {
+        let events = [
+            cell_event(0, &[], &[EffectCell::ArrayContents(9)]),
+            cell_event(1, &[], &[own_property(9, "0")]),
+            cell_event(2, &[own_property(9, "1")], &[]),
+        ];
+        let mut edges = Vec::new();
+        let mut pairs = BTreeSet::new();
+        emit_cell_order_events(events, &mut edges, &mut pairs, None);
+        assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
+        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
+        assert!(!pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
+    }
+
+    #[test]
+    fn narrow_array_write_keeps_broad_reader_live_for_later_index_write() {
+        let events = [
+            cell_event(0, &[EffectCell::ArrayContents(9)], &[]),
+            cell_event(1, &[], &[own_property(9, "0")]),
+            cell_event(2, &[], &[own_property(9, "1")]),
+        ];
+        let mut edges = Vec::new();
+        let mut pairs = BTreeSet::new();
+        emit_cell_order_events(events, &mut edges, &mut pairs, None);
+        assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
+        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
+        assert!(!pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
     }
 
     #[test]

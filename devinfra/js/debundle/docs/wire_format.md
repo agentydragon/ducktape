@@ -247,7 +247,11 @@ independently of legacy dataflow opacity, execution incompleteness and heap
 opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
 false. Cell conflicts can include `own_property` with `origin` and `property`;
 the origin includes all runtime generations of its source allocation and
-supplies no strong-update or privacy proof.
+supplies no strong-update or privacy proof. A cell conflict retains the later
+access in `cell` and adds `overlap: { left, right, law }` for both footprints.
+The current laws are `exact_cell` and `array_contents_index_or_length`, the
+same-origin alias between array contents and canonical numeric indices or
+`length`. Shape and ordinary named properties remain distinct.
 `coverage.covered_owner_dependencies` retains the typed conditions for
 all owner coverage certificates in the analyzed facts. `relocation_dependencies`
 retains the typed conditions for closed owners participating in candidate
@@ -298,7 +302,8 @@ it leaves every graph, bounded summary, source input and census scope intact.
 Each JSONL line is one pair in the complete sweep order; summary examples are
 selected from this stream without changing that order. A line includes
 `runs_first`, `runs_later`, every `cells` entry
-with access provenance, exact `cell_count`, `havoc`, typed `disposition`,
+with its later-footprint `cell`, an `overlap: { left, right, law }` witness,
+and access provenance, exact `cell_count`, `havoc`, typed `disposition`,
 `premise_locations`, typed `premise_references`, and the report-only
 `legacy_edge_conflict` comparison.
 `first_opacity` and

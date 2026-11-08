@@ -505,7 +505,8 @@ Twenty deterministic examples bound default output: rows with modeled cells
 are preferred, then the earliest Havoc-only rows fill unused slots; selected
 rows retain sweep order. Truncation and coverage limitations remain explicit.
 `run --effect-conflicts-jsonl` additionally streams every pair, cell, access
-provenance, premise disposition and endpoint opacity
+provenance (including both footprints and their overlap law), premise
+disposition and endpoint opacity
 to `effect_conflicts.jsonl` in each chunk's report directory, using the same
 enumeration. Write and flush errors fail the run. Missing report roots and
 accepted dry runs that suppress reports refuse an explicit export request;
@@ -4424,7 +4425,12 @@ impure initializer appears in `sequenced_source_unit`. The edge's
   `write_after_write`, `write_after_read`, `use_after_allocation` or
   `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
   `array_contents`, `set_contents`, or `own_property` with `origin` and
-  `property`), or `after_barrier` / `barrier_after_prior`
+  `property`). The first four conflict kinds also carry `overlap: {left, right,
+law}` preserving both source footprints; `law` is `exact_cell` or
+  `array_contents_index_or_length` (same-origin array contents versus a
+  canonical numeric index or `length`). Shape and ordinary named properties
+  remain distinct. Barrier conflicts carry no overlap witness. The conflict's
+  `cell` remains the later access footprint. `after_barrier` / `barrier_after_prior`
   for the opaque-barrier dependence. `source`, `target` and `observation` are
   the provenance of that endpoint's binding effect (§ Commuting statements):
   `{"kind": "observed"}` or `{"kind": "fallback", "reason": {"path": …}}`
