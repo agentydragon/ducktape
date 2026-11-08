@@ -3,12 +3,7 @@
 > **Status:** paused — two aborted attempts, no headline yet. See
 > [What happened](#what-happened) and [Next steps](#next-steps).
 
-Replacement for the earlier N=100 attempt at
-<../2026-04-29_swebench_n100_gpt20/> which was started before we
-noticed the `--sample-shuffle` flag was missing. The earlier run
-loaded samples in alpha-by-repo order, so the first 90 (it stopped
-at 90/100) were 22× `astropy` + 68× `django` — not a representative
-cross-section of Verified's 12+ repos.
+Replacement for the [historical unshuffled N=100 run](https://github.com/agentydragon/ducktape/blob/2c01f4ba449f3aa3468b08f33e87c45183914535/cluster/docs/inference/runs/2026-04-29_swebench_n100_gpt20/README.md), which was started before we noticed the `--sample-shuffle` flag was missing. That run loaded samples in alpha-by-repo order, so the first 90 (it stopped at 90/100) were 22× `astropy` + 68× `django` — not a representative cross-section of Verified's 12+ repos.
 
 This run uses `--sample-shuffle 42` so the 100 sampled problems are
 drawn at random from the 500 in Verified.
