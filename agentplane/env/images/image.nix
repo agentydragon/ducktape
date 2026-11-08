@@ -1,6 +1,6 @@
 # The native harness image: the sandbox image's definition (<./sandbox.nix>) plus nixpkgs' Claude
 # Code and Codex, and with `extraPaths` the repository's own hook/build tools. Published as
-# environment-tools by .github/workflows/agentplane-environment-tools-image.yml and run by the runner
+# environment-tools by .github/workflows/nix-images.yml and run by the runner
 # SandboxTemplate (cluster/cdk8s/agentplane/environment_sandbox.py), which names the harnesses by their
 # /bin paths here.
 #

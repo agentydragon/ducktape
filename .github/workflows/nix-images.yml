@@ -1,0 +1,249 @@
+# Build the Nix-built images listed in devinfra/ci/nix_images.json together and publish them to the
+# Forgejo registry. One runner builds every image whose inputs changed in a single `nix build`, so
+# their shared closure is built once; an image already verified at the same output path is skipped
+# (see devinfra/ci/nix_images.py). Pull requests build and smoke-test; only devel pushes and manual
+# devel runs publish, one matrix job per image, so one broken image does not withhold the others.
+name: Nix images
+
+# Paths: devinfra/ci/nix_images.json's common_paths plus every image's paths (test_nix_images.py
+# checks the three lists agree with it).
+on:
+  push:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/finish-attic-upload/action.yml"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/nix-images.yml"
+      - ".github/workflows/trusted-fork-pr-context.yml"
+      - ".pre-commit-config.yaml"
+      - "agentplane/cli/package.nix"
+      - "agentplane/env/images/build.nix"
+      - "agentplane/env/images/container-disk.nix"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/firecracker-image.nix"
+      - "agentplane/env/images/firecracker.nix"
+      - "agentplane/env/images/firecracker_guest_contract.json"
+      - "agentplane/env/images/home_prepare"
+      - "agentplane/env/images/image.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/systemd/**"
+      - "agentplane/env/images/tools.nix"
+      - "agentplane/env/images/vm.nix"
+      - "agentplane/env/images/vm_guest_contract.json"
+      - "cpap/gateway/**"
+      - "devinfra/ci/nix_images.json"
+      - "devinfra/ci/nix_images.py"
+      - "devinfra/ci/pr_mergeability.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
+      - "nix/flake/devtools.nix"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "nix/nixos/modules/base.nix"
+      - "nix/nixos/modules/vm-hardware.nix"
+      - "nix/packages/**"
+      - "ruff.toml"
+      - "website/**"
+      # keep-sorted end
+  # Same-repository PRs use pull_request directly. Fork PRs are skipped here (their secrets are
+  # unavailable) and use pull_request_target below instead.
+  pull_request:
+    paths:
+      # keep-sorted start
+      - ".github/actions/finish-attic-upload/action.yml"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/nix-images.yml"
+      - ".github/workflows/trusted-fork-pr-context.yml"
+      - ".pre-commit-config.yaml"
+      - "agentplane/cli/package.nix"
+      - "agentplane/env/images/build.nix"
+      - "agentplane/env/images/container-disk.nix"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/firecracker-image.nix"
+      - "agentplane/env/images/firecracker.nix"
+      - "agentplane/env/images/firecracker_guest_contract.json"
+      - "agentplane/env/images/home_prepare"
+      - "agentplane/env/images/image.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/systemd/**"
+      - "agentplane/env/images/tools.nix"
+      - "agentplane/env/images/vm.nix"
+      - "agentplane/env/images/vm_guest_contract.json"
+      - "cpap/gateway/**"
+      - "devinfra/ci/nix_images.json"
+      - "devinfra/ci/nix_images.py"
+      - "devinfra/ci/pr_mergeability.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
+      - "nix/flake/devtools.nix"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "nix/nixos/modules/base.nix"
+      - "nix/nixos/modules/vm-hardware.nix"
+      - "nix/packages/**"
+      - "ruff.toml"
+      - "website/**"
+      # keep-sorted end
+  # Fork PRs use pull_request_target so the build can read the Attic cache. fork-context resolves
+  # GitHub's merge commit and gates non-allowlisted authors with fork-ci-review before checkout.
+  pull_request_target:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/finish-attic-upload/action.yml"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/nix-images.yml"
+      - ".github/workflows/trusted-fork-pr-context.yml"
+      - ".pre-commit-config.yaml"
+      - "agentplane/cli/package.nix"
+      - "agentplane/env/images/build.nix"
+      - "agentplane/env/images/container-disk.nix"
+      - "agentplane/env/images/ducktape_image_smoke.sh"
+      - "agentplane/env/images/ducktape_tools_check.nix"
+      - "agentplane/env/images/firecracker-image.nix"
+      - "agentplane/env/images/firecracker.nix"
+      - "agentplane/env/images/firecracker_guest_contract.json"
+      - "agentplane/env/images/home_prepare"
+      - "agentplane/env/images/image.nix"
+      - "agentplane/env/images/sandbox.nix"
+      - "agentplane/env/images/systemd/**"
+      - "agentplane/env/images/tools.nix"
+      - "agentplane/env/images/vm.nix"
+      - "agentplane/env/images/vm_guest_contract.json"
+      - "cpap/gateway/**"
+      - "devinfra/ci/nix_images.json"
+      - "devinfra/ci/nix_images.py"
+      - "devinfra/ci/pr_mergeability.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
+      - "nix/flake/devtools.nix"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "nix/nixos/modules/base.nix"
+      - "nix/nixos/modules/vm-hardware.nix"
+      - "nix/packages/**"
+      - "ruff.toml"
+      - "website/**"
+      # keep-sorted end
+  workflow_dispatch:
+
+concurrency:
+  # Keep a skipped fork pull_request run from canceling its trusted pull_request_target run. A
+  # cancelled devel run loses nothing: the next one diffs from the last successful run.
+  group: nix-images-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fork-context:
+    uses: ./.github/workflows/trusted-fork-pr-context.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  build:
+    name: Build & verify
+    needs: [fork-context]
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'pull_request_target' || needs.fork-context.outputs.source_commit != '') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    environment: ${{ needs.fork-context.outputs.environment || null }}
+    runs-on: ubuntu-latest
+    # A cold firecracker kernel alone took ~2h, and the other images build alongside it.
+    timeout-minutes: 330
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      images: ${{ steps.select.outputs.images }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.fork-context.outputs.source_commit || github.sha }}
+          # select diffs a PR merge commit against its first parent.
+          fetch-depth: 2
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' }}
+
+      - name: Select images whose inputs changed
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m devinfra.ci.nix_images select --event "$GITHUB_EVENT_NAME" --repository "$GITHUB_REPOSITORY"
+
+      # The root filesystem cannot hold the VM disks, the kernel build and the docker images at once.
+      - name: Put the Nix store on the runner's scratch disk
+        if: steps.select.outputs.images != '[]'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo mkdir -p /mnt/nix /nix
+          sudo mount --bind /mnt/nix /nix
+          df -h / /mnt
+
+      - if: steps.select.outputs.images != '[]'
+        uses: ./.github/actions/setup-nix-attic
+        with:
+          # Fork revisions (pull_request_target) never get the writer token.
+          attic_token: ${{ secrets[github.event_name != 'pull_request_target' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
+          upload: ${{ github.event_name != 'pull_request_target' }}
+
+      - name: Build, smoke-test and mark verified
+        if: steps.select.outputs.images != '[]'
+        env:
+          IMAGES: ${{ steps.select.outputs.images }}
+        run: python3 -m devinfra.ci.nix_images build --images "$IMAGES"
+
+      - name: Finish Attic upload
+        if: always() && steps.select.outputs.images != '[]' && github.event_name != 'pull_request_target'
+        uses: ./.github/actions/finish-attic-upload
+
+  publish:
+    name: Publish ${{ matrix.image }}
+    needs: [build]
+    # Flux ImagePolicy picks the newest devel-* tag, so nothing else may publish. publish skips an
+    # image whose build failed (no verified marker) and one `latest` already holds.
+    if: >-
+      !cancelled() &&
+      github.ref_name == 'devel' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.build.outputs.images != '' && needs.build.outputs.images != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.build.outputs.images) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Put the Nix store on the runner's scratch disk
+        run: |
+          sudo mkdir -p /mnt/nix /nix
+          sudo mount --bind /mnt/nix /nix
+
+      - uses: ./.github/actions/setup-nix-attic
+        with:
+          attic_token: ${{ secrets.ATTIC_READ_TOKEN }}
+
+      - name: Log in to Forgejo registry
+        env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
+        run: |
+          echo "$FORGEJO_IMAGES_PASSWORD" | skopeo login git.allegedly.works \
+            -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+
+      - name: Push ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: python3 -m devinfra.ci.nix_images publish --image "$IMAGE" --sha "$GITHUB_SHA"

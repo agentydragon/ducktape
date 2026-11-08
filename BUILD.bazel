@@ -119,6 +119,7 @@ npm_link_package(
 exports_files([
     ".github/workflows/cancel-closed-pr-ci.yml",
     ".github/workflows/cancel-obsolete-pr-ci.yml",
+    ".github/workflows/nix-images.yml",
     "MODULE.bazel",
     "mypy.ini",
     "nebula-mesh.json",

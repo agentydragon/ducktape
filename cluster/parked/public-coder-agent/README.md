@@ -27,8 +27,9 @@ inventory was removed.
 To resume, move the app directory back under `cluster/k8s` and drop the parked
 annotation, per `cluster/AGENTS.md`; restore the OpenClaw replica count and
 unsuspend the backup. The OpenClaw image workflow and smoke script are parked in
-`cluster/parked/public-coder-agent/ci/`; move them back and publish a fresh image
-before resuming. Ensure the rebuilt image contains the gRPC-capable `agentplane` CLI and verify
+`cluster/parked/public-coder-agent/ci/`. The workflow calls the since-removed `nix-image.yml`: port
+it to an entry in `devinfra/ci/nix_images.json` (smoke script as its `smoke`, its paths added to
+`.github/workflows/nix-images.yml`), then publish a fresh image before resuming. Ensure the rebuilt image contains the gRPC-capable `agentplane` CLI and verify
 `agentplane egress rules` through the sidecar route. The Haku Kubernetes API route and bearer were removed and will not
 return with the app. Verify model budgets and credentials first; do not reset retained
 PVCs or change the embedding identity.
