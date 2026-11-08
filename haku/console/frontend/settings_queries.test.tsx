@@ -11,8 +11,8 @@ import { SettingsPanel } from "./settings_panel";
 import type { AgentListResponse, AgentView } from "./schema";
 import { deferred } from "../../../util/frontend/testing/deferred";
 
-vi.mock("./client", async (original) => ({
-  ...(await original<typeof import("./client")>()),
+vi.mock(import("./client"), async (original) => ({
+  ...(await original()),
   listAgents: vi.fn(),
   fetchDeploymentInfo: vi.fn(),
   updateAgentAccessProfile: vi.fn(),

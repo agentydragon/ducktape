@@ -1061,8 +1061,6 @@ vitest_config(
     environment = "node",
 )
 
-check_vitest_specs()
-
 ts_library(
     name = "query",
     srcs = ["query.ts"],
@@ -1090,3 +1088,5 @@ haku_vitest_test(
         "//util/frontend:deferred_test_utils",
     ],
 )
+
+check_vitest_specs()
