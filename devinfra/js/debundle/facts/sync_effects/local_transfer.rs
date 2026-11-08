@@ -471,7 +471,7 @@ fn read_field(
             Some(LocalValueResult {
                 allocation: AllocationValue {
                     values: read.values,
-                    judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+                    judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
                 },
                 effects,
                 selection,
@@ -599,7 +599,7 @@ fn binary_expression(
         op,
         &left.values,
         &right.values,
-        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        AllocationJudgment::CoveredAllocationOnly(Box::default()),
     );
     let Some(transfer) = transfer else {
         judgment.compose(&AllocationJudgment::Opaque);
@@ -648,7 +648,7 @@ fn template_expression(
             swc_ecma_ast::BinaryOp::Add,
             &string,
             &operand.values,
-            AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+            AllocationJudgment::CoveredAllocationOnly(Box::default()),
         ) else {
             judgment.compose(&AllocationJudgment::Opaque);
             context.binary_fallback(frame, &operand.values, span);
@@ -708,10 +708,9 @@ fn record_expression(
         properties
             .iter()
             .map(|property| property.map(|value| value)),
-        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        AllocationJudgment::CoveredAllocationOnly(Box::default()),
         |context, node| {
-            let mut judgment =
-                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+            let mut judgment = AllocationJudgment::CoveredAllocationOnly(Box::default());
             let selected = expression(context.context, node, body, context.frame, &mut judgment)?;
             // A later child can truncate the unfinished literal.
             context.frame.inputs.extend(selected.values.iter().cloned());
@@ -744,10 +743,9 @@ fn array_expression(
         &mut LocalValueContext { context, frame },
         *allocation,
         elements.iter().map(Option::as_ref),
-        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        AllocationJudgment::CoveredAllocationOnly(Box::default()),
         |context, node| {
-            let mut judgment =
-                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+            let mut judgment = AllocationJudgment::CoveredAllocationOnly(Box::default());
             let selected = expression(context.context, node, body, context.frame, &mut judgment)?;
             context.frame.inputs.extend(selected.values.iter().cloned());
             Some(AllocationValue {
@@ -774,10 +772,9 @@ fn sequence_expression(
     let result = allocation_transfer::sequence(
         &mut LocalValueContext { context, frame },
         expressions.iter(),
-        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        AllocationJudgment::CoveredAllocationOnly(Box::default()),
         |context, node| {
-            let mut judgment =
-                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+            let mut judgment = AllocationJudgment::CoveredAllocationOnly(Box::default());
             let selected = expression(context.context, node, body, context.frame, &mut judgment)?;
             selection = selected.selection;
             Some(AllocationValue {
@@ -1175,7 +1172,7 @@ pub(super) fn execute(
     body: &LocalBody,
     frame: &mut LocalFrame,
 ) -> Option<LocalTransferResult> {
-    let mut judgment = AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+    let mut judgment = AllocationJudgment::CoveredAllocationOnly(Box::default());
     frame.return_selection = None;
     if let Some(arguments) = frame.parameter_inputs.clone() {
         // Later parameters are in TDZ while an earlier default executes.

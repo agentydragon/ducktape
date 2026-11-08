@@ -10911,6 +10911,9 @@ impl ExecutionIndex {
                 descriptor_copy_author_refs: BTreeSet::new(),
                 argument_input_refs: BTreeSet::new(),
                 native_operation_input_refs: dependencies.native_operation_inputs.clone(),
+                imported_primitive_array_spread_input_refs: dependencies
+                    .imported_primitive_array_spread_inputs
+                    .clone(),
             },
             dependencies,
             census: false,
@@ -14772,6 +14775,9 @@ fn returned_record(
             descriptor_copy_author_refs: BTreeSet::new(),
             argument_input_refs: dependencies.argument_inputs.clone(),
             native_operation_input_refs: dependencies.native_operation_inputs.clone(),
+            imported_primitive_array_spread_input_refs: dependencies
+                .imported_primitive_array_spread_inputs
+                .clone(),
         },
     }
 }

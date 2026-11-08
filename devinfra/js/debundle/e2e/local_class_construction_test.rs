@@ -617,6 +617,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             argument_input_refs: BTreeSet::new(),
             argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: BTreeSet::new(),
+            imported_primitive_array_spread_input_refs: BTreeSet::new(),
         }
     );
     let unique_execution = unique
@@ -655,6 +656,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             argument_input_refs: BTreeSet::new(),
             argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: BTreeSet::new(),
+            imported_primitive_array_spread_input_refs: BTreeSet::new(),
         }
     );
     assert_eq!(
@@ -680,6 +682,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             argument_input_refs: BTreeSet::new(),
             argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: BTreeSet::new(),
+            imported_primitive_array_spread_input_refs: BTreeSet::new(),
         }
     );
     assert!(plain.heap_native_integrity_uses.is_empty());

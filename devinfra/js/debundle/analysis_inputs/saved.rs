@@ -160,6 +160,7 @@ mod tests {
             descriptor_copy_author_refs: BTreeSet::new(),
             argument_input_refs: BTreeSet::<ArgumentInputRef>::new(),
             native_operation_input_refs: BTreeSet::new(),
+            imported_primitive_array_spread_input_refs: BTreeSet::new(),
         };
         let mut summary = CallableSummary::namespace_wrapper(NamespaceWrapperSummary {
             defining_module: "provider".to_string(),

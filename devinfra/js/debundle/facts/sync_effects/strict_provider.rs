@@ -221,7 +221,7 @@ impl LocalContext for ProviderContext<'_> {
                     Kind::Function,
                     callable,
                 ))]),
-                judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+                judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
             },
             // Provider queries have no application call/execution receipt.
             effects: Default::default(),
@@ -243,7 +243,7 @@ impl LocalContext for ProviderContext<'_> {
         Some(LocalValueResult {
             allocation: AllocationValue {
                 values: frame.environment.get(binding)?.clone(),
-                judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+                judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
             },
             effects: Default::default(),
             selection: None,
@@ -638,7 +638,7 @@ pub(super) fn derive(
         retained_arguments,
         retained_provider_captures,
         native_constructions: context.native_constructions,
-        dependencies,
+        dependencies: *dependencies,
         record,
         closure,
     })
@@ -747,7 +747,7 @@ pub(super) fn derive_class(
         retained_arguments,
         retained_provider_captures: BTreeSet::new(),
         native_constructions: context.native_constructions,
-        dependencies,
+        dependencies: *dependencies,
         record: None,
         closure: None,
     })

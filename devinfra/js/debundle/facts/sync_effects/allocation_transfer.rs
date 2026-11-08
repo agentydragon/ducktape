@@ -24,7 +24,7 @@ use swc_ecma_ast::{BinaryOp, Id};
 pub(super) enum AllocationJudgment {
     Opaque,
     /// No external access, write, publication, invocation or throwing operation.
-    CoveredAllocationOnly(ProofDependencies),
+    CoveredAllocationOnly(Box<ProofDependencies>),
 }
 
 impl AllocationJudgment {
@@ -133,7 +133,7 @@ pub(super) fn update_result(operand: &Values) -> Option<AllocationValue> {
         values.insert(AbstractValue::Value(Value::Unavailable));
         AllocationJudgment::Opaque
     } else {
-        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default())
+        AllocationJudgment::CoveredAllocationOnly(Box::default())
     };
     Some(AllocationValue { values, judgment })
 }
@@ -182,7 +182,7 @@ pub(super) fn keyed_collection_new(
                 kind,
                 site.allocation_id(),
             ))]),
-            judgment: AllocationJudgment::CoveredAllocationOnly(dependencies),
+            judgment: AllocationJudgment::CoveredAllocationOnly(Box::new(dependencies)),
         },
         effects,
     })
@@ -358,7 +358,7 @@ pub(super) fn transfer(
     expression: &ValueExpr,
 ) -> Option<AllocationValue> {
     let mut judgment = if context.source_covered() {
-        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default())
+        AllocationJudgment::CoveredAllocationOnly(Box::default())
     } else {
         AllocationJudgment::Opaque
     };
@@ -716,7 +716,7 @@ pub(super) fn closed_binding(
     }
     Some(AllocationValue {
         values: values.clone(),
-        judgment: AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
     })
 }
 

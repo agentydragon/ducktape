@@ -151,6 +151,11 @@ pub fn compute_logical_chunk_facts(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.assumptions.imported_primitive_array_spread_inputs = program_summary
+            .imported_primitive_array_spread_inputs
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         inputs.inferred_set_constructions = program_summary
             .inferred_set_constructions
             .get(chunk_id)

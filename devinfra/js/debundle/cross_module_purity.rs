@@ -29,16 +29,18 @@ use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use js_ast::SourceLineIndex;
-use swc_common::{BytePos, Span};
-use swc_ecma_ast::ModuleItem;
+use swc_common::{BytePos, Span, Spanned};
+use swc_ecma_ast::{Decl, Expr, Lit, ModuleDecl, ModuleItem, Pat, Stmt};
 
 use crate::analysis_inputs::{
     BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
     DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
-    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, NativeIntrinsic,
-    PrimitiveExportCell, ProofDependencies, ResolvedBindingValueInput,
+    ImportedPrimitiveArrayOperandEvidence, ImportedPrimitiveArraySpreadInputEvidence,
+    ImportedPrimitiveArraySpreadInputRef, NamespaceWrapperSummary, NativeInputKind,
+    NativeIntegrity, NativeIntrinsic, PrimitiveExportCell, ProofDependencies,
+    ResolvedBindingValueInput, ResolvedImportedPrimitiveArraySpreadInput,
     ResolvedNativeOperationInput, ReturnedRecordSummary, SelectedBindingValueInput,
     SelectedNativeOperationInput,
 };
@@ -184,6 +186,309 @@ struct PreparedModulePurityFacts<'a> {
     plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
     plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
     plain_array_bindings: BTreeSet<String>,
+    known_eager_rebindings: BTreeMap<swc_ecma_ast::Id, BTreeSet<u32>>,
+    known_lazy_rebindings: BTreeSet<swc_ecma_ast::Id>,
+    known_member_write_roots: BTreeMap<swc_ecma_ast::Id, BTreeSet<u32>>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PreparationOptions {
+    /// Retain exact mutation roots only for chunks named by an imported-array
+    /// spread premise. The ordinary purity path does not need these facts.
+    collect_imported_array_write_sites: bool,
+}
+
+fn var_decl_for_source_item(item: &ModuleItem) -> Option<&swc_ecma_ast::VarDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+            Decl::Var(var) => Some(var),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn selected_array_declarator<'a>(
+    module: &'a ModulePurityFacts<'_>,
+    declaration: &crate::analysis_inputs::SourceDeclaration,
+    request: &str,
+) -> Result<(&'a swc_ecma_ast::VarDeclarator, swc_ecma_ast::Id)> {
+    let item = module
+        .body
+        .get(declaration.body_index)
+        .ok_or_else(|| anyhow::anyhow!("{request} selects a missing module item"))?;
+    let var = var_decl_for_source_item(item).ok_or_else(|| {
+        anyhow::anyhow!("{request} must select a direct var/let/const declaration")
+    })?;
+    let [declarator] = var.decls.as_slice() else {
+        bail!("{request} must select one simple top-level declarator");
+    };
+    let Pat::Ident(binding) = &declarator.name else {
+        bail!("{request} must select a simple identifier declarator");
+    };
+    if binding.id.sym.as_ref() != declaration.binding {
+        bail!("{request} no longer selects its declared binding");
+    }
+    let Some(Expr::Array(_)) = declarator.init.as_deref().map(Expr::unwrap_parens) else {
+        bail!("{request} must select a direct array literal initializer");
+    };
+    Ok((declarator, binding.id.to_id()))
+}
+
+fn primitive_array_kinds(array: &swc_ecma_ast::ArrayLit, request: &str) -> Result<Vec<PrimKinds>> {
+    array
+        .elems
+        .iter()
+        .enumerate()
+        .map(|(index, element)| {
+            let Some(element) = element else {
+                bail!("{request} producer array contains a hole at index {index}");
+            };
+            if element.spread.is_some() {
+                bail!("{request} producer array must contain only primitive literals");
+            }
+            match element.expr.unwrap_parens() {
+                Expr::Lit(Lit::Str(_)) => Ok(PrimKinds::STRING),
+                Expr::Lit(Lit::Num(_)) => Ok(PrimKinds::NUMBER),
+                Expr::Lit(Lit::Bool(_)) => Ok(PrimKinds::BOOLEAN),
+                Expr::Lit(Lit::Null(_)) => Ok(PrimKinds::NULL),
+                Expr::Lit(Lit::BigInt(_)) => Ok(PrimKinds::BIGINT),
+                _ => bail!("{request} producer array must contain only primitive literals"),
+            }
+        })
+        .collect()
+}
+
+fn source_location(module: &ModulePurityFacts<'_>, span: Span) -> Option<SourceLocation> {
+    let (source_path, line_index) = module.source.as_ref()?;
+    let (start_line, end_line, start_column) =
+        line_index.line_range_and_start_column_for_span(span)?;
+    Some(SourceLocation {
+        source_path: source_path.clone(),
+        start_line,
+        end_line,
+        start_column: Some(start_column),
+    })
+}
+
+fn resolve_imported_primitive_array_spread_inputs(
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    prepared: &BTreeMap<SourceModuleKey, PreparedModulePurityFacts<'_>>,
+    selected: &BTreeMap<
+        SourceModuleKey,
+        Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+    >,
+) -> Result<BTreeMap<SourceModuleKey, Vec<ResolvedImportedPrimitiveArraySpreadInput>>> {
+    let mut resolved = BTreeMap::new();
+    for (consumer, inputs) in selected {
+        let consumer_facts = modules
+            .get(consumer)
+            .with_context(|| format!("imported array spread consumer {consumer} is unavailable"))?;
+        let mut resolved_inputs = Vec::with_capacity(inputs.len());
+        for (input_index, input) in inputs.iter().enumerate() {
+            let request = format!(
+                "chunk_analysis_options.{consumer}.imported_primitive_array_spread_inputs[{input_index}]"
+            );
+            let (consumer_declarator, _) =
+                selected_array_declarator(consumer_facts, &input.consumer_declaration, &request)?;
+            let Expr::Array(consumer_array) = consumer_declarator
+                .init
+                .as_deref()
+                .expect("selected_array_declarator checked its initializer")
+                .unwrap_parens()
+            else {
+                unreachable!("selected_array_declarator checked array initializer")
+            };
+            let array_operands = consumer_array
+                .elems
+                .iter()
+                .map(|element| {
+                    let Some(element) = element else {
+                        bail!("{request} consumer initializer contains an array hole");
+                    };
+                    let Some(token) = element.spread else {
+                        bail!("{request} consumer initializer must be spread-only");
+                    };
+                    let Expr::Ident(binding) = element.expr.unwrap_parens() else {
+                        bail!("{request} every spread operand must be a direct import identifier");
+                    };
+                    Ok((token, binding.to_id(), binding.sym.to_string()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let consumer_spread_position = consumer_declarator.span.lo.0;
+            if array_operands.len() != input.operands.len() {
+                bail!("{request} operand selector count does not match the selected spread array");
+            }
+            let mut operand_evidence = Vec::with_capacity(input.operands.len());
+            let mut token_spans = Vec::with_capacity(input.operands.len());
+            let consumer_prepared = prepared
+                .get(consumer)
+                .with_context(|| format!("{request} consumer {consumer} was not prepared"))?;
+            for (position, (operand, (token, consumer_id, actual_binding))) in
+                input.operands.iter().zip(array_operands).enumerate()
+            {
+                if consumer_prepared
+                    .known_eager_rebindings
+                    .get(&consumer_id)
+                    .is_some_and(|positions| {
+                        positions
+                            .iter()
+                            .any(|write| *write < consumer_spread_position)
+                    })
+                {
+                    bail!(
+                        "{request} imported array binding {} is contradicted by a known source rebind before its selected spread",
+                        actual_binding
+                    );
+                }
+                if consumer_prepared
+                    .known_lazy_rebindings
+                    .contains(&consumer_id)
+                {
+                    bail!(
+                        "{request} unsupported: imported array binding {} has a known lazy rebind whose invocation order through the selected spread is not established",
+                        actual_binding
+                    );
+                }
+                if consumer_prepared
+                    .known_member_write_roots
+                    .contains_key(&consumer_id)
+                {
+                    bail!(
+                        "{request} unsupported: imported array binding {} has a known indexed/member write whose execution ordering through the selected spread is not established",
+                        actual_binding
+                    );
+                }
+                if actual_binding != operand.consumer_binding {
+                    bail!(
+                        "{request} operand {} no longer resolves to its selected import binding",
+                        operand.selector_local
+                    );
+                }
+                let import = consumer_facts
+                    .imports
+                    .get(&actual_binding)
+                    .with_context(|| {
+                        format!(
+                            "{request} operand {} is not a direct named/default import",
+                            operand.selector_local
+                        )
+                    })?;
+                if import.module != operand.provider_chunk {
+                    bail!(
+                        "{request} operand {} imports from {}, but its selected provider chunk is {}",
+                        operand.selector_local,
+                        import.module,
+                        operand.provider_chunk
+                    );
+                }
+                let provider_facts = modules.get(&import.module).with_context(|| {
+                    format!(
+                        "{request} selected provider {} is unavailable",
+                        import.module
+                    )
+                })?;
+                let provider_binding =
+                    provider_facts
+                        .exports
+                        .get(&import.export)
+                        .with_context(|| {
+                            format!(
+                                "{request} provider export {}:{} has no direct source binding",
+                                import.module, import.export
+                            )
+                        })?;
+                if provider_binding != &operand.provider_declaration.binding {
+                    bail!(
+                        "{request} provider export {}:{} does not resolve to the selected producer declaration",
+                        import.module,
+                        import.export
+                    );
+                }
+                let (producer_declarator, producer_id) = selected_array_declarator(
+                    provider_facts,
+                    &operand.provider_declaration,
+                    &format!("{request}.operands[{position}].provider_source_match"),
+                )?;
+                let provider_prepared = prepared.get(&import.module).with_context(|| {
+                    format!(
+                        "{request} selected provider {} was not prepared",
+                        import.module
+                    )
+                })?;
+                if provider_prepared
+                    .known_eager_rebindings
+                    .contains_key(&producer_id)
+                    || provider_prepared
+                        .known_lazy_rebindings
+                        .contains(&producer_id)
+                {
+                    bail!(
+                        "{request} unsupported: producer binding {} has a known source rebind in provider {}, but current cross-module facts do not establish its ordering through the selected spread",
+                        provider_binding,
+                        import.module
+                    );
+                }
+                if provider_prepared
+                    .known_member_write_roots
+                    .contains_key(&producer_id)
+                {
+                    bail!(
+                        "{request} unsupported: producer array {} has a known indexed/member write in provider {}, but current cross-module facts do not establish its ordering through the selected spread",
+                        provider_binding,
+                        import.module
+                    );
+                }
+                let Expr::Array(producer_array) = producer_declarator
+                    .init
+                    .as_deref()
+                    .expect("selected_array_declarator checked its initializer")
+                    .unwrap_parens()
+                else {
+                    unreachable!("selected_array_declarator checked array initializer")
+                };
+                let primitive_slots = primitive_array_kinds(
+                    producer_array,
+                    &format!("{request}.operands[{position}].provider_source_match"),
+                )?;
+                token_spans.push(token);
+                operand_evidence.push(ImportedPrimitiveArrayOperandEvidence {
+                    selector_local: operand.selector_local.clone(),
+                    consumer_binding: actual_binding,
+                    provider_module: import.module.clone(),
+                    provider_export: import.export.clone(),
+                    provider_local: provider_binding.clone(),
+                    source_specifier: import.source_specifier.clone(),
+                    provider_source_match: operand.provider_source_match.clone(),
+                    provider_source_sha256: operand.audited_provider_source_sha256.clone(),
+                    primitive_slots,
+                    provider_source_location: source_location(provider_facts, producer_array.span),
+                });
+            }
+            let evidence = ImportedPrimitiveArraySpreadInputEvidence {
+                reference: ImportedPrimitiveArraySpreadInputRef {
+                    defining_chunk: consumer.clone(),
+                    input_index,
+                },
+                spec_location: request,
+                consumer_source_match: input.source_match.clone(),
+                consumer_source_sha256: input.audited_source_sha256.clone(),
+                selected_consumer_binding: input.consumer_declaration.binding.clone(),
+                consumer_source_location: source_location(consumer_facts, consumer_array.span),
+                operands: operand_evidence,
+                lifetime: input.lifetime.clone(),
+                note: input.note.clone(),
+            };
+            resolved_inputs.push(ResolvedImportedPrimitiveArraySpreadInput {
+                evidence,
+                consumer_initializer_span: consumer_array.span,
+                spread_token_spans: token_spans,
+            });
+        }
+        resolved.insert(consumer.clone(), resolved_inputs);
+    }
+    Ok(resolved)
 }
 
 impl<'a> ModulePurityFacts<'a> {
@@ -193,6 +498,7 @@ impl<'a> ModulePurityFacts<'a> {
         &self,
         inputs: &crate::analysis_inputs::AnalysisInputs,
         structural_flow: Option<ChunkValueFlow>,
+        options: PreparationOptions,
     ) -> PreparedModulePurityFacts<'a> {
         let source = crate::facts::collect_chunk_source_facts_from_items(self.body, None, |_| None);
         let structural = match structural_flow {
@@ -217,6 +523,38 @@ impl<'a> ModulePurityFacts<'a> {
         let plain_data_inference_uses = structural.plain_data_inference_uses;
         let source_semantic_facts = structural.source_semantic_facts;
         let stable_array_spread_shapes = structural.stable_array_spread_shapes;
+        let (known_eager_rebindings, known_lazy_rebindings, known_member_write_roots) =
+            if options.collect_imported_array_write_sites {
+                let mut known_eager_rebindings = BTreeMap::<_, BTreeSet<_>>::new();
+                let mut known_lazy_rebindings = BTreeSet::new();
+                let mut known_member_write_roots = BTreeMap::<_, BTreeSet<_>>::new();
+                for statement in &structural.per_statement {
+                    let write_position = views
+                        .get(statement.ordinal.0)
+                        .map(|view| view.as_module_item().span().lo.0)
+                        .unwrap_or(u32::MAX);
+                    for binding in &statement.rebinds.eager {
+                        known_eager_rebindings
+                            .entry(binding.clone())
+                            .or_default()
+                            .insert(write_position);
+                    }
+                    known_lazy_rebindings.extend(statement.rebinds.lazy.iter().cloned());
+                    for binding in &statement.member_write_roots {
+                        known_member_write_roots
+                            .entry(binding.clone())
+                            .or_default()
+                            .insert(write_position);
+                    }
+                }
+                (
+                    known_eager_rebindings,
+                    known_lazy_rebindings,
+                    known_member_write_roots,
+                )
+            } else {
+                (BTreeMap::new(), BTreeSet::new(), BTreeMap::new())
+            };
         let plain_array_bindings =
             crate::facts::abstract_domain::heap::plain_array_bindings(&views, &shadowed);
         let set_iterable_proof = structural.set_iterable_shapes;
@@ -247,6 +585,9 @@ impl<'a> ModulePurityFacts<'a> {
             plain_data_dependencies,
             plain_data_inference_uses,
             plain_array_bindings,
+            known_eager_rebindings,
+            known_lazy_rebindings,
+            known_member_write_roots,
         }
     }
 
@@ -333,7 +674,7 @@ pub fn resolve_imported_purities(
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
     callable_summaries: &mut ResolvedCallableSummaries,
-) -> BTreeMap<SourceModuleKey, BTreeMap<String, Arc<Purity>>> {
+) -> Result<BTreeMap<SourceModuleKey, BTreeMap<String, Arc<Purity>>>> {
     // Only exported verdicts read by a named/default import can affect the
     // returned maps or another module's closure. Namespace member calls are
     // intentionally outside this oracle.
@@ -386,6 +727,18 @@ pub fn resolve_imported_purities(
             Some(((module.clone(), export.clone()), function.clone()))
         })
         .collect();
+    let imported_array_write_fact_chunks: BTreeSet<_> = callable_summaries
+        .selected_imported_primitive_array_spread_inputs
+        .iter()
+        .flat_map(|(consumer, inputs)| {
+            std::iter::once(consumer.clone()).chain(inputs.iter().flat_map(|input| {
+                input
+                    .operands
+                    .iter()
+                    .map(|operand| operand.provider_chunk.clone())
+            }))
+        })
+        .collect();
 
     // Authoritative source/native/captured-input facts are fixed before this
     // one effects closure starts. Declared chunk-local purity hints remain
@@ -394,9 +747,10 @@ pub fn resolve_imported_purities(
     let jobs: Vec<_> = modules
         .iter()
         .filter(|(key, _)| {
-            inferred_export_keys
-                .keys()
-                .any(|(module, _)| module == *key)
+            imported_array_write_fact_chunks.contains(*key)
+                || inferred_export_keys
+                    .keys()
+                    .any(|(module, _)| module == *key)
         })
         .map(|(key, facts)| {
             // Rebuilding a provider's execution index must retain the same captured
@@ -445,27 +799,43 @@ pub fn resolve_imported_purities(
                 facts,
                 inputs,
                 callable_summaries.structural_flows.remove(key),
+                imported_array_write_fact_chunks.contains(key),
             )
         })
         .collect();
     // Each provider prepares from its own body and inputs alone.
-    let prepared: BTreeMap<_, _> =
-        crate::swc_parallel::map_with_swc_globals(jobs, |(key, facts, inputs, flow)| {
+    let prepared: BTreeMap<_, _> = crate::swc_parallel::map_with_swc_globals(
+        jobs,
+        |(key, facts, inputs, flow, collect_write_sites)| {
             if progress {
                 eprintln!(
                     "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=start"
                 );
             }
-            let facts_prepared = facts.prepare(&inputs, flow);
+            let facts_prepared = facts.prepare(
+                &inputs,
+                flow,
+                PreparationOptions {
+                    collect_imported_array_write_sites: collect_write_sites,
+                },
+            );
             if progress {
                 eprintln!(
                     "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=end"
                 );
             }
             (key.clone(), facts_prepared)
-        })
-        .into_iter()
-        .collect();
+        },
+    )
+    .into_iter()
+    .collect();
+
+    callable_summaries.imported_primitive_array_spread_inputs =
+        resolve_imported_primitive_array_spread_inputs(
+            modules,
+            &prepared,
+            &callable_summaries.selected_imported_primitive_array_spread_inputs,
+        )?;
 
     let mut bodies = BTreeMap::new();
     let no_declared_pure = BTreeSet::new();
@@ -535,10 +905,10 @@ pub fn resolve_imported_purities(
         }
     }
 
-    modules
+    Ok(modules
         .iter()
         .map(|(key, facts)| (key.clone(), facts.imported_purities(&export_purity)))
-        .collect()
+        .collect())
 }
 
 /// Callback transfer is independent of purity, including asserted purity.
@@ -550,6 +920,14 @@ pub struct ResolvedCallableSummaries {
     pub native_integrity: Option<NativeIntegrity>,
     pub value_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedBindingValueInput>>,
     pub native_operation_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedNativeOperationInput>>,
+    pub imported_primitive_array_spread_inputs: BTreeMap<
+        SourceModuleKey,
+        Vec<crate::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput>,
+    >,
+    pub(crate) selected_imported_primitive_array_spread_inputs: BTreeMap<
+        SourceModuleKey,
+        Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+    >,
     pub stable_set_spreads:
         BTreeMap<SourceModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
     pub inferred_set_constructions:
@@ -737,6 +1115,10 @@ pub struct CallableSummaryInputs<'a> {
     pub selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
     pub selected_native_operation_inputs:
         &'a BTreeMap<SourceModuleKey, Vec<SelectedNativeOperationInput>>,
+    pub selected_imported_primitive_array_spread_inputs: &'a BTreeMap<
+        SourceModuleKey,
+        Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+    >,
     pub argument_inputs:
         &'a BTreeMap<SourceModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
     pub predefined_globals: spec::PredefinedGlobals,
@@ -759,6 +1141,7 @@ pub fn resolve_imported_callable_summaries(
         requested_original_provider_exports,
         selected_value_inputs,
         selected_native_operation_inputs,
+        selected_imported_primitive_array_spread_inputs,
         argument_inputs,
         predefined_globals,
         no_accessor_install_callables,
@@ -1356,6 +1739,17 @@ pub fn resolve_imported_callable_summaries(
                     .then_some(input.evidence.spec_location.as_str())
                 })
         });
+    let array_spread_request = array_spread_request.map(str::to_owned).or_else(|| {
+        selected_imported_primitive_array_spread_inputs
+            .iter()
+            .find_map(|(consumer, inputs)| {
+                (!inputs.is_empty()).then(|| {
+                    format!(
+                        "chunk_analysis_options.{consumer}.imported_primitive_array_spread_inputs[0]"
+                    )
+                })
+            })
+    });
     if let Some(request) = array_spread_request {
         let protocol_integrity =
             crate::facts::sync_effects::execution_index::resolve_array_spread_protocol_integrity(
@@ -1613,6 +2007,9 @@ pub fn resolve_imported_callable_summaries(
         native_integrity: Some(native_integrity),
         value_inputs: resolved_value_inputs,
         native_operation_inputs: resolved_native_operation_inputs,
+        imported_primitive_array_spread_inputs: BTreeMap::new(),
+        selected_imported_primitive_array_spread_inputs:
+            selected_imported_primitive_array_spread_inputs.clone(),
         stable_set_spreads,
         inferred_set_constructions,
         argument_inputs: argument_inputs.clone(),
@@ -1991,7 +2388,11 @@ mod tests {
     ) -> Purity {
         let module = parse(source);
         let facts = facts(&module, &[], &[("out", local)]);
-        let prepared = facts.prepare(&crate::analysis_inputs::AnalysisInputs::default(), None);
+        let prepared = facts.prepare(
+            &crate::analysis_inputs::AnalysisInputs::default(),
+            None,
+            PreparationOptions::default(),
+        );
         facts
             .build_graph(&prepared, imported)
             .function_purity(local)
@@ -2043,6 +2444,7 @@ mod tests {
                 descriptor_copy_author_refs: Default::default(),
                 argument_input_refs: BTreeSet::new(),
                 native_operation_input_refs: BTreeSet::new(),
+                imported_primitive_array_spread_input_refs: BTreeSet::new(),
             },
             replacement_package: None,
         });
@@ -2093,7 +2495,8 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
-        );
+        )
+        .unwrap();
         assert!(!resolved["a"]["wrap"].is_pure());
     }
 
@@ -2116,7 +2519,8 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
-        );
+        )
+        .unwrap();
 
         assert!(resolved["a"]["right"].is_pure());
         assert!(resolved["b"]["left"].is_pure());
@@ -2142,7 +2546,8 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
-        );
+        )
+        .unwrap();
 
         let right = &resolved["a"]["right"];
         let left = &resolved["b"]["left"];
@@ -2192,7 +2597,8 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
-        );
+        )
+        .unwrap();
         assert!(!resolved["app"].contains_key("ext"));
     }
 
@@ -2212,7 +2618,8 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
-        );
+        )
+        .unwrap();
         assert!(!resolved["app"].contains_key("table"));
     }
 
@@ -2221,8 +2628,11 @@ mod tests {
         let module = parse(
             "const values = [1]; Set.prototype.add = function add(value) {}; new Set(values);",
         );
-        let prepared = facts(&module, &[], &[])
-            .prepare(&crate::analysis_inputs::AnalysisInputs::default(), None);
+        let prepared = facts(&module, &[], &[]).prepare(
+            &crate::analysis_inputs::AnalysisInputs::default(),
+            None,
+            PreparationOptions::default(),
+        );
 
         struct SetConstructors(Vec<Span>);
         impl Visit for SetConstructors {
@@ -2269,7 +2679,8 @@ mod tests {
                 &modules,
                 &BTreeMap::new(),
                 &mut ResolvedCallableSummaries::default()
-            )["app"]["observer"]
+            )
+            .unwrap()["app"]["observer"]
                 .is_pure()
         );
         // With the assertion on the defining chunk: pure, at every importer.
@@ -2279,7 +2690,8 @@ mod tests {
             &modules,
             &asserted,
             &mut ResolvedCallableSummaries::default(),
-        );
+        )
+        .unwrap();
         assert!(resolved["app"]["observer"].is_pure());
         assert_eq!(
             resolved["app"]["observer"].dependencies(),
@@ -2325,7 +2737,8 @@ mod tests {
                 &modules,
                 &BTreeMap::new(),
                 &mut ResolvedCallableSummaries::default()
-            )["app"]
+            )
+            .unwrap()["app"]
                 .contains_key("forwardRef")
         );
         let asserted = BTreeMap::from([(
@@ -2337,7 +2750,8 @@ mod tests {
                 &modules,
                 &asserted,
                 &mut ResolvedCallableSummaries::default()
-            )["app"]["forwardRef"]
+            )
+            .unwrap()["app"]["forwardRef"]
                 .is_pure()
         );
     }
@@ -2382,6 +2796,7 @@ mod tests {
                 requested_original_provider_exports: &BTreeSet::new(),
                 selected_value_inputs: &BTreeMap::new(),
                 selected_native_operation_inputs: &BTreeMap::new(),
+                selected_imported_primitive_array_spread_inputs: &BTreeMap::new(),
                 argument_inputs: &BTreeMap::new(),
                 predefined_globals: spec::PredefinedGlobals::Unknown,
                 no_accessor_install_callables: &BTreeMap::new(),

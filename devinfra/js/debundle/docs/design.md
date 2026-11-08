@@ -231,6 +231,23 @@ use evidence. Ordinary heap constraints can still require expanded ownership.
 For a primitive array spread, the premise covers only the Array iterator and
 iterator `next` identities at the selected initializer; the source shape, not
 the author, proves the declarator interval has no producer.
+Imported primitive arrays use a separate `imported_primitive_array_spread_inputs`
+contract. It selects one spread-only array initializer and direct imported
+identifier operands, resolves each provider export to its selected dense
+primitive-literal producer, and binds both endpoints to parser-input digests.
+The author supplies the exact lifetime promise through that spread, including
+the ordinary Array prototype chain. A direct eager consumer rebind before the
+spread and protocol writes contradict the input. Provider write facts do not
+retain enough cross-module execution ordering to establish whether a known
+write occurs before the selected spread, so such provider writes reject as
+unsupported. Lazy consumer rebinds and indexed/member writes also reject as
+unsupported when their execution ordering through the spread is not
+established; cyclic provider initialization is unsupported.
+Independent import aliases in other chunks are not traced; the author includes
+their possible mutation paths in the lifetime audit. The analysis transfers
+only finite primitive yields into a fresh consumer allocation; provider module
+ownership, imports, initialization dependencies, later array uses and callback
+effects remain in the ordinary graph and interpreter.
 The `text_encoder_empty` initializer premise certifies only a direct bare
 zero-argument `new TextEncoder()` site. Its original global data binding is
 checked against known exact-slot writes in every analyzed chunk. It uses the

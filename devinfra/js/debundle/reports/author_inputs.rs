@@ -37,11 +37,31 @@ impl<'a> AuthorInputLocations<'a> {
             .filter(|(_, options)| {
                 !options.value_inputs.is_empty()
                     || !options.native_operation_inputs.is_empty()
+                    || !options.imported_primitive_array_spread_inputs.is_empty()
                     || !options.native_call_identity_inputs.is_empty()
                     || !options.argument_inputs.is_empty()
             })
             .map(|(chunk, _)| chunk)
             .collect::<Vec<_>>();
+        let mut with_inputs = with_inputs;
+        let mut chunk_set: std::collections::BTreeSet<_> = with_inputs.iter().copied().collect();
+        for (chunk, chunk_options) in options {
+            if chunk_options
+                .imported_primitive_array_spread_inputs
+                .is_empty()
+            {
+                continue;
+            }
+            chunk_set.insert(chunk);
+            chunk_set.extend(
+                chunk_options
+                    .imported_primitive_array_spread_inputs
+                    .iter()
+                    .flat_map(|input| &input.operands)
+                    .map(|operand| &operand.provider_chunk),
+            );
+        }
+        with_inputs = chunk_set.into_iter().collect();
         if with_inputs.is_empty() {
             return Ok(Self {
                 spec_path: None,
@@ -142,12 +162,27 @@ impl<'a> AuthorInputLocations<'a> {
             .collect();
     }
 
+    pub fn render_imported_primitive_array_spread_input_use(
+        &self,
+        input_use: &mut crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse,
+    ) {
+        let reference = &input_use.evidence.reference;
+        let contract = &self
+            .chunk_options(&reference.defining_chunk)
+            .imported_primitive_array_spread_inputs[reference.input_index];
+        input_use.evidence.note = contract.note.clone();
+        input_use.evidence.spec_location = self.spec_location(&input_use.evidence.spec_location);
+    }
+
     pub fn render_synchronous_execution(&self, execution: &mut SynchronousExecutionReport) {
         for inference_use in &mut execution.inference_uses {
             self.render_inference_use(inference_use);
         }
         for input_use in &mut execution.native_operation_input_uses {
             self.render_native_operation_input(&mut input_use.evidence);
+        }
+        for input_use in &mut execution.imported_primitive_array_spread_input_uses {
+            self.render_imported_primitive_array_spread_input_use(input_use);
         }
     }
 

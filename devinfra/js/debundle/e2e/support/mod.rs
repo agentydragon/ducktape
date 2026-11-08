@@ -32,12 +32,14 @@ use serde_json::Value;
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
     ArgumentInputContract, BunModule, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
-    CommutingStatementsContract, EmbeddedLoader, HostBehavior, InitializerCallEffectInputContract,
+    CommutingStatementsContract, EmbeddedLoader, HostBehavior,
+    ImportedPrimitiveArrayLifetimeContract, ImportedPrimitiveArrayOperandContract,
+    ImportedPrimitiveArraySpreadInputContract, InitializerCallEffectInputContract,
     InitializerPurity, LoaderResultForEvaluatingModule, MemberEffect, MemberPurity,
     NativeCallIdentityInputContract, NativeCallIdentityKind, NativeOperationInputContract,
     NativeOperationKind, NoAccessorInstallCallableContract, NodeBuiltinModule,
     NonLiteralLoaderCalls, PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises,
-    ReentryFreeOperation, ResolvedMemberSelector, SourceUnitSelector,
+    ReentryFreeOperation, ResolvedMemberSelector, SourceMatchClaim, SourceUnitSelector,
     SynchronousLoadDrainsMicrotasks, SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader,
     ValueInputContract, VendorLevel, VendorMark,
 };

@@ -2606,6 +2606,31 @@ chunk_analysis_options:
           bindings: [makeRecord]
         callee: object_freeze
         audited_source_sha256: "<64 hex characters for the parser input>"
+  static/app:
+    imported_primitive_array_spread_inputs:
+      - source_match:
+          match: "const result = [...left, ...right];"
+          bindings: [result]
+        operands:
+          - selector_local: left
+            provider_chunk: static/provider
+            provider_source_match:
+              match: "var values = ['a'];"
+              bindings: [values]
+            audited_provider_source_sha256: "<64 hex characters for the provider parser input>"
+          - selector_local: right
+            provider_chunk: static/provider
+            provider_source_match:
+              match: "const values = ['b'];"
+              bindings: [values]
+            audited_provider_source_sha256: "<same provider parser input digest>"
+        audited_source_sha256: "<64 hex characters for the consumer parser input>"
+        lifetime:
+          identity_unchanged_through_spread: true
+          dense_own_data_primitive_contents_unchanged_through_spread: true
+          ordinary_array_prototype_chain_unchanged_through_spread: true
+          no_own_iterator_or_accessors_through_spread: true
+          no_rebinding_through_spread: true
 ```
 
 A `native_operation_inputs` entry gives exactly one selector: `source_match`, or
@@ -2652,6 +2677,35 @@ census witnesses covered by the assertion: a write to an apparently unrelated
 property can still run a setter or Proxy trap.
 The separate `symbol_primitive_class_keys` capability has the narrowly checked
 guarded-fill exception below and does not assert original native slots.
+
+`chunk_analysis_options.<consumer>.imported_primitive_array_spread_inputs` is
+a distinct exact-site author premise; it does not broaden
+`native_operation_inputs.array_spread_from_primitive_arrays`. Its consumer
+selector captures one or more stable placeholder names from a top-level simple
+array initializer containing only direct imported identifier spreads. Each
+operand names a configured provider chunk alias and source-selects the direct
+provider array declaration. The engine resolves the actual import/export edge
+and producer binding from the selected sources, and checks both parser-input
+digests. Every lifetime field must be `true`: through this selected spread the
+provider array's identity, dense own-data primitive contents, ordinary Array
+prototype chain, absence of own iterator/accessors, and binding identity remain
+unchanged. The ordinary `%Array.prototype%` iterator and
+`%ArrayIteratorPrototype%.next` write census still applies. Known producer
+rebindings or indexed/member writes reject the input because the existing
+provider write facts do not establish their ordering through the selected
+consumer spread. A direct eager consumer rebind before the selected spread and
+protocol writes contradict the input. Lazy consumer rebinds and indexed/member
+writes reject as unsupported when their execution ordering through the spread
+is not established; a provider initialization cycle is also unsupported.
+The analyzer does not trace mutations through independent aliases imported by
+other chunks, so the author must audit those paths under the lifetime promise.
+Opaque mutation paths, including exposure of an exported mutable array, are
+also covered only by the scoped author assertion. The transfer copies the selected
+primitive yields into a fresh consumer array; it does not import provider heap
+identity or suppress provider evaluation, import order, callback effects, or
+later array uses. Reports and saved analysis retain the asserted lifetime
+fields separately from source-derived import edges, producer declarations, and
+primitive slot kinds.
 
 A validated `symbol` site has an additional pure-initializer consequence only
 for direct `Symbol()` or `Symbol('literal')`; `symbol_for` requires exactly one

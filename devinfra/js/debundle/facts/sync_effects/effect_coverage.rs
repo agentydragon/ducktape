@@ -14,7 +14,7 @@ use swc_ecma_ast::Id;
 pub(super) enum DomainCoverage {
     #[default]
     Unknown,
-    Covered(ProofDependencies),
+    Covered(Box<ProofDependencies>),
 }
 
 impl DomainCoverage {
@@ -368,13 +368,13 @@ impl EffectCoverageFragment {
     pub(super) fn no_effects() -> Self {
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
-                global_properties: DomainCoverage::Covered(ProofDependencies::default()),
-                general_heap: DomainCoverage::Covered(ProofDependencies::default()),
-                host_effects: DomainCoverage::Covered(ProofDependencies::default()),
+                global_properties: DomainCoverage::Covered(Box::default()),
+                general_heap: DomainCoverage::Covered(Box::default()),
+                host_effects: DomainCoverage::Covered(Box::default()),
             })),
             lexical: Some(Box::new(LexicalEffectCoverage {
-                reads: DomainCoverage::Covered(ProofDependencies::default()),
-                rebinds: DomainCoverage::Covered(ProofDependencies::default()),
+                reads: DomainCoverage::Covered(Box::default()),
+                rebinds: DomainCoverage::Covered(Box::default()),
                 calls: BTreeMap::new(),
             })),
             completion: Completion::Normal,
@@ -387,9 +387,9 @@ impl EffectCoverageFragment {
     pub(super) fn native_operation(dependencies: &ProofDependencies) -> Self {
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
-                global_properties: DomainCoverage::Covered(dependencies.clone()),
-                general_heap: DomainCoverage::Covered(dependencies.clone()),
-                host_effects: DomainCoverage::Covered(dependencies.clone()),
+                global_properties: DomainCoverage::Covered(Box::new(dependencies.clone())),
+                general_heap: DomainCoverage::Covered(Box::new(dependencies.clone())),
+                host_effects: DomainCoverage::Covered(Box::new(dependencies.clone())),
             })),
             // Native operands are outside the bounded lexical migration.
             lexical: None,
@@ -408,7 +408,7 @@ impl EffectCoverageFragment {
             if let Some(DomainCoverage::Covered(prior)) = prior {
                 covered.extend(prior);
             }
-            DomainCoverage::Covered(covered)
+            DomainCoverage::Covered(Box::new(covered))
         };
         let prior = self.initialization.as_deref();
         self.initialization = Some(Box::new(InitializationEffectCoverage {
@@ -443,7 +443,7 @@ impl EffectCoverageFragment {
             .lexical
             .as_mut()
             .expect("no-effects fragment carries known lexical domains")
-            .reads = DomainCoverage::Covered(ProofDependencies::default());
+            .reads = DomainCoverage::Covered(Box::default());
         fragment
     }
 
@@ -453,8 +453,8 @@ impl EffectCoverageFragment {
     pub(super) fn lexical_operation() -> Self {
         Self {
             lexical: Some(Box::new(LexicalEffectCoverage {
-                reads: DomainCoverage::Covered(ProofDependencies::default()),
-                rebinds: DomainCoverage::Covered(ProofDependencies::default()),
+                reads: DomainCoverage::Covered(Box::default()),
+                rebinds: DomainCoverage::Covered(Box::default()),
                 calls: BTreeMap::new(),
             })),
             completion: Completion::Normal,
@@ -561,7 +561,10 @@ impl EffectCoverageFragment {
         let DomainCoverage::Covered(rebind_dependencies) = &lexical.rebinds else {
             return None;
         };
-        Some((read_dependencies.clone(), rebind_dependencies.clone()))
+        Some((
+            read_dependencies.as_ref().clone(),
+            rebind_dependencies.as_ref().clone(),
+        ))
     }
 
     pub(super) fn seal_lexical_binding_effects(

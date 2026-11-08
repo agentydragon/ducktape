@@ -536,6 +536,9 @@ pub struct InferenceUseReport {
     pub argument_input_spec_locations: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub native_operation_input_refs: BTreeSet<crate::analysis_inputs::NativeOperationInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub imported_primitive_array_spread_input_refs:
+        BTreeSet<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputRef>,
 }
 
 impl From<&crate::analysis_provenance::InferenceUse> for InferenceUseReport {
@@ -548,6 +551,9 @@ impl From<&crate::analysis_provenance::InferenceUse> for InferenceUseReport {
             argument_input_refs: inference.argument_input_refs.clone(),
             argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: inference.native_operation_input_refs.clone(),
+            imported_primitive_array_spread_input_refs: inference
+                .imported_primitive_array_spread_input_refs
+                .clone(),
         }
     }
 }
@@ -666,6 +672,11 @@ pub struct SynchronousExecutionReport {
     /// premise. This is author evidence, not a native-integrity inference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_operation_input_uses: Vec<NativeOperationInputUse>,
+    /// Exact imported-array spreads with the authored lifetime assertion
+    /// beside independently source-resolved import/export and literal facts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_primitive_array_spread_input_uses:
+        Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>,
     pub complete: bool,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

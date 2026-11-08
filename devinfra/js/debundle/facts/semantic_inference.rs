@@ -149,6 +149,9 @@ pub(crate) fn native_premise(
             descriptor_copy_author_refs: BTreeSet::new(),
             argument_input_refs: BTreeSet::new(),
             native_operation_input_refs: dependencies.native_operation_inputs.clone(),
+            imported_primitive_array_spread_input_refs: dependencies
+                .imported_primitive_array_spread_inputs
+                .clone(),
         },
         census,
         dependencies,
@@ -580,6 +583,9 @@ impl SemanticFacts {
             descriptor_copy_author_refs: dependencies.descriptor_copy_authors.clone(),
             argument_input_refs: dependencies.argument_inputs.clone(),
             native_operation_input_refs: dependencies.native_operation_inputs.clone(),
+            imported_primitive_array_spread_input_refs: dependencies
+                .imported_primitive_array_spread_inputs
+                .clone(),
         })
     }
 }

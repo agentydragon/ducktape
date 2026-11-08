@@ -75,6 +75,10 @@ impl OwnPropertyProof {
             descriptor_copy_author_refs: self.dependencies.descriptor_copy_authors.clone(),
             argument_input_refs: self.dependencies.argument_inputs.clone(),
             native_operation_input_refs: self.dependencies.native_operation_inputs.clone(),
+            imported_primitive_array_spread_input_refs: self
+                .dependencies
+                .imported_primitive_array_spread_inputs
+                .clone(),
         }
     }
 }

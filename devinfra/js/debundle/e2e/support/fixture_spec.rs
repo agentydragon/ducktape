@@ -755,6 +755,9 @@ pub struct FixtureOpts<'a> {
     pub native_operation_inputs: Vec<(String, Vec<spec::NativeOperationInputContract>)>,
     pub initializer_call_effect_inputs:
         Vec<(String, Vec<spec::InitializerCallEffectInputContract>)>,
+    /// Exact-site imported primitive-array spread premises keyed by consumer.
+    pub imported_primitive_array_spread_inputs:
+        Vec<(String, Vec<spec::ImportedPrimitiveArraySpreadInputContract>)>,
     /// Source-selected exact native callee identity premises keyed by provider.
     pub native_call_identity_inputs: Vec<(String, Vec<spec::NativeCallIdentityInputContract>)>,
     pub argument_inputs: Vec<(String, Vec<spec::ArgumentInputContract>)>,
@@ -804,6 +807,7 @@ impl<'a> FixtureOpts<'a> {
             value_inputs: Vec::new(),
             native_operation_inputs: Vec::new(),
             initializer_call_effect_inputs: Vec::new(),
+            imported_primitive_array_spread_inputs: Vec::new(),
             native_call_identity_inputs: Vec::new(),
             argument_inputs: Vec::new(),
             no_accessor_install_callables: Vec::new(),
@@ -875,6 +879,16 @@ impl<'a> FixtureOpts<'a> {
         inputs: Vec<spec::InitializerCallEffectInputContract>,
     ) -> Self {
         self.initializer_call_effect_inputs
+            .push((chunk.into(), inputs));
+        self
+    }
+
+    pub fn with_imported_primitive_array_spread_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::ImportedPrimitiveArraySpreadInputContract>,
+    ) -> Self {
+        self.imported_primitive_array_spread_inputs
             .push((chunk.into(), inputs));
         self
     }
@@ -1301,6 +1315,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         || !opts.admission_overrides.is_empty()
         || !opts.native_operation_inputs.is_empty()
         || !opts.initializer_call_effect_inputs.is_empty()
+        || !opts.imported_primitive_array_spread_inputs.is_empty()
         || !opts.native_call_identity_inputs.is_empty()
         || !opts.argument_inputs.is_empty()
         || !opts.commuting_statements.is_empty()
@@ -1311,6 +1326,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
                 value_inputs: Vec::new(),
                 native_operation_inputs: Vec::new(),
                 initializer_call_effect_inputs: Vec::new(),
+                imported_primitive_array_spread_inputs: Vec::new(),
                 commuting_statements: Vec::new(),
                 native_call_identity_inputs: Vec::new(),
                 argument_inputs: Vec::new(),
@@ -1377,6 +1393,15 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             .entry(chunk.clone())
             .or_insert_with(DependencyGraphOptions::default)
             .initializer_call_effect_inputs = initializer_call_effect_inputs.clone();
+    }
+    for (chunk, imported_primitive_array_spread_inputs) in
+        &opts.imported_primitive_array_spread_inputs
+    {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .imported_primitive_array_spread_inputs =
+            imported_primitive_array_spread_inputs.clone();
     }
     for (chunk, native_call_identity_inputs) in &opts.native_call_identity_inputs {
         chunk_analysis_options

@@ -116,6 +116,10 @@ pub struct ProgramSummary {
     /// Source-resolved native operation premises for the provider initializer.
     pub native_operation_inputs: BTreeMap<String, Vec<ResolvedNativeOperationInput>>,
     pub initializer_call_effect_inputs: BTreeMap<String, Vec<ResolvedInitializerCallEffectInput>>,
+    /// Exact-site imported-array lifetime assumptions and source-resolved
+    /// provider primitive slots for each selected spread.
+    pub imported_primitive_array_spread_inputs:
+        BTreeMap<String, Vec<analysis::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput>>,
     pub stable_set_spreads:
         BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>,
     pub inferred_set_constructions:
@@ -155,7 +159,15 @@ fn validate_analysis_source_sites(
     site_chunks.extend(source_sites.initializer_call_effect_inputs.keys());
     site_chunks.extend(source_sites.argument_inputs.keys());
     site_chunks.extend(source_sites.no_accessor_install_callables.keys());
+    site_chunks.extend(source_sites.imported_primitive_array_spread_inputs.keys());
     site_chunks.extend(native_operation_inputs.keys());
+    for input in source_sites
+        .imported_primitive_array_spread_inputs
+        .values()
+        .flatten()
+    {
+        site_chunks.extend(input.operands.iter().map(|operand| &operand.provider_chunk));
+    }
     ensure!(
         site_chunks.iter().copied().collect::<BTreeSet<_>>()
             == source_sites.source_sha256.keys().collect::<BTreeSet<_>>(),
@@ -805,6 +817,9 @@ pub fn collect_program_summary(
             requested_original_provider_exports: &requested_original_provider_exports,
             selected_value_inputs: &value_inputs,
             selected_native_operation_inputs: &native_operation_inputs,
+            selected_imported_primitive_array_spread_inputs: &projection
+                .source_sites
+                .imported_primitive_array_spread_inputs,
             argument_inputs: &argument_inputs,
             predefined_globals,
             no_accessor_install_callables: &no_accessor_install_callables,
@@ -821,6 +836,7 @@ pub fn collect_program_summary(
                 .unwrap_or_default(),
         },
     )?;
+    let bindings = resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries)?;
     for inputs in initializer_call_effect_inputs.values() {
         for input in inputs {
             if let Some((module, export, reason)) = known_original_provider_write(
@@ -834,6 +850,25 @@ pub fn collect_program_summary(
                     "initializer_call_effect_inputs {}:{} is contradicted by source-known original provider write {module}:{export}: {reason}",
                     input.reference.defining_chunk,
                     input.reference.input_index,
+                );
+            }
+        }
+    }
+    for (consumer, inputs) in &callable_summaries.imported_primitive_array_spread_inputs {
+        for input in inputs {
+            for operand in &input.evidence.operands {
+                ensure!(
+                    resolved_closure_precedes_importer(
+                        consumer,
+                        &operand.provider_module,
+                        &operand.source_specifier,
+                        &static_dependencies,
+                    )
+                    .is_some(),
+                    "{} requires direct provider {} to have a complete acyclic ordinary static initialization closure before consumer {}",
+                    input.evidence.spec_location,
+                    operand.provider_module,
+                    consumer
                 );
             }
         }
@@ -886,7 +921,7 @@ pub fn collect_program_summary(
         ),
         values,
         primitive_reads,
-        bindings: resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries),
+        bindings,
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
@@ -896,6 +931,8 @@ pub fn collect_program_summary(
         value_inputs: callable_summaries.value_inputs,
         native_operation_inputs: callable_summaries.native_operation_inputs,
         initializer_call_effect_inputs,
+        imported_primitive_array_spread_inputs: callable_summaries
+            .imported_primitive_array_spread_inputs,
         stable_set_spreads: callable_summaries.stable_set_spreads,
         inferred_set_constructions: callable_summaries.inferred_set_constructions,
         argument_inputs: callable_summaries.argument_inputs,
