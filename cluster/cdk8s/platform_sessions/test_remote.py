@@ -25,13 +25,15 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         obj for obj in public_objects if obj["kind"] == "Service" and obj["metadata"]["name"] == app.NAME
     )
     assert public_service["spec"]["selector"] == {"app": app.NAME}
-    legacy = next(
-        obj for obj in public_objects if obj["kind"] == "Deployment" and obj["metadata"]["name"] == app.NAME
-    )["spec"]
+    legacy = next(obj for obj in public_objects if obj["kind"] == "Deployment" and obj["metadata"]["name"] == app.NAME)[
+        "spec"
+    ]
     assert legacy["replicas"] == 1
     assert legacy["template"]["spec"]["containers"][0]["image"] == app.IMAGE
     legacy_monitor = next(
-        obj for obj in public_objects if obj["kind"] == "PodMonitor" and obj["metadata"]["name"] == "platform-sessions-quest"
+        obj
+        for obj in public_objects
+        if obj["kind"] == "PodMonitor" and obj["metadata"]["name"] == "platform-sessions-quest"
     )
     assert legacy_monitor["spec"]["selector"]["matchLabels"] == {"app": app.NAME}
 

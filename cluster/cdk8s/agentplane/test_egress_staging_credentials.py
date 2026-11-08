@@ -140,12 +140,7 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
     )
     assert {
         "toEndpoints": [
-            {
-                "matchLabels": {
-                    "app": "platform-sessions",
-                    "k8s:io.kubernetes.pod.namespace": "platform-sessions",
-                }
-            }
+            {"matchLabels": {"app": "platform-sessions", "k8s:io.kubernetes.pod.namespace": "platform-sessions"}}
         ],
         "toPorts": [{"ports": [{"port": "8080", "protocol": "TCP"}]}],
     } in network["spec"]["egress"]
