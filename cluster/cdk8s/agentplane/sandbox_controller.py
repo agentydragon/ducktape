@@ -3,6 +3,8 @@ Sandboxes' state PVC, ServiceAccount and PolicyBinding and, while running, its P
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Role, RoleBinding, RolePolicyRule
 from constructs import Construct
@@ -72,7 +74,7 @@ class SandboxController(Construct):
             metrics_bind_address=f":{endpoint.port.number}",
             health_probe_bind_address=f":{_HEALTH_PORT}",
             runner_gateway_target=gateway_control_target,
-            runner_gateway_token_file=f"{_GATEWAY_TOKEN_DIR}/token",
+            runner_gateway_token_file=Path(_GATEWAY_TOKEN_DIR) / "token",
             runner_certificate_issuer=runner_certificate_issuer,
         )
         settings_file = SettingsFile(
