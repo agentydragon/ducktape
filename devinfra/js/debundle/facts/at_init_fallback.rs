@@ -308,8 +308,16 @@ struct ElementUses {
 }
 
 impl ElementUses {
+    fn is_element_name(&self, name: &str) -> bool {
+        self.element.as_deref() == Some(name)
+    }
+
     fn is_element(&self, ident: &Ident) -> bool {
-        self.element.as_deref() == Some(ident.sym.as_ref())
+        self.is_element_name(ident.sym.as_ref())
+    }
+
+    fn is_element_binding(&self, binding: &Id) -> bool {
+        self.is_element_name(binding.0.as_ref())
     }
 
     fn mentions_element<N: VisitWith<ElementMention>>(&self, node: &N) -> bool {
@@ -437,7 +445,7 @@ impl ElementUses {
                 let left = match binding_targets::simple_write_target(&assign.left) {
                     Some(binding_targets::SimpleWriteTarget::Member(member)) => self.member(member),
                     Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
-                        !self.is_element(&binding)
+                        !self.is_element_binding(&binding)
                     }
                     None => !self.mentions_element(&assign.left),
                 };
