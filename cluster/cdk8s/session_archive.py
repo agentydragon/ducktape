@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, session_backup
@@ -60,6 +61,9 @@ def _database(chart: Chart) -> None:
         size="100Gi",
         resize_in_use_volumes=False,
         instances=3,
+        # The default 5s replication timeouts disconnect the HDD standby during
+        # observed multi-second storage and network stalls.
+        postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
         initdb=cluster.same_owner_initdb("ai_session_archive"),
         wal_archive=True,
     )
