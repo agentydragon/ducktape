@@ -14,6 +14,7 @@ export function App({ api }: { api?: SessionBrowserApi }): JSX.Element {
       new QueryClient({
         defaultOptions: {
           queries: {
+            networkMode: "always",
             refetchOnReconnect: false,
             refetchOnWindowFocus: false,
             retry: false,
