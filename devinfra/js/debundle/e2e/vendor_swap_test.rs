@@ -1217,14 +1217,9 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
 
 #[test]
 fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_consumers() {
-    // `references_rewritten` parity pin: the manifest must count *emitted* consumer
-    // references identically whether a reference lives in a pass-through
-    // file (the caller chunk's residual entry, rewritten by the
-    // post-materialize wave) or in a materialized module body (whose
-    // vendor-targeted runtime re-import is planned during lowering's
-    // import construction). One swapped member-kind symbol consumed once
-    // from each file class pins the total at 2 — the same count the
-    // all-wave path produced before the file-class split.
+    // `references_rewritten` must count one shorthand value read in each
+    // consumer file, while preserving the source-local property key. The
+    // shadowed shorthand remains a local read and does not add to the count.
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
     const APP_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "zod";
@@ -1239,8 +1234,9 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     ws.write_chunk(
         APP_PATH,
         "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\n\
-         export const movedFlag = zodBoolean() && kept() === 7;\n\
-         export function stay() { return zodBoolean(); }\n",
+         export const movedFlag = ({ zodBoolean }).zodBoolean() && kept() === 7;\n\
+         export function stay() { return ({ zodBoolean }).zodBoolean(); }\n\
+         export function shadow(zodBoolean) { return ({ zodBoolean }).zodBoolean(); }\n",
     );
     ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{APP_PATH}\n"));
     let package_root = ws.write_upstream_package(
@@ -1303,15 +1299,19 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
         &module_path,
         &[
             "import * as z from \"zod\"",
-            "z.boolean()",
+            "zodBoolean: z.boolean",
             "keepMe as kept",
         ],
-        &["zodBoolean"],
+        &[],
     );
     let entry_path = ws.out_root.join("app/static/app/entry.js");
     assert_source_file(
         &entry_path,
-        &["import * as z from \"zod\"", "z.boolean()"],
+        &[
+            "import * as z from \"zod\"",
+            "zodBoolean: z.boolean",
+            "function shadow(zodBoolean)",
+        ],
         &[],
     );
 
@@ -1340,10 +1340,55 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     let probe_path = ws.out_root.join("__run_count_parity.mjs");
     write_text_file(
         &probe_path,
-        "const { stay, movedFlag } = await import(\"./app/static/app/entry.js\");\n\
-         console.log(`${stay()}:${movedFlag}`);\n",
+        "const { stay, movedFlag, shadow } = await import(\"./app/static/app/entry.js\");\n\
+         console.log(`${stay()}:${movedFlag}:${shadow(() => \"LOCAL\")}`);\n",
     );
-    assert_node_output(&probe_path, "true:true\n", "");
+    assert_node_output(&probe_path, "true:true:LOCAL\n", "");
+}
+
+#[test]
+fn partial_swap_proto_shorthand_preserves_data_property_and_shadowing() {
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => \"VENDOR\";\n",
+        caller_source: "import { e6 as __proto__ } from \"../megachunk/entry.js\";\n\
+                        const value = { __proto__ };\n\
+                        const originalPrototype = Object.getPrototypeOf(value);\n\
+                        function shadow(__proto__) { return { __proto__ }; }\n\
+                        const shadowed = shadow(() => \"LOCAL\");\n\
+                        export function inspect() { return [\n\
+                          Object.prototype.hasOwnProperty.call(value, \"__proto__\"),\n\
+                          originalPrototype === Object.prototype,\n\
+                          Object.getPrototypeOf(value) === originalPrototype,\n\
+                          value.__proto__(),\n\
+                          Object.prototype.hasOwnProperty.call(shadowed, \"__proto__\"),\n\
+                          Object.getPrototypeOf(shadowed) === Object.prototype,\n\
+                          shadowed.__proto__(),\n\
+                        ].join(\"|\"); }\n",
+        upstream_source: "export const boolean = () => \"UPSTREAM\";\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert_success(&fixture.result);
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &["[\"__proto__\"]: z.boolean", "function shadow(__proto__)"],
+        &[],
+    );
+
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => \"UPSTREAM\";\n",
+    );
+    let probe_path = app_root.join("__run_proto_shorthand.mjs");
+    write_text_file(
+        &probe_path,
+        "const { inspect } = await import(\"./static/app/entry.js\");\nconsole.log(inspect());\n",
+    );
+    assert_node_output(&probe_path, "true|true|true|UPSTREAM|true|true|LOCAL\n", "");
 }
 
 #[test]
@@ -1414,16 +1459,18 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
     // where the chunk export `o` is a single named export of the package
     // (e.g. `mobx-react-lite#observer`). The local alias `mobxObserver`
     // is whatever the chunker emitted — the partial-swap rewrites both
-    // the import (no alias) AND every reference in the file to use the
-    // upstream export name. So `mobxObserver(...)` becomes
-    // `observer(...)`.
+    // the import (no alias) AND every value reference in the file to use the
+    // upstream export name. Shorthand keeps its source-local key, and the
+    // same spelling in a nested parameter remains a local binding.
     let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
         kind: PartialSwapKind::Named,
         package_name: "mobx-react-lite",
         package_version: "4.0.7",
         subpath: "dist/index.js",
         chunk_source: "export const o = (Component) => Component;\nexport const keepMe = () => 7;\n",
-        caller_source: "import { o as mobxObserver, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return mobxObserver(\"X\") + kept(); }\n",
+        caller_source: "import { o as mobxObserver, keepMe as kept } from \"../megachunk/entry.js\";\n\
+                         const shadowed = ((mobxObserver) => ({ mobxObserver }).mobxObserver(\"local\"))(value => `shadow:${value}`);\n\
+                         export function go() { return `${({ mobxObserver }).mobxObserver(\"X\")}|${shadowed}|${kept()}`; }\n",
         upstream_source: "export const observer = (Component) => Component;\n",
         chunk_export: "o",
         upstream_export: Some("observer"),
@@ -1434,11 +1481,27 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
         &fixture.caller_emitted_path,
         &[
             "import { observer } from \"mobx-react-lite\"",
-            "observer(\"X\")",
+            "mobxObserver: observer",
+            ".mobxObserver(\"X\")",
+            ".mobxObserver(\"local\")",
             "keepMe as kept",
         ],
-        &["mobxObserver"],
+        &[],
     );
+
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "mobx-react-lite",
+        "4.0.7",
+        "export const observer = value => value;\n",
+    );
+    let probe_path = app_root.join("__run_named_shorthand.mjs");
+    write_text_file(
+        &probe_path,
+        "const { go } = await import(\"./static/app/entry.js\");\nconsole.log(go());\n",
+    );
+    assert_node_output(&probe_path, "X|shadow:local|7\n", "");
 }
 
 #[test]
@@ -1877,8 +1940,10 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
             (
                 VENDOR_PATH,
                 "function nY(Ctor) { return `vendor:${Ctor.name}`; }\n\
-                 const schema = nY(URL);\n\
-                 export { schema as keep };\n",
+                 const shorthand = { nY };\n\
+                 const schema = shorthand.nY(URL);\n\
+                 const shadowed = ((nY) => ({ nY }).nY(URL))(Ctor => `shadow:${Ctor.name}`);\n\
+                 export const keep = `${schema}|${shadowed}`;\n",
             ),
             (
                 APP_PATH,
@@ -1908,7 +1973,7 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
 
     assert_source_file(
         &ws.out_root.join("app/static/vendor/entry.js"),
-        &[".instanceof(URL)"],
+        &["nY:", ".instanceof"],
         &["function nY"],
     );
 
@@ -1917,7 +1982,7 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
         &probe_path,
         "await import(\"./app/static/app/entry.js\");\n",
     );
-    assert_node_output(&probe_path, "package:URL\n", "");
+    assert_node_output(&probe_path, "package:URL|shadow:URL\n", "");
 }
 
 #[test]

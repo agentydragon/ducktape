@@ -265,6 +265,41 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
         call.visit_mut_children_with(self);
     }
 
+    fn visit_mut_prop(&mut self, prop: &mut Prop) {
+        let Prop::Shorthand(ident) = prop else {
+            prop.visit_mut_children_with(self);
+            return;
+        };
+        if !self.bindings.contains_key(&ident.to_id()) {
+            return;
+        }
+
+        // A shorthand identifier is both its property key and its value
+        // read. Keep the original key and hygiene-bearing value identifier,
+        // then route the value through the same expression rewrite path.
+        let ident = ident.clone();
+        let key = if ident.sym.as_ref() == "__proto__" {
+            // `{ __proto__ }` creates an own data property, but the
+            // noncomputed `{ __proto__: value }` form sets the prototype.
+            PropName::Computed(ComputedPropName {
+                span: ident.span,
+                expr: Box::new(Expr::Lit(Lit::Str(Str {
+                    span: ident.span,
+                    value: "__proto__".into(),
+                    raw: None,
+                }))),
+            })
+        } else {
+            PropName::Ident(IdentName::new(ident.sym.clone(), ident.span))
+        };
+        let mut value = Expr::Ident(ident);
+        self.visit_mut_expr(&mut value);
+        *prop = Prop::KeyValue(KeyValueProp {
+            key,
+            value: Box::new(value),
+        });
+    }
+
     fn visit_mut_expr(&mut self, expr: &mut Expr) {
         // Recurse first so nested matches (e.g., the obj of a member
         // expression, the callee of a call) are rewritten before we
