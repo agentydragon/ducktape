@@ -325,9 +325,6 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     fn object_properties_are_settled(&self, allocation: u32) -> bool {
         self.context.object_properties_are_settled(allocation)
     }
-    fn property_values(&self, allocation: u32, property: &str) -> Option<Values> {
-        self.context.property_values(allocation, property).cloned()
-    }
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
         self.context.property_is_accessor(allocation, property)
     }

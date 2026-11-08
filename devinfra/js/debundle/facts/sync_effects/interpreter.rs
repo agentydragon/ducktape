@@ -3099,7 +3099,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if values.len() != 1 {
             return None;
         }
-        if !self.state.object_enumerability_is_settled(*object) {
+        if !self.state.object_enumerability_is_settled(object) {
             return None;
         }
         let shape = self.ordinary_record_shape(*object)?.clone();

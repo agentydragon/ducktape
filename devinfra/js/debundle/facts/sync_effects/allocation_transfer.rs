@@ -97,9 +97,6 @@ pub(super) trait AllocationContext {
     fn object_properties_are_settled(&self, _allocation: u32) -> bool {
         false
     }
-    fn property_values(&self, _allocation: u32, _property: &str) -> Option<Values> {
-        None
-    }
     fn property_is_accessor(&self, _allocation: u32, _property: &str) -> bool {
         true
     }
