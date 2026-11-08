@@ -166,6 +166,9 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 # The shared ClickHouse uses the canonical default logical cluster
                 # name, so Langfuse can keep automatic migrations enabled.
                 {"name": "CLICKHOUSE_CLUSTER_NAME", "value": "default"},
+                # The legacy traces/observations tables were truncated after the v4
+                # backfill; any other mode would read or write them again.
+                {"name": "LANGFUSE_MIGRATION_V4_WRITE_MODE", "value": "events_only"},
                 # Authentik SSO (generic OIDC relying party). Client credentials come
                 # from the langfuse-oidc-config secret, minted by
                 # tf/gitops/sso-providers/provider_langfuse.tf in the authentik
