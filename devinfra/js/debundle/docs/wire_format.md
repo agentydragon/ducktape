@@ -261,8 +261,10 @@ trusted input artifact.
 An exact `initializer_call_effect_inputs` reference in
 `covered_owner_dependencies` identifies an AUTHOR operation-domain premise
 consumed by normal owner coverage. Its original and effective source digests
-remain in saved staged evidence; the graph's legacy `own_at_init.opaque` and
-separate `binding_effect_authority` fields can remain conservative.
+remain in saved staged evidence; the authored `resolved_member` key is only the
+selector for locating the declaration and does not replace that downstream
+proof reference. The graph's legacy `own_at_init.opaque` and separate
+`binding_effect_authority` fields can remain conservative.
 `coverage.owner_coverage_refusals` counts typed reasons why an original
 owner's whole-initialization certificate was not sealed. Bounded examples
 include an optional refusal and existing source location for each endpoint;

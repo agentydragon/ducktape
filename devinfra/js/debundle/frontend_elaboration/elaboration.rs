@@ -695,13 +695,19 @@ fn resolve_provider_source_sites(
     {
         let request_id =
             format!("chunk_analysis_options.{chunk_name}.initializer_call_effect_inputs[{index}]");
-        resolved
-            .initializer_call_effect_inputs
-            .push(select_one_source_declaration(
-                &selector_chunk,
-                &request_id,
-                &contract.source_match,
-            )?);
+        // Reuse the chunk's joint logical-member claim projection rather than
+        // resolving a second selector for each initializer input.
+        let site = resolve_premise_member_site(
+            resolved_member_sites,
+            &request_id,
+            chunk_name,
+            &contract.resolved_member.module,
+            &contract.resolved_member.name,
+        )?;
+        let declaration = site.declaration.clone().with_context(|| {
+            format!("{request_id}.resolved_member has no unique original local declaration")
+        })?;
+        resolved.initializer_call_effect_inputs.push(declaration);
     }
     for (index, contract) in options.analysis.argument_inputs.iter().enumerate() {
         let request_id = format!("chunk_analysis_options.{chunk_name}.argument_inputs[{index}]");
@@ -779,24 +785,24 @@ fn resolve_premise_member_site<'a>(
     let key = (module.to_owned(), name.to_owned());
     let sites = resolved_member_sites.get(&key).with_context(|| {
         format!(
-            "{request_id}.resolved_member names no logical module member for requested provider chunk {chunk_name} (module {module}, member {name}); module names are chunk-relative, so declare the module under logical_modules[{chunk_name}]"
+            "{request_id}.resolved_member names no logical module member in chunk {chunk_name} (module {module}, member {name}); the reference may be stale after an owner rename or move"
         )
     })?;
-    let mut provider_sites = sites
+    let mut chunk_sites = sites
         .iter()
         .filter(|site| site.provider_chunk == chunk_name);
-    let site = provider_sites.next().with_context(|| {
+    let site = chunk_sites.next().with_context(|| {
         let providers: BTreeSet<_> = sites
             .iter()
             .map(|site| site.provider_chunk.as_str())
             .collect();
         format!(
-            "{request_id}.resolved_member belongs to another provider chunk(s) {providers:?}, not requested provider chunk {chunk_name} (module {module}, member {name}); module names are chunk-relative, so use a module declared under logical_modules[{chunk_name}]"
+            "{request_id}.resolved_member belongs to another chunk(s) {providers:?}, not requested chunk {chunk_name} (module {module}, member {name})"
         )
     })?;
     ensure!(
-        provider_sites.next().is_none(),
-        "{request_id}.resolved_member is ambiguous in provider {chunk_name} (module {module}, member {name}); module names are chunk-relative to each provider chunk"
+        chunk_sites.next().is_none(),
+        "{request_id}.resolved_member is ambiguous in chunk {chunk_name} (module {module}, member {name})"
     );
     Ok(site)
 }

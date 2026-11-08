@@ -8,17 +8,12 @@ use sha2::{Digest, Sha256};
 use spec::{
     BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage,
     InitializerCallEffectiveReplacement, PartialSwapKind, PartialSwapSymbol,
+    ResolvedMemberSelector,
 };
 use std::collections::BTreeMap;
 use std::fs;
 use tempfile::TempDir;
 
-const FIRST: &str = "const first = wrap(function () { return neighbor[0]; });";
-const SECOND: &str = "const second = wrap(function () { return neighbor[1]; });";
-const FIRST_COMMA: &str = "const before = 1, first = wrap(function () { return neighbor[0]; });";
-const SECOND_COMMA: &str = "const second = wrap(function () { return neighbor[1]; }), after = 2;";
-const FIRST_DEFERRED_OPAQUE: &str = "const first = wrap(function () { return neighbor?.[0]; });";
-const SECOND_DEFERRED_OPAQUE: &str = "const second = wrap(function () { return neighbor?.[1]; });";
 // Optional chaining marks only the deferred callback body opaque. Creating
 // either fresh function still executes no body code at module initialization.
 const SOURCE_DEFERRED_OPAQUE: &str = "import { wrap } from './peer.js';\n\
@@ -81,12 +76,12 @@ fn digest(source: &str) -> String {
         .collect()
 }
 
-fn input(source: &str, binding: &str, declaration: &str) -> InitializerCallEffectInputContract {
+fn input(source: &str, binding: &str) -> InitializerCallEffectInputContract {
     InitializerCallEffectInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {declaration:?}\nbindings: [{binding}]\n"
-        ))
-        .expect("source selector"),
+        resolved_member: ResolvedMemberSelector {
+            module: format!("callbacks/{binding}"),
+            name: binding.into(),
+        },
         audited_source_sha256: digest(source),
         provider_chunk: "static/peer".into(),
         provider_export: "wrap".into(),
@@ -118,9 +113,9 @@ fn opts<'a>(purity: &'a [(&'a str, ChunkExportPurity)], asserted_calls: usize) -
         .with_unassigned_mode(unassigned_mode_inline())
         .with_chunk_export_purity(purity);
     if asserted_calls > 0 {
-        let mut inputs = vec![input(SOURCE, "first", FIRST)];
+        let mut inputs = vec![input(SOURCE, "first")];
         if asserted_calls == 2 {
-            inputs.push(input(SOURCE, "second", SECOND));
+            inputs.push(input(SOURCE, "second"));
         }
         opts.with_initializer_call_effect_inputs("static/app", inputs)
     } else {
@@ -151,10 +146,7 @@ fn selected_call_in_prepared_comma_list_initializers_is_covered() {
             .with_chunk_export_purity(&purity)
             .with_initializer_call_effect_inputs(
                 "static/app",
-                vec![
-                    input(SOURCE_COMMA, "first", FIRST_COMMA),
-                    input(SOURCE_COMMA, "second", SECOND_COMMA),
-                ],
+                vec![input(SOURCE_COMMA, "first"), input(SOURCE_COMMA, "second")],
             ),
     );
     assert_preserved_entry_output(&fixture, "initial later 2\n");
@@ -229,8 +221,8 @@ fn deferred_opaque_callback_body_does_not_poison_fresh_function_creation() {
     );
 
     let inputs = vec![
-        input(SOURCE_DEFERRED_OPAQUE, "first", FIRST_DEFERRED_OPAQUE),
-        input(SOURCE_DEFERRED_OPAQUE, "second", SECOND_DEFERRED_OPAQUE),
+        input(SOURCE_DEFERRED_OPAQUE, "first"),
+        input(SOURCE_DEFERRED_OPAQUE, "second"),
     ];
     let fixture =
         run_fixture(fixture_opts().with_initializer_call_effect_inputs("static/app", inputs));
@@ -255,8 +247,8 @@ fn exact_wrapper_effect_input_does_not_cover_eager_callback_body() {
         .with_pure_exports(&["wrap"])
         .build()];
     let mut eager_inputs = vec![
-        input(SOURCE_DEFERRED_OPAQUE, "first", FIRST_DEFERRED_OPAQUE),
-        input(SOURCE_DEFERRED_OPAQUE, "second", SECOND_DEFERRED_OPAQUE),
+        input(SOURCE_DEFERRED_OPAQUE, "first"),
+        input(SOURCE_DEFERRED_OPAQUE, "second"),
     ];
     for input in &mut eager_inputs {
         input.audited_provider_sha256 = digest(EAGER_PROVIDER);
@@ -324,10 +316,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
     );
 
     let opaque_provider = [("static/peer", PROVIDER_WITHOUT_RESULT_SUMMARY)];
-    let mut opaque_inputs = vec![
-        input(SOURCE, "first", FIRST),
-        input(SOURCE, "second", SECOND),
-    ];
+    let mut opaque_inputs = vec![input(SOURCE, "first"), input(SOURCE, "second")];
     for entry in &mut opaque_inputs {
         entry.audited_provider_sha256 = digest(PROVIDER_WITHOUT_RESULT_SUMMARY);
     }
@@ -360,10 +349,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
             .with_chunk_export_purity(&purity)
             .with_initializer_call_effect_inputs(
                 "static/app",
-                vec![
-                    input(SOURCE, "first", FIRST),
-                    input(SOURCE, "second", SECOND),
-                ],
+                vec![input(SOURCE, "first"), input(SOURCE, "second")],
             ),
     );
     assert!(
@@ -412,8 +398,8 @@ fn ordered_inline_callback_factory_transfers_its_fresh_callable() {
         .with_inline_callback_factories(&["wrap"])
         .build()];
     let mut inputs = vec![
-        input(SOURCE_INLINE_FACTORY, "first", FIRST),
-        input(SOURCE_INLINE_FACTORY, "second", SECOND),
+        input(SOURCE_INLINE_FACTORY, "first"),
+        input(SOURCE_INLINE_FACTORY, "second"),
     ];
     for entry in &mut inputs {
         entry.audited_provider_sha256 = digest(PROVIDER_INLINE_FACTORY);
@@ -501,10 +487,7 @@ fn selected_bundled_replacement_needs_exact_effective_identity() {
             .with_pure_exports(&["wrap"])
             .with_retained_callback_factory("wrap", 1, &[0])
             .build()];
-        let mut inputs = vec![
-            input(SOURCE, "first", FIRST),
-            input(SOURCE, "second", SECOND),
-        ];
+        let mut inputs = vec![input(SOURCE, "first"), input(SOURCE, "second")];
         for input in &mut inputs {
             if case != "missing" {
                 input.effective_replacement = Some(InitializerCallEffectiveReplacement {
@@ -603,10 +586,7 @@ fn source_known_original_provider_global_write_rejects_audited_call() {
             .with_pure_exports(&["wrap"])
             .with_callback_factories(&["wrap"])
             .build()];
-        let mut inputs = vec![
-            input(SOURCE, "first", FIRST),
-            input(SOURCE, "second", SECOND),
-        ];
+        let mut inputs = vec![input(SOURCE, "first"), input(SOURCE, "second")];
         for entry in &mut inputs {
             entry.audited_provider_sha256 = digest(provider);
         }
