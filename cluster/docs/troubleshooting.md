@@ -130,8 +130,10 @@ terminating a backend, prove it is an orphan on the **current CNPG primary**; se
 <lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md> for the state matrix, SQL,
 and safe recovery.
 
-The separate Kubernetes-backend stale-Lease failure mode is historical because all CRs
-now use PG; see <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>.
+The Kubernetes-backend stale-Lease failure mode is historical. Current PG-backed lock
+diagnosis and recovery are covered by
+<lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md>; the March note
+<lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md> preserves the old incident.
 
 ## Secrets & Auth Issues
 
