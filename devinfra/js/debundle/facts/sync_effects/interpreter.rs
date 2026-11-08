@@ -1952,8 +1952,41 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             values.first(),
             Some(AbstractValue::Closure(_, captured)) if captured.values.cells.is_empty()
         );
+        // This exact root creates one fresh ordinary function as the provider
+        // call's argument. Its body does not run at creation, even when the
+        // deferred body contains syntax the callable interpreter marks opaque.
+        // Keep the capture-cell restriction and preserve the closure value so
+        // an eager invocation or later escape still follows its usual path.
+        let selected_function_argument = body.opaque
+            && matches!(
+                creation,
+                super::super::local_operations::DeferredCallableCreation::Function(_)
+            )
+            && matches!(self.scope, LocalExecutionScope::RootInitializer)
+            && self
+                .outcome
+                .root_binding_effect_identity
+                .as_ref()
+                .is_some_and(|identity| {
+                    identity.owner == self.owner
+                        && identity.initializer_span == self.body.initializer_span()
+                        && self
+                            .body
+                            .single_identifier_call_with_function_argument_initializer()
+                            .is_some_and(|(callee, call_span)| {
+                                self.executor
+                                    .inputs
+                                    .initializer_call_effect_input(
+                                        self.owner,
+                                        &identity.binding,
+                                        callee,
+                                        call_span,
+                                    )
+                                    .is_some()
+                            })
+                });
         let effects = if captured_cells_are_empty
-            && !body.opaque
+            && (!body.opaque || selected_function_argument)
             && !body.generator
             && !self
                 .executor
