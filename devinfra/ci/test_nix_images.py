@@ -8,10 +8,10 @@ import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
-from devinfra.ci.nix_images import Image, changed_images, load_images, marker_path
+from devinfra.ci.nix_images import BUILD_JOB, Image, changed_images, load_images, marker_path
 
 
-def test_workflow_triggers_on_exactly_the_image_inputs() -> None:
+def test_workflow_matches_roster_and_wait_build() -> None:
     workflow = yaml.load(
         (Runfiles.CreateOrRaise().root() / "ducktape/.github/workflows/nix-images.yml").read_text(),
         Loader=yaml.BaseLoader,
@@ -19,6 +19,7 @@ def test_workflow_triggers_on_exactly_the_image_inputs() -> None:
     inputs = {p for image in load_images().values() for p in image.paths}
     for event in ("push", "pull_request", "pull_request_target"):
         assert set(workflow["on"][event]["paths"]) == inputs, event
+    assert workflow["jobs"]["build"]["name"] == BUILD_JOB
 
 
 def test_smoke_scripts_are_image_inputs() -> None:
