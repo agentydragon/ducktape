@@ -4062,8 +4062,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut own_property_projection: Option<OwnPropertyProof>,
     ) -> Values {
         if args.is_empty()
-            && super::super::allocation_transfer::keyed_collection_new(row, site, Box::default())
-                .is_some()
+            && super::super::allocation_transfer::keyed_collection_new(
+                row,
+                site,
+                ProofDependencies::default(),
+            )
+            .is_some()
         {
             // The operation kernel proves the row's fresh empty-construction
             // semantics. This interpreter has no keyed-collection heap lane,
