@@ -1568,7 +1568,12 @@ def generate_manifests(root: Path) -> None:
     platform_sessions_artifact = artifact("platform-sessions", platform_sessions_app.OUTPUT_DIR)
     platform_sessions_kustomization = platform_sessions_app.platform_sessions(
         flux_chart,
-        write_directory(root, platform_sessions_artifact, platform_sessions_app.chart),
+        write_directory(
+            root,
+            platform_sessions_artifact,
+            platform_sessions_app.chart,
+            config_map_generator=[platform_sessions_app.CONFIG],
+        ),
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         flux_image_automation_ghcr_kustomization,

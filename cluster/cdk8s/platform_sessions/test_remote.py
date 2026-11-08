@@ -1,4 +1,4 @@
-"""The gateway and provider workloads agree on their connections and storage."""
+"""The staged gateway and providers preserve the running legacy service."""
 
 import json
 from urllib.parse import urlsplit
@@ -16,6 +16,7 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         return next(item for item in objects if item["kind"] == kind and item["metadata"]["name"] == name)
 
     gateway = resource("Deployment", remote.GATEWAY)["spec"]
+    assert gateway["replicas"] == 0
     assert gateway["strategy"]["type"] == "Recreate"
     gateway_pod = gateway["template"]["spec"]
     assert all("persistentVolumeClaim" not in volume for volume in gateway_pod["volumes"])
@@ -23,7 +24,16 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     public_service = next(
         obj for obj in public_objects if obj["kind"] == "Service" and obj["metadata"]["name"] == app.NAME
     )
-    assert public_service["spec"]["selector"] == gateway["template"]["metadata"]["labels"]
+    assert public_service["spec"]["selector"] == {"app": app.NAME}
+    legacy = next(
+        obj for obj in public_objects if obj["kind"] == "Deployment" and obj["metadata"]["name"] == app.NAME
+    )["spec"]
+    assert legacy["replicas"] == 1
+    assert legacy["template"]["spec"]["containers"][0]["image"] == app.IMAGE
+    legacy_monitor = next(
+        obj for obj in public_objects if obj["kind"] == "PodMonitor" and obj["metadata"]["name"] == "platform-sessions-quest"
+    )
+    assert legacy_monitor["spec"]["selector"]["matchLabels"] == {"app": app.NAME}
 
     assert remote.CONFIG.data is not None
     connections = json.loads(remote.CONFIG.data["connections.json"])
@@ -45,6 +55,7 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     for instance, connection in connections.items():
         name = f"platform-sessions-{instance}"
         provider = resource("Deployment", name)["spec"]
+        assert provider["replicas"] == 0
         assert provider["strategy"]["type"] == "Recreate"
         provider_pod = provider["template"]["spec"]
         expected_image = remote._provider_image(instance)
