@@ -34,10 +34,9 @@ class Harness:
         runfiles_root = self.runfiles.root()
         return subprocess.run(
             [
-                "/bin/bash",
-                (runfiles_root / "ducktape/nix/home/services/session_backup.sh"),
-                (runfiles_root / "ducktape/third_party/restic/restic_bin"),
                 sys.executable,
+                (runfiles_root / "ducktape/nix/home/services/session_backup.py"),
+                (runfiles_root / "ducktape/third_party/restic/restic_bin"),
                 (runfiles_root / "ducktape/nix/home/services/snapshot_sqlite.py"),
                 str(self.home),
                 str(self.claude),
