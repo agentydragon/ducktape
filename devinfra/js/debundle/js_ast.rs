@@ -930,11 +930,24 @@ mod tests {
     }
 
     #[test]
-    fn canonical_parser_rejects_optional_chain_assignment_target() {
+    fn canonical_parser_optional_chain_targets_keep_existing_write_recording() {
         with_swc_globals(|| {
-            assert!(
-                parse_js_module("invalid-target.ts", "let count = 0; count?.value = 1;").is_err()
-            );
+            // The configured parser accepts this target form. The recorder
+            // must preserve its conservative member-write fact; this supplies
+            // no execution or emitted-syntax acceptance proof.
+            let parsed = parse_js_module("optional-target.ts", "let count = 0; count?.value = 1;")
+                .expect("configured parser accepts optional-chain assignment targets");
+            let mut visitor = TargetRecorderVisitor::default();
+            parsed.module.visit_with(&mut visitor);
+            assert!(visitor.recorder.binding_writes.is_empty());
+            assert_eq!(visitor.recorder.member_writes, vec!["count".to_string()]);
+        });
+    }
+
+    #[test]
+    fn canonical_parser_rejects_literal_assignment_target() {
+        with_swc_globals(|| {
+            assert!(parse_js_module("invalid-target.ts", "1 = 2;").is_err());
         });
     }
 
