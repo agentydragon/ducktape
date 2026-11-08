@@ -5,10 +5,12 @@
 is implemented. VolSync Restic-to-SeaweedFS backups do exist elsewhere: Home
 Assistant uses a Restic `ReplicationSource`, and the shared `ResticBackup`
 construct is used by paused Public Coder backup resources. Grocy's existing
-PVC-to-PVC backups still use `rsyncTLS`; migrating the named apps and adding the
-offsite Drive stage remain open work.
-**Scope**: small high-value PVCs (Grocy SF/Vallejo config, Tana-MCP state, app
-config DBs). Large media is explicitly out of scope for now.
+PVC-to-PVC backups still use `rsyncTLS`. Tana-MCP's OAuth state is in a shared
+CNPG database whose base backups and WAL already go to SeaweedFS; copying that
+backup offsite needs a separate CNPG-aware path ([mcp_oauth_state.py](../../cdk8s/mcp_oauth_state.py#L82)).
+Migrating Grocy's PVCs and adding the offsite Drive stage remain open work.
+**Scope**: small high-value data sets: Grocy SF/Vallejo config PVCs, the Tana-MCP
+OAuth-state database, and app config databases. Large media is explicitly out of scope for now.
 
 ## Goal
 
@@ -67,10 +69,11 @@ Why two stages instead of pointing VolSync's restic mover straight at
   already run (e.g. <../../cdk8s/langfuse.py>,
   <../../cdk8s/seaweedfs/s3_config.py>).
 
-This also **supersedes the ad-hoc rsyncTLS PVC→PVC backups** (Grocy, Tana-MCP):
-restic-to-S3 gives retention + offsite in one mechanism, where rsyncTLS only
-gives a single in-cluster restore point. Migrating those is optional and can be
-done per-app after the pattern is proven.
+For Grocy, this **supersedes the existing `rsyncTLS` PVC→PVC backups**: restic-to-S3
+gives retention and an offsite copy in one mechanism, where `rsyncTLS` only gives
+a single in-cluster restore point. Migrating those is optional and can be done
+per app after the pattern is proven. Tana-MCP has no such VolSync PVC backup; its
+CNPG backup path is described above.
 
 ## Components
 
@@ -84,7 +87,7 @@ One bucket `volsync-backups`, one prefix per app (`/grocy-sf`, `/grocy-vallejo`,
 `/tana-mcp`, …). Per the [SeaweedFS Bucket co-location convention](../../k8s/seaweedfs/),
 put the Bucket CR in the backup tooling's own flux-kustomization dir, not under
 `seaweedfs/`. One identity `s3-identity-volsync` with `Read,Write,List,Tagging`
-on the bucket, modeled on <../../k8s/seaweedfs/secrets/identities/langfuse.sops.yaml>.
+on the bucket, following the current <../../cdk8s/langfuse.py> `PrivateBucket` pattern.
 
 Deliver `accessKey`/`secretKey` into each consuming namespace via ESO the same
 way other tenants do (per-namespace `ExternalSecret` reading the seaweedfs
@@ -152,7 +155,7 @@ write — acceptable for crash-consistent restore.
 
 **Airlock is already an OAuth token broker**, so it — not a hand-minted SOPS
 secret — owns the Drive credential. Its `oauth.providers` list
-(<../../k8s/agents/airlock/config.yaml>) declares providers (oura, google, bsc);
+(<../../k8s/agents/airlock/kustomization.yaml#L10>) declares providers (oura, google, bsc);
 a background `token_refresh_loop` (<../../../airlock/oauth/refresh.py>) keeps
 each access token fresh and writes two k8s Secrets per provider:
 
@@ -282,9 +285,12 @@ discipline the Study Casino DB backup TODO calls for).
 - **One bucket + prefixes vs one bucket per app.** Prefixes are simpler and let a
   single identity + single rclone job cover everything; per-app buckets give
   tighter blast-radius isolation. Leaning prefixes for this scope.
-- **Migrate the existing rsyncTLS Grocy/Tana backups to restic, or run both?**
-  Restic supersedes them functionally; suggest cutting over per-app once a restore
-  drill passes, then deleting the rsyncTLS `ReplicationSource` + backup PVC.
+- **Migrate Grocy's existing `rsyncTLS` backups to restic, or run both?**
+  Suggest cutting over per app once a restore drill passes, then deleting its
+  `rsyncTLS` `ReplicationSource` and backup PVC.
+- **How should Tana-MCP's CNPG backups join the offsite copy?** Its shared CNPG
+  cluster already writes base backups and WAL to SeaweedFS; define a CNPG-aware
+  copy and restore path separately from per-PVC VolSync sources.
 - **Where the rclone CronJob's S3 identity lives** — reuse `s3-identity-volsync`
   (read+write) or mint a read-only `s3-identity-volsync-reader` for the copy job
   (least privilege). Prefer the reader.
