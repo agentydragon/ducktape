@@ -10,6 +10,6 @@ describe("listAgents", () => {
 
     await listAgents();
 
-    expect(get).toHaveBeenCalledWith("/api/agent-enrollment/agents");
+    expect(get).toHaveBeenCalledWith("/api/agent-enrollment/agents", { signal: undefined });
   });
 });
