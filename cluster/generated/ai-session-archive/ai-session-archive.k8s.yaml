@@ -28,6 +28,10 @@ spec:
       name: barman-cloud.cloudnative-pg.io
       parameters:
         barmanObjectName: session-archive-db
+  postgresql:
+    parameters:
+      wal_receiver_timeout: 60s
+      wal_sender_timeout: 60s
   probes:
     liveness:
       isolationCheck:
