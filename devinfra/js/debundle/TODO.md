@@ -273,6 +273,17 @@ closure`, conflating unresolved host requests, missing captured chunks,
 
 ### Pipeline performance and architecture cleanup
 
+- **Keep resolved operation references out of semantic analysis identity.**
+  `ChunkAnalysisInputs.initializer_call_effect_inputs` still serializes the
+  authored `{module, name}` reference after frontend resolution has recorded the
+  actual declaration in `AnalysisSourceSites`. Updating only that owner key
+  therefore changes the analysis projection and requires fresh analysis. Project
+  the operation's effect/provenance contract and resolved source identity into a
+  selector-free analysis type; keep the ordinary joint selector and declaration
+  validation before cache reuse. Owner-only edits should reuse matching facts,
+  while changes to the selected declaration, source or effect contract still
+  invalidate them.
+
 Proposer-gate, `debundle run` (report opt-out, chunk-level incremental
 rebuilds, codegen cache), and materialize-stage performance work lives in
 <perf/proposer.md>.
