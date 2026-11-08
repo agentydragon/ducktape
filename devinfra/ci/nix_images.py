@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -30,6 +31,9 @@ from devinfra.ci.push_image import pinned_tag
 logger = logging.getLogger(__name__)
 
 CONFIG = Path(__file__).with_name("nix_images.json")
+WORKFLOW = "nix-images.yml"
+# The workflow's build job `name:`, which wait_for_build looks for.
+BUILD_JOB = "Build & verify"
 CACHE_URL = "https://cache.allegedly.works/main"
 MARKER_NAME = "nix-image-verified"
 _SYSTEM = "x86_64-linux"
@@ -71,29 +75,51 @@ def changed_images(images: dict[str, Image], base: str | None, head: str) -> lis
     )
 
 
+def _gh_api(path: str) -> dict[str, Any]:
+    result: dict[str, Any] = json.loads(
+        subprocess.run(["gh", "api", path], check=True, capture_output=True, text=True).stdout
+    )
+    return result
+
+
 def last_published_commit(repository: str) -> str | None:
     """Head commit of this workflow's newest successful devel push run, or None if none succeeded.
 
     A devel run diffs against this rather than the push's `before`: a run cancelled by a newer push
     (or one that failed) published nothing, and its changes must stay in the next run's diff.
     """
-    runs = json.loads(
-        subprocess.run(
-            [
-                "gh",
-                "api",
-                f"repos/{repository}/actions/workflows/nix-images.yml/runs?branch=devel&event=push&status=success&per_page=1",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
+    runs = _gh_api(
+        f"repos/{repository}/actions/workflows/{WORKFLOW}/runs?branch=devel&event=push&status=success&per_page=1"
     )["workflow_runs"]
     if not runs:
         return None
     sha: str = runs[0]["head_sha"]
     _git("fetch", "--quiet", "--depth=1", "origin", sha)
     return sha
+
+
+def wait_for_build(repository: str, sha: str, max_wait: datetime.timedelta) -> None:
+    """Block until the build job of this push's run of this workflow finishes, or `max_wait` passes.
+
+    nix-attic-push calls this so it substitutes the closure this workflow is building rather than
+    building it again alongside. Both runs are created when the push is processed, before either job
+    starts, so no run here means this workflow was not triggered. `max_wait` bounds the wait for a
+    cold build whose long tail (the firecracker kernel) nothing else shares.
+    """
+    deadline = datetime.datetime.now(datetime.UTC) + max_wait
+    for run in _gh_api(f"repos/{repository}/actions/workflows/{WORKFLOW}/runs?head_sha={sha}&event=push")[
+        "workflow_runs"
+    ]:
+        while datetime.datetime.now(datetime.UTC) < deadline:
+            if _gh_api(f"repos/{repository}/actions/runs/{run['id']}")["status"] == "completed":
+                break
+            jobs = _gh_api(f"repos/{repository}/actions/runs/{run['id']}/jobs")["jobs"]
+            if any(j["name"] == BUILD_JOB and j["status"] == "completed" for j in jobs):
+                break
+            print(f"waiting for {run['html_url']}")
+            time.sleep(60)
+        else:
+            print(f"stopped waiting for {run['html_url']} after {max_wait}")
 
 
 def _nix32(digest: bytes) -> str:
@@ -272,6 +298,10 @@ def main(argv: list[str] | None = None) -> None:
     publish_cmd = sub.add_parser("publish")
     publish_cmd.add_argument("--image", required=True)
     publish_cmd.add_argument("--sha", required=True)
+    wait_cmd = sub.add_parser("wait-build", help="wait for this commit's build job, if this workflow runs")
+    wait_cmd.add_argument("--repository", required=True)
+    wait_cmd.add_argument("--sha", required=True)
+    wait_cmd.add_argument("--max-minutes", required=True, type=int)
     args = parser.parse_args(argv)
 
     images = load_images()
@@ -292,6 +322,8 @@ def main(argv: list[str] | None = None) -> None:
             build(images, args.images)
         case "publish":
             publish(images[args.image], args.sha)
+        case "wait-build":
+            wait_for_build(args.repository, args.sha, datetime.timedelta(minutes=args.max_minutes))
 
 
 if __name__ == "__main__":
