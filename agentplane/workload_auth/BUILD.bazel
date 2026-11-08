@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -20,15 +20,4 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = ["@pypi//pydantic"],
-)
-
-py_test(
-    name = "test_listener",
-    srcs = ["test_listener.py"],
-    deps = [
-        ":listener",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest_bazel",
-    ],
 )

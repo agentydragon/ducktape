@@ -1,4 +1,4 @@
-"""Config text preserves source presence while serializing nested typed values."""
+"""Config text preserves mapping keys and serializes complete nested typed values."""
 
 import json
 from pathlib import Path
@@ -96,6 +96,7 @@ def test_nested_models_remain_typed_until_rendering(format: str) -> None:
         "url": "http://peer.invalid/",
         "token_file": "file:/tokens/peer",
         "account": "app",
+        "retries": 3,
         "serialized": True,
     }
     if format == "json":
@@ -111,12 +112,16 @@ def test_nested_models_remain_typed_until_rendering(format: str) -> None:
 def test_complete_model_uses_the_same_serialization_boundary(format: str) -> None:
     peer = TestSettingsEntry(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), retries=3)
     rendered = yaml.safe_load(yaml_config(peer)) if format == "yaml" else json.loads(json_config(peer))
-    assert rendered == {
+    expected = {
         "url": "http://peer.invalid/",
         "token_file": "file:/tokens/peer",
         "retries": 3,
+        "account": "app",
         "serialized": True,
     }
+    if format == "json":
+        expected["optional"] = None
+    assert rendered == expected
 
 
 @pytest.mark.parametrize("format", ["yaml", "json"])
@@ -133,24 +138,42 @@ def test_serialization_retains_nested_field_schema(format: str) -> None:
     )
     settings = TestSettings(peer=entry, peers=[entry], named_peers={"worker": entry}, database_url="test-db")
     rendered = yaml.safe_load(yaml_config(settings)) if format == "yaml" else json.loads(json_config(settings))
-    expected = {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "serialized": True}
+    expected = {
+        "url": "http://peer.invalid/",
+        "token_file": "file:/tokens/peer",
+        "retries": 3,
+        "optional": None,
+        "account": "app",
+        "serialized": True,
+    }
+    if format == "yaml":
+        del expected["optional"]
     assert rendered == {
         "peer": expected,
         "peers": [expected],
         "named_peers": {"worker": expected},
         "database_url": "test-db",
     }
-    assert settings.model_dump(mode="json", exclude_unset=True) == rendered
+    expected_model = settings.model_dump(mode="json")
+    assert expected_model["peer"] == expected | ({"optional": None} if format == "yaml" else {})
 
 
 def test_yaml_keeps_cdk8s_null_omission() -> None:
     peer = TestSettingsEntry(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), optional=None)
     assert yaml.safe_load(yaml_config({"peer": peer, "optional": None}, exclude_none=True)) == {
-        "peer": {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "serialized": True}
+        "peer": {
+            "url": "http://peer.invalid/",
+            "token_file": "file:/tokens/peer",
+            "retries": 3,
+            "account": "app",
+            "serialized": True,
+        }
     }
 
 
-def test_yaml_config_preserves_default_destination_discriminators() -> None:
+@pytest.mark.parametrize("format", ["yaml", "json"])
+@pytest.mark.parametrize("nested", [False, True])
+def test_config_preserves_default_destination_discriminators(format: str, nested: bool) -> None:
     config = Config(
         tokens=[
             Token(
@@ -175,10 +198,12 @@ def test_yaml_config_preserves_default_destination_discriminators() -> None:
         ]
     )
 
-    rendered = yaml.safe_load(yaml_config(config.model_dump(mode="json")))
+    content = {"settings": config} if nested else config
+    rendered = yaml.safe_load(yaml_config(content)) if format == "yaml" else json.loads(json_config(content))
+    settings = rendered["settings"] if nested else rendered
 
-    assert [token["destination"]["storage"] for token in rendered["tokens"]] == ["sops", "kubernetes"]
-    parsed = Config.model_validate(rendered)
+    assert [token["destination"]["storage"] for token in settings["tokens"]] == ["sops", "kubernetes"]
+    parsed = Config.model_validate(settings)
     assert isinstance(parsed.tokens[0].destination, SopsDestination)
     assert isinstance(parsed.tokens[1].destination, KubernetesDestination)
 

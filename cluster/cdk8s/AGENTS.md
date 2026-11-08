@@ -70,7 +70,8 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   field fails at synth. For a complete settings file, construct the full model with
   typed keyword arguments and pass it to `yaml_config` before `SettingsFile`.
   `yaml_config` and `json_config` serialize models recursively, including models nested in
-  source mappings and lists, emitting only explicitly set model fields. Keep models typed
+  source mappings and lists, including model defaults such as union discriminators. A plain
+  mapping preserves absent keys for partial settings; nested model values are complete. Keep models typed
   until this text boundary; use `model_dump` only for an explicit field projection or
   different serialization policy.
   For a file fragment whose other values come from runtime sources, check the present
