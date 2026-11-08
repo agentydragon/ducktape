@@ -65,7 +65,8 @@
           "expr": "sum by (storage_pool) (disk_usage:pool_used_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
           "refId": "A",
-          "legendFormat": "{{storage_pool}}"
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -116,7 +117,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 27,
@@ -135,7 +161,8 @@
           "expr": "sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
           "refId": "A",
-          "legendFormat": "{{storage_pool}}"
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -186,7 +213,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 28,
@@ -205,7 +257,8 @@
           "expr": "sum by (storage_pool) (disk_usage:pool_free_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
           "refId": "A",
-          "legendFormat": "{{storage_pool}}"
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -256,7 +309,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 29,
@@ -275,7 +353,8 @@
           "expr": "sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
           "refId": "A",
-          "legendFormat": "{{storage_pool}}"
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -326,7 +405,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 30,
@@ -345,7 +449,8 @@
           "expr": "sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}) - sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
           "refId": "A",
-          "legendFormat": "{{storage_pool}}"
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -396,7 +501,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 31,
@@ -415,7 +545,8 @@
           "expr": "sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}) / sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
           "refId": "A",
-          "legendFormat": "{{storage_pool}}"
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -466,7 +597,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 34,

@@ -59,6 +59,19 @@ async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestO
                     await expect(capacity.get_by_text("6 TiB", exact=True)).to_be_visible()
                     await expect(capacity.get_by_text("3 TiB", exact=True)).to_be_visible()
                     await expect(capacity.get_by_text("512 GiB", exact=True)).to_be_visible()
+                    for title in (
+                        "Physical pool used",
+                        "Physical pool capacity",
+                        "Physical pool free",
+                        "Diskful copy limits",
+                        "Uncommitted limit headroom",
+                        "Copy limits / pool capacity",
+                    ):
+                        panel = page.get_by_role("region", name=title, exact=True)
+                        for pool in ("archive", "hdd", "ssd"):
+                            await expect(panel.get_by_text(pool, exact=True)).to_be_visible()
+                        text = await panel.inner_text()
+                        assert text.index("archive") < text.index("hdd") < text.index("ssd"), (title, text)
                     record_stage("capturing full dashboard")
                     await capture_dashboard(view)
                     assert await page.get_by_text("No data", exact=True).count() == 0

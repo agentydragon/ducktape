@@ -6,83 +6,25 @@
           {
             "schema": {
               "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
               "fields": [
                 {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
+                  "name": "storage_pool",
+                  "type": "string"
                 },
                 {
                   "name": "Value",
                   "type": "number",
                   "typeInfo": {
                     "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "ssd"
                   }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [1031809316864]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "hdd"
-                  }
-                }
+              "values": [
+                ["ssd", "hdd"],
+                [1031809316864, 4691638519808]
               ]
-            },
-            "data": {
-              "values": [[1738411200000], [4691638519808]]
             }
           }
         ]
@@ -94,83 +36,25 @@
           {
             "schema": {
               "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
               "fields": [
                 {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
+                  "name": "storage_pool",
+                  "type": "string"
                 },
                 {
                   "name": "Value",
                   "type": "number",
                   "typeInfo": {
                     "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "ssd"
                   }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [1498192805888]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "hdd"
-                  }
-                }
+              "values": [
+                ["ssd", "hdd"],
+                [1498192805888, 7971513827328]
               ]
-            },
-            "data": {
-              "values": [[1738411200000], [7971513827328]]
             }
           }
         ]
@@ -182,83 +66,25 @@
           {
             "schema": {
               "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
               "fields": [
                 {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
+                  "name": "storage_pool",
+                  "type": "string"
                 },
                 {
                   "name": "Value",
                   "type": "number",
                   "typeInfo": {
                     "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "ssd"
                   }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [466383489024]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "hdd"
-                  }
-                }
+              "values": [
+                ["ssd", "hdd"],
+                [466383489024, 3279875307520]
               ]
-            },
-            "data": {
-              "values": [[1738411200000], [3279875307520]]
             }
           }
         ]
@@ -270,83 +96,25 @@
           {
             "schema": {
               "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
               "fields": [
                 {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
+                  "name": "storage_pool",
+                  "type": "string"
                 },
                 {
                   "name": "Value",
                   "type": "number",
                   "typeInfo": {
                     "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "ssd"
                   }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [2026821910528]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "hdd"
-                  }
-                }
+              "values": [
+                ["ssd", "hdd"],
+                [2026821910528, 8664022777856]
               ]
-            },
-            "data": {
-              "values": [[1738411200000], [8664022777856]]
             }
           }
         ]
@@ -358,83 +126,25 @@
           {
             "schema": {
               "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
               "fields": [
                 {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
+                  "name": "storage_pool",
+                  "type": "string"
                 },
                 {
                   "name": "Value",
                   "type": "number",
                   "typeInfo": {
                     "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "ssd"
                   }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [-528629104640]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "hdd"
-                  }
-                }
+              "values": [
+                ["ssd", "hdd"],
+                [-528629104640, -692508950528]
               ]
-            },
-            "data": {
-              "values": [[1738411200000], [-692508950528]]
             }
           }
         ]
@@ -446,83 +156,25 @@
           {
             "schema": {
               "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
               "fields": [
                 {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
+                  "name": "storage_pool",
+                  "type": "string"
                 },
                 {
                   "name": "Value",
                   "type": "number",
                   "typeInfo": {
                     "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "ssd"
                   }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [1.35284450877247]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 120000
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 120000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "hdd"
-                  }
-                }
+              "values": [
+                ["ssd", "hdd"],
+                [1.35284450877247, 1.0868729535604562]
               ]
-            },
-            "data": {
-              "values": [[1738411200000], [1.0868729535604562]]
             }
           }
         ]
