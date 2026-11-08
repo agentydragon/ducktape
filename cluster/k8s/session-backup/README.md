@@ -133,9 +133,8 @@ archive dependency does not suspend the Rest Server.
 Each workstation has a 15-minute CronJob that scans all retained snapshots. Failed or interrupted
 imports retry on a later run, and newly uploaded snapshots appear without a one-time backfill
 command. Each host has its own `Forbid` concurrency policy. Runs are offset by five minutes to
-spread database and repository load. Imported history is durable application data: CNPG takes
-weekly base backups and continuously archives WAL to SeaweedFS with a 30-day recovery window. The
-database does not depend on replaying Restic snapshots as its only recovery path.
+spread database and repository load. The database is a rebuildable projection and is not backed up;
+the retained Restic snapshots are the durable backup. Database recovery requires reimporting them.
 
 The importers use the workstation's existing REST credentials and the shared Restic encryption
 password for snapshot inventory, diff, file listing, and extraction against the append-only

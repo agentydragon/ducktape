@@ -64,7 +64,7 @@ def _schedule(ref: cluster.PostgresRef, cadence: Cadence) -> str:
 class CnpgBackup(Construct):
     """`ref`'s backups into a private SeaweedFS bucket `<namespace>-db-backups`: the ObjectStore
     named `ref.name`, which `cluster.cluster(wal_archive=True)` archives WAL to, and a `cadence`
-    ScheduledBackup (`_schedule`). WAL is archived continuously, so any moment within `retention`
+    ScheduledBackup (`_schedule`), unless `cadence=None` retains the store without a schedule. WAL is archived continuously, so any moment within `retention`
     (the ObjectStore's recovery window, `<n>d`, `<n>w` or `<n>m`) is a recovery point. Every base
     backup is a full copy, so storage grows with (backups in the window) x (DB size); a large DB
     takes `Cadence.WEEKLY` base backups, trading longer WAL replay on restore for fewer copies.
@@ -81,7 +81,7 @@ class CnpgBackup(Construct):
         *,
         ref: cluster.PostgresRef,
         retention: str,
-        cadence: Cadence = Cadence.DAILY,
+        cadence: Cadence | None = Cadence.DAILY,
         secret_name: str | None = None,
         adopt_existing: bool = True,
     ) -> None:
@@ -124,15 +124,16 @@ class CnpgBackup(Construct):
                 ),
             ),
         )
-        ScheduledBackup(
-            self,
-            "scheduled-backup",
-            metadata=ApiObjectMetadata(name=ref.name, namespace=ref.namespace),
-            spec=ScheduledBackupSpec(
-                schedule=_schedule(ref, cadence),
-                backup_owner_reference=ScheduledBackupSpecBackupOwnerReference.SELF,
-                cluster=ScheduledBackupSpecCluster(name=ref.name),
-                method=ScheduledBackupSpecMethod.PLUGIN,
-                plugin_configuration=ScheduledBackupSpecPluginConfiguration(name=cluster.BARMAN_PLUGIN),
-            ),
-        )
+        if cadence is not None:
+            ScheduledBackup(
+                self,
+                "scheduled-backup",
+                metadata=ApiObjectMetadata(name=ref.name, namespace=ref.namespace),
+                spec=ScheduledBackupSpec(
+                    schedule=_schedule(ref, cadence),
+                    backup_owner_reference=ScheduledBackupSpecBackupOwnerReference.SELF,
+                    cluster=ScheduledBackupSpecCluster(name=ref.name),
+                    method=ScheduledBackupSpecMethod.PLUGIN,
+                    plugin_configuration=ScheduledBackupSpecPluginConfiguration(name=cluster.BARMAN_PLUGIN),
+                ),
+            )

@@ -2,6 +2,7 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   annotations:
+    cnpg.io/skipWalArchiving: enabled
     description: Disposable, Restic-derived view of workstation AI session history.
   name: session-archive-db
   namespace: session-backup
@@ -23,11 +24,6 @@ spec:
   instances: 1
   monitoring:
     enablePodMonitor: true
-  plugins:
-    - isWALArchiver: true
-      name: barman-cloud.cloudnative-pg.io
-      parameters:
-        barmanObjectName: session-archive-db
   postgresql:
     parameters:
       wal_receiver_timeout: 60s
@@ -115,20 +111,6 @@ spec:
     wal:
       compression: gzip
   retentionPolicy: 30d
----
-apiVersion: postgresql.cnpg.io/v1
-kind: ScheduledBackup
-metadata:
-  name: session-archive-db
-  namespace: session-backup
-spec:
-  backupOwnerReference: self
-  cluster:
-    name: session-archive-db
-  method: plugin
-  pluginConfiguration:
-    name: barman-cloud.cloudnative-pg.io
-  schedule: 0 37 3 * * 3
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
