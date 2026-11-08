@@ -422,7 +422,11 @@ if ! cgroup_has_only_pid "$delegated_parent/cgroup.procs" "$$"; then
 	for member_pid in $cgroup_members; do
 		case $member_pid in '' | *[!0-9]*) continue ;; esac
 		member_comm=$("$busybox" cat "/proc/$member_pid/comm" 2>/dev/null) || member_comm=gone
-		emit "MEMBER pid=$member_pid comm=$member_comm"
+		member_status=$("$busybox" awk '/^(State|PPid):/ {printf "%s%s,", $1, $2}' "/proc/$member_pid/status" 2>/dev/null) ||
+			member_status=gone
+		member_cmdline=$("$busybox" tr '\000' ' ' <"/proc/$member_pid/cmdline" 2>/dev/null | "$busybox" head -c 160) ||
+			member_cmdline=gone
+		emit "MEMBER pid=$member_pid comm=$member_comm status=$member_status cmdline=$member_cmdline"
 	done
 	IFS=$old_ifs
 	unexercised "delegate_subgroup_did_not_contain_only_writer"
