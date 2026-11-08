@@ -413,7 +413,16 @@ if has_io "$delegated_parent/cgroup.subtree_control"; then
 fi
 [ -w "$delegated_parent/cgroup.subtree_control" ] || unexercised "delegated_parent_not_writable"
 [ ! -e "$driver" ] && [ ! -e "$payload" ] || unexercised "owned_cgroup_name_already_exists"
-if ! cgroup_has_only_pid "$delegated_parent/cgroup.procs" "$$"; then
+membership_waits=0
+while ! cgroup_has_only_pid "$delegated_parent/cgroup.procs" "$$"; do
+	# BusyBox timeout leaves its watchdog in this cgroup until its 3-second
+	# deadline, even after systemctl has returned. Wait for transient members;
+	# never move or ignore another process to make the fixture pass.
+	if [ "$membership_waits" -lt 5 ]; then
+		membership_waits=$((membership_waits + 1))
+		"$busybox" sleep 1
+		continue
+	fi
 	emit "MEMBERSHIP writer_pid=$$ count=$cgroup_member_count pids=${cgroup_members:-none}"
 	# The snapshot above uses only shell builtins. These later child processes
 	# may themselves enter the cgroup, so inspect only the PIDs in that snapshot.
@@ -430,8 +439,8 @@ if ! cgroup_has_only_pid "$delegated_parent/cgroup.procs" "$$"; then
 	done
 	IFS=$old_ifs
 	unexercised "delegate_subgroup_did_not_contain_only_writer"
-fi
-emit "MEMBERSHIP writer_pid=$$ count=$cgroup_member_count pids=$cgroup_members"
+done
+emit "MEMBERSHIP writer_pid=$$ count=$cgroup_member_count pids=$cgroup_members waits=$membership_waits"
 
 emit "BEGIN pairs=$pairs direct_root_writes=none delegated_parent=systemd_service_child max_active_seconds=$active_budget_seconds"
 [ -z "$("$busybox" cat "$delegated_service/cgroup.procs")" ] || unexercised "service_parent_populated_before_propagation"
