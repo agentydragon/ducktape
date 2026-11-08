@@ -75,10 +75,9 @@ def _database(chart: Chart) -> None:
             "description": (
                 "Events of every Claude Code cloud session, mirrored by claude-session-sync. Once the sessions "
                 "age out of Anthropic's API this may be the only copy."
-            ),
-            "cnpg.io/hibernation": "on",
+            )
         },
-        # The original PVs must be detached and retained before this reduction.
+        # Each PostgreSQL instance uses a single-copy local HDD volume.
         profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-local", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="40Gi",
         resize_in_use_volumes=False,
