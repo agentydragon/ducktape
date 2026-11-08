@@ -13,9 +13,11 @@ tracefs=$trace_root
 trace_instance_owned=no
 pairs=20
 active_budget_seconds=75
-trace_buffer_kib=64
-trace_byte_limit=131072
-trace_line_limit=2000
+# The earlier PID 1 cgroup pilot overran a 64 KiB ring and needed 1 MiB
+# to capture the closed call tree; only a compact witness reaches serial.
+trace_buffer_kib=1024
+trace_byte_limit=2097152
+trace_line_limit=20000
 scratch=$("$busybox" mktemp -d /run/agentplane-delegated-cgroup-stress.XXXXXX)
 record_file=$scratch/record
 service_cgroup=
