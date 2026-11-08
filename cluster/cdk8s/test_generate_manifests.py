@@ -166,6 +166,44 @@ def test_generated_tree_matches_committed_snapshot(generated: Path, checkout: Pa
     assert not failures, "\n\n".join(failures)
 
 
+def test_remote_platform_sessions_disables_prune_before_shared_monitor_handoff(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    remote_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "platform-sessions-remote"
+    )
+    assert remote_kustomization["spec"]["prune"] is False
+    assert remote_kustomization["spec"]["deletionPolicy"] == "Orphan"
+    legacy_kustomization = next(
+        doc
+        for doc in documents
+        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "platform-sessions"
+    )
+    assert legacy_kustomization["spec"]["prune"] is True
+
+    remote_manifest = generated / GENERATED_ROOT / "platform-sessions-remote" / "platform-sessions-remote.k8s.yaml"
+    legacy_manifest = generated / GENERATED_ROOT / "platform-sessions" / "platform-sessions.k8s.yaml"
+    remote_monitor = next(
+        doc
+        for doc in parsed_yaml_documents[remote_manifest]
+        if isinstance(doc, dict)
+        and doc.get("kind") == "PodMonitor"
+        and doc["metadata"].get("name") == "platform-sessions-quest"
+    )
+    legacy_monitor = next(
+        doc
+        for doc in parsed_yaml_documents[legacy_manifest]
+        if isinstance(doc, dict)
+        and doc.get("kind") == "PodMonitor"
+        and doc["metadata"].get("name") == "platform-sessions-quest"
+    )
+    assert remote_monitor["spec"]["selector"]["matchLabels"] == {"app": "platform-sessions-quest"}
+    assert legacy_monitor["spec"]["selector"]["matchLabels"] == {"app": "platform-sessions"}
+
+
 def test_piraeus_storage_is_confined_to_prepared_nodes(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:

@@ -3757,7 +3757,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/platform-sessions-remote
-  prune: true
+  prune: false
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
