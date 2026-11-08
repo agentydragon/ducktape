@@ -7,15 +7,14 @@ using BuildBuddy remote execution. It pins source commit
 target, not the separate KVM pool target. The Job's small client Pod excludes
 node `wyrm2`; the actual test actions run on BuildBuddy RBE.
 
-The Job runs twenty consecutive batches of ten, each with `--jobs=1`,
-`--runs_per_test=10`, `--flaky_test_attempts=1`, `--nocache_test_results` and
-`--keep_going`. Each batch has a unique invocation ID and the BuildBuddy tag
-`vm-shutdown-stalls-200-20261108`. Test failures do not abort the experiment;
-after each batch the driver checks that all ten numbered results are present,
-uncached, and report remote execution. If results cannot be verified, it stops
-instead of silently counting or replaying unknown work. The Job has no automatic
-Pod retry. BuildBuddy may independently retry infrastructure execution attempts;
-inspect those separately from Bazel test attempts.
+The Job uses one `bb remote --script` call to start a single Bazel test
+invocation with `--jobs=1`, `--runs_per_test=200`, `--flaky_test_attempts=1`,
+`--nocache_test_results` and `--keep_going`. Its test invocation carries the
+BuildBuddy tag `vm-shutdown-stalls-200-20261108`. The remote runner has a
+48-hour timeout, and the Kubernetes Job has no automatic Pod retry. The bb
+client's whole-run retries are disabled to avoid replaying work after an
+uncertain disconnect. BuildBuddy may independently retry infrastructure
+execution attempts; inspect those separately from Bazel test attempts.
 
 The Pod reads the existing namespace-local `buildbuddy-api-key` Secret and
 mounts its scripts from ConfigMap `vm-shutdown-stalls-200-20261108`. Neither
@@ -31,11 +30,12 @@ bbapi invocation list --repo https://github.com/agentydragon/ducktape \
   --tag vm-shutdown-stalls-200-20261108 --count 100 --all
 ```
 
-`BATCH_BEGIN` reports the invocation ID before submitting work;
-`BATCH_VERIFIED` records the ten test statuses, and `EXPERIMENT_COMPLETE` is
-printed only after all 200 results are verified. A Kubernetes Job completion
-means the collection loop completed; a failed test remains a test failure
-even when the Job continues. Inspect each failure's own run/shard/attempt and
-guest artifacts before classifying it as the historical shutdown stall.
+`EXPERIMENT_BEGIN` reports the test invocation ID before submitting work.
+`EXPERIMENT_COMMAND_EXIT` records the bb client's outcome. A completed or
+failed Job does not by itself establish that all 200 results were produced;
+check the invocation's individual test results and distinguish test failures
+from interrupted or retried infrastructure actions. Inspect each failure's
+own run/shard/attempt and guest artifacts before classifying it as the
+historical shutdown stall.
 BuildBuddy artifact references have limited retention. The Job itself does not
 automatically preserve raw artifacts outside BuildBuddy.
