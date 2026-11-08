@@ -33,6 +33,16 @@ neighbor.push('later');\n\
 const second = wrap(function () { return neighbor[1]; }), after = 2;\n\
 console.log(first.invoke(), second.invoke(), neighbor.length);\n\
 export { first, second, neighbor };\n";
+const SOURCE_INLINE_FACTORY: &str = "import { wrap } from './peer.js';\n\
+const neighbor = ['initial'];\n\
+const first = wrap(function () { return neighbor[0]; });\n\
+neighbor.push('later');\n\
+const second = wrap(function () { return neighbor[1]; });\n\
+console.log(first(), second(), neighbor.length);\n\
+export { first, second, neighbor };\n";
+const PROVIDER_INLINE_FACTORY: &str = "export function wrap(callback) {\n\
+  return function () { return callback(); };\n\
+}\n";
 const EXTRA_CHUNKS: &[(&str, &str)] = &[("static/peer", PROVIDER)];
 const EFFECTIVE_BUNDLE: &str = "const bundleWrap = callback => {\n\
   const record = { callback };\n\
@@ -173,6 +183,125 @@ fn exact_initializer_call_effect_inputs_break_only_selected_operation_cycles() {
             {"defining_chunk": "static/app", "input_index": 1},
         ]),
         "completed owner coverage must identify both author inputs: {report:#}"
+    );
+}
+
+#[test]
+fn ordered_imported_callback_factory_transfers_a_retained_result() {
+    // This is the plain callback-factory assertion. The older positive case
+    // above uses the separate retained-callback-factory signature, which has
+    // its own ordered return transfer.
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_pure_exports(&["wrap"])
+        .with_callback_factories(&["wrap"])
+        .build()];
+    let no_input = run_rejection_fixture(opts(&purity, 0));
+    assert!(
+        !no_input.cycles().is_empty(),
+        "callback timing and provider purity do not cover the initializer operation"
+    );
+
+    let missing_factory = [ChunkExportPurityBuilder::new("static/peer")
+        .with_pure_exports(&["wrap"])
+        .build()];
+    let without_factory = run_rejection_fixture(opts(&missing_factory, 2));
+    assert!(
+        !without_factory.cycles().is_empty(),
+        "the operation input and purity cannot invent a returned callback carrier"
+    );
+    let without_factory_report = without_factory.effect_translation_validation();
+    assert_eq!(
+        without_factory_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::Value::Null,
+        "no callback-factory result evidence may consume the operation inputs"
+    );
+
+    let no_initializer_purity = vec![
+        logical_module("callbacks/first", &[Member::new("first")]),
+        logical_module("callbacks/second", &[Member::new("second")]),
+    ];
+    let without_initializer_purity = run_rejection_fixture(
+        FixtureOpts::new(SOURCE, no_initializer_purity)
+            .with_extra_chunks(EXTRA_CHUNKS)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_chunk_export_purity(&purity)
+            .with_initializer_call_effect_inputs(
+                "static/app",
+                vec![
+                    input(SOURCE, "first", FIRST),
+                    input(SOURCE, "second", SECOND),
+                ],
+            ),
+    );
+    assert!(
+        !without_initializer_purity.cycles().is_empty(),
+        "the factory carrier and operation input cannot certify a nonthrowing initializer"
+    );
+    let without_purity_report = without_initializer_purity.effect_translation_validation();
+    assert_eq!(
+        without_purity_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::Value::Null,
+        "missing initializer purity must not consume the operation inputs"
+    );
+
+    let first_only = run_rejection_fixture(opts(&purity, 1));
+    assert_eq!(
+        first_only.cycles().len(),
+        1,
+        "only the unselected second wrapper should remain ordered with the neighbor"
+    );
+    let first_report = first_only.effect_translation_validation();
+    assert_eq!(
+        first_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::json!([{"defining_chunk": "static/app", "input_index": 0}]),
+        "the first exact call must earn ordinary root coverage: {first_report:#}"
+    );
+
+    let both = run_fixture(opts(&purity, 2));
+    // `invoke` runs after the neighbor mutation; the callback and its later
+    // heap read must remain reachable through the returned opaque wrapper.
+    assert_preserved_entry_output(&both, "initial later 2\n");
+    let both_report = both.effect_translation_validation();
+    assert_eq!(
+        both_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+        ]),
+        "both exact calls must earn independent operation receipts: {both_report:#}"
+    );
+}
+
+#[test]
+fn ordered_inline_callback_factory_transfers_its_fresh_callable() {
+    let purity = [ChunkExportPurityBuilder::new("static/peer")
+        .with_pure_exports(&["wrap"])
+        .with_inline_callback_factories(&["wrap"])
+        .build()];
+    let mut inputs = vec![
+        input(SOURCE_INLINE_FACTORY, "first", FIRST),
+        input(SOURCE_INLINE_FACTORY, "second", SECOND),
+    ];
+    for entry in &mut inputs {
+        entry.audited_provider_sha256 = digest(PROVIDER_INLINE_FACTORY);
+    }
+    let extra_chunks = [("static/peer", PROVIDER_INLINE_FACTORY)];
+    let fixture = run_fixture(
+        FixtureOpts::new(SOURCE_INLINE_FACTORY, modules())
+            .with_extra_chunks(&extra_chunks)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_chunk_export_purity(&purity)
+            .with_initializer_call_effect_inputs("static/app", inputs),
+    );
+    assert_preserved_entry_output(&fixture, "initial later 2\n");
+    let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+        ]),
+        "the inline-only factory needs separate callback and operation evidence: {report:#}"
     );
 }
 
@@ -339,7 +468,7 @@ fn source_known_original_provider_global_write_rejects_audited_call() {
         let extra_chunks = [("static/peer", provider)];
         let purity = [ChunkExportPurityBuilder::new("static/peer")
             .with_pure_exports(&["wrap"])
-            .with_retained_callback_factory("wrap", 1, &[0])
+            .with_callback_factories(&["wrap"])
             .build()];
         let mut inputs = vec![
             input(SOURCE, "first", FIRST),

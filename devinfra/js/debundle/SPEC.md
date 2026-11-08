@@ -1435,6 +1435,15 @@ selected author input under
 normal owner coverage consumes it. The legacy graph's
 `heap_frontier.own_at_init.opaque` and lexical
 `ordered_root_initializer_uncovered` fields may remain conservative.
+For the exact selected direct import, existing `callback_factory_exports` or
+`inline_callback_factory_exports` evidence can supply the ordered caller's
+opaque normal returned carrier when its already evaluated operands contain
+one fresh ordinary function and its callee has one matching target. Separate
+`initializer_purity: pure` excludes provider throws; operand and callee throws,
+unknown or mixed targets, spreads, and member receivers retain their ordinary
+fallback. The callback remains reachable through the carrier on later use.
+This transfer adds no operation-domain, lexical, or completion assertion by
+itself; the normal root still needs every independent premise above.
 
 ## Static-import and host-loader queries
 
