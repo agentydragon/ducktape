@@ -31,12 +31,58 @@
                   "typeInfo": {
                     "frame": "float64"
                   },
-                  "labels": {}
+                  "labels": {
+                    "storage_pool": "ssd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "ssd"
+                  }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [5723447836672]]
+              "values": [[1738411200000], [1031809316864]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 120000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 120000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "storage_pool": "hdd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "hdd"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [4691638519808]]
             }
           }
         ]
@@ -73,12 +119,58 @@
                   "typeInfo": {
                     "frame": "float64"
                   },
-                  "labels": {}
+                  "labels": {
+                    "storage_pool": "ssd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "ssd"
+                  }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [9469706633216]]
+              "values": [[1738411200000], [1498192805888]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 120000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 120000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "storage_pool": "hdd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "hdd"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [7971513827328]]
             }
           }
         ]
@@ -115,12 +207,58 @@
                   "typeInfo": {
                     "frame": "float64"
                   },
-                  "labels": {}
+                  "labels": {
+                    "storage_pool": "ssd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "ssd"
+                  }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [3746258796544]]
+              "values": [[1738411200000], [466383489024]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 120000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 120000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "storage_pool": "hdd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "hdd"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [3279875307520]]
             }
           }
         ]
@@ -157,12 +295,58 @@
                   "typeInfo": {
                     "frame": "float64"
                   },
-                  "labels": {}
+                  "labels": {
+                    "storage_pool": "ssd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "ssd"
+                  }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [10690844688384]]
+              "values": [[1738411200000], [2026821910528]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 120000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 120000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "storage_pool": "hdd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "hdd"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [8664022777856]]
             }
           }
         ]
@@ -199,12 +383,58 @@
                   "typeInfo": {
                     "frame": "float64"
                   },
-                  "labels": {}
+                  "labels": {
+                    "storage_pool": "ssd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "ssd"
+                  }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [-1221138055168]]
+              "values": [[1738411200000], [-528629104640]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 120000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 120000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "storage_pool": "hdd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "hdd"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [-692508950528]]
             }
           }
         ]
@@ -241,12 +471,58 @@
                   "typeInfo": {
                     "frame": "float64"
                   },
-                  "labels": {}
+                  "labels": {
+                    "storage_pool": "ssd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "ssd"
+                  }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [1.1289520470343537]]
+              "values": [[1738411200000], [1.35284450877247]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "numeric-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "vector",
+                  "calculatedMinStep": 120000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 120000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "storage_pool": "hdd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "hdd"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1.0868729535604562]]
             }
           }
         ]
@@ -4194,578 +4470,46 @@
           {
             "schema": {
               "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector",
-                  "calculatedMinStep": 60000
-                }
-              },
               "fields": [
                 {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
+                  "name": "copy",
+                  "type": "string"
+                },
+                {
+                  "name": "storage_pool",
+                  "type": "string"
                 },
                 {
                   "name": "Value",
                   "type": "number",
                   "typeInfo": {
                     "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-1",
-                    "location": "location-1",
-                    "namespace": "namespace-1",
-                    "node": "node-e",
-                    "persistentvolume": "persistentvolume-1",
-                    "persistentvolumeclaim": "persistentvolumeclai-1",
-                    "phase": "Bound",
-                    "resource": "resource-1",
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-1"
                   }
                 }
               ]
             },
             "data": {
-              "values": [[1738411200000], [1592602787840]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-2",
-                    "location": "location-2",
-                    "namespace": "namespace-1",
-                    "node": "node-d",
-                    "persistentvolume": "persistentvolume-2",
-                    "persistentvolumeclaim": "persistentvolumeclai-2",
-                    "phase": "Bound",
-                    "resource": "resource-2",
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-2"
-                  }
-                }
+              "values": [
+                [
+                  "copy-1",
+                  "copy-2",
+                  "copy-3",
+                  "copy-4",
+                  "copy-5",
+                  "copy-6",
+                  "copy-7",
+                  "copy-8",
+                  "copy-9",
+                  "copy-10",
+                  "copy-11",
+                  "copy-12"
+                ],
+                ["hdd", "hdd", "hdd", "hdd", "hdd", "ssd", "ssd", "ssd", "ssd", "ssd", "ssd", "ssd"],
+                [
+                  1592602787840, 1187651256320, 991007342592, 446344724480, 325253857280, 256170295296, 256089735168,
+                  101868281856, 92066652160, 69358501888, 31715028992, 31242469376
+                ]
               ]
-            },
-            "data": {
-              "values": [[1738411200000], [1187651256320]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-3",
-                    "location": "location-3",
-                    "namespace": "namespace-1",
-                    "node": "node-c",
-                    "persistentvolume": "persistentvolume-3",
-                    "persistentvolumeclaim": "persistentvolumeclai-3",
-                    "phase": "Bound",
-                    "resource": "resource-3",
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-3"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [991007342592]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-4",
-                    "location": "location-2",
-                    "namespace": "namespace-2",
-                    "node": "node-d",
-                    "persistentvolume": "persistentvolume-4",
-                    "persistentvolumeclaim": "persistentvolumeclai-4",
-                    "phase": "Bound",
-                    "resource": "resource-4",
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-4"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [446344724480]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-5",
-                    "location": "location-3",
-                    "namespace": "namespace-2",
-                    "node": "node-c",
-                    "persistentvolume": "persistentvolume-5",
-                    "persistentvolumeclaim": "persistentvolumeclai-5",
-                    "phase": "Bound",
-                    "resource": "resource-5",
-                    "storage_pool": "hdd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-5"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [325253857280]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-6",
-                    "location": "location-4",
-                    "namespace": "namespace-1",
-                    "node": "node-b",
-                    "persistentvolume": "persistentvolume-6",
-                    "persistentvolumeclaim": "persistentvolumeclai-6",
-                    "phase": "Bound",
-                    "resource": "resource-6",
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-6"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [256170295296]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-7",
-                    "location": "location-5",
-                    "namespace": "namespace-1",
-                    "node": "node-f",
-                    "persistentvolume": "persistentvolume-7",
-                    "persistentvolumeclaim": "persistentvolumeclai-7",
-                    "phase": "Bound",
-                    "resource": "resource-7",
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-7"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [256089735168]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-8",
-                    "location": "location-4",
-                    "namespace": "namespace-3",
-                    "node": "node-b",
-                    "persistentvolume": "persistentvolume-8",
-                    "persistentvolumeclaim": "persistentvolumeclai-8",
-                    "phase": "Bound",
-                    "resource": "resource-8",
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-8"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [101868281856]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-9",
-                    "location": "location-6",
-                    "namespace": "namespace-1",
-                    "node": "node-g",
-                    "persistentvolume": "persistentvolume-9",
-                    "persistentvolumeclaim": "persistentvolumeclai-9",
-                    "phase": "Bound",
-                    "resource": "resource-9",
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-9"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [92066652160]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-10",
-                    "location": "location-5",
-                    "namespace": "namespace-3",
-                    "node": "node-f",
-                    "persistentvolume": "persistentvolume-10",
-                    "persistentvolumeclaim": "persistentvolumeclai-10",
-                    "phase": "Bound",
-                    "resource": "resource-10",
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-10"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [69358501888]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-11",
-                    "location": "location-4",
-                    "namespace": "namespace-3",
-                    "node": "node-b",
-                    "persistentvolume": "persistentvolume-11",
-                    "persistentvolumeclaim": "persistentvolumeclai-11",
-                    "phase": "Bound",
-                    "resource": "resource-11",
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-11"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [31715028992]]
-            }
-          },
-          {
-            "schema": {
-              "refId": "A",
-              "meta": {
-                "type": "numeric-multi",
-                "typeVersion": [0, 1],
-                "custom": {
-                  "resultType": "vector"
-                }
-              },
-              "fields": [
-                {
-                  "name": "Time",
-                  "type": "time",
-                  "typeInfo": {
-                    "frame": "time.Time"
-                  },
-                  "config": {
-                    "interval": 60000
-                  }
-                },
-                {
-                  "name": "Value",
-                  "type": "number",
-                  "typeInfo": {
-                    "frame": "float64"
-                  },
-                  "labels": {
-                    "copy": "copy-12",
-                    "location": "location-6",
-                    "namespace": "namespace-3",
-                    "node": "node-g",
-                    "persistentvolume": "persistentvolume-11",
-                    "persistentvolumeclaim": "persistentvolumeclai-11",
-                    "phase": "Bound",
-                    "resource": "resource-11",
-                    "storage_pool": "ssd"
-                  },
-                  "config": {
-                    "displayNameFromDS": "copy-12"
-                  }
-                }
-              ]
-            },
-            "data": {
-              "values": [[1738411200000], [31242469376]]
             }
           }
         ]
@@ -7251,6 +6995,7 @@
   },
   "variables": {
     "node": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f", "node-g"],
-    "pool_node": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f", "node-g"]
+    "pool_node": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f", "node-g"],
+    "storage_pool": ["hdd", "ssd"]
   }
 }
