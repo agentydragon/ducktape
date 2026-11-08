@@ -10,6 +10,23 @@ const later = 42;
 console.log(unique.size, later);
 "#;
 
+const DYNAMIC_GLOBAL_ALIAS_SOURCE: &str = r#"const values = ["a", "b"];
+const alias = values;
+globalThis[`saved`] = () => later;
+const unique = new Set(alias);
+const later = 42;
+console.log(unique.size, later);
+"#;
+
+const SHADOWED_GLOBAL_ALIAS_SOURCE: &str = r#"const values = ["a", "b"];
+const alias = values;
+const globalThis = alias;
+globalThis[`saved`] = () => later;
+const unique = new Set(alias);
+const later = 42;
+console.log(unique.size, later);
+"#;
+
 const INLINE_SOURCE: &str = r#"globalThis.saved = () => later;
 const unique = new Set(["a", "b"]);
 const later = 42;
@@ -186,6 +203,48 @@ fn unescaped_const_primitive_array_alias_does_not_fabricate_set_reentry() {
         ),
         "2 42\n",
     );
+}
+
+#[test]
+fn dynamic_global_object_write_does_not_poison_a_private_array() {
+    assert_split_runs(
+        DYNAMIC_GLOBAL_ALIAS_SOURCE,
+        logical_module_with_anon(
+            "values/collection",
+            &[
+                Member::new("values"),
+                Member::new("alias"),
+                Member::new("unique"),
+            ],
+            &["globalThis[`saved`] = () => later;"],
+        ),
+        "2 42\n",
+    );
+}
+
+#[test]
+fn shadowed_global_object_name_keeps_its_array_mutation_barrier() {
+    let collection = logical_module_with_anon(
+        "values/collection",
+        &[
+            Member::new("values"),
+            Member::new("alias"),
+            Member::new("globalThis"),
+            Member::new("unique"),
+        ],
+        &["globalThis[`saved`] = () => later;"],
+    );
+    let rejected = run_rejection_fixture(split_opts(SHADOWED_GLOBAL_ALIAS_SOURCE, collection));
+    assert!(
+        rejected.stderr.contains("materialize_logical_modules"),
+        "expected a materialization rejection, got: {}",
+        rejected.stderr,
+    );
+
+    let fixture = run_fixture(
+        FixtureOpts::new(SHADOWED_GLOBAL_ALIAS_SOURCE, vec![]).with_chunk_id("static/provider"),
+    );
+    assert_preserved_entry_output(&fixture, "2 42\n");
 }
 
 #[test]

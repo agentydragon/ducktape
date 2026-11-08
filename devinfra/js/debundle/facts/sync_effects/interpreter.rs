@@ -8015,6 +8015,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().mark_unknown_enumerability(object);
     }
 
+    fn top_write_receiver_values(&mut self, binding: &Id, env: &Context) -> Values {
+        // Keep the current owner snapshot; the binding resolver also recognizes
+        // unshadowed global aliases when neither snapshot contains this name.
+        if let Some(values) = env
+            .get(binding)
+            .or_else(|| self.state.prefix_values.get(binding))
+            .filter(|values| !values.is_empty())
+        {
+            return values.clone();
+        }
+        self.evaluate_binding(binding, env)
+    }
+
     fn unsettle_all_enumerability_candidates(&mut self) {
         let mut objects: BTreeSet<_> = self
             .state
@@ -14548,21 +14561,13 @@ impl Executor<'_, '_> {
         // membership even when the pooled property Values are unchanged.
         for (receiver, _) in &index.top_property_writes[fact.ordinal.0] {
             if let Some(binding) = receiver {
-                let values = top_env
-                    .get(binding)
-                    .or_else(|| self.state.prefix_values.get(binding))
-                    .cloned()
-                    .unwrap_or_default();
+                let values = self.top_write_receiver_values(binding, &top_env);
                 self.invalidate_enumerability_values(&values);
             }
         }
         for receiver in &index.top_dynamic_property_receivers[fact.ordinal.0] {
             if let ValueExpr::Binding(binding) = receiver {
-                let values = top_env
-                    .get(binding)
-                    .or_else(|| self.state.prefix_values.get(binding))
-                    .cloned()
-                    .unwrap_or_default();
+                let values = self.top_write_receiver_values(binding, &top_env);
                 self.invalidate_dynamic_enumerability_values(&values);
             } else {
                 self.unsettle_all_enumerability_candidates();
