@@ -75,7 +75,8 @@ def _database(chart: Chart) -> None:
             "description": (
                 "Events of every Claude Code cloud session, mirrored by claude-session-sync. Once the sessions "
                 "age out of Anthropic's API this may be the only copy."
-            )
+            ),
+            "cnpg.io/hibernation": "on",
         },
         # Keep existing PVCs while two single-copy local HDD replicas join the cluster.
         profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-local", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
