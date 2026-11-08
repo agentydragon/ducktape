@@ -129,6 +129,19 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
     await view.capture(target=view.page.locator("#app"))
 
 
+async def test_system_color_preference_changes(visual: VisualHarness) -> None:
+    async with visual.open(query={"scene": "hot"}, color_scheme="light") as view:
+        page = view.page
+        await expect(page.locator("html")).to_have_attribute("data-mantine-color-scheme", "light")
+        card = page.locator(".aiquota-card").first
+        await expect(card).to_be_visible()
+        light_background = await card.evaluate("element => getComputedStyle(element).backgroundColor")
+        await page.emulate_media(color_scheme="dark")
+        await expect(page.locator("html")).to_have_attribute("data-mantine-color-scheme", "dark")
+        dark_background = await card.evaluate("element => getComputedStyle(element).backgroundColor")
+        assert light_background != dark_background
+
+
 async def test_live_subscription(visual: VisualHarness) -> None:
     async with visual.open(
         query={"scene": "hot", "live": "1"},
