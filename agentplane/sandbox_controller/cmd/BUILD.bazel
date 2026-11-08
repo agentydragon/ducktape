@@ -14,7 +14,7 @@ go_library(
         "//agentplane/sandbox_controller",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
-        "@com_github_spf13_viper//:viper",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//discovery",

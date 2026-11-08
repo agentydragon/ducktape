@@ -5,6 +5,16 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 **incarnation** is one Pod, or one run of the VM. Its `SandboxTemplate` sets its kind: `pod` or
 `vm`, exactly one.
 
+## Deployment settings
+
+The controller reads one required, strict YAML settings file at the path named by
+`AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`. Unknown keys, missing required values or invalid
+configuration fail startup; metrics and health bind addresses keep their existing defaults when omitted.
+The controller does not fall back to per-setting environment variables. The file is mounted read-only
+from the cdk8s-authored ConfigMap and is loaded at process startup. Reloader restarts the Deployment
+when the ConfigMap changes. The file contains static settings and the path to the projected Runner
+Gateway token; token contents remain in the rotating read-only projected volume.
+
 ## State PVC
 
 - Every Sandbox gets one PVC, `<sandbox>-state`, created from its `SandboxTemplate`'s claim when

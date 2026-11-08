@@ -3,17 +3,10 @@ Sandboxes' state PVC, ServiceAccount and PolicyBinding and, while running, its P
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import (
-    ContainerResources,
-    Cpu,
-    CpuResources,
-    EnvValue,
-    MemoryResources,
-    Role,
-    RoleBinding,
-    RolePolicyRule,
-)
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Role, RoleBinding, RolePolicyRule
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
@@ -22,13 +15,15 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.settings_contract import checked_value, env_name
+from cluster.cdk8s.settings_file import SettingsFile
 
 _GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
+_SETTINGS_PATH = "/etc/agentplane-sandbox-controller/config.yaml"
 
 NAME = "sandbox-controller"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -74,26 +69,27 @@ class SandboxController(Construct):
         self.gateway = gateway
         namespace = env.namespace
         endpoint = metrics(namespace)
-        scalars = {
-            field: checked_value(Settings, field, value)
-            for field, value in {
-                "namespace": namespace,
-                "metrics_bind_address": f":{endpoint.port.number}",
-                "health_probe_bind_address": f":{_HEALTH_PORT}",
-                "runner_gateway_target": gateway_control_target,
-                "runner_gateway_token_file": f"{_GATEWAY_TOKEN_DIR}/token",
-                "runner_certificate_issuer": runner_certificate_issuer,
-            }.items()
-        }
+        settings = Settings(
+            namespace=namespace,
+            metrics_bind_address=f":{endpoint.port.number}",
+            health_probe_bind_address=f":{_HEALTH_PORT}",
+            runner_gateway_target=gateway_control_target,
+            runner_gateway_token_file=Path(_GATEWAY_TOKEN_DIR) / "token",
+            runner_certificate_issuer=runner_certificate_issuer,
+        )
+        settings_file = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=namespace),
+            content=yaml_config(settings),
+            path=_SETTINGS_PATH,
+        )
         workload = add_service_workload(
             self,
             env,
             serves=[endpoint],
             container="sandbox-controller",
             image=f"{_IMAGE}:unset",
-            env_variables={
-                env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()
-            },
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
@@ -106,6 +102,7 @@ class SandboxController(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
+        settings_file.mount_into(workload.container, env=Settings.config_file_env)
         workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": gateway_audience})
         role_name = NAME.removeprefix("agentplane-")
         Role(

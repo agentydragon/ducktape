@@ -1,62 +1,116 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
-const settingPrefix = "AGENTPLANE_SANDBOX_CONTROLLER_"
+const validSettings = `namespace: agentplane
+metrics_bind_address: ":9090"
+health_probe_bind_address: ":9091"
+runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
+runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
+runner_certificate_issuer: agentplane-runner-ca
+`
 
-// required is the environment of a deployment that sets every setting without a default.
-var required = map[string]string{
-	"NAMESPACE":                 "agentplane",
-	"RUNNER_GATEWAY_TARGET":     "{sandbox}-control.{namespace}.svc:8080",
-	"RUNNER_GATEWAY_TOKEN_FILE": "/var/run/token",
-	"RUNNER_CERTIFICATE_ISSUER": "agentplane-runner-ca",
-}
-
-func setEnvironment(t *testing.T, environment map[string]string) {
+func writeSettings(t *testing.T, content string) string {
 	t.Helper()
-	for name, value := range environment {
-		t.Setenv(settingPrefix+name, value)
+	path := filepath.Join(t.TempDir(), "settings.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
+	return path
 }
 
-func TestEverySettingComesFromTheEnvironment(t *testing.T) {
-	setEnvironment(t, required)
-	setEnvironment(t, map[string]string{"METRICS_BIND_ADDRESS": ":9090", "HEALTH_PROBE_BIND_ADDRESS": ":9091"})
+func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
+	t.Setenv(configFileEnv, writeSettings(t, validSettings))
+	for _, name := range []string{
+		"NAMESPACE",
+		"METRICS_BIND_ADDRESS",
+		"HEALTH_PROBE_BIND_ADDRESS",
+		"RUNNER_GATEWAY_TARGET",
+		"RUNNER_GATEWAY_TOKEN_FILE",
+		"RUNNER_CERTIFICATE_ISSUER",
+	} {
+		t.Setenv("AGENTPLANE_SANDBOX_CONTROLLER_"+name, "from-environment")
+	}
+
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := config{
 		Namespace: "agentplane", MetricsBindAddress: ":9090", HealthProbeBindAddress: ":9091",
-		RunnerGatewayTarget: "{sandbox}-control.{namespace}.svc:8080", RunnerGatewayTokenFile: "/var/run/token",
+		RunnerGatewayTarget:     "{sandbox}-control.{namespace}.svc:8080",
+		RunnerGatewayTokenFile:  "/var/run/secrets/agentplane-runner-gateway/token",
 		RunnerCertificateIssuer: "agentplane-runner-ca",
 	}
 	if c != want {
-		t.Fatalf("settings were not read: %+v", c)
+		t.Fatalf("unexpected settings: %+v", c)
 	}
 }
 
-func TestBindAddressesDefaultWhenUnset(t *testing.T) {
-	setEnvironment(t, required)
+func TestLoadConfigRequiresConfigFilePath(t *testing.T) {
+	t.Setenv(configFileEnv, " \t")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("started without a settings file path")
+	}
+}
+
+func TestLoadConfigRejectsMissingFile(t *testing.T) {
+	t.Setenv(configFileEnv, filepath.Join(t.TempDir(), "missing.yaml"))
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("started without the required settings file")
+	}
+}
+
+func TestBindAddressesDefaultWhenOmittedFromYAML(t *testing.T) {
+	settings := strings.Replace(validSettings, "metrics_bind_address: \":9090\"\n", "", 1)
+	settings = strings.Replace(settings, "health_probe_bind_address: \":9091\"\n", "", 1)
+	t.Setenv(configFileEnv, writeSettings(t, settings))
+
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.MetricsBindAddress != ":8080" || c.HealthProbeBindAddress != ":8081" {
-		t.Fatalf("defaults were lost: %+v", c)
+		t.Fatalf("bind address defaults were lost: %+v", c)
 	}
 }
 
-func TestEachRequiredSettingIsRequired(t *testing.T) {
-	for omitted := range required {
-		t.Run(omitted, func(t *testing.T) {
-			for name, value := range required {
-				if name != omitted {
-					t.Setenv(settingPrefix+name, value)
-				}
-			}
+func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
+	missing := map[string]string{
+		"namespace":                 "namespace: agentplane\n",
+		"runner_gateway_target":     "runner_gateway_target: \"{sandbox}-control.{namespace}.svc:8080\"\n",
+		"runner_gateway_token_file": "runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token\n",
+		"runner_certificate_issuer": "runner_certificate_issuer: agentplane-runner-ca\n",
+	}
+	cases := map[string]string{
+		"unknown key":        validSettings + "unknown_setting: value\n",
+		"malformed YAML":     "namespace: [unclosed\n",
+		"multiple documents": validSettings + "---\n{}\n",
+		"empty metrics bind address": strings.Replace(
+			validSettings, "metrics_bind_address: \":9090\"\n", "metrics_bind_address: \"\"\n", 1,
+		),
+		"empty health probe bind address": strings.Replace(
+			validSettings, "health_probe_bind_address: \":9091\"\n", "health_probe_bind_address: \"\"\n", 1,
+		),
+	}
+	for name, line := range missing {
+		content := strings.Replace(validSettings, line, "", 1)
+		if content == validSettings {
+			t.Fatalf("test fixture no longer contains %s", name)
+		}
+		cases["missing "+name] = content
+	}
+
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(configFileEnv, writeSettings(t, content))
 			if _, err := loadConfig(); err == nil {
-				t.Fatalf("started without %s", omitted)
+				t.Fatal("started with invalid settings")
 			}
 		})
 	}
