@@ -68,6 +68,7 @@ console.log(names[0], names[1], names[2], names[3], names[4], names[5], names[6]
             argument_input_refs: BTreeSet::new(),
             argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: BTreeSet::new(),
+            imported_primitive_array_spread_input_refs: BTreeSet::new(),
         }
     );
 }
