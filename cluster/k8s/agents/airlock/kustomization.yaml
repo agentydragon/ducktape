@@ -39,6 +39,8 @@ configMapGenerator:
                 - tag
                 - workout
               refresh_margin_seconds: 3600
+              extra_auth_params: {}
+              use_pkce: false
             - name: google
               display_name: Google
               refresh_secret:
@@ -63,6 +65,7 @@ configMapGenerator:
               extra_auth_params:
                 access_type: offline
                 prompt: consent
+              use_pkce: false
             - name: google-write
               display_name: Google (write access)
               refresh_secret:
@@ -81,6 +84,7 @@ configMapGenerator:
               extra_auth_params:
                 access_type: offline
                 prompt: consent
+              use_pkce: false
             - name: bsc
               display_name: Blue Shield of California (FHIR sandbox)
               redirect_uri: https://airlock.allegedly.works/oauth/callback/bsc
@@ -97,5 +101,6 @@ configMapGenerator:
                 - PatientEOB
                 - PatientRead
               refresh_margin_seconds: 300
+              extra_auth_params: {}
               use_pkce: true
               aud: https://api-dev.blueshieldca.com/bsc/fhir-sandbox/fhir-server/api/v4/cloud/

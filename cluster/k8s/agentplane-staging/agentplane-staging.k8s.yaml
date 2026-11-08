@@ -3031,7 +3031,8 @@ data:
             "eager_input_streaming": true,
             "compaction": {
               "max_tokens": 8192,
-              "auto_compact_tokens": 750000
+              "auto_compact_tokens": 750000,
+              "keep_recent_turns": 0
             }
           },
           "exec_encoding": "json",
@@ -3064,7 +3065,8 @@ data:
             "eager_input_streaming": true,
             "compaction": {
               "max_tokens": 8192,
-              "auto_compact_tokens": 750000
+              "auto_compact_tokens": 750000,
+              "keep_recent_turns": 0
             }
           },
           "exec_encoding": "json",
@@ -3097,7 +3099,8 @@ data:
             "eager_input_streaming": true,
             "compaction": {
               "max_tokens": 8192,
-              "auto_compact_tokens": 750000
+              "auto_compact_tokens": 750000,
+              "keep_recent_turns": 0
             }
           },
           "exec_encoding": "json",
@@ -3130,7 +3133,8 @@ data:
             "eager_input_streaming": true,
             "compaction": {
               "max_tokens": 8192,
-              "auto_compact_tokens": 750000
+              "auto_compact_tokens": 750000,
+              "keep_recent_turns": 0
             }
           },
           "exec_encoding": "json",
@@ -3155,12 +3159,14 @@ data:
       "history_token_file": "/var/run/secrets/central-sampler/history",
       "gateway_target": "{sandbox}-control.{namespace}.svc:8080",
       "gateway_token_file": "/var/run/secrets/central-sampler/gateway",
+      "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
       "turn_timeout_seconds": 3600,
       "rpc_timeout_seconds": 30,
       "executor_initialize_timeout_seconds": 30,
-      "lease_seconds": 60,
-      "auto_compact_tokens": null
+      "shutdown_drain_seconds": 40,
+      "shutdown_budget_seconds": 55,
+      "lease_seconds": 60
     }
 immutable: false
 ---
@@ -6332,6 +6338,7 @@ data:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
       audience: agentplane-staging-actions
       jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
+      token_profile: authentik
     policy_namespace: agentplane-staging
     caller_service_account_namespaces:
       - agentplane-staging
@@ -6352,18 +6359,23 @@ data:
         server_id: github
         server_url: https://api.githubcopilot.com/mcp/
         client_id: configured-by-secret
+        use_shared_cimd: false
         client_secret_file: /etc/agentplane-github/client_secret
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+        scopes: []
       kubernetes_admin:
         server_id: kubernetes_admin
         server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
         client_id: kubectl-passthrough-mcp
+        use_shared_cimd: false
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+        scopes: []
       grocy_sf:
         server_id: grocy_sf
         server_url: https://grocy-mcp-sf.allegedly.works/mcp
         use_shared_cimd: true
         redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+        scopes: []
     session_dispatcher:
       target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/actions/dispatcher
@@ -6394,6 +6406,8 @@ data:
             auth: oauth
             headers:
               X-MCP-Toolsets: default,actions
+        available: true
+        actions: {}
       kubernetes_admin:
         title: Kubernetes admin
         description: The Kubernetes API with the linked operator's own permissions. Use it only for what your own Kubernetes identity cannot do; each call waits for the operator's approval.
@@ -6405,6 +6419,8 @@ data:
             url: http://kubectl-passthrough-mcp.kubectl-passthrough-mcp.svc:8080/mcp
             server_id: kubernetes_admin
             auth: oauth
+        available: true
+        actions: {}
       grocy_sf:
         title: Grocy SF MCP
         description: Grocy SF household MCP tools; every Action remains subject to operator approval.
@@ -6416,6 +6432,8 @@ data:
             url: https://grocy-mcp-sf.allegedly.works/mcp
             server_id: grocy_sf
             auth: oauth
+        available: true
+        actions: {}
       sandbox:
         title: Sandbox
         description: Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A sandbox reaches what its caller's egress bindings allow and is admitted back to this service as that same caller, so it confers no authority the caller did not hold.
@@ -6426,6 +6444,10 @@ data:
           templates:
             sandbox: "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl (configured as the caller's ServiceAccount) and python3 (install packages into a `python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
             sandbox-build: "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory that survives the container being killed for running out of memory, though not the box's Pod."
+          max_timeout_seconds: 1800
+          max_output_bytes: 200000
+        available: true
+        actions: {}
         direct_tools:
           - create
           - dispose
@@ -6444,6 +6466,8 @@ data:
             url: http://ssh-mcp.ssh-mcp.svc:8080/mcp
             auth: static_bearer
             bearer_file: /run/secrets/ssh-mcp/bearer-token
+        available: true
+        actions: {}
       home_assistant:
         title: Home Assistant MCP
         description: Home Assistant tools; every Action remains subject to operator approval.
@@ -6455,6 +6479,8 @@ data:
             url: http://ha-mcp.ha-mcp.svc:8765/mcp
             auth: static_bearer
             bearer_file: /run/secrets/ha-mcp/bearer-token
+        available: true
+        actions: {}
       tana:
         title: Tana MCP
         description: Tana read/write tools; every Action remains subject to operator approval.
@@ -6466,6 +6492,8 @@ data:
             url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
             auth: static_bearer
             bearer_file: /run/secrets/tana-mcp/bearer-token
+        available: true
+        actions: {}
       gmail:
         title: Gmail
         description: Gmail read/write tools; every Action remains subject to operator approval.
@@ -6477,6 +6505,8 @@ data:
             url: http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp
             auth: static_bearer
             bearer_file: /run/secrets/google-mcp/bearer-token
+        available: true
+        actions: {}
       google_calendar:
         title: Google Calendar
         description: Google Calendar read/write tools; every Action remains subject to operator approval.
@@ -6488,6 +6518,8 @@ data:
             url: http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp
             auth: static_bearer
             bearer_file: /run/secrets/google-mcp/bearer-token
+        available: true
+        actions: {}
       orchestration_v1:
         title: Orchestration
         description: "Launch Session Sandboxes and drive their Sessions: create them, send input, interrupt, change model or effort, and read their state. A launch waits for the operator and grants its caller what it names on the new Sandbox."
@@ -6851,6 +6883,8 @@ data:
                   fi
                   # Uses the repository's default_install_hook_types (pre-commit and prepare-commit-msg).
                   pre-commit install
+        available: true
+        actions: {}
         direct_tools:
           - change_model
           - change_reasoning_effort
@@ -6868,6 +6902,8 @@ data:
         executor:
           kind: session_delegation
           description: Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.
+        available: true
+        actions: {}
         direct_tools:
           - get
           - list
@@ -6878,6 +6914,8 @@ data:
         executor:
           kind: session_delegation
           description: Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.
+        available: true
+        actions: {}
         direct_tools:
           - cancel_input
           - create
@@ -7583,6 +7621,7 @@ data:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
       audience: agentplane-staging-actions
       jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
+      token_profile: authentik
     caller_service_account_namespaces:
       - agentplane-staging
     mintable_accounts:
@@ -8031,14 +8070,18 @@ data:
     actions:
       url: http://actions.agentplane-staging.svc.cluster.local:8080/
       token_file: /var/run/secrets/notifications/actions
+      request_timeout_s: 5
     runner_gateway:
       control_target: "{sandbox}-control.{namespace}.svc:8080"
+      request_timeout_s: 5
       token_file: /var/run/secrets/notifications/gateway
     history_service:
       target: history-service.agentplane-staging.svc.cluster.local:8080
+      request_timeout_s: 20
       token_file: /var/run/secrets/notifications/history
     session_dispatcher:
       target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+      request_timeout_s: 15
       token_file: /var/run/secrets/notifications/dispatcher
     github:
       app_id: 5188971
