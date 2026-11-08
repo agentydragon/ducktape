@@ -65,13 +65,15 @@ async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestO
                     assert not query_errors, query_errors
                     record_stage("checking tier selection on mixed-pool node")
                     for tier, expected_capacity in (("hdd", "2 TiB"), ("ssd", "1 TiB")):
-                        await page.goto(
+                        record_stage(f"checking {tier} on mixed-pool node")
+                        tier_page = await context.new_page()
+                        await tier_page.goto(
                             url.replace("var-node=All", f"var-node=storage-mixed&var-storage_tier={tier}"),
                             wait_until="domcontentloaded",
                         )
-                        await expect(capacity.get_by_text(expected_capacity, exact=True)).to_be_visible()
-                    await asyncio.gather(*checks)
-                    assert not query_errors, query_errors
+                        tier_capacity = tier_page.get_by_role("region", name="Physical pool capacity")
+                        await expect(tier_capacity.get_by_text(expected_capacity, exact=True)).to_be_visible()
+                        await tier_page.close()
                     record_stage("captures complete")
 
 
