@@ -55,8 +55,8 @@ the proxy and every desktop's `AW_DEST_TOKEN`; the read token is also reflected 
 `haku-egress-proxy` for the iron proxy (below). The write route currently allows GET
 because the importer reads the destination to dedup, so a leaked write token can read
 history too; it becomes write-only once the importer syncs incrementally
-([revival-plan.md](revival-plan.md)). The image tag is pinned in `deployment.yaml` and
-updated through the normal image-automation configuration.
+([revival-plan.md](revival-plan.md)). The server image tag is pinned in
+`cluster/k8s/activitywatch/image-pins/kustomization.yaml` and updated by image automation.
 
 **Device transport** (`nix/home/services/activitywatch.nix`): each synced desktop runs a
 local `aw-server` under systemd, `awatcher` for window/AFK capture, and `aw-watcher-tmux`;
