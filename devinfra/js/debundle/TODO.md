@@ -233,6 +233,52 @@ to one exact source/spec pair and held to the interactive budget in
   Retain an explicit diagnostic discriminator through graph/report and gate
   explanations while preserving the current ordering and projection rules.
 
+- **F4 — Explain callback-fallback read provenance.** A pool-limit report names
+  the pool size and promoted read without a path from an actual callback seed
+  through the static source-owner closure. Add a bounded predecessor witness
+  with callable creation/initialization availability and the first cache
+  contribution's source owner. A later initializer may consume an earlier
+  cached read; distinguish those locations. Preserve actual TDZ observations
+  and conservative effects; an unavailable future function body is a diagnosis
+  hypothesis until a neutral failing fixture establishes it.
+- **F5 — Reuse canonical selectors for exact operation inputs.** Authoring
+  exact initializer operation contracts currently duplicates full function
+  selectors from module YAML into configuration. Ordinary
+  `source_matches[].bindings[]` claims can pin a binding through a use site
+  (<e2e/use_site_pinning_test.rs>), but `initializer_call_effect_inputs`
+  routes through `select_one_declared_binding`, which requires the target to
+  be declared in the pattern (<frontend_elaboration/elaboration.rs>).
+  Reference a canonical
+  resolved claim, then validate the selected raw binding's actual initializer
+  and operation predicate; caller context is not initializer evidence. Cover
+  direct binding identifiers, structural members and source-match captures,
+  keeping readable/template names distinct from the raw binding. Preserve
+  exactly-one selection, importer/provider/effective-bundle digests, direct
+  import and fresh-argument checks, and source-known contradiction rejection.
+  Replace the owned input format atomically; add no legacy-format fallback.
+
+- **F6 — Expose a read-only bulk resolved-claim inventory.** `coverage`
+  resolves every non-empty module claim set in one joint call, but emits only
+  module-level binding/atomic-group summaries (<peel/plan.rs>).
+  `modules.json` describes materialized selected claims. Add a source-only,
+  provenance-checked query such as
+  `debundle claims inventory` that reports every authored claim in the scoped
+  module trees, whether or not a later extraction selects it. Keep the
+  physical YAML path separate from the normalized owner, and typed claim
+  identity plus readable/template names separate from the actual raw binding.
+  Include declaration source-unit IDs and parsed initializer form/span where
+  available. Report resolution and ownership-selection statuses separately so
+  resolved-but-unselected claims remain visible; do not filter them away. Do
+  not decode caches, scan source text manually, or add a legacy
+  mapping fallback.
+  Close when one query emits a deterministic row for every in-scope typed
+  claim from one joint selector solve per chunk, retains ordinary
+  graph/source/spec provenance checks, and remains available when the later
+  placement gate rejects. Use neutral controls for use-site captures, direct
+  pins, structural members, imports, anonymous claims, repeated declarations
+  and path-case aliases; accepted rows must reconcile with `modules.json`,
+  while unresolved statuses never infer identity by spelling.
+
 ### Pipeline performance and architecture cleanup
 
 Proposer-gate, `debundle run` (report opt-out, chunk-level incremental
