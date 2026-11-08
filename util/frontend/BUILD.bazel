@@ -208,6 +208,7 @@ ts_library(
         "//agentplane/app/frontend/threads:__pkg__",
         "//finance/augur/frontend:__pkg__",
         "//finance/plaid/spend/ui:__pkg__",
+        "//haku/console/frontend:__pkg__",
         "//props/frontend/src/components:__pkg__",
         "//props/frontend/src/pages:__pkg__",
         "//x/ai_session_archive/frontend:__pkg__",

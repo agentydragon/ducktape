@@ -59,14 +59,14 @@ export async function fetchOperator(): Promise<OperatorResponse> {
   return data;
 }
 
-export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {
-  const { data, error } = await api.GET("/api/deployment");
+export async function fetchDeploymentInfo(signal?: AbortSignal): Promise<DeploymentInfo> {
+  const { data, error } = await api.GET("/api/deployment", { signal });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load deployment information"));
   return data;
 }
 
-export async function listAgents(): Promise<AgentListResponse> {
-  const { data, error } = await api.GET("/api/agent-enrollment/agents");
+export async function listAgents(signal?: AbortSignal): Promise<AgentListResponse> {
+  const { data, error } = await api.GET("/api/agent-enrollment/agents", { signal });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load Agents"));
   return data;
 }
