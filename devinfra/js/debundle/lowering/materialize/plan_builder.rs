@@ -200,24 +200,42 @@ impl ChunkPlanBuilder {
             );
         }
 
-        let choices = selected
+        let choices: BTreeMap<spec::ModulePath, _> = selected
             .iter()
-            .map(|entry| (&entry.module, &entry.bindings))
-            .collect::<BTreeMap<_, _>>();
+            .map(|entry| {
+                (
+                    entry.module.clone(),
+                    (&entry.bindings, &entry.anonymous_statements),
+                )
+            })
+            .collect();
         let mut remapped_indices = vec![None; self.module_plans.len()];
+        let mut retained_anonymous_statements =
+            vec![BTreeSet::<StatementId>::new(); self.module_plans.len()];
         let mut matched_selected = BTreeSet::new();
         let mut next_index = 0;
         for (old_index, plan) in self.module_plans.iter().enumerate() {
             let path = spec::ModulePath::parse(&plan.target_path, "")
                 .with_context(|| format!("module plan {:?} has an invalid target path", plan.id))?;
-            if choices.contains_key(&path) {
-                ensure!(
-                    matched_selected.insert(path.clone()),
-                    "multiple module plans have selected target path {path}"
-                );
-                remapped_indices[old_index] = Some(next_index);
-                next_index += 1;
-            }
+            let Some((_, anonymous_selector_indices)) = choices.get(&path).copied() else {
+                continue;
+            };
+            ensure!(
+                matched_selected.insert(path.clone()),
+                "multiple module plans have selected target path {path}"
+            );
+            remapped_indices[old_index] = Some(next_index);
+            next_index += 1;
+            retained_anonymous_statements[old_index] = plan
+                .anonymous_statement_selector_indices
+                .iter()
+                .filter_map(|(selector_index, statement)| {
+                    anonymous_selector_indices
+                        .as_ref()
+                        .is_none_or(|indices| indices.contains(selector_index))
+                        .then_some(*statement)
+                })
+                .collect();
         }
 
         let missing_selected = selected
@@ -252,16 +270,32 @@ impl ChunkPlanBuilder {
             let Some(new_index) = remap_index(old_index)? else {
                 continue;
             };
-            let path = spec::ModulePath::parse(&self.module_plans[old_index].target_path, "")?;
-            let keep = match choices[&path] {
+            let plan = &self.module_plans[old_index];
+            let source_name = binding.0.as_ref();
+            // Anonymous-statement declarations are derived from their whole
+            // statement claim. Drop them here and let the caller's post-filter
+            // adoption pass restore only declarations whose statements remain.
+            // Explicit named claims keep their independent ownership.
+            let anonymous_derived = matches!(kind, BindingKind::Owned { .. })
+                && plan
+                    .anonymous_binding_statement_origins
+                    .contains_key(source_name)
+                && !plan.binding_claim_origins.contains_key(source_name);
+            if anonymous_derived {
+                continue;
+            }
+
+            let path = spec::ModulePath::parse(&plan.target_path, "")?;
+            let (binding_names, _) = choices
+                .get(&path)
+                .copied()
+                .expect("every retained plan has a subset choice");
+            let keep = match binding_names {
                 None => true,
                 Some(names) => match kind {
                     BindingKind::Owned { .. } => {
-                        let source_name = binding.0.as_ref();
-                        self.module_plans[old_index]
-                            .binding_claim_origins
-                            .contains_key(source_name)
-                            && self.module_plans[old_index]
+                        plan.binding_claim_origins.contains_key(source_name)
+                            && plan
                                 .bindings
                                 .get(source_name)
                                 .is_some_and(|name| names.contains(name))
@@ -280,7 +314,9 @@ impl ChunkPlanBuilder {
 
         let mut whole_statement_assignment = BTreeMap::new();
         for (statement, old_index) in &self.whole_statement_assignment {
-            if let Some(new_index) = remap_index(*old_index)? {
+            if let Some(new_index) = remap_index(*old_index)?
+                && retained_anonymous_statements[*old_index].contains(statement)
+            {
                 whole_statement_assignment.insert(*statement, new_index);
             }
         }
@@ -292,6 +328,7 @@ impl ChunkPlanBuilder {
             .filter_map(|(old_index, mut plan)| {
                 remapped_indices[old_index].map(|_| {
                     let retained = &retained_claim_names[old_index];
+                    let retained_statements = &retained_anonymous_statements[old_index];
                     plan.bindings.retain(|name, _| retained.contains(name));
                     plan.spec_named_bindings
                         .retain(|name| retained.contains(name));
@@ -299,6 +336,17 @@ impl ChunkPlanBuilder {
                         .retain(|name, _| retained.contains(name));
                     plan.binding_claim_origins
                         .retain(|name, _| retained.contains(name));
+                    plan.anonymous_statements
+                        .retain(|statement| retained_statements.contains(statement));
+                    plan.anonymous_statement_comments
+                        .retain(|statement, _| retained_statements.contains(statement));
+                    plan.anonymous_statement_selector_indices
+                        .retain(|_, statement| retained_statements.contains(statement));
+                    plan.anonymous_binding_statement_origins
+                        .retain(|_, statements| {
+                            statements.retain(|statement| retained_statements.contains(statement));
+                            !statements.is_empty()
+                        });
                     plan
                 })
             })
@@ -492,6 +540,8 @@ impl ChunkPlanBuilder {
                 .map(|member| member.binding.clone())
                 .collect(),
             anonymous_statements: Vec::new(),
+            anonymous_statement_selector_indices: BTreeMap::new(),
+            anonymous_binding_statement_origins: BTreeMap::new(),
             anonymous_statement_comments: BTreeMap::new(),
             comment: request.comment.clone(),
             binding_comments,
@@ -532,6 +582,13 @@ impl ChunkPlanBuilder {
                 "logical_module {request_id}: anonymous statement resolved before its module plan existed"
             )
         })?;
+        ensure!(
+            plan.anonymous_statement_selector_indices
+                .insert(claim.selector_index, claim.body_index)
+                .is_none(),
+            "logical_module {request_id}: anonymous selector index {} resolved more than once",
+            claim.selector_index
+        );
         plan.anonymous_statements.push(claim.body_index);
         plan.anonymous_statements.sort_unstable();
         plan.anonymous_statements.dedup();
@@ -596,6 +653,7 @@ impl ChunkPlanBuilder {
                         index,
                         &request.id,
                         &ResolvedAnonymousStatement {
+                            selector_index: statement_index,
                             body_index: statement,
                             comment: request.anonymous_statements[statement_index]
                                 .comment
@@ -944,20 +1002,42 @@ impl ChunkPlanBuilder {
             };
             let module = ModuleId(plan_index);
             for (name, id) in &decl.bindings {
-                if let Some(existing) = owned_destination(&self.bindings_catalogue, id) {
-                    if Some(existing) != self.residual_plan_index {
+                let existing = owned_destination(&self.bindings_catalogue, id);
+                let already_adopted_here = self.module_plans[plan_index]
+                    .anonymous_binding_statement_origins
+                    .contains_key(name);
+                if let Some(existing) = existing {
+                    if Some(existing) == self.residual_plan_index {
+                        if let Some(residual_index) = self.residual_plan_index {
+                            self.module_plans[residual_index].bindings.remove(name);
+                        }
+                    } else if existing == plan_index && already_adopted_here {
+                        self.module_plans[plan_index]
+                            .anonymous_binding_statement_origins
+                            .entry(name.clone())
+                            .or_default()
+                            .insert(decl.statement);
+                        continue;
+                    } else {
                         continue;
                     }
-                    if let Some(residual_index) = self.residual_plan_index {
-                        self.module_plans[residual_index].bindings.remove(name);
-                    }
                 }
+                let has_explicit_claim = self.module_plans[plan_index]
+                    .binding_claim_origins
+                    .contains_key(name);
                 self.module_plans[plan_index]
                     .bindings
                     .entry(name.clone())
                     .or_insert_with(|| name.clone());
                 self.bindings_catalogue
                     .insert(id.clone(), BindingKind::Owned { module });
+                if !has_explicit_claim {
+                    self.module_plans[plan_index]
+                        .anonymous_binding_statement_origins
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(decl.statement);
+                }
             }
         }
     }
@@ -1045,6 +1125,8 @@ impl ChunkPlanBuilder {
                     bindings: HashMap::new(),
                     spec_named_bindings: BTreeSet::new(),
                     anonymous_statements: Vec::new(),
+                    anonymous_statement_selector_indices: BTreeMap::new(),
+                    anonymous_binding_statement_origins: BTreeMap::new(),
                     anonymous_statement_comments: BTreeMap::new(),
                     comment: None,
                     binding_comments: BTreeMap::new(),
@@ -1781,6 +1863,8 @@ impl ChunkPlanBuilder {
                 bindings,
                 spec_named_bindings: BTreeSet::new(),
                 anonymous_statements,
+                anonymous_statement_selector_indices: BTreeMap::new(),
+                anonymous_binding_statement_origins: BTreeMap::new(),
                 anonymous_statement_comments: BTreeMap::new(),
                 comment: None,
                 binding_comments: BTreeMap::new(),

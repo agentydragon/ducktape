@@ -38,6 +38,14 @@ pub(super) struct ModulePlan {
     /// materializer routes each such statement into this module's
     /// body in source order, alongside the named members.
     pub(super) anonymous_statements: Vec<StatementId>,
+    /// Authored anonymous selector index → resolved source-chunk statement.
+    /// This provenance supports selector-indexed ownership subsets.
+    pub(super) anonymous_statement_selector_indices: BTreeMap<usize, StatementId>,
+    /// Bindings adopted only because these anonymous statements declare them,
+    /// keyed by binding name with every contributing declaration statement.
+    /// Ownership filtering drops these derived claims, then the retained
+    /// anonymous statements adopt their declarations again.
+    pub(super) anonymous_binding_statement_origins: BTreeMap<String, BTreeSet<StatementId>>,
     /// Source-chunk body index → anonymous-statement comment text.
     /// Emitted as a `// ...` block immediately above the matched
     /// statement in the generated module body.

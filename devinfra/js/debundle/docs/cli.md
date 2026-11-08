@@ -616,10 +616,23 @@ selected module, using the module's authored readable member/export names:
 { "modules": [{ "chunk": "app", "module": "features/view", "bindings": ["parseView"] }] }
 ```
 
-Omitting `bindings` retains all claims in that module. An empty list retains
-its anonymous-statement claims only, including any bindings those whole
-statements declare. Unknown or repeated names fail. This option selects
-ownership claims; the ordinary source-unit placement and gate still decide
+Omitting `bindings` retains all named claims in that module; an empty list
+retains none. Add an independent `anonymous_statements` include list to select
+zero-based indices in the module's authored `anonymous_statements` selector
+list:
+
+```json
+{ "modules": [{ "chunk": "app", "module": "features/view", "bindings": [], "anonymous_statements": [1] }] }
+```
+
+Omitting `anonymous_statements` retains every anonymous claim; `[]` retains
+none. Thus `bindings: []` with no anonymous field retains only the module's
+anonymous claims, while `anonymous_statements: []` with no `bindings` field
+retains all named claims and no anonymous claims. A retained whole statement
+also retains its declarations; a filtered-out statement and declarations
+adopted only from it return to ordinary unassigned routing. Unknown or repeated
+names, and out-of-range or repeated selector indices fail. The option selects
+ownership claims; ordinary source-unit placement and the gate still decide
 whether a partial selection is realizable.
 
 Build allowlists from the authored member names: the `readable_name` in
@@ -660,8 +673,8 @@ fail even when their modules are omitted.
 
 Normal gates, translation validation, reconstruction and emission run on the
 selected assignment. `graph_summary.json` and `modules.json` carry its
-`ownership_subset` module paths and optional binding lists, including empty
-selections. This is partial output;
+`ownership_subset` module paths and optional binding and anonymous-selector
+index lists, preserving omitted fields versus empty selections. This is partial output;
 it does not validate the full canonical assignment. Full graph export remains
 unsupported with this option. An omitted explicit catchall claim can be recreated
 as ordinary residual ownership without its authored renames. Use the same
