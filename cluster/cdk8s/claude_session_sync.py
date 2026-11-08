@@ -78,11 +78,11 @@ def _database(chart: Chart) -> None:
             ),
             "cnpg.io/hibernation": "on",
         },
-        # Keep existing PVCs while two single-copy local HDD replicas join the cluster.
+        # The original PVs must be detached and retained before this reduction.
         profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-local", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="40Gi",
         resize_in_use_volumes=False,
-        instances=5,
+        instances=2,
         initdb=cluster.same_owner_initdb("claude_sessions"),
         wal_archive=True,
         # Most of this Cluster's WAL is full-page images of the append-only events table.
