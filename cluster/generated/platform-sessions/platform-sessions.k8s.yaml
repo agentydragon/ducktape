@@ -59,31 +59,6 @@ spec:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
 ---
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: platform-sessions
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/platform-sessions
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: platform-sessions
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^main-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: platform-sessions
-  policy:
-    alphabetical:
-      order: asc
----
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
