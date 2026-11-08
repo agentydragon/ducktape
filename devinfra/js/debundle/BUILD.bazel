@@ -325,7 +325,6 @@ rust_library(
         "artifacts/paths.rs",
         "artifacts/reports.rs",
         "artifacts/runtime_resources.rs",
-        "artifacts/script_output.rs",
         "artifacts/source_program.rs",
     ],
     crate_root = "artifacts/artifact.rs",
@@ -379,7 +378,10 @@ rust_library(
 
 rust_library(
     name = "write_tree",
-    srcs = ["artifacts/write_tree.rs"],
+    srcs = [
+        "artifacts/script_output.rs",
+        "artifacts/write_tree.rs",
+    ],
     crate_root = "artifacts/write_tree.rs",
     edition = "2024",
     deps = [
@@ -389,6 +391,8 @@ rust_library(
         ":reconstruction",
         ":source_identity",
         "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_common",
     ],
 )
 

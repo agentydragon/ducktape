@@ -1,20 +1,40 @@
 use source_identity::ChunkId;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use artifact::EmissionFiles;
 use artifact::metrics::DecompositionMetrics;
 use artifact::reports::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunksReport,
     PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering, write_json,
 };
-use artifact::script_output::materialize_artifact_scripts;
 use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::{DebundleOutputLayout, GATE_REJECTED_MARKER};
-use reconstruction::{EmittablePlan, RejectedPlan};
+use reconstruction::{EmittablePlan, RejectedPlan, ValidatedPlan};
+
+mod script_output;
+
+pub use script_output::MaterializedScripts;
+use script_output::materialize_artifact_scripts;
+
+/// Render only the immutable files owned by the accepted program. Rejected
+/// files go through `write_js_tree`, which writes their inspection marker first.
+pub fn materialize_accepted_scripts(
+    plan: &ValidatedPlan,
+    app_root: &Path,
+    report_tree_root: &Path,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+) -> Result<MaterializedScripts> {
+    materialize_artifact_scripts(
+        plan.files(),
+        app_root,
+        report_tree_root,
+        decomposition_by_chunk,
+        plan.excluded_chunk_ids(),
+    )
+}
 
 pub struct WriteTreeInput<'a> {
     pub plan: EmittablePlan<'a>,
@@ -59,8 +79,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
 
     write_common_emission_reports(
         &layout,
-        input.plan.files(),
-        input.plan.excluded_chunk_ids(),
+        input.plan,
         input.chunk_records,
         input.decomposition_by_chunk,
     )?;
@@ -130,12 +149,15 @@ fn render_gate_rejected_marker(rejected: &RejectedPlan, artifacts: RejectedArtif
 /// output.
 pub fn write_common_emission_reports(
     layout: &DebundleOutputLayout,
-    files: &EmissionFiles,
-    excluded_chunk_ids: &BTreeSet<ChunkId>,
+    plan: EmittablePlan<'_>,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<()> {
-    let queue = compute_identifier_rename_queue(files, decomposition_by_chunk, excluded_chunk_ids)?;
+    let queue = compute_identifier_rename_queue(
+        plan.files(),
+        decomposition_by_chunk,
+        plan.excluded_chunk_ids(),
+    )?;
     write_json(layout.rename_queue_report(), &queue)?;
     write_json(
         layout.chunks_report(),

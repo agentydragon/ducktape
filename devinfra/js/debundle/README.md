@@ -136,7 +136,7 @@ the shared resolver and gate rather than their own acceptance rules.
 | Assemble assignments and validate realizability                                 | `assignment_assembly.rs`, `gate.rs`, `realizability/`               |
 | Lower accepted assignments to entry and logical-module files                    | `lowering/`                                                         |
 | Plan/apply vendor substitution and finalize emitted files                       | `vendor/`, `artifacts/emission_files.rs`                            |
-| Render and write finalized JavaScript files and output reports                  | `artifacts/script_output.rs`                                        |
+| Render finalized scripts through accepted plans and write output reports        | `artifacts/write_tree.rs`, `artifacts/script_output.rs`             |
 | Accept concrete syntax, replacements, and browser loading before writing        | `reconstruction.rs`, `artifacts/browser_harness_plan.rs`            |
 | Propose moves or safe module refinements; inspect or edit spec                  | `peel/`, `cli/`                                                     |
 
