@@ -577,6 +577,37 @@ source shape proves fresh dense elements and a closed interval, and the graph
 co-locates producer and consumer statements so the emitted module keeps it.
 No family-wide `Array` integrity follows; the external A11 obligation still
 applies.
+
+`chunk_analysis_options.<consumer>.imported_primitive_array_spread_inputs` is
+a distinct exact-site premise for a top-level simple array initializer whose
+elements are direct imported identifier spreads. Each provider operand is
+source-selected as a dense array of primitive literals, and both parser-input
+digests plus the canonical import/export endpoints bind those facts to the
+consumer and configured provider chunk alias. The provider's ordinary static
+initialization closure must be complete, acyclic and initialized before the
+consumer.
+
+The author separately asserts that, through the selected spread, each producer
+keeps its identity, dense own-data primitive contents, ordinary Array
+prototype chain and binding, and has no own iterator or accessors. The shared
+whole-program iterator and `%ArrayIteratorPrototype%.next` census remains
+required. Known provider rebinds/indexed writes reject as unsupported because
+the existing provider write facts do not establish their ordering through the
+selected consumer spread. A direct eager consumer rebind before the selected
+spread and protocol writes contradict the input. Lazy consumer rebinds and
+indexed/member writes reject as unsupported when their execution ordering
+through the spread is not established; a cyclic provider is unsupported. The
+analysis does not trace mutations through independent aliases imported by
+other chunks, so the author must include those paths in the lifetime audit;
+opaque mutation routes, including routes through an exposed export, are also
+covered only by this exact lifetime promise. The transfer copies the finite primitive
+slot kinds into a fresh consumer allocation and carries no provider heap
+identity. It leaves provider evaluation and ownership, import dependencies,
+normal callback effects, other heap/global/host effects and later array uses
+under their existing analyses. The saved and rendered evidence keeps the
+author's lifetime fields separate from source-derived selectors, endpoints
+and primitive slot kinds.
+
 An exact validated `symbol` site with zero arguments or one direct string
 literal has a separate pure-initializer consequence: the original native
 `Symbol` creates a fresh symbol without coercion callbacks or a throw. An exact

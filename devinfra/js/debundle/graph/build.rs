@@ -411,6 +411,9 @@ pub fn build_dependency_graph_with(
                     native_prefix_observations: calls.native_prefix_observations.clone(),
                     native_integrity_uses: calls.native_integrity_uses.clone(),
                     native_operation_input_uses: calls.native_operation_input_uses.clone(),
+                    imported_primitive_array_spread_input_uses: calls
+                        .imported_primitive_array_spread_input_uses
+                        .clone(),
                     inference_uses: calls
                         .inference_uses
                         .iter()

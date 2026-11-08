@@ -15,6 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use analysis::AnalysisAssumptions;
+pub use analysis::analysis_inputs::{
+    AnalysisImportedPrimitiveArrayOperand, AnalysisImportedPrimitiveArraySpreadInput,
+};
 use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
 use analysis::{GraphOptions, LocalEffectPolicy};
 use anyhow::{Context, Result, ensure};
@@ -53,6 +56,12 @@ pub struct AnalysisSourceSites {
     pub initializer_call_effect_inputs: BTreeMap<String, Vec<SourceDeclaration>>,
     pub argument_inputs: BTreeMap<String, Vec<SourceDeclaration>>,
     pub no_accessor_install_callables: BTreeMap<String, Vec<SourceDeclaration>>,
+    /// Exact consumer/provider declarations and captures selected by the
+    /// canonical source selector. Digests for every named chunk are in
+    /// `source_sha256`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub imported_primitive_array_spread_inputs:
+        BTreeMap<String, Vec<AnalysisImportedPrimitiveArraySpreadInput>>,
 }
 
 /// Author inputs consumed while facts are analyzed for one chunk.
@@ -92,6 +101,8 @@ pub struct ProjectedChunkOptions {
     pub analysis: ChunkAnalysisInputs,
     pub graph: ChunkGraphInputs,
     pub native_operation_inputs: Vec<NativeOperationInputContract>,
+    pub imported_primitive_array_spread_inputs:
+        Vec<spec::ImportedPrimitiveArraySpreadInputContract>,
 }
 
 /// Split the mixed YAML authoring type into the inputs read by each stage.
@@ -109,6 +120,7 @@ pub fn project_chunk_options(
                 value_inputs,
                 native_operation_inputs,
                 initializer_call_effect_inputs,
+                imported_primitive_array_spread_inputs,
                 commuting_statements: _,
                 native_call_identity_inputs,
                 argument_inputs,
@@ -146,6 +158,7 @@ pub fn project_chunk_options(
                         commuting_statements,
                     },
                     native_operation_inputs,
+                    imported_primitive_array_spread_inputs,
                 },
             ))
         })
@@ -356,6 +369,9 @@ impl AnalysisSpec {
                 assumptions.captured_value_inputs.is_empty()
                     && assumptions.native_operation_inputs.is_empty()
                     && assumptions.initializer_call_effect_inputs.is_empty()
+                    && assumptions
+                        .imported_primitive_array_spread_inputs
+                        .is_empty()
                     && assumptions.argument_inputs.is_empty()
             }),
             "declared assumptions carry source-resolved inputs"

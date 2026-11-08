@@ -422,6 +422,13 @@ pub struct InitializerCallEffectInputRef {
     pub input_index: usize,
 }
 
+/// Stable reference to one exact imported-array lifetime assertion.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ImportedPrimitiveArraySpreadInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
 /// Author premise admitted only after source, provider, import, and call-site
 /// checks. The source binding and call span are session-local; the reference
 /// remains stable in saved effect proofs and reports.
@@ -454,6 +461,55 @@ pub struct EffectiveInitializerCallReplacement {
     pub bundle_sha256: String,
 }
 
+/// Provider identity resolved from one direct named import and one selected
+/// exported producer declaration. All names are source-derived evidence.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ImportedPrimitiveArrayOperandEvidence {
+    pub selector_local: String,
+    pub consumer_binding: String,
+    pub provider_module: String,
+    pub provider_export: String,
+    pub provider_local: String,
+    pub source_specifier: String,
+    pub provider_source_match: spec::SourceMatchClaim,
+    pub provider_source_sha256: String,
+    pub primitive_slots: Vec<analysis_model::PrimKinds>,
+    pub provider_source_location: Option<SourceLocation>,
+}
+
+/// Exact-site imported-array lifetime assertion, kept separate from inferred
+/// provider literal and import/export resolution facts.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ImportedPrimitiveArraySpreadInputEvidence {
+    pub reference: ImportedPrimitiveArraySpreadInputRef,
+    pub spec_location: String,
+    pub consumer_source_match: spec::SourceMatchClaim,
+    pub consumer_source_sha256: String,
+    pub selected_consumer_binding: String,
+    pub consumer_source_location: Option<SourceLocation>,
+    pub operands: Vec<ImportedPrimitiveArrayOperandEvidence>,
+    pub lifetime: spec::ImportedPrimitiveArrayLifetimeContract,
+    pub note: Option<String>,
+}
+
+/// One operand whose exact native array spread consumed the input above.
+/// `evidence.lifetime` is the author's assertion; selected import endpoints,
+/// producer literals and primitive slot kinds are independently source-derived.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ImportedPrimitiveArraySpreadInputUse {
+    pub evidence: ImportedPrimitiveArraySpreadInputEvidence,
+    pub operand_index: usize,
+}
+
+/// Resolved author premise passed to exactly one consumer chunk. Spans are
+/// parser-session-local; the evidence record above is stable and serializable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedImportedPrimitiveArraySpreadInput {
+    pub evidence: ImportedPrimitiveArraySpreadInputEvidence,
+    pub consumer_initializer_span: Span,
+    pub spread_token_spans: Vec<Span>,
+}
+
 /// Additional captured-value assertions required by an inferred proof.
 /// Structural source evidence stays on the proof's existing source identity.
 /// Empty dependencies add no captured-value premise; the analysis's baseline
@@ -466,6 +522,8 @@ pub struct ProofDependencies {
     pub native_operation_inputs: BTreeSet<NativeOperationInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub initializer_call_effect_inputs: BTreeSet<InitializerCallEffectInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub imported_primitive_array_spread_inputs: BTreeSet<ImportedPrimitiveArraySpreadInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub descriptor_copy_authors: BTreeSet<DescriptorCopyAuthorRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -572,6 +630,7 @@ impl ProofDependencies {
         self.value_inputs.is_empty()
             && self.native_operation_inputs.is_empty()
             && self.initializer_call_effect_inputs.is_empty()
+            && self.imported_primitive_array_spread_inputs.is_empty()
             && self.descriptor_copy_authors.is_empty()
             && self.argument_inputs.is_empty()
             && self.host_behavior.is_empty()
@@ -588,6 +647,8 @@ impl ProofDependencies {
             .extend(other.native_operation_inputs.iter().cloned());
         self.initializer_call_effect_inputs
             .extend(other.initializer_call_effect_inputs.iter().cloned());
+        self.imported_primitive_array_spread_inputs
+            .extend(other.imported_primitive_array_spread_inputs.iter().cloned());
         self.descriptor_copy_authors
             .extend(other.descriptor_copy_authors.iter().cloned());
         self.argument_inputs
@@ -696,6 +757,29 @@ pub enum NativeOperationSelectorProvenance {
 pub struct SourceDeclaration {
     pub binding: String,
     pub body_index: usize,
+}
+
+/// Source-selected imported primitive-array spread input normalized for the
+/// analysis crate. Projection owns authored syntax; analysis consumes only
+/// these source-bound selectors and contracts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisImportedPrimitiveArrayOperand {
+    pub selector_local: String,
+    pub consumer_binding: String,
+    pub provider_chunk: String,
+    pub provider_source_match: SourceMatchClaim,
+    pub provider_declaration: SourceDeclaration,
+    pub audited_provider_source_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisImportedPrimitiveArraySpreadInput {
+    pub consumer_declaration: SourceDeclaration,
+    pub source_match: SourceMatchClaim,
+    pub audited_source_sha256: String,
+    pub operands: Vec<AnalysisImportedPrimitiveArrayOperand>,
+    pub lifetime: spec::ImportedPrimitiveArrayLifetimeContract,
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -906,6 +990,8 @@ pub struct AnalysisAssumptions {
     /// Exact source-selected author call-effect premises. These cover the
     /// provider invocation's nonlexical effects only, never its operands.
     pub initializer_call_effect_inputs: Vec<ResolvedInitializerCallEffectInput>,
+    /// Source-selected author premises for exact imported array spreads.
+    pub imported_primitive_array_spread_inputs: Vec<ResolvedImportedPrimitiveArraySpreadInput>,
     /// Source-selected author premises for one exact local helper parameter.
     pub argument_inputs: Vec<ResolvedArgumentInput>,
     /// Host operations the author audited as unable to run application code

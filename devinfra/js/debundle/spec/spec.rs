@@ -513,18 +513,28 @@ impl TransformSpec {
     /// Provider ASTs needed to resolve source-bound premises, independently of
     /// which chunks are selected for materialization.
     pub fn source_premise_chunk_ids(&self) -> BTreeSet<String> {
-        self.chunk_analysis_options
+        let mut chunks: BTreeSet<String> = self
+            .chunk_analysis_options
             .iter()
             .filter(|(_, options)| {
                 !options.value_inputs.is_empty()
                     || !options.native_operation_inputs.is_empty()
                     || !options.initializer_call_effect_inputs.is_empty()
+                    || !options.imported_primitive_array_spread_inputs.is_empty()
                     || !options.native_call_identity_inputs.is_empty()
                     || !options.argument_inputs.is_empty()
                     || !options.no_accessor_install_callables.is_empty()
             })
             .map(|(chunk, _)| chunk.clone())
-            .collect()
+            .collect();
+        chunks.extend(
+            self.chunk_analysis_options
+                .values()
+                .flat_map(|options| &options.imported_primitive_array_spread_inputs)
+                .flat_map(|input| &input.operands)
+                .map(|operand| operand.provider_chunk.clone()),
+        );
+        chunks
     }
 
     /// Chunk ids selected by the `materialize_logical_modules` stage.
@@ -745,6 +755,12 @@ pub struct DependencyGraphOptions {
     /// of call timing, result shape, purity, and callback retention contracts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub initializer_call_effect_inputs: Vec<InitializerCallEffectInputContract>,
+    /// Exact-site author premise for spreading directly imported arrays whose
+    /// exported identity and contents otherwise remain mutable. The selected
+    /// provider declarations and import edges are resolved from source; this
+    /// input only supplies the explicit lifetime audit for the exact spread.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_primitive_array_spread_inputs: Vec<ImportedPrimitiveArraySpreadInputContract>,
     /// Author-certified pairs of this chunk's source units whose synchronous
     /// initialization effects are order-independent. Each endpoint selects
     /// exactly one source unit; the pair is resolved and validated when the
@@ -910,6 +926,47 @@ pub struct InitializerCallEffectInputContract {
     /// original provider parser input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_replacement: Option<InitializerCallEffectiveReplacement>,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Author-audited identity and own-content lifetime promise for one selected
+/// imported array spread. Every field is required and must be `true`; keeping
+/// the promises explicit makes the capability reviewable in saved specs.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ImportedPrimitiveArrayLifetimeContract {
+    pub identity_unchanged_through_spread: bool,
+    pub dense_own_data_primitive_contents_unchanged_through_spread: bool,
+    pub ordinary_array_prototype_chain_unchanged_through_spread: bool,
+    pub no_own_iterator_or_accessors_through_spread: bool,
+    pub no_rebinding_through_spread: bool,
+}
+
+/// One source-selected imported array operand. `selector_local` is a stable
+/// placeholder from the consumer's source-match pattern, not a source local
+/// name. The provider declaration selector resolves the actual export cell.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ImportedPrimitiveArrayOperandContract {
+    pub selector_local: String,
+    /// Configured chunk alias from the artifact/spec, not a physical filename.
+    pub provider_chunk: String,
+    pub provider_source_match: SourceMatchClaim,
+    pub audited_provider_source_sha256: String,
+}
+
+/// Source-bound, exact consumer spread input. Its selectors, digest and import
+/// edges locate source facts; only `lifetime` is the author assertion.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ImportedPrimitiveArraySpreadInputContract {
+    pub source_match: SourceMatchClaim,
+    pub operands: Vec<ImportedPrimitiveArrayOperandContract>,
+    pub audited_source_sha256: String,
+    pub lifetime: ImportedPrimitiveArrayLifetimeContract,
+    /// YAML-only author rationale. It does not strengthen the premise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -924,7 +981,6 @@ pub struct InitializerCallEffectiveReplacement {
     pub upstream_export: Option<String>,
     pub audited_bundle_sha256: String,
 }
-
 /// Author premise that two source units of one chunk commute: neither
 /// observes the other's synchronous initialization effect. Each endpoint
 /// selects exactly one source unit of the option's chunk.

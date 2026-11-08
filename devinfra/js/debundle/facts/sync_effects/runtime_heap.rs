@@ -34,7 +34,9 @@ pub(super) enum NativeIterableYields {
 
 #[derive(Debug, Clone)]
 pub(super) struct NativeIterableReceipt {
-    pub(super) source: u32,
+    /// `None` for the scoped imported-array transfer, which intentionally
+    /// carries yields but no provider heap identity.
+    pub(super) source: Option<u32>,
     pub(super) yields: NativeIterableYields,
     /// Body reads are retained even for a private input whose read cannot
     /// observe a caller's earlier heap. The external projection is below.
@@ -47,7 +49,7 @@ impl NativeIterableReceipt {
     pub(super) fn external_heap_contents(&self) -> crate::facts::HeapContentCells {
         let mut external = self.heap_contents.clone();
         if let NativeIterableInput::ImmediateArrayLiteral(origin) = self.input
-            && self.source == origin
+            && self.source == Some(origin)
         {
             // The operation validated the actual source against this canonical
             // immediate literal. This invocation consumes its newly built

@@ -496,6 +496,16 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "imported_primitive_array_spread_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_yaml",
+        "@crates//:sha2",
+    ],
+)
+
+debundle_e2e_test(
     name = "imported_callback_timing_test",
     deps = [
         ":graph_support",

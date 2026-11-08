@@ -6,8 +6,9 @@
 
 use super::*;
 use crate::analysis_inputs::{
-    InferredSetConstruction, InferredSetOperation, NativeInputKind, NativeOperationInputEvidence,
-    ProofDependencies, ResolvedNativeOperationInput, StableSetIterableUse,
+    AnalysisInputs, ImportedPrimitiveArrayOperandEvidence, InferredSetConstruction,
+    InferredSetOperation, NativeInputKind, NativeOperationInputEvidence, ProofDependencies,
+    ResolvedImportedPrimitiveArraySpreadInput, ResolvedNativeOperationInput, StableSetIterableUse,
 };
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
@@ -256,15 +257,14 @@ pub(crate) struct SetIterableProof {
     protected_intervals: Vec<Vec<Id>>,
     spread_sources: BTreeMap<u32, u32>,
     array_spreads: StableArraySpreadShapes,
+    imported_array_spreads: BTreeMap<u32, (ResolvedImportedPrimitiveArraySpreadInput, usize)>,
 }
 
 impl SetIterableProof {
     pub(super) fn new(
         facts: Arc<SemanticFacts>,
         author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
-        stable_spreads: &BTreeMap<u32, StableSetIterableUse>,
-        source_constructions: &BTreeMap<u32, InferredSetConstruction>,
-        native_inputs: &[ResolvedNativeOperationInput],
+        hints: &AnalysisInputs,
         array_spreads: StableArraySpreadShapes,
         constructor_operands: &BTreeMap<u32, TopLevelNativeIterableOperandSite>,
     ) -> Self {
@@ -273,7 +273,7 @@ impl SetIterableProof {
             .map(|(site, evidence)| {
                 (
                     *site,
-                    stable_spreads.get(site).map_or_else(
+                    hints.stable_set_spreads.get(site).map_or_else(
                         || ProofDependencies {
                             native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
                             ..ProofDependencies::default()
@@ -283,10 +283,12 @@ impl SetIterableProof {
                 )
             })
             .collect();
-        let spreads: Vec<_> = stable_spreads
+        let spreads: Vec<_> = hints
+            .stable_set_spreads
             .values()
             .chain(
-                source_constructions
+                hints
+                    .inferred_set_constructions
                     .values()
                     .filter_map(|proof| match &proof.operation {
                         InferredSetOperation::ProtectedSpread { interval, .. } => {
@@ -300,11 +302,14 @@ impl SetIterableProof {
             .iter()
             .map(|spread| spread.interval_bindings.clone())
             .collect();
-        let origins: BTreeMap<_, _> = native_inputs
+        let origins: BTreeMap<_, _> = hints
+            .assumptions
+            .native_operation_inputs
             .iter()
             .map(|input| (input.binding.clone(), input.call_span.lo.0))
             .chain(
-                source_constructions
+                hints
+                    .inferred_set_constructions
                     .iter()
                     .map(|(site, proof)| (proof.binding.clone(), *site)),
             )
@@ -327,7 +332,7 @@ impl SetIterableProof {
             author_dependencies,
             protected_intervals,
             spread_sources,
-            source_constructions: source_constructions.clone(),
+            source_constructions: hints.inferred_set_constructions.clone(),
             native_iterable_operands: BTreeMap::new(),
             stable_spreads: spreads
                 .into_iter()
@@ -338,6 +343,18 @@ impl SetIterableProof {
                 })
                 .collect(),
             array_spreads,
+            imported_array_spreads: hints
+                .assumptions
+                .imported_primitive_array_spread_inputs
+                .iter()
+                .flat_map(|input| {
+                    input
+                        .spread_token_spans
+                        .iter()
+                        .enumerate()
+                        .map(|(position, span)| (span.lo.0, (input.clone(), position)))
+                })
+                .collect(),
         };
         let operation_sites: BTreeSet<_> = proof
             .author_inputs
@@ -471,6 +488,21 @@ impl SetIterableProof {
         let initializer = self.array_spreads.by_site.get(&token.lo.0)?;
         self.facts
             .inference_use(&SemanticKey::StablePrimitiveArraySpread(*initializer))
+    }
+
+    pub(crate) fn imported_array_spread(
+        &self,
+        token: Span,
+    ) -> Option<(
+        &ResolvedImportedPrimitiveArraySpreadInput,
+        usize,
+        &ImportedPrimitiveArrayOperandEvidence,
+    )> {
+        let (input, position) = self.imported_array_spreads.get(&token.lo.0)?;
+        if input.spread_token_spans.get(*position) != Some(&token) {
+            return None;
+        }
+        Some((input, *position, input.evidence.operands.get(*position)?))
     }
 
     pub(crate) fn stable_iterable_producers(

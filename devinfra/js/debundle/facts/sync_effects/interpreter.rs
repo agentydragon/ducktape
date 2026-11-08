@@ -990,6 +990,8 @@ pub(super) struct ExecutionState {
     native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
     native_operation_input_uses:
         RefCell<BTreeMap<(u32, u32), crate::reports::schema::NativeOperationInputUse>>,
+    imported_primitive_array_spread_input_uses:
+        RefCell<Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>>,
     proof_dependencies: RefCell<ProofDependencies>,
     inference_uses: RefCell<BTreeSet<crate::analysis_provenance::InferenceUse>>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
@@ -3667,6 +3669,63 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operation: NativeIterableUse,
         operand: &Values,
     ) -> Option<NativeIterableReceipt> {
+        if let NativeIterableUse::ArraySpread(span) = operation
+            && let Some((input, source_index, source)) =
+                self.inputs.set_iterable_proof.imported_array_spread(span)
+        {
+            // The selected source and its author lifetime premise are bound
+            // to this exact spread token. This transfers only finite
+            // primitive yields; it deliberately creates no provider heap
+            // identity or provider-content read cell.
+            if !self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS) {
+                return None;
+            }
+            let mut dependencies = self.settled_prefix_dependencies();
+            dependencies
+                .imported_primitive_array_spread_inputs
+                .insert(input.evidence.reference.clone());
+            self.record_proof_dependencies(NativeIntegrityGuard::ArrayIntrinsics, &dependencies);
+            self.state.inference_uses.borrow_mut().insert(
+                crate::analysis_provenance::InferenceUse {
+                    conclusion: InferenceRule::ImportedPrimitiveArraySpread,
+                    derivation_rules: BTreeSet::from([
+                        InferenceRule::ImportedPrimitiveArraySpread,
+                        InferenceRule::NativeIntegrity,
+                    ]),
+                    value_input_refs: BTreeSet::new(),
+                    descriptor_copy_author_refs: BTreeSet::new(),
+                    argument_input_refs: BTreeSet::new(),
+                    native_operation_input_refs: BTreeSet::new(),
+                    imported_primitive_array_spread_input_refs: BTreeSet::from([input
+                        .evidence
+                        .reference
+                        .clone()]),
+                },
+            );
+            let mut input_uses = self
+                .state
+                .imported_primitive_array_spread_input_uses
+                .borrow_mut();
+            let input_use = crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse {
+                evidence: input.evidence.clone(),
+                operand_index: source_index,
+            };
+            if !input_uses.contains(&input_use) {
+                input_uses.push(input_use);
+            }
+            let yields = source
+                .primitive_slots
+                .iter()
+                .map(|kind| Values::from([AbstractValue::Value(Value::Prim(*kind))]))
+                .collect();
+            return Some(NativeIterableReceipt {
+                source: None,
+                yields: NativeIterableYields::ExactSlots(yields),
+                heap_contents: crate::facts::HeapContentCells::default(),
+                input: NativeIterableInput::Borrowed,
+                coverage: EffectCoverageFragment::native_iterable_protocol(&dependencies),
+            });
+        }
         let [AbstractValue::Value(Value::Alloc(kind, object))] =
             operand.iter().collect::<Vec<_>>().as_slice()
         else {
@@ -3786,7 +3845,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             NativeIterableInput::Borrowed
         };
         Some(NativeIterableReceipt {
-            source: *object,
+            source: Some(*object),
             yields,
             heap_contents,
             input,
@@ -7085,6 +7144,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 descriptor_copy_author_refs: BTreeSet::new(),
                 argument_input_refs: summary.dependencies.argument_inputs.clone(),
                 native_operation_input_refs: summary.dependencies.native_operation_inputs.clone(),
+                imported_primitive_array_spread_input_refs: summary
+                    .dependencies
+                    .imported_primitive_array_spread_inputs
+                    .clone(),
             },
             &summary.dependencies,
         );
@@ -13089,9 +13152,7 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     let set_iterable_proof = SetIterableProof::new(
         facts,
         author_set_inputs,
-        &hints.stable_set_spreads,
-        &hints.inferred_set_constructions,
-        &hints.assumptions.native_operation_inputs,
+        hints,
         stable_array_spread_shapes.clone(),
         &constructor_operands,
     );
@@ -13628,6 +13689,7 @@ pub(crate) fn annotate_synchronous_calls(
         author_host_contract_uses: Vec::new(),
         native_integrity_uses: RefCell::default(),
         native_operation_input_uses: RefCell::default(),
+        imported_primitive_array_spread_input_uses: RefCell::default(),
         proof_dependencies: RefCell::default(),
         inference_uses: RefCell::default(),
         class_member_effects: BTreeMap::new(),
@@ -13946,6 +14008,10 @@ impl Executor<'_, '_> {
         self.state.native_prefix_observations.borrow_mut().clear();
         self.state.native_integrity_uses.borrow_mut().clear();
         self.state.native_operation_input_uses.borrow_mut().clear();
+        self.state
+            .imported_primitive_array_spread_input_uses
+            .borrow_mut()
+            .clear();
         *self.state.proof_dependencies.borrow_mut() = ProofDependencies::default();
         self.state.inference_uses.borrow_mut().clear();
         self.state.current_top_owner = Some(fact.ordinal);
@@ -14546,6 +14612,11 @@ impl Executor<'_, '_> {
             std::mem::take(self.state.native_operation_input_uses.get_mut())
                 .into_values()
                 .collect();
+        outcome.effects.imported_primitive_array_spread_input_uses = std::mem::take(
+            self.state
+                .imported_primitive_array_spread_input_uses
+                .get_mut(),
+        );
         outcome.effects.inference_uses = std::mem::take(self.state.inference_uses.get_mut())
             .into_iter()
             .collect();

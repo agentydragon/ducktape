@@ -262,6 +262,8 @@ pub(crate) struct SynchronousCalls {
     pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
     pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub native_operation_input_uses: Vec<crate::reports::schema::NativeOperationInputUse>,
+    pub imported_primitive_array_spread_input_uses:
+        Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>,
     pub inference_uses: Vec<crate::analysis_provenance::InferenceUse>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,

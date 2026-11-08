@@ -480,6 +480,8 @@ struct SavedSynchronousCalls<'a> {
     native_prefix_observations: Cow<'a, [crate::reports::schema::NativePrefixObservation]>,
     native_integrity_uses: Cow<'a, [crate::reports::schema::NativeIntegrityUse]>,
     native_operation_input_uses: Vec<SavedNativeOperationInputUse<'a>>,
+    imported_primitive_array_spread_input_uses:
+        Cow<'a, [crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse]>,
     inference_uses: Cow<'a, [crate::analysis_provenance::InferenceUse]>,
     callback_factory_uses: Cow<'a, [super::CallbackFactoryUseFact]>,
     returned_record_uses: Cow<'a, [super::ReturnedRecordUseFact]>,
@@ -562,6 +564,9 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .iter()
                 .map(SavedNativeOperationInputUse::snapshot)
                 .collect(),
+            imported_primitive_array_spread_input_uses: Cow::Borrowed(
+                &calls.imported_primitive_array_spread_input_uses,
+            ),
             inference_uses: Cow::Borrowed(&calls.inference_uses),
             callback_factory_uses: Cow::Borrowed(&calls.callback_factory_uses),
             returned_record_uses: Cow::Borrowed(&calls.returned_record_uses),
@@ -648,6 +653,9 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .into_iter()
                 .map(SavedNativeOperationInputUse::restore)
                 .collect(),
+            imported_primitive_array_spread_input_uses: self
+                .imported_primitive_array_spread_input_uses
+                .into_owned(),
             inference_uses: self.inference_uses.into_owned(),
             callback_factory_uses: self.callback_factory_uses.into_owned(),
             returned_record_uses: self.returned_record_uses.into_owned(),
