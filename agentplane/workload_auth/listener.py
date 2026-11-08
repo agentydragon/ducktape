@@ -1,9 +1,9 @@
 """Authentication allowlist and transport settings for a service listener."""
 
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 
 class TLS(BaseModel):
@@ -31,12 +31,24 @@ class SPIFFEAuth(BaseModel):
             raise ValueError("spiffe requires an absolute ca_file")
         return self
 
+    @model_serializer(mode="wrap")
+    def serialize_discriminator(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        serialized: dict[str, Any] = handler(self)
+        serialized["mode"] = self.mode
+        return serialized
+
 
 class KubernetesBearerAuth(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["kubernetes_bearer"] = "kubernetes_bearer"
     audience: str = Field(min_length=1)
+
+    @model_serializer(mode="wrap")
+    def serialize_discriminator(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        serialized: dict[str, Any] = handler(self)
+        serialized["mode"] = self.mode
+        return serialized
 
 
 type Authentication = Annotated[SPIFFEAuth | KubernetesBearerAuth, Field(discriminator="mode")]
