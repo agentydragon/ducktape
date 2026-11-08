@@ -16,6 +16,12 @@ client's whole-run retries are disabled to avoid replaying work after an
 uncertain disconnect. BuildBuddy may independently retry infrastructure
 execution attempts; inspect those separately from Bazel test attempts.
 
+The test invocation is [`b834d3e5-8dc4-4bc5-8dd4-4da10000f07e`](https://app.buildbuddy.io/invocation/b834d3e5-8dc4-4bc5-8dd4-4da10000f07e).
+BuildBuddy exposed the expected tag and an executing `TestRunner` action for
+`run_1_of_200` on 2026-11-08. At that point, tag-filtered invocation search
+had not returned the still-running invocation; use the direct link if search
+has not indexed it yet. This records startup, not the outcome of the 200 runs.
+
 The Pod reads the existing namespace-local `buildbuddy-api-key` Secret and
 mounts its scripts from ConfigMap `vm-shutdown-stalls-200-20261108`. Neither
 the key nor guest logs are copied into this repository. The Job and ConfigMap
