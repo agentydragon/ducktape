@@ -13,6 +13,7 @@ def samples() -> str:
         ("storage-b", "ssd", 2 * 2**40, 0.45),
         ("storage-mixed", "hdd", 2 * 2**40, 0.65),
         ("storage-mixed", "ssd", 1 * 2**40, 0.35),
+        ("storage-mixed", "archive", 512 * 2**30, 0.25),
     ]
     metrics: dict[str, list[tuple[dict[str, str], float]]] = {}
 

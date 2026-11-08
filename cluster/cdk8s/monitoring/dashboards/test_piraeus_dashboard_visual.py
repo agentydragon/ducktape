@@ -58,17 +58,18 @@ async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestO
                     capacity = page.get_by_role("region", name="Physical pool capacity")
                     await expect(capacity.get_by_text("6 TiB", exact=True)).to_be_visible()
                     await expect(capacity.get_by_text("3 TiB", exact=True)).to_be_visible()
+                    await expect(capacity.get_by_text("512 GiB", exact=True)).to_be_visible()
                     record_stage("capturing full dashboard")
                     await capture_dashboard(view)
                     assert await page.get_by_text("No data", exact=True).count() == 0
                     await asyncio.gather(*checks)
                     assert not query_errors, query_errors
-                    record_stage("checking tier selection on mixed-pool node")
-                    for tier, expected_capacity in (("hdd", "2 TiB"), ("ssd", "1 TiB")):
-                        record_stage(f"checking {tier} on mixed-pool node")
+                    record_stage("checking pool selection on mixed-pool node")
+                    for pool, expected_capacity in (("hdd", "2 TiB"), ("ssd", "1 TiB"), ("archive", "512 GiB")):
+                        record_stage(f"checking {pool} on mixed-pool node")
                         tier_page = await context.new_page()
                         await tier_page.goto(
-                            url.replace("var-node=All", f"var-node=storage-mixed&var-storage_tier={tier}"),
+                            url.replace("var-node=All", f"var-node=storage-mixed&var-storage_pool={pool}"),
                             wait_until="domcontentloaded",
                         )
                         tier_capacity = tier_page.get_by_role("region", name="Physical pool capacity")
