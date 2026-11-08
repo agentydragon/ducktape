@@ -1,6 +1,8 @@
 """Exercise the authenticated private proxy and the gateway-to-provider hop."""
 
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import PurePosixPath
+from threading import Thread
 
 import pytest_bazel
 from fastapi.testclient import TestClient
@@ -9,12 +11,46 @@ from pydantic import BaseModel, SecretStr
 from platform_sessions.auth import Bearer, BearerAuth
 from platform_sessions.provider_proxy import ProviderProxy
 from platform_sessions.proxy import HeaderPolicy, ProxyInstance, ProxyRequest, ProxyResponse
+from platform_sessions.proxy_support import HttpSessionTransport
 from platform_sessions.registry import IntegrationInstance
 from platform_sessions.routes import Route
 
 
 class Settings(BaseModel):
     pass
+
+
+def test_session_transport_uses_configured_http_proxy(monkeypatch):
+    paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            paths.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"proxied")
+
+        def log_message(self, format, *args):
+            pass
+
+    class Store:
+        def load(self):
+            return object()
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setenv("HTTP_PROXY", f"http://127.0.0.1:{server.server_port}")
+        monkeypatch.setenv("NO_PROXY", "")
+        transport = HttpSessionTransport(Store(), lambda session: ())
+        response = transport._request(ProxyRequest("GET", "http://upstream.invalid/resource", b"", (), b""))
+        assert response.body == b"proxied"
+        assert paths == ["http://upstream.invalid/resource"]
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
 
 
 class Transport:

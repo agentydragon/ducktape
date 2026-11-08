@@ -218,6 +218,7 @@ py_test(
         ":auth",
         ":provider_proxy",
         ":proxy",
+        ":proxy_support",
         ":registry",
         ":routes",
         "//:conftest",
