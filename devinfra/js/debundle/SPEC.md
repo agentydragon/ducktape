@@ -1391,18 +1391,33 @@ provider-private writes and any broader `Object` or `Function` integrity
 claim. The assertion is independent of `pure_exports`, callback factory
 assertions, and `initializer_binding_effects`.
 
-Each entry has `source_match` with exactly one `bindings[]` name,
+Each entry has a required `resolved_member: { module, name }` reference to an
+existing logical-module member in the importer chunk, plus
 `audited_source_sha256`, `provider_chunk`, `provider_export`, and
-`audited_provider_sha256`; `note` is optional rationale. The two SHA-256
-values pin the parser input bytes of the importer and original provider.
-The selected binding must have one direct initializer call to a bare named
-ESM import of that exact provider export, with exactly one freshly written,
-anonymous, ordinary `function` expression argument. Spreads, other arities,
-named/async/generator callbacks, mutated or indirect callees, and ambiguous
-selectors are rejected. Prepared comma-list declarations may select one
-declarator; sibling declarators gain no assertion. The provider's resolved
-ordinary static dependency closure must finish before the importer, without
-an importer backedge or ambiguous/nonordinary request.
+`audited_provider_sha256`; `note` is optional rationale. The reference uses the
+logical owner path and readable member name. The joint logical-member selector
+solve supplies the actual local binding and declaration, including for a
+source-match claim anchored at a use site; the use-site statement is not treated
+as the initializer. A missing, ambiguous, imported-only, or non-declaration
+member fails closed. The two SHA-256 values pin the parser input bytes of the
+importer and original provider. The selected declaration must have one direct
+initializer call to a bare named ESM import of that exact provider export,
+with exactly one freshly written, anonymous, ordinary `function` expression
+argument. Spreads, other arities, named/async/generator callbacks, mutated or
+indirect callees, and ambiguous declarations are rejected. Prepared comma-list
+declarations may select one declarator; sibling declarators gain no assertion.
+The provider's resolved ordinary static dependency closure must finish before
+the importer, without an importer backedge or ambiguous/nonordinary request.
+
+The `resolved_member` key names logical ownership, not a stable claim ID.
+Module/member renames, moves, merges, and deletions must update or remove
+referring inputs in the same authoring change. The `bindings rename`,
+`bindings assign`, `bindings unassign`, `modules merge`, `modules refine`, and
+`modules delete --force` commands edit logical-module YAML only; they do not
+rewrite `chunk_analysis_options`. If one of those edits changes or removes a
+referenced owner path or readable name, source analysis rejects the stale
+reference until the input is updated or removed. There is no `source_match`
+compatibility form.
 
 If that export is emitted through `bundled_partial_swap`, the same entry must
 also contain `effective_replacement` with `package`, `bundle_export`,

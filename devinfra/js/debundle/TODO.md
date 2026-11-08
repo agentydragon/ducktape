@@ -249,22 +249,6 @@ closure`, conflating unresolved host requests, missing captured chunks,
   cached read; distinguish those locations. Preserve actual TDZ observations
   and conservative effects; an unavailable future function body is a diagnosis
   hypothesis until a neutral failing fixture establishes it.
-- **F5 — Reuse canonical selectors for exact operation inputs.** Authoring
-  exact initializer operation contracts currently duplicates full function
-  selectors from module YAML into configuration. Ordinary
-  `source_matches[].bindings[]` claims can pin a binding through a use site
-  (<e2e/use_site_pinning_test.rs>), but `initializer_call_effect_inputs`
-  routes through `select_one_declared_binding`, which requires the target to
-  be declared in the pattern (<frontend_elaboration/elaboration.rs>).
-  Reference a canonical
-  resolved claim, then validate the selected raw binding's actual initializer
-  and operation predicate; caller context is not initializer evidence. Cover
-  direct binding identifiers, structural members and source-match captures,
-  keeping readable/template names distinct from the raw binding. Preserve
-  exactly-one selection, importer/provider/effective-bundle digests, direct
-  import and fresh-argument checks, and source-known contradiction rejection.
-  Replace the owned input format atomically; add no legacy-format fallback.
-
 - **F6 — Expose a read-only bulk resolved-claim inventory.** `coverage`
   resolves every non-empty module claim set in one joint call, but emits only
   module-level binding/atomic-group summaries (<peel/plan.rs>).

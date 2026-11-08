@@ -916,7 +916,10 @@ pub struct NativeOperationInputContract {
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InitializerCallEffectInputContract {
-    pub source_match: SourceMatchClaim,
+    /// Existing logical-module owner in the importer chunk. Frontend
+    /// elaboration resolves its canonical claim to the actual local
+    /// declaration before validating the initializer shape.
+    pub resolved_member: ResolvedMemberSelector,
     pub audited_source_sha256: String,
     pub provider_chunk: String,
     pub provider_export: String,

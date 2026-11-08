@@ -3,6 +3,21 @@
 Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
 `comment:` fields. Operational base: `cli.md`.
 
+## References to logical members
+
+`chunk_analysis_options.<chunk>.initializer_call_effect_inputs[].resolved_member`
+names an existing logical member by `{module, name}`. Its key follows the
+logical module path and readable member name, so an owner rename changes the
+reference. `bindings rename`, `bindings assign`, `bindings unassign`,
+`modules merge`, `modules refine`, and `modules delete --force` edit the
+logical-module tree but do not read or rewrite `chunk_analysis_options`. When
+one of these edits changes or removes a referenced module path or member name,
+update or remove every referring input in the same authoring change. The normal
+source-analysis resolver rejects missing or stale references; it never falls
+back to a source selector or raw binding spelling. References to
+`chunk_renames` entries are unsupported because those entries do not create
+logical-module ownership claims.
+
 ## Workflow: executing a delegated assignment
 
 Use the [snapshot-backed adapter contract](../skills/shared/workflow.md#adapter-contract)

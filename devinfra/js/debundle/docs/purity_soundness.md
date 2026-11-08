@@ -1196,7 +1196,11 @@ coverage while preserving its syntax-derived dependencies.
 
 `initializer_call_effect_inputs` is a separate exact AUTHOR premise for one
 direct imported-call initializer with one fresh anonymous ordinary function
-argument. It covers the invoked provider operation's global-property,
+argument. Its required `resolved_member: { module, name }` reference identifies
+an existing logical-module owner in the importer chunk. The joint selector
+solve supplies the actual declaration, which remains subject to the exact
+initializer-shape checks below. It covers the invoked provider operation's
+global-property,
 general-heap and host-effect domains under an audited stable protocol and
 provider-slot lifetime: only fresh per-call allocations may be written, and
 no mutable application/global/host state may be read. It does not infer that

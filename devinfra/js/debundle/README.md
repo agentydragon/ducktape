@@ -196,7 +196,8 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   computed class-key read premises;
   `native_call_identity_inputs` certifies the callee at one selected direct
   `Object.freeze` call while retaining its argument and effect checks;
-  `initializer_call_effect_inputs` supplies an exact audited imported-call
+  `initializer_call_effect_inputs` selects an existing logical-module member
+  with `resolved_member` and supplies an exact audited imported-call
   operation-domain receipt, independently of purity, timing, and retained
   callback evidence (<SPEC.md#exact-initializer-call-effect-inputs>);
   `commuting_statements` certifies two selected source units as order-independent
