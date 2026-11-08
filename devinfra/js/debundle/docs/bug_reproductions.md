@@ -47,6 +47,13 @@ If the private failure cannot genuinely be reproduced with a synthetic
 fixture, explain that limit in the PR, add coverage at the next useful level,
 and smoke-test the private corpus.
 
+For a proof-coverage regression, assert the exact source owner's operation
+receipt and the effect assessment alongside the actual executable inversion
+and runtime result. An incomplete effect assessment can coexist with an
+accepted ordinary gate and emitted inversions: the effect report is currently
+report-only. A negative control should verify the missing receipt or uncovered
+effect, rather than assume that it prevents every reorder.
+
 ## Downstream acceptance and stricter checks
 
 Before changing acceptance, compare the candidate and a working engine against

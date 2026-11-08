@@ -1514,8 +1514,8 @@ host_behavior:
 | `loader_result_for_evaluating_module` | `unknown` | Loader-closed derivation (below)                |
 | `synchronous_load_runs_app_callbacks` | `unknown` | Loader-closed derivation (below)                |
 | `synchronous_load_drains_microtasks`  | `unknown` | Mandatory suspension (loader-closed derivation) |
-| `reentry_free_builtin_modules`        | empty     | Export-reentry closure and loader requests      |
-| `reentry_free_bun_modules`            | empty     | Export-reentry closure and loader requests      |
+| `reentry_free_builtin_modules`        | empty     | Static dependency closures and loader requests  |
+| `reentry_free_bun_modules`            | empty     | Static dependency closures and loader requests  |
 | `reentry_free_embedded_loaders`       | empty     | Loader requests for embedded files              |
 | `reentry_free_operations`             | empty     | Synchronous-effect interpreter (below)          |
 | `predefined_globals`                  | `unknown` | Native census: bundle-owned globals (below)     |
@@ -2264,8 +2264,11 @@ the provider that does not reach the importer. Unresolved, unsupported,
 non-entry, or importer-reaching dependencies leave the imported value
 unavailable to ordinary candidate execution. The capability retains every
 local export cell that supplied the value through copies and re-exports;
-aliases do not erase that provenance. It authorizes only the reached imported
-binding read's existing module-read effect coverage. It does not certify
+aliases do not erase that provenance. Ordinary unresolved requests admitted by
+`host_behavior.reentry_free_builtin_modules` or `reentry_free_bun_modules`
+serve as closed host leaves in this dependency check. They grant no builtin
+export value or operation-effect summary. The capability authorizes only the
+reached imported binding read's existing module-read effect coverage. It does not certify
 provider effects or general ESM completion. Until that completion is modeled,
 raw primitive kinds do not stand in for a normal imported value or its read
 effects.

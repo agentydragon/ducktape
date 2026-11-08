@@ -113,6 +113,61 @@ fn run_configured(
     )
 }
 
+fn admitted_builtin_modules(modules: &[NodeBuiltinModule]) -> HostBehavior {
+    HostBehavior {
+        reentry_free_builtin_modules: modules.iter().copied().collect(),
+        ..HostBehavior::default()
+    }
+}
+
+fn run_builtin_closure_fixture(
+    consumer: &str,
+    provider: &str,
+    helper: &str,
+    contract: ImportedPrimitiveArraySpreadInputContract,
+    host_behavior: HostBehavior,
+) -> Fixture {
+    let chunks = [("static/provider", provider), ("static/helper", helper)];
+    let provider_logical_modules = [
+        ("static/provider", provider_modules()),
+        (
+            "static/helper",
+            vec![logical_module("values/helper", &[Member::new("marker")])],
+        ),
+    ];
+    run_fixture(
+        FixtureOpts::new(consumer, nonempty_consumer_modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_chunk_logical_modules(&provider_logical_modules)
+            .with_imported_primitive_array_spread_inputs("static/app", vec![contract])
+            .with_host_behavior(host_behavior),
+    )
+}
+
+fn run_rejected_builtin_closure_fixture(
+    consumer: &str,
+    provider: &str,
+    helper: &str,
+    contract: ImportedPrimitiveArraySpreadInputContract,
+    host_behavior: HostBehavior,
+) -> RejectedFixture {
+    let chunks = [("static/provider", provider), ("static/helper", helper)];
+    let provider_logical_modules = [
+        ("static/provider", provider_modules()),
+        (
+            "static/helper",
+            vec![logical_module("values/helper", &[Member::new("marker")])],
+        ),
+    ];
+    run_rejection_fixture(
+        FixtureOpts::new(consumer, empty_consumer_modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_chunk_logical_modules(&provider_logical_modules)
+            .with_imported_primitive_array_spread_inputs("static/app", vec![contract])
+            .with_host_behavior(host_behavior),
+    )
+}
+
 fn run_rejected(
     consumer: &str,
     provider: &str,
@@ -555,4 +610,111 @@ fn circular_provider_initialization_is_rejected() {
         "{}",
         rejected.stderr
     );
+}
+
+#[test]
+fn admitted_direct_and_transitive_node_builtin_dependencies_preserve_runtime() {
+    let consumer = nonempty_consumer();
+    let provider = format!(
+        "import 'path';\nimport {{ marker }} from './helper.js';\n\
+         if (marker !== 1) throw new Error('helper did not initialize');\n\
+         {NONEMPTY_PROVIDER}"
+    );
+    let helper = "import 'node:util';\nexport const marker = 1;\n";
+    let contract = input(
+        &consumer,
+        &provider,
+        None,
+        None,
+        "var values = ['a'];",
+        "const values = ['b'];",
+    );
+
+    let fixture = run_builtin_closure_fixture(
+        &consumer,
+        &provider,
+        helper,
+        contract,
+        admitted_builtin_modules(&[NodeBuiltinModule::Path, NodeBuiltinModule::Util]),
+    );
+    assert_preserved_entry_output(&fixture, "a b true 2 2\n");
+}
+
+#[test]
+fn builtin_dependency_closure_requires_each_builtin_to_be_admitted() {
+    let consumer = nonempty_consumer();
+    let provider = format!(
+        "import 'path';\nimport {{ marker }} from './helper.js';\n\
+         if (marker !== 1) throw new Error('helper did not initialize');\n\
+         {NONEMPTY_PROVIDER}"
+    );
+    let helper = "import 'node:util';\nexport const marker = 1;\n";
+    let contract = input(
+        &consumer,
+        &provider,
+        None,
+        None,
+        "var values = ['a'];",
+        "const values = ['b'];",
+    );
+
+    let rejected = run_rejected_builtin_closure_fixture(
+        &consumer,
+        &provider,
+        helper,
+        contract,
+        HostBehavior::default(),
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("complete acyclic ordinary static initialization closure"),
+        "without builtin admission, the imported array closure stays incomplete:\n{}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn unlisted_builtins_and_unknown_bare_imports_remain_unresolved() {
+    let consumer = nonempty_consumer();
+    let provider = format!(
+        "import 'path';\nimport {{ marker }} from './helper.js';\n\
+         if (marker !== 1) throw new Error('helper did not initialize');\n\
+         {NONEMPTY_PROVIDER}"
+    );
+    let host = admitted_builtin_modules(&[NodeBuiltinModule::Path, NodeBuiltinModule::Util]);
+
+    for (helper, request) in [
+        (
+            "import 'node:util';\nimport 'node:fs';\nexport const marker = 1;\n",
+            "unlisted Node builtins",
+        ),
+        (
+            "import 'node:util';\nimport '@fixture/not-a-node-builtin';\nexport const marker = 1;\n",
+            "unknown bare packages",
+        ),
+    ] {
+        let contract = input(
+            &consumer,
+            &provider,
+            None,
+            None,
+            "var values = ['a'];",
+            "const values = ['b'];",
+        );
+        let rejected = run_rejected_builtin_closure_fixture(
+            &consumer,
+            &provider,
+            helper,
+            contract,
+            host.clone(),
+        );
+        assert!(
+            rejected
+                .stderr
+                .contains("complete acyclic ordinary static initialization closure"),
+            "{request} must not be treated as admitted builtin leaves:\n{}",
+            rejected.stderr
+        );
+    }
 }
