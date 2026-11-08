@@ -1,5 +1,5 @@
 """The Attic Nix binary cache (`cache.allegedly.works`): the server and its Postgres,
-the previous SeaweedFS IAM resources pending cleanup, the cache bootstrap Job, and hourly JWT rotation.
+the temporary SeaweedFS IAM identity re-adoption for staged cleanup, the cache bootstrap Job, and hourly JWT rotation.
 
 cdk8s writes the directory Kustomization and the typed rotator roster. The native
 `server.toml`, SOPS Secrets, and `image-pins/kustomization.yaml` remain hand-written beside
@@ -22,6 +22,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
+from seaweed_s3identity_crds.com.seaweedfs.seaweed import S3IdentitySpecReclaimPolicy
 
 from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling
 from cluster.cdk8s.cnpg import cluster
@@ -36,6 +37,7 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.nix_cache import ci_token
 from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.seaweedfs import s3 as seaweed_s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.rotators.attic_jwt_rotation.config import (
@@ -581,6 +583,15 @@ def _rotation(scope: Construct) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
+    # Re-adopt the retained IAM identity with Delete so a later revision can remove it cleanly.
+    # Deliberately omit S3Credentials: recreating that resource would mint another key.
+    seaweed_s3.identity(
+        chart,
+        "retained-backup-identity",
+        name="nix-cache-db-backups",
+        namespace=NAMESPACE,
+        reclaim_policy=S3IdentitySpecReclaimPolicy.DELETE,
+    )
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
     _service(chart)
