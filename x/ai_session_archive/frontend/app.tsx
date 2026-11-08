@@ -1,5 +1,7 @@
 import { Container } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { JSX } from "react";
+import { useMemo } from "react";
 import { Route, Routes, useLocation } from "react-router";
 
 import type { SessionBrowserApi } from "./api";
@@ -7,13 +9,29 @@ import { MachineImportProgressPage } from "./import-progress";
 import { SessionViewer } from "./session-viewer";
 
 export function App({ api }: { api?: SessionBrowserApi }): JSX.Element {
+  const queryClient = useMemo(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            networkMode: "always",
+            refetchOnReconnect: false,
+            refetchOnWindowFocus: false,
+            retry: false,
+          },
+        },
+      }),
+    [api]
+  );
   return (
-    <Container fluid p="md" style={{ height: "100dvh", boxSizing: "border-box" }}>
-      <Routes>
-        <Route path="/" element={<SessionArchiveHome api={api} />} />
-        <Route path="/sessions/:sessionId" element={<SessionViewer api={api} />} />
-      </Routes>
-    </Container>
+    <QueryClientProvider client={queryClient}>
+      <Container fluid p="md" style={{ height: "100dvh", boxSizing: "border-box" }}>
+        <Routes>
+          <Route path="/" element={<SessionArchiveHome api={api} />} />
+          <Route path="/sessions/:sessionId" element={<SessionViewer api={api} />} />
+        </Routes>
+      </Container>
+    </QueryClientProvider>
   );
 }
 
