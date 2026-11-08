@@ -273,7 +273,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const eventCursor = eventPages.at(-1)?.next_cursor ?? null;
   const loadingEvents = eventQuery.isLoading;
   const loadingEarlierEvents = eventQuery.isFetchingNextPage;
-  const eventScope = JSON.stringify([selectedSession?.id ?? null, selectedVersionId]);
+  const eventScope = `${selectedSession?.id ?? ""}\u0000${selectedVersionId ?? ""}`;
 
   const parentSessionId = selectedSession?.parent_session_id ?? null;
   const parentSessionQuery = useQuery({
