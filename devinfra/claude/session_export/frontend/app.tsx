@@ -42,7 +42,7 @@ function SyncPage({
         message: reason instanceof Error ? reason.message : "Could not start a sync.",
       });
     }
-  }, [refresh]);
+  }, [refresh, setError]);
 
   return (
     <Stack gap="md">
