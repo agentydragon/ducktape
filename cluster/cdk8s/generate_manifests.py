@@ -1596,6 +1596,7 @@ def generate_manifests(root: Path) -> None:
         platform_sessions_kustomization,
         cert_manager_environment_kustomization,
         forgejo_image_automation_kustomization,
+        piraeus_cluster_kustomization,
     )
     session_archive_artifact = artifact(
         "ai-session-archive",

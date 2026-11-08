@@ -2,6 +2,10 @@
 
 from typing import NotRequired, TypedDict
 
+# Record all provider upstream exchanges through at least January 2027 to soak
+# session renewal and rotation. Captures include credentials and private data.
+RECORD_UPSTREAM_TRAFFIC = True
+
 
 class BearerConfig(TypedDict):
     role: str

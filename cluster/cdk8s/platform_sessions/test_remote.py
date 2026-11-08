@@ -10,7 +10,7 @@ from cluster.cdk8s.platform_sessions import app, config, remote
 
 
 def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: App) -> None:
-    objects = Cdk8sTesting.synth(remote.chart(scratch_app))
+    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
 
     def resource(kind, name):
         return next(item for item in objects if item["kind"] == kind and item["metadata"]["name"] == name)
@@ -70,6 +70,51 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
             assert monitor["selector"]["matchLabels"] == {"app": "platform-sessions-quest"}
             assert {endpoint["port"] for endpoint in monitor["podMetricsEndpoints"]} == {"metrics", "quest-metrics"}
         assert "metrics" in {p["name"] for p in provider_pod["containers"][0]["ports"]}
+
+
+def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: App) -> None:
+    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=True))
+
+    def resource(kind, name):
+        return next(item for item in objects if item["kind"] == kind and item["metadata"]["name"] == name)
+
+    assert config.RECORD_UPSTREAM_TRAFFIC
+    for instance in remote.PROVIDERS:
+        name = f"platform-sessions-{instance}"
+        pod = resource("Deployment", name)["spec"]["template"]["spec"]
+        containers = {container["name"]: container for container in pod["containers"]}
+        assert set(containers) == {"provider"}
+        init = pod["initContainers"]
+        assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
+        recorder = init[1]
+        assert recorder["restartPolicy"] == "Always"
+        assert "startupProbe" in recorder
+        env = {item["name"]: item["value"] for item in containers["provider"]["env"]}
+        assert env["HTTPS_PROXY"] == "http://127.0.0.1:18080"
+        assert env["SSL_CERT_FILE"] == "/var/run/session-recorder-trust/ca-certificates.crt"
+        assert env["PLATFORM_SESSIONS_PROXY_CA_FILE"] == "/var/run/session-recorder-ca/tls.crt"
+        assert "+/captures/%Y-%m-%d.mitm" in recorder["command"][-1]
+        claim = resource("PersistentVolumeClaim", f"{name}-captures")
+        assert claim["spec"]["storageClassName"] == "piraeus-hdd-local"
+        assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
+        capture = next(volume for volume in pod["volumes"] if volume["name"] == "captures")
+        assert capture["persistentVolumeClaim"]["claimName"] == f"{name}-captures"
+        assert not any(mount["name"] == "captures" for mount in containers["provider"]["volumeMounts"])
+
+
+def test_disabled_recording_keeps_capture_claims_without_proxy(scratch_app: App) -> None:
+    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
+    for instance in remote.PROVIDERS:
+        name = f"platform-sessions-{instance}"
+        pod = next(item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == name)[
+            "spec"
+        ]["template"]["spec"]
+        assert [item["name"] for item in pod["containers"]] == ["provider"]
+        assert not any(item["name"] == "HTTPS_PROXY" for item in pod["containers"][0]["env"])
+        assert any(
+            item["kind"] == "PersistentVolumeClaim" and item["metadata"]["name"] == f"{name}-captures"
+            for item in objects
+        )
 
 
 if __name__ == "__main__":

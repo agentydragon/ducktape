@@ -1,3 +1,53 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-recorder-root-ca
+  namespace: platform-sessions
+spec:
+  commonName: platform-sessions-recorder-root-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 8760h
+  secretName: platform-sessions-recorder-ca
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: platform-sessions-recorder-trust
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        key: ca.crt
+        name: cluster-root-ca-secret
+    - secret:
+        key: tls.crt
+        name: platform-sessions-recorder-ca
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for platform-session upstream recording
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - platform-sessions
+---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
@@ -131,6 +181,21 @@ spec:
       storage: 1Gi
   storageClassName: seaweedfs-ovh-ssd
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-openai-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -176,6 +241,16 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
           livenessProbe:
             httpGet:
@@ -222,8 +297,79 @@ spec:
               name: data
             - mountPath: /tmp
               name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
@@ -265,6 +411,23 @@ spec:
             claimName: platform-sessions-openai
         - emptyDir: {}
           name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-openai-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
 ---
 apiVersion: v1
 kind: Service
@@ -429,6 +592,21 @@ spec:
       storage: 1Gi
   storageClassName: seaweedfs-ovh-ssd
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-anthropic-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -474,6 +652,16 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
           livenessProbe:
             httpGet:
@@ -520,8 +708,79 @@ spec:
               name: data
             - mountPath: /tmp
               name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
@@ -563,6 +822,23 @@ spec:
             claimName: platform-sessions-anthropic
         - emptyDir: {}
           name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-anthropic-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
 ---
 apiVersion: v1
 kind: Service
@@ -727,6 +1003,21 @@ spec:
       storage: 1Gi
   storageClassName: seaweedfs-ovh-ssd
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-chatgpt-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -772,6 +1063,16 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt:unset
           livenessProbe:
             httpGet:
@@ -818,8 +1119,79 @@ spec:
               name: data
             - mountPath: /tmp
               name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
@@ -861,6 +1233,23 @@ spec:
             claimName: platform-sessions-chatgpt
         - emptyDir: {}
           name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-chatgpt-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
 ---
 apiVersion: v1
 kind: Service
@@ -1025,6 +1414,21 @@ spec:
       storage: 1Gi
   storageClassName: seaweedfs-ovh-ssd
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-blueshield-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1068,6 +1472,16 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-blueshield:unset
           livenessProbe:
             httpGet:
@@ -1114,8 +1528,79 @@ spec:
               name: data
             - mountPath: /tmp
               name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
@@ -1157,6 +1642,23 @@ spec:
             claimName: platform-sessions-blueshield
         - emptyDir: {}
           name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-blueshield-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
 ---
 apiVersion: v1
 kind: Service
@@ -1321,6 +1823,21 @@ spec:
       storage: 1Gi
   storageClassName: seaweedfs-ovh-ssd
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-quest-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1366,6 +1883,16 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-quest:unset
           livenessProbe:
             httpGet:
@@ -1414,8 +1941,79 @@ spec:
               name: data
             - mountPath: /tmp
               name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
@@ -1457,6 +2055,23 @@ spec:
             claimName: platform-sessions-quest
         - emptyDir: {}
           name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-quest-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
 ---
 apiVersion: v1
 kind: Service
@@ -1624,6 +2239,21 @@ spec:
       storage: 1Gi
   storageClassName: seaweedfs-ovh-ssd
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-thrive-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1669,6 +2299,16 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
           livenessProbe:
             httpGet:
@@ -1715,8 +2355,79 @@ spec:
               name: data
             - mountPath: /tmp
               name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       securityContext:
@@ -1758,6 +2469,23 @@ spec:
             claimName: platform-sessions-thrive
         - emptyDir: {}
           name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-thrive-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
 ---
 apiVersion: v1
 kind: Service
