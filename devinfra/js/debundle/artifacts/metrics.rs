@@ -63,7 +63,8 @@ pub struct OutputFileMetric {
 }
 
 impl OutputMetrics {
-    pub(crate) fn from_file_metrics(metrics: impl IntoIterator<Item = OutputFileMetric>) -> Self {
+    /// Build aggregate metrics from the files rendered by the output writer.
+    pub fn from_file_metrics(metrics: impl IntoIterator<Item = OutputFileMetric>) -> Self {
         let metrics = metrics.into_iter().collect::<Vec<_>>();
         let total = OutputSize::sum(metrics.iter());
         let top_level_entry = size_for_role(&metrics, OutputRole::TopLevelEntry);
@@ -292,7 +293,8 @@ impl OutputSize {
     }
 }
 
-pub(crate) fn write_tree_reports(
+/// Write the per-file and directory reports for rendered output files.
+pub fn write_tree_reports(
     report_tree_root: &Path,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     file_metrics: &[OutputFileMetric],
