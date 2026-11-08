@@ -16,14 +16,39 @@ export TMPDIR="${RUNTIME_DIRECTORY:?}"
 # Preserve raw files even when a damaged database cannot produce a consistent
 # image. The persisted manifest records errors, and the unit still fails.
 snapshot_status=0
-# Hook-generated runtime/build state; see home_session_dir and write_session_bazelrc
-# in devinfra/claude/claude_hook/main.rs. Keep this out of both capture paths.
-claude_session_env="$claude_home/session-env"
-codex_worktrees="$codex_home/worktrees"
+snapshot_excludes=()
+backup_excludes=()
+exclude_directory() {
+  local root=$1 harness=$2 relative=$3
+  snapshot_excludes+=(--exclude-directory "$root/$relative")
+  # Staging is persistent: exclude images created before these rules as well.
+  backup_excludes+=(--exclude "$root/$relative" --exclude "$staging_dir/images/$harness/*/$relative")
+}
+
+# Hook-generated build state, worktrees, caches, packages and diagnostic logs.
+for relative in session-env .tmp cache .cache plugins/cache debug logs; do
+  exclude_directory "$claude_home" claude "$relative"
+done
+for relative in worktrees .tmp tmp packages cache .cache plugins/cache log logs; do
+  exclude_directory "$codex_home" codex "$relative"
+done
+exclude_file() {
+  local root=$1 harness=$2 relative=$3
+  snapshot_excludes+=(--exclude-file "$root/$relative")
+  backup_excludes+=(--exclude "$root/$relative" --exclude "$staging_dir/images/$harness/*/$relative")
+}
+for relative in stats-cache.json mcp-needs-auth-cache.json plugins/plugin-directory-cache-v2.json daemon.log; do
+  exclude_file "$claude_home" claude "$relative"
+done
+exclude_file "$codex_home" codex models_cache.json
+# This SQLite database contains diagnostic logs, not conversation history.
+exclude_file "$codex_home" codex logs_2.sqlite
+backup_excludes+=(--exclude "$codex_home/logs_2.sqlite-wal" --exclude "$codex_home/logs_2.sqlite-shm"
+  --exclude "$codex_home/logs_2.sqlite-journal")
+
 "$python" "$snapshot_script" --output "$staging_dir" \
   --root claude "$claude_home" --root codex "$codex_home" \
-  --exclude-directory "$claude_session_env" \
-  --exclude-directory "$codex_worktrees" || snapshot_status=$?
+  "${snapshot_excludes[@]}" || snapshot_status=$?
 
 if ! "$restic" snapshots --latest 1 >/dev/null 2>&1; then
   "$restic" init
@@ -35,10 +60,7 @@ backup_path() {
 }
 
 "$restic" backup --host "$host" --tag ai-sessions --skip-if-unchanged \
-  --exclude "$claude_session_env" \
-  --exclude "$codex_worktrees" \
-  --exclude "$staging_dir/images/claude/*/session-env" \
-  --exclude "$staging_dir/images/codex/*/worktrees" -- \
+  "${backup_excludes[@]}" -- \
   "$(backup_path "$claude_home")" \
   "$(backup_path "$codex_home")" \
   "$(backup_path "$staging_dir")"

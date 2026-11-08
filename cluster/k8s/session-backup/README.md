@@ -23,19 +23,25 @@ another workstation's repository. Escrow `restic_password` in the user's passwor
 manager before enabling the client backup timer.
 
 The first workstation timer run captures the Claude and Codex directories,
-including credentials, configuration, caches, transcripts, subagents, original SQLite
-files, and their sidecars. Later runs add incremental snapshots every 15 minutes;
+including credentials, configuration, transcripts, subagents, original SQLite
+files, and their sidecars, except for the exclusions below. Later runs add incremental snapshots every 15 minutes;
 unchanged captures create no new snapshot. The roots respect `CLAUDE_CONFIG_DIR`,
 `CODEX_HOME`, and the Home Manager XDG configuration. Captured history stays in the
 append-only repository even after a harness deletes its local files.
 
-The Claude root's `session-env/` and the Codex root's `worktrees/` are excluded from
-both raw backup and SQLite discovery. The [Claude hook](../../../devinfra/claude/claude_hook/main.rs)
+The Claude root's `session-env/`, `.tmp/`, `cache/`, `.cache/`, `plugins/cache/`,
+`debug/`, and `logs/` and the Codex root's `worktrees/`, `.tmp/`, `tmp/`, `packages/`,
+`cache/`, `.cache/`, `plugins/cache/`, `log/`, and `logs/` are excluded from both raw
+backup and SQLite discovery. The [Claude hook](../../../devinfra/claude/claude_hook/main.rs)
 (`home_session_dir`, `write_session_bazelrc`) writes per-session runtime configuration
-there and directs Bazel's build output into it. Previously staged SQLite images from
-both excluded subtrees are also excluded from new snapshots; existing archived snapshots remain.
+and Bazel output under `session-env/`. Codex's diagnostic `logs_2.sqlite` and its
+sidecars are excluded too, along with the Claude daemon log and the known Claude and
+Codex model, statistics, authentication-status, and plugin-directory cache files.
+Claude's `paste-cache/` remains included because it can contain user-authored input.
+Previously staged SQLite images from these paths are also
+excluded from new snapshots; existing archived snapshots remain.
 
-The client also scans both trees for SQLite file headers, regardless of filename or
+The client also scans the included trees for SQLite file headers, regardless of filename or
 subdirectory, and uses SQLite's online backup API to create consistent database images
 under `${XDG_STATE_HOME}/ducktape/ai-session-backup-sqlite`. Each image is a consistent
 copy of one database; the complete directory capture is not an atomic filesystem
