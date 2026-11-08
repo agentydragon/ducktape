@@ -32,7 +32,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "This dashboard covers **Piraeus LVM thin-pool and volume accounting**. Thin-pool used, capacity, and free bytes are physical pool measurements. Diskful PV limits are a separate commitment measure; their ratio to raw capacity is not physical-use percentage and can exceed 100%. Per-copy allocation estimates do not decompose physical pool use.\n\nThe PVC table shows kubelet-reported filesystem use on the consumer node alongside a Bound PV capacity limit. It is separate from both host ext4/XFS filesystem accounting and thin-pool physical use. Raw-block or unmounted PVCs may have no filesystem-use sample.\n\nThe Storage tier selector filters by node labels; Machine filters node-owned panels. This is node-level filtering. If a node later has both SSD and HDD, per-device media labels will be needed to separate those disks."
+        "content": "This dashboard covers **Piraeus LVM thin-pool and volume accounting**. Thin-pool used, capacity, and free bytes are physical pool measurements. Diskful PV limits are a separate commitment measure; their ratio to raw capacity is not physical-use percentage and can exceed 100%. Per-copy allocation estimates do not decompose physical pool use.\n\nThe PVC table shows kubelet-reported filesystem use on the consumer node alongside a Bound PV capacity limit. It is separate from both host ext4/XFS filesystem accounting and thin-pool physical use. Raw-block or unmounted PVCs may have no filesystem-use sample.\n\nStorage tier filters by the Piraeus storage pool, including on machines with both SSD and HDD pools. Machine filters storage nodes for pool and copy panels and consumer nodes for the PVC table. PVCs with copies in both tiers appear in both selections."
       }
     },
     {
@@ -51,7 +51,7 @@
     {
       "id": 26,
       "title": "Physical pool used",
-      "description": "Piraeus thin-pool physical use, summed over the selected storage nodes and pools.",
+      "description": "Piraeus thin-pool physical use, summed over the selected storage nodes by pool tier.",
       "type": "stat",
       "gridPos": {
         "h": 4,
@@ -62,9 +62,10 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_used_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_used_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}"
         }
       ],
       "fieldConfig": {
@@ -101,9 +102,10 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_capacity_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}"
         }
       ],
       "fieldConfig": {
@@ -140,9 +142,10 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_free_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_free_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}"
         }
       ],
       "fieldConfig": {
@@ -179,9 +182,10 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_committed_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}"
         }
       ],
       "fieldConfig": {
@@ -218,9 +222,10 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_capacity_bytes{node=~\"$node\"}) - sum(disk_usage:pool_committed_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}) - sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}"
         }
       ],
       "fieldConfig": {
@@ -257,9 +262,10 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_committed_bytes{node=~\"$node\"}) / sum(disk_usage:pool_capacity_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}) / sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}"
         }
       ],
       "fieldConfig": {
@@ -296,37 +302,37 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "disk_usage:pool_used_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_used_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
         },
         {
-          "expr": "disk_usage:pool_used_bytes{node=~\"$node\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_used_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}",
           "format": "table",
           "instant": true,
           "refId": "C"
         },
         {
-          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}",
           "format": "table",
           "instant": true,
           "refId": "D"
         },
         {
-          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}",
           "format": "table",
           "instant": true,
           "refId": "E"
         },
         {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"} - on (node, storage_pool) disk_usage:pool_committed_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"} - on (node, storage_pool) disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}",
           "format": "table",
           "instant": true,
           "refId": "F"
@@ -585,12 +591,12 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "disk_usage:pool_used_bytes{node=~\"$pool_node\"}",
+          "expr": "disk_usage:pool_used_bytes{node=~\"$pool_node\", storage_pool=~\"$storage_tier\"}",
           "legendFormat": "{{storage_pool}} used",
           "refId": "A"
         },
         {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$pool_node\"}",
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$pool_node\", storage_pool=~\"$storage_tier\"}",
           "legendFormat": "{{storage_pool}} capacity",
           "refId": "B"
         }
@@ -677,12 +683,12 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "disk_usage:pool_committed_bytes{node=~\"$pool_node\"}",
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$pool_node\", storage_pool=~\"$storage_tier\"}",
           "legendFormat": "{{storage_pool}} copy limits",
           "refId": "A"
         },
         {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$pool_node\"}",
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$pool_node\", storage_pool=~\"$storage_tier\"}",
           "legendFormat": "{{storage_pool}} capacity",
           "refId": "B"
         }
@@ -782,7 +788,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "topk(15, (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", persistentvolumeclaim!=\"\"}), \"copy\", \"/\", \"namespace\", \"persistentvolumeclaim\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" · \", \"copy\", \"location\", \"phase\")) or (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", persistentvolumeclaim=\"\"}), \"copy\", \"/\", \"namespace\", \"resource\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" · \", \"copy\", \"location\", \"phase\")))",
+          "expr": "topk(15, (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\", persistentvolumeclaim!=\"\"}), \"copy\", \"/\", \"namespace\", \"persistentvolumeclaim\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" · \", \"copy\", \"location\", \"phase\")) or (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\", persistentvolumeclaim=\"\"}), \"copy\", \"/\", \"namespace\", \"resource\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" · \", \"copy\", \"location\", \"phase\")))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -841,13 +847,13 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\"})",
+          "expr": "sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "max by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{node=~\"$node\"})",
+          "expr": "max by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"})",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -1006,19 +1012,19 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "expr": "disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\", storage_pool=~\"$storage_tier\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "group by (namespace, persistentvolumeclaim, node) (disk_usage:pvc_used_bytes{node=~\"$node\"}) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "expr": "group by (namespace, persistentvolumeclaim, node) (disk_usage:pvc_used_bytes{node=~\"$node\"}) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\", storage_pool=~\"$storage_tier\"})",
           "format": "table",
           "instant": true,
           "refId": "B"
         },
         {
-          "expr": "(disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})) / on (namespace, persistentvolumeclaim) group_left() max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "expr": "(disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\", storage_pool=~\"$storage_tier\"})) / on (namespace, persistentvolumeclaim) group_left() max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\", storage_pool=~\"$storage_tier\"})",
           "format": "table",
           "instant": true,
           "refId": "C"
@@ -1205,12 +1211,12 @@
           "value": ["$__all"]
         },
         "datasource": "${DS_MIMIR}",
-        "definition": "label_values(kube_node_labels{label_storage_allegedly_works_tier=~\"$storage_tier\"}, node)",
+        "definition": "label_values(kube_node_info, node)",
         "includeAll": true,
         "label": "Machine",
         "multi": true,
         "name": "node",
-        "query": "label_values(kube_node_labels{label_storage_allegedly_works_tier=~\"$storage_tier\"}, node)",
+        "query": "label_values(kube_node_info, node)",
         "refresh": 1,
         "sort": 1,
         "type": "query"
@@ -1219,8 +1225,8 @@
         "name": "pool_node",
         "type": "query",
         "datasource": "${DS_MIMIR}",
-        "definition": "label_values(disk_usage:pool_capacity_bytes{node=~\"$node\"}, node)",
-        "query": "label_values(disk_usage:pool_capacity_bytes{node=~\"$node\"}, node)",
+        "definition": "label_values(disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}, node)",
+        "query": "label_values(disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_tier\"}, node)",
         "current": {
           "text": "All",
           "value": ["$__all"]
