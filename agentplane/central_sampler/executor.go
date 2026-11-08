@@ -82,7 +82,7 @@ func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Sessio
 		if err != nil {
 			return nil, nil, err
 		}
-		connection, err = bearer.Dial(address, settings.GatewayTokenFile, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
+		connection, err = bearer.Dial(address, settings.GatewayTokenFile, time.Duration(settings.RPCTimeoutSeconds)*time.Second, nil)
 		if err != nil {
 			return nil, nil, err
 		}

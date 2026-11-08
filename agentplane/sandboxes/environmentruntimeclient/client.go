@@ -8,6 +8,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/metadata"
@@ -16,6 +17,7 @@ import (
 // Config describes one call through the Runner Gateway proxy. Every call owns a fresh connection so
 // DNS can resolve a new connection holder after a handoff.
 type Config struct {
+	TLS                     *environment_runtime_transport.ClientTLS
 	Target                  string
 	TokenFile               string
 	Timeout                 time.Duration
@@ -40,7 +42,7 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, e
 	if call == nil {
 		return errors.New("runner proxy call is required")
 	}
-	conn, err := bearer.Dial(config.Target, config.TokenFile, config.Timeout)
+	conn, err := bearer.Dial(config.Target, config.TokenFile, config.Timeout, config.TLS)
 	if err != nil {
 		return err
 	}

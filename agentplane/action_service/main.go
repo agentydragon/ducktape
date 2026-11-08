@@ -276,7 +276,7 @@ func sessionDelegationExecutors(
 
 // dial connects to p as this service's workload.
 func dial(p peer) (*grpc.ClientConn, error) {
-	return bearer.Dial(p.Target, p.TokenFile, time.Duration(p.RequestTimeoutSeconds*float64(time.Second)))
+	return bearer.Dial(p.Target, p.TokenFile, time.Duration(p.RequestTimeoutSeconds*float64(time.Second)), nil)
 }
 
 // mcpExecutors builds the Executor of each MCP group, which withdraws the group's Actions until its server lists them:
@@ -395,7 +395,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if c.SessionDelegationDispatcher != nil {
 		dispatcherConn, err := workloadgrpc.DialDelegated(
 			c.SessionDelegationDispatcher.Target, c.SessionDelegationDispatcher.TokenFile,
-			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)),
+			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)), nil,
 		)
 		if err != nil {
 			return fmt.Errorf("dial delegated Environment Service and Session Dispatcher: %w", err)
@@ -403,7 +403,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		defer dispatcherConn.Close()
 		historyConn, err := workloadgrpc.DialDelegated(
 			c.SessionDelegationHistory.Target, c.SessionDelegationHistory.TokenFile,
-			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)),
+			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)), nil,
 		)
 		if err != nil {
 			return fmt.Errorf("dial delegated History Service: %w", err)

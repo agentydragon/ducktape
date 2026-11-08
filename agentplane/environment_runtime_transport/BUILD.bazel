@@ -6,6 +6,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "environment_runtime_transport",
     srcs = [
+        "client_tls.go",
         "credentials.go",
         "expiry_credentials.go",
         "http_expiry.go",
@@ -26,6 +27,7 @@ go_library(
 go_test(
     name = "environment_runtime_transport_test",
     srcs = [
+        "client_tls_test.go",
         "credentials_test.go",
         "egress_proxy_client_test.go",
         "http_expiry_test.go",

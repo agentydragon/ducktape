@@ -41,7 +41,7 @@ func New(config Config) (*Client, error) {
 }
 
 func (c *Client) dialLocked() error {
-	conn, err := bearer.Dial(c.config.Target, c.config.TokenFile, c.config.Timeout)
+	conn, err := bearer.Dial(c.config.Target, c.config.TokenFile, c.config.Timeout, nil)
 	if err != nil {
 		return err
 	}

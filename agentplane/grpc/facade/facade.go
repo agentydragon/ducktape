@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -20,6 +20,7 @@ type Registration func(ctx context.Context, mux *runtime.ServeMux, endpoint stri
 
 // HandlerOptions controls the HTTP/JSON facade without changing the generated gRPC service.
 type HandlerOptions struct {
+	TLS *environment_runtime_transport.ClientTLS
 	// RejectUnknownJSONFields refuses request fields absent from the current protobuf contract. In
 	// particular, a removed destination field must not be silently ignored during a wire cutover.
 	RejectUnknownJSONFields bool
@@ -42,6 +43,10 @@ func NewHandlerWithOptions(ctx context.Context, target string, unaryTimeout time
 	if unaryTimeout < 0 {
 		return nil, errors.New("unary timeout must not be negative")
 	}
+	credentials, err := options.TLS.Credentials()
+	if err != nil {
+		return nil, err
+	}
 	var muxOptions []runtime.ServeMuxOption
 	if options.RejectUnknownJSONFields {
 		// Match gRPC-Gateway's default response shape and HTTPBody behavior; only request decoding changes.
@@ -52,7 +57,7 @@ func NewHandlerWithOptions(ctx context.Context, target string, unaryTimeout time
 	mux := runtime.NewServeMux(muxOptions...)
 	for _, register := range registrations {
 		dialOptions := []grpc.DialOption{
-			observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry(),
+			observability.GRPCClientOption(), grpc.WithTransportCredentials(credentials), grpc.WithDisableRetry(),
 		}
 		if unaryTimeout > 0 {
 			dialOptions = append(dialOptions, grpc.WithUnaryInterceptor(unaryTimeoutInterceptor(unaryTimeout)))
