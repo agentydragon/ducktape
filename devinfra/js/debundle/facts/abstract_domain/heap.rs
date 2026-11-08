@@ -1165,27 +1165,22 @@ impl HeapScan<'_> {
     /// Taint the binding a member target's receiver names, through `Paren`
     /// wrappers and optional chains.
     fn taint_member_receiver(&mut self, expr: &Expr) {
-        let mut cur = expr;
-        loop {
-            match cur {
-                Expr::Paren(p) => cur = &p.expr,
-                Expr::Member(member) => {
-                    if let Expr::Ident(recv) = member.obj.as_ref() {
+        match binding_targets::transparent_target_expr(expr) {
+            Expr::Member(member) => {
+                if let Expr::Ident(recv) = binding_targets::transparent_target_expr(&member.obj) {
+                    self.apply_to_name(recv.sym.as_ref(), HeapEffect::Taint);
+                }
+            }
+            Expr::OptChain(opt) => match &*opt.base {
+                OptChainBase::Member(member) => {
+                    if let Expr::Ident(recv) = binding_targets::transparent_target_expr(&member.obj)
+                    {
                         self.apply_to_name(recv.sym.as_ref(), HeapEffect::Taint);
                     }
-                    return;
                 }
-                Expr::OptChain(opt) => match &*opt.base {
-                    OptChainBase::Member(member) => {
-                        if let Expr::Ident(recv) = member.obj.as_ref() {
-                            self.apply_to_name(recv.sym.as_ref(), HeapEffect::Taint);
-                        }
-                        return;
-                    }
-                    OptChainBase::Call(_) => return,
-                },
-                _ => return,
-            }
+                OptChainBase::Call(_) => {}
+            },
+            _ => {}
         }
     }
 
@@ -1342,12 +1337,15 @@ impl Visit for HeapScan<'_> {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        match &node.left {
+        match binding_targets::simple_write_target(&node.left) {
             // A member write. Even a data-property write taints: `PlainData`
             // member reads are reorderable only while no write reaches them.
-            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
-                self.apply_to_reachable(&member.obj, HeapEffect::Taint);
-                if let Expr::Ident(recv) = member.obj.as_ref() {
+            Some(binding_targets::SimpleWriteTarget::Member(member)) => {
+                self.apply_to_reachable(
+                    binding_targets::transparent_target_expr(&member.obj),
+                    HeapEffect::Taint,
+                );
+                if let Expr::Ident(recv) = binding_targets::transparent_target_expr(&member.obj) {
                     self.apply_to_name(recv.sym.as_ref(), HeapEffect::Taint);
                 }
                 self.apply_to_reachable(&node.right, HeapEffect::Publish);
@@ -1356,14 +1354,14 @@ impl Visit for HeapScan<'_> {
             // plain-data literal: anything else may produce an
             // accessor-bearing value. A compound operator produces a
             // primitive, never a literal.
-            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                if !is_plain_data_init(&node.right, binding.sym.as_ref(), VarDeclKind::Let) {
-                    self.rebind(binding.sym.as_ref());
+            Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                if !is_plain_data_init(&node.right, binding.0.as_ref(), VarDeclKind::Let) {
+                    self.rebind(binding.0.as_ref());
                 }
             }
             // Destructuring and other compound targets: a tracked name
             // anywhere in one may be rebound or written through.
-            _ => {
+            None => {
                 let mut idents = TrackedIdents {
                     tracked: self.tracked,
                     hit: BTreeSet::new(),
@@ -1379,12 +1377,18 @@ impl Visit for HeapScan<'_> {
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
-        if let Expr::Ident(ident) = node.arg.as_ref() {
-            self.rebind(ident.sym.as_ref());
-        }
-        self.taint_member_receiver(&node.arg);
-        if let Expr::Member(member) = node.arg.unwrap_parens() {
-            self.apply_to_reachable(&member.obj, HeapEffect::Taint);
+        match binding_targets::simple_update_target(&node.arg) {
+            Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                self.rebind(binding.0.as_ref());
+            }
+            Some(binding_targets::SimpleWriteTarget::Member(member)) => {
+                self.taint_member_receiver(&node.arg);
+                self.apply_to_reachable(
+                    binding_targets::transparent_target_expr(&member.obj),
+                    HeapEffect::Taint,
+                );
+            }
+            None => self.taint_member_receiver(&node.arg),
         }
         node.visit_children_with(self);
     }
@@ -1392,8 +1396,11 @@ impl Visit for HeapScan<'_> {
     fn visit_unary_expr(&mut self, node: &UnaryExpr) {
         if node.op == UnaryOp::Delete {
             self.taint_member_receiver(&node.arg);
-            if let Expr::Member(member) = node.arg.unwrap_parens() {
-                self.apply_to_reachable(&member.obj, HeapEffect::Taint);
+            if let Expr::Member(member) = binding_targets::transparent_target_expr(&node.arg) {
+                self.apply_to_reachable(
+                    binding_targets::transparent_target_expr(&member.obj),
+                    HeapEffect::Taint,
+                );
             }
         }
         // `typeof X` / `!X` / `void X` inspect the value transiently.

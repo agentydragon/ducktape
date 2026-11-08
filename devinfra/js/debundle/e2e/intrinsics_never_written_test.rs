@@ -92,6 +92,11 @@ fn a_write_on_a_named_familys_exact_object_refutes_the_premise() {
             "function patch(value) { Map.prototype.extra = value; }\n",
             "[Map]",
         ),
+        (
+            "function patch(value) { (Map.prototype.extra as any) = value; }\n",
+            "[Map]",
+        ),
+        ("function patch(value) { (Map as any) = value; }\n", "[Map]"),
         ("function patch(value) { Map.groupBy = value; }\n", "all"),
         (
             "function patch(value) { globalThis.Map = value; }\n",

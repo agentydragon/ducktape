@@ -385,14 +385,16 @@ impl ArrayContentCollector<'_> {
             }
             return;
         }
-        self.record_set_expr(&member.obj, true, false, true);
+        let receiver = binding_targets::transparent_target_expr(&member.obj);
+        self.record_set_expr(receiver, true, false, true);
         if let Some(opaque) = self.member_content_kind(member) {
-            self.record_array_expr(&member.obj, true, false, opaque);
+            self.record_array_expr(receiver, true, false, opaque);
         }
     }
 
     fn record_member_write(&mut self, member: &MemberExpr, read: bool) {
-        self.record_set_expr(&member.obj, read, true, true);
+        let receiver = binding_targets::transparent_target_expr(&member.obj);
+        self.record_set_expr(receiver, read, true, true);
         if self.member_content_kind(member).is_some() {
             // A static key identifies which array's contents are involved,
             // but it does not prove an own writable data property. The write
@@ -400,7 +402,7 @@ impl ArrayContentCollector<'_> {
             // array escaped. Keep the exact cell plus the opaque barrier;
             // trusted binding/global summaries do not assert descriptor
             // integrity.
-            self.record_array_expr(&member.obj, read, true, true);
+            self.record_array_expr(receiver, read, true, true);
         }
     }
 }
@@ -434,7 +436,9 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if let Some(member) = assign_member_target(&node.left) {
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+            binding_targets::simple_write_target(&node.left)
+        {
             self.record_member_write(member, !matches!(node.op, AssignOp::Assign));
             self.record_escaped_expr(&node.right);
             self.visit_member_children(member);
@@ -445,7 +449,9 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
-        if let Expr::Member(member) = node.arg.unwrap_parens() {
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+            binding_targets::simple_update_target(&node.arg)
+        {
             self.record_member_write(member, true);
             self.visit_member_children(member);
         } else {
@@ -756,20 +762,6 @@ pub(crate) fn is_array_index(value: &str) -> bool {
 
 fn is_numeric_index(value: f64) -> bool {
     value.is_finite() && value >= 0.0 && value < u32::MAX as f64 && value.fract() == 0.0
-}
-
-fn assign_member_target(target: &AssignTarget) -> Option<&MemberExpr> {
-    let AssignTarget::Simple(simple) = target else {
-        return None;
-    };
-    match simple {
-        SimpleAssignTarget::Member(member) => Some(member),
-        SimpleAssignTarget::Paren(paren) => match paren.expr.unwrap_parens() {
-            Expr::Member(member) => Some(member),
-            _ => None,
-        },
-        _ => None,
-    }
 }
 
 #[cfg(test)]

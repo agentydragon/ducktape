@@ -207,11 +207,12 @@ impl LazyBoundary for GlobalAliasUses<'_> {
 
 impl GlobalAliasUses<'_> {
     fn is_alias(&self, expr: &Expr) -> bool {
-        matches!(expr.unwrap_parens(), Expr::Ident(ident) if self.aliases.contains(&ident.to_id()))
+        matches!(binding_targets::transparent_target_expr(expr), Expr::Ident(ident)
+            if self.aliases.contains(&ident.to_id()))
     }
 
     fn is_global_name(&self, expr: &Expr) -> bool {
-        matches!(expr.unwrap_parens(), Expr::Ident(ident)
+        matches!(binding_targets::transparent_target_expr(expr), Expr::Ident(ident)
             if self.global_object_names.contains(ident.sym.as_ref()))
     }
 }
@@ -257,7 +258,8 @@ impl Visit for GlobalAliasUses<'_> {
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
         // A write through an alias stays opaque.
         if self.lazy_depth == 0
-            && let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left
+            && let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+                binding_targets::simple_write_target(&assign.left)
             && self.is_alias(&member.obj)
         {
             self.escaped = true;
@@ -267,7 +269,8 @@ impl Visit for GlobalAliasUses<'_> {
 
     fn visit_update_expr(&mut self, update: &UpdateExpr) {
         if self.lazy_depth == 0
-            && let Expr::Member(member) = update.arg.unwrap_parens()
+            && let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+                binding_targets::simple_update_target(&update.arg)
             && self.is_alias(&member.obj)
         {
             self.escaped = true;

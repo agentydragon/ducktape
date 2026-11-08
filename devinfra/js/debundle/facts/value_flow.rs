@@ -1883,14 +1883,14 @@ impl Visit for FlowProgramCollector {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        match &node.left {
-            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+        match binding_targets::simple_write_target(&node.left) {
+            Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
                 self.events.push(FlowEvent::AssignBinding {
-                    id: self.symbols.binding(binding.id.to_id()),
+                    id: self.symbols.binding(binding),
                     right: FlowValueExpr::from_ast(&node.right, &mut self.symbols),
                 });
             }
-            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+            Some(binding_targets::SimpleWriteTarget::Member(member)) => {
                 if let Some(property) = static_prop(&member.prop) {
                     self.events.push(FlowEvent::AssignProperty {
                         object: FlowValueExpr::from_ast(&member.obj, &mut self.symbols),
@@ -1899,7 +1899,7 @@ impl Visit for FlowProgramCollector {
                     });
                 }
             }
-            _ => {}
+            None => {}
         }
         node.visit_children_with(self);
     }
@@ -2695,11 +2695,11 @@ impl Visit for FlowPass<'_> {
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         let values = self.flow.values_of_expr(&node.right);
-        match &node.left {
-            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                self.merge_binding(binding.id.to_id(), values);
+        match binding_targets::simple_write_target(&node.left) {
+            Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                self.merge_binding(binding, values);
             }
-            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+            Some(binding_targets::SimpleWriteTarget::Member(member)) => {
                 if let Some(prop) = static_prop(&member.prop) {
                     for origin in self.flow.values_of_expr(&member.obj) {
                         if let Value::Alloc(Kind::Object, object) = origin {
@@ -2710,7 +2710,7 @@ impl Visit for FlowPass<'_> {
                     }
                 }
             }
-            _ => {}
+            None => {}
         }
         node.visit_children_with(self);
     }

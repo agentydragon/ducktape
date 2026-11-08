@@ -215,7 +215,10 @@ pub fn evaluate(expr: &Expr, scope: &impl PrimScope) -> Option<PrimKinds> {
         Expr::Tpl(_) => Some(PrimKinds::STRING),
         Expr::Ident(ident) => scope.binding(ident),
         Expr::Unary(unary_expr) => Some(unary(unary_expr.op, evaluate(&unary_expr.arg, scope))),
-        Expr::Update(update_expr) => Some(update(evaluate(&update_expr.arg, scope))),
+        Expr::Update(update_expr) => Some(update(evaluate(
+            binding_targets::transparent_target_expr(&update_expr.arg),
+            scope,
+        ))),
         Expr::Bin(binary_expr) => {
             let left = evaluate(&binary_expr.left, scope);
             let right = evaluate(&binary_expr.right, scope);
@@ -418,7 +421,7 @@ impl GlobalWriteFinder {
     }
 
     fn record_property(&mut self, object: &Expr, key: &str) {
-        if let Expr::Ident(object) = object.unwrap_parens()
+        if let Expr::Ident(object) = binding_targets::transparent_target_expr(object)
             && builtins::GLOBALS.contains(object.sym.as_ref())
         {
             self.written.insert(format!("{}.{key}", object.sym));
@@ -435,20 +438,27 @@ impl GlobalWriteFinder {
 
 impl Visit for GlobalWriteFinder {
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        match &node.left {
-            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+        match binding_targets::simple_write_target(&node.left) {
+            Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                self.record(binding.0.as_ref());
+            }
+            Some(binding_targets::SimpleWriteTarget::Member(member)) => {
                 self.record_member(member);
             }
-            other => other.visit_with(&mut AssignTargetNames(self)),
+            None => node.left.visit_with(&mut AssignTargetNames(self)),
         }
         node.visit_children_with(self);
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
-        match node.arg.unwrap_parens() {
-            Expr::Ident(ident) => self.record(ident.sym.as_ref()),
-            Expr::Member(member) => self.record_member(member),
-            _ => {}
+        match binding_targets::simple_update_target(&node.arg) {
+            Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                self.record(binding.0.as_ref());
+            }
+            Some(binding_targets::SimpleWriteTarget::Member(member)) => {
+                self.record_member(member);
+            }
+            None => {}
         }
         node.visit_children_with(self);
     }
@@ -517,7 +527,7 @@ impl Visit for AssignTargetNames<'_> {
 fn static_member_key(member: &MemberExpr) -> Option<&str> {
     match &member.prop {
         MemberProp::Ident(id) => Some(id.sym.as_ref()),
-        MemberProp::Computed(key) => match key.expr.unwrap_parens() {
+        MemberProp::Computed(key) => match binding_targets::transparent_target_expr(&key.expr) {
             Expr::Lit(Lit::Str(value)) => value.value.as_str(),
             _ => None,
         },

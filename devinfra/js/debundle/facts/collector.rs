@@ -238,7 +238,8 @@ impl StatementFactsCollector {
     }
 
     fn is_global_object_expr(&self, expr: &Expr) -> bool {
-        matches!(expr.unwrap_parens(), Expr::Ident(i) if self.global_object_names.contains(i.sym.as_ref()))
+        matches!(binding_targets::transparent_target_expr(expr), Expr::Ident(i)
+            if self.global_object_names.contains(i.sym.as_ref()))
     }
 
     fn record_global_prop(&mut self, member: &MemberExpr, is_write: bool) {
@@ -884,35 +885,38 @@ impl Visit for StatementFactsCollector {
         self.mark_parameter_value_escape(&node.right);
         let before_assignment = self.past_await;
         record_assign_target(&node.left, self);
-        if let Some(member) = simple_assign_member_target(&node.left)
-            && let Expr::Ident(root) = member.obj.unwrap_parens()
+        let simple_target = binding_targets::simple_write_target(&node.left);
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref()
+            && let Expr::Ident(root) = binding_targets::transparent_target_expr(&member.obj)
         {
             self.member_write_roots.insert(root.to_id());
         }
         if self.lazy_depth == 0 {
-            match &node.left {
-                AssignTarget::Simple(_) => {
-                    if let Some(member) = simple_assign_member_target(&node.left) {
-                        if self.is_global_object_expr(&member.obj) {
-                            // `globalThis.tag = ...`: a precisely
-                            // tracked cell (dynamic keys bail inside
-                            // `record_global_prop`).
-                            self.record_global_prop(member, /*is_write=*/ true);
-                        } else {
-                            // Member write through a binding or a
-                            // deeper global chain (`globalThis.a.b`):
-                            // not attributable to a static cell.
-                            self.bail_summarizable();
-                        }
-                    }
-                }
-                AssignTarget::Pat(pat) => {
-                    // Destructuring targets may smuggle member
-                    // writes: `[obj.x] = arr`.
-                    if assign_target_pat_has_member_target(pat) {
+            match simple_target.as_ref() {
+                Some(binding_targets::SimpleWriteTarget::Member(member)) => {
+                    if self.is_global_object_expr(&member.obj) {
+                        // `globalThis.tag = ...`: a precisely
+                        // tracked cell (dynamic keys bail inside
+                        // `record_global_prop`).
+                        self.record_global_prop(member, /*is_write=*/ true);
+                    } else {
+                        // Member write through a binding or a
+                        // deeper global chain (`globalThis.a.b`):
+                        // not attributable to a static cell.
                         self.bail_summarizable();
                     }
                 }
+                None if matches!(&node.left, AssignTarget::Pat(_)) => {
+                    let AssignTarget::Pat(pattern) = &node.left else {
+                        unreachable!();
+                    };
+                    // Destructuring targets may smuggle member
+                    // writes: `[obj.x] = arr`.
+                    if assign_target_pat_has_member_target(pattern) {
+                        self.bail_summarizable();
+                    }
+                }
+                Some(binding_targets::SimpleWriteTarget::Binding(_)) | None => {}
             }
         }
         node.left.visit_with(self);
@@ -927,17 +931,18 @@ impl Visit for StatementFactsCollector {
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         record_update_target(&node.arg, self);
-        if let Expr::Member(member) = node.arg.unwrap_parens()
-            && let Expr::Ident(root) = member.obj.unwrap_parens()
+        let simple_target = binding_targets::simple_update_target(&node.arg);
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref()
+            && let Expr::Ident(root) = binding_targets::transparent_target_expr(&member.obj)
         {
             self.member_write_roots.insert(root.to_id());
         }
         if self.lazy_depth == 0 {
-            match node.arg.unwrap_parens() {
-                // `count++`: binding read+write, handled by
-                // `record_update_target` + the child visit.
-                Expr::Ident(_) => {}
-                Expr::Member(member) if self.is_global_object_expr(&member.obj) => {
+            match simple_target.as_ref() {
+                Some(binding_targets::SimpleWriteTarget::Binding(_)) => {}
+                Some(binding_targets::SimpleWriteTarget::Member(member))
+                    if self.is_global_object_expr(&member.obj) =>
+                {
                     // `globalThis.count++` reads and writes the cell.
                     self.record_global_prop(member, /*is_write=*/ true);
                     self.record_global_prop(member, /*is_write=*/ false);
@@ -1191,23 +1196,6 @@ impl Visit for StatementFactsCollector {
     }
     fn visit_class_member(&mut self, member: &ClassMember) {
         lazy_visit_class_member(self, member);
-    }
-}
-
-/// The member expression a simple assignment target writes through,
-/// unwrapping parens (`(globalThis.x) = 1`). `None` for ident,
-/// opt-chain, and pattern targets.
-fn simple_assign_member_target(target: &AssignTarget) -> Option<&MemberExpr> {
-    let AssignTarget::Simple(simple) = target else {
-        return None;
-    };
-    match simple {
-        SimpleAssignTarget::Member(member) => Some(member),
-        SimpleAssignTarget::Paren(paren) => match paren.expr.unwrap_parens() {
-            Expr::Member(member) => Some(member),
-            _ => None,
-        },
-        _ => None,
     }
 }
 

@@ -427,19 +427,19 @@ impl ElementUses {
                 // it, and a compound operator converts both operands.
                 let right = if assign.op == AssignOp::Assign
                     && matches!(
-                        assign.left,
-                        AssignTarget::Simple(SimpleAssignTarget::Member(_))
+                        binding_targets::simple_write_target(&assign.left),
+                        Some(binding_targets::SimpleWriteTarget::Member(_))
                     ) {
                     Use::Value
                 } else {
                     Use::Coerce
                 };
-                let left = match &assign.left {
-                    AssignTarget::Simple(SimpleAssignTarget::Member(member)) => self.member(member),
-                    AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                        !self.is_element(&binding.id)
+                let left = match binding_targets::simple_write_target(&assign.left) {
+                    Some(binding_targets::SimpleWriteTarget::Member(member)) => self.member(member),
+                    Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                        !self.is_element(&binding)
                     }
-                    other => !self.mentions_element(other),
+                    None => !self.mentions_element(&assign.left),
                 };
                 left && self.expr(&assign.right, right)
             }
@@ -453,11 +453,13 @@ impl ElementUses {
         if self.record_member(member) {
             return true;
         }
-        self.expr(&member.obj, Use::Coerce)
-            && match &member.prop {
-                MemberProp::Computed(key) => self.expr(&key.expr, Use::Coerce),
-                MemberProp::Ident(_) | MemberProp::PrivateName(_) => true,
-            }
+        self.expr(
+            binding_targets::transparent_target_expr(&member.obj),
+            Use::Coerce,
+        ) && match &member.prop {
+            MemberProp::Computed(key) => self.expr(&key.expr, Use::Coerce),
+            MemberProp::Ident(_) | MemberProp::PrivateName(_) => true,
+        }
     }
 
     /// A static read of an own key of every record element.

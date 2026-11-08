@@ -525,10 +525,13 @@ fn fresh_value_step(item: &ModuleItem) -> Option<FreshValueStep> {
             if assignment.op != AssignOp::Assign || !value_without_user_code(&assignment.right) {
                 return None;
             }
-            let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left else {
+            let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+                binding_targets::simple_write_target(&assignment.left)
+            else {
                 return None;
             };
-            let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+            let Expr::Ident(receiver) = binding_targets::transparent_target_expr(&member.obj)
+            else {
                 return None;
             };
             let MemberProp::Ident(property) = &member.prop else {
@@ -1448,14 +1451,18 @@ fn safe_constructor_assignment(
             )
         }),
         Expr::Assign(assign) if assign.op == AssignOp::Assign => {
-            let AssignTarget::Simple(SimpleAssignTarget::Member(target)) = &assign.left else {
+            let Some(binding_targets::SimpleWriteTarget::Member(target)) =
+                binding_targets::simple_write_target(&assign.left)
+            else {
                 return false;
             };
             let MemberProp::Ident(property) = &target.prop else {
                 return false;
             };
-            if !matches!(target.obj.unwrap_parens(), Expr::This(_))
-                || property.sym.as_ref() == "__proto__"
+            if !matches!(
+                binding_targets::transparent_target_expr(&target.obj),
+                Expr::This(_)
+            ) || property.sym.as_ref() == "__proto__"
                 || !safe_constructor_value(&assign.right, params, property_reads, binding_reads)
             {
                 return false;
@@ -1841,11 +1848,13 @@ fn symbol_guarded_fill(statement: &IfStmt) -> Option<(Id, &'static str, Span)> {
     let Expr::Assign(assignment) = expression.expr.as_ref() else {
         return None;
     };
-    let AssignTarget::Simple(SimpleAssignTarget::Member(target)) = &assignment.left else {
+    let Some(binding_targets::SimpleWriteTarget::Member(target)) =
+        binding_targets::simple_write_target(&assignment.left)
+    else {
         return None;
     };
     if assignment.op != AssignOp::Assign
-        || !matches!(target.obj.as_ref(), Expr::Ident(receiver) if receiver.to_id() == symbol.to_id())
+        || !matches!(binding_targets::transparent_target_expr(&target.obj), Expr::Ident(receiver) if receiver.to_id() == symbol.to_id())
         || !matches!(&target.prop, MemberProp::Ident(key) if key.sym.as_ref() == property)
     {
         return None;
@@ -4496,11 +4505,15 @@ fn intrinsic_write_target(
     IntrinsicWriteTarget {
         owner,
         activation_callable,
-        constructor_this: receiver_callable
-            .filter(|_| matches!(member.obj.unwrap_parens(), Expr::This(_))),
+        constructor_this: receiver_callable.filter(|_| {
+            matches!(
+                binding_targets::transparent_target_expr(&member.obj),
+                Expr::This(_)
+            )
+        }),
         span: member.span,
         operation,
-        receiver: ValueExpr::from_expr(&member.obj),
+        receiver: ValueExpr::from_expr(binding_targets::transparent_target_expr(&member.obj)),
         key: Some(key),
         additional_keys: Vec::new(),
         value: None,
@@ -5428,7 +5441,7 @@ fn builtin_global_root(ident: &Ident) -> Option<BuiltinGlobalRoot> {
 }
 
 fn is_global_receiver(expression: &Expr, names: &BTreeSet<&str>) -> bool {
-    match expression.unwrap_parens() {
+    match binding_targets::transparent_target_expr(expression) {
         Expr::Ident(ident) => names.contains(ident.sym.as_ref()),
         Expr::Member(member) => {
             matches!(
@@ -5696,12 +5709,15 @@ fn deferred_global_assignment(expression: &Expr) -> Option<DeferredGlobalPublica
     let Expr::Assign(assignment) = expression.unwrap_parens() else {
         return None;
     };
-    let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left else {
+    let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+        binding_targets::simple_write_target(&assignment.left)
+    else {
         return None;
     };
-    let (Expr::Ident(receiver), MemberProp::Ident(property)) =
-        (member.obj.unwrap_parens(), &member.prop)
-    else {
+    let (Expr::Ident(receiver), MemberProp::Ident(property)) = (
+        binding_targets::transparent_target_expr(&member.obj),
+        &member.prop,
+    ) else {
         return None;
     };
     if assignment.op != AssignOp::Assign
@@ -12856,18 +12872,19 @@ impl Visit for ExecutionIndex {
             if let Expr::Assign(assignment) = expression.unwrap_parens()
                 && assignment.op == AssignOp::Assign
             {
-                if let AssignTarget::Simple(SimpleAssignTarget::Ident(receiver)) = &assignment.left
+                if let Some(binding_targets::SimpleWriteTarget::Binding(receiver)) =
+                    binding_targets::simple_write_target(&assignment.left)
                     && let Expr::Call(call) = assignment.right.unwrap_parens()
                     && let Callee::Expr(callee) = &call.callee
                     && let Expr::Ident(callee) = callee.unwrap_parens()
                     && callee.sym == "Error"
                 {
-                    fresh = Some((receiver.id.to_id(), callee.to_id()));
+                    fresh = Some((receiver, callee.to_id()));
                     continues = true;
                 } else if let Some((receiver, callee)) = &fresh
-                    && let AssignTarget::Simple(SimpleAssignTarget::Member(member)) =
-                        &assignment.left
-                    && matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.to_id() == *receiver)
+                    && let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+                        binding_targets::simple_write_target(&assignment.left)
+                    && matches!(binding_targets::transparent_target_expr(&member.obj), Expr::Ident(id) if id.to_id() == *receiver)
                     && let Some(property) = static_prop(&member.prop)
                     && property != "__proto__"
                     && property != "stack"
@@ -12988,7 +13005,9 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_simple_assign_target(&mut self, target: &SimpleAssignTarget) {
-        if let SimpleAssignTarget::Member(member) = target {
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+            binding_targets::simple_assign_target_simple(target)
+        {
             self.member_write_sites.insert(member.span.into());
         }
         target.visit_children_with(self);
@@ -12999,34 +13018,38 @@ impl Visit for ExecutionIndex {
         // can only make this conservative. Reuse the complete target walker
         // used by raw facts, including patterns and parenthesized targets.
         binding_targets::record_assign_target(&assignment.left, self);
+        let simple_target = binding_targets::simple_write_target(&assignment.left);
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref() {
+            self.member_write_sites.insert(member.span.into());
+        }
         let mut assigned = Vec::new();
-        match &assignment.left {
-            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                assigned.push((binding.id.to_id(), ValueExpr::Unknown));
+        match simple_target.as_ref() {
+            Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                assigned.push((binding.clone(), ValueExpr::Unknown));
             }
-            AssignTarget::Pat(pattern) => {
-                collect_assign_target_assignments(pattern, &ValueExpr::Unknown, &mut assigned);
+            Some(binding_targets::SimpleWriteTarget::Member(_)) => {}
+            None => {
+                if let AssignTarget::Pat(pattern) = &assignment.left {
+                    collect_assign_target_assignments(pattern, &ValueExpr::Unknown, &mut assigned);
+                }
             }
-            _ => {}
         }
         self.reassigned_bindings
             .extend(assigned.iter().map(|(binding, _)| binding.clone()));
-        match &assignment.left {
-            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => self
+        match simple_target.as_ref() {
+            Some(binding_targets::SimpleWriteTarget::Binding(binding)) => self
                 .property_key_assignments
-                .entry(binding.id.to_id())
+                .entry(binding.clone())
                 .or_default()
                 .push(if assignment.op == AssignOp::Assign {
                     PropertyKeyExpr::from_expr(&assignment.right)
                 } else {
                     PropertyKeyExpr::Unknown
                 }),
-            AssignTarget::Pat(pattern) => {
-                let mut bindings = Vec::new();
-                collect_assign_target_assignments(pattern, &ValueExpr::Unknown, &mut bindings);
-                for (id, _) in bindings {
+            None if matches!(&assignment.left, AssignTarget::Pat(_)) => {
+                for (id, _) in &assigned {
                     self.property_key_assignments
-                        .entry(id)
+                        .entry(id.clone())
                         .or_default()
                         .push(PropertyKeyExpr::Unknown);
                 }
@@ -13034,11 +13057,11 @@ impl Visit for ExecutionIndex {
             _ => {}
         }
         if self.global_guards_requested {
-            self.global_alias_written |= match &assignment.left {
-                AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                    self.global_object_names.contains(binding.id.sym.as_ref())
+            self.global_alias_written |= match simple_target.as_ref() {
+                Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                    self.global_object_names.contains(binding.0.as_ref())
                 }
-                AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                Some(binding_targets::SimpleWriteTarget::Member(member)) => {
                     is_global_receiver(&member.obj, &self.global_object_names)
                         && static_prop(&member.prop).is_some_and(|property| {
                             matches!(
@@ -13047,16 +13070,17 @@ impl Visit for ExecutionIndex {
                             )
                         })
                 }
-                _ => false,
+                None => false,
             };
         }
-        if matches!(&assignment.left,
-            AssignTarget::Simple(SimpleAssignTarget::Ident(binding))
-                if binding.id.sym == "Map")
-        {
+        if matches!(
+            simple_target.as_ref(),
+            Some(binding_targets::SimpleWriteTarget::Binding(binding))
+                if binding.0.as_ref() == "Map"
+        ) {
             self.reassigned_map = true;
         }
-        if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left {
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref() {
             let right = ValueExpr::from_expr(&assignment.right);
             let value = match assignment.op {
                 AssignOp::Assign => right,
@@ -13066,7 +13090,9 @@ impl Visit for ExecutionIndex {
                     ValueExpr::Alternatives(
                         [
                             ValueExpr::Member(
-                                Arc::new(ValueExpr::from_expr(&member.obj)),
+                                Arc::new(ValueExpr::from_expr(
+                                    binding_targets::transparent_target_expr(&member.obj),
+                                )),
                                 static_prop(&member.prop),
                                 MemberKey::of(&member.prop),
                                 member.span.into(),
@@ -13109,38 +13135,46 @@ impl Visit for ExecutionIndex {
             assignment.op,
             AssignOp::Assign | AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
         ) {
-            let left = match &assignment.left {
-                AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                    ValueExpr::Binding(binding.id.to_id())
+            let left = match simple_target.as_ref() {
+                Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                    ValueExpr::Binding(binding.clone())
                 }
-                AssignTarget::Simple(SimpleAssignTarget::Member(member)) => ValueExpr::Member(
-                    Arc::new(ValueExpr::from_expr(&member.obj)),
+                Some(binding_targets::SimpleWriteTarget::Member(member)) => ValueExpr::Member(
+                    Arc::new(ValueExpr::from_expr(
+                        binding_targets::transparent_target_expr(&member.obj),
+                    )),
                     static_prop(&member.prop),
                     MemberKey::of(&member.prop),
                     member.span.into(),
                 ),
-                _ => ValueExpr::Unknown,
+                None => ValueExpr::Unknown,
             };
             self.record_implicit_coercion_value(left, assignment.span);
             self.record_implicit_coercion(&assignment.right, assignment.span);
         }
-        if let (Some(key), AssignTarget::Simple(SimpleAssignTarget::Ident(binding))) =
-            (self.current, &assignment.left)
+        if let (Some(key), Some(binding_targets::SimpleWriteTarget::Binding(binding))) =
+            (self.current, simple_target.as_ref())
         {
             let callable = self.callables.get_mut(&key).unwrap();
-            callable.rebinds.insert(binding.id.to_id());
+            callable.rebinds.insert(binding.clone());
             callable
                 .local_assignments
-                .push((binding.id.to_id(), ValueExpr::from_expr(&assignment.right)));
-        } else if let AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) = &assignment.left {
+                .push((binding.clone(), ValueExpr::from_expr(&assignment.right)));
+        } else if let Some(binding_targets::SimpleWriteTarget::Binding(binding)) =
+            simple_target.as_ref()
+        {
             self.top_assignments[self.owner.0]
-                .push((binding.id.to_id(), ValueExpr::from_expr(&assignment.right)));
+                .push((binding.clone(), ValueExpr::from_expr(&assignment.right)));
             if self.conditional_depth == 0 {
-                self.top_definite_initializers[self.owner.0].insert(binding.id.to_id());
+                self.top_definite_initializers[self.owner.0].insert(binding.clone());
             }
-        } else if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left {
+        } else if let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+            simple_target.as_ref()
+        {
             let write = CallbackResultWrite {
-                receiver: ValueExpr::from_expr(&member.obj),
+                receiver: ValueExpr::from_expr(binding_targets::transparent_target_expr(
+                    &member.obj,
+                )),
                 property_key: match &member.prop {
                     MemberProp::Computed(key) => ValueExpr::from_expr(&key.expr),
                     _ => ValueExpr::NonCallable(PrimKinds::STRING),
@@ -13164,7 +13198,7 @@ impl Visit for ExecutionIndex {
             } else {
                 self.top_callback_result_writes[self.owner.0].push(write);
             }
-            if let Expr::Ident(receiver) = member.obj.unwrap_parens()
+            if let Expr::Ident(receiver) = binding_targets::transparent_target_expr(&member.obj)
                 && let Some(key) = static_prop(&member.prop)
             {
                 let write = MemberValueWrite {
@@ -13183,7 +13217,9 @@ impl Visit for ExecutionIndex {
                 } else {
                     self.top_member_value_writes[self.owner.0].push(write);
                 }
-            } else if let Expr::Ident(receiver) = member.obj.unwrap_parens() {
+            } else if let Expr::Ident(receiver) =
+                binding_targets::transparent_target_expr(&member.obj)
+            {
                 let write = MemberValueWrite {
                     receiver: receiver.to_id(),
                     property: None,
@@ -13248,40 +13284,54 @@ impl Visit for ExecutionIndex {
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         binding_targets::record_update_target(&expression.arg, self);
-        if let Expr::Ident(ident) = expression.arg.unwrap_parens() {
-            self.reassigned_bindings.insert(ident.to_id());
+        let simple_target = binding_targets::simple_update_target(&expression.arg);
+        if let Some(binding_targets::SimpleWriteTarget::Binding(binding)) = simple_target.as_ref() {
+            self.reassigned_bindings.insert(binding.clone());
             self.property_key_assignments
-                .entry(ident.to_id())
+                .entry(binding.clone())
                 .or_default()
                 .push(PropertyKeyExpr::Unknown);
         }
-        if let Expr::Member(member) = expression.arg.unwrap_parens() {
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref() {
             self.member_write_sites.insert(member.span.into());
         }
 
-        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Function" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet" | "FinalizationRegistry"))
-        {
+        if matches!(
+            simple_target.as_ref(),
+            Some(binding_targets::SimpleWriteTarget::Binding(binding))
+                if matches!(
+                    binding.0.as_ref(),
+                    "Error" | "Function" | "Object" | "Array" | "Math" | "RegExp" | "Symbol"
+                        | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet" | "FinalizationRegistry"
+                )
+        ) {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 owner: self.owner,
                 activation_callable: self.current,
                 constructor_this: None,
                 span: expression.span,
                 operation: NativeMutationOperation::Update,
-                receiver: ValueExpr::from_expr(&expression.arg),
+                receiver: ValueExpr::from_expr(binding_targets::transparent_target_expr(
+                    &expression.arg,
+                )),
                 key: None,
                 additional_keys: Vec::new(),
                 value: None,
             });
         }
 
-        if matches!(expression.arg.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
+        if matches!(
+            simple_target.as_ref(),
+            Some(binding_targets::SimpleWriteTarget::Binding(binding))
+                if binding.0.as_ref() == "Map"
+        ) {
             self.reassigned_map = true;
         }
         self.namespace_privacy.target_depth += 1;
         expression.visit_children_with(self);
         self.namespace_privacy.target_depth -= 1;
         self.record_implicit_coercion(&expression.arg, expression.span);
-        if let Expr::Member(member) = expression.arg.unwrap_parens() {
+        if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref() {
             self.intrinsic_writes.push(intrinsic_write_target(
                 member,
                 self.owner,
@@ -13296,13 +13346,15 @@ impl Visit for ExecutionIndex {
         // ToNumeric and store at execution, where values decide coverage.
         self.record_source_protocol(
             CallKind::OpaqueExecution,
-            ValueExpr::from_expr(&expression.arg),
+            ValueExpr::from_expr(binding_targets::transparent_target_expr(&expression.arg)),
             expression.span,
         );
-        let ordered_binding_update = matches!(expression.arg.unwrap_parens(), Expr::Ident(_))
-            && self
-                .current
-                .is_some_and(|key| self.callables[&key].body_facts.ordered_plan().is_some());
+        let ordered_binding_update = matches!(
+            simple_target.as_ref(),
+            Some(binding_targets::SimpleWriteTarget::Binding(_))
+        ) && self
+            .current
+            .is_some_and(|key| self.callables[&key].body_facts.ordered_plan().is_some());
         if !ordered_binding_update {
             self.mark_opaque();
         }
