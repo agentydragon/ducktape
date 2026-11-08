@@ -9,10 +9,12 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use swc_common::GLOBALS;
 
-use crate::metrics::{OutputFileMetric, OutputMetrics, OutputRole, write_tree_reports};
-use crate::paths::{join_module_path, path_from_module_path};
-use crate::reports::{ChunkDecompositionOutput, ChunkManifest, SelectedModuleLowering, write_json};
-use crate::{ChunkBundle, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
+use artifact::metrics::{OutputFileMetric, OutputMetrics, OutputRole, write_tree_reports};
+use artifact::paths::{join_module_path, path_from_module_path};
+use artifact::reports::{
+    ChunkDecompositionOutput, ChunkManifest, SelectedModuleLowering, write_json,
+};
+use artifact::{ChunkBundle, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
 use output_layout::CHUNK_REPORT;
 
 pub struct MaterializedScripts {
@@ -20,7 +22,7 @@ pub struct MaterializedScripts {
     pub file_metrics: Vec<OutputFileMetric>,
 }
 
-pub fn materialize_artifact_scripts(
+pub(super) fn materialize_artifact_scripts(
     files: &EmissionFiles,
     app_root: &Path,
     report_tree_root: &Path,

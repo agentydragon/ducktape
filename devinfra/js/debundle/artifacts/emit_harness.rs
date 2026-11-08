@@ -8,11 +8,10 @@ use serde::Serialize;
 use artifact::metrics::OutputMetrics;
 use artifact::paths::module_path_from_path;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput, write_json};
-use artifact::script_output::materialize_artifact_scripts;
 use output_layout::DebundleOutputLayout;
-use reconstruction::ValidatedPlan;
+use reconstruction::{EmittablePlan, ValidatedPlan};
 use source_identity::ChunkId;
-use write_tree::write_common_emission_reports;
+use write_tree::{materialize_accepted_scripts, write_common_emission_reports};
 
 /// `chunk_records` carries the emission set only (the caller drops
 /// records of excluded chunks); the validated plan identifies chunks
@@ -28,13 +27,11 @@ pub fn emit_browser_harness(
     let browser = plan
         .browser_harness()
         .context("validated program has no browser harness")?;
-    let files = plan.files();
-    let excluded_chunk_ids = plan.excluded_chunk_ids();
     let layout = DebundleOutputLayout::new(&browser.out_dir);
     let app_root = layout.app_root();
     layout.prepare()?;
-    let materialized = materialize_artifact_scripts(
-        files,
+    let materialized = materialize_accepted_scripts(
+        plan,
         &app_root,
         &layout.tree_root(),
         decomposition_by_chunk,
@@ -47,8 +44,7 @@ pub fn emit_browser_harness(
     fs::write(app_root.join("bootstrap.js"), &browser.bootstrap)?;
     write_common_emission_reports(
         &layout,
-        files,
-        excluded_chunk_ids,
+        EmittablePlan::Accepted(plan),
         chunk_records,
         decomposition_by_chunk,
     )?;

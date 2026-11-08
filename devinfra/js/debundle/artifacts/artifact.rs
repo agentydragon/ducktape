@@ -24,7 +24,6 @@ pub mod metrics;
 pub mod paths;
 pub mod reports;
 pub mod runtime_resources;
-pub mod script_output;
 mod source_program;
 pub use emission_files::EmissionFiles;
 pub use source_program::{
