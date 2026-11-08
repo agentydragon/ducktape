@@ -1,11 +1,11 @@
 # HYBRID INFRASTRUCTURE
 # Talos cluster control plane currently runs on OVH Kimsufi bare metal.
-# Machine secrets generated fresh per lifecycle (prevents stale discovery from previous clusters)
+# Machine secrets are persistent across cluster lifecycles; see talos-machine-secrets.tf.
 
 # LOCALS: Shared configuration for all nodes
 
 locals {
-  # Machine secrets generated locally (fresh per lifecycle)
+  # Persistent machine secrets and client credentials.
   machine_secrets      = talos_machine_secrets.cluster.machine_secrets
   client_configuration = talos_machine_secrets.cluster.client_configuration
 
