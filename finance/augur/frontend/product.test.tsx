@@ -2,6 +2,7 @@
 
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { deferred } from "../../../util/frontend/testing/deferred";
@@ -147,6 +148,7 @@ function detail(seed: number, value: string): Awaited<ReturnType<typeof fetchPro
 const requests: Array<ReturnType<typeof deferred<ReturnType<typeof detail>>> & { seed: number; signal: AbortSignal }> =
   [];
 const roots: Array<ReturnType<typeof createRoot>> = [];
+const queryClients: QueryClient[] = [];
 const bootstrap = {
   locations: [],
   properties: [],
@@ -167,30 +169,44 @@ async function mount() {
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
+  const queryClient = new QueryClient();
+  queryClients.push(queryClient);
   await act(async () => {
     root.render(
-      <ProductProjectionWorkspace
-        bootstrap={bootstrap}
-        deployment={null}
-        tab="product"
-        onSelectTab={vi.fn()}
-        rolloutCount={2}
-        onChangeRolloutCount={vi.fn()}
-        firstSeed={1}
-        model="example-model"
-        onChangeModel={vi.fn()}
-        horizonMonths={24}
-        onChangeHorizonMonths={vi.fn()}
-        metricScale="linear"
-        onChangeMetricScale={vi.fn()}
-        currencyDisplay="compact"
-        onChangeCurrencyDisplay={vi.fn()}
-        settingsOpen={false}
-        onChangeSettingsOpen={vi.fn()}
-      />
+      <QueryClientProvider client={queryClient}>
+        <ProductProjectionWorkspace
+          bootstrap={bootstrap}
+          deployment={null}
+          tab="product"
+          onSelectTab={vi.fn()}
+          rolloutCount={2}
+          onChangeRolloutCount={vi.fn()}
+          firstSeed={1}
+          model="example-model"
+          onChangeModel={vi.fn()}
+          horizonMonths={24}
+          onChangeHorizonMonths={vi.fn()}
+          metricScale="linear"
+          onChangeMetricScale={vi.fn()}
+          currencyDisplay="compact"
+          onChangeCurrencyDisplay={vi.fn()}
+          settingsOpen={false}
+          onChangeSettingsOpen={vi.fn()}
+        />
+      </QueryClientProvider>
     );
   });
+  await act(async () => {
+    const portfolioRequest = client.portfolio.mock.results[0]?.value;
+    if (!portfolioRequest) throw new Error("Expected the portfolio query to start during mount");
+    await portfolioRequest;
+  });
   await act(async () => vi.advanceTimersByTimeAsync(120));
+  await flushQueryUpdates();
+}
+
+async function flushQueryUpdates() {
+  await act(async () => vi.advanceTimersByTimeAsync(1));
 }
 
 async function click(label: string) {
@@ -204,6 +220,7 @@ async function resolveDetail(index: number, value: string) {
     requests[index].resolve(detail(requests[index].seed, value));
     await requests[index].promise;
   });
+  await flushQueryUpdates();
 }
 
 function displayedDetail() {
@@ -241,6 +258,7 @@ it("inspects a stopped seed when no horizon-terminal wealth exists", async () =>
     requests[0].resolve(stopped);
     await requests[0].promise;
   });
+  await flushQueryUpdates();
   expect(displayedDetail()).toBe("150000,120000");
   expect(document.querySelector('[data-testid="detail-years"]')?.textContent).toBe("0,0");
   expect(document.querySelector("[data-product-stop-book]")?.textContent).toContain(
@@ -277,6 +295,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount());
+  for (const queryClient of queryClients.splice(0)) queryClient.clear();
   document.body.replaceChildren();
   vi.useRealTimers();
 });
@@ -318,6 +337,7 @@ it("ignores late success and failure responses after switching scenario or clear
     requests[2].reject(new Error("obsolete detail failed"));
     await requests[2].promise.catch(() => undefined);
   });
+  await flushQueryUpdates();
   expect(displayedDetail()).toBe("");
   expect(client.toast).not.toHaveBeenCalled();
   await click("Variant high");
@@ -334,10 +354,40 @@ it("waits for a changed scenario's current percentile-to-seed mapping while reta
   expect(requests).toHaveLength(1);
   expect(document.querySelector('[data-testid="fans"]')?.textContent).toBe(fans);
   await act(async () => vi.advanceTimersByTimeAsync(120));
+  await flushQueryUpdates();
   expect(requests.map((request) => request.seed)).toEqual([10, 20]);
   expect(client.rollout.mock.calls[1][0].scenario.monthly_spend).toBe("2000");
   await resolveDetail(1, "222");
   expect(displayedDetail()).toBe("222");
+});
+
+it("keeps the previous fan after a failed refresh and blocks its old terminal samples", async () => {
+  await mount();
+  const fans = document.querySelector('[data-testid="fans"]')?.textContent;
+  const refreshedProjection = deferred<ReturnType<typeof projection>>();
+  client.projection.mockImplementation((request) =>
+    request.scenario.monthly_spend === "2000" ? refreshedProjection.promise : Promise.resolve(projection(request))
+  );
+
+  await click("Edit base");
+  await click("Base low");
+  expect(client.rollout).not.toHaveBeenCalled();
+  expect(document.querySelector('[data-testid="fans"]')?.textContent).toBe(fans);
+
+  await act(async () => vi.advanceTimersByTimeAsync(120));
+  await flushQueryUpdates();
+  expect(client.projection.mock.calls.some(([request]) => request.scenario.monthly_spend === "2000")).toBe(true);
+  expect(document.querySelector('[data-testid="fans"]')?.textContent).toBe(fans);
+
+  await act(async () => {
+    refreshedProjection.reject(new Error("refreshed projection failed"));
+    await refreshedProjection.promise.catch(() => undefined);
+  });
+  await flushQueryUpdates();
+  expect(document.body.textContent).toContain("refreshed projection failed");
+  expect(document.querySelector('[data-testid="fans"]')?.textContent).toBe(fans);
+  expect(client.rollout).not.toHaveBeenCalled();
+  expect(client.toast).toHaveBeenCalledTimes(1);
 });
 
 it("scopes an error to the selected detail and clears it when selecting another seed", async () => {
@@ -347,6 +397,7 @@ it("scopes an error to the selected detail and clears it when selecting another 
     requests[0].reject(new Error("current detail failed"));
     await requests[0].promise.catch(() => undefined);
   });
+  await flushQueryUpdates();
   expect(document.body.textContent).toContain("current detail failed");
   expect(client.toast).toHaveBeenCalledTimes(1);
   await click("Base high");
