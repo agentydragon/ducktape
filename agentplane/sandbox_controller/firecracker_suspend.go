@@ -7,6 +7,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 	"google.golang.org/grpc/codes"
@@ -25,6 +26,7 @@ type RuntimeSuspender interface {
 }
 
 type GatewaySuspender struct {
+	TLS       *environment_runtime_transport.ClientTLS
 	Target    string
 	TokenFile string
 }
@@ -32,7 +34,7 @@ type GatewaySuspender struct {
 func (g GatewaySuspender) withClient(ctx context.Context, sandbox *sandboxapi.Sandbox, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
 	return environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
 		Target:    environmentruntimeclient.ExpandTarget(g.Target, sandbox.Name, sandbox.Namespace),
-		TokenFile: g.TokenFile, Timeout: quiesceTimeout,
+		TokenFile: g.TokenFile, TLS: g.TLS, Timeout: quiesceTimeout,
 		SandboxName: sandbox.Name, SandboxUID: string(sandbox.UID), SandboxNamespace: sandbox.Namespace,
 	}, call)
 }
