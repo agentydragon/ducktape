@@ -249,6 +249,8 @@ spec:
               value: localhost,127.0.0.1,.svc,.svc.cluster.local
             - name: SSL_CERT_FILE
               value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
             - name: PLATFORM_SESSIONS_PROXY_CA_FILE
               value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
@@ -660,6 +662,8 @@ spec:
               value: localhost,127.0.0.1,.svc,.svc.cluster.local
             - name: SSL_CERT_FILE
               value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
             - name: PLATFORM_SESSIONS_PROXY_CA_FILE
               value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
@@ -1071,6 +1075,8 @@ spec:
               value: localhost,127.0.0.1,.svc,.svc.cluster.local
             - name: SSL_CERT_FILE
               value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
             - name: PLATFORM_SESSIONS_PROXY_CA_FILE
               value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt:unset
@@ -1480,6 +1486,8 @@ spec:
               value: localhost,127.0.0.1,.svc,.svc.cluster.local
             - name: SSL_CERT_FILE
               value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
             - name: PLATFORM_SESSIONS_PROXY_CA_FILE
               value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-blueshield:unset
@@ -1891,6 +1899,8 @@ spec:
               value: localhost,127.0.0.1,.svc,.svc.cluster.local
             - name: SSL_CERT_FILE
               value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
             - name: PLATFORM_SESSIONS_PROXY_CA_FILE
               value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-quest:unset
@@ -2307,6 +2317,8 @@ spec:
               value: localhost,127.0.0.1,.svc,.svc.cluster.local
             - name: SSL_CERT_FILE
               value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
             - name: PLATFORM_SESSIONS_PROXY_CA_FILE
               value: /var/run/session-recorder-ca/tls.crt
           image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset

@@ -291,6 +291,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             k8s.EnvVar(name="HTTPS_PROXY", value=f"http://127.0.0.1:{_RECORD_PORT}"),
             k8s.EnvVar(name="NO_PROXY", value="localhost,127.0.0.1,.svc,.svc.cluster.local"),
             k8s.EnvVar(name="SSL_CERT_FILE", value=f"{_RECORD_TRUST_DIR}/ca-certificates.crt"),
+            k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="true"),
             k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_CA_FILE", value=f"{_RECORD_CA_DIR}/tls.crt"),
         ]
         if record_upstream_traffic
