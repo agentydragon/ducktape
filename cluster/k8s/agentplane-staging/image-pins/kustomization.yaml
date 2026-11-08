@@ -5,7 +5,7 @@ images:
     newTag: devel-20261108050816-f5f5201 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
-    newTag: devel-20261108050755-f5f5201 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
+    newTag: devel-20261108204407-bb2089f # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
     newTag: devel-20261108204414-bb2089f # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
@@ -17,7 +17,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
     newTag: devel-20261108204420-bb2089f # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261108072533-bbb3049 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261108204431-bb2089f # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
     newTag: devel-20261108204419-bb2089f # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
@@ -43,6 +43,6 @@ images:
     newTag: devel-20261108194838-8e54ea3 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261108060147-ced1ee7 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261108204502-bb2089f # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
