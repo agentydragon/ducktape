@@ -1,5 +1,14 @@
 """Non-secret platform-sessions integration and route policy."""
 
+from typing import NotRequired, TypedDict
+
+
+class BearerConfig(TypedDict):
+    role: str
+    token_file: str
+    allow: NotRequired[list[dict[str, str]]]
+
+
 THRIVE_READ_PATHS = (
     "/products",
     "/account/orders",
@@ -29,7 +38,7 @@ BLUE_SHIELD_READ_PATHS = (
     "member/mhr/labresults/v2",
 )
 
-INTEGRATIONS = {
+INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
     "integrations": [
         {"id": "openai", "type": "openai", "state_dir": "/data/session/openai"},
         {"id": "anthropic", "type": "anthropic", "state_dir": "/data/session/anthropic"},
@@ -45,7 +54,7 @@ INTEGRATIONS = {
     ]
 }
 
-BEARERS = {
+BEARERS: dict[str, BearerConfig] = {
     "owner": {"role": "owner", "token_file": "/var/run/platform-sessions/owner"},
     "blueshield-read": {
         "role": "routes",

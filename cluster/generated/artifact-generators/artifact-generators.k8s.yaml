@@ -496,6 +496,13 @@ spec:
       name: platform-sessions
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/platform-sessions-remote/**"
+          to: "@artifact/cluster/generated/platform-sessions-remote/"
+        - from: "@repo/cluster/k8s/platform-sessions-remote-image-pins/**"
+          to: "@artifact/cluster/k8s/platform-sessions-remote-image-pins/"
+      name: platform-sessions-remote
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/cli-proxy-api/**"
           to: "@artifact/cluster/k8s/cli-proxy-api/"
       name: cli-proxy-api
