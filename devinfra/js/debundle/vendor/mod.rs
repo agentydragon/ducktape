@@ -35,10 +35,11 @@ pub use manifests::*;
 pub use output_imports::{
     MaterializedOutputChunkIndex, bundled_facade_import_source, resolve_partial_swap_import_target,
 };
-use plan::{ChunkBundledPartialSwapPlan, upstream_property_path};
 pub use plan::{
-    VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
+    BundledReplacementExportIdentity, VendorImportAction, VendorPlanOptions, VendorResolutionPlan,
+    build_vendor_resolution_plan,
 };
+use plan::{ChunkBundledPartialSwapPlan, upstream_property_path};
 use spec::PartialSwapKind;
 
 // === partial vendor swap =================================================

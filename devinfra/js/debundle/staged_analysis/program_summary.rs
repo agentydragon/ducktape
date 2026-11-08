@@ -11,16 +11,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
-    ArgumentInputEvidence, ArgumentInputRef, CallableSummary, ImportedPrimitiveRead,
-    NativeInputKind, NativeIntegrity, NativeOperationInputEvidence, NativeOperationInputRef,
-    NativeOperationSelectorProvenance, NoAccessorInstallRef, PrimitiveExportCell,
-    ResolvedArgumentInput, ResolvedBindingValueInput, ResolvedNativeOperationInput,
-    ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
-    ValueInputEvidence, ValueInputRef,
+    ArgumentInputEvidence, ArgumentInputRef, CallableSummary, EffectiveInitializerCallReplacement,
+    ImportedPrimitiveRead, InitializerCallEffectInputRef, NativeInputKind, NativeIntegrity,
+    NativeOperationInputEvidence, NativeOperationInputRef, NativeOperationSelectorProvenance,
+    NoAccessorInstallRef, PrimitiveExportCell, ResolvedArgumentInput, ResolvedBindingValueInput,
+    ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput, ResolvedNoAccessorInstall,
+    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
-    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedImport,
-    resolve_asserted_callback_factory_members, resolve_asserted_fluent_bindings,
+    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
+    ResolvedImport, resolve_asserted_callback_factory_members, resolve_asserted_fluent_bindings,
     resolve_asserted_inline_callback_factories, resolve_asserted_member_purities,
     resolve_asserted_namespace_independent_members, resolve_asserted_no_reentry_bindings,
     resolve_asserted_no_reentry_callbacks, resolve_asserted_no_reentry_members,
@@ -37,7 +37,7 @@ use artifact::reports::{
     StaticModuleRequestMode,
 };
 use artifact::{ArtifactIndexes, ChunkBundle};
-use graph_provenance::GraphProvenance;
+use graph_provenance::{CurrentRoots, GraphProvenance, InputRoot};
 use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
 use swc_common::{Span, Spanned};
@@ -46,6 +46,7 @@ use swc_ecma_ast::{
     ModuleDecl, ModuleItem, Pat, SetterProp,
 };
 use swc_ecma_visit::{Visit, VisitWith};
+use vendor::VendorResolutionPlan;
 
 use analysis_projection::{
     AnalysisNativeOperationInput, AnalysisProjection, AnalysisSourceSites, ChunkAnalysisInputs,
@@ -114,6 +115,7 @@ pub struct ProgramSummary {
     pub value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
     /// Source-resolved native operation premises for the provider initializer.
     pub native_operation_inputs: BTreeMap<String, Vec<ResolvedNativeOperationInput>>,
+    pub initializer_call_effect_inputs: BTreeMap<String, Vec<ResolvedInitializerCallEffectInput>>,
     pub stable_set_spreads:
         BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>,
     pub inferred_set_constructions:
@@ -150,6 +152,7 @@ fn validate_analysis_source_sites(
     let mut site_chunks = BTreeSet::new();
     site_chunks.extend(source_sites.value_inputs.keys());
     site_chunks.extend(source_sites.native_call_identity_inputs.keys());
+    site_chunks.extend(source_sites.initializer_call_effect_inputs.keys());
     site_chunks.extend(source_sites.argument_inputs.keys());
     site_chunks.extend(source_sites.no_accessor_install_callables.keys());
     site_chunks.extend(native_operation_inputs.keys());
@@ -301,6 +304,7 @@ fn resolved_closure_precedes_importer(
 /// Inputs that affect program-summary construction.
 pub struct ProgramSummaryOptions<'a> {
     pub graph_provenance: Option<&'a GraphProvenance>,
+    pub vendor_plan: Option<&'a VendorResolutionPlan>,
     /// Export name → replacement package of every vendor-swapped export, by
     /// defining chunk; summaries derived from those bodies name the package.
     pub replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
@@ -367,6 +371,7 @@ pub fn collect_program_summary(
 ) -> Result<ProgramSummary> {
     let ProgramSummaryOptions {
         graph_provenance,
+        vendor_plan,
         replacement_packages,
     } = options;
     let chunk_export_purity = projection.chunk_export_purity;
@@ -573,6 +578,18 @@ pub fn collect_program_summary(
         &static_requests,
         &modules.keys().cloned().collect(),
     );
+    let initializer_call_effect_inputs = resolve_initializer_call_effect_inputs(
+        artifact,
+        &modules,
+        chunk_analysis_inputs,
+        &projection.source_sites,
+        ProgramSummaryOptions {
+            graph_provenance,
+            vendor_plan,
+            replacement_packages,
+        },
+        &static_dependencies,
+    )?;
     let primitive_reads: BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>> = modules
         .iter()
         .map(|(importer, module)| {
@@ -767,6 +784,11 @@ pub fn collect_program_summary(
             }
         }
     }
+    let requested_original_provider_exports = initializer_call_effect_inputs
+        .values()
+        .flatten()
+        .map(|input| (input.provider_chunk.clone(), input.provider_export.clone()))
+        .collect();
     let mut callable_summaries = resolve_imported_callable_summaries(
         &modules,
         &asserted_callback_factories,
@@ -780,6 +802,7 @@ pub fn collect_program_summary(
             })
             .collect(),
         CallableSummaryInputs {
+            requested_original_provider_exports: &requested_original_provider_exports,
             selected_value_inputs: &value_inputs,
             selected_native_operation_inputs: &native_operation_inputs,
             argument_inputs: &argument_inputs,
@@ -798,6 +821,23 @@ pub fn collect_program_summary(
                 .unwrap_or_default(),
         },
     )?;
+    for inputs in initializer_call_effect_inputs.values() {
+        for input in inputs {
+            if let Some((module, export, reason)) = known_original_provider_write(
+                &input.provider_chunk,
+                &input.provider_export,
+                &modules,
+                &callable_summaries,
+                &mut BTreeSet::new(),
+            ) {
+                anyhow::bail!(
+                    "initializer_call_effect_inputs {}:{} is contradicted by source-known original provider write {module}:{export}: {reason}",
+                    input.reference.defining_chunk,
+                    input.reference.input_index,
+                );
+            }
+        }
+    }
     Ok(ProgramSummary {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
             &modules,
@@ -855,6 +895,7 @@ pub fn collect_program_summary(
         bundle_globals: callable_summaries.bundle_globals,
         value_inputs: callable_summaries.value_inputs,
         native_operation_inputs: callable_summaries.native_operation_inputs,
+        initializer_call_effect_inputs,
         stable_set_spreads: callable_summaries.stable_set_spreads,
         inferred_set_constructions: callable_summaries.inferred_set_constructions,
         argument_inputs: callable_summaries.argument_inputs,
@@ -883,6 +924,273 @@ pub fn collect_program_summary(
             &asserted_no_reentry_exports,
         ),
     })
+}
+
+fn known_original_provider_write(
+    module: &str,
+    export: &str,
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    known: &ResolvedCallableSummaries,
+    visited: &mut BTreeSet<(String, String)>,
+) -> Option<(String, String, String)> {
+    if !visited.insert((module.to_owned(), export.to_owned())) {
+        return None;
+    }
+    if let Some(reason) = known.known_original_external_write(module, export) {
+        return Some((module.to_owned(), export.to_owned(), reason.to_owned()));
+    }
+    let local = modules.get(module)?.exports.get(export)?;
+    let target = modules.get(module)?.imports.get(local)?;
+    known_original_provider_write(&target.module, &target.export, modules, known, visited)
+}
+
+fn resolve_initializer_call_effect_inputs(
+    artifact: &ChunkBundle,
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    options: &BTreeMap<String, ChunkAnalysisInputs>,
+    sites: &analysis_projection::AnalysisSourceSites,
+    summary_options: ProgramSummaryOptions<'_>,
+    dependencies: &ResolvedStaticDependencies,
+) -> Result<BTreeMap<String, Vec<ResolvedInitializerCallEffectInput>>> {
+    let ProgramSummaryOptions {
+        graph_provenance: provenance,
+        vendor_plan,
+        replacement_packages,
+    } = summary_options;
+    let mut resolved = BTreeMap::new();
+    for (chunk, options) in options {
+        if options.initializer_call_effect_inputs.is_empty() {
+            continue;
+        }
+        let prefix = format!("chunk_analysis_options.{chunk}.initializer_call_effect_inputs");
+        let module = modules
+            .get(chunk)
+            .with_context(|| format!("{prefix} importer has no analyzed entry"))?;
+        let selected = sites
+            .initializer_call_effect_inputs
+            .get(chunk)
+            .with_context(|| format!("{prefix} has no resolved source sites"))?;
+        ensure!(
+            selected.len() == options.initializer_call_effect_inputs.len(),
+            "{prefix} source-site count does not match authored inputs"
+        );
+        let source_sha = sites
+            .source_sha256
+            .get(chunk)
+            .with_context(|| format!("{prefix} has no parser-input digest"))?;
+        let provenance =
+            provenance.context("initializer call effect inputs require parser-input provenance")?;
+        let mut seen = BTreeSet::new();
+        let mut entries = Vec::new();
+        for (index, (contract, selected)) in options
+            .initializer_call_effect_inputs
+            .iter()
+            .zip(selected)
+            .enumerate()
+        {
+            let request = format!("{prefix}[{index}]");
+            for (field, digest) in [
+                ("audited_source_sha256", &contract.audited_source_sha256),
+                ("audited_provider_sha256", &contract.audited_provider_sha256),
+            ] {
+                ensure!(
+                    digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()),
+                    "{request}.{field} must be a 64-character SHA-256 digest"
+                );
+            }
+            ensure!(
+                &contract.audited_source_sha256 == source_sha,
+                "{request} has stale audited_source_sha256"
+            );
+            let provider_source = provenance
+                .chunk_sources
+                .iter()
+                .find(|source| source.chunk_id == contract.provider_chunk)
+                .with_context(|| {
+                    format!("{request}.provider_chunk has no parser-input provenance")
+                })?;
+            ensure!(
+                contract.audited_provider_sha256 == provider_source.sha256,
+                "{request} has stale audited_provider_sha256"
+            );
+            let provider = modules
+                .get(&contract.provider_chunk)
+                .with_context(|| format!("{request}.provider_chunk has no analyzed entry"))?;
+            ensure!(
+                provider.exports.contains_key(&contract.provider_export),
+                "{request}.provider_export has no analyzed export"
+            );
+            let provider_id = artifact
+                .chunk_table
+                .get(&contract.provider_chunk)
+                .with_context(|| {
+                    format!("{request}.provider_chunk has no resolved chunk identity")
+                })?;
+            let swapped_package = replacement_packages
+                .get(&provider_id)
+                .and_then(|exports| exports.get(&contract.provider_export));
+            let effective_replacement = if let Some(swapped_package) = swapped_package {
+                let plan = vendor_plan.with_context(|| {
+                    format!("{request} has no effective vendor resolution plan")
+                })?;
+                let authored = contract.effective_replacement.as_ref().with_context(|| {
+                    format!("{request}.effective_replacement is required for a swapped export")
+                })?;
+                let resolved = plan.bundled_replacement_export(provider_id, &contract.provider_export)
+                    .with_context(|| format!("{request} requires an exact bundled_partial_swap export; other swap levels are unsupported"))?;
+                ensure!(
+                    !plan.replacement_bundle_is_open(provider_id),
+                    "{request} replacement bundle has an open evaluation closure"
+                );
+                ensure!(
+                    authored.package == *swapped_package
+                        && authored.package == resolved.package
+                        && authored.bundle_export == resolved.bundle_export
+                        && authored.symbol_kind == resolved.symbol_kind
+                        && authored.upstream_export == resolved.upstream_export,
+                    "{request}.effective_replacement disagrees with the selected vendor mapping"
+                );
+                let bundle_path = graph_provenance::absolute(&resolved.bundle_path)?;
+                let recorded_files = provenance
+                    .files
+                    .iter()
+                    .filter(|file| {
+                        matches!(&file.root, InputRoot::Source | InputRoot::Absolute)
+                            && provenance
+                                .resolve(&file.root, &file.path, &CurrentRoots::default())
+                                .and_then(|path| graph_provenance::absolute(&path))
+                                .is_ok_and(|path| path == bundle_path)
+                    })
+                    .collect::<Vec<_>>();
+                let [recorded] = recorded_files.as_slice() else {
+                    bail!("{request} selected vendor bundle has no unique captured source input");
+                };
+                ensure!(
+                    authored.audited_bundle_sha256.len() == 64
+                        && authored
+                            .audited_bundle_sha256
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit()),
+                    "{request}.effective_replacement.audited_bundle_sha256 must be a 64-character SHA-256 digest"
+                );
+                ensure!(
+                    authored.audited_bundle_sha256 == recorded.sha256,
+                    "{request} has stale effective_replacement.audited_bundle_sha256"
+                );
+                Some(EffectiveInitializerCallReplacement {
+                    package: resolved.package,
+                    bundle_path,
+                    bundle_export: resolved.bundle_export,
+                    symbol_kind: resolved.symbol_kind,
+                    upstream_export: resolved.upstream_export,
+                    bundle_sha256: recorded.sha256.clone(),
+                })
+            } else {
+                ensure!(
+                    contract.effective_replacement.is_none(),
+                    "{request}.effective_replacement names an unswapped provider export"
+                );
+                None
+            };
+            let item = module
+                .body
+                .get(selected.body_index)
+                .with_context(|| format!("{request} selected source item is missing"))?;
+            let ModuleItem::Stmt(swc_ecma_ast::Stmt::Decl(Decl::Var(declaration))) = item else {
+                anyhow::bail!("{request} requires one ordinary variable declaration");
+            };
+            let mut declarators = declaration.decls.iter().filter(|declarator| {
+                matches!(&declarator.name, Pat::Ident(binding)
+                    if binding.id.sym.as_ref() == selected.binding)
+            });
+            let declarator = declarators.next().with_context(|| {
+                format!("{request} selected binding has no variable declarator")
+            })?;
+            ensure!(
+                declarators.next().is_none(),
+                "{request} selected binding has multiple variable declarators"
+            );
+            let Pat::Ident(binding) = &declarator.name else {
+                anyhow::bail!("{request} requires one simple binding");
+            };
+            ensure!(
+                binding.id.sym.as_ref() == selected.binding,
+                "{request} source selector binding differs from initializer binding"
+            );
+            let Some(initializer) = &declarator.init else {
+                anyhow::bail!("{request} requires an initializer");
+            };
+            let swc_ecma_ast::Expr::Call(call) = initializer.as_ref().unwrap_parens() else {
+                anyhow::bail!("{request} requires a direct root call initializer");
+            };
+            let swc_ecma_ast::Callee::Expr(callee_expression) = &call.callee else {
+                anyhow::bail!("{request} requires a direct imported callee");
+            };
+            let swc_ecma_ast::Expr::Ident(callee) = callee_expression.as_ref().unwrap_parens()
+            else {
+                anyhow::bail!("{request} requires a bare imported callee");
+            };
+            let [argument] = call.args.as_slice() else {
+                anyhow::bail!("{request} requires exactly one function argument");
+            };
+            let swc_ecma_ast::Expr::Fn(callback) = argument.expr.as_ref().unwrap_parens() else {
+                anyhow::bail!("{request} requires a fresh anonymous ordinary function argument");
+            };
+            ensure!(
+                argument.spread.is_none()
+                    && call.type_args.is_none()
+                    && callback.ident.is_none()
+                    && !callback.function.is_async
+                    && !callback.function.is_generator
+                    && callback.function.body.is_some()
+                    && callback.function.decorators.is_empty()
+                    && callback.function.type_params.is_none()
+                    && callback.function.return_type.is_none(),
+                "{request} requires a fresh anonymous ordinary function argument"
+            );
+            // The callee is a resolved direct ESM import binding. Its immutable
+            // module environment cell supplies the selected GetBindingValue;
+            // attempted assignment throws and remains an actual source effect.
+            let imported = module.imports.get(callee.sym.as_ref()).with_context(|| {
+                format!("{request} callee is not a resolved direct named import")
+            })?;
+            ensure!(
+                imported.module == contract.provider_chunk
+                    && imported.export == contract.provider_export,
+                "{request} provider identity disagrees with the direct import"
+            );
+            let closure = resolved_closure_precedes_importer(
+                chunk,
+                &imported.module,
+                &imported.source_specifier,
+                dependencies,
+            )
+            .with_context(|| {
+                format!("{request} provider static closure does not precede importer")
+            })?;
+            ensure!(
+                seen.insert((call.span.lo.0, call.span.hi.0)),
+                "{request} duplicates an asserted initializer call"
+            );
+            entries.push(ResolvedInitializerCallEffectInput {
+                reference: InitializerCallEffectInputRef {
+                    defining_chunk: chunk.clone(),
+                    input_index: index,
+                },
+                binding: binding.id.to_id(),
+                callee: callee.to_id(),
+                call_span: call.span,
+                source_sha256: source_sha.clone(),
+                provider_chunk: imported.module.clone(),
+                provider_export: imported.export.clone(),
+                provider_sha256: provider_source.sha256.clone(),
+                effective_replacement,
+                provider_dependency_closure: closure,
+            });
+        }
+        resolved.insert(chunk.clone(), entries);
+    }
+    Ok(resolved)
 }
 
 fn resolve_value_inputs(
@@ -1584,6 +1892,7 @@ mod tests {
                     .expect("empty projection is valid"),
                     ProgramSummaryOptions {
                         graph_provenance: None,
+                        vendor_plan: None,
                         replacement_packages: &BTreeMap::new(),
                     },
                     None,
@@ -1664,6 +1973,7 @@ mod tests {
                 .expect("empty projection is valid"),
                 ProgramSummaryOptions {
                     graph_provenance: None,
+                    vendor_plan: None,
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
@@ -1728,6 +2038,7 @@ mod tests {
                 .expect("empty projection is valid"),
                 ProgramSummaryOptions {
                     graph_provenance: None,
+                    vendor_plan: None,
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,

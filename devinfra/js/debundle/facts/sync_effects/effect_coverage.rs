@@ -397,6 +397,37 @@ impl EffectCoverageFragment {
         }
     }
 
+    /// Add the audited nonlexical domains of one selected initializer call.
+    /// This author input does not change completion or lexical coverage.
+    pub(super) fn audited_initializer_call_domains(
+        mut self,
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        let merged = |prior: Option<&DomainCoverage>| {
+            let mut covered = dependencies.clone();
+            if let Some(DomainCoverage::Covered(prior)) = prior {
+                covered.extend(prior);
+            }
+            DomainCoverage::Covered(covered)
+        };
+        let prior = self.initialization.as_deref();
+        self.initialization = Some(Box::new(InitializationEffectCoverage {
+            global_properties: merged(prior.map(|coverage| &coverage.global_properties)),
+            general_heap: merged(prior.map(|coverage| &coverage.general_heap)),
+            host_effects: merged(prior.map(|coverage| &coverage.host_effects)),
+        }));
+        self
+    }
+
+    /// The separate exact initializer-purity assertion excludes throws. The
+    /// caller also checks its actual normal result and execution path; an
+    /// already observed abrupt completion cannot be replaced by this proof.
+    pub(super) fn normal_completion_from_pure_initializer(&mut self) {
+        if self.completion != Completion::Abrupt {
+            self.completion = Completion::Normal;
+        }
+    }
+
     /// Actual ordinary native iteration over a proved primitive source.
     /// Its protocol/contents reads and fresh internal allocation are modeled;
     /// this is body coverage, not completion of operand evaluation.

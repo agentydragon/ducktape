@@ -272,6 +272,7 @@ pub fn analyze_program(
         &projection,
         program_summary::ProgramSummaryOptions {
             graph_provenance: Some(graph_provenance),
+            vendor_plan: Some(vendor_plan),
             replacement_packages: &vendor_plan.replacement_packages(),
         },
         Some(&program_summary_chunk_closure),

@@ -23,10 +23,11 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use source_identity::ChunkId;
 use spec::{
     AdmissionOverrides, ArgumentInputContract, BuiltinGlobalRoot, ChunkExportPurity,
-    CommutingStatementsContract, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,
-    LoadJsChunksArgs, NativeCallIdentityInputContract, NativeOperationInputContract,
-    NativeOperationKind, NoAccessorInstallCallableContract, ProgramPremises, TransformSpec,
-    ValueInputContract, VendorLevel, VendorMark,
+    CommutingStatementsContract, DependencyGraphOptions, HostBehavior,
+    InitializerCallEffectInputContract, IntrinsicsNeverWritten, LoadJsChunksArgs,
+    NativeCallIdentityInputContract, NativeOperationInputContract, NativeOperationKind,
+    NoAccessorInstallCallableContract, ProgramPremises, TransformSpec, ValueInputContract,
+    VendorLevel, VendorMark,
 };
 
 /// Native premises after resolving layout-relative references at the selector boundary.
@@ -49,6 +50,7 @@ pub struct AnalysisSourceSites {
     pub source_sha256: BTreeMap<String, String>,
     pub value_inputs: BTreeMap<String, Vec<SourceDeclaration>>,
     pub native_call_identity_inputs: BTreeMap<String, Vec<SourceDeclaration>>,
+    pub initializer_call_effect_inputs: BTreeMap<String, Vec<SourceDeclaration>>,
     pub argument_inputs: BTreeMap<String, Vec<SourceDeclaration>>,
     pub no_accessor_install_callables: BTreeMap<String, Vec<SourceDeclaration>>,
 }
@@ -64,6 +66,7 @@ pub struct ChunkAnalysisInputs {
     pub admission_overrides: AdmissionOverrides,
     pub value_inputs: Vec<ValueInputContract>,
     pub native_call_identity_inputs: Vec<NativeCallIdentityInputContract>,
+    pub initializer_call_effect_inputs: Vec<InitializerCallEffectInputContract>,
     pub argument_inputs: Vec<ArgumentInputContract>,
     pub no_accessor_install_callables: Vec<NoAccessorInstallCallableContract>,
 }
@@ -105,6 +108,7 @@ pub fn project_chunk_options(
             let DependencyGraphOptions {
                 value_inputs,
                 native_operation_inputs,
+                initializer_call_effect_inputs,
                 commuting_statements: _,
                 native_call_identity_inputs,
                 argument_inputs,
@@ -131,6 +135,7 @@ pub fn project_chunk_options(
                         admission_overrides,
                         value_inputs,
                         native_call_identity_inputs,
+                        initializer_call_effect_inputs,
                         argument_inputs,
                         no_accessor_install_callables,
                     },
@@ -350,6 +355,7 @@ impl AnalysisSpec {
             declared_assumptions.values().all(|assumptions| {
                 assumptions.captured_value_inputs.is_empty()
                     && assumptions.native_operation_inputs.is_empty()
+                    && assumptions.initializer_call_effect_inputs.is_empty()
                     && assumptions.argument_inputs.is_empty()
             }),
             "declared assumptions carry source-resolved inputs"

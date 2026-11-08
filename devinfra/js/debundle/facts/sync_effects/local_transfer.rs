@@ -155,6 +155,16 @@ pub(super) trait LocalContext: OwnDataContext {
     fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
     fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult>;
+    /// The one selected direct-import call may prove its module callee read
+    /// after source closure validation. Other reads use ordinary coverage.
+    fn read_call_callee(
+        &mut self,
+        binding: &Id,
+        _call_span: Span,
+        frame: &mut LocalFrame,
+    ) -> Option<LocalValueResult> {
+        self.read_binding(binding, frame)
+    }
     /// Whether this exact evaluated receiver came from an initialized,
     /// non-imported module binding at the current prefix. Strict provider
     /// queries keep the default false and require fresh-local ownership.
@@ -375,6 +385,28 @@ fn read_binding_selected(
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
     let result = context.read_binding(binding, frame)?;
+    frame.effect_coverage.compose(&result.effects);
+    judgment.compose(&result.allocation.judgment);
+    let selection = result
+        .selection
+        .filter(|selection| selection.matches(&result.allocation.values));
+    Some(completing_selected(
+        SelectedValue {
+            values: result.allocation.values,
+            selection,
+        },
+        frame,
+    ))
+}
+
+fn read_call_callee_selected(
+    context: &mut impl LocalContext,
+    binding: &Id,
+    call_span: Span,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let result = context.read_call_callee(binding, call_span, frame)?;
     frame.effect_coverage.compose(&result.effects);
     judgment.compose(&result.allocation.judgment);
     let selection = result
@@ -920,9 +952,9 @@ fn call_expression(
         LocalCallee::Creation(callable) => {
             EvaluatedCallee::Direct(closure_expression(context, callable, frame, judgment)?)
         }
-        LocalCallee::Binding(binding) => {
-            EvaluatedCallee::Direct(read_binding_selected(context, binding, frame, judgment)?)
-        }
+        LocalCallee::Binding(binding) => EvaluatedCallee::Direct(read_call_callee_selected(
+            context, binding, *span, frame, judgment,
+        )?),
         LocalCallee::Member {
             receiver,
             property,

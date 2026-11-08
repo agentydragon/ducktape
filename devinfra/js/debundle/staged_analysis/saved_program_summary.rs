@@ -9,8 +9,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use analysis::analysis_inputs::saved::{SavedCallableSummary, SavedNativeIntegrity};
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ImportedPrimitiveRead, InferredSetConstruction, InferredSetOperation,
-    NativeOperationInputEvidence, ResolvedArgumentInput, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, StableSetIterableUse, ValueInputEvidence,
+    InitializerCallEffectInputRef, NativeOperationInputEvidence, ResolvedArgumentInput,
+    ResolvedBindingValueInput, ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput,
+    StableSetIterableUse, ValueInputEvidence,
 };
 use analysis::facts::abstract_domain::value::Value;
 use analysis_codec::{ContextOrdinals, SavedBinding};
@@ -39,6 +40,7 @@ pub(super) struct SavedProgramSummary<'a> {
     bundle_globals: Cow<'a, analysis::analysis_inputs::BundleGlobalNames>,
     value_inputs: BTreeMap<String, Vec<SavedValueInput>>,
     native_operation_inputs: BTreeMap<String, Vec<SavedNativeOperationInput>>,
+    initializer_call_effect_inputs: BTreeMap<String, Vec<SavedInitializerCallEffectInput>>,
     stable_set_spreads: BTreeMap<String, BTreeMap<u32, SavedStableSetIterableUse>>,
     inferred_set_constructions: BTreeMap<String, BTreeMap<u32, SavedInferredSetConstruction>>,
     argument_inputs: BTreeMap<String, Vec<SavedArgumentInput>>,
@@ -115,6 +117,19 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
+        let initializer_call_effect_inputs = summary
+            .initializer_call_effect_inputs
+            .iter()
+            .map(|(chunk, inputs)| {
+                Ok((
+                    chunk.clone(),
+                    inputs
+                        .iter()
+                        .map(|input| SavedInitializerCallEffectInput::snapshot(input, ordinals))
+                        .collect::<Result<Vec<_>>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
         let stable_set_spreads = summary
             .stable_set_spreads
             .iter()
@@ -179,6 +194,7 @@ impl<'a> SavedProgramSummary<'a> {
                 .map(SavedNativeIntegrity::snapshot),
             bundle_globals: Cow::Borrowed(&summary.bundle_globals),
             native_operation_inputs,
+            initializer_call_effect_inputs,
             stable_set_spreads,
             inferred_set_constructions,
             argument_inputs,
@@ -254,6 +270,19 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
+        let initializer_call_effect_inputs = self
+            .initializer_call_effect_inputs
+            .into_iter()
+            .map(|(chunk, inputs)| {
+                Ok((
+                    chunk,
+                    inputs
+                        .into_iter()
+                        .map(|input| input.restore(ordinals))
+                        .collect::<Result<Vec<_>>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
         let stable_set_spreads = self
             .stable_set_spreads
             .into_iter()
@@ -308,6 +337,7 @@ impl<'a> SavedProgramSummary<'a> {
                 .transpose()?,
             bundle_globals: self.bundle_globals.into_owned(),
             native_operation_inputs,
+            initializer_call_effect_inputs,
             stable_set_spreads,
             inferred_set_constructions,
             argument_inputs,
@@ -377,6 +407,55 @@ impl SavedArgumentInput {
             evidence: self.evidence,
             binding: ordinals.restore_binding(self.binding)?,
             function_start: self.function_start,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedInitializerCallEffectInput {
+    reference: InitializerCallEffectInputRef,
+    binding: SavedBinding,
+    callee: SavedBinding,
+    call_span: Span,
+    source_sha256: String,
+    provider_chunk: String,
+    provider_export: String,
+    provider_sha256: String,
+    effective_replacement: Option<analysis::analysis_inputs::EffectiveInitializerCallReplacement>,
+    provider_dependency_closure: BTreeSet<String>,
+}
+
+impl SavedInitializerCallEffectInput {
+    fn snapshot(
+        input: &ResolvedInitializerCallEffectInput,
+        ordinals: &ContextOrdinals,
+    ) -> Result<Self> {
+        Ok(Self {
+            reference: input.reference.clone(),
+            binding: ordinals.snapshot_binding(&input.binding)?,
+            callee: ordinals.snapshot_binding(&input.callee)?,
+            call_span: input.call_span,
+            source_sha256: input.source_sha256.clone(),
+            provider_chunk: input.provider_chunk.clone(),
+            provider_export: input.provider_export.clone(),
+            provider_sha256: input.provider_sha256.clone(),
+            effective_replacement: input.effective_replacement.clone(),
+            provider_dependency_closure: input.provider_dependency_closure.clone(),
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<ResolvedInitializerCallEffectInput> {
+        Ok(ResolvedInitializerCallEffectInput {
+            reference: self.reference,
+            binding: ordinals.restore_binding(self.binding)?,
+            callee: ordinals.restore_binding(self.callee)?,
+            call_span: self.call_span,
+            source_sha256: self.source_sha256,
+            provider_chunk: self.provider_chunk,
+            provider_export: self.provider_export,
+            provider_sha256: self.provider_sha256,
+            effective_replacement: self.effective_replacement,
+            provider_dependency_closure: self.provider_dependency_closure,
         })
     }
 }
@@ -568,6 +647,7 @@ mod tests {
             bundle_globals: Default::default(),
             value_inputs: BTreeMap::new(),
             native_operation_inputs: BTreeMap::new(),
+            initializer_call_effect_inputs: BTreeMap::new(),
             stable_set_spreads: BTreeMap::new(),
             inferred_set_constructions: BTreeMap::new(),
             argument_inputs: BTreeMap::new(),

@@ -9404,6 +9404,39 @@ impl ExecutionIndex {
                     .initialization_source_identities
                     .insert(owner, identity.clone());
             }
+            // A split comma-list owner keeps its original declaration/span
+            // identity. The ordinary composed-initializer path below cannot
+            // admit a call leaf, so admit only the one exact audited root call
+            // that was independently selected from the original source.
+            if !hints.assumptions.initializer_call_effect_inputs.is_empty()
+                && matches!(
+                    item,
+                    TopLevelItemView::Owned {
+                        item: ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))),
+                        ..
+                    }
+                )
+                && let Some(declaration) = var_decl_of_item(item.as_module_item())
+                && !declaration.declare
+                && let [declarator] = declaration.decls.as_slice()
+                && let Pat::Ident(binding) = &declarator.name
+                && let Some(expression) = declarator.init.as_deref()
+                && let Some(input) = hints
+                    .assumptions
+                    .initializer_call_effect_inputs
+                    .iter()
+                    .find(|input| input.binding == binding.id.to_id())
+                && source_identity.as_ref().is_ok_and(|(identity, _)| {
+                    identity.matches(owner, &binding.id.to_id(), expression.span())
+                })
+                && let Some(body) = LocalBody::from_initializer(expression)
+                && let Some((callee, call_span)) =
+                    body.single_identifier_call_with_function_argument_initializer()
+                && input.callee == *callee
+                && input.call_span == call_span
+            {
+                index.ordered_initializers.insert(owner, body);
+            }
             match OriginalInitializer::collect(item, owner, source_identity) {
                 Ok(initializer) => {
                     if matches!(
@@ -13987,6 +14020,88 @@ pub(crate) struct PreparedCallableCapabilities {
 }
 
 impl PreparedCallableCapabilities {
+    /// A negative check for an exact audited imported call. This reads the
+    /// already prepared callable index; unresolved calls remain the author's
+    /// responsibility rather than becoming inferred absence of effects.
+    pub(crate) fn known_external_write_for_local(&self, local: &str) -> Option<String> {
+        let index = &self.index;
+        let binding = index
+            .hoisted_bindings
+            .keys()
+            .chain(index.top_assignments.iter().flatten().map(|(id, _)| id))
+            .find(|id| id.0.as_ref() == local)?;
+        let start = direct_callable_binding(index, binding, &mut BTreeSet::new())?;
+        let mut pending = vec![start];
+        let mut visited = BTreeSet::new();
+        while let Some(key) = pending.pop() {
+            if !visited.insert(key) {
+                continue;
+            }
+            let callable = &index.callables[&key];
+            let known_nonfresh = |receiver: &Id| {
+                // A helper parameter or closure capture can still point to
+                // the wrapper allocated by its caller. Only an identified
+                // module/global binding is a definite contradiction here.
+                !callable.declared_locals.contains(receiver)
+                    && !callable.pattern_locals.contains(receiver)
+                    && !callable
+                        .params
+                        .iter()
+                        .any(|param| param.bindings.contains(receiver))
+                    && ((index.global_object_names.contains(receiver.0.as_ref())
+                        && !index.callables.values().any(|scope| {
+                            scope.declared_locals.contains(receiver)
+                                || scope.pattern_locals.contains(receiver)
+                                || scope
+                                    .params
+                                    .iter()
+                                    .any(|param| param.bindings.contains(receiver))
+                        }))
+                        || index.imported_bindings.contains(receiver)
+                        || index.hoisted_bindings.contains_key(receiver)
+                        || index.top_const_declarations.contains(receiver)
+                        || index
+                            .top_assignments
+                            .iter()
+                            .flatten()
+                            .any(|(id, _)| id == receiver))
+            };
+            for (receiver, property) in &callable.member_writes {
+                if known_nonfresh(receiver) {
+                    return Some(format!("property write {}.{property}", receiver.0));
+                }
+            }
+            for receiver in &callable.dynamic_property_receivers {
+                if let ValueExpr::Binding(receiver) = receiver
+                    && known_nonfresh(receiver)
+                {
+                    return Some(format!("computed property write on {}", receiver.0));
+                }
+            }
+            for binding in &callable.rebinds {
+                if known_nonfresh(binding) {
+                    return Some(format!("outer binding write {}", binding.0));
+                }
+            }
+            for call in &callable.calls {
+                if call.kind != CallKind::Call {
+                    continue;
+                }
+                let ValueExpr::Binding(callee) = &call.callee else {
+                    continue;
+                };
+                if let Some(&helper) = callable.local_functions.get(callee) {
+                    pending.push(helper);
+                } else if let Some(helper) =
+                    direct_callable_binding(index, callee, &mut BTreeSet::new())
+                {
+                    pending.push(helper);
+                }
+            }
+        }
+        None
+    }
+
     /// Called with the conservative completed all-source census before any
     /// structural flow. A later refined census cannot add roots retroactively.
     pub(crate) fn inferred_set_constructions(
@@ -14298,6 +14413,31 @@ impl PreparedCallableCapabilities {
         .into_iter()
         .filter_map(|(local, call)| Some((local, (call.declaration_start, arguments(&call)?))))
         .collect()
+    }
+}
+
+fn direct_callable_binding(
+    index: &ExecutionIndex,
+    binding: &Id,
+    visited: &mut BTreeSet<Id>,
+) -> Option<u32> {
+    if !visited.insert(binding.clone()) || index.reassigned_bindings.contains(binding) {
+        return None;
+    }
+    if let Some(&key) = index.hoisted_bindings.get(binding) {
+        return Some(key);
+    }
+    let assignments = index
+        .top_assignments
+        .iter()
+        .flatten()
+        .filter(|(id, _)| id == binding)
+        .map(|(_, value)| value)
+        .collect::<Vec<_>>();
+    match assignments.as_slice() {
+        [ValueExpr::Alloc(Kind::Function, key)] if index.callables.contains_key(key) => Some(*key),
+        [ValueExpr::Binding(alias)] => direct_callable_binding(index, alias, visited),
+        _ => None,
     }
 }
 

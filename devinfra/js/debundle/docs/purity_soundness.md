@@ -1163,6 +1163,27 @@ source-backed read or rebind beyond the asserted footprint rejects it.
 For that initializer, the assertion completes dynamic lexical read/rebind
 coverage while preserving its syntax-derived dependencies.
 
+`initializer_call_effect_inputs` is a separate exact AUTHOR premise for one
+direct imported-call initializer with one fresh anonymous ordinary function
+argument. It covers the invoked provider operation's global-property,
+general-heap and host-effect domains under an audited stable protocol and
+provider-slot lifetime: only fresh per-call allocations may be written, and
+no mutable application/global/host state may be read. It does not infer that
+promise from `pure_exports`, callback factory evidence, or heap locality.
+The original provider and importer parser bytes are digest-bound; a bundled
+partial replacement additionally requires the exact vendor mapping and a
+separately captured effective bundle digest. Static provider initialization
+must precede the importer without reentry. Source-known writes to identified
+module/global bindings in the already prepared original provider callable
+and uniquely resolved direct local helpers contradict the assertion;
+unresolved helper/alias behavior and the effective replacement remain the
+author's exact-byte audit obligations. This negative check is not an inferred
+absence of effects. Callee/argument evaluation,
+lexical effects, abrupt paths, callback timing and retention, result shape,
+and later use remain independent. The normal root can consume the operation
+domains only after separate `initializer_purity: pure` and settled ordered
+execution evidence. See SPEC § Exact initializer call effect inputs.
+
 This does not assert purity or freedom from throws, and it does not complete
 coverage of shared-heap effects, foreign registry or configuration access,
 global-object or host effects, result shape, or callbacks retained for later

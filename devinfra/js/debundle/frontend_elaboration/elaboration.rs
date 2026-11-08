@@ -307,6 +307,7 @@ fn resolve_analysis_source_sites(
     for (chunk_name, options) in projected_options {
         let has_source_premises = !options.native_operation_inputs.is_empty()
             || !options.analysis.value_inputs.is_empty()
+            || !options.analysis.initializer_call_effect_inputs.is_empty()
             || !options.analysis.native_call_identity_inputs.is_empty()
             || !options.analysis.argument_inputs.is_empty()
             || !options.analysis.no_accessor_install_callables.is_empty();
@@ -324,6 +325,11 @@ fn resolve_analysis_source_sites(
             if !options.analysis.value_inputs.is_empty() {
                 bail!(
                     "chunk_analysis_options.{chunk_name}.value_inputs provider is outside the existing analyzed import closure"
+                );
+            }
+            if !options.analysis.initializer_call_effect_inputs.is_empty() {
+                bail!(
+                    "chunk_analysis_options.{chunk_name}.initializer_call_effect_inputs importer is outside the existing analyzed import closure"
                 );
             }
             if !options.native_operation_inputs.is_empty()
@@ -351,6 +357,27 @@ fn resolve_analysis_source_sites(
         source_sites
             .source_sha256
             .insert(chunk_name.clone(), source.sha256.clone());
+        for (index, contract) in options
+            .analysis
+            .initializer_call_effect_inputs
+            .iter()
+            .enumerate()
+        {
+            let request = format!(
+                "chunk_analysis_options.{chunk_name}.initializer_call_effect_inputs[{index}]"
+            );
+            let provider = artifact
+                .chunks
+                .iter()
+                .find(|candidate| {
+                    artifact.chunk_table.name(candidate.chunk_id) == contract.provider_chunk
+                })
+                .with_context(|| format!("{request}.provider_chunk names no loaded chunk"))?;
+            ensure!(
+                provider_closure.contains(&provider.chunk_id),
+                "{request}.provider_chunk is outside the analyzed import closure"
+            );
+        }
         let entry_file = chunk
             .js
             .get_file(&chunk.analysis.entry_file)
@@ -370,6 +397,7 @@ fn resolve_analysis_source_sites(
         let ProviderSourceSites {
             value_inputs,
             native_call_identity_inputs,
+            initializer_call_effect_inputs,
             argument_inputs,
             no_accessor_install_callables,
             native_operation_inputs: operations,
@@ -383,6 +411,11 @@ fn resolve_analysis_source_sites(
             source_sites
                 .native_call_identity_inputs
                 .insert(chunk_name.clone(), native_call_identity_inputs);
+        }
+        if !initializer_call_effect_inputs.is_empty() {
+            source_sites
+                .initializer_call_effect_inputs
+                .insert(chunk_name.clone(), initializer_call_effect_inputs);
         }
         if !argument_inputs.is_empty() {
             source_sites
@@ -405,6 +438,7 @@ fn resolve_analysis_source_sites(
 struct ProviderSourceSites {
     value_inputs: Vec<SourceDeclaration>,
     native_call_identity_inputs: Vec<SourceDeclaration>,
+    initializer_call_effect_inputs: Vec<SourceDeclaration>,
     argument_inputs: Vec<SourceDeclaration>,
     no_accessor_install_callables: Vec<SourceDeclaration>,
     native_operation_inputs: Vec<AnalysisNativeOperationInput>,
@@ -422,6 +456,9 @@ fn resolve_provider_source_sites(
         value_inputs: Vec::with_capacity(options.analysis.value_inputs.len()),
         native_call_identity_inputs: Vec::with_capacity(
             options.analysis.native_call_identity_inputs.len(),
+        ),
+        initializer_call_effect_inputs: Vec::with_capacity(
+            options.analysis.initializer_call_effect_inputs.len(),
         ),
         argument_inputs: Vec::with_capacity(options.analysis.argument_inputs.len()),
         no_accessor_install_callables: Vec::with_capacity(
@@ -448,6 +485,22 @@ fn resolve_provider_source_sites(
             format!("chunk_analysis_options.{chunk_name}.native_call_identity_inputs[{index}]");
         resolved
             .native_call_identity_inputs
+            .push(select_one_source_declaration(
+                &selector_chunk,
+                &request_id,
+                &contract.source_match,
+            )?);
+    }
+    for (index, contract) in options
+        .analysis
+        .initializer_call_effect_inputs
+        .iter()
+        .enumerate()
+    {
+        let request_id =
+            format!("chunk_analysis_options.{chunk_name}.initializer_call_effect_inputs[{index}]");
+        resolved
+            .initializer_call_effect_inputs
             .push(select_one_source_declaration(
                 &selector_chunk,
                 &request_id,

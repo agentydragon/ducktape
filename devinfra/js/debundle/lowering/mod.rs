@@ -559,6 +559,7 @@ pub fn materialize_logical_modules(
                 &projection,
                 program_summary::ProgramSummaryOptions {
                     graph_provenance: options.graph_provenance.as_ref(),
+                    vendor_plan: Some(vendor_plan),
                     replacement_packages: &vendor_plan.replacement_packages(),
                 },
                 Some(&program_summary_chunk_closure),
@@ -621,7 +622,7 @@ pub fn materialize_logical_modules(
                 FinishedLogicalChunk::Assessed {
                     chunk_id,
                     assessment,
-                } => Ok((chunk_id, assessment)),
+                } => Ok((chunk_id, *assessment)),
                 FinishedLogicalChunk::Lowered(_) => {
                     bail!("assessment-only materialization unexpectedly lowered a chunk")
                 }
@@ -632,7 +633,7 @@ pub fn materialize_logical_modules(
     let chunk_results = chunk_results
         .into_iter()
         .map(|result| match result {
-            FinishedLogicalChunk::Lowered(chunk) => Ok(chunk),
+            FinishedLogicalChunk::Lowered(chunk) => Ok(*chunk),
             FinishedLogicalChunk::Assessed { .. } => {
                 bail!("normal materialization unexpectedly returned an assessment")
             }

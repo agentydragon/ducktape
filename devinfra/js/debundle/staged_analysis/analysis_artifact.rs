@@ -265,6 +265,7 @@ mod tests {
             .expect("empty projection is valid"),
             ProgramSummaryOptions {
                 graph_provenance: None,
+                vendor_plan: None,
                 replacement_packages: &BTreeMap::new(),
             },
             None,
