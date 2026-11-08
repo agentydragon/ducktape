@@ -635,6 +635,11 @@ py_library(
     ],
     deps = [
         ":egress",
+        ":history_service",
+        ":notifications",
+        ":policy_controller",
+        ":runner_gateway",
+        ":session_dispatcher",
         "//agentplane/app:action_federation_settings",
         "//agentplane/app:presets",
         "//agentplane/app:settings",

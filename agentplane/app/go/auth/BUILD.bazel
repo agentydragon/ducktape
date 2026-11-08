@@ -23,7 +23,10 @@ go_library(
 
 go_test(
     name = "unit_test",
-    srcs = ["auth_test.go"],
+    srcs = [
+        "auth_test.go",
+        "config_test.go",
+    ],
     embed = [":auth"],
     deps = [
         "@io_k8s_api//authentication/v1:authentication",

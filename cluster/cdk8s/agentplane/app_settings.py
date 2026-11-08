@@ -7,8 +7,9 @@ from pathlib import Path
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
+from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.app.settings import AppSettingsConfig, FrontendConfig
+from agentplane.app.settings import FrontendConfig, Settings
 from agentplane.env.runtime.harness import Harness
 from agentplane.sandboxes.runtimeconfig.model_catalog import (
     WORKSPACE_ROOT,
@@ -23,7 +24,14 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import (
 # preset its baseline policies, so it refers to them; each comes from the module that creates the
 # policy answering to it, so a preset names a policy without repeating the string. The Pod execution
 # environment a preset launches on is the caller's: `settings()` takes its name.
-from cluster.cdk8s.agentplane import egress
+from cluster.cdk8s.agentplane import (
+    egress,
+    history_service,
+    notifications,
+    policy_controller,
+    runner_gateway,
+    session_dispatcher,
+)
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -133,13 +141,13 @@ def settings(
     connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
+    app_origin: str,
+    oidc_issuer: str,
+    electric_url: HttpEndpointUrl | None = None,
     frontend_config: FrontendConfig | None = None,
     central_sampler_enabled: bool = False,
-) -> AppSettingsConfig:
-    optional_configuration: dict[str, object] = {}
-    if frontend_config is not None:
-        optional_configuration["frontend_config"] = frontend_config
-    return AppSettingsConfig(
+) -> Settings:
+    configured = Settings(
         models=(
             runtime_catalog.models
             if runtime_catalog is not None
@@ -186,5 +194,24 @@ def settings(
         # Asked for each sandbox's recent decisions; the page shows the rules alone when it does not answer.
         egress_admin_url=AnyHttpUrl(egress.admin(namespace).url),
         action_federation=action_federation,
-        **optional_configuration,
+        sandbox_namespace=namespace,
+        runner_gateway_target=runner_gateway.target(namespace),
+        session_dispatcher_target=(
+            f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
+        ),
+        policy_service_target=(
+            f"{policy_controller.service(namespace).fqdn}:{policy_controller.service(namespace).port.number}"
+        ),
+        runner_gateway_control_target=runner_gateway.control_target(namespace),
+        history_service_target=(
+            f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"
+        ),
+        notifications_url=AnyHttpUrl(notifications.service(namespace).url),
+        listen_address="0.0.0.0:8080",
+        electric_url=electric_url,
+        token_subjects=frozenset({f"system:serviceaccount:{namespace}:agentplane-agent"}),
+        oidc=OIDCSettings(issuer=oidc_issuer, public_base_url=app_origin),
     )
+    if frontend_config is not None:
+        configured.frontend_config = frontend_config
+    return configured

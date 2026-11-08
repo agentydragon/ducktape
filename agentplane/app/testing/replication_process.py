@@ -19,6 +19,7 @@ from uuid import uuid4
 import grpc
 import httpx
 import uvicorn
+import yaml
 from playwright.async_api import Page
 from python.runfiles import Runfiles
 from starlette.requests import Request
@@ -27,7 +28,7 @@ from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.oidc import OIDCSettings
+from agentplane.app.oidc import OIDCSecretInputs, OIDCSettings
 from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.notifications import FakeNotifications
@@ -219,12 +220,13 @@ async def spawn_go_app(
     config: dict[str, object],
     *,
     oidc: OIDCSettings | None = None,
+    oidc_secrets: OIDCSecretInputs | None = None,
     env: dict[str, str] | None = None,
     listener: Listener | None = None,
 ) -> AsyncIterator[AppProcess]:
     configured = fixture_config() | config
-    configured["database_url"] = render_postgresql_url(
-        str(configured["database_url"]), "postgresql", query={"sslmode": "disable"}
+    database_url = render_postgresql_url(
+        str(configured.pop("database_url")), "postgresql", query={"sslmode": "disable"}
     )
     stderr = undeclared_outputs_dir() / f"go-app-{uuid4().hex}.log"
     with (
@@ -234,13 +236,25 @@ async def spawn_go_app(
         url = f"http://{endpoint.host}:{endpoint.port}"
         listener_fd = endpoint.socket.fileno()
         configured["listen_address"] = f"fd:{listener_fd}"
-        config_file = Path(directory) / "config.json"
-        config_file.write_text(json.dumps(configured))
-        process_env = {key: value for key, value in os.environ.items() if not key.startswith("AGENTPLANE_")}
-        process_env.update({"AGENTPLANE_CONFIG_FILE": str(config_file), "OTEL_SDK_DISABLED": "true"})
         if oidc is not None:
+            configured.setdefault("oidc", oidc.model_dump(mode="json", exclude_unset=True))
+        config_file = Path(directory) / "config.yaml"
+        config_file.write_text(yaml.safe_dump(configured, sort_keys=False))
+        process_env = {key: value for key, value in os.environ.items() if not key.startswith("AGENTPLANE_")}
+        process_env.update(
+            {
+                "AGENTPLANE_CONFIG_FILE": str(config_file),
+                "AGENTPLANE_DATABASE_URL": database_url,
+                "OTEL_SDK_DISABLED": "true",
+            }
+        )
+        if oidc_secrets is not None:
             process_env.update(
-                {f"AGENTPLANE_OIDC_{key.upper()}": str(value) for key, value in oidc.model_dump().items()}
+                {
+                    "AGENTPLANE_OIDC_CLIENT_ID": oidc_secrets.client_id,
+                    "AGENTPLANE_OIDC_CLIENT_SECRET": oidc_secrets.client_secret,
+                    "AGENTPLANE_OIDC_SESSION_SECRET": oidc_secrets.session_secret,
+                }
             )
         process_env.update(env or {})
         with stderr.open("wb") as log:
@@ -477,7 +491,6 @@ async def app_process(
     certificate: BrowserCertificate | None = None,
     oidc_provider_options: OIDCProviderOptions | None = None,
     config_for_oidc_issuer: Callable[[str], dict[str, object]] | None = None,
-    oidc_env: dict[str, str] | None = None,
 ) -> AsyncIterator[AppProcess]:
     with TemporaryDirectory(prefix="app-oidc-") as directory, listen_tcp() as listener:
         port = listener.port
@@ -512,17 +525,27 @@ async def app_process(
                 settings["electric_url"] = electric_url
             oidc = OIDCSettings(
                 issuer=issuer,
-                client_id="test-agentplane",
-                client_secret="test-secret",
-                session_secret="test-session-secret",
                 public_base_url=certificate.url if certificate is not None else f"http://127.0.0.1:{port}",
             )
+            oidc_secrets = OIDCSecretInputs(
+                client_id="test-agentplane", client_secret="test-secret", session_secret="test-session-secret"
+            )
+            settings["oidc"] = oidc.model_dump(mode="json", exclude_unset=True)
             configured = settings.copy()
+
+            def merge_overrides(overrides: dict[str, object]) -> None:
+                oidc_override = overrides.get("oidc")
+                if isinstance(oidc_override, dict):
+                    configured_oidc = configured.get("oidc", {})
+                    assert isinstance(configured_oidc, dict)
+                    configured["oidc"] = {**configured_oidc, **oidc_override}
+                configured.update({key: value for key, value in overrides.items() if key != "oidc"})
+
             if config_for_oidc_issuer is not None:
-                configured |= config_for_oidc_issuer(issuer)
-            configured |= config or {}
+                merge_overrides(config_for_oidc_issuer(issuer))
+            merge_overrides(config or {})
             async with spawn_go_app(
-                configured, oidc=oidc, env={"SSL_CERT_FILE": str(ca)} | (oidc_env or {}), listener=listener
+                configured, oidc=oidc, oidc_secrets=oidc_secrets, env={"SSL_CERT_FILE": str(ca)}, listener=listener
             ) as app:
                 app.public_url = oidc.public_base_url
                 app.login_ca = ssl.create_default_context(cafile=str(ca))

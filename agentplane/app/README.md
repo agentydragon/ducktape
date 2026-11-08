@@ -21,9 +21,14 @@ The API image contains no browser assets. The separate [static frontend](fronten
 serves the SPA and service worker on the same public origin through Gateway path routing; API,
 authentication and streaming requests reach this service directly.
 
-Set `AGENTPLANE_ELECTRIC_URL` to enable the authenticated thread-sync API and Electric health probe.
-Omitting it leaves REST and SSE available without Electric; backend lifecycle and model-smoke
-fixtures use this composition. Electric configuration does not control static-file serving.
+The mounted `app-config` YAML's optional `electric_url` enables the authenticated thread-sync API
+and Electric health probe. Omitting it leaves REST and SSE available without Electric; backend
+lifecycle and model-smoke fixtures use this composition. Electric configuration does not control
+static-file serving. `AGENTPLANE_CONFIG_FILE` is the only environment setting that selects the
+static configuration file; database and OIDC credentials are separate Secret inputs.
+The app no longer reads per-setting environment variables or configuration flags. Deploy the image
+and `app-config` together; during a brief image/config mismatch the new binary fails startup until
+both converge.
 
 The retained-event SSE API follows History's `FollowSession` RPC, resuming upstream renewals from
 its covered cursor. The app adds attachment and terminal feed frames from History summaries;
@@ -322,8 +327,10 @@ Every API route needs a caller; only `/healthz`, `/readyz` and the `/auth/*` end
 one. The separate frontend serves public static files, including `/sw.js`. There are two credentials,
 and both are cryptographic:
 
-- **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an
-  Authentik client; `/auth/login` runs an authorization-code flow with PKCE and stores the
+- **An operator's OIDC session.** The mounted `app-config` YAML's `oidc` section supplies the issuer,
+  public base URL, and session timing; the Deployment supplies the client ID, client secret, and
+  session signing secret through explicit Secret-backed inputs. `/auth/login` starts an
+  authorization-code flow with PKCE and stores the
   `iss`, stable `sub`, and display `preferred_username` in PostgreSQL behind an opaque signed `__Host-` cookie. Unsafe methods additionally have to be
   same-origin, which is the CSRF defence `SameSite=lax` leaves open. The deployed app requires these
   settings; an app the tests build without them has no login at all.
@@ -331,8 +338,9 @@ and both are cryptographic:
   session compatibility. Switching between the Python and Go images requires signing in again.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
   username the API server vouches for. The token has to carry the app's audience
-  (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here,
-  and the username has to be one `--token-subjects` names, or the app answers 403. The audience
+  (`token_audience` in the mounted YAML, `agentplane` by default), so a token minted for anything
+  else cannot be replayed here, and the username has to appear in the YAML `token_subjects` list,
+  or the app answers 403. The audience
   would not be a gate on its own: RBAC decides which ServiceAccount a principal may mint a token
   for, never which audience it asks for, so an unnamed subject is refused however it minted. Empty
   -- the default -- accepts no token caller at all. On staging the list holds one entry, and an
@@ -422,7 +430,7 @@ existing heartbeat, Lease and Sandbox watches; browser countdown ticks send no r
 SIGTERM or SIGINT begins the Go server's drain. `/readyz` answers 503 while `/healthz` remains a
 liveness check. The server stops accepting new connections; long-lived SSE and upstream stream
 handlers that watch the drain signal end promptly. `http.Server.Shutdown` waits up to
-`--shutdown-timeout` seconds (5 by default) for active requests. When that wait ends, the runtime
+`shutdown_timeout` seconds from the mounted YAML (5 by default) for active requests. When that wait ends, the runtime
 cancels the app context and waits for background workers before closing the database and clients.
 The Deployment keeps its 60-second termination grace period for this sequence; no preStop delay
 consumes that budget.
@@ -503,9 +511,9 @@ whether a Pod or a Connection acting as it submitted it.
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
 submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
-Staging configures federation: the Deployment reads `AGENTPLANE_ACTION_FEDERATION` from the
-Git-owned `agentplane-action-federation` ConfigMap (built from the `action_federation`/
-`operator_oidc` dicts in `cluster/cdk8s/generate_manifests.py`), and the app's network
+Staging configures federation in the same mounted `app-config` YAML as the rest of the app's
+non-secret settings. The `action_federation` section is generated by
+`cluster/cdk8s/agentplane/staging_config.py`, and the app's network
 policies admit Authentik by TLS SNI, the Action Service on 8080, and the MCP edge's Connection
 Service on 8080. The app composes a request-bound
 JWT-bearer exchanger; the service independently validates the exchanged operator JWT. No static BFF

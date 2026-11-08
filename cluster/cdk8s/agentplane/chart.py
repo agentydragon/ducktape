@@ -223,7 +223,6 @@ def environment_chart(
         database_url=app_database_url,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
-        runner_control_target=runner_gateway.control_target(env.namespace),
     ).add_platform_resources()
     frontend.Frontend(chart, "frontend", env).add_platform_resources()
     environment_sandbox.EnvironmentSandbox(

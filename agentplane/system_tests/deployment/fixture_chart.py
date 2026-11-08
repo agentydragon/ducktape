@@ -35,7 +35,8 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
-from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
+from agentplane.app.oidc import OIDCSettings
+from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Settings, TraceSearchSettings
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
@@ -217,7 +218,7 @@ def environment(
         # debounce deadlines. Keep batching enabled without a minute-long wait per notice.
         notifications_debounce=NoticeDebounceSettings(quiet_seconds=1, max_wait_seconds=2),
         default_policy_sets=frozenset(egress.DEFAULT_POLICIES),
-        app_config=AppSettingsConfig(
+        app_config=Settings(
             models=catalog,
             connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),
             thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},
@@ -227,6 +228,20 @@ def environment(
                 )
             },
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
+            sandbox_namespace=NAMESPACE,
+            runner_gateway_target=runner_gateway.target(NAMESPACE),
+            session_dispatcher_target=(
+                f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
+            ),
+            runner_gateway_control_target=runner_gateway.control_target(NAMESPACE),
+            history_service_target=(
+                f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
+            ),
+            notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
+            listen_address="0.0.0.0:8080",
+            token_subjects=frozenset({f"system:serviceaccount:{NAMESPACE}:agentplane-agent"}),
+            log_levels={},
+            oidc=OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin),
             action_federation=dex.action_federation(operator_oidc),
             frontend_config=FrontendConfig(
                 trace_search=TraceSearchSettings(
@@ -507,7 +522,6 @@ def build_chart(
         database_url=app_database_url,
         placement=None,
         registry_secret_name=None,
-        runner_control_target=control_target,
         memory_limit=None,
     )
     mcp_edge_service = mcp_edge.McpEdge(

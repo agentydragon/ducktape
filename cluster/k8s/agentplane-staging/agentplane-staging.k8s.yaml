@@ -3611,6 +3611,7 @@ data:
           branch with the substituted PAT. Never push directly to the upstream repository. Check the
           diff for personal data before pushing; public ducktape must contain only generic tooling and
           public-safe instructions.
+        setup_script: ""
       haku-codex:
         title: Haku
         harness: HARNESS_CENTRAL_SAMPLER
@@ -3881,6 +3882,7 @@ data:
         inbox_tags:
           - haku
         thread_preset: haku-codex
+        bootstrap: ""
       finance-agent:
         title: Finance agent
         template: environment-tools
@@ -3908,6 +3910,7 @@ data:
         inbox_tags:
           - finance-agent
         thread_preset: finance-agent-codex
+        bootstrap: ""
       public-coder-ducktape:
         title: Public coder / ducktape
         template: environment-tools
@@ -3941,13 +3944,16 @@ data:
       wake_on_send: true
       idle_suspend_after_seconds: 900
     egress_admin_url: http://egress-admin.agentplane-staging.svc:8081/
+    connection_service_url: http://mcp-edge.agentplane-staging.svc:8080/
     action_federation:
       service_url: http://actions.agentplane-staging.svc:8080/
       login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
+      login_token_profile: authentik
       target:
         issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
         audience: agentplane-staging-actions
         jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
+        token_profile: authentik
       scope: openid
       mode: exchange
       token_endpoint: https://auth.allegedly.works/application/o/token/
@@ -3959,8 +3965,42 @@ data:
       langfuse_search:
         base_url: https://langfuse.allegedly.works/
         project_id: langfuse-litellm-project
+        session_metadata_key: attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id
         sandbox_namespace_metadata_key: attributes.litellm.metadata.spend_logs_metadata.agentplane.namespace
         sandbox_service_account_metadata_key: attributes.litellm.metadata.spend_logs_metadata.agentplane.service_account
+    sandbox_namespace: agentplane-staging
+    runner_gateway_target: runner-gateway.agentplane-staging.svc.cluster.local:8080
+    session_dispatcher_target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+    policy_service_target: policy-controller.agentplane-staging.svc.cluster.local:8082
+    policy_service_token_file: /var/run/secrets/agentplane-policy/token
+    runner_gateway_control_target: "{sandbox}-control.{namespace}.svc:8080"
+    history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
+    notifications_url: http://notifications.agentplane-staging.svc:8080/
+    notifications_token_file: /var/run/secrets/agentplane-notifications/token
+    notifications_request_timeout_s: 5
+    runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
+    session_dispatcher_token_file: /var/run/secrets/agentplane-session-dispatcher/token
+    session_dispatcher_request_timeout_s: 20
+    history_service_token_file: /var/run/secrets/agentplane-history-service/token
+    history_service_request_timeout_s: 20
+    runner_gateway_request_timeout_s: 20
+    runner_gateway_lifecycle_timeout_s: 310
+    log_levels: {}
+    listen_address: 0.0.0.0:8080
+    electric_url: http://electric.agentplane-staging.svc:3000/
+    egress_admin_token_file: /var/run/secrets/agentplane-egress-admin/token
+    egress_admin_timeout: 5
+    shutdown_timeout: 5
+    token_audience: agentplane
+    token_subjects:
+      - system:serviceaccount:agentplane-staging:agentplane-agent
+    oidc:
+      issuer: https://auth.allegedly.works/application/o/agentplane-staging/
+      public_base_url: https://agentplane-staging.allegedly.works
+      session_max_seconds: 604800
+      session_idle_seconds: 86400
+      session_activity_step_seconds: 300
+      token_renew_before_seconds: 30
 immutable: false
 ---
 apiVersion: v1
@@ -4003,28 +4043,12 @@ spec:
     spec:
       automountServiceAccountToken: true
       containers:
-        - args:
-            - --sandbox-namespace=agentplane-staging
-            - --runner-gateway-target=runner-gateway.agentplane-staging.svc.cluster.local:8080
-            - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
-            - --history-service-target=history-service.agentplane-staging.svc.cluster.local:8080
-            - --session-dispatcher-target=session-dispatcher.agentplane-staging.svc.cluster.local:8080
-            - --policy-service-target=policy-controller.agentplane-staging.svc.cluster.local:8082
-            - --notifications-url=http://notifications.agentplane-staging.svc.cluster.local:8080
-            - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
-            - --listen-address=0.0.0.0:8080
-          env:
+        - env:
             - name: AGENTPLANE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
                   name: postgres-app
-            - name: AGENTPLANE_ELECTRIC_URL
-              value: http://electric.agentplane-staging.svc:3000
-            - name: AGENTPLANE_OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/agentplane-staging/
-            - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
-              value: https://agentplane-staging.allegedly.works
             - name: AGENTPLANE_OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -4040,12 +4064,6 @@ spec:
                 secretKeyRef:
                   key: session-secret
                   name: agentplane-staging-session-secret
-            - name: AGENTPLANE_TOKEN_SUBJECTS
-              value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
-            - name: AGENTPLANE_CONNECTION_SERVICE_URL
-              value: http://mcp-edge.agentplane-staging.svc:8080/
-            - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
-              value: "{sandbox}-control.{namespace}.svc:8080"
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
               value: http://alloy.monitoring.svc.cluster.local:4318/v1/traces
             - name: OTEL_EXPORTER_OTLP_TRACES_PROTOCOL

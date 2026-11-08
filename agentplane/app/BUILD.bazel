@@ -257,21 +257,6 @@ oci_image(
     workdir = "/",
 )
 
-py_test(
-    name = "test_settings",
-    size = "medium",
-    srcs = ["test_settings.py"],
-    deps = [
-        ":oidc",
-        ":settings",
-        "//:conftest",
-        "//agentplane/app/testing:model_test_data",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "oidc",
     srcs = ["oidc.py"],
@@ -280,10 +265,7 @@ py_library(
         "//agentplane/system_tests:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_test(
@@ -548,14 +530,13 @@ py_library(
     ],
     deps = [
         ":action_federation_settings",
+        ":oidc",
         ":presets",
         ":sandbox_models",
         "//agentplane:log_levels",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "//util:urls",
-        "//util:yaml_file_settings",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
     ],
 )
 

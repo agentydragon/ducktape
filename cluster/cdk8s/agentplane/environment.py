@@ -17,7 +17,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.app.settings import AppSettingsConfig
+from agentplane.app.settings import Settings
 from agentplane.central_sampler import settings
 from agentplane.env.config import GuestResources
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
@@ -195,7 +195,7 @@ class Environment:
     description: str
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/settings.py's `Settings`.
-    app_config: AppSettingsConfig
+    app_config: Settings
     # Whether the History Service's writers remove an item's streamed delta entries once its
     # completion provably holds them (agentplane/history_service/README.md#delta-settlement).
     settle_deltas: bool

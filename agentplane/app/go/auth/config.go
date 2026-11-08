@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,8 +23,7 @@ const (
 )
 
 // OIDCConfig contains the relying-party settings and browser-session policy. Session durations
-// retain the Python defaults when zero. The env loader fills TokenRenewBeforeSeconds so its valid
-// zero value remains meaningful.
+// use their configured defaults. TokenRenewBeforeSeconds intentionally accepts zero.
 type OIDCConfig struct {
 	Issuer                     string
 	ClientID                   string
@@ -36,6 +34,17 @@ type OIDCConfig struct {
 	SessionIdleSeconds         int
 	SessionActivityStepSeconds int
 	TokenRenewBeforeSeconds    int
+}
+
+// OIDCSettings contains the non-secret relying-party settings authored in the mounted app YAML.
+// Pointer durations distinguish omitted values (defaults) from explicit zero for token renewal.
+type OIDCSettings struct {
+	Issuer                     string `mapstructure:"issuer"`
+	PublicBaseURL              string `mapstructure:"public_base_url"`
+	SessionMaxSeconds          *int   `mapstructure:"session_max_seconds"`
+	SessionIdleSeconds         *int   `mapstructure:"session_idle_seconds"`
+	SessionActivityStepSeconds *int   `mapstructure:"session_activity_step_seconds"`
+	TokenRenewBeforeSeconds    *int   `mapstructure:"token_renew_before_seconds"`
 }
 
 // RedirectURI is the fixed public callback registered with the identity provider.
@@ -54,44 +63,49 @@ func (c OIDCConfig) CookieName() string {
 // Secure reports whether the browser cookie must be sent only over HTTPS.
 func (c OIDCConfig) Secure() bool { return strings.HasPrefix(c.PublicBaseURL, "https://") }
 
-// LoadOIDCFromEnv reads AGENTPLANE_OIDC_* settings. It returns nil,nil when the
-// feature is wholly unconfigured and an error for partial or invalid configuration.
-func LoadOIDCFromEnv() (*OIDCConfig, error) {
-	values := []string{
-		os.Getenv("AGENTPLANE_OIDC_ISSUER"),
-		os.Getenv("AGENTPLANE_OIDC_CLIENT_ID"),
-		os.Getenv("AGENTPLANE_OIDC_CLIENT_SECRET"),
-		os.Getenv("AGENTPLANE_OIDC_SESSION_SECRET"),
-		os.Getenv("AGENTPLANE_OIDC_PUBLIC_BASE_URL"),
+// LoadOIDC overlays explicit credential inputs onto the static settings file section. It returns
+// nil,nil when the feature is wholly unconfigured and an error for partial or invalid configuration.
+func LoadOIDC(settings *OIDCSettings) (*OIDCConfig, error) {
+	secretNames := []string{
+		"AGENTPLANE_OIDC_CLIENT_ID", "AGENTPLANE_OIDC_CLIENT_SECRET", "AGENTPLANE_OIDC_SESSION_SECRET",
 	}
-	allEmpty := true
-	for _, value := range values {
-		allEmpty = allEmpty && value == ""
+	secrets := make([]string, len(secretNames))
+	anySecretPresent := false
+	for index, name := range secretNames {
+		value, present := os.LookupEnv(name)
+		secrets[index] = value
+		anySecretPresent = anySecretPresent || present
 	}
-	if allEmpty {
+	if settings == nil && !anySecretPresent {
 		return nil, nil
 	}
-	names := []string{"ISSUER", "CLIENT_ID", "CLIENT_SECRET", "SESSION_SECRET", "PUBLIC_BASE_URL"}
-	for i, value := range values {
+	if settings == nil {
+		return nil, errors.New("OIDC Secret inputs require the oidc settings section in AGENTPLANE_CONFIG_FILE")
+	}
+	for index, value := range secrets {
 		if value == "" {
-			return nil, fmt.Errorf("AGENTPLANE_OIDC_%s is required when OIDC is configured", names[i])
+			return nil, fmt.Errorf("%s is required when oidc is configured", secretNames[index])
 		}
 	}
 	c := &OIDCConfig{
-		Issuer: values[0], ClientID: values[1], ClientSecret: values[2], SessionSecret: values[3], PublicBaseURL: values[4],
+		Issuer: settings.Issuer, ClientID: secrets[0], ClientSecret: secrets[1], SessionSecret: secrets[2],
+		PublicBaseURL:              settings.PublicBaseURL,
+		SessionMaxSeconds:          intSetting(settings.SessionMaxSeconds, 604800),
+		SessionIdleSeconds:         intSetting(settings.SessionIdleSeconds, 86400),
+		SessionActivityStepSeconds: intSetting(settings.SessionActivityStepSeconds, 300),
+		TokenRenewBeforeSeconds:    intSetting(settings.TokenRenewBeforeSeconds, 30),
 	}
-	var err error
-	if c.SessionMaxSeconds, err = envInt("AGENTPLANE_OIDC_SESSION_MAX_SECONDS", 604800, 1); err != nil {
-		return nil, err
+	if c.SessionMaxSeconds <= 0 {
+		return nil, errors.New("oidc.session_max_seconds must be positive")
 	}
-	if c.SessionIdleSeconds, err = envInt("AGENTPLANE_OIDC_SESSION_IDLE_SECONDS", 86400, 1); err != nil {
-		return nil, err
+	if c.SessionIdleSeconds <= 0 {
+		return nil, errors.New("oidc.session_idle_seconds must be positive")
 	}
-	if c.SessionActivityStepSeconds, err = envInt("AGENTPLANE_OIDC_SESSION_ACTIVITY_STEP_SECONDS", 300, 1); err != nil {
-		return nil, err
+	if c.SessionActivityStepSeconds <= 0 {
+		return nil, errors.New("oidc.session_activity_step_seconds must be positive")
 	}
-	if c.TokenRenewBeforeSeconds, err = envInt("AGENTPLANE_OIDC_TOKEN_RENEW_BEFORE_SECONDS", 30, 0); err != nil {
-		return nil, err
+	if c.TokenRenewBeforeSeconds < 0 {
+		return nil, errors.New("oidc.token_renew_before_seconds must be non-negative")
 	}
 	if err := c.validate(); err != nil {
 		return nil, err
@@ -99,16 +113,11 @@ func LoadOIDCFromEnv() (*OIDCConfig, error) {
 	return c, nil
 }
 
-func envInt(name string, fallback, minimum int) (int, error) {
-	text, present := os.LookupEnv(name)
-	if !present || text == "" {
-		return fallback, nil
+func intSetting(value *int, fallback int) int {
+	if value == nil {
+		return fallback
 	}
-	value, err := strconv.Atoi(text)
-	if err != nil || value < minimum {
-		return 0, fmt.Errorf("%s must be an integer >= %d", name, minimum)
-	}
-	return value, nil
+	return *value
 }
 
 func (c OIDCConfig) validate() error {

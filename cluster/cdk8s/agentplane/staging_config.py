@@ -1,5 +1,5 @@
 """Generates agentplane-staging's `app-config` ConfigMap's `config.yaml`
-content -- agentplane/app/settings.py's `AppSettingsConfig`, mounted by the Deployment. See
+content -- agentplane/app/settings.py's complete static `Settings`, mounted by the Deployment. See
 model_catalog/catalog.py for the model-name scheme.
 """
 
@@ -12,7 +12,7 @@ from pydantic import AnyHttpUrl
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
+from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Settings, TraceSearchSettings
 from agentplane.env.runtime.harness import Harness
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from cluster.cdk8s import agent_access_profiles
@@ -83,7 +83,10 @@ def config(
     connection_service_url: HttpEndpointUrl,
     runtime: Catalog | None = None,
     central_sampler_enabled: bool = False,
-) -> AppSettingsConfig:
+    app_origin: str,
+    oidc_issuer: str,
+    electric_url: HttpEndpointUrl,
+) -> Settings:
     if runtime is None:
         runtime = runtime_catalog(
             models, templates=(sandbox_template,), central_sampler_enabled=central_sampler_enabled
@@ -97,6 +100,9 @@ def config(
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         connection_service_url=connection_service_url,
+        app_origin=app_origin,
+        oidc_issuer=oidc_issuer,
+        electric_url=electric_url,
         public_coder_policy_sets=[
             COMMON_GITHUB_READ_SET,
             GITHUB_IDENTITY_READS_SET,

@@ -164,10 +164,7 @@ func run(ctx context.Context, config Config) error {
 	defer policyConnection.Close()
 	policySetNames := policypb.NewPolicyServiceClient(policyConnection)
 
-	oidc, err := auth.LoadOIDCFromEnv()
-	if err != nil {
-		return err
-	}
+	oidc := config.OIDC
 	var federator *federation.Client
 	if oidc != nil {
 		tokenEndpoint := ""

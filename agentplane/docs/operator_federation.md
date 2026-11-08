@@ -21,16 +21,17 @@ must use the same app database, OIDC configuration, public origin, and session s
 Login requires a verified signature, the exact configured issuer, a single audience naming the
 login client (string or singleton list), a matching `azp` when present, and valid state/nonce/expiry.
 Pending login expires after at most ten minutes. Authentication rotates the handle, deletes the
-pending row, and consumes all OAuth state. A login then lasts until `AGENTPLANE_OIDC_SESSION_IDLE_SECONDS`
-(default a day) pass without a request presenting it, and at most `AGENTPLANE_OIDC_SESSION_MAX_SECONDS`
-(default a week) from login; token lifetimes do not bound it. The row's `expires_at` is the earlier
+pending row, and consumes all OAuth state. A login then lasts until the mounted `app-config` YAML's
+`oidc.session_idle_seconds` (default a day) pass without a request presenting it, and at most
+`oidc.session_max_seconds` (default a week) from login; token lifetimes do not bound it. The row's `expires_at` is the earlier
 of the two deadlines, and the cookie lasts until the absolute one. A request moves the idle deadline
 only when it would move by more than five minutes, so the idle timeout holds to within that and a
 burst of requests costs one row write. A request never waits on the row's lock to move it: while
 another transaction holds the row, a later request moves it instead.
 
 The login asks for `offline_access`, so Authentik issues a refresh token beside its ten-minute access
-token. When an exchange needs the access token and it expires within 30 seconds, the app renews it
+token. When an exchange needs the access token and it expires within `oidc.token_renew_before_seconds`
+(30 seconds by default), the app renews it
 with the refresh token and stores the new tokens, holding the session row's lock across the renewal:
 Authentik rotates the refresh token on every use and refuses the one it replaced, so a second replica
 renewing with it would lose the session. Under the lock it re-reads the row first, and uses a token
@@ -117,11 +118,11 @@ constrains nor is constrained by this. The transport decision is recorded separa
 ## Explicit configuration required before deployment
 
 **Staging GitOps wiring:** `tf/gitops/sso-providers/provider_agentplane_actions.tf` provisions the
-Action-only Authentik target and its policy binding. The non-secret `action-federation` and
-`operator-oidc` JSON is Git-owned in the `_AGENTPLANE_STAGING_ACTION_FEDERATION`/
-`_AGENTPLANE_STAGING_OPERATOR_OIDC` dicts in `cluster/cdk8s/generate_manifests.py`; both
-Deployments read it from that ConfigMap through their existing Settings environment
-sources. Terraform still owns the
+Action-only Authentik target and its policy binding. The app's non-secret `oidc` and
+`action_federation` sections are authored in `cluster/cdk8s/agentplane/staging.py` and rendered as
+the mounted `app-config` YAML. The Action Service's `operator_oidc` JSON remains Git-owned in its
+existing federation ConfigMap and is read through the Action Service's existing settings input.
+Terraform still owns the
 Authentik provider and the credential-bearing Secrets, but does not render this configuration. This
 is configuration, not a credential or evidence of a successful live exchange. Never mount a shared
 BFF operator bearer, forward a workload token, or invent a BFF signing authority.
@@ -132,15 +133,17 @@ and the current operator's login access token as `client_assertion`. No client s
 exchange target. This is not RFC 8693 token exchange. Each request creates a fresh exchange client;
 there is no mutable application-global operator-token cache.
 
-To opt in, set the app's `action_federation` YAML key (or `AGENTPLANE_ACTION_FEDERATION` JSON)
-with these fields. Token profiles default to Authentik; the pins below are descriptions, not
+To opt in, set the app's `action_federation` section in its mounted `app-config` YAML with these
+fields. The same YAML's `oidc.issuer` configures the login provider and `oidc.public_base_url`
+configures the app's public origin; the client ID, client secret, and session signing secret remain
+Secret-backed runtime inputs. Token profiles default to Authentik; the pins below are descriptions, not
 deployable defaults:
 
 - `mode`: `exchange` for the staging Authentik provider boundary; `direct` only when the login token
   already has the target issuer, audience, and subject format.
 - `service_url`: canonical Action Service base URL; use a trusted internal route or HTTPS.
 - `token_endpoint`: Authentik's shared HTTPS token endpoint. Loopback HTTP is accepted for tests only.
-- `login_jwks_uri`: pinned JWKS URI for the configured `AGENTPLANE_OIDC_ISSUER` login provider.
+- `login_jwks_uri`: pinned JWKS URI for the configured `oidc.issuer` login provider.
 - `login_token_profile`: `authentik` (default) or `dex`; selected by reviewed configuration,
   never inferred from a presented token.
 - `scope`: the exact reviewed federation scope set; no proxy-outpost `ak_proxy` scope by default.
@@ -249,9 +252,9 @@ preserve this source contract or update and revalidate the subject mode.
    starting until the Actions Kustomization has delivered it. Reloader rolls both consumers when the
    configuration changes.
 3. The app depends on the Action Service and retains its existing database, OIDC client, and session
-   signing Secret. Its `AGENTPLANE_ACTION_FEDERATION` JSON comes from the same federation ConfigMap.
-   The stable ConfigMap name plus reloader annotations rolls both processes when its pins change;
-   generated application settings ConfigMaps retain their Kustomize name hashes.
+   signing Secret. Its `action_federation` and static `oidc` settings come from the mounted
+   `app-config` YAML; OIDC credentials remain Secret-backed runtime inputs. Existing ConfigMap and
+   Secret reloader annotations restart the app when either changes.
    This federation configuration does not set replica counts; the control-plane deployment plan
    handles them separately. Runner ingestion supports replicas through database leases and shared
    event delivery.
