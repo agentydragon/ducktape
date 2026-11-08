@@ -130,6 +130,8 @@ before reconciling this component.
 Rest Server's append-only mode prevents workstation clients from pruning snapshots or
 deleting repository data. No automatic repository expiration or pruning is configured;
 the repositories grow until an operator performs planned server-side maintenance.
+The [thread-history rewrite procedure](../../session_backup_maintenance/README.md) stages and verifies
+replacement snapshots before any originals are removed.
 The repository has two storage copies within the cluster and no separate recovery copy.
 
 Before first deployment, complete the replicated-class failover, resync, and expansion
