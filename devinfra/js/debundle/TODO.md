@@ -260,9 +260,15 @@ closure`, conflating unresolved host requests, missing captured chunks,
   identity plus readable/template names separate from the actual raw binding.
   Include declaration source-unit IDs and parsed initializer form/span where
   available. Report resolution and ownership-selection statuses separately so
-  resolved-but-unselected claims remain visible; do not filter them away. Do
-  not decode caches, scan source text manually, or add a legacy
-  mapping fallback.
+  resolved-but-unselected claims remain visible; do not filter them away.
+  Do not prefilter to selected or near-complete owners: include claims from fully
+  unselected and partially selected owners. Keep physical implicit placement
+  distinct from explicit canonical claims; unrestricted `bindings` can still
+  leave explicit anonymous-statement exclusions. Initializer shape is a lead,
+  not eligibility evidence: source/provenance, native guards and author premises
+  must qualify a match. Keep the combined ordinary gate and retention checks.
+  Do not decode caches, scan source text manually, or add a legacy mapping
+  fallback.
   Close when one query emits a deterministic row for every in-scope typed
   claim from one joint selector solve per chunk, retains ordinary
   graph/source/spec provenance checks, and remains available when the later
