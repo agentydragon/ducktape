@@ -14,6 +14,7 @@ import {
   Title,
 } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent, type JSX } from "react";
 
 import RunTriggerModal from "$components/RunTriggerModal";
@@ -28,6 +29,7 @@ import {
   useNeedsToken,
 } from "$lib/stores/token";
 import type { RunModalPrefill } from "$lib/types";
+import { createPropsQueryClient } from "$lib/queryClient";
 import DefinitionDetailPage from "./pages/DefinitionDetailPage";
 import ExamplesPage from "./pages/ExamplesPage";
 import OverviewPage from "./pages/OverviewPage";
@@ -289,12 +291,15 @@ function PropsApp(): JSX.Element {
 }
 
 export default function App(): JSX.Element {
+  const [queryClient] = useState(createPropsQueryClient);
   return (
-    <MantineProvider defaultColorScheme="auto">
-      <Notifications position="top-right" autoClose={8000} />
-      <HashRouter>
-        <PropsApp />
-      </HashRouter>
-    </MantineProvider>
+    <QueryClientProvider client={queryClient}>
+      <MantineProvider defaultColorScheme="auto">
+        <Notifications position="top-right" autoClose={8000} />
+        <HashRouter>
+          <PropsApp />
+        </HashRouter>
+      </MantineProvider>
+    </QueryClientProvider>
   );
 }

@@ -6,6 +6,7 @@ import { HashRouter } from "react-router";
 import App from "../../src/App";
 import type { ComponentType } from "react";
 import { MantineProvider } from "@mantine/core";
+import { QueryClientProvider } from "@tanstack/react-query";
 
 import "../../src/app.css";
 
@@ -26,6 +27,7 @@ import { llmAnthropicRequests, llmChatRequests, llmRequests } from "./fixtures/l
 import { criticRunDetail, runs } from "./fixtures/runs";
 import { fileTree, snapshotDetail } from "./fixtures/snapshot";
 import { RunModalContext } from "../../src/lib/runModalContext";
+import { createPropsQueryClient } from "../../src/lib/queryClient";
 import {
   coverageCells,
   coverageDefinitions,
@@ -188,6 +190,7 @@ const pageName = params.get("page");
 const app = document.getElementById("app");
 if (!app) throw new Error("missing #app");
 const root = createRoot(app);
+const queryClient = createPropsQueryClient();
 
 declare global {
   interface Window {
@@ -222,13 +225,15 @@ if (!pageName) {
       </div>
     );
     root.render(
-      <MantineProvider defaultColorScheme="auto">
-        <HashRouter>
-          <RunModalContext.Provider value={{ open: () => undefined }}>
-            {page.wrapperClassName ? <div className={page.wrapperClassName}>{shot}</div> : shot}
-          </RunModalContext.Provider>
-        </HashRouter>
-      </MantineProvider>
+      <QueryClientProvider client={queryClient}>
+        <MantineProvider defaultColorScheme="auto">
+          <HashRouter>
+            <RunModalContext.Provider value={{ open: () => undefined }}>
+              {page.wrapperClassName ? <div className={page.wrapperClassName}>{shot}</div> : shot}
+            </RunModalContext.Provider>
+          </HashRouter>
+        </MantineProvider>
+      </QueryClientProvider>
     );
   }
 }

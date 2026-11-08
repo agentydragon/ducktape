@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import {
   Badge,
@@ -17,31 +18,26 @@ import {
   Title,
 } from "@mantine/core";
 
-import BackButton from "$components/BackButton";
-import Breadcrumb from "$components/Breadcrumb";
-import CopyButton from "$components/CopyButton";
-import FileTree from "$components/FileTree";
-import FileViewer from "$components/FileViewer";
-import OccurrenceStats from "$components/stats/OccurrenceStats";
-import CreditBadge from "$components/stats/CreditBadge";
-import type {
-  ClusterResponse,
-  FileContentResponse,
-  FileTreeResponse,
-  OccurrenceStatsRow,
-  SnapshotDetailResponse,
-} from "$lib/schema";
+import BackButton from "../components/BackButton";
+import Breadcrumb from "../components/Breadcrumb";
+import CopyButton from "../components/CopyButton";
+import FileTree from "../components/FileTree";
+import FileViewer from "../components/FileViewer";
+import OccurrenceStats from "../components/stats/OccurrenceStats";
+import CreditBadge from "../components/stats/CreditBadge";
+import type { FileTreeResponse, SnapshotDetailResponse } from "../lib/schema";
 import {
   fetchOccurrenceStats,
   fetchSnapshotClusters,
   fetchSnapshotDetail,
   fetchSnapshotFile,
   fetchSnapshotTree,
-} from "$lib/api/client";
-import { formatLocationAnchor } from "$lib/formatters";
+} from "../lib/api/client";
+import { formatLocationAnchor } from "../lib/formatters";
 import { Link, useSearchParams } from "react-router";
-import { toast } from "$lib/toast";
-import OccurrenceLink from "$lib/OccurrenceLink";
+import { toast } from "../lib/toast";
+import OccurrenceLink from "../lib/OccurrenceLink";
+import { snapshotDetailQueryKey } from "../lib/queryKeys";
 
 interface Props {
   slug: string;
@@ -52,6 +48,10 @@ interface Props {
 type ActiveTab = "files" | "tps" | "fps" | "clusters" | "stats";
 type SnapshotIssue =
   SnapshotDetailResponse["true_positives"][number] | SnapshotDetailResponse["false_positives"][number];
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Failed to load snapshot";
+}
 
 function splitColor(split: string): string {
   switch (split) {
@@ -74,86 +74,97 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree 
   const routeOccurrenceId = parts.length >= 4 ? parts[3] : undefined;
   const targetFile = searchParams.get("file") || undefined;
 
-  const [snapshot, setSnapshot] = useState<SnapshotDetailResponse | null>(initialSnapshot ?? null);
-  const [tree, setTree] = useState<FileTreeResponse | null>(initialTree ?? null);
-  const [loading, setLoading] = useState(!initialSnapshot);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTab>("files");
-  const [selectedFile, setSelectedFile] = useState<FileContentResponse | null>(null);
-  const [loadingFile, setLoadingFile] = useState(false);
-  const [occurrenceStats, setOccurrenceStats] = useState<OccurrenceStatsRow[]>([]);
-  const [clusters, setClusters] = useState<ClusterResponse[]>([]);
-  const [expandedIssues, setExpandedIssues] = useState<Set<string>>(() => new Set());
-  const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null);
-  const fileRequestId = useRef(0);
-
+  const hasSeededSnapshot = initialSnapshot?.slug === snapshotSlug;
+  const snapshotQuery = useQuery({
+    queryKey: snapshotDetailQueryKey(snapshotSlug, null, null),
+    staleTime: Infinity,
+    queryFn: ({ signal }) => fetchSnapshotDetail(snapshotSlug, undefined, undefined, signal),
+    enabled: !hasSeededSnapshot,
+    initialData: hasSeededSnapshot ? initialSnapshot : undefined,
+  });
+  const treeQuery = useQuery({
+    queryKey: ["props", "snapshot-tree", snapshotSlug],
+    staleTime: Infinity,
+    queryFn: ({ signal }) => fetchSnapshotTree(snapshotSlug, signal),
+    enabled: !hasSeededSnapshot,
+    initialData: hasSeededSnapshot ? initialTree : undefined,
+  });
+  const snapshot = snapshotQuery.data ?? null;
+  const tree = treeQuery.data ?? null;
+  const error = !hasSeededSnapshot
+    ? snapshotQuery.error
+      ? errorMessage(snapshotQuery.error)
+      : treeQuery.error
+        ? errorMessage(treeQuery.error)
+        : null
+    : null;
+  const loading = !hasSeededSnapshot && !error && (snapshotQuery.isPending || treeQuery.isPending);
+  const auxiliaryQueriesEnabled = !hasSeededSnapshot && snapshotQuery.isSuccess && treeQuery.isSuccess;
+  const occurrenceStatsQuery = useQuery({
+    queryKey: ["props", "snapshot-occurrence-stats", snapshotSlug],
+    queryFn: ({ signal }) => fetchOccurrenceStats(snapshotSlug, undefined, signal),
+    enabled: auxiliaryQueriesEnabled,
+  });
+  const clustersQuery = useQuery({
+    queryKey: ["props", "snapshot-clusters", snapshotSlug],
+    queryFn: ({ signal }) => fetchSnapshotClusters(snapshotSlug, signal),
+    enabled: auxiliaryQueriesEnabled,
+  });
+  const occurrenceStats = useMemo(() => occurrenceStatsQuery.data?.occurrences ?? [], [occurrenceStatsQuery.data]);
+  const clusters = useMemo(() => clustersQuery.data?.clusters ?? [], [clustersQuery.data]);
   const occurrenceStatsMap = useMemo(
     () => new Map(occurrenceStats.map((occurrence) => [`${occurrence.tp_id}:${occurrence.occurrence_id}`, occurrence])),
     [occurrenceStats]
   );
 
-  useEffect(() => {
-    if (!snapshotSlug || initialSnapshot) return;
+  const [activeTab, setActiveTab] = useState<ActiveTab>("files");
+  const [fileSelection, setFileSelection] = useState<{ snapshotSlug: string; path: string } | null>(null);
+  const selectedFilePath = fileSelection?.snapshotSlug === snapshotSlug ? fileSelection.path : null;
+  const selectedFileQuery = useQuery({
+    queryKey: ["props", "snapshot-file", snapshotSlug, selectedFilePath],
+    staleTime: Infinity,
+    queryFn: ({ signal }) => {
+      if (!selectedFilePath) throw new Error("file path is unavailable");
+      return fetchSnapshotFile(snapshotSlug, selectedFilePath, signal);
+    },
+    enabled: selectedFilePath !== null,
+  });
+  const selectedFile = selectedFileQuery.data ?? null;
+  const loadingFile = selectedFilePath !== null && selectedFileQuery.isPending;
+  const [expandedIssues, setExpandedIssues] = useState<Set<string>>(() => new Set());
+  const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null);
 
-    let current = true;
-    setLoading(true);
-    setError(null);
-    setOccurrenceStats([]);
-    setClusters([]);
-    setSelectedFile(null);
+  useEffect(() => {
+    setFileSelection(null);
     setPendingScrollTarget(null);
     setExpandedIssues(new Set());
-    fileRequestId.current += 1;
-    setLoadingFile(false);
+  }, [snapshotSlug]);
 
-    void Promise.all([fetchSnapshotDetail(snapshotSlug), fetchSnapshotTree(snapshotSlug)])
-      .then(([snapshotData, treeData]) => {
-        if (!current) return;
-        setSnapshot(snapshotData);
-        setTree(treeData);
-
-        void fetchOccurrenceStats(snapshotSlug).then(
-          (data) => {
-            if (current) setOccurrenceStats(data.occurrences);
-          },
-          (reason: unknown) => {
-            if (current) toast.error(reason instanceof Error ? reason.message : "Failed to load occurrence stats");
-          }
-        );
-        void fetchSnapshotClusters(snapshotSlug).then(
-          (data) => {
-            if (current) setClusters(data.clusters);
-          },
-          (reason: unknown) => {
-            if (current) toast.error(reason instanceof Error ? reason.message : "Failed to load clusters");
-          }
-        );
-      })
-      .catch((reason: unknown) => {
-        if (current) setError(reason instanceof Error ? reason.message : "Failed to load snapshot");
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-
-    return () => {
-      current = false;
-    };
-  }, [snapshotSlug, initialSnapshot]);
+  useEffect(() => {
+    if (occurrenceStatsQuery.error) {
+      toast.error(
+        occurrenceStatsQuery.error instanceof Error
+          ? occurrenceStatsQuery.error.message
+          : "Failed to load occurrence stats"
+      );
+    }
+  }, [occurrenceStatsQuery.error]);
+  useEffect(() => {
+    if (clustersQuery.error) {
+      toast.error(clustersQuery.error instanceof Error ? clustersQuery.error.message : "Failed to load clusters");
+    }
+  }, [clustersQuery.error]);
+  useEffect(() => {
+    if (selectedFileQuery.error) {
+      const reason =
+        selectedFileQuery.error instanceof Error ? selectedFileQuery.error.message : String(selectedFileQuery.error);
+      toast.error(`Failed to load file: ${reason}`);
+    }
+  }, [selectedFileQuery.error]);
 
   const handleFileClick = useCallback(
-    async (path: string) => {
-      const requestId = ++fileRequestId.current;
-      const requestedSlug = snapshotSlug;
-      setLoadingFile(true);
-      try {
-        const file = await fetchSnapshotFile(requestedSlug, path);
-        if (requestId === fileRequestId.current) setSelectedFile(file);
-      } catch (reason) {
-        if (requestId === fileRequestId.current) toast.error(`Failed to load file: ${reason}`);
-      } finally {
-        if (requestId === fileRequestId.current) setLoadingFile(false);
-      }
+    (path: string) => {
+      setFileSelection({ snapshotSlug, path });
     },
     [snapshotSlug]
   );
