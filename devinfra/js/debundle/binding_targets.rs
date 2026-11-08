@@ -3,6 +3,66 @@ use swc_ecma_ast::*;
 use swc_ecma_utils::find_pat_ids;
 use swc_ecma_visit::{Visit, VisitWith};
 
+/// The simple runtime shape of an assignment or update target after erasing
+/// TypeScript-only wrappers. This is syntax evidence only; it does not imply
+/// that a write is modeled or completes normally.
+pub enum SimpleWriteTarget<'a> {
+    Binding(Id),
+    Member(&'a MemberExpr),
+}
+
+/// Return a simple binding or member assignment target, normalizing only
+/// parentheses and TypeScript wrappers that erase at runtime. Patterns and
+/// other target forms remain `None` for conservative handling by callers.
+pub fn simple_write_target(target: &AssignTarget) -> Option<SimpleWriteTarget<'_>> {
+    match target {
+        AssignTarget::Simple(simple) => simple_assign_target(simple),
+        AssignTarget::Pat(_) => None,
+    }
+}
+
+/// Return the simple binding or member shape of a `SimpleAssignTarget`.
+pub fn simple_assign_target(target: &SimpleAssignTarget) -> Option<SimpleWriteTarget<'_>> {
+    match target {
+        SimpleAssignTarget::Ident(binding) => Some(SimpleWriteTarget::Binding(binding.id.to_id())),
+        SimpleAssignTarget::Member(member) => Some(SimpleWriteTarget::Member(member)),
+        SimpleAssignTarget::Paren(paren) => simple_write_target_expr(&paren.expr),
+        SimpleAssignTarget::TsAs(wrapper) => simple_write_target_expr(&wrapper.expr),
+        SimpleAssignTarget::TsSatisfies(wrapper) => simple_write_target_expr(&wrapper.expr),
+        SimpleAssignTarget::TsNonNull(wrapper) => simple_write_target_expr(&wrapper.expr),
+        SimpleAssignTarget::TsTypeAssertion(wrapper) => simple_write_target_expr(&wrapper.expr),
+        SimpleAssignTarget::TsInstantiation(wrapper) => simple_write_target_expr(&wrapper.expr),
+        _ => None,
+    }
+}
+
+/// Return a simple binding or member update target, normalizing only
+/// parentheses and TypeScript wrappers that erase at runtime.
+pub fn simple_update_target(target: &Expr) -> Option<SimpleWriteTarget<'_>> {
+    simple_write_target_expr(target)
+}
+
+/// Strip syntax that does not change the runtime target expression.
+pub fn transparent_target_expr(expression: &Expr) -> &Expr {
+    match expression {
+        Expr::Paren(paren) => transparent_target_expr(&paren.expr),
+        Expr::TsAs(wrapper) => transparent_target_expr(&wrapper.expr),
+        Expr::TsSatisfies(wrapper) => transparent_target_expr(&wrapper.expr),
+        Expr::TsNonNull(wrapper) => transparent_target_expr(&wrapper.expr),
+        Expr::TsTypeAssertion(wrapper) => transparent_target_expr(&wrapper.expr),
+        Expr::TsInstantiation(wrapper) => transparent_target_expr(&wrapper.expr),
+        other => other,
+    }
+}
+
+fn simple_write_target_expr(target: &Expr) -> Option<SimpleWriteTarget<'_>> {
+    match transparent_target_expr(target) {
+        Expr::Ident(binding) => Some(SimpleWriteTarget::Binding(binding.to_id())),
+        Expr::Member(member) => Some(SimpleWriteTarget::Member(member)),
+        _ => None,
+    }
+}
+
 pub trait TargetAccessRecorder {
     /// Called for update expressions like `a++`, where the target binding is
     /// both read and written. Validators that only care about writes can leave
@@ -158,10 +218,9 @@ fn record_simple_assign_target(
 }
 
 fn record_assign_expr_target(target: &Expr, recorder: &mut impl TargetAccessRecorder) {
-    match type_erased_expr(target) {
+    match transparent_target_expr(target) {
         Expr::Ident(ident) => recorder.record_binding_write(&ident.to_id()),
         Expr::Member(member) => record_member_target(member, recorder),
-        Expr::Paren(paren) => record_assign_expr_target(&paren.expr, recorder),
         Expr::OptChain(opt_chain) => {
             if let Some(id) = opt_chain_base_id(opt_chain) {
                 recorder.record_member_write(&id);
@@ -230,7 +289,7 @@ pub fn record_member_target(member: &MemberExpr, recorder: &mut impl TargetAcces
 }
 
 pub fn record_update_target(target: &Expr, recorder: &mut impl TargetAccessRecorder) {
-    match type_erased_expr(target) {
+    match transparent_target_expr(target) {
         Expr::Ident(ident) => {
             let id = ident.to_id();
             recorder.record_binding_read(&id);
@@ -242,7 +301,6 @@ pub fn record_update_target(target: &Expr, recorder: &mut impl TargetAccessRecor
                 recorder.record_member_write(&id);
             }
         }
-        Expr::Paren(paren) => record_update_target(&paren.expr, recorder),
         Expr::OptChain(opt_chain) => {
             if let Some(id) = opt_chain_base_id(opt_chain) {
                 recorder.record_binding_read(&id);
@@ -258,14 +316,13 @@ pub fn record_update_target(target: &Expr, recorder: &mut impl TargetAccessRecor
 /// (atom + syntax context), or `None` if the head isn't a plain
 /// identifier (numeric literal, call expression, etc.).
 pub fn member_root_id(expr: &Expr) -> Option<Id> {
-    match type_erased_expr(expr) {
+    match transparent_target_expr(expr) {
         Expr::Ident(ident) => Some(ident.to_id()),
         Expr::Member(member) => member_root_id(&member.obj),
         Expr::OptChain(opt_chain) => match &*opt_chain.base {
             OptChainBase::Member(member) => member_root_id(&member.obj),
             OptChainBase::Call(call) => member_root_id(&call.callee),
         },
-        Expr::Paren(paren) => member_root_id(&paren.expr),
         _ => None,
     }
 }
@@ -276,29 +333,14 @@ pub fn member_root_id(expr: &Expr) -> Option<Id> {
 /// `window.foo` / `document.foo`. For binding-cell identity (graph
 /// edges, validator membership checks), use [`member_root_id`].
 pub fn member_root_sym(expr: &Expr) -> Option<&Atom> {
-    match type_erased_expr(expr) {
+    match transparent_target_expr(expr) {
         Expr::Ident(ident) => Some(&ident.sym),
         Expr::Member(member) => member_root_sym(&member.obj),
         Expr::OptChain(opt_chain) => match &*opt_chain.base {
             OptChainBase::Member(member) => member_root_sym(&member.obj),
             OptChainBase::Call(call) => member_root_sym(&call.callee),
         },
-        Expr::Paren(paren) => member_root_sym(&paren.expr),
         _ => None,
-    }
-}
-
-/// TypeScript type-erasure wrappers do not change the runtime value. Follow
-/// only these forms when recording target expressions and finding member
-/// roots; leave all other expressions conservative.
-fn type_erased_expr(expr: &Expr) -> &Expr {
-    match expr {
-        Expr::TsAs(wrapper) => type_erased_expr(&wrapper.expr),
-        Expr::TsSatisfies(wrapper) => type_erased_expr(&wrapper.expr),
-        Expr::TsNonNull(wrapper) => type_erased_expr(&wrapper.expr),
-        Expr::TsTypeAssertion(wrapper) => type_erased_expr(&wrapper.expr),
-        Expr::TsInstantiation(wrapper) => type_erased_expr(&wrapper.expr),
-        _ => expr,
     }
 }
 
