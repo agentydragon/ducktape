@@ -92,6 +92,14 @@
           # aws-lc-sys otherwise probes OpenSSL first and rejects its headers.
           # AWS-LC's headers and libraries live in separate Nix outputs, and
           # its headers are nested under include/aws-lc.
+          # The unstable Codex recipe also lacks the system libraries demanded
+          # by Nix's cargo hook; master already declares most of these.
+          buildInputs = old.buildInputs ++ [
+            prev.aws-lc
+            prev.oniguruma
+            prev.sqlite
+            prev.zstd.dev
+          ];
           env = old.env // {
             AWS_LC_SYS_SYSTEM_DIR = prev.symlinkJoin {
               name = "codex-aws-lc-system";
