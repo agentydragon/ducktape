@@ -1,8 +1,18 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 
 py_binary(
     name = "forgejo_retention_report",
     srcs = ["forgejo_retention_report.py"],
+)
+
+py_test(
+    name = "test_forgejo_retention_report",
+    srcs = ["test_forgejo_retention_report.py"],
+    deps = [
+        ":forgejo_retention_report",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

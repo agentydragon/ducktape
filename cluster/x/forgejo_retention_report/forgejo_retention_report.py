@@ -21,6 +21,15 @@ from typing import Any
 
 REGISTRY = "git.allegedly.works"
 TAG = re.compile(r"devel-[0-9]{14}-[0-9a-f]{7}")
+SHAPES = (
+    ("dated-devel", TAG),
+    ("dated-main", re.compile(r"main-[0-9]{14}-[0-9a-f]{7}")),
+    ("pr-merge", re.compile(r"[0-9]+-merge-[0-9]{14}-[0-9a-f]{7}")),
+    ("digest", re.compile(r"sha256:[0-9a-f]{64}")),
+    ("bare-hash", re.compile(r"[0-9a-f]{7,40}")),
+    ("latest", re.compile(r"latest")),
+    ("upload-session", re.compile(r"_upload")),
+)
 TOKEN = re.compile(r"devel-[0-9]{14}-[0-9a-f]{7}|sha256:[0-9a-f]{64}")
 REFERENCE = re.compile(re.escape(REGISTRY) + r"/([\w./-]+)[:@]([\w.:-]+)")
 WORKLOADS = (
@@ -128,6 +137,11 @@ def scan_workloads(objects: dict[str, Any], protection: Protection) -> dict[str,
     return dict(counts)
 
 
+def classify_shape(version: str) -> str:
+    """Name of the tag scheme `version` follows, or `unrecognized`."""
+    return next((name for name, pattern in SHAPES if pattern.fullmatch(version)), "unrecognized")
+
+
 def make_report(
     snapshot: dict[str, Any], protection: Protection, *, owner: str, keep: int, days: int, now: datetime
 ) -> dict[str, Any]:
@@ -179,6 +193,26 @@ def make_report(
                 }
             )
     reclaimable = {b for b, refs in blob_refs.items() if refs and refs <= candidates}
+    members: dict[tuple[str, str, str, bool], set[int]] = defaultdict(set)
+    for v in versions.values():
+        if not (v["owner"] == owner and v["type"] == "container" and TAG.fullmatch(v["version"]) and not v["internal"]):
+            members[(v["owner"], v["type"], classify_shape(v["version"]), v["internal"])].add(v["id"])
+    out_of_policy = []
+    for (g_owner, g_type, shape, internal), ids in sorted(members.items()):
+        group_blobs = set().union(*(version_blobs[i] for i in ids))
+        out_of_policy.append(
+            {
+                "owner": g_owner,
+                "type": g_type,
+                "shape": shape,
+                "internal": internal,
+                "versions": len(ids),
+                "packages": len({versions[i]["name"] for i in ids}),
+                "unique_referenced_bytes": sum(blobs[b]["size"] for b in group_blobs),
+                "exclusive_bytes": sum(blobs[b]["size"] for b in group_blobs if blob_refs[b] <= ids),
+                "examples": sorted({versions[i]["version"] for i in ids})[:3],
+            }
+        )
     unreferenced = set(blobs) - blob_refs.keys()
     images = []
     for image, group in sorted(groups.items()):
@@ -207,6 +241,7 @@ def make_report(
             "already_unreferenced_blobs": len(unreferenced),
         },
         "images": images,
+        "out_of_policy": out_of_policy,
         "versions": details,
     }
 
@@ -240,7 +275,7 @@ def markdown(report: dict[str, Any]) -> str:
         "- All listed live workload kinds were read cluster-wide, including dormant templates and old ReplicaSets.",
         "- Git scans use committed revisions; local uncommitted files and unlisted repositories are excluded.",
         "- Split tag fields are protected conservatively wherever a dated tag or digest appears, including docs/tests.",
-        "- Internal records, digest-named versions, non-devel tags and other owners are retained.",
+        "- Internal records, digest-named versions, non-devel tags and other owners are retained; see `Versions outside the policy`.",
         "- Source, cluster and registry reads are separate snapshots. This is not authorization to delete.",
         "- External consumers and custom workload kinds beyond the listed kinds may add protection requirements.",
         "",
@@ -271,6 +306,23 @@ def markdown(report: dict[str, Any]) -> str:
         f"| `{row['image']}` | {gib(row['unique_referenced_bytes'])} | {row['versions']} | {row['candidates']} |"
         for row in sorted(report["images"], key=lambda r: r["unique_referenced_bytes"], reverse=True)[:15]
     )
+    lines += [
+        "",
+        "## Versions outside the policy",
+        "",
+        "Never candidates, whatever their age. `Exclusive` bytes are held only by that group; "
+        "`Referenced` bytes may also be held by other groups. `UNRECOGNIZED` matches no known tag scheme.",
+        "",
+        "| Owner | Type | Shape | Internal | Packages | Versions | Exclusive (GiB) | Referenced (GiB) | Examples |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+    ]
+    for g in sorted(report["out_of_policy"], key=lambda g: (g["shape"] == "unrecognized", -g["exclusive_bytes"])):
+        shape = "**UNRECOGNIZED**" if g["shape"] == "unrecognized" else g["shape"]
+        lines.append(
+            f"| {g['owner']} | {g['type']} | {shape} | {g['internal']} | {g['packages']} | {g['versions']} "
+            f"| {gib(g['exclusive_bytes'])} | {gib(g['unique_referenced_bytes'])} "
+            f"| {', '.join(f'`{e}`' for e in g['examples'])} |"
+        )
     lines += [
         "",
         "## Candidate images",
