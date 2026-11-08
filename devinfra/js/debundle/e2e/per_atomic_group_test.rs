@@ -604,7 +604,7 @@ fn ownership_subset_anonymous_index_controls_adopted_declarations() {
         &released.out_root,
         "static/app/modules/residual/unhandled.js",
         &["if (true)", "var adopted"],
-        &["selected"],
+        &["const selected"],
     );
 }
 
