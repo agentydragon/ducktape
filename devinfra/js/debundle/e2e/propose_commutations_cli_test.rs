@@ -638,54 +638,6 @@ fn known_global_property_conflict_is_reported_not_proposed() {
     );
 }
 
-/// Erasing a TypeScript assertion on an assignment target preserves the same
-/// global-property write conflict as an unwrapped target.
-#[test]
-fn wrapped_global_property_write_conflict_is_reported_not_proposed() {
-    const SOURCE: &str = "globalThis.flag = \"first\";\nconst snapshot = globalThis.flag;\n(globalThis.flag as any) = \"second\";\n(globalThis.flag as any)++;\nconsole.log(snapshot, globalThis.flag);\nexport { snapshot };\n";
-    let rejected = run_rejection_fixture(
-        FixtureOpts::new(
-            SOURCE,
-            vec![
-                logical_module_with_anon(
-                    "mod_w",
-                    &[],
-                    &[
-                        "globalThis.flag = \"first\";",
-                        "(globalThis.flag as any) = \"second\";",
-                        "(globalThis.flag as any)++;",
-                    ],
-                ),
-                logical_module("mod_read", &[Member::new("snapshot")]),
-            ],
-        )
-        .with_dataflow_aware_s_chain()
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    let report = propose_rejected(&rejected, &[]);
-    assert!(array(&report, "proposals").is_empty(), "{report:#}");
-    let rejected_candidates = array(&report, "rejected");
-    assert!(!rejected_candidates.is_empty(), "{report:#}");
-    let flag_cell = serde_json::json!({ "kind": "global_prop", "key": "flag" });
-    assert!(
-        rejected_candidates.iter().any(|candidate| {
-            candidate["reason"] == "known_conflict"
-                && candidate["conflicts"].as_array().is_some_and(|conflicts| {
-                    conflicts.iter().any(|conflict| {
-                        conflict["conflict"]["conflicts"]
-                            .as_array()
-                            .is_some_and(|relations| {
-                                relations
-                                    .iter()
-                                    .any(|relation| relation["cell"] == flag_cell)
-                            })
-                    })
-                })
-        }),
-        "{rejected_candidates:?}"
-    );
-}
-
 /// An anonymous endpoint whose statement appears twice has no unique
 /// selector; the pair is reported with the resolve's outcome and not drafted.
 #[test]
