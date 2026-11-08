@@ -113,3 +113,17 @@ Linux's function-graph tracer does not show the process by default. The probe no
 enables `funcgraph-proc`, restores its initial value, and records bounded root lines if the
 witness still fails. The failed smoke did not retain trace lines, so the missing PID label is
 a hypothesis rather than a proven explanation for that specific run.
+
+The [PID-labelled smoke](https://app.buildbuddy.io/invocation/bad6743e-546f-4efd-a53a-a001534f2d12)
+at `94d39c50595b9ca30bae33c73f369720aeeb03e6` captured a clean, closed writer-PID-539
+`cgroup_subtree_control_write > cgroup_update_dfl_csses > percpu_down_write > rcu_sync_enter`
+tree (108,836 bytes and 1,660 trace lines). The guest recorded all 40 verified transitions,
+trace cleanup, service-controller restoration, and `SUCCESS`. Its VMI UID was
+`124b5670-3d0c-460c-98ee-7eebd75eeb47`.
+
+The host nevertheless timed out waiting for that success and did not request the measured ACPI
+shutdown. The guest emitted two spaces before `service_controller_restored=yes`; the host
+parser expected exactly one. Running the actual retained console through the parser reproduced
+the rejection, while normalizing that space made the same console pass. The parser now checks
+the individual cleanup fields regardless of whitespace, and still rejects a missing or failed
+restoration field. This run exercises the probe but does not validate normal VM shutdown.
