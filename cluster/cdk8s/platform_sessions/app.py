@@ -10,14 +10,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
-    ImagePolicySpecFilterTags,
-    ImagePolicySpecImageRepositoryRef,
-    ImagePolicySpecPolicy,
-    ImagePolicySpecPolicyAlphabetical,
-    ImagePolicySpecPolicyAlphabeticalOrder,
-)
-from flux_imagerepository_crds.io.fluxcd.toolkit.image import ImageRepositorySpecSecretRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecPodMetricsEndpoints,
@@ -38,8 +30,6 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.platform_sessions import config
-from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
-from cluster.cdk8s.providers.flux.image_repository import ImageRepository
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -182,24 +172,6 @@ def chart(app: App) -> Chart:
     _claim(chart, NAME, NAMESPACE)
     _claim(chart, "openai-platform-session", "openai-platform-session")
     forgejo_images_creds_external_secret(chart, "registry-creds", namespace=NAMESPACE)
-    repository = ImageRepository(
-        chart,
-        "image-repository",
-        metadata=ApiObjectMetadata(name=NAME, namespace="flux-system"),
-        image="git.allegedly.works/ducktape-ci/platform-sessions",
-        interval="5m",
-        secret_ref=ImageRepositorySpecSecretRef(name="forgejo-images-creds"),
-    )
-    ImagePolicy(
-        chart,
-        "image-policy",
-        metadata=ApiObjectMetadata(name=repository.name, namespace=repository.metadata.namespace),
-        image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
-        filter_tags=ImagePolicySpecFilterTags(pattern=r"^main-\d{14}-[0-9a-f]{7}$"),
-        policy=ImagePolicySpecPolicy(
-            alphabetical=ImagePolicySpecPolicyAlphabetical(order=ImagePolicySpecPolicyAlphabeticalOrder.ASC)
-        ),
-    )
     for name, target in (
         ("owner", None),
         ("chatgpt-read", None),
