@@ -54,8 +54,12 @@ def _database(chart: Chart) -> None:
                 "Imported workstation AI session history, independently protected by CNPG backups and WAL archive."
             )
         },
-        profile=cluster.OVH_PIRAEUS_SSD,
+        # During migration existing SSD PVCs stay attached to their original instances.
+        # HDD replicas may run on any OVH node while CNPG maintains pod anti-affinity.
+        profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="100Gi",
+        resize_in_use_volumes=False,
+        instances=3,
         initdb=cluster.same_owner_initdb("ai_session_archive"),
         wal_archive=True,
     )
