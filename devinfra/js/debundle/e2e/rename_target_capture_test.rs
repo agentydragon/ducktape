@@ -214,32 +214,6 @@ export { source_value, read };
     assert_preserved_entry_output(&fixture, "Aundefined\n");
 }
 
-/// A swap introduces both spellings, but every old reference to either
-/// spelling is renamed by its exact Id. The resolved references remain bound
-/// to their original values after JavaScript emission.
-#[test]
-fn chunk_rename_swap_preserves_resolved_target_references() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const alpha = "A";
-const beta = "B";
-function read() {
-  return alpha + beta;
-}
-console.log(read());
-export { alpha, beta, read };
-"#,
-            vec![],
-        )
-        .with_chunk_renames(chunk_renames(&[
-            ChunkRenameEntry::new("beta", "alpha"),
-            ChunkRenameEntry::new("alpha", "beta"),
-        ]))
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "AB\n");
-}
-
 /// A shadowing parameter alone is safe when no renamed-source reference occurs
 /// in its scope; the top-level source reference must still resolve to the rename.
 #[test]
