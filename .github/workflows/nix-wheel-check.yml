@@ -111,6 +111,9 @@ jobs:
       - uses: ./.github/actions/setup-nix-attic
         with:
           attic_token: ${{ secrets[github.event_name != 'pull_request_target' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
+          # Fork revisions (pull_request_target, via trusted-fork-pr-ci.yml) never write
+          # to the shared cache.
+          upload: ${{ github.event_name != 'pull_request_target' }}
 
       - name: Install pinned BuildBuddy CLIs
         run: nix profile install .#bb .#bbapi
@@ -190,17 +193,6 @@ jobs:
             echo "$overrides"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
-
-      # Upload every path this run adds to the store as soon as it lands, so a
-      # cold rebuild that times out or fails still leaves its finished paths in
-      # Attic for the next run. Fork revisions (pull_request_target, via
-      # trusted-fork-pr-ci.yml) never write to the shared cache.
-      - name: Start incremental Attic upload
-        if: github.event_name != 'pull_request_target'
-        run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
-          nohup attic watch-store ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &
 
       # Each marker depends on the complete source-built package and its checks.
       # Cache hits need only the marker; misses build the package as before.

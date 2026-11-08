@@ -5,6 +5,12 @@ inputs:
   attic_token:
     description: Attic token for private cache access and permitted uploads
     required: true
+  upload:
+    description: >-
+      Upload every path added to the store to ducktape:main as it lands (`attic watch-store`),
+      so a failed or timed-out cold build still caches its finished paths. Requires a writer token.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -39,3 +45,11 @@ runs:
         umask 077
         printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
           > /home/runner/.config/nix/netrc
+
+    - name: Start incremental Attic upload
+      if: inputs.upload == 'true'
+      shell: bash
+      run: |
+        nix profile install nixpkgs#attic-client
+        attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+        nohup attic watch-store ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &

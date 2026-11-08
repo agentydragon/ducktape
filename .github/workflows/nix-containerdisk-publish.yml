@@ -17,7 +17,7 @@ on:
         required: true
         type: string
       attic:
-        description: Cache the built image in Attic on devel
+        description: Cache the build in Attic (except on fork PRs)
         required: false
         type: boolean
         default: false
@@ -79,17 +79,16 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-attic
         with:
-          attic_token: ${{ secrets[inputs.attic && github.event_name != 'pull_request_target' && github.ref_name == 'devel' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
+          attic_token: ${{ secrets[inputs.attic && github.event_name != 'pull_request_target' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
+          upload: ${{ inputs.attic && github.event_name != 'pull_request_target' }}
 
       - name: Build containerDisk image
         run: nix build ".#$FLAKE_OUTPUT" --print-build-logs
 
+      # watch-store may still be uploading; this covers the image's full closure.
       - name: Push to Attic
-        if: inputs.attic && github.event_name != 'pull_request_target' && github.ref_name == 'devel'
-        run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
-          attic push ducktape:main result
+        if: inputs.attic && github.event_name != 'pull_request_target'
+        run: attic push ducktape:main result
 
       - name: Compute tag
         id: meta
