@@ -155,6 +155,91 @@ fn module_member_rename_cannot_capture_unbound_typeof_name() {
     );
 }
 
+/// A source-name shadow must not hide the reverse capture: the unchanged
+/// free `typeof unbound_value` reference would resolve to the introduced
+/// module binding after emission.
+#[test]
+fn module_member_rename_cannot_capture_free_target_under_source_shadow() {
+    const SOURCE: &str = r#"const source_value = "A";
+function read(source_value) {
+  return typeof unbound_value;
+}
+console.log(read("local"));
+export { source_value, read };
+"#;
+    let baseline = run_fixture(FixtureOpts::new(SOURCE, vec![]));
+    assert_preserved_entry_output(&baseline, "undefined\n");
+
+    let opts = FixtureOpts::new(
+        SOURCE,
+        vec![logical_module(
+            "values",
+            &[
+                Member::renamed("unbound_value", "source_value"),
+                Member::new("read"),
+            ],
+        )],
+    );
+    expect_rename_refusal_with_candidate_output(
+        opts,
+        "undefined\n",
+        "string\n",
+        &["source_value", "unbound_value"],
+    );
+}
+
+/// An ident with the target spelling can already resolve to a hoisted local.
+/// Its exact resolver context keeps it outside reverse-capture refusal even
+/// when the existing name-only scope walk does not model `var` hoisting.
+#[test]
+fn chunk_rename_leaves_hoisted_inner_target_reference_local() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const source_value = "A";
+function read() {
+  const before = typeof taken_name;
+  if (false) {
+    var taken_name;
+  }
+  return before;
+}
+console.log(source_value + read());
+export { source_value, read };
+"#,
+            vec![],
+        )
+        .with_chunk_renames(chunk_rename("taken_name", "source_value"))
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "Aundefined\n");
+}
+
+/// A swap introduces both spellings, but every old reference to either
+/// spelling is renamed by its exact Id. The resolved references remain bound
+/// to their original values after JavaScript emission.
+#[test]
+fn module_member_swap_preserves_resolved_target_references() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const alpha = "A";
+const beta = "B";
+function read() {
+  return alpha + beta;
+}
+console.log(read());
+export { alpha, beta, read };
+"#,
+        vec![logical_module(
+            "swapped",
+            &[
+                Member::renamed("beta", "alpha"),
+                Member::renamed("alpha", "beta"),
+                Member::new("read"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "AB\n");
+}
+
 /// A shadowing parameter alone is safe when no renamed-source reference occurs
 /// in its scope; the top-level source reference must still resolve to the rename.
 #[test]

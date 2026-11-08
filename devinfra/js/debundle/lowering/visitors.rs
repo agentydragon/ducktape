@@ -26,15 +26,17 @@
 //! is not. The stack therefore errs toward suppressing whenever a name is
 //! re-bound anywhere in the enclosing subtree.
 //!
-//! ## Target capture
+//! ## Binding-resolution changes
 //!
 //! Shadow tracking covers rename TARGETS as well as sources: renaming
 //! `a` -> `b` at a point where an enclosing scope binds `b` would make
 //! the rewritten reference resolve to the inner `b` (capture). The
 //! visitors do not apply such a rename; they record the offending
-//! `(source, target)` pair in `captured` instead — a partial
-//! application (decl renamed at top level, captured reference left
-//! as-is) is itself a miscompile. The recorded set has three consumer
+//! `(source, target)` pair in `captured` instead. They also record when an
+//! introduced target spelling would capture an unchanged identifier whose
+//! exact resolver context is the parser-owned unresolved context. Both
+//! changes alter reference resolution after emitted JavaScript erases
+//! SWC's hygiene contexts. The recorded set has three consumer
 //! classes: the read-only `RenameCaptureProbe` walks the un-renamed
 //! body to feed the ledger seal the capture facts it hard-errors on;
 //! the post-seal executors `debug_assert!` it is empty (seal already
@@ -57,7 +59,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use swc_atoms::Atom;
-use swc_common::DUMMY_SP;
+use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -193,10 +195,12 @@ fn shadowed_by_block_decls(stmts: &[Stmt], names: &RenameNames<'_>) -> BTreeSet<
 ///
 /// Expects `self.renames: &BTreeMap<Id, Atom>`,
 /// `self.sources` and `self.targets: BTreeSet<String>`, `self.scopes: RenameScopeStack`, and
-/// `self.captured: BTreeSet<(String, String)>`.
+/// `self.captured: BTreeSet<(String, String)>` and
+/// `self.unresolved_context: SyntaxContext`.
 macro_rules! impl_rename_visit_mut {
     () => {
         fn visit_mut_ident(&mut self, ident: &mut Ident) {
+            self.record_unresolved_target_capture(&ident.to_id());
             if self.scopes.is_shadowed(ident.sym.as_ref()) {
                 return;
             }
@@ -242,6 +246,7 @@ macro_rules! impl_rename_visit_mut {
                 prop.visit_mut_children_with(self);
                 return;
             };
+            self.record_unresolved_target_capture(&ident.to_id());
             if self.scopes.is_shadowed(ident.sym.as_ref()) {
                 return;
             }
@@ -367,11 +372,11 @@ macro_rules! impl_rename_visit_mut {
 
 /// Generates the shared non-`VisitMut` helpers both renaming visitors use:
 /// scope push/pop, the source/target name universe, and the
-/// capture-checked rename lookup. The lookup returns the rename target for
-/// `name` only when applying it is safe at the current traversal point;
-/// when the target is shadowed it records the `(source, target)` pair in
-/// `self.captured` and returns `None` (see the module docs' "Target
-/// capture" for who consumes the set).
+/// capture checks. The lookup returns the rename target for `name` only
+/// when applying it is safe at the current traversal point; when the target
+/// is shadowed it records the `(source, target)` pair in `self.captured`.
+/// Reference visitors also record an unresolved occurrence of an introduced
+/// target spelling before applying source-shadow suppression.
 macro_rules! impl_rename_helpers {
     () => {
         fn with_rename_scope<F: FnOnce(&mut Self)>(&mut self, scope: BTreeSet<String>, f: F) {
@@ -395,14 +400,30 @@ macro_rules! impl_rename_helpers {
             }
             Some(to.clone())
         }
+
+        fn record_unresolved_target_capture(&mut self, id: &Id) {
+            if id.1 != self.unresolved_context || self.renames.contains_key(id) {
+                return;
+            }
+            if !self.targets.contains(id.0.as_ref()) {
+                return;
+            }
+            for (source, target) in self.renames {
+                if target.as_ref() == id.0.as_ref() && source.0.as_ref() != target.as_ref() {
+                    self.captured
+                        .insert((source.0.to_string(), target.to_string()));
+                }
+            }
+        }
     };
 }
 
 /// Read-only mirror of the renaming visitors: walks the same reference
 /// sites with the same shadow tracking, but instead of mutating it only
 /// records the `(source, target)` pairs the rename map would withhold
-/// (target shadowed at a reference of the un-shadowed source). This is
-/// how seal receives reference-precise capture facts from the
+/// (a target shadowed at a source reference, or an introduced target
+/// capturing an unresolved reference). This is how seal receives
+/// reference-precise binding-resolution facts from the
 /// **un-renamed** tree — the executor (the single post-seal rename pass)
 /// then `debug_assert!`s that its own `captured` set is empty, pinning
 /// the probe and the executor to the same verdict.
@@ -412,6 +433,7 @@ macro_rules! impl_rename_helpers {
 /// it at too, with the same scope pushes.
 pub(super) struct RenameCaptureProbe<'a> {
     renames: &'a BTreeMap<Id, Atom>,
+    unresolved_context: SyntaxContext,
     sources: BTreeSet<String>,
     targets: BTreeSet<String>,
     scopes: RenameScopeStack,
@@ -420,9 +442,10 @@ pub(super) struct RenameCaptureProbe<'a> {
 }
 
 impl<'a> RenameCaptureProbe<'a> {
-    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>) -> Self {
+    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>, unresolved_context: SyntaxContext) -> Self {
         Self {
             renames,
+            unresolved_context,
             sources: rename_sources(renames),
             targets: rename_targets(renames),
             scopes: RenameScopeStack::default(),
@@ -436,6 +459,7 @@ impl<'a> RenameCaptureProbe<'a> {
     /// visitors do (recording a capture when the target is shadowed),
     /// discarding the would-be target.
     fn probe(&mut self, id: &Id) {
+        self.record_unresolved_target_capture(id);
         if self.scopes.is_shadowed(id.0.as_ref()) {
             return;
         }
@@ -557,20 +581,21 @@ pub(super) struct IdentifierRenamer<'a> {
     sources: BTreeSet<String>,
     targets: BTreeSet<String>,
     scopes: RenameScopeStack,
-    /// `(source, target)` pairs whose rename was withheld because the
-    /// target was shadowed at the reference. Non-empty after a pass means
-    /// the mutated body is partially renamed (see the module docs'
-    /// "Target capture" for the consumer classes).
+    unresolved_context: SyntaxContext,
+    /// `(source, target)` pairs whose rename changes reference resolution.
+    /// Non-empty after a pass means the body cannot be emitted as mutated
+    /// (see the module docs' "Binding-resolution changes").
     pub(super) captured: BTreeSet<(String, String)>,
 }
 
 impl<'a> IdentifierRenamer<'a> {
-    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>) -> Self {
+    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>, unresolved_context: SyntaxContext) -> Self {
         Self {
             renames,
             sources: rename_sources(renames),
             targets: rename_targets(renames),
             scopes: RenameScopeStack::default(),
+            unresolved_context,
             captured: BTreeSet::new(),
         }
     }
@@ -587,17 +612,19 @@ pub(super) struct RenameAndShorthandNaturalizer<'a> {
     sources: BTreeSet<String>,
     targets: BTreeSet<String>,
     scopes: RenameScopeStack,
+    unresolved_context: SyntaxContext,
     /// See [`IdentifierRenamer::captured`].
     pub(super) captured: BTreeSet<(String, String)>,
 }
 
 impl<'a> RenameAndShorthandNaturalizer<'a> {
-    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>) -> Self {
+    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>, unresolved_context: SyntaxContext) -> Self {
         Self {
             renames,
             sources: rename_sources(renames),
             targets: rename_targets(renames),
             scopes: RenameScopeStack::default(),
+            unresolved_context,
             captured: BTreeSet::new(),
         }
     }

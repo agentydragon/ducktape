@@ -43,14 +43,18 @@
 //! - **Capture facts, not conservative sets**: capture is
 //!   reference-precise — a target bound in a nested scope is harmless
 //!   when the source is shadowed (or never referenced) inside that scope,
-//!   and the e2e suite pins valid specs of exactly that shape. A flat
+//!   while an introduced target is refused if it captures an unchanged
+//!   parser-unresolved reference. The e2e suite pins valid specs of the
+//!   harmless nested-target shape. A flat
 //!   occupied-name set cannot express this, so the caller supplies the
 //!   `(source, target)` pairs a scope-aware walk of the **un-renamed**
 //!   body withholds ([`ScopeOccupancy::Body::captured`]): the read-only
 //!   `RenameCaptureProbe` over [`RenameLedger::pending_renames`]
-//!   for the entry body, the derive clone's candidate walk for module
-//!   bodies. Captured explicit/import-induced intents are hard errors;
-//!   cosmetic heuristic intents are dropped. The post-seal executor
+//!   for the entry body, the derive clone's candidate walk for naturalized
+//!   module bodies, and the assembled-body probe for import-local mints.
+//!   These probes also compare unresolved references against the parser's
+//!   exact unresolved context. Captured explicit/import-induced intents are
+//!   hard errors; cosmetic heuristic intents are dropped. The post-seal executor
 //!   `debug_assert!`s its own capture set is empty, pinning probe and
 //!   executor to one verdict.
 //!
@@ -367,11 +371,12 @@ pub enum ScopeOccupancy {
         /// with both levels; a collision is an internal invariant
         /// violation).
         nested: BTreeSet<String>,
-        /// `(source, target)` pairs the rename visitor's scope stack
-        /// withheld on the pre-seal application/preview walk of this
-        /// scope's body: the target was shadowed at a reference of the
-        /// un-shadowed source, so applying the rename would capture.
-        /// Seal turns these into [`SealError::ChunkRenamesCaptured`] or
+        /// `(source, target)` pairs whose application changes reference
+        /// resolution on the pre-seal application/preview walk of this
+        /// scope's body. This includes a nested binding shadowing a rename
+        /// target at a source reference and an introduced target capturing
+        /// an unchanged parser-resolved unresolved reference. Seal turns
+        /// these into [`SealError::ChunkRenamesCaptured`] or
         /// [`SealError::ModuleRenamesCaptured`].
         captured: BTreeSet<(String, String)>,
     },
@@ -415,14 +420,15 @@ pub enum SealError {
         label: String,
         violations: Vec<ModuleRenameViolation>,
     },
-    /// Explicit or import-induced `chunk_renames` that a nested binding of the entry body of
-    /// `chunk` would capture, as `(source, target)` pairs.
+    /// Explicit or import-induced `chunk_renames` that would change
+    /// reference resolution in the entry body of `chunk`, as
+    /// `(source, target)` pairs.
     ChunkRenamesCaptured {
         chunk: String,
         captured: BTreeSet<(String, String)>,
     },
-    /// Explicit or import-induced renames that a nested binding of the body `label` would
-    /// capture, as `(source, target)` pairs.
+    /// Explicit or import-induced renames that would change reference
+    /// resolution in the body `label`, as `(source, target)` pairs.
     ModuleRenamesCaptured {
         label: String,
         captured: BTreeSet<(String, String)>,
@@ -505,11 +511,11 @@ impl fmt::Display for SealError {
             ),
             Self::ChunkRenamesCaptured { chunk, captured } => write!(
                 f,
-                "chunk_renames for chunk {chunk} would be captured by a nested binding: {captured:?}"
+                "chunk_renames for chunk {chunk} would change reference resolution: {captured:?}"
             ),
             Self::ModuleRenamesCaptured { label, captured } => write!(
                 f,
-                "renames for module {label} would be captured by a nested binding: {captured:?}"
+                "renames for module {label} would change reference resolution: {captured:?}"
             ),
             Self::MintedTargetOccupied { scope, from, to } => write!(
                 f,
