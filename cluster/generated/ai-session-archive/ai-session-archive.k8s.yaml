@@ -38,31 +38,8 @@ spec:
     storageClass: piraeus-hdd-2
 ---
 apiVersion: seaweed.seaweedfs.com/v1
-kind: Bucket
-metadata:
-  annotations:
-    description: Private CNPG physical backups and WAL archive for session-backup/session-archive-db.
-  name: session-backup-db-backups
-  namespace: session-backup
-spec:
-  access:
-    - actions:
-        - Read
-        - Write
-        - List
-        - Tagging
-      user: session-backup-db-backups
-  clusterRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  name: session-backup-db-backups
-  reclaimPolicy: Delete
----
-apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
-  annotations:
-    description: Private CNPG physical backups and WAL archive for session-backup/session-archive-db.
   name: session-backup-db-backups
   namespace: session-backup
 spec:
@@ -87,30 +64,6 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: session-backup-db-backups-s3-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
----
-apiVersion: barmancloud.cnpg.io/v1
-kind: ObjectStore
-metadata:
-  annotations:
-    description: SeaweedFS S3 destination for session-backup/session-archive-db base backups and WAL.
-  name: session-archive-db
-  namespace: session-backup
-spec:
-  configuration:
-    data:
-      compression: gzip
-    destinationPath: s3://session-backup-db-backups/
-    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
-    s3Credentials:
-      accessKeyId:
-        key: AWS_ACCESS_KEY_ID
-        name: session-backup-db-backups-s3-credentials
-      secretAccessKey:
-        key: AWS_SECRET_ACCESS_KEY
-        name: session-backup-db-backups-s3-credentials
-    wal:
-      compression: gzip
-  retentionPolicy: 30d
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

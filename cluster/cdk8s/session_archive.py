@@ -6,15 +6,15 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecReclaimPolicy
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, session_backup
-from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import env_name
@@ -66,15 +66,16 @@ def _database(chart: Chart) -> None:
         # The Restic snapshots are the durable backup; this database is a rebuildable projection.
         wal_archive=False,
     )
-    # Keep the existing backup resources until WAL archiving has stopped; then retire the bucket.
-    backup.CnpgBackup(
+    # Keep IAM writers until the backup bucket's Delete finalizer completes.
+    retired_bucket = "session-backup-db-backups"
+    s3.identity(chart, "retired-backup-identity", name=retired_bucket, namespace=NAMESPACE)
+    s3.credentials(
         chart,
-        "archive-database-backup",
-        ref=DATABASE,
-        retention="30d",
-        cadence=None,
-        adopt_existing=False,
-        bucket_reclaim_policy=BucketSpecReclaimPolicy.DELETE,
+        "retired-backup-credentials",
+        identity=retired_bucket,
+        namespace=NAMESPACE,
+        secret=f"{retired_bucket}-s3-credentials",
+        key_fields=s3.AWS_ENV_KEY_FIELDS,
     )
 
 
