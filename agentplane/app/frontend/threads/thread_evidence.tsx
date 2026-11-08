@@ -1,7 +1,8 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
 import { create, toJson } from "@bufbuild/protobuf";
+import { type InfiniteData, infiniteQueryOptions, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
-import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
+import type { CSSProperties, JSX, MouseEvent } from "react";
 
 import { displayableError } from "../client";
 import { threadEvidence, threadNativeFrames } from "./client";
@@ -13,12 +14,14 @@ import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/fron
 import {
   ReadEntityEvidenceRequestSchema,
   ReadNativeFramesRequestSchema,
-  type ReadEntityEvidenceResponse,
-  type ReadNativeFramesResponse,
   type ThreadEntity,
 } from "../../../history_service/history_service_pb";
 import { threadEntityKey, threadEntityKind } from "./thread_entity";
 import "./thread_evidence.css";
+
+function firstPage<T, P>(data: InfiniteData<T, P> | undefined): InfiniteData<T, P> | undefined {
+  return data && { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) };
+}
 
 function EvidenceFramesPage({
   threadId,
@@ -29,47 +32,42 @@ function EvidenceFramesPage({
   entity: ThreadEntity;
   observationCursor: string;
 }): JSX.Element {
-  const [page, setPage] = useState<ReadNativeFramesResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [afterSequence, setAfterSequence] = useState("0");
-  const request = useRef<AbortController | null>(null);
-  const loadFirstPage = useEffectEvent(() => load());
-  useEffect(() => {
-    loadFirstPage();
-    return () => request.current?.abort();
-  }, []);
-  const load = (after = "0"): void => {
-    if (loading) return;
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setLoading(true);
-    void threadNativeFrames(
-      create(ReadNativeFramesRequestSchema, {
-        sessionId: threadId,
-        projectionEpoch: entity.projectionEpoch,
-        entity: threadEntityKey(entity),
-        observationCursor: BigInt(observationCursor),
-        afterSequence: BigInt(after),
-        limit: 30,
-      }),
-      controller.signal
-    )
-      .then(
-        (value) => {
-          if (!controller.signal.aborted) {
-            setPage(value);
-            setAfterSequence(after);
-          }
-        },
-        (reason: unknown) => {
-          if (!controller.signal.aborted) setError(displayableError(reason));
-        }
-      )
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+  const client = useQueryClient();
+  const options = infiniteQueryOptions({
+    queryKey: [
+      "thread-native-frames",
+      threadId,
+      entity.projectionEpoch,
+      threadEntityKind(entity),
+      entity.entityId,
+      observationCursor,
+    ],
+    initialPageParam: "0",
+    // Disclosure readers start at the first page when reopened.
+    gcTime: 0,
+    staleTime: 0,
+    queryFn: ({ signal, pageParam }) =>
+      threadNativeFrames(
+        create(ReadNativeFramesRequestSchema, {
+          sessionId: threadId,
+          projectionEpoch: entity.projectionEpoch,
+          entity: threadEntityKey(entity),
+          observationCursor: BigInt(observationCursor),
+          afterSequence: BigInt(pageParam),
+          limit: 30,
+        }),
+        signal
+      ),
+    getNextPageParam: (page) => page.nextAfterSequence?.toString(),
+  });
+  const query = useInfiniteQuery(options);
+  const page = query.data?.pages.at(-1);
+  const afterSequence = query.data?.pageParams.at(-1) ?? "0";
+  const error = query.error === null ? null : displayableError(query.error);
+  const loading = query.isFetching;
+  const loadFirst = (): void => {
+    client.setQueryData(options.queryKey, firstPage);
+    void query.refetch({ cancelRefetch: false });
   };
   return (
     <DisclosureBody>
@@ -85,17 +83,17 @@ function EvidenceFramesPage({
           )
         )}
         {!page && error && (
-          <Button loading={loading} onClick={() => load()}>
+          <Button loading={loading} onClick={loadFirst}>
             Retry raw frames
           </Button>
         )}
         {afterSequence !== "0" && (
-          <Button variant="subtle" disabled={loading} onClick={() => load()}>
+          <Button variant="subtle" disabled={loading} onClick={loadFirst}>
             First frames
           </Button>
         )}
         {page?.nextAfterSequence !== undefined && (
-          <Button variant="subtle" loading={loading} onClick={() => load(page.nextAfterSequence?.toString() ?? "0")}>
+          <Button variant="subtle" loading={loading} onClick={() => void query.fetchNextPage({ cancelRefetch: false })}>
             Load more frames
           </Button>
         )}
@@ -117,52 +115,39 @@ function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observa
         </span>
       }
     >
-      <EvidenceFramesPage key={id} {...props} />
+      <EvidenceFramesPage key={`${props.threadId}:${id}`} {...props} />
     </RetainedDisclosure>
   );
 }
 
 function EvidencePageView({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
-  const [page, setPage] = useState<ReadEntityEvidenceResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [afterCursor, setAfterCursor] = useState("0");
-  const request = useRef<AbortController | null>(null);
-  const loadFirstPage = useEffectEvent(() => load());
-  useEffect(() => {
-    loadFirstPage();
-    return () => request.current?.abort();
-  }, []);
-  const load = (after = "0"): void => {
-    if (loading) return;
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setLoading(true);
-    void threadEvidence(
-      create(ReadEntityEvidenceRequestSchema, {
-        sessionId: threadId,
-        projectionEpoch: entity.projectionEpoch,
-        entity: threadEntityKey(entity),
-        afterCursor: BigInt(after),
-        limit: 30,
-      }),
-      controller.signal
-    )
-      .then(
-        (value) => {
-          if (!controller.signal.aborted) {
-            setPage(value);
-            setAfterCursor(after);
-          }
-        },
-        (reason: unknown) => {
-          if (!controller.signal.aborted) setError(displayableError(reason));
-        }
-      )
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+  const client = useQueryClient();
+  const options = infiniteQueryOptions({
+    queryKey: ["thread-evidence", threadId, entity.projectionEpoch, threadEntityKind(entity), entity.entityId],
+    initialPageParam: "0",
+    gcTime: 0,
+    staleTime: 0,
+    queryFn: ({ signal, pageParam }) =>
+      threadEvidence(
+        create(ReadEntityEvidenceRequestSchema, {
+          sessionId: threadId,
+          projectionEpoch: entity.projectionEpoch,
+          entity: threadEntityKey(entity),
+          afterCursor: BigInt(pageParam),
+          limit: 30,
+        }),
+        signal
+      ),
+    getNextPageParam: (page) => page.nextAfterCursor?.toString(),
+  });
+  const query = useInfiniteQuery(options);
+  const page = query.data?.pages.at(-1);
+  const afterCursor = query.data?.pageParams.at(-1) ?? "0";
+  const error = query.error === null ? null : displayableError(query.error);
+  const loading = query.isFetching;
+  const loadFirst = (): void => {
+    client.setQueryData(options.queryKey, firstPage);
+    void query.refetch({ cancelRefetch: false });
   };
   return (
     <Stack gap="xs">
@@ -198,12 +183,16 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
         <DisclosureBody>
           <Stack gap="xs">
             {page?.nextAfterCursor !== undefined && (
-              <Button variant="subtle" loading={loading} onClick={() => load(page.nextAfterCursor?.toString() ?? "0")}>
+              <Button
+                variant="subtle"
+                loading={loading}
+                onClick={() => void query.fetchNextPage({ cancelRefetch: false })}
+              >
                 Load more evidence
               </Button>
             )}
             {afterCursor !== "0" && (
-              <Button variant="subtle" disabled={loading} onClick={() => load()}>
+              <Button variant="subtle" disabled={loading} onClick={loadFirst}>
                 First evidence
               </Button>
             )}
@@ -272,7 +261,7 @@ export function EvidencePanel({ threadId, entity }: { threadId: string; entity: 
         </Text>
       }
     >
-      <EvidencePageView key={id} threadId={threadId} entity={entity} />
+      <EvidencePageView key={`${threadId}:${id}`} threadId={threadId} entity={entity} />
     </RetainedDisclosure>
   ) : (
     <></>
