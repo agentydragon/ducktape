@@ -8016,12 +8016,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn top_write_receiver_values(&mut self, binding: &Id, env: &Context) -> Values {
-        // Keep the current owner snapshot; the binding resolver also recognizes
-        // unshadowed global aliases when neither snapshot contains this name.
+        // Keep the current owner snapshot, including an explicit empty/unknown
+        // value; the binding resolver recognizes global aliases only when both
+        // snapshots lack this name.
         if let Some(values) = env
             .get(binding)
             .or_else(|| self.state.prefix_values.get(binding))
-            .filter(|values| !values.is_empty())
         {
             return values.clone();
         }

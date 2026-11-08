@@ -240,6 +240,17 @@ fn shadowed_global_object_name_keeps_its_array_mutation_barrier() {
         "expected a materialization rejection, got: {}",
         rejected.stderr,
     );
+    let conflicts = rejected.atomic_group_conflicts();
+    assert!(
+        conflicts.iter().any(|conflict| {
+            conflict["claims"].as_array().is_some_and(|claims| {
+                ["values/collection", "values/later"]
+                    .iter()
+                    .all(|module| claims.iter().any(|claim| claim["module"] == *module))
+            })
+        }),
+        "expected the collection/later atomic conflict, got: {conflicts:#?}"
+    );
 
     let fixture = run_fixture(
         FixtureOpts::new(SHADOWED_GLOBAL_ALIAS_SOURCE, vec![]).with_chunk_id("static/provider"),
