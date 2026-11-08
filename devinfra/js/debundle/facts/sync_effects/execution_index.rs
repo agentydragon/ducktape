@@ -1325,6 +1325,7 @@ struct MemberValueWrite {
     receiver: Id,
     property: Option<String>,
     value: ValueExpr,
+    simple_assignment: bool,
     site: CallSite,
     owner: SourceUnitOrdinal,
 }
@@ -13171,6 +13172,7 @@ impl Visit for ExecutionIndex {
                     receiver: receiver.to_id(),
                     property: Some(key),
                     value: ValueExpr::from_expr(&assignment.right),
+                    simple_assignment: assignment.op == AssignOp::Assign,
                     site: assignment.span.into(),
                     owner: self.owner,
                 };
@@ -13188,6 +13190,7 @@ impl Visit for ExecutionIndex {
                     receiver: receiver.to_id(),
                     property: None,
                     value: ValueExpr::from_expr(&assignment.right),
+                    simple_assignment: assignment.op == AssignOp::Assign,
                     site: assignment.span.into(),
                     owner: self.owner,
                 };

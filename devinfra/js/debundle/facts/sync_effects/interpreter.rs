@@ -7514,6 +7514,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         for write in writes {
             if !write.simple_assignment
+                || !write
+                    .property
+                    .as_deref()
+                    .is_some_and(|property| property != "__proto__")
                 || !primitive(self, &write.property_key)
                 || !primitive(self, &write.value)
                 || !fresh_receiver(self, &write.receiver)
@@ -7607,15 +7611,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     {
                         let may_be_published = self.state.tainted_objects.contains(&object)
                             || self.state.unsettled_objects.contains(&object);
-                        if !certified_data_receivers.contains(&object) {
+                        let replace_existing_data = write.simple_assignment
+                            && property.as_deref().is_some_and(|property| {
+                                self.property_is_writable(object, property)
+                            });
+                        if !certified_data_receivers.contains(&object) && !replace_existing_data {
                             self.invalidate_object_heap_proofs(object);
                             self.state.tainted_objects.insert(object);
                         }
                         // RegExp slots share this heap only for callback
                         // containment. Ordinary-record shape and member-read
                         // proofs remain restricted to `Kind::Object`.
-                        self.literal_heap()
-                            .write_property(object, property.clone(), &values);
+                        if replace_existing_data {
+                            self.literal_heap().write_existing_data_value(
+                                object,
+                                property
+                                    .as_ref()
+                                    .expect("a writable existing data slot has a static key")
+                                    .clone(),
+                                &values,
+                            );
+                        } else {
+                            self.literal_heap()
+                                .write_property(object, property.clone(), &values);
+                        }
                         if may_be_published {
                             self.publish_values(
                                 &values,
@@ -7626,7 +7645,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     AbstractValue::Instance(key, captured, _) => {
                         self.state.tainted_classes.insert(key);
-                        self.invalidate_object_heap_proofs(key);
                         self.taint_objects(&captured.values);
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
@@ -8190,8 +8208,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 )
                 .map(|call| CallSite::from(call.span).allocation_id()),
         );
-        objects.extend(self.inputs.index.local_constructors.keys().copied());
-        objects.extend(self.inputs.index.class_values.keys().copied());
         objects.extend(
             self.state
                 .own_descriptor_maps
@@ -8367,7 +8383,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if self.state.tainted_classes.insert(*class) {
                         self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                     }
-                    self.invalidate_object_heap_proofs(*class);
                 }
                 AbstractValue::GlobalObject
                 | AbstractValue::ArrayIntrinsic
@@ -8443,7 +8458,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Instance(class, _, _) => {
                     changed |= self.state.tainted_classes.insert(*class);
-                    self.invalidate_object_heap_proofs(*class);
                 }
                 AbstractValue::Value(Value::Top) | AbstractValue::ForeignDeferredRecord => {
                     if !invalidated_global_heap {
@@ -11752,6 +11766,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .extend(objects.iter().copied());
         }
         let mut certified_data_receivers = self.fresh_primitive_write_receivers(callable, &env);
+        if let Some(objects) = &fresh_data_writes {
+            certified_data_receivers.extend(objects.iter().copied());
+        }
         let fresh_record_receiver = self.fresh_local_record_receiver(key, callable);
         if let Some(object) = fresh_record_receiver {
             certified_data_receivers.insert(object);

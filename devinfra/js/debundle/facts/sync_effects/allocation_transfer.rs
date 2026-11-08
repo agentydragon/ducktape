@@ -308,6 +308,20 @@ impl LiteralHeap<'_> {
         }
     }
 
+    /// Join values into an already-proven own data slot without changing its
+    /// descriptor or enumerable layout. The caller must supply a current
+    /// writable-own-slot proof; this remains a pooled-site value join.
+    pub(super) fn write_existing_data_value(
+        &mut self,
+        allocation: u32,
+        property: String,
+        values: &Values,
+    ) {
+        let mut properties = BTreeMap::new();
+        properties.insert(Some(property), values.clone());
+        self.record(allocation, properties);
+    }
+
     pub(super) fn invalidate_dense_array(&mut self, allocation: u32) {
         if self.arrays.remove(&allocation).is_some() {
             *self.revision = self.revision.wrapping_add(1);
