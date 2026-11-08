@@ -26,6 +26,7 @@ ts_library(
         ":proto_fixtures",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
@@ -34,6 +35,7 @@ ts_library(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:query",
         "//agentplane/app/frontend/actions:action_client",
     ],
 )

@@ -4,12 +4,11 @@ import { IconArrowLeft } from "../icons";
 import { type JSX, useContext, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 
-import { actionRequestQuery, ActionRequestsContext, PendingActionCard } from "./requests";
+import { actionGroupsQuery, actionRequestQuery, ActionRequestsContext, PendingActionCard } from "./requests";
 import { displayableError } from "../client";
 import { ActionHistoryCard } from "./history";
 import { ActionState, ExecutorKind } from "../../../action_service/action_service_pb";
 import { actionIdentity } from "./presentation";
-import { listActionGroups } from "./client";
 
 type InAppReturnTo = string | { pathname: string; search?: string; hash?: string };
 
@@ -40,14 +39,16 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const actions = useContext(ActionRequestsContext);
   if (actions === null) throw new Error("Action details require an ActionRequestsProvider.");
   const detail = useQuery(actionRequestQuery(requestId), actions.queryClient);
-  const [executorKind, setExecutorKind] = useState<ExecutorKind | null>(null);
   const [returnAfterDecision, setReturnAfterDecision] = useState<{ requestId: string; version: bigint } | null>(null);
   const historyState = location.state as { returnTo?: unknown } | null;
   const returnTo = inAppReturnTo(historyState?.returnTo);
   const request = detail.data;
-  const detailRequestId = request?.id;
-  const detailRequestState = request?.state;
   const detailActionGroup = request === undefined ? undefined : actionIdentity(request).group;
+  const groups = useQuery({
+    ...actionGroupsQuery(),
+    enabled: request !== undefined && request.state !== ActionState.DECISION_PENDING,
+  });
+  const executorKind = groups.data?.find((group) => group.key === detailActionGroup)?.executorKind;
   const stalePendingRequest = request?.state === ActionState.DECISION_PENDING && detail.isStale;
   const loading = detail.isFetching;
   const error = detail.error === null ? null : displayableError(detail.error);
@@ -64,25 +65,6 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
     }
     void navigate(returnTo, { replace: true });
   }, [request, navigate, returnAfterDecision, returnTo]);
-
-  useEffect(() => {
-    if (detailRequestId === undefined || detailRequestState === ActionState.DECISION_PENDING) {
-      setExecutorKind(null);
-      return;
-    }
-    let active = true;
-    void listActionGroups().then(
-      (groups) => {
-        if (active) setExecutorKind(groups.find((group) => group.key === detailActionGroup)?.executorKind ?? null);
-      },
-      () => {
-        if (active) setExecutorKind(null);
-      }
-    );
-    return () => {
-      active = false;
-    };
-  }, [detailActionGroup, detailRequestId, detailRequestState]);
 
   function goBack(): void {
     if (returnTo !== null) {

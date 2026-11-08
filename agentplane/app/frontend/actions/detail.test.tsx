@@ -3,14 +3,19 @@
 import { type JSX, act } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { clone, create } from "@bufbuild/protobuf";
+import { clone, create, fromJson } from "@bufbuild/protobuf";
+import { ValueSchema } from "@bufbuild/protobuf/wkt";
+import { useQueryClient } from "@tanstack/react-query";
 import { deferred } from "../../../../util/frontend/testing/deferred";
 
 import { ActionRequestDetail } from "./detail";
 import {
   ActionIdentitySchema,
+  ActionGroupSchema,
   ActionRequestSchema,
   ActionState,
+  ExecutorKind,
+  type ActionGroup,
   type ActionRequest,
 } from "../../../action_service/action_service_pb";
 import { ActionsSidebarSection } from "./sidebar";
@@ -222,6 +227,54 @@ it("shares a pending detail read between observers", async () => {
   await act(async () => response.resolve(ROW));
   await vi.waitFor(() => expect(container.querySelectorAll('button[aria-label="Approve"]')).toHaveLength(2));
   expect(sent).toHaveLength(1);
+});
+
+function RefreshCatalog(): JSX.Element {
+  const client = useQueryClient();
+  return (
+    <button onClick={() => void client.invalidateQueries({ queryKey: ["action-groups"] })}>Refresh catalog</button>
+  );
+}
+
+it("shares metadata reads and applies a refreshed executor catalog to both receipts", async () => {
+  const row = decided(ActionState.SUCCEEDED);
+  if (row.execution === undefined) throw new Error("missing execution fixture");
+  row.execution.result = fromJson(ValueSchema, {
+    content: [{ type: "text", text: "test tool failure" }],
+    isError: true,
+  });
+  const initialGroups = deferred<ActionGroup[]>();
+  let catalog: ActionGroup[] | Promise<ActionGroup[]> = initialGroups.promise;
+  const sent = answerApi(({ path }) => (path.endsWith("/action-groups") ? catalog : row));
+  const container = await mount(
+    <MemoryRouter>
+      <ActionRequestsProvider>
+        <ActionRequestDetail requestId={row.id} />
+        <ActionRequestDetail requestId={row.id} />
+        <RefreshCatalog />
+      </ActionRequestsProvider>
+    </MemoryRouter>
+  );
+  await vi.waitFor(() => expect(sent.filter(({ path }) => path.endsWith("/action-groups"))).toHaveLength(1));
+  await act(async () =>
+    initialGroups.resolve([create(ActionGroupSchema, { key: "ssh", executorKind: ExecutorKind.POD })])
+  );
+  await vi.waitFor(() =>
+    expect(
+      [...container.querySelectorAll('[data-testid="action-execution-state"]')].map((node) => node.textContent)
+    ).toEqual(["succeeded", "succeeded"])
+  );
+
+  catalog = [create(ActionGroupSchema, { key: "ssh", executorKind: ExecutorKind.MCP })];
+  const refresh = [...container.querySelectorAll("button")].find((node) => node.textContent === "Refresh catalog");
+  if (refresh === undefined) throw new Error("missing catalog refresh control");
+  await act(async () => refresh.click());
+  await vi.waitFor(() =>
+    expect(
+      [...container.querySelectorAll('[data-testid="action-execution-state"]')].map((node) => node.textContent)
+    ).toEqual(["Tool error", "Tool error"])
+  );
+  expect(sent.filter(({ path }) => path.endsWith("/action-groups"))).toHaveLength(2);
 });
 
 async function finishOlderReadAfterWatch(newer: ActionRequest): Promise<{ container: HTMLDivElement; sent: Sent[] }> {

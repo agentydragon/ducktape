@@ -291,6 +291,13 @@ ts_library(
 )
 
 ts_library(
+    name = "query",
+    srcs = ["query.ts"],
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/@tanstack/react-query"],
+)
+
+ts_library(
     name = "raw_switch",
     srcs = ["raw_switch.tsx"],
     tsconfig = TSCONFIG,

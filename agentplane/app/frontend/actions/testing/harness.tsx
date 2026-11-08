@@ -1,4 +1,5 @@
 import { MantineProvider } from "@mantine/core";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, vi } from "vitest";
@@ -6,6 +7,7 @@ import { create, fromJson, type JsonObject } from "@bufbuild/protobuf";
 import { TimestampSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import { api } from "../../client";
+import { createAppQueryClient } from "../../query";
 import {
   ActionRequestSchema,
   ActionState,
@@ -144,7 +146,7 @@ export function sshExec(state: ActionState, returned: Record<string, unknown> = 
   return row;
 }
 
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
+const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement; queryClient: QueryClient }> = [];
 
 function actionResponse(path: string, value: unknown): unknown {
   if (value instanceof Response || value === undefined || value === null || typeof value !== "object") return value;
@@ -384,9 +386,14 @@ export async function mount(node: ReactNode): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  mounted.push({ root, container });
+  const queryClient = createAppQueryClient();
+  mounted.push({ root, container, queryClient });
   await act(async () => {
-    root.render(<MantineProvider env="test">{node}</MantineProvider>);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <MantineProvider env="test">{node}</MantineProvider>
+      </QueryClientProvider>
+    );
   });
   return container;
 }
@@ -543,12 +550,14 @@ export async function unmountLast(): Promise<void> {
   const item = mounted.pop();
   if (!item) return;
   await act(async () => item.root.unmount());
+  item.queryClient.clear();
   item.container.remove();
 }
 
 afterEach(async () => {
   for (const item of mounted.splice(0)) {
     await act(async () => item.root.unmount());
+    item.queryClient.clear();
     item.container.remove();
   }
   for (const eject of ejects.splice(0)) eject();
