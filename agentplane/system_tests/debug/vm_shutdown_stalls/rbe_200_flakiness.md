@@ -13,6 +13,36 @@ passing results were visible in the active next batch. Counts include the
 tenth initial test, recovered from its execution result after the parent runner
 stopped, rather than from the incomplete Bazel test summary.
 
+## Additional failures at 67 completed runs
+
+A later snapshot recorded 67 verified results: 64 passed and three failed. The
+active Job had submitted the next batch. These are whole-suite results, not an
+estimate of a common failure mechanism.
+
+[Invocation `331d8d98`](https://app.buildbuddy.io/invocation/331d8d98-b806-415c-b9f3-55169dbe1a4d),
+run 1 of 3, passed the test scenario but failed teardown with
+`GuestShutdownError`: the `systest-vm-codex-oom` launcher did not produce the
+shutdown-complete marker. The launcher signaled graceful shutdown at 20:04:52
+UTC and recorded the domain destroyed at 20:05:23. The guest console shows
+systemd performing shutdown, with messages still progressing shortly before
+destruction; this establishes an incomplete shutdown within the grace period,
+not a proven deadlock or the cause of earlier stalls.
+
+The guest watchdog armed SysRq and successfully issued `w` at guest uptime
+225.15 seconds; the recorded blocked-task dump contains no task stacks. A
+snapshot subsequently recorded PID 1 in `do_epoll_wait`, while systemd was
+still processing shutdown jobs. These are point-in-time observations, not proof
+of the process responsible for the delay. No RCU stall report or shutdown-complete
+marker appeared in the affected guest serial log. The later host report could
+not inspect QEMU because the launcher pod had already disappeared; earlier
+host snapshots and the raw console remain in the invocation's artifacts.
+
+[Invocation `3e01a55d`](https://app.buildbuddy.io/invocation/3e01a55d-f7ba-40ca-a174-a733113a662c),
+run 3 of 3, failed before scenario completion: `systest-vm-1` did not become
+Ready within 300 seconds. Its workload pod was Ready, but the Runner Gateway
+was still waiting for the runner's first state message. This does not by itself
+establish a guest RCU stall or a relationship to the shutdown failure.
+
 ## Guest did not become Ready; RCU reports and forced cleanup
 
 In [invocation `1c1dc380`](https://app.buildbuddy.io/invocation/1c1dc380-f62b-48f4-8925-e9eea2c11347),
