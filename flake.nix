@@ -109,10 +109,10 @@
       # Python and Bazel toolchains while nixpkgs catches up.
       ruffLatest = pkgs.stdenvNoCC.mkDerivation {
         pname = "ruff";
-        version = "0.16.7";
+        version = "0.17.4";
         src = pkgs.fetchurl {
-          url = "https://github.com/astral-sh/ruff/releases/download/0.16.7/ruff-x86_64-unknown-linux-gnu.tar.gz";
-          hash = "sha256-c4lMe3yaU/1m7XFes6HsZQd/MWMo43cFepi9t/y6AyY=";
+          url = "https://github.com/astral-sh/ruff/releases/download/0.17.4/ruff-x86_64-unknown-linux-gnu.tar.gz";
+          hash = "sha256-OrKzSurNvB6lxSnNvaPgV5JjPVhyKBI/0J87Wg+ssno=";
         };
         nativeBuildInputs = [ pkgs.autoPatchelfHook ];
         buildInputs = [ pkgs.stdenv.cc.cc.lib ];
