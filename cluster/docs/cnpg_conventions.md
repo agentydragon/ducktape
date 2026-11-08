@@ -110,7 +110,7 @@ No roster here — it drifts. The SSOT is the `Cluster` manifests themselves;
 sweep them with:
 
 ```bash
-grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
+rg -l '^kind: Cluster$' cluster/k8s cluster/generated -g '*.yaml'
 ```
 
 Live instance counts and bound PVCs can differ from the declared configuration

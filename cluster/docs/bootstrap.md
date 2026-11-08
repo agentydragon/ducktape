@@ -23,7 +23,8 @@ live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = 
 Nebula node identities are durable inputs: public certificates and SOPS-encrypted
 private keys in `secrets/nebula/`, read by tofu via the `sops` provider rather
 than generated during an apply.
-Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle).
+Talos machine secrets are persistent across cluster lifecycles; the SOPS export
+is their durable recovery source.
 See <bootstrap_dependencies.md> for the full dependency graph.
 
 ## Cold-Start Deployment
@@ -59,7 +60,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
   reads public GitHub anonymously, then Flux decrypts GitHub App auth for
   private/write paths
 - Core Services → cert-manager, Cilium Gateway API
-- Storage → local-path/SeaweedFS/OpenEBS/Proxmox CSI
+- Storage → Piraeus and SeaweedFS
 - Platform → ESO, Authentik
 
 ### Verification

@@ -132,7 +132,7 @@ kubectl -n kube-system exec <cilium-pod-on-source-node> -- \
   bash -lc 'for ip in 147.135.37.175 147.135.39.162 147.135.39.176 147.135.104.5 147.135.104.16; do timeout 2 bash -lc "</dev/tcp/${ip}/50000" && echo "${ip} ok" || echo "${ip} fail"; done'
 ```
 
-Add the new public IP to `cluster/nebula-mesh.json` so non-Talos nodes (wyrm2,
+Add the new public IP to the repository-root `nebula-mesh.json` so non-Talos nodes (wyrm2,
 rugged) have a direct path instead of relying on stale relay paths. Commit.
 
 ## 5. Replacing an existing slot

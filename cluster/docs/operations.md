@@ -32,7 +32,7 @@ talosctl --endpoints <node> --nodes <node> reboot
 
 ### Take VM Screenshots
 
-See `~/.claude/skills/proxmox_vm/vm-screenshot.sh`
+Use `vm-interact <vmid> --screenshot`; see <../skills/proxmox_vm/SKILL.md>.
 
 ### Direct VM Console Access
 

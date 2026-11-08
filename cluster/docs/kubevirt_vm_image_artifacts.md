@@ -9,7 +9,7 @@ CPAP gateway and Agentplane runner images:
   <../../agentplane/env/images/container-disk.nix>.
 - Publishing workflows: <../../.github/workflows/cpap-gateway-image.yml> and
   <../../.github/workflows/agentplane-environment-vm-image.yml>.
-- KubeVirt definitions: <../cdk8s/cpap_sync/app.py> and the Agentplane staging
+- KubeVirt definitions: <../cdk8s/cpap_sync.py> and the Agentplane staging
   SandboxTemplate in <../cdk8s/agentplane/staging.py>.
 
 The Agentplane VM attaches two: the guest root and a small read-only erofs disk with the
