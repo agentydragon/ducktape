@@ -215,14 +215,10 @@ manifest:
     ipykernel_launcher: ipykernel
     ipython_pygments_lexers: ipython_pygments_lexers
     itsdangerous: itsdangerous
-    jaraco.classes: jaraco.classes
-    jaraco.context: jaraco_context
-    jaraco.functools: jaraco_functools
     jax: jax
     jaxlib: jaxlib
     jaxtyping: jaxtyping
     jedi: jedi
-    jeepney: jeepney
     jinja2: jinja2
     jiter: jiter
     jmespath: jmespath
@@ -243,7 +239,6 @@ manifest:
     jwt: pyjwt
     kaitaistruct: kaitaistruct
     key_value: py_key_value_aio
-    keyring: keyring
     keysymdef: keysymdef
     kiwisolver: kiwisolver
     kubernetes: kubernetes
@@ -414,7 +409,6 @@ manifest:
     s3fs: s3fs
     s3transfer: s3transfer
     scipy: scipy
-    secretstorage: secretstorage
     semver: semver
     service_identity: service_identity
     setuptools: setuptools
@@ -479,4 +473,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 03ead7934a9c34cc71464f1a8ab94dc661aedc60f317ed08cd554408a303542e
+integrity: 58d7a69c78c8b77705b6b2225bd1f9b6e87b0840c14168ba793bdc8f74f94383
