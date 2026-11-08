@@ -1,4 +1,3 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -12,17 +11,11 @@ ts_config(
     src = "tsconfig.json",
 )
 
-js_library(
-    name = "app_css",
-    srcs = ["app.css"],
-)
-
 ts_library(
     name = "main",
     srcs = ["main.tsx"],
     tsconfig = ":tsconfig",
     deps = [
-        ":app_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -43,10 +36,14 @@ py_test(
     name = "browser_test",
     srcs = ["browser_test.py"],
     data = [":bundle"],
+    tags = ["visual"],
     deps = [
         "//:conftest",
+        "//devinfra/testing:output_writer",
         "//util:playwright",  # keep: pytest plugin
         "//util/testing:asgi",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:context",
         "@pypi//fastapi",
         "@pypi//playwright",
         "@pypi//pytest",

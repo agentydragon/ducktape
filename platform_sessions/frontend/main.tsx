@@ -5,8 +5,12 @@ import {
   Button,
   Card,
   Code,
+  Container,
+  Flex,
+  Group,
   MantineProvider,
   NativeSelect,
+  Stack,
   Table,
   Text,
   Textarea,
@@ -15,8 +19,6 @@ import {
 import "@mantine/core/styles.css";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-
-import "./app.css";
 
 type JsonObject = Record<string, unknown>;
 type Instruction = { text: string; command?: string };
@@ -235,23 +237,38 @@ function IntegrationCard({
 }) {
   const current = status ?? { state: "checking", message: "Checking session…", details: [] };
   return (
-    <Card component="section" withBorder className="integration-card" aria-label={`${info.id} integration`}>
-      <div className="integration-content">
-        <div className="integration-heading">
-          <Title order={3} className="integration-title">
+    <Card
+      component="section"
+      withBorder
+      padding="lg"
+      radius="md"
+      flex="1 1 24rem"
+      miw={0}
+      aria-label={`${info.id} integration`}
+    >
+      <Stack gap="md">
+        <Group justify="space-between" align="flex-start">
+          <Title order={3} style={{ overflowWrap: "anywhere" }}>
             {info.id}
           </Title>
           <Badge
-            className={`session-state session-state-${stateColor(current.state)}`}
+            color={stateColor(current.state)}
             variant="light"
+            h="auto"
+            py={4}
+            styles={{ label: { whiteSpace: "normal", overflowWrap: "anywhere" } }}
             aria-live="polite"
           >
             {current.message}
           </Badge>
-        </div>
-        {current.help ? <Text className="muted">{current.help}</Text> : null}
+        </Group>
+        {current.help ? (
+          <Text c="dimmed" size="sm">
+            {current.help}
+          </Text>
+        ) : null}
         {current.details.length > 0 ? (
-          <Table className="status-details" aria-label={`${info.id} session details`}>
+          <Table aria-label={`${info.id} session details`}>
             <Table.Tbody>
               {current.details.map((detail) => (
                 <Table.Tr key={detail.key}>
@@ -274,21 +291,21 @@ function IntegrationCard({
             <Accordion.Control>Export instructions</Accordion.Control>
             <Accordion.Panel>
               {info.instructions.length === 0 ? (
-                <Text className="muted">No export instructions are available.</Text>
+                <Text c="dimmed">No export instructions are available.</Text>
               ) : (
-                <div className="instruction-list">
+                <Stack gap="sm">
                   {info.instructions.map((instruction, index) => (
-                    <div className="instruction" key={`${index}-${instruction.text}`}>
+                    <div key={`${index}-${instruction.text}`}>
                       <Text>{instruction.text}</Text>
                       {instruction.command ? <Code block>{instruction.command}</Code> : null}
                     </div>
                   ))}
-                </div>
+                </Stack>
               )}
             </Accordion.Panel>
           </Accordion.Item>
         </Accordion>
-      </div>
+      </Stack>
     </Card>
   );
 }
@@ -455,105 +472,110 @@ function App() {
 
   return (
     <MantineProvider defaultColorScheme="auto" withCssVariables={false} withGlobalClasses={false}>
-      <header className="status-header">
-        <div className="page-container status-header-content">
-          <div>
-            <Title order={1}>Platform sessions</Title>
-            <Text className="muted">Browser sessions for your connected services.</Text>
-          </div>
-          <form action="/auth/logout" method="post">
-            <Button type="submit" variant="default">
-              Sign out
-            </Button>
-          </form>
-        </div>
-      </header>
-      <main className="page-container status-page">
-        <div className="page-content">
-          {integrationError ? (
-            <Alert className="integration-error" role="status">
-              {integrationError}
-            </Alert>
-          ) : null}
-          {integrations.length > 0 ? (
-            <div className="providers">
-              {integrations.map((integration) => (
-                <IntegrationCard
-                  key={integration.id}
-                  info={integration}
-                  status={statuses[integration.id]}
-                  checking={Boolean(checking[integration.id])}
-                  importing={importing}
-                  onVerify={verify}
-                />
-              ))}
+      <Container size="lg" py="xl">
+        <Stack gap="xl">
+          <Group component="header" justify="space-between" align="flex-start">
+            <div>
+              <Title order={1}>Platform sessions</Title>
+              <Text c="dimmed">Browser sessions for your connected services.</Text>
             </div>
-          ) : integrationError ? null : (
-            <Text className="muted" role="status">
-              Loading integrations…
-            </Text>
-          )}
-          <Card component="section" withBorder className="import-card" aria-labelledby="import-heading">
-            <div className="import-content">
-              <div>
-                <Title id="import-heading" order={2}>
-                  Import a session
-                </Title>
-                <Text className="muted">
-                  Open an integration’s export instructions above, copy its session, then paste it here.
-                </Text>
-              </div>
-              <form onSubmit={(event) => void submit(event)}>
-                <div className="import-fields">
-                  <Textarea
-                    label="Session export"
-                    value={sessionText}
-                    onChange={(event) => {
-                      setSessionText(event.currentTarget.value);
-                      setSelectedInstance(null);
-                    }}
-                    required
-                    rows={6}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="session-input"
+            <form action="/auth/logout" method="post">
+              <Button type="submit" variant="default">
+                Sign out
+              </Button>
+            </form>
+          </Group>
+          <Stack component="main" gap="lg">
+            {integrationError ? (
+              <Alert color="red" role="status">
+                {integrationError}
+              </Alert>
+            ) : null}
+            {integrations.length > 0 ? (
+              <Flex gap="md" wrap="wrap">
+                {integrations.map((integration) => (
+                  <IntegrationCard
+                    key={integration.id}
+                    info={integration}
+                    status={statuses[integration.id]}
+                    checking={Boolean(checking[integration.id])}
+                    importing={importing}
+                    onVerify={verify}
                   />
-                  <Text className="muted" aria-live="polite">
-                    {detectionMessage}
+                ))}
+              </Flex>
+            ) : integrationError ? null : (
+              <Text c="dimmed" role="status">
+                Loading integrations…
+              </Text>
+            )}
+            <Card component="section" withBorder padding="lg" radius="md" aria-labelledby="import-heading">
+              <Stack gap="md">
+                <div>
+                  <Title id="import-heading" order={2}>
+                    Import a session
+                  </Title>
+                  <Text c="dimmed">
+                    Open an integration’s export instructions above, copy its session, then paste it here.
                   </Text>
-                  {matches.length > 1 ? (
-                    <NativeSelect
-                      label="Choose an integration"
-                      value={selectedInstance ?? ""}
-                      onChange={(event) => setSelectedInstance(event.currentTarget.value || null)}
-                    >
-                      <option value="">Choose which session to replace</option>
-                      {matches.map((integration) => (
-                        <option key={integration.id} value={integration.id}>
-                          {integration.id}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  ) : null}
-                  <Button type="submit" loading={importing}>
-                    Verify and import
-                  </Button>
-                  {importResult ? (
-                    <Alert
-                      className={`import-result import-result-${importResult.kind}`}
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {importResult.message}
-                    </Alert>
-                  ) : null}
                 </div>
-              </form>
-              <Text className="muted">Treat session exports like passwords. Clear the clipboard after importing.</Text>
-            </div>
-          </Card>
-        </div>
-      </main>
+                <form onSubmit={(event) => void submit(event)}>
+                  <Stack gap="sm">
+                    <Textarea
+                      label="Session export"
+                      value={sessionText}
+                      onChange={(event) => {
+                        setSessionText(event.currentTarget.value);
+                        setSelectedInstance(null);
+                      }}
+                      required
+                      rows={6}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <Text c="dimmed" size="sm" aria-live="polite">
+                      {detectionMessage}
+                    </Text>
+                    {matches.length > 1 ? (
+                      <NativeSelect
+                        label="Choose an integration"
+                        value={selectedInstance ?? ""}
+                        onChange={(event) => setSelectedInstance(event.currentTarget.value || null)}
+                      >
+                        <option value="">Choose which session to replace</option>
+                        {matches.map((integration) => (
+                          <option key={integration.id} value={integration.id}>
+                            {integration.id}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    ) : null}
+                    <Group>
+                      <Button type="submit" loading={importing}>
+                        Verify and import
+                      </Button>
+                    </Group>
+                    {importResult ? (
+                      <Alert
+                        color={
+                          importResult.kind === "success" ? "green" : importResult.kind === "pending" ? "blue" : "red"
+                        }
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {importResult.message}
+                      </Alert>
+                    ) : null}
+                  </Stack>
+                </form>
+                <Text c="dimmed" size="sm">
+                  Treat session exports like passwords. Clear the clipboard after importing.
+                </Text>
+              </Stack>
+            </Card>
+          </Stack>
+        </Stack>
+      </Container>
     </MantineProvider>
   );
 }

@@ -14,10 +14,13 @@ import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
-from playwright.async_api import Browser, Page, expect
+from playwright.async_api import Browser, Page, Playwright, expect
 from python.runfiles import Runfiles
 
+from devinfra.testing.output_writer import BoundTestOutputs
 from util.testing.asgi import serve_app
+from util.testing.frontend_visual.capture import open_visual_page
+from util.testing.frontend_visual.context import deterministic_browser_context
 
 pytest_plugins = ("util.playwright",)
 
@@ -307,6 +310,26 @@ async def test_unauthorized_api_response_redirects_to_login(
         await page.get_by_role("button", name="Check again").first.click()
     assert page.url.endswith("/auth/login")
     await context.close()
+
+
+@pytest.mark.parametrize(("scheme", "width"), [("light", 1200), ("dark", 390)])
+async def test_dashboard_visual(
+    playwright: Playwright,
+    test_outputs: BoundTestOutputs,
+    dashboard: tuple[str, dict[str, Any]],
+    scheme: Literal["light", "dark"],
+    width: int,
+) -> None:
+    origin, _ = dashboard
+    async with (
+        deterministic_browser_context(
+            playwright, viewport={"width": width, "height": 900}, frozen_now_ms=None, color_scheme=scheme
+        ) as context,
+        open_visual_page(context, test_outputs, title="Platform sessions") as view,
+    ):
+        await view.page.goto(origin, wait_until="domcontentloaded")
+        await expect(view.page.get_by_text("Connected").first).to_be_visible()
+        await view.capture(full_page=True, animations="disabled")
 
 
 if __name__ == "__main__":
