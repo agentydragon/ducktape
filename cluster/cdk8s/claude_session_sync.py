@@ -77,11 +77,11 @@ def _database(chart: Chart) -> None:
                 "age out of Anthropic's API this may be the only copy."
             )
         },
-        # Existing SSD PVCs stay attached while an HDD replica joins the cluster.
-        profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
+        # Keep existing PVCs while a single-copy local HDD replica joins the cluster.
+        profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-local", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="40Gi",
         resize_in_use_volumes=False,
-        instances=3,
+        instances=4,
         initdb=cluster.same_owner_initdb("claude_sessions"),
         wal_archive=True,
         # Most of this Cluster's WAL is full-page images of the append-only events table.
