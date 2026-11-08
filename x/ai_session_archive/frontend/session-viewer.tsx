@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActionIcon,
   Alert,
@@ -26,7 +27,7 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
-import type { EventRecord, Harness, Machine, SessionKind, SessionSummary, SessionVersion } from "./schema";
+import type { EventRecord, Harness, SessionKind, SessionSummary } from "./schema";
 import { ResizeHandle, usePaneSize, type PaneSize } from "../../../util/frontend/resize_handle";
 import { HistoryRecorderTools } from "../../../util/frontend/transcript/history_recorder_tools";
 import { historyRecorder } from "./history-recorder";
@@ -138,6 +139,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     .join(",");
   const selectedKinds = useMemo(() => (kindScope === "" ? [] : (kindScope.split(",") as SessionKind[])), [kindScope]);
   const requestedVersionId = search.get("version");
+  const queryClient = useQueryClient();
   const layoutRef = useRef<HTMLDivElement>(null);
   const mobileSessionListRef = useRef<HTMLElement>(null);
   const [layoutWidth, setLayoutWidth] = useState(() => Math.max(0, window.innerWidth - 32));
@@ -158,70 +160,175 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     resize: (size) => storedSidebarPane.resize(Math.min(size, sidebarMaxWidth)),
     step: (delta) => storedSidebarPane.step(delta),
   };
-  const [machines, setMachines] = useState<Machine[]>([]);
+  const machinesQuery = useQuery({
+    queryKey: ["ai-session-archive", "machines"],
+    queryFn: ({ signal }) => api.listMachines(signal),
+  });
+  const machines = machinesQuery.data ?? [];
   const {
     progress: importProgress,
     loading: loadingImportProgress,
     error: importProgressError,
   } = useMachineImportProgress(api);
-  const [sessionListRefreshRequest, setSessionListRefreshRequest] = useState(0);
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [loadedSessionScope, setLoadedSessionScope] = useState<string | null>(null);
-  const [sessionCursor, setSessionCursor] = useState<string | null>(null);
-  const [fetchedSession, setFetchedSession] = useState<SessionSummary | null>(null);
-  const [loadingSelectedSession, setLoadingSelectedSession] = useState(false);
-  const [selectedSessionError, setSelectedSessionError] = useState<string | null>(null);
-  const [versions, setVersions] = useState<SessionVersion[]>([]);
-  const [versionsSessionId, setVersionsSessionId] = useState<string | null>(null);
-  const [events, setEvents] = useState<EventRecord[]>([]);
-  const [eventCursor, setEventCursor] = useState<number | null>(null);
-  const [parentSession, setParentSession] = useState<SessionSummary | null>(null);
-  const [childSessions, setChildSessions] = useState<SessionSummary[]>([]);
-  const [childSessionCursor, setChildSessionCursor] = useState<string | null>(null);
-  const [parentSessionLoadError, setParentSessionLoadError] = useState<string | null>(null);
-  const [childSessionsLoadError, setChildSessionsLoadError] = useState<string | null>(null);
-  const [loadingMachines, setLoadingMachines] = useState(true);
-  const [loadingSessions, setLoadingSessions] = useState(true);
-  const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [loadingEvents, setLoadingEvents] = useState(false);
-  const [loadingEarlierEvents, setLoadingEarlierEvents] = useState(false);
-  const [loadingParentSession, setLoadingParentSession] = useState(false);
-  const [loadingChildSessions, setLoadingChildSessions] = useState(false);
-  const [loadingMoreRelatedSessions, setLoadingMoreRelatedSessions] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const sessionScope = `${selectedMachineId}\u0000${selectedHarness}\u0000${kindScope}`;
-  const sessionScopeRef = useRef(sessionScope);
-  sessionScopeRef.current = sessionScope;
-  const selectedSession =
-    sessions.find((session) => session.id === sessionId) ?? (fetchedSession?.id === sessionId ? fetchedSession : null);
+  const sessionListQueryKey = [
+    "ai-session-archive",
+    "sessions",
+    selectedMachineId || null,
+    selectedHarness || null,
+    selectedKinds,
+  ] as const;
+  const sessionsQuery = useInfiniteQuery({
+    queryKey: sessionListQueryKey,
+    queryFn: ({ pageParam, signal }) =>
+      api.listSessions(
+        {
+          ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
+          ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
+          ...(pageParam === null ? {} : { cursor: pageParam }),
+          kinds: selectedKinds,
+          limit: SESSION_PAGE_SIZE,
+        },
+        signal
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: selectedKinds.length > 0,
+  });
+  const sessionPages = sessionsQuery.data?.pages ?? [];
+  const sessions = useMemo(
+    () =>
+      mergeById(
+        [],
+        sessionPages.flatMap((page) => page.data)
+      ),
+    [sessionPages]
+  );
+  const sessionCursor = sessionPages.at(-1)?.next_cursor ?? null;
+  const loadingSessions = selectedKinds.length > 0 && sessionsQuery.isLoading;
+  const loadingMoreSessions = sessionsQuery.isFetchingNextPage;
+  const loadedSessionScope = selectedKinds.length === 0 || sessionsQuery.data !== undefined;
+
+  const listedSelectedSession = sessions.find((session) => session.id === sessionId) ?? null;
+  const selectedSessionQuery = useQuery({
+    queryKey: ["ai-session-archive", "session", sessionId ?? null],
+    queryFn: ({ signal }) => {
+      if (sessionId === undefined) throw new Error("A session ID is required.");
+      return api.getSession(sessionId, signal);
+    },
+    enabled: sessionId !== undefined && listedSelectedSession === null,
+  });
+  const fetchedSession =
+    sessionId !== undefined && selectedSessionQuery.data?.id === sessionId ? selectedSessionQuery.data : null;
+  const selectedSession = listedSelectedSession ?? fetchedSession;
+  const loadingSelectedSession =
+    sessionId !== undefined && listedSelectedSession === null && selectedSessionQuery.isLoading;
+  const selectedSessionError = selectedSessionQuery.error === null ? null : errorMessage(selectedSessionQuery.error);
+
+  const versionsQuery = useQuery({
+    queryKey: [
+      "ai-session-archive",
+      "versions",
+      selectedSession?.id ?? null,
+      selectedSession?.latest_version_id ?? null,
+    ],
+    queryFn: ({ signal }) => {
+      if (selectedSession === null) throw new Error("A selected session is required.");
+      return api.listVersions(selectedSession.id, signal);
+    },
+    enabled: selectedSession !== null,
+  });
+  const versions = versionsQuery.data ?? [];
+  const hasLoadedVersions = versionsQuery.data !== undefined;
   const requestedVersionUnavailable =
-    requestedVersionId !== null &&
-    versionsSessionId === selectedSession?.id &&
-    !versions.some((version) => version.id === requestedVersionId);
-  const selectedVersionId =
-    versionsSessionId === selectedSession?.id
-      ? requestedVersionId !== null
-        ? (versions.find((version) => version.id === requestedVersionId)?.id ?? null)
-        : (versions.find((version) => version.id === selectedSession.latest_version_id)?.id ?? versions[0]?.id ?? null)
-      : null;
-  const eventScope = `${sessionId ?? ""}\u0000${selectedVersionId ?? ""}`;
-  const eventScopeRef = useRef(eventScope);
-  eventScopeRef.current = eventScope;
-  const sessionPageRequest = useRef<AbortController | null>(null);
-  const eventPageRequest = useRef<AbortController | null>(null);
-  const relatedPageRequest = useRef<AbortController | null>(null);
-  const selectedSessionIdRef = useRef(sessionId);
-  selectedSessionIdRef.current = sessionId;
+    requestedVersionId !== null && hasLoadedVersions && !versions.some((version) => version.id === requestedVersionId);
+  const selectedVersionId = !hasLoadedVersions
+    ? null
+    : requestedVersionId !== null
+      ? (versions.find((version) => version.id === requestedVersionId)?.id ?? null)
+      : (versions.find((version) => version.id === selectedSession?.latest_version_id)?.id ?? versions[0]?.id ?? null);
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
+  const loadingVersions = selectedSession !== null && versionsQuery.isLoading;
+
+  const eventQuery = useInfiniteQuery({
+    queryKey: ["ai-session-archive", "events", selectedSession?.id ?? null, selectedVersionId],
+    queryFn: ({ pageParam, signal }) => {
+      if (selectedSession === null || selectedVersionId === null) {
+        throw new Error("A selected session version is required.");
+      }
+      return api.listEvents(selectedSession.id, selectedVersionId, pageParam, signal);
+    },
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: selectedSession !== null && selectedVersionId !== null,
+  });
+  const eventPages = eventQuery.data?.pages ?? [];
+  const events = useMemo(
+    () =>
+      mergeByOrdinal(
+        [],
+        eventPages.flatMap((page) => page.data)
+      ),
+    [eventPages]
+  );
+  const eventCursor = eventPages.at(-1)?.next_cursor ?? null;
+  const loadingEvents = eventQuery.isLoading;
+  const loadingEarlierEvents = eventQuery.isFetchingNextPage;
+  const eventScope = JSON.stringify([selectedSession?.id ?? null, selectedVersionId]);
+
+  const parentSessionId = selectedSession?.parent_session_id ?? null;
+  const parentSessionQuery = useQuery({
+    queryKey: ["ai-session-archive", "session", parentSessionId],
+    queryFn: ({ signal }) => {
+      if (parentSessionId === null) throw new Error("A parent session ID is required.");
+      return api.getSession(parentSessionId, signal);
+    },
+    enabled: parentSessionId !== null,
+  });
+  const parentSession = parentSessionQuery.data?.id === parentSessionId ? parentSessionQuery.data : null;
+  const loadingParentSession = parentSessionId !== null && parentSessionQuery.isLoading;
+  const parentSessionLoadError = parentSessionQuery.error === null ? null : errorMessage(parentSessionQuery.error);
+
+  const childSessionsQuery = useInfiniteQuery({
+    queryKey: ["ai-session-archive", "children", selectedSession?.id ?? null],
+    queryFn: ({ pageParam, signal }) => {
+      if (selectedSession === null) throw new Error("A selected session is required.");
+      return api.listSessions(
+        {
+          parentSessionId: selectedSession.id,
+          ...(pageParam === null ? {} : { cursor: pageParam }),
+          limit: SESSION_PAGE_SIZE,
+        },
+        signal
+      );
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: selectedSession !== null,
+  });
+  const childPages = childSessionsQuery.data?.pages ?? [];
+  const childSessions = useMemo(
+    () =>
+      mergeById(
+        [],
+        childPages.flatMap((page) => page.data)
+      ),
+    [childPages]
+  );
+  const childSessionCursor = childPages.at(-1)?.next_cursor ?? null;
+  const loadingChildSessions = selectedSession !== null && childSessionsQuery.isLoading;
+  const loadingMoreRelatedSessions = childSessionsQuery.isFetchingNextPage;
+  const childSessionsLoadError = childSessionsQuery.error === null ? null : errorMessage(childSessionsQuery.error);
+  const error =
+    [machinesQuery.error, sessionsQuery.error, versionsQuery.error, eventQuery.error].find(
+      (reason): reason is Error => reason !== null
+    ) ?? null;
+  const errorText = error === null ? null : errorMessage(error);
+  const loadingMachines = machinesQuery.isLoading;
 
   const machineNames = useMemo(
     () => new Map(machines.map((machine) => [machine.id, machine.display_name])),
     [machines]
   );
-  const selectedVersion =
-    versionsSessionId === selectedSession?.id
-      ? (versions.find((version) => version.id === selectedVersionId) ?? null)
-      : null;
   const selectedVersionIsEarlierCapture =
     selectedVersion !== null &&
     selectedSession !== null &&
@@ -238,7 +345,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
         (selectedSession.parent_native_session_id_candidates?.length ?? 0) > 0));
   const hasCapturedParentSession = selectedSession !== null && selectedSession.parent_session_id !== null;
   const relatedSessionCount = childSessions.length + Number(hasCapturedParentSession);
-  const hasMoreRelatedChildren = childSessionCursor !== null;
+  const hasMoreRelatedChildren = childSessionsQuery.hasNextPage;
   const relatedSessionCountLabel = `${relatedSessionCount}${hasMoreRelatedChildren ? "+" : ""}`;
   const loadingRelatedSessions = loadingParentSession || loadingChildSessions;
   const hasRelatedSessions =
@@ -248,15 +355,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       loadingRelatedSessions ||
       parentSessionLoadError !== null ||
       childSessionsLoadError !== null);
-
-  useEffect(
-    () => () => {
-      sessionPageRequest.current?.abort();
-      eventPageRequest.current?.abort();
-      relatedPageRequest.current?.abort();
-    },
-    []
-  );
 
   useEffect(() => {
     const layout = layoutRef.current;
@@ -313,299 +411,22 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   }, [selectedSession?.id]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void api
-      .listMachines(controller.signal)
-      .then(setMachines)
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingMachines(false);
-      });
-    return () => controller.abort();
-  }, [api]);
-
-  useEffect(() => {
-    sessionPageRequest.current?.abort();
-    sessionPageRequest.current = null;
-    const controller = new AbortController();
-    setLoadingSessions(true);
-    setLoadingMoreSessions(false);
-    setError(null);
-    if (kindScope === "") {
-      setSessions([]);
-      setSessionCursor(null);
-      setLoadedSessionScope(sessionScope);
-      setLoadingSessions(false);
-      return () => controller.abort();
-    }
-    void api
-      .listSessions(
-        {
-          ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
-          ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
-          kinds: selectedKinds,
-          limit: SESSION_PAGE_SIZE,
-        },
-        controller.signal
-      )
-      .then((page) => {
-        if (controller.signal.aborted) return;
-        setSessions(page.data);
-        setSessionCursor(page.next_cursor);
-        setLoadedSessionScope(sessionScope);
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingSessions(false);
-      });
-    return () => {
-      controller.abort();
-      sessionPageRequest.current?.abort();
-      sessionPageRequest.current = null;
-    };
-  }, [api, selectedMachineId, selectedHarness, kindScope, sessionListRefreshRequest]);
-
-  useEffect(() => {
-    if (sessionId === undefined && loadedSessionScope === sessionScope && !loadingSessions && sessions[0]) {
+    if (sessionId === undefined && loadedSessionScope && !loadingSessions && sessions[0]) {
       navigate(`/sessions/${encodeURIComponent(sessions[0].id)}${location.search}`, { replace: true });
     }
-  }, [sessionId, loadedSessionScope, sessionScope, loadingSessions, sessions, location.search, navigate]);
+  }, [sessionId, loadedSessionScope, loadingSessions, sessions, location.search, navigate]);
 
-  useEffect(() => {
-    if (sessionId === undefined || sessions.some((session) => session.id === sessionId)) {
-      setFetchedSession(null);
-      setSelectedSessionError(null);
-      setLoadingSelectedSession(false);
-      return;
-    }
-    const controller = new AbortController();
-    setFetchedSession(null);
-    setSelectedSessionError(null);
-    setLoadingSelectedSession(true);
-    void api
-      .getSession(sessionId, controller.signal)
-      .then((session) => {
-        if (!controller.signal.aborted) setFetchedSession(session);
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setSelectedSessionError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingSelectedSession(false);
-      });
-    return () => controller.abort();
-  }, [api, sessionId, sessions]);
-
-  useEffect(() => {
-    eventPageRequest.current?.abort();
-    eventPageRequest.current = null;
-    setLoadingEarlierEvents(false);
-    if (selectedSession === null) {
-      setVersions([]);
-      setVersionsSessionId(null);
-      setEvents([]);
-      setEventCursor(null);
-      return;
-    }
-    const controller = new AbortController();
-    setVersions([]);
-    setVersionsSessionId(null);
-    setEvents([]);
-    setEventCursor(null);
-    setLoadingVersions(true);
-    setError(null);
-    void api
-      .listVersions(selectedSession.id, controller.signal)
-      .then((items) => {
-        if (controller.signal.aborted) return;
-        setVersions(items);
-        setVersionsSessionId(selectedSession.id);
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingVersions(false);
-      });
-    return () => controller.abort();
-  }, [api, selectedSession?.id, selectedSession?.latest_version_id]);
-
-  useEffect(() => {
-    eventPageRequest.current?.abort();
-    eventPageRequest.current = null;
-    setLoadingEarlierEvents(false);
-    if (selectedSession === null || selectedVersionId === null || versionsSessionId !== selectedSession.id) {
-      setEvents([]);
-      setEventCursor(null);
-      setLoadingEvents(false);
-      return;
-    }
-    const controller = new AbortController();
-    setEvents([]);
-    setEventCursor(null);
-    setLoadingEvents(true);
-    setError(null);
-    void api
-      .listEvents(selectedSession.id, selectedVersionId, undefined, controller.signal)
-      .then((page) => {
-        if (controller.signal.aborted) return;
-        setEvents(page.data);
-        setEventCursor(page.next_cursor);
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingEvents(false);
-      });
-    return () => {
-      controller.abort();
-      eventPageRequest.current?.abort();
-      eventPageRequest.current = null;
-    };
-  }, [api, selectedSession?.id, selectedVersionId, versionsSessionId]);
-
-  useEffect(() => {
-    relatedPageRequest.current?.abort();
-    relatedPageRequest.current = null;
-    setLoadingMoreRelatedSessions(false);
-    setParentSession(null);
-    setChildSessions([]);
-    setChildSessionCursor(null);
-    setParentSessionLoadError(null);
-    setChildSessionsLoadError(null);
-    if (selectedSession === null) {
-      setLoadingParentSession(false);
-      setLoadingChildSessions(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    const parentSessionId = selectedSession.parent_session_id;
-    setLoadingParentSession(parentSessionId !== null);
-    setLoadingChildSessions(true);
-    const parent =
-      parentSessionId === null
-        ? Promise.resolve()
-        : api
-            .getSession(parentSessionId, controller.signal)
-            .then((item) => {
-              if (!controller.signal.aborted) setParentSession(item);
-            })
-            .catch((reason: unknown) => {
-              if (!controller.signal.aborted) setParentSessionLoadError(errorMessage(reason));
-            })
-            .finally(() => {
-              if (!controller.signal.aborted) setLoadingParentSession(false);
-            });
-    const children = api
-      .listSessions({ parentSessionId: selectedSession.id, limit: SESSION_PAGE_SIZE }, controller.signal)
-      .then((page) => {
-        if (controller.signal.aborted) return;
-        setChildSessions(page.data);
-        setChildSessionCursor(page.next_cursor);
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setChildSessionsLoadError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingChildSessions(false);
-      });
-    void Promise.all([parent, children]);
-    return () => {
-      controller.abort();
-      relatedPageRequest.current?.abort();
-      relatedPageRequest.current = null;
-    };
-  }, [api, selectedSession?.id, selectedSession?.parent_session_id]);
-
-  const loadMoreSessions = async (): Promise<void> => {
-    if (sessionCursor === null || loadingMoreSessions) return;
-    const requestedScope = sessionScope;
-    const controller = new AbortController();
-    sessionPageRequest.current?.abort();
-    sessionPageRequest.current = controller;
-    setLoadingMoreSessions(true);
-    setError(null);
-    try {
-      const page = await api.listSessions(
-        {
-          ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
-          ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
-          cursor: sessionCursor,
-          kinds: selectedKinds,
-          limit: SESSION_PAGE_SIZE,
-        },
-        controller.signal
-      );
-      if (!controller.signal.aborted && requestedScope === sessionScopeRef.current) {
-        setSessions((current) => mergeById(current, page.data));
-        setSessionCursor(page.next_cursor);
-      }
-    } catch (reason) {
-      if (!controller.signal.aborted && requestedScope === sessionScopeRef.current) setError(errorMessage(reason));
-    } finally {
-      if (sessionPageRequest.current === controller) {
-        sessionPageRequest.current = null;
-        setLoadingMoreSessions(false);
-      }
-    }
+  const loadMoreSessions = (): void => {
+    if (sessionsQuery.hasNextPage && !sessionsQuery.isFetchingNextPage) void sessionsQuery.fetchNextPage();
   };
 
-  const loadEarlierEvents = async (): Promise<void> => {
-    if (selectedSession === null || selectedVersionId === null || eventCursor === null || loadingEarlierEvents) return;
-    const requestedScope = eventScope;
-    const controller = new AbortController();
-    eventPageRequest.current?.abort();
-    eventPageRequest.current = controller;
-    setLoadingEarlierEvents(true);
-    setError(null);
-    try {
-      const page = await api.listEvents(selectedSession.id, selectedVersionId, eventCursor, controller.signal);
-      if (!controller.signal.aborted && requestedScope === eventScopeRef.current) {
-        setEvents((current) => mergeByOrdinal(current, page.data));
-        setEventCursor(page.next_cursor);
-      }
-    } catch (reason) {
-      if (!controller.signal.aborted && requestedScope === eventScopeRef.current) setError(errorMessage(reason));
-    } finally {
-      if (eventPageRequest.current === controller) {
-        eventPageRequest.current = null;
-        setLoadingEarlierEvents(false);
-      }
-    }
+  const loadEarlierEvents = (): void => {
+    if (eventQuery.hasNextPage && !eventQuery.isFetchingNextPage) void eventQuery.fetchNextPage();
   };
 
-  const loadMoreRelatedSessions = async (): Promise<void> => {
-    if (selectedSession === null || childSessionCursor === null || loadingMoreRelatedSessions) return;
-    const requestedSessionId = selectedSession.id;
-    const controller = new AbortController();
-    relatedPageRequest.current?.abort();
-    relatedPageRequest.current = controller;
-    setLoadingMoreRelatedSessions(true);
-    setChildSessionsLoadError(null);
-    try {
-      const page = await api.listSessions(
-        { parentSessionId: requestedSessionId, cursor: childSessionCursor, limit: SESSION_PAGE_SIZE },
-        controller.signal
-      );
-      if (!controller.signal.aborted && requestedSessionId === selectedSessionIdRef.current) {
-        setChildSessions((current) => mergeById(current, page.data));
-        setChildSessionCursor(page.next_cursor);
-      }
-    } catch (reason) {
-      if (!controller.signal.aborted && requestedSessionId === selectedSessionIdRef.current) {
-        setChildSessionsLoadError(errorMessage(reason));
-      }
-    } finally {
-      if (relatedPageRequest.current === controller) {
-        relatedPageRequest.current = null;
-        setLoadingMoreRelatedSessions(false);
-      }
+  const loadMoreRelatedSessions = (): void => {
+    if (childSessionsQuery.hasNextPage && !childSessionsQuery.isFetchingNextPage) {
+      void childSessionsQuery.fetchNextPage();
     }
   };
 
@@ -666,9 +487,9 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
           returnTo={`${location.pathname}${location.search}`}
         />
       </Box>
-      {error !== null && (
+      {errorText !== null && (
         <Alert color="red" title="Session data unavailable">
-          {error}
+          {errorText}
         </Alert>
       )}
       <Box
@@ -740,7 +561,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
               size="xs"
               variant="default"
               loading={loadingSessions}
-              onClick={() => setSessionListRefreshRequest((current) => current + 1)}
+              onClick={() => void queryClient.resetQueries({ queryKey: sessionListQueryKey, exact: true })}
             >
               Refresh session list
             </Button>
@@ -1120,7 +941,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                     </Button>
                   </Stack>
                 </Center>
-              ) : selectedVersion === null && !loadingVersions ? (
+              ) : loadingVersions ? (
+                <Center style={{ flex: 1 }}>
+                  <Loader size="sm" aria-label="Loading captured versions" />
+                </Center>
+              ) : selectedVersion === null ? (
                 <Center h={180}>
                   <Stack align="center" gap="xs" maw={480}>
                     <Text size="sm" fw={600}>

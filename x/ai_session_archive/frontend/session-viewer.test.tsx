@@ -42,11 +42,30 @@ async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<
     );
     await flush();
   });
+  await waitForQueriesToSettle(container);
   return container;
 }
 
 async function flush(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+async function waitForQueriesToSettle(view: HTMLElement): Promise<void> {
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await flush();
+    });
+    for (const label of [
+      "Loading sessions",
+      "Loading selected session",
+      "Loading captured versions",
+      "Loading conversation records",
+      "Loading parent session",
+      "Loading child sessions",
+    ]) {
+      expect(view.querySelector(`[aria-label="${label}"]`)).toBeNull();
+    }
+  });
 }
 
 async function scrollToEarlierRecords(view: HTMLElement): Promise<void> {
@@ -77,6 +96,7 @@ async function toggleKind(view: HTMLElement, kind: string): Promise<void> {
     checkbox.click();
     await flush();
   });
+  await waitForQueriesToSettle(view);
 }
 
 it("hides guardian and subagent sessions by default and restores them with checkboxes", async () => {
@@ -147,6 +167,7 @@ async function openRelatedSessions(view: HTMLElement): Promise<HTMLElement> {
     '#session-browser-related-dropdown[aria-label="Related sessions"]'
   );
   if (related === null) throw new Error("Could not find the related sessions panel");
+  await waitForQueriesToSettle(view);
   return related;
 }
 
@@ -281,10 +302,12 @@ it("keeps session selection in history for back and forward navigation", async (
     );
     await flush();
   });
+  await waitForQueriesToSettle(container);
   await act(async () => {
     findControl(container!, "Inspect a local transcript").click();
     await flush();
   });
+  await waitForQueriesToSettle(container);
   expect(router.state.location.pathname).toBe("/sessions/claude-session-1");
   expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
     "Review this local conversation."
@@ -294,6 +317,7 @@ it("keeps session selection in history for back and forward navigation", async (
     await router.navigate(-1);
     await flush();
   });
+  await waitForQueriesToSettle(container);
   expect(router.state.location.pathname).toBe("/sessions/codex-thread-1");
   expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
     "I found two snapshots for this session."
@@ -303,6 +327,7 @@ it("keeps session selection in history for back and forward navigation", async (
     await router.navigate(1);
     await flush();
   });
+  await waitForQueriesToSettle(container);
   expect(router.state.location.pathname).toBe("/sessions/claude-session-1");
   expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
     "Review this local conversation."
@@ -375,6 +400,7 @@ it("does not show a different transcript for an unavailable version URL", async 
     findControl(view, "View current capture").click();
     await flush();
   });
+  await waitForQueriesToSettle(view);
   expect(transcript?.textContent).toContain("I found two snapshots for this session.");
 });
 
@@ -440,6 +466,7 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
     earlierCapture.click();
     await flush();
   });
+  await waitForQueriesToSettle(view);
   expect(view.textContent).toContain("This is the earlier captured version.");
   expect(view.textContent).not.toContain("I found two snapshots for this session.");
 });
@@ -591,18 +618,21 @@ it("distinguishes inventory, failed and missing imports from an empty captured v
     findControl(view, "Failed import placeholder").click();
     await flush();
   });
+  await waitForQueriesToSettle(view);
   expect(view.textContent).toContain("Importing an inventoried file failed, so no transcript version is available.");
 
   await act(async () => {
     findControl(view, "Unavailable source placeholder").click();
     await flush();
   });
+  await waitForQueriesToSettle(view);
   expect(view.textContent).toContain("Inventory alone does not establish that a usable file was captured");
 
   await act(async () => {
     findControl(view, "Captured empty transcript").click();
     await flush();
   });
+  await waitForQueriesToSettle(view);
   expect(view.textContent).toContain("This captured version contains no JSONL records.");
 });
 
@@ -933,6 +963,7 @@ it("does not prepend an older event page after switching sessions", async () => 
     findControl(view, "Inspect a local transcript").click();
     await flush();
   });
+  await waitForQueriesToSettle(view);
   expect(view.textContent).toContain("Review this local conversation.");
 
   pending.resolve({
