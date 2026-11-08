@@ -7,7 +7,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { deferred } from "../../../../util/frontend/testing/deferred";
-import type { AgentRunDetail, LlmRequestInfo, SnapshotDetailResponse } from "../lib/schema";
+import type { AgentRunDetail, FileContentResponse, LlmRequestInfo, SnapshotDetailResponse } from "../lib/schema";
 import { fetchLLMRequests, fetchRun, fetchRunLogs, fetchSnapshotDetail, fetchSnapshotFiles } from "../lib/api/client";
 import { toast } from "../lib/toast";
 import { createPropsQueryClient } from "../lib/queryClient";
@@ -110,7 +110,15 @@ let root: Root | null = null;
 let queryClient: ReturnType<typeof createPropsQueryClient> | null = null;
 let container: HTMLDivElement;
 
-async function mount(runId: string): Promise<void> {
+async function mount(
+  runId: string,
+  seed: {
+    initialRun?: AgentRunDetail;
+    initialSnapshotDetail?: SnapshotResponse;
+    initialFileContents?: Map<string, FileContentResponse>;
+    initialLLMRequests?: LlmRequestInfo[];
+  } = {}
+): Promise<void> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -121,7 +129,7 @@ async function mount(runId: string): Promise<void> {
       <QueryClientProvider client={client}>
         <MantineProvider env="test">
           <MemoryRouter>
-            <RunDetail runId={runId} />
+            <RunDetail runId={runId} {...seed} />
           </MemoryRouter>
         </MantineProvider>
       </QueryClientProvider>
@@ -288,6 +296,16 @@ it("ignores a lazy request failure after the component unmounts", async () => {
     await Promise.resolve();
   });
   expect(toast.error).not.toHaveBeenCalled();
+});
+
+it("does not fetch missing resources for a seeded critic run", async () => {
+  await mount("seeded-run", { initialRun: run("seeded-run", "seeded/snapshot") });
+  await flushQueryNotifications();
+
+  expect(fetchRun).not.toHaveBeenCalled();
+  expect(fetchLLMRequests).not.toHaveBeenCalled();
+  expect(fetchSnapshotDetail).not.toHaveBeenCalled();
+  expect(fetchSnapshotFiles).not.toHaveBeenCalled();
 });
 
 it("fetches logs lazily and refreshes run and tab data when revisited", async () => {
