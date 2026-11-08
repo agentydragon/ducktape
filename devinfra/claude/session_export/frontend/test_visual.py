@@ -399,6 +399,14 @@ async def test_session_sync_unpaired(open_fixture: OpenFixture) -> None:
         await _capture(view)
 
 
+@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
+async def test_session_viewer_unpaired(open_fixture: OpenFixture) -> None:
+    async with open_fixture("viewer-unpaired") as view:
+        await expect(view.page.get_by_role("alert")).to_contain_text("Claude is not paired")
+        await expect(view.page.get_by_role("link", name="Pair with Claude")).to_have_attribute("href", "/sync")
+        await _capture(view)
+
+
 @pytest.mark.parametrize(
     ("viewport", "color_scheme"), [(_DESKTOP, "dark"), (_PHONE, "light")], ids=["desktop-dark", "mobile-light"]
 )

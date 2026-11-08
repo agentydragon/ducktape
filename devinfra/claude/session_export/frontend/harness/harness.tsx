@@ -639,7 +639,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
     new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 
   if (url.pathname === "/api/status") {
-    return Promise.resolve(json(fixture === "sync-paired" ? pairedStatus : unpairedStatus));
+    return Promise.resolve(json(fixture === "sync" || fixture === "viewer-unpaired" ? unpairedStatus : pairedStatus));
   }
   if (url.pathname === "/api/pairing") return Promise.resolve(json({ authorization_url: "https://claude.ai/code" }));
   if (url.pathname === "/api/pairing/complete") return Promise.resolve(json(pairedStatus));
@@ -749,6 +749,7 @@ if (
     "peer-hold",
     "local-commands",
     "viewer",
+    "viewer-unpaired",
   ].includes(fixture ?? "")
 ) {
   throw new Error(`Unknown session fixture ${fixture}`);
