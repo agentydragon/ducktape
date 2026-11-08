@@ -20,13 +20,13 @@
 let
   foxflss-unwrapped = pkgs.stdenv.mkDerivation {
     pname = "foxflss";
-    version = "1.0.16";
+    version = "1.0.17";
 
     src = pkgs.fetchFromGitHub {
       owner = "foxconn-pc";
       repo = "fii_linux";
-      rev = "a3cc1f89ca28ee8caece66eab92b766fa7298c24";
-      hash = "sha256-8ILrG5ap/I59gPK51jgUzrWUYvhSEofvUV1hJBo4x/A=";
+      rev = "v1.0.17";
+      hash = "sha256-ie1RByjsAsFFTSoGyaM4Y9Tw1hNNXMR1bY0y/mlll2A=";
     };
 
     nativeBuildInputs = [ pkgs.autoPatchelfHook ];
