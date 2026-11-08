@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener
 from util.yaml_file_settings import YamlFileSettings
 
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
@@ -29,19 +30,12 @@ class DelegationSettings(BaseModel):
 
 class IngressSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    token_audience: str = Field(
-        min_length=1, description="The audience runners' projected tokens carry for the ingress."
-    )
+    token_audience: str = Field(min_length=1, description="The token audience for journal pushes by central samplers.")
     writer_namespaces: frozenset[str] = Field(
         min_length=1, description="Namespaces whose ServiceAccounts may push: the ones Sandboxes run in."
     )
     sampler_accounts: frozenset[ServiceAccountRef] = Field(
         default=frozenset(), description="ServiceAccounts allowed to publish centrally hosted Sessions."
-    )
-    listen_address: str = Field(
-        default="0.0.0.0:8081",
-        min_length=1,
-        description="The ingress listener; network policy must admit the egress proxy and any enabled central sampler.",
     )
     settle_deltas: bool = Field(
         default=True,
@@ -66,7 +60,7 @@ class Settings(YamlFileSettings):
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
     log_levels: LogLevels
-    listen_address: str = Field(default="0.0.0.0:8080", min_length=1)
+    rpc: Listener
     kubeconfig: Path | None = None
     ingress: IngressSettings
     fold_concurrency: int = Field(default=4, ge=1, le=64)
@@ -79,3 +73,15 @@ class Settings(YamlFileSettings):
     watch_lease_s: float = Field(
         default=300, gt=0, description="Seconds a WatchSessionSummaries stream lasts before planned renewal."
     )
+
+    @model_validator(mode="after")
+    def bearer_audiences(self) -> Settings:
+        audiences = frozenset(
+            audience
+            for method in self.rpc.auth
+            if isinstance(method, KubernetesBearerAuth)
+            for audience in method.audiences
+        )
+        if not {self.token_audience, self.ingress.token_audience} <= audiences:
+            raise ValueError("rpc.auth must allow the read and ingress bearer audiences")
+        return self

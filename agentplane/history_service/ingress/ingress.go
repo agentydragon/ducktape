@@ -47,7 +47,7 @@ type Timing struct {
 // is bound to the ServiceAccount that first pushed it.
 type Service struct {
 	session_ingresspb.UnimplementedSessionJournalIngressServer
-	Principals      *auth.Resolver
+	Principals      auth.PrincipalResolver
 	SandboxUIDs     SandboxUIDResolver
 	History         *storage.Store
 	Timing          Timing

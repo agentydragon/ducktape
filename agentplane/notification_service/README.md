@@ -48,6 +48,14 @@ stored, but no notice reaches a Session: a delivery reads the Session's receipts
 Service first and, failing that, releases its claim to retry later. A delivery also waits while the
 History Service lags the runner's journal, so a retry never precedes an admission it has not seen.
 
+Sandbox callers authenticate with the Runner SVID on the shared TLS RPC listener.
+Egress routes workload gRPC through an opaque central-proxy CONNECT. Notification verifies the
+certificate chain, explicit clientAuth EKU, expiry, current Sandbox UID and accepted credential ID,
+then resolves the Sandbox's controlled
+ServiceAccount UID. Caller headers cannot select another account. Native gRPC uses this resolver,
+and watch revalidation repeats the live lookup. Backend/operator callers use the same listener
+with their audience-scoped tokens and existing authorization.
+
 ## Running and deployment
 
 `:service_image` contains `notification-service`, which applies Goose migrations before opening
@@ -113,10 +121,13 @@ watch. GitHub is on
 when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails startup. A setting
 that fails validation stops startup without printing its value.
 
-The gRPC listener (`host`, `port`) serves `Notifications` and `grpc.health.v1`. The HTTP
-listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other paths return
-not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials the gRPC listener,
-and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
+The native gRPC listener (`rpc.listen_address`) serves `Notifications` and `grpc.health.v1`.
+`rpc.tls` supplies its server certificate and key, and `rpc.auth` explicitly admits SPIFFE and/or
+Kubernetes bearer authentication. Both modes retain the same method and inbox ownership policy.
+A certificate combined with bearer or delegation metadata is refused.
+The HTTP listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other
+paths return not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials
+the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
 process answers). Four workers claim inboxes, and one that returns or fails ends the process, logging the types of
 its error and never its message.
@@ -130,7 +141,9 @@ Configuration changes require a service restart.
 
 `actions` retains its `url` and `token_file` settings, plus optional `request_timeout_s` (default 5).
 The URL must be an HTTP(S) origin; Go derives the gRPC host and port from it, using h2c for `http`
-and TLS for `https`. `runner_gateway` uses `control_target` and `token_file` for per-Sandbox
+and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE URI and CA
+without presenting a client certificate. This block applies independently of the legacy Actions URL scheme.
+`runner_gateway` uses `control_target` and `token_file` for per-Sandbox
 runner live-state checks.
 `history_service` and `session_dispatcher` each contain a `target` and `token_file`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks
@@ -234,7 +247,7 @@ Staging is enabled and the operator has installed the App; see the
 [live acceptance record](docs/staging_github_acceptance.md). Testing remains disabled.
 For another environment, register a separate App, supply its credentials through encrypted deployment
 configuration and `secretKeyRef`, and expose only `/v1/webhooks/github` through HTTPS ingress with
-matching network policy and TLS. The only public path is the signed webhook; never expose the gRPC workload API publicly. Verify real App delivery
+matching network policy and TLS. The only public path is the signed webhook; never expose the workload gRPC listener publicly. Verify real App delivery
 through inbox and harness rather than relying solely on configuration or a successful ingress response.
 
 GitHub issue subscriptions require the App installation to grant Issues read permission; generated

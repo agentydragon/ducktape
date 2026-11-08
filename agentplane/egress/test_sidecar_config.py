@@ -20,6 +20,7 @@ from agentplane.egress.sidecar_config import (
     Settings,
     SpiffeProxyAuth,
     TLSProxyTransport,
+    WorkloadRoute,
 )
 
 
@@ -84,7 +85,7 @@ def test_tls_connect_route_requires_svid_proxy_hop() -> None:
             )
         },
     )
-    with pytest.raises(ValidationError, match="TLS CONNECT platform routes require"):
+    with pytest.raises(ValidationError, match="SVID-authenticated routes require"):
         Settings(
             proxy=Proxy(
                 address="egress.example:8888",
@@ -92,7 +93,7 @@ def test_tls_connect_route_requires_svid_proxy_hop() -> None:
             ),
             platform_routes=routes,
         )
-    with pytest.raises(ValidationError, match="TLS CONNECT platform routes require"):
+    with pytest.raises(ValidationError, match="SVID-authenticated routes require"):
         Settings(
             proxy=Proxy(
                 address="egress.example:8888",
@@ -112,6 +113,49 @@ def test_tls_connect_route_requires_svid_proxy_hop() -> None:
         ),
         platform_routes=routes,
     )
+
+
+def test_workload_route_reuses_svid_proxy_hop() -> None:
+    route = WorkloadRoute(upstream="notifications:8443", server_uri="spiffe://agentplane/notifications")
+    with pytest.raises(ValidationError, match="SVID-authenticated routes require"):
+        Settings(
+            proxy=Proxy(
+                address="egress.example:8888",
+                transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=Path("/token"))),
+            ),
+            workload_routes={"notifications:8080": route},
+        )
+    with pytest.raises(ValidationError, match="SVID-authenticated routes require"):
+        Settings(
+            proxy=Proxy(
+                address="egress.example:8888",
+                transport=TLSProxyTransport(
+                    ca_file=Path("/ca"), auth=KubernetesBearerProxyAuth(token_file=Path("/token"))
+                ),
+            ),
+            workload_routes={"notifications:8080": route},
+        )
+    Settings(
+        proxy=Proxy(
+            address="egress.example:8888",
+            transport=TLSProxyTransport(
+                ca_file=Path("/ca"),
+                auth=SpiffeProxyAuth(cert_file=Path("/svid/tls.crt"), key_file=Path("/svid/tls.key")),
+            ),
+        ),
+        workload_routes={"notifications:8080": route},
+    )
+
+
+def test_workload_route_rejects_per_route_tls_credentials() -> None:
+    with pytest.raises(ValidationError):
+        WorkloadRoute.model_validate(
+            {
+                "upstream": "notifications:8443",
+                "server_uri": "spiffe://agentplane/notifications",
+                "tls": {"cert_file": "/cert", "key_file": "/key", "ca_file": "/ca"},
+            }
+        )
 
 
 if __name__ == "__main__":

@@ -34,7 +34,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -130,7 +129,11 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	routes.Handle("/v1/", httpFacade)
 	routes.Handle("/metrics", promhttp.Handler())
 	// This public document is owned by Actions; the edge supplies only its HTTP presentation.
-	metadataConnection, err := grpc.NewClient(c.ActionsTarget, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	actionsCredentials, err := c.ActionsTLS.Credentials()
+	if err != nil {
+		return err
+	}
+	metadataConnection, err := grpc.NewClient(c.ActionsTarget, observability.GRPCClientOption(), grpc.WithTransportCredentials(actionsCredentials))
 	if err != nil {
 		return fmt.Errorf("configure Action client metadata: %w", err)
 	}
@@ -185,7 +188,7 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 		return nil, fmt.Errorf("starting external MCP authorization: %w", err)
 	}
 	caller := &coreCaller{authority: authority.VerifyBearer, callers: callers, kube: kube, recheckPeriod: 5 * time.Second, tokens: map[auth.Account]cachedToken{}}
-	connection, err := dialActions(c.ActionsTarget, caller)
+	connection, err := dialActions(c.ActionsTarget, caller, c.ActionsTLS)
 	if err != nil {
 		return nil, err
 	}

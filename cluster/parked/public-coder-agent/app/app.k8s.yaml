@@ -444,6 +444,7 @@ data:
           mode: kubernetes_bearer
           token_file: /var/run/agentplane-egress/token
     audience_token_files: {}
+    workload_routes: {}
     platform_routes:
       listen_address: 127.0.0.1:3130
       routes:
@@ -537,8 +538,6 @@ spec:
               value: agentplane-credential-public-coder-matrix
             - name: AGENTPLANE_EGRESS_GRPC_URL
               value: http://127.0.0.1:3130
-            - name: AGENTPLANE_EGRESS_GRPC_CREDENTIAL
-              value: platform-route
             - name: NODE_USE_ENV_PROXY
               value: "1"
             - name: HTTP_PROXY

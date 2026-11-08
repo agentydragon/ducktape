@@ -6,14 +6,24 @@ resume and Dispatcher automatic wake use the shared lifecycle manager. Automatic
 effective caller and applies the Sandbox's `wakeOnSend` setting and the configured `wake_callers` grant.
 EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
 The Gateway dials each Runner's native gRPC
-server on private port `9090`. Its public `listen_address` serves Dispatcher and proxies for the
-Runner and optional Executor services with independent per-method authorization.
+server on private port `9090`. One TLS gRPC listener serves Dispatcher, EnvironmentService,
+Gateway proxy, Executor and health methods, with independent per-method authorization.
 Only the Pod-bound Gateway/Dispatcher workload can proxy Runtime Session creation and commands;
 `gateway_callers` grants read-only diagnostics. Startup reviews `runner_token_file` with the Gateway
 audience and verifies its Pod name, current UID and ServiceAccount against Kubernetes before serving.
 The Kubernetes API must answer that TokenReview and Pod read; failure prevents startup.
 See the [proxy contract](gateway/SPEC.md). The Sandbox
 Controller owns `Sandbox.status`.
+
+The required `rpc` settings block configures this shared TLS listener. It enables SPIFFE and
+Kubernetes bearer authentication, with exactly the Dispatcher and Gateway audiences. Dispatcher
+and EnvironmentService methods use the Dispatcher audience; Gateway proxy and Executor methods use
+the Gateway audience. Dispatcher and EnvironmentService methods also accept a verified Sandbox
+SVID. Each method retains its existing caller allowlist, delegation, and effective-caller checks.
+Calls select one enabled credential: an invalid presented SVID cannot fall back to bearer
+authentication, and certificate plus authorization or delegation credentials are rejected as
+ambiguous. The Gateway's calls through each Sandbox control Service use `gateway_tls` to verify
+the Session Dispatcher server SVID and present only their projected Gateway bearer.
 
 Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
 trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client

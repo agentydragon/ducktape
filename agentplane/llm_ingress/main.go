@@ -9,14 +9,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -60,67 +62,92 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	var svidResolver *auth.SVIDResolver
+	if c.RPC.Has(authlistener.SPIFFE) {
+		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces)
+		if err != nil {
+			return err
+		}
+	}
+	resolver, err = resolver.WithListenerAuthentication(c.RPC, svidResolver)
+	if err != nil {
+		return err
+	}
 	handler, err := newIngressHandler(c, resolver, logger)
 	if err != nil {
 		return err
 	}
 	defer handler.transport.CloseIdleConnections()
-	address := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
-	listener, err := net.Listen("tcp", address)
+	tlsConfig, err := c.RPC.TLSConfig(environment_runtime_transport.LLMIngressURI)
 	if err != nil {
-		return fmt.Errorf("could not listen on configured address: %w", err)
+		return err
+	}
+	if tlsConfig == nil {
+		return errors.New("rpc.tls is required")
+	}
+	tlsConfig.NextProtos = []string{"h2", "http/1.1"}
+	listener, err := net.Listen("tcp", c.RPC.ListenAddress)
+	if err != nil {
+		return err
 	}
 	defer listener.Close()
-	grpcAddress := net.JoinHostPort(c.Host, strconv.Itoa(c.GRPCPort))
-	grpcListener, err := net.Listen("tcp", grpcAddress)
-	if err != nil {
-		return fmt.Errorf("could not listen on configured gRPC address: %w", err)
-	}
-	defer grpcListener.Close()
 	models := make(map[string]modelConfig, len(c.Models))
 	for _, model := range c.Models {
 		models[model.Model] = model
 	}
-	grpcServer := newModelConfigServer(resolver, models)
+	grpcServer := newModelConfigServer(resolver, &modelConfigService{models: models})
 	server := &http.Server{
-		Handler:           observability.HTTPHandler(handler),
+		Handler:           observability.HTTPHandler(rpcHandler(grpcServer, handler)),
 		ReadHeaderTimeout: 10 * time.Second,
+		TLSConfig:         tlsConfig,
+		ConnState:         environment_runtime_transport.HTTPServerTLSExpiryConnState(),
 	}
-	logger.Info("forwarding authenticated Sandbox model traffic to LiteLLM", "url", c.LiteLLMURL, "address", address)
-	serveResult := make(chan error, 2)
-	go func() { serveResult <- server.Serve(listener) }()
-	go func() { serveResult <- grpcServer.Serve(grpcListener) }()
+	stopped := make(chan error, 1)
+	go func() { stopped <- server.ServeTLS(listener, "", "") }()
+	logger.Info("serving authenticated model inference and configuration", "address", c.RPC.ListenAddress)
+	shutdown := func() error {
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := server.Shutdown(shutdownContext)
+		if err != nil {
+			_ = server.Close()
+		}
+		graceful.Stop(shutdownContext, grpcServer)
+		return err
+	}
 	select {
-	case err := <-serveResult:
-		grpcServer.Stop()
-		_ = server.Close()
+	case err := <-stopped:
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		return errors.Join(err, shutdown())
+	case <-ctx.Done():
+		if err := shutdown(); err != nil {
+			return err
+		}
+		err := <-stopped
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return fmt.Errorf("ingress listener failed: %w", err)
-	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownContext); err != nil {
-			_ = server.Close()
-			grpcServer.Stop()
-			return errors.New("HTTP server shutdown exceeded five seconds")
-		}
-		graceful.Stop(shutdownContext, grpcServer)
-		for range 2 {
-			if err := <-serveResult; !errors.Is(err, http.ErrServerClosed) && err != nil {
-				return fmt.Errorf("ingress listener stopped with an error: %w", err)
-			}
-		}
-		return nil
+		return err
 	}
 }
 
-func newModelConfigServer(resolver *auth.Resolver, models map[string]modelConfig) *grpc.Server {
+func rpcHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.ProtoMajor == 2 && strings.HasPrefix(request.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(writer, request)
+			return
+		}
+		httpHandler.ServeHTTP(writer, request)
+	})
+}
+
+func newModelConfigServer(resolver auth.PrincipalResolver, service modelconfigpb.ModelConfigServiceServer) *grpc.Server {
 	methods := auth.HealthMethods()
 	methods[modelconfigpb.ModelConfigService_GetModelConfig_FullMethodName] = auth.AnyAccount(resolver)
 	server := grpc.NewServer(append(methods.ServerOptions(10*time.Second), observability.GRPCServerOption())...)
-	modelconfigpb.RegisterModelConfigServiceServer(server, &modelConfigService{models: models})
+	modelconfigpb.RegisterModelConfigServiceServer(server, service)
 	healthpb.RegisterHealthServer(server, health.NewServer())
 	return server
 }

@@ -29,9 +29,11 @@ const (
 )
 
 type sidecar struct {
-	config   config
-	proxyHop *proxyHop
-	ready    atomic.Bool
+	workloadContext context.Context
+	workloadRoutes  map[string]*workloadRoute
+	config          config
+	proxyHop        *proxyHop
+	ready           atomic.Bool
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
@@ -45,6 +47,10 @@ type sidecar struct {
 }
 
 func (s *sidecar) run(ctx context.Context) error {
+	if err := s.prepareWorkloadRoutes(); err != nil {
+		return err
+	}
+	defer s.closeWorkloadRoutes()
 	readinessListener, err := netlistener.Open(s.config.ReadinessListenAddress)
 	if err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
@@ -66,6 +72,7 @@ func (s *sidecar) run(ctx context.Context) error {
 }
 
 func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes *platformRoutes) error {
+	s.workloadContext = ctx
 	s.proxyListener = proxyListener
 	s.proxyServer = &http.Server{Handler: s.proxyHandler(), MaxHeaderBytes: maxHeadBytes}
 	s.routes = routes
@@ -251,14 +258,26 @@ func (s *sidecar) proxyHandler() http.Handler {
 			s.handleConnect(writer, request)
 			return
 		}
+		absolute := request.URL.Scheme == "http" && request.URL.Host != ""
 		if request.URL.Scheme == "" && request.URL.Host == "" && request.Host != "" {
-			// Accept origin-form requests from local clients as requests to their Host.
+			// Local clients may send origin-form requests to the proxy listener.
+			// Only absolute-form requests select a privileged workload route.
 			request = request.Clone(request.Context())
 			request.URL.Scheme = "http"
 			request.URL.Host = request.Host
 		} else if request.URL.Scheme != "http" || request.URL.Host == "" {
 			refuse(writer, http.StatusBadRequest, "bad-request")
 			return
+		}
+		authority := request.URL.Host
+		if request.URL.Port() == "" {
+			authority = net.JoinHostPort(request.URL.Hostname(), "80")
+		}
+		if absolute {
+			if route := s.workloadRoutes[authority]; route != nil {
+				s.exchangeWorkloadRoute(writer, request, route)
+				return
+			}
 		}
 		token, err := s.proxyHop.auth.requestToken()
 		if err != nil {
@@ -279,6 +298,10 @@ func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Reques
 	}
 	if authority == "" {
 		refuse(writer, http.StatusBadRequest, "bad-request")
+		return
+	}
+	if route := s.workloadRoutes[authority]; route != nil {
+		s.exchangeWorkloadConnectRoute(writer, request, route)
 		return
 	}
 	token, err := s.proxyHop.auth.requestToken()

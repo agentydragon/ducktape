@@ -4,7 +4,7 @@ shared LiteLLM deployment.
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
@@ -18,6 +18,9 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     MemoryResources,
     PodSecurityContextProps,
+    Role,
+    RoleBinding,
+    RolePolicyRule,
     Secret,
     Service,
     ServiceAccount,
@@ -25,14 +28,17 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.workload_auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import central_sampler, telemetry
+from cluster.cdk8s.agentplane import central_sampler, telemetry, workload_tls
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -54,7 +60,7 @@ _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 def service(namespace: str) -> ServiceRef:
     """The LLM ingress in one environment's namespace."""
     return ServiceRef(
-        name=_NAME, port=Port(name="http", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+        name=_NAME, port=Port(name="rpc", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
     )
 
 
@@ -63,11 +69,6 @@ def proxied_url(namespace: str) -> str:
     exact string its policy names."""
     llm = service(namespace)
     return f"http://{llm.fqdn}:{llm.port.number}"
-
-
-def grpc_service(namespace: str) -> ServiceRef:
-    """Native model configuration API on the same ingress Pods."""
-    return ServiceRef(name=_NAME, port=Port(name="grpc", number=8081), pods=service(namespace).pods)
 
 
 class LlmIngress(Construct):
@@ -93,7 +94,6 @@ class LlmIngress(Construct):
         self.registry_secret_name = registry_secret_name
         self.memory_limit = memory_limit
         self.service = service(env.namespace)
-        self.grpc_service = grpc_service(env.namespace)
 
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
         # calls TokenReview as itself, so it needs its own mounted token.
@@ -103,14 +103,36 @@ class LlmIngress(Construct):
             metadata=ApiObjectMetadata(name=_NAME, namespace=env.namespace),
             automount_token=True,
         )
-        # TokenReview proves the Pod-bound workload bearer presented by the central
-        # egress proxy. It grants none of that Pod's authority to the ingress.
+        # Backend callers retain their Pod-bound TokenReview credentials. The
+        # proxy tunnels Sandbox TLS and asserts no caller identity.
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
             name=f"{env.namespace}-llm-ingress-token-reviewer",
             service_account_name=_NAME,
             namespace=env.namespace,
+        )
+        reader_role_name = f"{_NAME}-sandbox-reader"
+        Role(
+            self,
+            "sandbox-reader-role",
+            metadata=ApiObjectMetadata(name=reader_role_name, namespace=env.namespace),
+            rules=[
+                RolePolicyRule(
+                    resources=[custom_resource("agentplane.allegedly.works", "sandboxes")], verbs=["get", "list"]
+                ),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
+            ],
+        )
+        RoleBinding(
+            self,
+            "sandbox-reader-rolebinding",
+            metadata=ApiObjectMetadata(name=reader_role_name, namespace=env.namespace),
+            role=Role.from_role_name(self, "sandbox-reader-role-ref", reader_role_name),
+        ).add_subjects(
+            ServiceAccount.from_service_account_name(
+                self, "llm-ingress-account-ref", _NAME, namespace_name=env.namespace
+            )
         )
         catalog = codex_catalog(env.llm_ingress.codex_routes)
         catalog_map = (
@@ -136,6 +158,21 @@ class LlmIngress(Construct):
             "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
             **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
         }
+        deployment = self._add_deployment(service_account, catalog_map)
+        serving_tls = workload_tls.serving_certificate(
+            self, env, container=deployment.containers[0], name=_NAME, uri=LLM_INGRESS_URI
+        )
+        assert serving_tls.cert_file is not None
+        assert serving_tls.key_file is not None
+        assert serving_tls.ca_file is not None
+        content["rpc"] = Listener(
+            listen_address=f"0.0.0.0:{self.service.pod_port}",
+            tls=TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+            auth=[
+                SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
+                KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
+            ],
+        ).model_dump(mode="json")
         settings = SettingsFile(
             self,
             "settings",
@@ -143,16 +180,14 @@ class LlmIngress(Construct):
             content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
-        deployment = self._add_deployment(service_account, settings, catalog_map)
+        settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
         self._add_service(deployment)
 
     def add_platform_resources(self) -> None:
         """Add fleet Cilium network admission."""
         self._add_network_policy()
 
-    def _add_deployment(
-        self, service_account: ServiceAccount, settings: SettingsFile, catalog_map: ConfigMap | None
-    ) -> Deployment:
+    def _add_deployment(self, service_account: ServiceAccount, catalog_map: ConfigMap | None) -> Deployment:
         deployment = Deployment(
             self,
             "deployment",
@@ -162,7 +197,9 @@ class LlmIngress(Construct):
                 labels=_LABELS,
                 annotations={
                     "configmap.reloader.stakater.com/reload": ",".join(
-                        config_map.name for config_map in (settings.config_map, catalog_map) if config_map is not None
+                        config_map
+                        for config_map in (f"{_NAME}-settings", None if catalog_map is None else catalog_map.name)
+                        if config_map is not None
                     ),
                     "secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name,
                 },
@@ -191,8 +228,6 @@ class LlmIngress(Construct):
                     for field, value in {
                         "token_audience": WORKLOAD_TOKEN_AUDIENCE,
                         "litellm_url": self.litellm_url,
-                        "host": "0.0.0.0",
-                        "port": self.service.pod_port,
                     }.items()
                 },
                 **{
@@ -206,9 +241,21 @@ class LlmIngress(Construct):
                 .key("api-key")
                 .env_value(self, "litellm-key-secret"),
             },
-            ports=[self.service.port.container_port(), self.grpc_service.port.container_port()],
-            readiness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
+            ports=[self.service.port.container_port()],
+            readiness=tls_grpc_probe(
+                port=self.service.pod_port,
+                ca_file="/run/agentplane/workload-trust/ca-certificates.crt",
+                server_uri=LLM_INGRESS_URI,
+                initial_delay_seconds=3,
+                period_seconds=10,
+            ),
+            liveness=tls_grpc_probe(
+                port=self.service.pod_port,
+                ca_file="/run/agentplane/workload-trust/ca-certificates.crt",
+                server_uri=LLM_INGRESS_URI,
+                initial_delay_seconds=20,
+                period_seconds=30,
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
@@ -217,7 +264,6 @@ class LlmIngress(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
-        settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
         if catalog_map is not None:
             deployment.containers[0].mount(
                 str(_CODEX_CATALOG_PATH.parent),
@@ -236,13 +282,12 @@ class LlmIngress(Construct):
             "service",
             metadata=ApiObjectMetadata(name=self.service.name, namespace=self.env.namespace),
             selector=deployment,
-            ports=[self.service.port.service_port(), self.grpc_service.port.service_port()],
+            ports=[self.service.port.service_port()],
         )
 
     def _add_network_policy(self) -> None:
-        # Only central egress can call the workload-authenticated listener. The
-        # ingress can reach only DNS, TokenReview at the API server, and the
-        # existing LiteLLM Service.
+        # Existing proxy and sampler callers share the verified TLS listener.
+        # The ingress reaches DNS, the API server, and LiteLLM.
         NetworkPolicy(
             self,
             "networkpolicy",

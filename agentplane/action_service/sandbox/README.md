@@ -12,14 +12,12 @@ Pod recipe (`cluster/cdk8s/agentplane/sandbox_pod.py`) and nothing else.
 
 ## The contract
 
-**A sandbox is a shell as yourself.** It runs as the calling ServiceAccount, reaches what that
-account's `PolicyBinding`s allow, and — because a Pod proves its ServiceAccount, and the account
-carries `agentplane.allegedly.works/use-action-service` — is admitted to the Action Service as that
-same account. No caller obtains authority it did not already hold.
-
-That answers the question an operator actually has when asked to bind this Action for a new
-ServiceAccount: it is exactly as safe as that account's own authority, and granting it grants
-arbitrary code execution under that identity.
+**A box runs under its caller's ServiceAccount.** The account is the Pod's Kubernetes owner and
+execution subject. The command/build templates have an egress sidecar with Pod-bound projected
+tokens. It verifies the proxy's server SVID and authenticates with its own bearer; policy remains
+the caller's `PolicyBinding`s. Workload containers receive only the local proxy address and public
+trust bundle. They mount neither a token nor an SVID. Sandbox workloads use their SVID path;
+non-Sandbox credential issuance moves to the shared lifecycle at the later cutover.
 
 The guard the rule rests on: the ServiceAccount comes from `ExecutionRequest.caller`, which the
 authenticated admission path sets. It is never a tool argument. A surface accepting one would mean
@@ -37,21 +35,9 @@ Every sandbox this surface stamps runs as the caller's account. A Session Sandbo
 owner-referenced account, and the difference is deliberate, with
 intended consequences.
 
-**A sandbox is a caller.** It can create and exec sandboxes itself, including ones it did not
-create, because they are one principal. The operation is closed: no chain gains authority.
-
-**Egress attribution collapses per principal in the app's view, not in the record.**
-The browser watches the proxy for decisions _by ServiceAccount_ through the app's generated Egress
-facade. Its decision messages contain no Pod field, so the view combines decisions for every sandbox
-of one account. The proxy's own record carries `source_pod_uid`, persisted with the rest
-(<../../egress/history/store.go>), but the API does not expose it. Accounts still differ
-from each other. This knowingly deviates from the [egress specification](../../egress/SPEC.md)'s
-"bind only an account dedicated to one workload".
-
-**The workload must never read the token.** `automountServiceAccountToken: false`, with the
-projected audience-scoped token mounted by the egress sidecar alone, is what keeps a shared account
-out of the container an agent runs commands in. Every template this surface stamps holds that
-invariant; breaking it costs the whole account's authority rather than one box's.
+**The workload must never read a ServiceAccount credential.** Every template sets
+`automountServiceAccountToken: false`. The inventory refuses projected tokens mounted in workload
+containers. The projected proxy and Kubernetes tokens are mounted only in the sidecar.
 
 ## Separation from the integration app
 
@@ -69,7 +55,7 @@ chooses it by. Each names a core `PodTemplate` in the namespace that cdk8s rende
 recipe (<../../../cluster/cdk8s/agentplane/command_sandbox.py>): an object rather than a Pod spec in
 the configuration, so the image pins rewrite its containers. Staging offers a command box on the
 plain sandbox image and a build-sized box. The Action Service refuses to start on an offered template
-that is missing, lacks the egress sidecar or lets the workload mount a ServiceAccount token, and
+that is missing or lets the workload mount a ServiceAccount token, and
 checks again at each `create`. A command runs in the container `kubectl exec` would pick, the Pod's
 `kubectl.kubernetes.io/default-container` or else its first. `get_template` returns one offered
 template's Pod whole. **Every caller can read everything in an offered template**, so a template
@@ -77,36 +63,10 @@ references Secrets and never inlines one.
 
 ## Kubernetes from inside the box
 
-The box reaches the API server the way it reaches everything else: a placeholder in the request, an
-`EgressCredential` the central proxy substitutes, and a rule admitting `kubernetes.default.svc`.
-The workload holds no Kubernetes credential, exactly as it holds no Forgejo one.
-
-The audience is the part that needed its own mechanism. The hop bearer is projected with the
-proxy's own audience (`agentplane-egress`), and the API server validates against its
-`--api-audiences`, so that token is refused there. The sidecar therefore projects a _second_ token
-carrying the API server's audience, mounted by the sidecar alone and rotated by kubelet, presented
-on the hop for the proxy to substitute into `Authorization` on the rules that name it — the
-`projectedWorkloadToken` credential source (<../../egress/SPEC.md>). The proxy gains no Kubernetes
-rights, the workload sees neither token, and the container boundary holding it is the one the design
-already rests on (the [ADR](../../docs/adr_sandbox_proxy_gateway.md)). Before substituting,
-the proxy reviews that token against the API server audience and requires it to resolve to the same
-Pod it authenticated, so a substituted credential provably belongs to the caller being decided.
-
-RBAC is then standing on the calling account, beside its `PolicyBinding`s, and every sandbox of that
-account has it. Under the contract above that is the intent rather than a leak.
-
-Verified from a sandbox on staging, 2026-09-19: a `SelfSubjectReview` through the proxy returns
-`system:serviceaccount:agentplane-staging:claude-ai` with
-`authentication.kubernetes.io/pod-name` and `pod-uid` naming the calling box. The identity the API
-server sees is the caller's account, bound to the Pod that asked.
-
-**Gotcha: the rule admits a host by name, not by address.** `kubernetes.default.svc.cluster.local`
-is what the rule names, so `https://kubernetes.default.svc` — the same Service, the same address —
-is denied `no-rule`. Use the fully qualified name.
-
-**Not exercised: the upgrade verbs.** `exec`, `attach` and `port-forward` negotiate SPDY or
-WebSocket and a watch streams chunked, none of which has been run through the bumping proxy. Haku's
-own API proxy answers `501` to the upgrade verbs, so that is where to expect trouble.
+The sidecar offers a separate Kubernetes-audience projected token for policy-authorized
+substitution. Commands use the Kubernetes credential's host, placeholder and invocation from the
+rules response; no kubeconfig or token is mounted in the workload. Kubernetes RBAC still applies to
+the caller's own ServiceAccount.
 
 ## Tool surface
 

@@ -168,18 +168,22 @@ func run(ctx context.Context, c config) error {
 }
 
 func listenAndServe(ctx context.Context, c config) error {
-	listener, err := netlistener.Open(c.ListenAddress)
+	rpcListener, err := netlistener.Open(c.RPC.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("gRPC listener: %w", err)
 	}
-	defer listener.Close()
-	return serve(ctx, c, listener)
+	defer rpcListener.Close()
+	return serve(ctx, c, rpcListener)
 }
 
-// serve uses the supplied gRPC listener.
-func serve(ctx context.Context, c config, listener net.Listener) error {
+// serve uses the supplied shared gRPC listener.
+func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return err
+	}
+	rpcCredentials, err := c.RPC.ServerCredentials(environment_runtime_transport.SessionDispatcherURI)
+	if err != nil {
+		return fmt.Errorf("Gateway RPC listener TLS: %w", err)
 	}
 	if c.RunnerSecurity.Mode == environment_runtime_transport.MutualTLS {
 		identity, err := c.RunnerSecurity.TLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
@@ -263,15 +267,27 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 		delegatedActors = append(delegatedActors, c.Delegation.Actor)
 	}
 	dispatchAccounts := append(append(append(append([]auth.Account{}, c.DispatcherCallers...), c.EnvironmentReaders...), c.EnvironmentManagers...), c.EnvironmentLaunchers...)
-	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience,
-		accountNamespaces(dispatchAccounts, &auth.Account{Namespace: c.Namespace}, delegatedActors...))
+	workloadNamespaces := accountNamespaces(dispatchAccounts, &auth.Account{Namespace: c.Namespace}, delegatedActors...)
+	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience, workloadNamespaces)
 	if err != nil {
 		return err
+	}
+	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace})
+	if err != nil {
+		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
+	}
+	dispatcherAuth, err := dispatchAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.DispatcherAudience, true), dispatcherSVIDs)
+	if err != nil {
+		return fmt.Errorf("configure Gateway Dispatcher authentication: %w", err)
 	}
 	gatewayAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GatewayAudience,
 		accountNamespaces(append(append([]auth.Account{}, c.GatewayCallers...), c.ExecutorCallers...), c.ControllerAccount))
 	if err != nil {
 		return err
+	}
+	gatewayRPCAuth, err := gatewayAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.GatewayAudience, false), nil)
+	if err != nil {
+		return fmt.Errorf("configure Gateway proxy authentication: %w", err)
 	}
 	deliveryAccount, err := dispatcherAccount(ctx, c, gatewayAuth, objects)
 	if err != nil {
@@ -283,7 +299,7 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 		DispatcherAccount:        deliveryAccount,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
-	}, gatewayAuth, inventory, inventoryHealth, kube.CoordinationV1(), kube.DiscoveryV1())
+	}, gatewayRPCAuth, inventory, inventoryHealth, kube.CoordinationV1(), kube.DiscoveryV1())
 	if err != nil {
 		return err
 	}
@@ -316,6 +332,7 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 	}
 	nativeRunner := &dispatcher.ProxyRunner{
 		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second,
+		GatewayTLS:     c.GatewayTLS,
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
 	runner := &dispatcher.RoutingRunner{Native: nativeRunner, Store: store, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
@@ -339,10 +356,10 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 		Sandboxes:     catalog,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	dispatcherMethods := dispatcher.Methods(dispatchAuth)
+	dispatcherMethods := dispatcher.Methods(auth.ReviewedServiceAccount(dispatcherAuth))
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
-	maps.Copy(methods, environments.Methods(dispatchAuth))
+	maps.Copy(methods, environments.Methods(dispatcherAuth))
 	if c.Delegation != nil {
 		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
 		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
@@ -360,11 +377,15 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
 		}
 	}
-	// Gateway proxy and Executor methods never accept delegated actor envelopes.
-	// Only Dispatcher and EnvironmentService expose delegated authorization.
+	// Delegation remains scoped to the configured Dispatcher and Environment methods. The Gateway proxy and Executor
+	// continue using only their separate Gateway-audience bearer resolver.
 	maps.Copy(methods, g.Methods())
+	serverOptions := methods.ServerOptions(0)
+	if rpcCredentials != nil {
+		serverOptions = append(serverOptions, grpc.Creds(rpcCredentials))
+	}
 	server := grpc.NewServer(append(
-		methods.ServerOptions(0),
+		serverOptions,
 		observability.GRPCServerOption(),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             30 * time.Second,
@@ -380,7 +401,7 @@ func serve(ctx context.Context, c config, listener net.Listener) error {
 	}
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
+	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(rpcListener)) }()
 	go func() { reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx)) }()
 
 	// Serving once the gRPC listener accepts calls.

@@ -12,8 +12,9 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.environment_runtime_transport.config import Security
+from agentplane.environment_runtime_transport.config import ClientTLS, Security
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
+from agentplane.workload_auth.listener import Listener
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
@@ -59,8 +60,9 @@ class Settings(YamlFileSettings):
         description="Kubernetes client requests per second; zero uses client-go's default, -1 disables its limiter.",
     )
 
-    listen_address: str = Field(
-        default=":8080", min_length=1, description="gRPC listen address for authenticated platform callers."
+    rpc: Listener = Field(description="The shared TLS gRPC listener and its explicitly enabled auth modes.")
+    gateway_tls: ClientTLS = Field(
+        description="Verify the Session Dispatcher SVID on this Gateway's named control-Service calls."
     )
     proxy_port: int = Field(
         default=8080, ge=1, le=65535, description="Port advertised in each Sandbox control EndpointSlice."
@@ -132,6 +134,20 @@ class Settings(YamlFileSettings):
     def validate_operator_callers(self) -> Settings:
         if self.operator_callers and not self.operator_callers <= self.dispatcher_callers:
             raise ValueError("operator_callers must be a subset of dispatcher_callers")
+        return self
+
+    @model_validator(mode="after")
+    def rpc_audiences_are_method_scoped(self) -> Settings:
+        audiences = {
+            audience for method in self.rpc.auth if method.mode == "kubernetes_bearer" for audience in method.audiences
+        }
+        if self.dispatcher_audience == self.gateway_audience or audiences != {
+            self.dispatcher_audience,
+            self.gateway_audience,
+        }:
+            raise ValueError("rpc bearer audiences must be exactly dispatcher_audience and gateway_audience")
+        if self.gateway_tls.server_uri != "spiffe://agentplane/session-dispatcher":
+            raise ValueError("gateway_tls.server_uri must identify the Session Dispatcher service")
         return self
 
     @field_validator("kubernetes_client_qps")

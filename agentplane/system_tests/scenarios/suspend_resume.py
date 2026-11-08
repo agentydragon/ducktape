@@ -33,6 +33,7 @@ from agentplane.system_tests.driver.dispatcher_transport import TOKEN_AUDIENCE, 
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tls import service_root_certificates
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
@@ -252,7 +253,10 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
 
     async with forward(cluster) as forwarded_target:
         environment = os.environ.copy()
-        environment["AGENTPLANE_SESSIONS_URL"] = f"http://{forwarded_target}"
+        ca_file = undeclared_outputs_dir() / "gateway-ca.pem"
+        ca_file.write_bytes(await service_root_certificates(cluster))
+        environment["SSL_CERT_FILE"] = str(ca_file)
+        environment["AGENTPLANE_SESSIONS_URL"] = f"https://{forwarded_target}"
         environment["AGENTPLANE_SESSIONS_CREDENTIAL"] = token
         descriptor = await _run_cli(environment, "environments", "get", target.namespace, target.name, target.uid)
         actions = descriptor["actions"]

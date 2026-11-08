@@ -58,7 +58,7 @@ func (e *ForeignError) Error() string {
 	return fmt.Sprintf("a sandbox named %q exists and is not yours", e.Name)
 }
 
-// TemplateError is an offered template whose box would escape the egress path. A box runs as its caller, so a
+// TemplateError is an offered template whose workload could read a ServiceAccount credential. A box runs as its caller, so a
 // ServiceAccount token in a container an agent runs commands in would hand out the caller's whole authority as a
 // portable credential.
 type TemplateError struct {
@@ -132,9 +132,6 @@ func checkTemplate(name string, template *corev1.PodTemplateSpec) error {
 	if spec.AutomountServiceAccountToken == nil || *spec.AutomountServiceAccountToken {
 		return &TemplateError{name, "must set automountServiceAccountToken: false"}
 	}
-	if !slices.ContainsFunc(spec.Containers, func(c corev1.Container) bool { return c.Name == egressSidecar }) {
-		return &TemplateError{name, fmt.Sprintf("must carry the %q container", egressSidecar)}
-	}
 	tokenVolumes := map[string]bool{}
 	for _, volume := range spec.Volumes {
 		if volume.Projected != nil && slices.ContainsFunc(volume.Projected.Sources,
@@ -161,7 +158,7 @@ func checkTemplate(name string, template *corev1.PodTemplateSpec) error {
 }
 
 // CheckTemplates reads every offered template once, when the service starts: one that is missing, or whose box
-// would escape the egress path, is a deployment defect, and refusing to start names it where a caller would only meet
+// would expose a credential to the workload, is a deployment defect, and refusing to start names it where a caller would only meet
 // it as a box that cannot be created.
 func (i *Inventory) CheckTemplates(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(i.binding.Templates)) {

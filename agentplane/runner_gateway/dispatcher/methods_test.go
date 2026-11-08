@@ -57,7 +57,7 @@ func TestEveryRPCAdmitsServedServiceAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(resolver)
+	methods := Methods(auth.ReviewedServiceAccount(resolver))
 	connection := grpcmethods.Serve(t, methods, registerStandIn)
 	for _, method := range grpcmethods.Of(dispatcherpb.SessionDispatcher_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {

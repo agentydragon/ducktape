@@ -26,7 +26,12 @@ BLOCKS: dict[str, object] = {
 def settings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Minimal valid settings YAML, selected through the config-file variable; tests append sections."""
     path = tmp_path / "settings.yaml"
-    path.write_text("""namespace: test
+    path.write_text("""rpc:
+  listen_address: 0.0.0.0:8080
+  auth:
+    - mode: kubernetes_bearer
+      audiences: [agentplane-notifications]
+namespace: test
 actions:
   url: http://actions
   token_file: /tokens/actions

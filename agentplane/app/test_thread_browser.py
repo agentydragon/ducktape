@@ -155,7 +155,7 @@ async def empty_gateway_access(
         gateway_audience=GATEWAY_AUDIENCE,
         runner_proxy_token_file=token_file,
     ) as gateway:
-        yield GatewayAccess(gateway.target, app_token_file)
+        yield GatewayAccess(gateway.target, app_token_file, gateway.client_tls)
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(

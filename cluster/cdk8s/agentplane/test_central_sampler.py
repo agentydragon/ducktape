@@ -10,8 +10,16 @@ import yaml
 from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
+from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway, staging
+from cluster.cdk8s.agentplane import (
+    central_sampler,
+    history_service,
+    llm_ingress,
+    runner_gateway,
+    staging,
+    workload_tls,
+)
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -90,8 +98,9 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert platform_instructions
     llm_connection = config["connections"]["llm-ingress"]
     llm_service = llm_ingress.service(namespace)
-    assert llm_connection["base_url"] == f"http://{llm_service.name}.{namespace}.svc:{llm_service.port.number}"
+    assert llm_connection["base_url"] == f"https://{llm_service.fqdn}:{llm_service.port.number}"
     assert llm_connection["auth"] == {"type": "bearer", "credential_file": "/var/run/secrets/central-sampler/llm"}
+    assert llm_connection["tls"] == {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": LLM_INGRESS_URI}
     anthropic_connection = config["connections"]["anthropic-api"]
     assert anthropic_connection["base_url"] == "https://api.anthropic.com"
     assert anthropic_connection["auth"] == {
@@ -160,7 +169,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert _admits(
         _resource(staging_manifests, "CiliumNetworkPolicy", history_service.NAME)["spec"],
         source=central_sampler.NAME,
-        port=history_service.ingress_service(namespace).pod_port,
+        port=history_service.service(namespace).pod_port,
     )
     assert _admits(
         _resource(staging_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"],

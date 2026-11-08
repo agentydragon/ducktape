@@ -696,7 +696,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
     spec: session_pb2.SessionSpec,
 ) -> None:
     sandboxes = SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace)
-    gateway = GatewayAccess(gateway_service.target, app_token_file)
+    gateway = GatewayAccess(gateway_service.target, app_token_file, gateway_service.client_tls)
     async with (
         app_process(db_url, history_client, sandboxes=sandboxes, gateway=gateway) as survivor,
         httpx.AsyncClient(

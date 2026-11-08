@@ -235,10 +235,10 @@ func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testi
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	if err := ExportSession(ctx, store, session.ID, target, token); err == nil {
+	if err := ExportSession(ctx, store, session.ID, target, token, nil); err == nil {
 		t.Fatal("first export did not observe the lost acknowledgement")
 	}
-	if err := ExportSession(ctx, store, session.ID, target, token); err != nil {
+	if err := ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
 		t.Fatal(err)
 	}
 	current, err := store.GetSession(ctx, session.ID, "")
@@ -269,7 +269,7 @@ func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testi
 	if _, err := store.DB().ExecContext(ctx, "DELETE FROM sampler_export_checkpoint"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ExportSession(ctx, store, session.ID, target, token); err != nil {
+	if err := ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
 		t.Fatal(err)
 	}
 	checkpoint, err = store.Checkpoint(ctx, session.ID, target)
@@ -298,7 +298,7 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 	}
 	defer hub.Close()
 	stopped := make(chan error, 1)
-	go func() { stopped <- RunExporter(ctx, store, target, token, hub) }()
+	go func() { stopped <- RunExporter(ctx, store, target, token, hub, nil) }()
 	defer func() {
 		cancel()
 		if err := <-stopped; err != nil && !errors.Is(err, context.Canceled) {
@@ -354,7 +354,7 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	if err := ExportSession(ctx, store, session.ID, target, token); err != nil {
+	if err := ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
 		t.Fatal(err)
 	}
 	// The first quantum makes durable remote progress without finishing the
@@ -373,7 +373,7 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	}
 	defer hub.Close()
 	stopped := make(chan error, 1)
-	go func() { stopped <- RunExporter(ctx, store, target, token, hub) }()
+	go func() { stopped <- RunExporter(ctx, store, target, token, hub, nil) }()
 	defer func() {
 		cancel()
 		if err := <-stopped; err != nil && !errors.Is(err, context.Canceled) {

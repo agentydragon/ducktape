@@ -11,9 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
@@ -50,13 +53,14 @@ type config struct {
 	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
 	MessageBodyLimitBytes int    `mapstructure:"message_body_limit_bytes"`
 	Host                  string `mapstructure:"host"`
-	// Port is the gRPC listener's, and HTTPPort the HTTP listener's for the signed GitHub webhook.
-	Port     int `mapstructure:"port"`
-	HTTPPort int `mapstructure:"http_port"`
+	// HTTPPort is reserved for the signed GitHub webhook.
+	HTTPPort int             `mapstructure:"http_port"`
+	RPC      listener.Config `mapstructure:"rpc"`
 }
 
 // runnerGateway is how the service reaches a Sandbox's runner through the Runner Gateway's proxy.
 type runnerGateway struct {
+	TLS *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
 	// ControlTarget is each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as
 	// `{sandbox}-control.{namespace}.svc:8080`.
 	ControlTarget         string  `mapstructure:"control_target"`
@@ -66,6 +70,7 @@ type runnerGateway struct {
 
 // peer is another Agentplane service the service calls over gRPC as a workload.
 type peer struct {
+	TLS *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
 	// Target is the gRPC `host:port`.
 	Target string `mapstructure:"target"`
 	// TokenFile is the projected ServiceAccount token the peer admits, read again for each call.
@@ -75,9 +80,10 @@ type peer struct {
 
 // actionPeer retains the deployment's HTTP(S) URL key while composing the Action Service's gRPC transport.
 type actionPeer struct {
-	URL                   string  `mapstructure:"url"`
-	TokenFile             string  `mapstructure:"token_file"`
-	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
+	TLS                   *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
+	URL                   string                                   `mapstructure:"url"`
+	TokenFile             string                                   `mapstructure:"token_file"`
+	RequestTimeoutSeconds float64                                  `mapstructure:"request_timeout_s"`
 }
 
 type actionGRPCEndpoint struct {
@@ -134,7 +140,7 @@ func defaultConfig() config {
 		RequestTimeoutSeconds: 15,
 		MessageBodyLimitBytes: 32 * 1024,
 		Host:                  "0.0.0.0",
-		Port:                  8080,
+		RPC:                   listener.Config{ListenAddress: "0.0.0.0:8080"},
 		HTTPPort:              8081,
 	}
 }
@@ -167,7 +173,7 @@ func loadConfig() (config, error) {
 		settings.Set(retentionKey, (*int)(nil))
 	}
 	// The errors name no value: a setting can be a Secret.
-	if err := settings.UnmarshalExact(&c); err != nil {
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook))); err != nil {
 		return config{}, errors.New("invalid Notification Service settings")
 	}
 	if err := c.validate(); err != nil {
@@ -202,13 +208,21 @@ func (c *config) validate() error {
 	if _, err := c.Actions.grpcEndpoint(); err != nil {
 		return err
 	}
-	for name, port := range map[string]int{"port": c.Port, "http_port": c.HTTPPort} {
-		if port < 1 || port > 65535 {
-			return errors.New(name + " must be between 1 and 65535")
-		}
+	if c.HTTPPort < 1 || c.HTTPPort > 65535 {
+		return errors.New("http_port must be between 1 and 65535")
 	}
-	if c.Port == c.HTTPPort {
-		return errors.New("port and http_port must differ")
+	if err := c.RPC.Validate(); err != nil {
+		return fmt.Errorf("rpc listener: %w", err)
+	}
+	if !c.RPC.AllowsBearerAudience(c.TokenAudience) {
+		return errors.New("rpc.auth must allow the configured token_audience")
+	}
+	for _, tls := range []*environment_runtime_transport.ClientTLS{c.Actions.TLS, c.RunnerGateway.TLS, c.HistoryService.TLS, c.SessionDispatcher.TLS} {
+		if tls != nil {
+			if err := tls.Validate(); err != nil {
+				return err
+			}
+		}
 	}
 	for _, quota := range []struct {
 		name  string

@@ -119,23 +119,28 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 	return base, nil
 }
 
-// workloadIdentity reviews an enabled bearer hop and each projected token for its audience,
-// accepting only ServiceAccounts of the allowed namespaces. SPIFFE-only listeners have no hop
-// bearer resolver.
+// workloadIdentity reviews explicitly enabled hop bearers and projected destination tokens.
 func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
 	var hop *auth.Resolver
-	var err error
-	if c.Forward.Has(listener.KubernetesBearer) {
-		hop, err = auth.NewResolver(reviews, c.Forward.BearerAudience(), c.AllowedServiceAccountNamespaces)
-		if err != nil {
-			return nil, err
+	for _, method := range c.Forward.Auth {
+		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok {
+			if len(bearer.Audiences) != 1 {
+				return nil, errors.New("proxy bearer authentication requires exactly one audience")
+			}
+			var err error
+			hop, err = auth.NewResolver(reviews, bearer.Audiences[0], c.AllowedServiceAccountNamespaces)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
 	for _, audience := range c.ProjectedTokenAudiences {
-		if projected[audience], err = auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces); err != nil {
+		resolver, err := auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces)
+		if err != nil {
 			return nil, err
 		}
+		projected[audience] = resolver
 	}
 	return identity.NewVerifier(hop, projected), nil
 }
@@ -195,10 +200,10 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer adminListener.Close()
-	return serve(ctx, c, proxyListener, adminListener, proxyTLS)
+	return serve(ctx, c, proxyListener, adminListener)
 }
 
-func serve(ctx context.Context, c config, proxyListener, adminListener net.Listener, proxyTLS *tls.Config) error {
+func serve(ctx context.Context, c config, proxyListener, adminListener net.Listener) error {
 	base, err := kubernetesConfig(c.Kubeconfig)
 	if err != nil {
 		return err
@@ -281,7 +286,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	}
 	adminServer, err := newAdminServer(c, reviews.TokenReviews(), admin.ServiceOptions{
 		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health, Credentials: index,
-	}, authentication, index, proxyTLS)
+	}, authentication, index)
 	if err != nil {
 		return err
 	}

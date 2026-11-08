@@ -213,6 +213,7 @@ func startTestSidecarWithState(t *testing.T, proxyPort int, tokenFile string, au
 		},
 		AudienceTokenFiles:     audiences,
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
 		ReadinessListenAddress: "127.0.0.1:0",
 	})
@@ -444,6 +445,7 @@ func TestMTLSFailureDoesNotRetryAsToken(t *testing.T) {
 			},
 		},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
 		ReadinessListenAddress: "127.0.0.1:0",
 	})
@@ -504,6 +506,7 @@ func TestNewSidecarFailsClosedWhenMTLSFilesAreUnavailable(t *testing.T) {
 			},
 		},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
 		ReadinessListenAddress: "127.0.0.1:0",
 	})
@@ -549,6 +552,7 @@ func TestMTLSDoesNotRequireDestinationBearer(t *testing.T) {
 			},
 		},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
 		ReadinessListenAddress: "127.0.0.1:0",
 	})
@@ -593,6 +597,7 @@ func TestNewSidecarRejectsMissingBearerAtStartup(t *testing.T) {
 			},
 		},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
 		ReadinessListenAddress: "127.0.0.1:0",
 	})
@@ -608,6 +613,7 @@ func TestNewSidecarRejectsMissingBearerAtStartup(t *testing.T) {
 			},
 		},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		ListenAddress:          "127.0.0.1:0",
 		ReadinessListenAddress: "127.0.0.1:0",
 	})

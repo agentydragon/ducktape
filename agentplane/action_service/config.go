@@ -16,7 +16,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -32,11 +34,8 @@ const settingPrefix = "AGENTPLANE_ACTIONS_"
 //
 // The database URL is a Secret, so a deployment supplies it as an environment variable.
 type config struct {
-	DatabaseURL string `mapstructure:"database_url"`
-	Host        string `mapstructure:"host"`
-	Port        int    `mapstructure:"port"`
-	// TokenAudience is the audience a workload's projected token must be issued for.
-	TokenAudience string `mapstructure:"token_audience"`
+	DatabaseURL string          `mapstructure:"database_url"`
+	RPC         listener.Config `mapstructure:"rpc"`
 	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
 	// them is refused.
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
@@ -71,9 +70,10 @@ type config struct {
 
 // peer is a gRPC service this one calls as its workload, with its projected token for the peer's audience.
 type peer struct {
-	Target                string  `mapstructure:"target"`
-	TokenFile             string  `mapstructure:"token_file"`
-	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
+	Target                string                                   `mapstructure:"target"`
+	TokenFile             string                                   `mapstructure:"token_file"`
+	RequestTimeoutSeconds float64                                  `mapstructure:"request_timeout_s"`
+	TLS                   *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
 }
 
 type gitHubVisibility struct {
@@ -84,7 +84,7 @@ type gitHubVisibility struct {
 
 func defaultConfig() config {
 	return config{
-		Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(),
+		OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 		GitHubVisibility: gitHubVisibility{
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
@@ -145,7 +145,11 @@ func loadConfig() (config, error) {
 		settings.Set("reader_accounts", readers)
 	}
 	// The errors name no value: a setting can be a Secret.
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	decodeHook := mapstructure.ComposeDecodeHookFunc(
+		mapstructure.TextUnmarshallerHookFunc(),
+		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
+	)
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
 	}
 	if err := c.validate(); err != nil {
@@ -158,10 +162,17 @@ func loadConfig() (config, error) {
 func (c *config) operatorsEnabled() bool { return c.OperatorOIDC != api.DefaultOperatorOIDCSettings() }
 
 func (c *config) validate() error {
+	if err := c.RPC.Validate(); err != nil {
+		return fmt.Errorf("rpc: %w", err)
+	}
+	if !c.RPC.Has(listener.KubernetesBearer) {
+		return errors.New("rpc.auth must include kubernetes_bearer")
+	}
+	if len(c.rpcBearerAudiences()) != 1 {
+		return errors.New("rpc kubernetes_bearer must configure exactly one audience")
+	}
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},
-		{"host", c.Host},
-		{"token_audience", c.TokenAudience},
 		{"policy_namespace", c.PolicyNamespace},
 	} {
 		if required.value == "" {
@@ -172,9 +183,6 @@ func (c *config) validate() error {
 		if err := new(auth.Account).UnmarshalText([]byte(account.Namespace + "/" + account.Name)); err != nil {
 			return errors.New("reader_accounts requires namespace and name")
 		}
-	}
-	if c.Port < 1 || c.Port > 65535 {
-		return errors.New("port must be between 1 and 65535")
 	}
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
@@ -205,6 +213,17 @@ func (c *config) validate() error {
 	return nil
 }
 
+func (c config) rpcBearerAudiences() []string {
+	for _, method := range c.RPC.Auth {
+		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok && bearer != nil {
+			return bearer.Audiences
+		}
+	}
+	return nil
+}
+
+func (c config) tokenAudience() string { return c.rpcBearerAudiences()[0] }
+
 // validateSessionDelegation requires the delegated Discovery/Dispatcher and History peers exactly when a
 // session_delegation group calls them.
 func (c *config) validateSessionDelegation() error {
@@ -223,8 +242,15 @@ func (c *config) validateSessionDelegation() error {
 			return fmt.Errorf("%s is required by session_delegation groups", called.key)
 		case !delegated && p != nil:
 			return fmt.Errorf("%s is set, but no session_delegation group calls it", called.key)
-		case p != nil && (p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0)):
-			return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+		case p != nil:
+			if p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
+				return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+			}
+			if p.TLS != nil {
+				if err := p.TLS.Validate(); err != nil {
+					return fmt.Errorf("%s tls: %w", called.key, err)
+				}
+			}
 		}
 	}
 	return nil
@@ -251,8 +277,15 @@ func (c *config) validateOrchestration() error {
 			return fmt.Errorf("%s is required by the orchestration_v1 groups", called.key)
 		case !orchestration && p != nil:
 			return fmt.Errorf("%s is set, but no orchestration_v1 group calls it", called.key)
-		case p != nil && (p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0)):
-			return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+		case p != nil:
+			if p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
+				return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+			}
+			if p.TLS != nil {
+				if err := p.TLS.Validate(); err != nil {
+					return fmt.Errorf("%s tls: %w", called.key, err)
+				}
+			}
 		}
 	}
 	return nil

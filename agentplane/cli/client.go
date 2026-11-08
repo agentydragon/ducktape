@@ -52,9 +52,9 @@ func grpcTarget(parsed *url.URL, variable string) (string, error) {
 	return net.JoinHostPort(host, port), nil
 }
 
-// actionService is a generated gRPC client of the Action Service. The configured credential is sent
-// as Authorization metadata on each call so the egress proxy can substitute it. grpc-go resolves its
-// proxy from HTTPS_PROXY even for an http origin and uses CONNECT, carrying h2c inside the tunnel.
+// actionService is a generated gRPC client of the Action Service. Sandbox endpoints use the
+// credential-holding sidecar's local gRPC route. An explicitly configured credential is sent as
+// Authorization metadata. grpc-go uses HTTPS_PROXY and CONNECT even for an http origin.
 type actionService struct {
 	connection *grpc.ClientConn
 	client     action_servicepb.ActionServiceClient
@@ -71,15 +71,8 @@ func (bearerCredential) RequireTransportSecurity() bool { return false }
 func (a *app) connectGRPC(group string) (*grpc.ClientConn, error) {
 	urlVariable, credentialVariable := "AGENTPLANE_"+group+"_URL", "AGENTPLANE_"+group+"_CREDENTIAL"
 	base, credential := a.getenv(urlVariable), a.getenv(credentialVariable)
-	var missing []string
 	if base == "" {
-		missing = append(missing, urlVariable)
-	}
-	if credential == "" {
-		missing = append(missing, credentialVariable)
-	}
-	if len(missing) > 0 {
-		return nil, usageFailure("%s not set", strings.Join(missing, " and "))
+		return nil, usageFailure("%s not set", urlVariable)
 	}
 	parsed, err := parseServiceURL(base, urlVariable)
 	if err != nil {
@@ -96,12 +89,14 @@ func (a *app) connectGRPC(group string) (*grpc.ClientConn, error) {
 	if parsed.Scheme == "https" {
 		transportCredentials = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12, ServerName: parsed.Hostname()})
 	}
-	connection, err := grpc.NewClient(
-		target,
+	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(transportCredentials),
-		grpc.WithPerRPCCredentials(bearerCredential(credential)),
 		grpc.WithDisableRetry(),
-	)
+	}
+	if credential != "" {
+		options = append(options, grpc.WithPerRPCCredentials(bearerCredential(credential)))
+	}
+	connection, err := grpc.NewClient(target, options...)
 	if err != nil {
 		return nil, usageFailure("%s is not a valid gRPC endpoint", urlVariable)
 	}

@@ -32,6 +32,7 @@ from agentplane.system_tests.driver.sandbox import (
     POD_TEMPLATE,
 )
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, session_until
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -263,13 +264,26 @@ async def deployed_session_command_cannot_cross_deletion(
             cwd="/state",
             reasoning_effort="low",
         )
+        server_credentials = await service_credentials(cluster)
         target = await stack.enter_async_context(forward(cluster))
-        channel = await stack.enter_async_context(dial(target))
+        channel = await stack.enter_async_context(
+            dial(
+                target,
+                channel_credentials=server_credentials,
+                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            )
+        )
         history_settings = json.loads(await cluster.kubectl("get", "configmap", "history-service-config", "-o", "json"))
         history_config = yaml.safe_load(history_settings["data"]["config.yaml"])
         history_caller, _, _ = await bound_caller(cluster, "app", audience=history_config["token_audience"])
         history_target = await stack.enter_async_context(forward(cluster, "service/history-service"))
-        history_channel = await stack.enter_async_context(dial(history_target))
+        history_channel = await stack.enter_async_context(
+            dial(
+                history_target,
+                channel_credentials=server_credentials,
+                server_name=f"history-service.{cluster.namespace}.svc.cluster.local",
+            )
+        )
         history: history_service_pb2_grpc.HistoryServiceAsyncStub = history_service_pb2_grpc.HistoryServiceStub(
             history_channel
         )

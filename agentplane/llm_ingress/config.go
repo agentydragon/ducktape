@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel/baggage"
 )
@@ -68,17 +70,12 @@ type config struct {
 	LiteLLMURL                      string            `mapstructure:"litellm_url"`
 	LiteLLMKey                      string            `mapstructure:"litellm_key"`
 	LogLevels                       map[string]string `mapstructure:"log_levels"`
-	Host                            string            `mapstructure:"host"`
-	Port                            int               `mapstructure:"port"`
-	GRPCPort                        int               `mapstructure:"grpc_port"`
+	RPC                             listener.Config   `mapstructure:"rpc"`
 	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 }
 
 func defaultConfig() config {
 	return config{
-		Host:      "0.0.0.0",
-		Port:      8080,
-		GRPCPort:  8081,
 		LogLevels: map[string]string{},
 	}
 }
@@ -88,8 +85,8 @@ func loadConfig() (config, error) {
 	settings := viper.New()
 	settings.SetEnvPrefix("AGENTPLANE_LLM_INGRESS")
 	for _, key := range []string{
-		"token_audience", "log_llm_requests", "codex_model_catalog_file", "litellm_url", "litellm_key", "host", "port",
-		"grpc_port", "kubeconfig",
+		"token_audience", "log_llm_requests", "codex_model_catalog_file", "litellm_url", "litellm_key",
+		"kubeconfig",
 	} {
 		settings.MustBindEnv(key)
 	}
@@ -100,7 +97,10 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read ingress settings file")
 		}
 	}
-	if err := settings.UnmarshalExact(&c); err != nil {
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToSliceHookFunc(","),
+		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
+	))); err != nil {
 		return config{}, errors.New("invalid ingress settings")
 	}
 	if !settings.InConfig("attribution") {
@@ -135,8 +135,14 @@ func validateConfig(c *config) error {
 	if err := validateAttribution(c.Attribution); err != nil {
 		return err
 	}
-	if c.Host == "" || c.Port < 0 || c.Port > 65535 || c.GRPCPort < 0 || c.GRPCPort > 65535 {
-		return errors.New("host must be non-empty and ports must be between 0 and 65535")
+	if err := c.RPC.Validate(); err != nil {
+		return err
+	}
+	if c.RPC.TLS == nil {
+		return errors.New("rpc.tls is required for the shared HTTP/2 listener")
+	}
+	if c.RPC.Has(listener.KubernetesBearer) && !c.RPC.AllowsBearerAudience(c.TokenAudience) {
+		return errors.New("rpc bearer audiences must include token_audience")
 	}
 	for _, model := range c.Models {
 		if model.Model == "" || model.TotalContextBudgetTokens <= 0 {

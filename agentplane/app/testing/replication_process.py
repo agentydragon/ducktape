@@ -32,6 +32,7 @@ from agentplane.app.oidc import OIDCSecretInputs, OIDCSettings
 from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.notifications import FakeNotifications
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service import notifications_pb2_grpc
@@ -54,6 +55,7 @@ class SandboxesAccess:
 class GatewayAccess:
     target: str
     token_file: Path
+    tls: ClientTLS | None = None
 
 
 @dataclass(frozen=True)
@@ -521,6 +523,9 @@ async def app_process(
                         "session_dispatcher_token_file": str(gateway.token_file),
                     }
                 )
+                if gateway.tls is not None:
+                    settings["runner_gateway_tls"] = gateway.tls.model_dump(mode="json")
+                    settings["session_dispatcher_tls"] = gateway.tls.model_dump(mode="json")
             if electric_url is not None:
                 settings["electric_url"] = electric_url
             oidc = OIDCSettings(

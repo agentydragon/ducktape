@@ -19,7 +19,6 @@ py_library(
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/agentplane:platform_routes",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",

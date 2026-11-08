@@ -184,8 +184,24 @@ func (r *Reader) ExecutionAccount(ctx context.Context, sandbox *Identity) (*Serv
 	if current.Name != sandbox.Name || current.Namespace != sandbox.Namespace || string(current.UID) != sandbox.Uid || current.DeletionTimestamp != nil {
 		return nil, false, nil
 	}
+	return r.ownedExecutionAccount(ctx, &current)
+}
+
+// RunnerCredentialAccount resolves an accepted runner credential and its owning
+// ServiceAccount together. Finalization alone does not revoke the credential:
+// Runtime still needs it to deliver its final History seal.
+func (r *Reader) RunnerCredentialAccount(ctx context.Context, sandboxUID, credentialID string) (View, *ServiceAccountIdentity, bool, error) {
+	view, found, err := r.FindRunnerCredential(ctx, sandboxUID, credentialID)
+	if err != nil || !found {
+		return View{}, nil, false, err
+	}
+	account, found, err := r.ownedExecutionAccount(ctx, view.Resource)
+	return view, account, found, err
+}
+
+func (r *Reader) ownedExecutionAccount(ctx context.Context, current *sandboxapi.Sandbox) (*ServiceAccountIdentity, bool, error) {
 	var account corev1.ServiceAccount
-	if err := r.objects.Get(ctx, key, &account); apierrors.IsNotFound(err) {
+	if err := r.objects.Get(ctx, client.ObjectKeyFromObject(current), &account); apierrors.IsNotFound(err) {
 		return nil, false, nil
 	} else if err != nil {
 		return nil, false, fmt.Errorf("read Sandbox execution ServiceAccount: %w", err)
@@ -198,7 +214,7 @@ func (r *Reader) ExecutionAccount(ctx context.Context, sandbox *Identity) (*Serv
 			break
 		}
 	}
-	if !controlled || account.Name != sandbox.Name || account.Namespace != sandbox.Namespace || account.UID == "" || account.DeletionTimestamp != nil {
+	if !controlled || account.Name != current.Name || account.Namespace != current.Namespace || account.UID == "" || account.DeletionTimestamp != nil {
 		return nil, false, nil
 	}
 	return &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: string(account.UID)}, true, nil

@@ -16,8 +16,8 @@ import (
 // ClientTLS verifies a service's server SVID without giving the caller a client
 // certificate. Backend callers continue to authenticate with their own bearer.
 type ClientTLS struct {
-	CAFile    string `mapstructure:"ca_file" json:"ca_file"`
-	ServerURI string `mapstructure:"server_uri" json:"server_uri"`
+	CAFile    string `mapstructure:"ca_file" json:"ca_file" yaml:"ca_file"`
+	ServerURI string `mapstructure:"server_uri" json:"server_uri" yaml:"server_uri"`
 }
 
 func (c ClientTLS) Validate() error {

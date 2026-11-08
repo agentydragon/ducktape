@@ -28,6 +28,7 @@ go_library(
     ],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/environment_runtime_transport",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/client:applyconfiguration_api",
@@ -174,5 +175,8 @@ py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//agentplane/environment_runtime_transport:config",
+        "@pypi//pydantic",
+    ],
 )

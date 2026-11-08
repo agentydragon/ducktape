@@ -12,7 +12,16 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from cdk8s_plus_34 import EnvValue
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import actions, history_service, mcp_edge, session_dispatcher, staging, telemetry
+from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
+from cluster.cdk8s.agentplane import (
+    actions,
+    history_service,
+    mcp_edge,
+    session_dispatcher,
+    staging,
+    telemetry,
+    workload_tls,
+)
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
@@ -65,7 +74,9 @@ def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]
     service = one(
         doc for doc in staging_manifests if doc["kind"] == "Service" and doc["metadata"]["name"] == actions.NAME
     )
-    assert one(service["spec"]["ports"])["name"] == "grpc"
+    ports = {port["name"] for port in service["spec"]["ports"]}
+    assert "grpc" in ports
+    assert "http" not in ports
     assert not any(
         doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == actions.NAME for doc in staging_manifests
     )
@@ -147,7 +158,13 @@ def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[st
     server = one(item for item in pod["containers"] if item["name"] == "actions")
     assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
     assert not pod.get("initContainers")
-    assert server["startupProbe"]["grpc"] == {"port": server["readinessProbe"]["grpc"]["port"], "service": "livez"}
+    startup = server["startupProbe"]["exec"]["command"]
+    readiness = server["readinessProbe"]["exec"]["command"]
+    assert startup[:2] == readiness[:2] == ["/healthprobe", "--target"]
+    assert "127.0.0.1:8080" in startup
+    assert "spiffe://agentplane/actions" in startup
+    assert "--service" in startup
+    assert "livez" in startup
 
 
 def test_actions_push_otlp_metrics(staging_manifests: list[dict[str, Any]]) -> None:
@@ -207,11 +224,13 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
         "token_file": "/var/run/secrets/actions/dispatcher",
         "request_timeout_s": actions._DELEGATED_PEER_TIMEOUT_SECONDS,
+        "tls": {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": SESSION_DISPATCHER_URI},
     }
     assert settings["session_delegation_history"] == {
         "target": f"{history.fqdn}:{history.pod_port}",
         "token_file": "/var/run/secrets/actions/history",
         "request_timeout_s": actions._DELEGATED_PEER_TIMEOUT_SECONDS,
+        "tls": {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": HISTORY_SERVICE_URI},
     }
     deployment = one(
         doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == actions.NAME

@@ -20,6 +20,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
@@ -233,9 +234,14 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             # The per-Sandbox Service selects the replica holding this Sandbox's Runner stream.
             control_target = await _control_address(cluster, connection, sandbox, uid)
             sampler_token = await _bound_token(cluster, core, "runner-gateway", gateway_pod, SERVICE)
+            server_credentials = await service_credentials(cluster)
             sampler_channel = await stack.enter_async_context(dial(target))
             dispatcher_channel = await stack.enter_async_context(
-                dial(await _address(cluster, core, "session-dispatcher", 8080))
+                dial(
+                    await _address(cluster, core, "session-dispatcher", 8080),
+                    channel_credentials=server_credentials,
+                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                )
             )
             await asyncio.wait_for(dispatcher_channel.channel_ready(), timeout=30)
             history = await stack.enter_async_context(
@@ -243,6 +249,8 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                     await _address(cluster, core, "history-service", 8080),
                     token_file=reader_token,
                     request_timeout_s=20,
+                    channel_credentials=server_credentials,
+                    server_name=f"history-service.{cluster.namespace}.svc.cluster.local",
                 )
             )
             deployed = CentralStack(

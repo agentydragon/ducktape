@@ -27,7 +27,7 @@ from agentplane.testing.tls import environment_runtime_identity_uri
 SANDBOX = "test-runner"
 _MERGE_PATCH = "application/merge-patch+json"
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
-_RUNNER_CREDENTIAL_ID = "test-environment-runtime-credential"
+_RUNNER_CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
 
 
 @dataclass(frozen=True)

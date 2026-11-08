@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -27,12 +28,13 @@ import (
 
 	"go.opentelemetry.io/otel/baggage"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
@@ -900,14 +902,14 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
+	address := listener.Addr().String()
+	_ = listener.Close()
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
+	rpcYAML := fmt.Sprintf("rpc: {listen_address: %q, tls: {cert_file: %q, key_file: %q}, auth: [{mode: kubernetes_bearer, audiences: [test-environment-audience]}]}\n", address, serverFiles.CertFile, serverFiles.KeyFile)
+	if err := os.WriteFile(settings, []byte(settingsYAML+rpcYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	grpcAddress := grpcListener.Addr().String()
-	grpcPort := grpcListener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-	_ = grpcListener.Close()
 
 	var logs bytes.Buffer
 	command := exec.Command(binary)
@@ -915,9 +917,6 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		"OTEL_SDK_DISABLED=true",
 		configFileEnv + "=" + settings,
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
-		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",
-		"AGENTPLANE_LLM_INGRESS_PORT=" + strconv.Itoa(port),
-		"AGENTPLANE_LLM_INGRESS_GRPC_PORT=" + strconv.Itoa(grpcPort),
 		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=test-environment-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
@@ -950,9 +949,14 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		}
 	}()
 
-	client := testClient()
+	verified := &environment_runtime_transport.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: environment_runtime_transport.LLMIngressURI}
+	clientTLS, err := verified.TLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS}}
 	defer client.CloseIdleConnections()
-	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
+	baseURL := "https://127.0.0.1:" + strconv.Itoa(port)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		response, err := client.Get(baseURL + "/healthz")
@@ -975,7 +979,11 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	conn, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+	credentials, err := verified.Credentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials), grpc.WithNoProxy())
 	if err != nil {
 		t.Fatal(err)
 	}

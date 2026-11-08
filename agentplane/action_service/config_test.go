@@ -22,7 +22,11 @@ import (
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgres://test-user:never-print-this@test-database/actions"
 
 // requiredFile is a deployment's settings file with every setting that has no default.
-const requiredFile = `token_audience: test-actions
+const requiredFile = `rpc:
+  listen_address: "0.0.0.0:8080"
+  auth:
+    - mode: kubernetes_bearer
+      audiences: [test-actions]
 policy_namespace: test-agentplane
 caller_service_account_namespaces: [test-agentplane]
 `
@@ -40,18 +44,18 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
+	if c.DatabaseURL == "" || c.RPC.ListenAddress != "0.0.0.0:8080" || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
 		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "https://api.github.com", CacheTTLSeconds: 86400}) {
 		t.Errorf("settings: %+v", c)
 	}
 }
 
 func TestAnEnvironmentVariableOverridesTheFile(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile+"host: 127.0.0.1\nport: 9000\n", settingPrefix+"PORT=9001")
+	c, err := loadTestConfig(t, requiredFile, settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Host != "127.0.0.1" || c.Port != 9001 {
+	if c.RPC.ListenAddress != "127.0.0.1:9001" {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
 }
@@ -128,7 +132,9 @@ operator_oidc:
 }
 
 func TestThePolicySettingsAreRead(t *testing.T) {
-	c, err := loadTestConfig(t, `token_audience: test-actions
+	c, err := loadTestConfig(t, `rpc:
+  listen_address: "0.0.0.0:8080"
+  auth: [{mode: kubernetes_bearer, audiences: [test-actions]}]
 policy_namespace: test-policies
 caller_service_account_namespaces: [test-callers, test-more-callers]
 github_visibility:
@@ -221,10 +227,9 @@ mcp_servers:
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":             requiredFile + "test_unknown_setting: never-print-this\n",
-		"port of a word":          requiredFile + "port: never-print-this\n",
-		"port out of range":       requiredFile + "port: 70000\n",
-		"empty host":              requiredFile + "host: \"\"\n",
-		"no audience":             strings.Replace(requiredFile, "token_audience: test-actions\n", "", 1),
+		"unknown listener key":    strings.Replace(requiredFile, "  listen_address: \"0.0.0.0:8080\"", "  unknown: never-print-this", 1),
+		"missing listener":        strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1),
+		"no audience":             strings.Replace(requiredFile, "      audiences: [test-actions]\n", "      audiences: []\n", 1),
 		"no caller namespaces":    strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
 		"no policy namespace":     strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
 		"negative visibility TTL": requiredFile + "github_visibility: {cache_ttl_seconds: -1}\n",
@@ -396,5 +401,17 @@ func TestSessionDelegationPeersAreSetExactlyWhenADelegationGroupCallsThem(t *tes
 				t.Fatal("accepted")
 			}
 		})
+	}
+}
+
+func TestListenerRequiresExplicitAddressAndAuthentication(t *testing.T) {
+	for _, fragment := range []string{
+		"rpc: {auth: [{mode: kubernetes_bearer, audiences: [test-actions]}]}\n",
+		"rpc: {listen_address: ':8080'}\n",
+		"rpc: {listen_address: ':8080', auth: [{mode: spiffe, ca_file: /trust/ca.crt}]}\n",
+	} {
+		if _, err := loadTestConfig(t, strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", fragment, 1)); err == nil {
+			t.Fatalf("accepted invalid RPC listener: %s", fragment)
+		}
 	}
 }

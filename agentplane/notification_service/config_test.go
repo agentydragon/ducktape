@@ -15,7 +15,12 @@ const (
 )
 
 // requiredFile is a settings file with every setting that has no default and is not a Secret.
-const requiredFile = `namespace: test-agentplane
+const requiredFile = `rpc:
+  listen_address: 0.0.0.0:8080
+  auth:
+    - mode: kubernetes_bearer
+      audiences: [agentplane-notifications]
+namespace: test-agentplane
 actions:
   url: http://test-actions.invalid:8080
   token_file: /test/tokens/actions
@@ -31,7 +36,12 @@ session_dispatcher:
 `
 
 // deploymentFile is the settings file cluster/cdk8s/agentplane/notifications.py writes, in the keys it sets.
-const deploymentFile = `namespace: test-agentplane
+const deploymentFile = `rpc:
+  listen_address: 0.0.0.0:8080
+  auth:
+    - mode: kubernetes_bearer
+      audiences: [test-notifications]
+namespace: test-agentplane
 token_audience: test-notifications
 operator_reader_account: test-app
 github_delivery_retention_days: 14
@@ -85,7 +95,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Host != "0.0.0.0" || c.Port != 8080 || c.HTTPPort != 8081 || c.TokenAudience != "agentplane-notifications" || c.OperatorReaderAccount != "" {
+	if c.Host != "0.0.0.0" || c.RPC.ListenAddress != "0.0.0.0:8080" || c.HTTPPort != 8081 || c.TokenAudience != "agentplane-notifications" || c.OperatorReaderAccount != "" {
 		t.Errorf("listener or admission defaults: %+v", c)
 	}
 	if c.Quotas.InboxesPerAccount != 64 || c.Quotas.ActiveSubscriptionsPerInbox != 64 || c.Quotas.EntriesPerInbox != 10_000 {
@@ -104,13 +114,13 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 }
 
 func TestAnEnvironmentVariableOverridesTheFileAtTopLevelAndNested(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile+"github_delivery_retention_days: 14\nport: 9000\nquotas:\n  entries_per_inbox: 5\n",
-		settingPrefix+"PORT=9001", settingPrefix+"NOTICE_DEBOUNCE__QUIET_SECONDS=7", settingPrefix+"ACTIONS__REQUEST_TIMEOUT_S=1.5",
+	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"github_delivery_retention_days: 14\nquotas:\n  entries_per_inbox: 5\n",
+		settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9001", settingPrefix+"NOTICE_DEBOUNCE__QUIET_SECONDS=7", settingPrefix+"ACTIONS__REQUEST_TIMEOUT_S=1.5",
 		settingPrefix+"UNAVAILABLE_DESTINATION_RETRY_S=9", settingPrefix+"GITHUB_DELIVERY_RETENTION_DAYS=3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Port != 9001 || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 7 ||
+	if c.RPC.ListenAddress != "127.0.0.1:9001" || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 7 ||
 		c.Actions.RequestTimeoutSeconds != 1.5 || c.UnavailableDestinationRetrySeconds != 9 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 3) {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
@@ -159,7 +169,7 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"no control target":           {file: strings.Replace(requiredFile, "  control_target: \"{sandbox}-control.{namespace}.svc:8080\"\n", "", 1)},
 		"no History token file":       {file: strings.Replace(requiredFile, "  token_file: /test/tokens/history\n", "", 1)},
 		"no Dispatcher target":        {file: strings.Replace(requiredFile, "  target: test-dispatcher.invalid:8080\n", "", 1)},
-		"port out of range":           {file: requiredFile + "port: 70000\n"},
+		"HTTP port out of range":      {file: requiredFile + "http_port: 70000\n"},
 		"quota of none":               {file: requiredFile + "quotas:\n  inboxes_per_account: 0\n"},
 		"debounce without a max wait": {file: requiredFile + "notice_debounce:\n  max_wait_seconds: 0\n"},
 		"request timeout of none":     {file: requiredFile + "history_service:\n  request_timeout_s: 0\n"},

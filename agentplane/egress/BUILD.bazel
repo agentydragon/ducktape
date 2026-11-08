@@ -68,6 +68,7 @@ py_test(
         "//agentplane/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
+        "//agentplane/workload_auth:audience",
         "//agentplane/workload_auth:listener",
         "//util:net",
         "@pypi//aiohttp",

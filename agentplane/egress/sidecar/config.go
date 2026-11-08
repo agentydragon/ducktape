@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"gopkg.in/yaml.v3"
@@ -20,8 +21,9 @@ const configFileEnv = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 type platformRouteMode string
 
 const (
-	platformRoutePlaintext  platformRouteMode = "plaintext"
-	platformRouteTLSConnect platformRouteMode = "tls_connect"
+	platformRoutePlaintext        platformRouteMode = "plaintext"
+	platformRouteTLSConnect       platformRouteMode = "tls_connect"
+	platformRouteTLSBearerConnect platformRouteMode = "tls_bearer_connect"
 )
 
 type platformRouteTransportConfig interface {
@@ -35,6 +37,12 @@ func (plaintextRouteTransportConfig) mode() platformRouteMode { return platformR
 type tlsConnectRouteTransportConfig struct{ ServerURI string }
 
 func (tlsConnectRouteTransportConfig) mode() platformRouteMode { return platformRouteTLSConnect }
+
+type tlsBearerConnectRouteTransportConfig struct{ ServerURI, TokenFile string }
+
+func (tlsBearerConnectRouteTransportConfig) mode() platformRouteMode {
+	return platformRouteTLSBearerConnect
+}
 
 type platformRouteConfig struct {
 	ServicePrefixes []string                     `yaml:"service_prefixes"`
@@ -100,8 +108,18 @@ func decodePlatformRouteTransport(node *yaml.Node) (platformRouteTransportConfig
 			return nil, err
 		}
 		return tlsConnectRouteTransportConfig{ServerURI: serverURI}, nil
+	case platformRouteTLSBearerConnect:
+		serverURI, err := requiredYAMLString(&transport.ServerURI, "server_uri")
+		if err != nil {
+			return nil, err
+		}
+		tokenFile, err := requiredYAMLString(&transport.TokenFile, "token_file")
+		if err != nil {
+			return nil, err
+		}
+		return tlsBearerConnectRouteTransportConfig{ServerURI: serverURI, TokenFile: tokenFile}, nil
 	default:
-		return nil, fmt.Errorf("mode must be %q or %q: %q", platformRoutePlaintext, platformRouteTLSConnect, transport.Mode)
+		return nil, fmt.Errorf("unsupported platform route mode %q", transport.Mode)
 	}
 }
 
@@ -290,11 +308,12 @@ func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
 }
 
 type config struct {
-	Proxy                  proxyConfig           `yaml:"proxy"`
-	AudienceTokenFiles     map[string]string     `yaml:"audience_token_files"`
-	PlatformRoutes         *platformRoutesConfig `yaml:"platform_routes"`
-	ListenAddress          string                `yaml:"listen_address"`
-	ReadinessListenAddress string                `yaml:"readiness_listen_address"`
+	Proxy                  proxyConfig                    `yaml:"proxy"`
+	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
+	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
+	PlatformRoutes         *platformRoutesConfig          `yaml:"platform_routes"`
+	ListenAddress          string                         `yaml:"listen_address"`
+	ReadinessListenAddress string                         `yaml:"readiness_listen_address"`
 }
 
 // loadConfig reads the only settings source used by the process.
@@ -305,6 +324,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	c := config{
 		AudienceTokenFiles:     map[string]string{},
+		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "0.0.0.0:3129",
@@ -368,12 +388,44 @@ func (c config) validate() error {
 			if err != nil || serverID.String() != routeTransport.ServerURI {
 				return fmt.Errorf("platform route %q server_uri must be an exact SPIFFE ID: %q", name, routeTransport.ServerURI)
 			}
+		case tlsBearerConnectRouteTransportConfig:
+			proxyTransport, ok := c.Proxy.Transport.(tlsProxyTransportConfig)
+			if !ok {
+				return fmt.Errorf("platform route %q TLS bearer CONNECT requires TLS proxy transport", name)
+			}
+			if !filepath.IsAbs(routeTransport.TokenFile) {
+				return fmt.Errorf("platform route %q token_file must be absolute", name)
+			}
+			if err := (environment_runtime_transport.ClientTLS{CAFile: proxyTransport.CAFile, ServerURI: routeTransport.ServerURI}).Validate(); err != nil {
+				return fmt.Errorf("platform route %q TLS: %w", name, err)
+			}
 		case plaintextRouteTransportConfig:
 			if routeTransport.TokenFile != "" && !filepath.IsAbs(routeTransport.TokenFile) {
 				return fmt.Errorf("platform route %q plaintext token_file must be an absolute path", name)
 			}
 		default:
 			return fmt.Errorf("platform route %q has unsupported transport %T", name, route.Transport)
+		}
+	}
+	if c.WorkloadRoutes == nil {
+		return errors.New("workload_routes must be an object")
+	}
+	if len(c.WorkloadRoutes) > 0 {
+		transport, ok := c.Proxy.Transport.(tlsProxyTransportConfig)
+		if !ok {
+			return errors.New("workload routes require TLS proxy transport")
+		}
+		if _, ok := transport.Auth.(spiffeProxyAuth); !ok {
+			return errors.New("workload routes require SPIFFE proxy authentication")
+		}
+	}
+	for authority, route := range c.WorkloadRoutes {
+		if err := validateWorkloadRoute(authority, route); err != nil {
+			return fmt.Errorf("workload route %q: %w", authority, err)
+		}
+		serverID, err := spiffeid.FromString(route.ServerURI)
+		if err != nil || serverID.String() != route.ServerURI {
+			return fmt.Errorf("workload route %q server_uri must be an exact SPIFFE ID: %q", authority, route.ServerURI)
 		}
 	}
 	return nil

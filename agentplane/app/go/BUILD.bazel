@@ -42,6 +42,7 @@ go_library(
         "//agentplane/app/go/status",
         "//agentplane/app/go/threads",
         "//agentplane/egress:egress_admin_go_proto",
+        "//agentplane/environment_runtime_transport",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/facade",

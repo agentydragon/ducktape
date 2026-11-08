@@ -3,15 +3,18 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-import grpc
-
 from agentplane.egress import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
+from agentplane.grpc.calls import dial
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import Caller, bound_caller
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
+from agentplane.system_tests.driver.tls import service_credentials
 
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//grpcio
+# gazelle:include_dep @pypi//types_grpcio
+# gazelle:include_dep @pypi//types_protobuf
 
 
 @asynccontextmanager
@@ -25,7 +28,13 @@ async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminA
         local_port=None,
         remote_port=8081,
     )
-    async with async_port_forward(forward) as target, grpc.aio.insecure_channel(target) as channel:
+    credentials = await service_credentials(cluster)
+    async with (
+        async_port_forward(forward) as target,
+        dial(
+            target, channel_credentials=credentials, server_name=f"egress-admin.{cluster.namespace}.svc.cluster.local"
+        ) as channel,
+    ):
         stub: rpc.EgressAdminAsyncStub = rpc.EgressAdminStub(channel)
         yield stub, caller
 

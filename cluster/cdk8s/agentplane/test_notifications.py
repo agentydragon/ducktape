@@ -6,6 +6,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from agentplane.environment_runtime_transport.config import ACTIONS_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import (
     actions as action_service,
@@ -13,6 +14,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     session_dispatcher,
     staging,
+    workload_tls,
 )
 
 
@@ -26,7 +28,13 @@ def test_notifications_migrate_before_serving_and_roll(staging_manifests: list[d
     server = one(item for item in pod["containers"] if item["name"] == "notifications")
     assert notifications_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
     assert not pod.get("initContainers")
-    assert server["startupProbe"]["grpc"] == {"port": server["readinessProbe"]["grpc"]["port"], "service": "livez"}
+    startup = server["startupProbe"]["exec"]["command"]
+    readiness = server["readinessProbe"]["exec"]["command"]
+    assert startup[:2] == readiness[:2] == ["/healthprobe", "--target"]
+    assert "127.0.0.1:8080" in startup
+    assert NOTIFICATIONS_URI in startup
+    assert "--service" in startup
+    assert "livez" in startup
 
     history_deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "history-service"
@@ -99,11 +107,16 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
     )
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     actions = action_service.service(staging.ENV.namespace)
-    assert settings["actions"]["url"] == f"http://{actions.fqdn}:{actions.port.number}/"
+    assert settings["actions"]["url"] == f"https://{actions.fqdn}:{actions.port.number}/"
     assert settings["actions"]["token_file"] == "/var/run/secrets/notifications/actions"
     dispatcher = session_dispatcher.service(staging.ENV.namespace)
     assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
     assert settings["session_dispatcher"]["token_file"] == "/var/run/secrets/notifications/dispatcher"
+    assert settings["actions"]["tls"] == {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": ACTIONS_URI}
+    assert settings["session_dispatcher"]["tls"] == {
+        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
+        "server_uri": SESSION_DISPATCHER_URI,
+    }
 
     deployment = one(
         doc
@@ -131,6 +144,27 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
         for endpoint in rule.get("toEndpoints", [])
     }
     assert runner_gateway.NAME in egress_services
+    proxy_ingress = one(
+        rule
+        for rule in policy["ingress"]
+        if any(
+            endpoint["matchLabels"].get("app.kubernetes.io/name") == "egress"
+            for endpoint in rule.get("fromEndpoints", [])
+        )
+    )
+    assert proxy_ingress == {
+        "fromEndpoints": [
+            {
+                "matchLabels": {
+                    "k8s:io.kubernetes.pod.namespace": staging.ENV.namespace,
+                    "app.kubernetes.io/name": "egress",
+                }
+            }
+        ],
+        "toPorts": [
+            {"ports": [{"port": str(notifications.service(staging.ENV.namespace).pod_port), "protocol": "TCP"}]}
+        ],
+    }
 
 
 if __name__ == "__main__":

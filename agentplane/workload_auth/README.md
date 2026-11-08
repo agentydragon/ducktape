@@ -2,10 +2,10 @@
 
 [`listener`](listener/config.go) and [`listener.py`](listener.py) define the shared authoring
 and Go decoding contract for workload listeners: a listen address and an explicit list of
-supported authentication methods. `kubernetes_bearer` requires an audience; `spiffe` requires
+supported authentication methods. `kubernetes_bearer` requires an `audiences` list; `spiffe` requires
 serving TLS and trust roots. Unsupported modes,
 empty lists, duplicates and unknown fields fail configuration loading; configuring a method does
-not grant its caller authorization. The egress proxy consumes this contract.
+not grant its caller authorization. The egress proxy and first-party service RPC listeners consume this contract.
 
 [`auth`](auth/auth.go) provides the TokenReview resolver used by Agentplane services. Each
 service constructs a `Resolver` with its accepted audience and allowed namespaces. Its namespace
@@ -16,6 +16,26 @@ reviewed ServiceAccount identity and returns a Pod-bound `Principal` containing 
 ServiceAccount UID, and the Pod name and UID. The API server's TokenReview checks the bound Pod;
 accepted review results are cached for up to 30 seconds by default, so revocation or Pod deletion
 may take that long to affect a cached token. Rejections and review failures are not cached.
+
+`SVIDResolver` accepts a leaf already verified by the shared workload TLS listener, requires its
+validity and explicit clientAuth EKU, and resolves its namespace, Sandbox UID and credential
+ID through live Sandbox status. It returns the same `Principal`: the Sandbox's own ServiceAccount
+with its canonical UID and the status-bound Pod name/UID. There is no identity reference or caller
+header. A finalizing Sandbox keeps using its accepted credential for History sealing; clearing
+acceptance or removing the object revokes it. Services need Sandbox get/list and ServiceAccount get in their allowed namespaces.
+`Resolver.WithListenerAuthentication` selects this path only when the listener explicitly allows
+SPIFFE; backend TokenReview and delegated callers keep their existing token path. A TLS peer cannot
+replace its certificate with a bearer or a delegation envelope. Stream revalidation repeats the live
+lookup and leaf validity checks.
+
+History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
+terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
+asserting a caller. The central sampler retains its delegated ServiceAccount path and holds no SVID.
+
+Each service uses one TLS RPC listener for its Sandbox and backend callers. Backend clients
+verify the service's SPIFFE URI using `environment_runtime_transport.ClientTLS`, then authenticate
+with their existing bearer or delegation credentials. They receive no SVID. The shared
+`grpc/healthprobe` binary checks the same listener through verified TLS without application credentials.
 
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
 belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
@@ -28,7 +48,9 @@ each full method name to the `Rule` admitting its callers and refuses any method
 
 `AnyAccount` accepts a `PrincipalResolver` and puts its resolved `Principal` in `Caller`. A
 TokenReview `Resolver` proves its established Pod-bound identity; another verified source supplies
-only the identity fields it proves. `Accounts` and `ReviewedServiceAccount` remain TokenReview-only.
+only the identity fields it proves. `Accounts` applies an explicit account allowlist. `SVIDOrAccounts` admits current Sandbox SVIDs
+and applies the account allowlist only to bearer callers, preserving History's sampler writer policy.
+`ReviewedServiceAccount` retains the separate optional Pod proof.
 
 Delegated calls are a separate, opt-in mode on an authenticated direct `Rule`. `AllowDelegationFrom`
 pins exact actor ServiceAccounts and per-actor caller namespace scopes to the Rule; attaching that
@@ -54,21 +76,24 @@ not install the ordinary Bearer interceptor. Existing direct clients continue us
 Bearer helper.
 
 [`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
-configured for Sandbox workload tokens. Cluster configuration passes the audience to each verifier;
-the Go resolver has no default audience.
+retained by backend callers of LLM ingress and Action Service, including the sampler's delegated
+path. Sandbox templates no longer project it, and the egress proxy does not accept it. Each backend
+verifier receives its audience explicitly; the Go resolver has no default audience.
 
 Operator and browser-session authentication use separate mechanisms and do not produce a workload
 principal. The approved [delegated authorization design](../docs/delegated_authorization.md) records
-the shared protocol. Its Action Service sender and SessionDispatcher receiver integrations remain
-separate work and are prerequisites for an operational delegated call.
+the shared protocol. Action Service's [Session delegation executor](../action_service/session_delegation/README.md)
+uses it for caller-scoped Environment, Dispatcher and History operations.
 
 [`listener`](listener/config.go) and its [authoring model](listener.py) describe one address,
 optional serving `tls` (`cert_file`, `key_file`), and a nonempty `auth` allowlist. `spiffe` requires
-TLS and an absolute `ca_file`; `kubernetes_bearer` requires its TokenReview `audience`. Each mode
-accepts only its own fields. Unknown, duplicate or incomplete modes fail startup. SPIFFE-only TLS
-requires a client certificate;
-a mixed listener permits no certificate but verifies any certificate presented with the same
-chain, Runtime URI and explicit clientAuth checks. Supplying both a certificate and an
-application authentication credential is ambiguous and fails. Selection never depends on list
+TLS and an absolute `ca_file`; `kubernetes_bearer` lists allowed TokenReview `audiences`. Each method's resolver still selects
+and verifies its own audience. Each mode
+accepts only its own fields. Unknown, duplicate or incomplete modes fail startup. SPIFFE-only
+forward TLS requires a client certificate. Native RPC `ServerCredentials` permits an absent
+certificate to reach public methods such as health; protected methods still require their configured credential.
+A mixed listener permits no certificate but verifies any certificate presented with the same
+chain, Runtime URI and explicit clientAuth checks. Protected calls with both a certificate and an
+application authentication credential are ambiguous and fail. Selection never depends on list
 order or retries another method after a failed credential. Each service retains its own
 namespace admission and authorization after authentication.

@@ -9,6 +9,7 @@ every box as a plain Pod from one, and staging.py offers both by name (`TEMPLATE
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cdk8s_plus_34 import k8s
@@ -16,7 +17,14 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoutes
+from agentplane.egress.platform_routes import (
+    PLATFORM_ROUTES_LISTEN_ADDRESS,
+    PlatformRoute,
+    PlatformRoutes,
+    TLSBearerConnectRouteTransport,
+)
+from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
@@ -83,9 +91,21 @@ class CommandSandbox(Construct):
             self,
             env,
             name=f"{NAME}-egress-sidecar",
-            platform_routes=PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS),
-            proxy_transport=sidecar_config.PlaintextProxyTransport(
-                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=sandbox_pod.EGRESS_TOKEN_FILE)
+            platform_routes=PlatformRoutes(
+                listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
+                routes={
+                    "egress-rules": PlatformRoute(
+                        service_prefixes=("/agentplane.egress.EgressRules/",),
+                        upstream=f"{egress.admin(env.namespace).fqdn}:{egress.admin(env.namespace).port.number}",
+                        transport=TLSBearerConnectRouteTransport(
+                            server_uri=EGRESS_PROXY_URI, token_file=Path(sandbox_pod.EGRESS_TOKEN_FILE)
+                        ),
+                    )
+                },
+            ),
+            proxy_transport=sidecar_config.TLSProxyTransport(
+                ca_file=sandbox_pod.SIDECAR_TRUST_DIR / egress.CA_BUNDLE_KEY,
+                auth=sidecar_config.KubernetesBearerProxyAuth(token_file=Path(sandbox_pod.EGRESS_TOKEN_FILE)),
             ),
         )
         _pod_template(
@@ -144,6 +164,19 @@ def _pod_template(
             workload_volumes=volumes,
             sidecar_settings=scope.sidecar_settings,
             sidecar_resources=scope.sidecar_resources,
+            # Directory mount lets the TLS root source observe trust-manager rotation.
+            sidecar_mounts=[
+                k8s.VolumeMount(
+                    name=sandbox_pod.EGRESS_CA_VOLUME_NAME,
+                    mount_path=str(sandbox_pod.SIDECAR_TRUST_DIR),
+                    read_only=True,
+                )
+            ],
+            sidecar_token_projections=[
+                k8s.ServiceAccountTokenProjection(
+                    audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
+                )
+            ],
             image_pull_secret_name=scope.image_pull_secret_name,
             # Keep command boxes in the environment's runner zone alongside LiteLLM.
             node_selector=(
@@ -173,7 +206,13 @@ def _workload(
         # dispose, and the quota the box holds, for the whole termination grace period.
         command=["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         security_context=sandbox_pod.workload_security_context(),
-        env=sandbox_pod.workload_environment(env, sandbox_pod.proxy_environment()),
+        env=sandbox_pod.workload_environment(
+            env,
+            [
+                *sandbox_pod.proxy_environment(),
+                k8s.EnvVar(name="AGENTPLANE_EGRESS_GRPC_URL", value=f"http://{PLATFORM_ROUTES_LISTEN_ADDRESS}"),
+            ],
+        ),
         resources=resources,
         volume_mounts=[*trust_mounts, sandbox_pod.bazelrc_mount(), *mounts],
     )

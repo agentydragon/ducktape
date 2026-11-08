@@ -8,6 +8,7 @@ from pydantic_settings import SettingsConfigDict
 
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.log_levels import LogLevels
+from agentplane.workload_auth.listener import Listener
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 
@@ -20,9 +21,7 @@ class Settings(YamlFileSettings):
 
     allowed_service_account_namespaces: frozenset[str] = Field(
         min_length=1,
-        description="Every namespace whose ServiceAccounts may authenticate here. The central proxy is the "
-        "only client, so this must admit at least what the proxy's own allowlist does: a workload it "
-        "authenticated and sent on is refused here if its namespace is missing.",
+        description="Namespaces whose Sandbox SVIDs or backend ServiceAccount bearers may authenticate here.",
     )
     central_sampler_accounts: frozenset[str] = Field(
         default_factory=frozenset,
@@ -54,7 +53,5 @@ class Settings(YamlFileSettings):
     litellm_url: HttpEndpointUrl = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
     log_levels: LogLevels
-    host: str = Field(default="0.0.0.0", description="Listener bind address.")
-    port: int = Field(default=8080, description="Listener port.")
-    grpc_port: int = Field(default=8081, description="Native gRPC listener port.")
+    rpc: Listener
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")

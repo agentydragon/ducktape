@@ -1,5 +1,4 @@
-"""What the namespace's egress grants a sandbox: the Actions API's agent-facing surface only, and
-the Kubernetes access every sandbox gets rather than the ones that opted in."""
+"""What the namespace grants a sandbox: SVID-protected service routes and Kubernetes access."""
 
 from __future__ import annotations
 
@@ -17,10 +16,19 @@ from more_itertools import one
 from agentplane.crd_group import GROUP
 from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.egress.settings import Settings as EgressSettings
+from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI, SESSION_DISPATCHER_URI
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import agent_access_profiles
-from cluster.cdk8s.agentplane import binding_delegation, environment_sandbox, notifications, staging, staging_grants
+from cluster.cdk8s.agentplane import (
+    binding_delegation,
+    environment_sandbox,
+    llm_ingress,
+    notifications,
+    runner_gateway,
+    session_dispatcher,
+    staging,
+    staging_grants,
+)
 from cluster.cdk8s.agentplane.egress import (
     ADMIN_GRPC_AUDIENCE,
     BASIC_POLICY,
@@ -32,6 +40,7 @@ from cluster.cdk8s.agentplane.egress import (
     PROXY_PORT,
     PUBLIC_INTERNET_POLICY,
     Egress,
+    admin,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
@@ -56,7 +65,13 @@ def test_egress_uses_embedded_migrations_and_startup_probe(staging_manifests: li
     pod = _by_name(staging_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
     assert not pod.get("initContainers")
-    assert proxy["startupProbe"]["grpc"] == {"port": proxy["readinessProbe"]["grpc"]["port"], "service": "livez"}
+    startup = proxy["startupProbe"]["exec"]["command"]
+    readiness = proxy["readinessProbe"]["exec"]["command"]
+    assert startup[:2] == readiness[:2] == ["/healthprobe", "--target"]
+    assert "127.0.0.1:8081" in startup
+    assert "spiffe://agentplane/egress-proxy" in startup
+    assert "--service" in startup
+    assert "livez" in startup
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
     assert "PGSSLMODE" not in proxy_env
     settings_path = PurePosixPath(proxy_env[EgressSettings.config_file_env]["value"])
@@ -87,52 +102,42 @@ def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[s
         admin_grpc_callers=[ServiceAccountRef(namespace=env.namespace, name="app")],
         placement=None,
         registry_secret_name=None,
-        enable_svid_auth=True,
     ).add_platform_resources()
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
-def test_staging_default_uses_one_plaintext_bearer_listener(staging_manifests: list[dict[str, Any]]) -> None:
+def test_staging_requires_the_tls_hop_and_rules_boundary(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = _by_name(staging_manifests, "Deployment", "egress")
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
-    assert [port["containerPort"] for port in proxy["ports"]].count(PROXY_PORT) == 1
+    ports = {port["containerPort"] for port in proxy["ports"]}
+    assert PROXY_PORT in ports
+    assert admin(staging.ENV.namespace).pod_port in ports
     settings = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
-    assert settings["forward"] == {
-        "listen_address": f"0.0.0.0:{PROXY_PORT}",
-        "auth": [{"mode": "kubernetes_bearer", "audience": WORKLOAD_TOKEN_AUDIENCE}],
-    }
-    assert WORKLOAD_TOKEN_AUDIENCE in settings["projected_token_audiences"]
-    role = _by_name(staging_manifests, "Role", "egress")
-    assert not any("sandboxes" in rule["resources"] for rule in role["rules"])
-    assert not any(
-        doc["kind"] == "Certificate" and doc["metadata"]["name"] == "agentplane-egress-proxy"
-        for doc in staging_manifests
-    )
+    assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
+    assert {method["mode"] for method in settings["forward"]["auth"]} == {"spiffe", "kubernetes_bearer"}
+    api = admin(staging.ENV.namespace)
+    assert f"{api.fqdn}:{api.port.number}" in settings["tls_passthrough_targets"]
 
 
-def test_mixed_listener_adds_svid_auth_on_the_existing_port(svid_egress_manifests: list[dict[str, Any]]) -> None:
+def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
+    svid_egress_manifests: list[dict[str, Any]],
+) -> None:
     deployment = _by_name(svid_egress_manifests, "Deployment", "egress")
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
     assert [port["containerPort"] for port in proxy["ports"]].count(PROXY_PORT) == 1
     service = _by_name(svid_egress_manifests, "Service", "egress")
-    assert [port["port"] for port in service["spec"]["ports"]].count(PROXY_PORT) == 1
+    mtls_ports = [port for port in service["spec"]["ports"] if port["port"] == PROXY_PORT]
+    assert len(mtls_ports) == 1
 
     settings = yaml.safe_load(
         _by_name(svid_egress_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
-    assert settings["forward"]["tls"] == {
-        "cert_file": "/etc/agentplane-egress/svid/tls.crt",
-        "key_file": "/etc/agentplane-egress/svid/tls.key",
-    }
-    assert settings["forward"]["auth"] == [
-        {"mode": "spiffe", "ca_file": "/etc/agentplane-egress/svid-ca/ca-certificates.crt"},
-        {"mode": "kubernetes_bearer", "audience": WORKLOAD_TOKEN_AUDIENCE},
-    ]
+    assert settings["forward"]["auth"][0]["ca_file"] == "/etc/agentplane-egress/svid-ca/ca-certificates.crt"
 
     role = _by_name(svid_egress_manifests, "Role", "egress")
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
@@ -226,6 +231,16 @@ def test_public_internet_is_available_but_never_implicitly_granted(staging_manif
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
 
 
+def test_legacy_workload_bearer_routes_are_removed_from_basic(staging_manifests: list[dict[str, Any]]) -> None:
+    policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
+    hosts = [host for rule in policy["spec"]["rules"] for host in rule.get("hosts", [])]
+    assert "actions.agentplane-staging.svc.cluster.local" not in hosts
+    assert not any(
+        doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == "agentplane-workload"
+        for doc in staging_manifests
+    )
+
+
 def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_manifests: list[dict[str, Any]]) -> None:
     """Every agent talks to the API server, so the rule admitting it is in `basic`.
 
@@ -264,109 +279,98 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
     assert BASIC_POLICY in defaults, defaults
 
 
-def test_sandboxes_no_longer_have_an_http_egress_credential_for_notifications(
-    staging_manifests: list[dict[str, Any]],
-) -> None:
+def test_notifications_verify_svids_behind_an_opaque_tunnel(staging_manifests: list[dict[str, Any]]) -> None:
     policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
-    notification_host = notifications.service(staging.ENV.namespace).fqdn
-    assert all(notification_host not in rule.get("hosts", []) for rule in policy["spec"]["rules"])
     assert all(
-        manifest.get("metadata", {}).get("name") != "agentplane-notifications-workload"
-        for manifest in staging_manifests
-        if manifest.get("kind") == "EgressCredential"
+        notifications.service(staging.ENV.namespace).fqdn not in rule.get("hosts", [])
+        for rule in policy["spec"]["rules"]
     )
-    settings = _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    # The direct sidecar gRPC route projects its own token and bypasses the central proxy.
-    assert notifications.TOKEN_AUDIENCE not in yaml.safe_load(settings)["projected_token_audiences"]
-    notification_settings = yaml.safe_load(
-        _by_name(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
+    assert not any(
+        item["kind"] == "EgressCredential" and item["metadata"]["name"] == "agentplane-notifications-workload"
+        for item in staging_manifests
     )
-    assert notification_settings["token_audience"] == notifications.TOKEN_AUDIENCE
-
-
-def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
-    staging_manifests: list[dict[str, Any]],
-) -> None:
-    """Only the Session and inventory RPCs get the Sandbox-bound bearer substitution.
-
-    The Gateway listener also hosts unrelated Runner-control RPCs. Compare normalized permissions
-    for rules that can reach this Service or consume its credential, so rule grouping and ordering
-    are irrelevant while a new route, method, destination, or uncredentialed path still fails.
-    """
-    destination = "session-dispatcher.agentplane-staging.svc.cluster.local"
-    service_url = f"http://{destination}:8080"
-    credential_name = "agentplane-session-dispatcher-workload"
-    audience = "session-dispatcher"
-    credential_placeholder = f"agentplane-credential-{credential_name}"
-    session_paths = [
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessions",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
-    ]
-    environment_service_paths = [
-        "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-        "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
-        "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
-        "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
-    ]
-    expected_permissions = {
-        (BASIC_POLICY, credential_name, destination, "POST", path, True)
-        for path in (*session_paths, *environment_service_paths)
-    }
-
-    def host_matches_destination(pattern: str) -> bool:
-        return pattern in {destination, "*"} or (
-            pattern.startswith("*.") and destination.endswith(pattern[1:]) and destination != pattern[2:]
-        )
-
-    actual_permissions: set[tuple[str, str | None, str, str, str, bool]] = set()
-    for policy in staging_manifests:
-        if policy["kind"] != "PolicySet":
-            continue
-        for rule in policy["spec"]["rules"]:
-            credential_ref = rule.get("credentialRef", {}).get("name")
-            # This separate opt-in set intentionally grants uncredentialed public access to any host.
-            if policy["metadata"]["name"] == PUBLIC_INTERNET_POLICY and credential_ref is None:
-                continue
-            if not any(host_matches_destination(host) for host in rule.get("hosts", [])) and (
-                credential_ref != credential_name
-            ):
-                continue
-
-            hosts = rule.get("hosts")
-            methods = rule.get("methods")
-            paths = rule.get("paths")
-            assert hosts, rule
-            assert methods, rule
-            assert paths, rule
-            actual_permissions.update(
-                (policy["metadata"]["name"], credential_ref, host, method, path, rule.get("clusterInternal", False))
-                for host in hosts
-                for method in methods
-                for path in paths
-            )
-
-    assert actual_permissions == expected_permissions
-
-    credential = _by_name(staging_manifests, "EgressCredential", credential_name)
-    gateway = _by_name(staging_manifests, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
-    gateway_container = one(container for container in gateway["containers"] if container["name"] == "runner-gateway")
-    gateway_env = {entry["name"]: entry["value"] for entry in gateway_container["env"] if "value" in entry}
-    dispatcher_audience = gateway_env["AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE"]
-    assert dispatcher_audience == audience
-    assert credential["spec"]["source"] == {"projectedWorkloadToken": {"audience": dispatcher_audience}}
-    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
     proxy_settings = yaml.safe_load(
         _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
-    assert proxy_settings["projected_token_audiences"].count(dispatcher_audience) == 1
+    assert notifications.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
+    endpoint = notifications.service(staging.ENV.namespace)
+    assert f"{endpoint.fqdn}:{endpoint.pod_port}" in proxy_settings["tls_passthrough_targets"]
+    notification_settings = yaml.safe_load(
+        _by_name(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
+    )
+    assert notification_settings["rpc"]["listen_address"] == f"0.0.0.0:{endpoint.pod_port}"
+    assert notification_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
 
-    # Both execution environments pass only the inert placeholder to the agent. The VM carries
-    # that value in its guest runner config; the Pod carries it in its runner container env.
+
+def test_llm_runner_traffic_uses_its_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
+    llm_service = _by_name(staging_manifests, "Service", "llm-ingress")
+    assert {port["port"] for port in llm_service["spec"]["ports"]} == {8080}
+
+    settings = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
+    workload = llm_ingress.service(staging.ENV.namespace)
+    assert f"{workload.fqdn}:{workload.pod_port}" in settings["tls_passthrough_targets"]
+
+    llm_settings = yaml.safe_load(
+        _by_name(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"]
+    )
+    assert llm_settings["rpc"]["listen_address"] == "0.0.0.0:8080"
+    assert llm_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
+    assert llm_settings["rpc"]["tls"]["key_file"].endswith("/tls.key")
+
+    certificate = _by_name(staging_manifests, "Certificate", "llm-ingress-workload")
+    assert certificate["spec"]["uris"] == [LLM_INGRESS_URI]
+    assert "server auth" in certificate["spec"]["usages"]
+
+    role = _by_name(staging_manifests, "Role", "llm-ingress-sandbox-reader")
+    assert role["rules"] == [
+        {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list"]},
+        {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get"]},
+    ]
+
+    basic_policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
+    allowed_hosts = [host for rule in basic_policy["spec"]["rules"] for host in rule.get("hosts", [])]
+    assert llm_ingress.service(staging.ENV.namespace).fqdn not in allowed_hosts
+
+    network_policy = _by_name(staging_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"]
+    assert any(
+        int(port["port"]) == workload.pod_port
+        for rule in network_policy["ingress"]
+        for port_rule in rule.get("toPorts", [])
+        for port in port_rule["ports"]
+    )
+
+
+def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(staging_manifests: list[dict[str, Any]]) -> None:
+    """Keep the CLI origin credential-free while the sidecar presents its SVID."""
+    namespace = staging.ENV.namespace
+    service_url = (
+        f"http://{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
+    )
+    destination = runner_gateway.service(namespace)
+    dispatcher_origin = (
+        f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
+    )
+    basic = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
+    assert all(
+        session_dispatcher.service(namespace).fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"]
+    )
+    proxy_settings = yaml.safe_load(
+        _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
+    )
+    assert session_dispatcher.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
+    assert f"{destination.fqdn}:{destination.pod_port}" in proxy_settings["tls_passthrough_targets"]
+
+    configured: list[tuple[str, Any]] = []
+    for item in staging_manifests:
+        if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
+            continue
+        routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
+        configured.extend((origin, routes[origin]) for origin in (dispatcher_origin,) if origin in routes)
+    assert {origin for origin, _ in configured} == {dispatcher_origin}
+    for _, route in configured:
+        assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+        assert route["server_uri"] == SESSION_DISPATCHER_URI
+
     pod_template = _by_name(staging_manifests, "SandboxTemplate", "environment-tools")
     pod_runner = one(
         container
@@ -375,13 +379,12 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
     )
     pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
     assert pod_env["AGENTPLANE_SESSIONS_URL"] == service_url
-    assert pod_env["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
-
-    vm_runner = json.loads(
-        _by_name(staging_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
+    assert not any(name.startswith("AGENTPLANE_") and name.endswith("_CREDENTIAL") for name in pod_env)
+    assert all(
+        source.get("serviceAccountToken", {}).get("audience") != session_dispatcher.TOKEN_AUDIENCE
+        for volume in pod_template["spec"]["pod"]["spec"]["volumes"]
+        for source in volume.get("projected", {}).get("sources", [])
     )
-    assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == service_url
-    assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
 
 
 def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manifests: list[dict[str, Any]]) -> None:

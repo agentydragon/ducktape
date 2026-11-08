@@ -10,6 +10,13 @@ the integration app exposes its own generated HTTP/JSON facade for browser clien
 The `/v1/` HTTP examples below describe that facade (mounted under `/upstream/actions` in the app),
 not routes on the Action Service listener.
 
+All Action, operator, linkage, Web Push and health RPCs use one listener on 8080.
+It accepts the existing Kubernetes bearer credentials and, for ActionService methods,
+the Sandbox's service-owned SVID. The service resolves a verified leaf to the live
+Sandbox's ServiceAccount and UID; caller-label, request ownership, approval policy
+and watch rechecks are unchanged. Operator APIs still require their configured OIDC
+issuer, and linkage callbacks retain their existing single-use state authorization.
+
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
 initiates `tools/call` itself, so the harness never holds an MCP client of its own. The standalone
@@ -462,12 +469,10 @@ may authenticate callers. `policy_namespace` names where PolicySets and PolicyBi
 namespace can name a ServiceAccount in another caller namespace. Neither setting approves Actions or
 selects an MCP destination.
 
-Sandbox calls use ordinary `Authorization: Bearer <workload token>` at this service. The runner does
-not hold that token: it presents the public
-`agentplane-credential-agentplane-workload` placeholder to the existing pod-local/central egress
-path, whose `projectedWorkloadToken` source names the `agentplane-egress` audience and substitutes
-the sidecar-projected token for the exact first-party destination rule. The Action Service still
-validates that bearer itself and applies its own authorization and lifecycle rules.
+Sandbox calls use the Runtime SVID route. The sidecar establishes the exact-origin TLS connection
+through an authorized CONNECT, removes caller Authorization, and presents the current Sandbox
+certificate to the service. The service resolves that SVID against live Sandbox state before
+authorization. External callers are not admitted by this Sandbox-only route.
 
 At the destination, the [workload resolver](../workload_auth/auth/) performs the TokenReview. Actions
 uses its explicit ServiceAccount-only resolution: the configured audience, allowed namespace and

@@ -11,6 +11,7 @@ from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.log_levels import LogLevels
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from util.urls import HttpEndpointUrl
@@ -96,6 +97,13 @@ class Settings(BaseModel):
         default_factory=FrontendConfig,
         description="Browser-safe settings exposed by `GET /upstream/app-config/v1/frontend-config`.",
     )
+
+    egress_admin_tls: ClientTLS | None = None
+    runner_gateway_tls: ClientTLS | None = None
+    session_dispatcher_tls: ClientTLS | None = None
+    history_service_tls: ClientTLS | None = None
+    notifications_tls: ClientTLS | None = None
+    actions_tls: ClientTLS | None = None
 
     sandbox_namespace: str = Field(
         min_length=1,
