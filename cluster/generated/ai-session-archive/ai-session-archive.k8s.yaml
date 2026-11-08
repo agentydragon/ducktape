@@ -2,7 +2,7 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   annotations:
-    description: Imported workstation AI session history, independently protected by CNPG backups and WAL archive.
+    description: Disposable, Restic-derived view of workstation AI session history.
   name: session-archive-db
   namespace: session-backup
 spec:
@@ -20,7 +20,7 @@ spec:
       database: ai_session_archive
       owner: ai_session_archive
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
-  instances: 3
+  instances: 1
   monitoring:
     enablePodMonitor: true
   plugins:
