@@ -189,8 +189,8 @@
       "sha256": "s0yy9Dkbaen70EnrDrVozm8H6sJNq833tauieEVdrno="
     },
     "skill-readback": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-readback-50d4d3412190/readback.skill",
-      "sha256": "UNTTQSGQD+dbvEEZ0TuTckFDh6MJXAjLXsCYSRWSWXI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-readback-ffa648187649/readback.skill",
+      "sha256": "/6ZIGHZJeJC1+JaV5h5DG7+zFJE2cHQbhg522FnIKEs="
     },
     "skill-reverse_engineer": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-reverse_engineer-0f2cccde48c0/reverse_engineer.skill",
