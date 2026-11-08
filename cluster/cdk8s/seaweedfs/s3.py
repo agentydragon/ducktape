@@ -177,7 +177,8 @@ class PrivateBucket(Construct):
     `<name>-s3-credentials`, or `secret_name` where a live consumer already reads another name, under
     `key_fields` (None: the operator's `accessKey`/`secretKey`). Additional identities can be
     granted read/write access for a backup process that spans several private buckets. A `tenant` outside the SeaweedFS
-    namespace must be in `cluster.TENANTS`. Everything Retains.
+    namespace must be in `cluster.TENANTS`. Everything Retains by default; a bucket can opt into Delete
+    when retiring explicitly disposable data.
 
     A live Secret keeps its name and `key_fields`: under a new name or keys the operator finds no key
     pair, mints one and revokes the key the consumer holds."""
@@ -194,6 +195,7 @@ class PrivateBucket(Construct):
         secret_name: str | None = None,
         key_fields: SecretKeyFields | None = AWS_ENV_KEY_FIELDS,
         additional_read_write_identities: Sequence[str] = (),
+        bucket_reclaim_policy: BucketSpecReclaimPolicy = BucketSpecReclaimPolicy.RETAIN,
     ) -> None:
         super().__init__(scope, id)
         secret = SecretRef(namespace=tenant, name=secret_name or f"{name}-s3-credentials")
@@ -205,6 +207,7 @@ class PrivateBucket(Construct):
             access=[BucketAccess.read_write(identity) for identity in (name, *additional_read_write_identities)],
             adopt_existing=adopt_existing,
             description=description,
+            reclaim_policy=bucket_reclaim_policy,
         )
         self.identity = identity(self, "identity", name=name, namespace=tenant, description=description)
         self.credentials = credentials(

@@ -29,6 +29,7 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
     ScheduledBackupSpecPluginConfiguration,
 )
 from constructs import Construct
+from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecReclaimPolicy
 
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.seaweedfs import s3
@@ -72,7 +73,8 @@ class CnpgBackup(Construct):
     this must depend on the SeaweedFS operator's. `secret_name` keeps the name of a credentials
     Secret the store already reads (`s3.PrivateBucket`). `adopt_existing` defaults to true for
     recovery under the same cluster identity; set it false when a new database must not adopt an
-    unrelated physical bucket with the generated bucket name."""
+    unrelated physical bucket with the generated bucket name. `bucket_reclaim_policy` can be set to
+    Delete during an explicitly authorized bucket retirement."""
 
     def __init__(
         self,
@@ -84,6 +86,7 @@ class CnpgBackup(Construct):
         cadence: Cadence | None = Cadence.DAILY,
         secret_name: str | None = None,
         adopt_existing: bool = True,
+        bucket_reclaim_policy: BucketSpecReclaimPolicy = BucketSpecReclaimPolicy.RETAIN,
     ) -> None:
         super().__init__(scope, id)
         bucket = f"{ref.namespace}-db-backups"
@@ -95,6 +98,7 @@ class CnpgBackup(Construct):
             adopt_existing=adopt_existing,
             description=f"Private CNPG physical backups and WAL archive for {ref.namespace}/{ref.name}.",
             secret_name=secret_name,
+            bucket_reclaim_policy=bucket_reclaim_policy,
         )
         ObjectStore(
             self,
