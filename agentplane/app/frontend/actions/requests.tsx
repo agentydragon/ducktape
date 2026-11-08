@@ -1,20 +1,29 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { QueryClient, queryOptions } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider, queryOptions } from "@tanstack/react-query";
 import { IconCheck, IconX } from "../icons";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { displayableError } from "../client";
 import type { StreamConnection } from "../stream_reader";
 import { useOptionalStreamStatus } from "../stream_status";
+import { createAppQueryClient } from "../query";
 import { ActionCall } from "./call";
-import { ActionState, Verdict, type ActionRequest } from "../../../action_service/action_service_pb";
+import { ActionState, Verdict, type ActionGroup, type ActionRequest } from "../../../action_service/action_service_pb";
 import { timestampText } from "./presentation";
-import { decideAction, followActionRequests, getAction } from "./client";
+import { decideAction, followActionRequests, getAction, listActionGroups } from "./client";
 
 export function actionRequestQuery(requestId: string): ReturnType<typeof queryOptions<ActionRequest>> {
   return queryOptions<ActionRequest>({
     queryKey: ["action-request", requestId],
     queryFn: () => getAction(requestId),
+  });
+}
+
+export function actionGroupsQuery(): ReturnType<typeof queryOptions<ActionGroup[]>> {
+  return queryOptions<ActionGroup[]>({
+    queryKey: ["action-groups"],
+    queryFn: listActionGroups,
+    staleTime: 0,
   });
 }
 
@@ -100,31 +109,21 @@ export function useActionRequests(enabled = true): {
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: Infinity,
-            gcTime: Infinity,
-            retry: false,
-            refetchOnWindowFocus: false,
-            refetchOnReconnect: false,
-            networkMode: "always",
-            // This cache holds only ActionRequests. Fence both HTTP and watch writes by version;
-            // protobuf messages contain bigints and do not use JSON structural sharing.
-            structuralSharing: (previous, incoming) => {
-              const current = previous as ActionRequest | undefined;
-              const next = incoming as ActionRequest;
-              return current !== undefined &&
-                (current.version > next.version || (current.version === next.version && current.state === next.state))
-                ? current
-                : next;
-            },
-          },
-        },
-      })
-  );
+  const [queryClient] = useState(() => {
+    const client = createAppQueryClient();
+    client.setQueryDefaults(["action-request"], {
+      // Fence both HTTP and watch writes; other resources have no ActionRequest version.
+      structuralSharing: (previous, incoming) => {
+        const current = previous as ActionRequest | undefined;
+        const next = incoming as ActionRequest;
+        return current !== undefined &&
+          (current.version > next.version || (current.version === next.version && current.state === next.state))
+          ? current
+          : next;
+      },
+    });
+    return client;
+  });
   const requestsRef = useRef<ActionRequest[]>([]);
   useOptionalStreamStatus("Actions", connection);
 
@@ -240,7 +239,11 @@ export const ActionRequestsContext: ReturnType<typeof createContext<ReturnType<t
 /** Own one live Action store for the whole app shell, including route transitions. */
 export function ActionRequestsProvider({ children }: { children: ReactNode }): JSX.Element {
   const actions = useActionRequests();
-  return <ActionRequestsContext.Provider value={actions}>{children}</ActionRequestsContext.Provider>;
+  return (
+    <QueryClientProvider client={actions.queryClient}>
+      <ActionRequestsContext.Provider value={actions}>{children}</ActionRequestsContext.Provider>
+    </QueryClientProvider>
+  );
 }
 
 export function PendingActionCard({

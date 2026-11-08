@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 
 import { Link, useLocation, useSearchParams } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { durationLabel } from "../format_time";
@@ -33,7 +34,6 @@ import {
   Verdict,
   type ActionRequest,
   type Decision,
-  type ExecutorKind as ExecutorKindType,
 } from "../../../action_service/action_service_pb";
 import {
   actionArguments,
@@ -42,7 +42,7 @@ import {
   executionResult,
   timestampText,
 } from "./presentation";
-import { actionHistory, followActionRequests, getAction, listActionGroups } from "./client";
+import { actionHistory, followActionRequests, getAction } from "./client";
 import {
   renderActionCall,
   renderActionOutcome,
@@ -51,7 +51,7 @@ import {
   renderDetailsResult,
   renderNativeDetailsResult,
 } from "./rendering/index";
-import { stateLabel } from "./requests";
+import { actionGroupsQuery, stateLabel } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
  * otherwise its stored JSON. */
@@ -297,23 +297,6 @@ export function ActionHistoryCard({
   );
 }
 
-/** Each configured Action group's executor kind, by group key: `null` until the groups arrive, and
- * for good when they cannot be read, which `error` then says. */
-function useExecutorKinds(): {
-  kinds: ReadonlyMap<string, ExecutorKindType> | null;
-  error: string | null;
-} {
-  const [kinds, setKinds] = useState<ReadonlyMap<string, ExecutorKindType> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    void listActionGroups().then(
-      (groups) => setKinds(new Map(groups.map((group) => [group.key, group.executorKind]))),
-      (failure: unknown) => setError(displayableError(failure))
-    );
-  }, []);
-  return { kinds, error };
-}
-
 /** Decided and terminal ActionRequests: durable receipts, not something an operator still acts on. */
 function ActionHistoryRequests({
   includeAutoAllowed,
@@ -443,13 +426,16 @@ function ActionHistoryRequests({
     observer.observe(node);
     return () => observer.disconnect();
   }, [cursor, loading, loadingMore, pageError, loadMore]);
-  const executors = useExecutorKinds();
+  const groups = useQuery(actionGroupsQuery());
+  const executors = new Map(groups.data?.map((group) => [group.key, group.executorKind]));
   const decided = requests.filter((request) => request.state !== ActionState.DECISION_PENDING);
 
   return (
     <Stack>
       {error && <Text c="red">{error}</Text>}
-      {executors.error && <Alert color="orange">Action group metadata could not be loaded. {executors.error}</Alert>}
+      {groups.error && (
+        <Alert color="orange">Action group metadata could not be loaded. {displayableError(groups.error)}</Alert>
+      )}
       {loading && <Text role="status">Loading actions…</Text>}
       {!loading && !error && decided.length === 0 && (
         <Stack gap="xs">
@@ -468,7 +454,7 @@ function ActionHistoryRequests({
           key={request.id}
           compact
           request={request}
-          mcp={executors.kinds?.get(actionIdentity(request).group) === ExecutorKind.MCP}
+          mcp={executors.get(actionIdentity(request).group) === ExecutorKind.MCP}
         />
       ))}
       <div ref={sentinel} data-testid="action-history-sentinel">
