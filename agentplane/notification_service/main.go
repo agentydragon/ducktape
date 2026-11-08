@@ -159,13 +159,13 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 	defer hub.Close()
 	// Neither connection dials until its first call, so a peer that is down does not stop the service starting.
-	historyConnection, err := bearer.Dial(c.HistoryService.Target, c.HistoryService.TokenFile, seconds(c.HistoryService.RequestTimeoutSeconds),
+	historyConnection, err := bearer.Dial(c.HistoryService.Target, c.HistoryService.TokenFile, seconds(c.HistoryService.RequestTimeoutSeconds), nil,
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(historyReceiveBytes)))
 	if err != nil {
 		return err
 	}
 	defer historyConnection.Close()
-	dispatcherConnection, err := bearer.Dial(c.SessionDispatcher.Target, c.SessionDispatcher.TokenFile, seconds(c.SessionDispatcher.RequestTimeoutSeconds))
+	dispatcherConnection, err := bearer.Dial(c.SessionDispatcher.Target, c.SessionDispatcher.TokenFile, seconds(c.SessionDispatcher.RequestTimeoutSeconds), nil)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		actionDialOptions = append(actionDialOptions,
 			grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, actionEndpoint.tlsServerName)))
 	}
-	actionsConnection, err := bearer.Dial(actionEndpoint.target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds), actionDialOptions...)
+	actionsConnection, err := bearer.Dial(actionEndpoint.target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds), nil, actionDialOptions...)
 	if err != nil {
 		return err
 	}

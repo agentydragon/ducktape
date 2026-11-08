@@ -47,7 +47,7 @@ func start(t *testing.T, tokenPath string, timeout time.Duration) (healthpb.Heal
 	}
 	go server.Serve(listener)
 	t.Cleanup(server.Stop)
-	connection, err := Dial(listener.Addr().String(), tokenPath, timeout)
+	connection, err := Dial(listener.Addr().String(), tokenPath, timeout, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,9 +135,9 @@ func TestACallEndsWithDeadlineExceededOnceItsTimeoutPasses(t *testing.T) {
 
 func TestDialRefusesWhatEveryCallNeeds(t *testing.T) {
 	for name, dial := range map[string]func() error{
-		"no target":  func() error { _, err := Dial("", "/token", time.Second); return err },
-		"no token":   func() error { _, err := Dial("test-host:1", "", time.Second); return err },
-		"no timeout": func() error { _, err := Dial("test-host:1", "/token", 0); return err },
+		"no target":  func() error { _, err := Dial("", "/token", time.Second, nil); return err },
+		"no token":   func() error { _, err := Dial("test-host:1", "", time.Second, nil); return err },
+		"no timeout": func() error { _, err := Dial("test-host:1", "/token", 0, nil); return err },
 	} {
 		if dial() == nil {
 			t.Errorf("%s: dialing succeeded", name)

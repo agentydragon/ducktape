@@ -144,7 +144,7 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
 	environmentConn, err := bearer.Dial(config.SessionDispatcherTarget, config.SessionDispatcherTokenFile,
-		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)))
+		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)), nil)
 	if err != nil {
 		return fmt.Errorf("configure Environment Service client: %w", err)
 	}
@@ -157,7 +157,7 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Runner bridge: %w", err)
 	}
-	policyConnection, err := bearer.Dial(config.PolicyServiceTarget, config.PolicyServiceTokenFile, 10*time.Second)
+	policyConnection, err := bearer.Dial(config.PolicyServiceTarget, config.PolicyServiceTokenFile, 10*time.Second, nil)
 	if err != nil {
 		return fmt.Errorf("configure Policy Service client: %w", err)
 	}

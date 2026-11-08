@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -45,13 +45,17 @@ func WithDelegation(ctx context.Context, envelope *delegation.Delegation) (conte
 // DialDelegated calls target using the destination-audience token at tokenPath and an explicit
 // per-call Delegation envelope. It has no ordinary Bearer interceptor and disables retries.
 // The token file is read for each RPC so projected-token rotation is observed.
-func DialDelegated(target, tokenPath string, timeout time.Duration) (*grpc.ClientConn, error) {
+func DialDelegated(target, tokenPath string, timeout time.Duration, transport *environment_runtime_transport.ClientTLS) (*grpc.ClientConn, error) {
 	if target == "" || tokenPath == "" || timeout <= 0 {
 		return nil, errors.New("target, token file and a positive timeout are required")
 	}
+	credentials, err := transport.Credentials()
+	if err != nil {
+		return nil, err
+	}
 	return grpc.NewClient(
 		target,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(credentials),
 		observability.GRPCClientOption(),
 		grpc.WithPerRPCCredentials(delegatedCredentials{tokenPath: tokenPath}),
 		grpc.WithUnaryInterceptor(withTimeout(timeout)),

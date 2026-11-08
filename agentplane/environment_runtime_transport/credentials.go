@@ -31,6 +31,30 @@ const GatewayURI = "spiffe://agentplane/runner-gateway"
 // forward-proxy listener.
 const EgressProxyURI = "spiffe://agentplane/egress-proxy"
 
+// HistoryIngressURI is the History Service workload listener.
+const HistoryIngressURI = "spiffe://agentplane/history-ingress"
+
+// NotificationsURI is the Notification Service workload listener.
+const NotificationsURI = "spiffe://agentplane/notifications"
+
+// LLMIngressURI is the LLM ingress listener that authenticates Sandbox SVIDs.
+const LLMIngressURI = "spiffe://agentplane/llm-ingress"
+
+// SessionDispatcherURI is the Runner Gateway's Sandbox workload listener.
+const SessionDispatcherURI = "spiffe://agentplane/session-dispatcher"
+
+// ActionsURI is the Action Service workload listener.
+const ActionsURI = "spiffe://agentplane/actions"
+
+func isWorkloadServiceURI(uri string) bool {
+	switch uri {
+	case EgressProxyURI, HistoryIngressURI, NotificationsURI, LLMIngressURI, SessionDispatcherURI, ActionsURI:
+		return true
+	default:
+		return false
+	}
+}
+
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
 // Config names the projected certificate, private key, and trust roots.

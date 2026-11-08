@@ -27,7 +27,7 @@ const (
 )
 
 func ExportSession(ctx context.Context, store *Store, sessionID, target, tokenFile string) error {
-	channel, err := bearer.Dial(target, tokenFile, 30*time.Second)
+	channel, err := bearer.Dial(target, tokenFile, 30*time.Second, nil)
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hu
 		return err
 	}
 	defer unsubscribe()
-	channel, err := bearer.Dial(target, tokenFile, 30*time.Second)
+	channel, err := bearer.Dial(target, tokenFile, 30*time.Second, nil)
 	if err != nil {
 		return err
 	}

@@ -30,7 +30,7 @@ func NewDispatcherClient(config DispatcherConfig) (*DispatcherClient, error) {
 }
 
 func (c *DispatcherClient) connection(ctx context.Context, call func(context.Context, dispatcherpb.SessionDispatcherClient) error) error {
-	conn, err := bearer.Dial(c.config.Target, c.config.TokenFile, c.config.Timeout)
+	conn, err := bearer.Dial(c.config.Target, c.config.TokenFile, c.config.Timeout, nil)
 	if err != nil {
 		return err
 	}

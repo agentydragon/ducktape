@@ -7,10 +7,10 @@ go_library(
     srcs = ["bearer.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/grpc/bearer",
     deps = [
+        "//agentplane/environment_runtime_transport",
         "//agentplane/observability",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],

@@ -178,7 +178,7 @@ func newFixture(t *testing.T) fixture {
 
 func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionServiceClient {
 	t.Helper()
-	connection, err := bearer.Dial(f.listener.Addr().String(), f.tokenFile, time.Duration(timeoutSeconds*float64(time.Second)))
+	connection, err := bearer.Dial(f.listener.Addr().String(), f.tokenFile, time.Duration(timeoutSeconds*float64(time.Second)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
