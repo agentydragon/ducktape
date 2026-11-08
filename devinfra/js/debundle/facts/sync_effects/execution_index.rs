@@ -13006,7 +13006,7 @@ impl Visit for ExecutionIndex {
 
     fn visit_simple_assign_target(&mut self, target: &SimpleAssignTarget) {
         if let Some(binding_targets::SimpleWriteTarget::Member(member)) =
-            binding_targets::simple_assign_target_simple(target)
+            binding_targets::simple_assign_target(target)
         {
             self.member_write_sites.insert(member.span.into());
         }

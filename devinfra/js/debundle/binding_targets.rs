@@ -16,14 +16,24 @@ pub enum SimpleWriteTarget<'a> {
 /// other target forms remain `None` for conservative handling by callers.
 pub fn simple_write_target(target: &AssignTarget) -> Option<SimpleWriteTarget<'_>> {
     match target {
-        AssignTarget::Simple(simple) => simple_assign_target_simple(simple),
+        AssignTarget::Simple(simple) => simple_assign_target(simple),
         AssignTarget::Pat(_) => None,
     }
 }
 
 /// Return the simple binding or member shape of a `SimpleAssignTarget`.
-pub fn simple_assign_target_simple(target: &SimpleAssignTarget) -> Option<SimpleWriteTarget<'_>> {
-    simple_write_target_simple(target)
+pub fn simple_assign_target(target: &SimpleAssignTarget) -> Option<SimpleWriteTarget<'_>> {
+    match target {
+        SimpleAssignTarget::Ident(binding) => Some(SimpleWriteTarget::Binding(binding.id.to_id())),
+        SimpleAssignTarget::Member(member) => Some(SimpleWriteTarget::Member(member)),
+        SimpleAssignTarget::Paren(paren) => simple_write_target_expr(&paren.expr),
+        SimpleAssignTarget::TsAs(wrapper) => simple_write_target_expr(&wrapper.expr),
+        SimpleAssignTarget::TsSatisfies(wrapper) => simple_write_target_expr(&wrapper.expr),
+        SimpleAssignTarget::TsNonNull(wrapper) => simple_write_target_expr(&wrapper.expr),
+        SimpleAssignTarget::TsTypeAssertion(wrapper) => simple_write_target_expr(&wrapper.expr),
+        SimpleAssignTarget::TsInstantiation(wrapper) => simple_write_target_expr(&wrapper.expr),
+        _ => None,
+    }
 }
 
 /// Return a simple binding or member update target, normalizing only
@@ -42,20 +52,6 @@ pub fn transparent_target_expr(expression: &Expr) -> &Expr {
         Expr::TsTypeAssertion(wrapper) => transparent_target_expr(&wrapper.expr),
         Expr::TsInstantiation(wrapper) => transparent_target_expr(&wrapper.expr),
         other => other,
-    }
-}
-
-fn simple_write_target_simple(target: &SimpleAssignTarget) -> Option<SimpleWriteTarget<'_>> {
-    match target {
-        SimpleAssignTarget::Ident(binding) => Some(SimpleWriteTarget::Binding(binding.id.to_id())),
-        SimpleAssignTarget::Member(member) => Some(SimpleWriteTarget::Member(member)),
-        SimpleAssignTarget::Paren(paren) => simple_write_target_expr(&paren.expr),
-        SimpleAssignTarget::TsAs(wrapper) => simple_write_target_expr(&wrapper.expr),
-        SimpleAssignTarget::TsSatisfies(wrapper) => simple_write_target_expr(&wrapper.expr),
-        SimpleAssignTarget::TsNonNull(wrapper) => simple_write_target_expr(&wrapper.expr),
-        SimpleAssignTarget::TsTypeAssertion(wrapper) => simple_write_target_expr(&wrapper.expr),
-        SimpleAssignTarget::TsInstantiation(wrapper) => simple_write_target_expr(&wrapper.expr),
-        _ => None,
     }
 }
 
