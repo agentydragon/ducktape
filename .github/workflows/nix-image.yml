@@ -74,7 +74,8 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-attic
         with:
-          attic_token: ${{ secrets[inputs.attic && github.event_name != 'pull_request_target' && github.ref_name == 'devel' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
+          attic_token: ${{ secrets[inputs.attic && github.event_name != 'pull_request_target' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
+          upload: ${{ inputs.attic && github.event_name != 'pull_request_target' }}
 
       - name: Build image
         run: nix build ".#${{ inputs.attr }}" --print-build-logs
@@ -105,9 +106,7 @@ jobs:
             "docker-archive:$(readlink -f result)" "docker://$ref"
           echo "pushed \`$ref\` as \`$IMAGE@$(cat "$RUNNER_TEMP/digest")\`" >> "$GITHUB_STEP_SUMMARY"
 
+      # watch-store may still be uploading; this covers the image's full closure.
       - name: Push to Attic
-        if: inputs.attic && github.event_name != 'pull_request_target' && github.ref_name == 'devel'
-        run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
-          attic push ducktape:main result
+        if: inputs.attic && github.event_name != 'pull_request_target'
+        run: attic push ducktape:main result
