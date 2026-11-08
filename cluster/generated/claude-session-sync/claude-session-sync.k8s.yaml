@@ -48,7 +48,7 @@ spec:
       database: claude_sessions
       owner: claude_sessions
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
-  instances: 4
+  instances: 5
   monitoring:
     enablePodMonitor: true
   plugins:
