@@ -119,7 +119,7 @@ function protobufStatus(data: JsonObject): SessionStatus {
           .replace(/^PROBE_(OUTCOME|FAILURE_REASON)_/, "")
           .replaceAll("_", " ")
           .toLowerCase()
-      : probe.outcome === undefined
+      : snapshot.lastProbe == null
         ? "Not checked yet"
         : "Check outcome unknown";
   const imported = snapshot.importedAt;
