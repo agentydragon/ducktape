@@ -35,35 +35,32 @@ function node(tag = "div") {
   };
 }
 
-function page(providers, grpc = false) {
+function page(providers) {
   const nodes = Object.fromEntries(Array.from(html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g), ([, id]) => [id, node()]));
   nodes.instance = node("select");
   const calls = [];
   const timers = [];
-  const replies = grpc
-    ? new Map([
-        [
-          "/api/v1/instances",
-          response({
-            instances: providers.map((provider) => ({
-              ref: { instanceId: provider.id, providerId: provider.type },
-              info: { instructions: provider.instructions },
-            })),
-          }),
-        ],
-      ])
-    : new Map([["/api/integrations", response(providers)]]);
+  const replies = new Map([
+    [
+      "/api/v1/instances",
+      response({
+        instances: providers.map((provider) => ({
+          ref: { instanceId: provider.id, providerId: provider.type },
+          info: { instructions: provider.instructions },
+        })),
+      }),
+    ],
+  ]);
   for (const provider of providers) {
-    const path = grpc ? `/api/v1/instances/${provider.id}/session` : `/api/integrations/${provider.id}`;
-    const status = grpc
-      ? { snapshot: { state: "SESSION_STATE_VERIFIED", ownerPresentation: { message: "Connected" } } }
-      : { state: "ready", message: "Connected", details: [] };
-    replies.set(path, response(status));
+    replies.set(
+      `/api/v1/instances/${provider.id}/session`,
+      response({ snapshot: { state: "SESSION_STATE_VERIFIED", ownerPresentation: { message: "Connected" } } })
+    );
   }
   let redirect;
   const context = {
     document: {
-      body: { dataset: { management: grpc ? "grpc" : "legacy" } },
+      body: { dataset: {} },
       getElementById: (id) => nodes[id],
       createElement: (tag) => node(tag),
     },
@@ -79,7 +76,7 @@ function page(providers, grpc = false) {
     setInterval: (callback) => timers.push(callback),
     fetch: async (url, options) => {
       calls.push({ url, options });
-      assert.ok(replies.has(url), `Unexpected rebeta: ${url}`);
+      assert.ok(replies.has(url), `Unexpected request: ${url}`);
       const reply = replies.get(url);
       if (reply instanceof Error) throw reply;
       return typeof reply === "function" ? await reply() : reply;
@@ -110,63 +107,97 @@ await submit(event);
 assert.equal(ui.calls.length, beforeChoice);
 assert.match(ui.nodes.result.textContent, /Choose/);
 ui.nodes.instance.value = "two";
-ui.replies.set("/api/integrations/two/session", response({ configured: true }));
+const alphaImport = "/api/v1/instances/two:importSession";
+ui.replies.set(alphaImport, response({ outcome: "IMPORT_OUTCOME_INSTALLED" }));
 await submit(event);
-const sent = ui.calls.findLast(({ url }) => url === "/api/integrations/two/session");
-assert.deepEqual(JSON.parse(sent.options.body), JSON.parse(alpha));
+const sent = ui.calls.findLast(({ url }) => url === alphaImport);
+const sentBody = JSON.parse(sent.options.body);
+assert.equal(sentBody.mediaType, "application/json");
+assert.deepEqual(JSON.parse(Buffer.from(sentBody.candidate, "base64").toString()), JSON.parse(alpha));
 assert.equal(ui.nodes.session.value, "");
 assert.equal(ui.nodes["import-session"].disabled, false);
 
 const beta = exportedSession("beta", { cookies: ["synthetic"] });
+const betaImport = "/api/v1/instances/beta:importSession";
 // One enabled instance of a provider is selected automatically.
 ui.nodes.session.value = beta;
 ui.nodes.session.listeners.input();
-ui.replies.set("/api/integrations/beta/session", response({ state: "ready" }));
+ui.replies.set(betaImport, response({ outcome: "IMPORT_OUTCOME_INSTALLED" }));
 await submit(event);
 assert.equal(ui.nodes.session.value, "");
-assert.equal(ui.calls.findLast(({ url }) => url === "/api/integrations/beta/session").options.method, "POST");
-for (const [error, status, message] of [
-  ["reauth_required", 409, /fresh sign-in/],
-  ["security_challenge", 503, /security challenge/],
-  ["outcome_unknown", 504, /outcome is unknown/],
-  ["outcome_unknown_invalid_response", 502, /unexpected response.*outcome is unknown/],
-  ["outcome_unknown_http", 502, /HTTP error.*outcome is unknown/],
-  ["outcome_unknown_http_429", 502, /HTTP 429.*outcome is unknown/],
-  ["verification_timeout", 504, /timed out.*may have completed/],
-  ["upstream_unavailable", 502, /Could not connect.*may have completed/],
-  ["invalid_response", 502, /unexpected response.*Check the session status/],
-  ["storage_error", 503, /session storage.*Check the session status/],
-  ["upstream_http_429", 502, /HTTP 429.*Check the session status/],
+assert.equal(ui.calls.findLast(({ url }) => url === betaImport).options.method, "POST");
+
+for (const [result, message] of [
+  [{ outcome: "IMPORT_OUTCOME_REJECTED" }, /session string is invalid/],
+  [{ outcome: "IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED" }, /fresh sign-in/],
+  [{ outcome: "IMPORT_OUTCOME_CHALLENGE_REQUIRED" }, /security challenge/],
+  [{ outcome: "IMPORT_OUTCOME_UNKNOWN" }, /outcome is unknown/],
+  [
+    { outcome: "IMPORT_OUTCOME_UNKNOWN", outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE" } },
+    /unexpected response.*outcome is unknown/,
+  ],
+  [
+    {
+      outcome: "IMPORT_OUTCOME_UNKNOWN",
+      outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR", upstreamHttpStatus: 429 },
+    },
+    /HTTP 429.*outcome is unknown/,
+  ],
+  [
+    {
+      outcome: "IMPORT_OUTCOME_UNKNOWN",
+      outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR", upstreamHttpStatus: 999 },
+    },
+    /Could not connect.*may have completed/,
+  ],
+  [
+    { outcome: "IMPORT_OUTCOME_UNKNOWN", outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_TIMEOUT" } },
+    /timed out.*may have completed/,
+  ],
+  [{ outcome: "IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE" }, /Could not connect.*may have completed/],
+  [
+    { outcome: "IMPORT_OUTCOME_FAILURE", failure: { reason: "IMPORT_FAILURE_REASON_INVALID_RESPONSE" } },
+    /unexpected response.*Check the session status/,
+  ],
+  [
+    { outcome: "IMPORT_OUTCOME_FAILURE", failure: { reason: "IMPORT_FAILURE_REASON_STORAGE_ERROR" } },
+    /session storage.*Check the session status/,
+  ],
+  [
+    {
+      outcome: "IMPORT_OUTCOME_FAILURE",
+      failure: { reason: "IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR", upstreamHttpStatus: 429 },
+    },
+    /HTTP 429.*Check the session status/,
+  ],
 ]) {
   ui.nodes.session.value = beta;
   ui.nodes.session.listeners.input();
   assert.equal(ui.nodes.instance.hidden, true);
-  ui.replies.set(
-    "/api/integrations/beta/session",
-    response({ error, message: "provider-internal response with private data" }, status)
-  );
+  ui.replies.set(betaImport, response({ ...result, message: "provider-internal response with private data" }));
   await submit(event);
   assert.match(ui.nodes.result.textContent, message);
   assert.doesNotMatch(ui.nodes.result.textContent, /provider-internal|private data/);
   assert.equal(ui.nodes.session.value, beta);
 }
 
-for (const error of ["unknown_sensitive_value", "upstream_http_999", "outcome_unknown_http_999", "toString"]) {
-  ui.nodes.session.value = beta;
-  ui.nodes.session.listeners.input();
-  ui.replies.set(
-    "/api/integrations/beta/session",
-    response({ error, message: "do not display this server text" }, 400)
-  );
-  await submit(event);
-  assert.equal(ui.nodes.result.textContent, "Could not verify the session. Check the session status before retrying.");
-  assert.doesNotMatch(ui.nodes.result.textContent, /unknown_sensitive|do not display/);
-}
+ui.nodes.session.value = beta;
+ui.nodes.session.listeners.input();
+ui.replies.set(
+  betaImport,
+  response({ outcome: "IMPORT_OUTCOME_FROM_FUTURE", message: "do not display this server text" })
+);
+await submit(event);
+assert.equal(
+  ui.nodes.result.textContent,
+  "The import outcome is unknown. Check the session status before trying again."
+);
+assert.doesNotMatch(ui.nodes.result.textContent, /do not display/);
 
 // An uncertain response never triggers another import, including during a poll.
 let complete;
 ui.replies.set(
-  "/api/integrations/beta/session",
+  betaImport,
   () =>
     new Promise((resolve) => {
       complete = resolve;
@@ -178,7 +209,7 @@ const whileImporting = ui.calls.length;
 await submit(event);
 ui.timers[0]();
 assert.equal(ui.calls.length, whileImporting);
-complete(response({ error: "outcome_unknown" }, 504));
+complete(response({ outcome: "IMPORT_OUTCOME_UNKNOWN" }));
 await pending;
 assert.equal(ui.nodes["import-session"].disabled, false);
 
@@ -193,8 +224,9 @@ assert.match(ui.nodes.result.textContent, /Unrecognized/);
 
 // A slow older status response must not overwrite a later verification result.
 let oldStatus;
+const firstStatus = "/api/v1/instances/one/session";
 ui.replies.set(
-  "/api/integrations/one",
+  firstStatus,
   () =>
     new Promise((resolve) => {
       oldStatus = resolve;
@@ -202,27 +234,36 @@ ui.replies.set(
 );
 ui.timers[0]();
 await settle();
-ui.replies.set("/api/integrations/one", response({ state: "ready", message: "Fresh status", details: [] }));
-ui.replies.set("/api/integrations/one/verify", response({ state: "ready" }));
+ui.replies.set(
+  firstStatus,
+  response({ snapshot: { state: "SESSION_STATE_VERIFIED", ownerPresentation: { message: "Fresh status" } } })
+);
+const probe = "/api/v1/instances/one:probe";
+ui.replies.set(probe, response({}));
 await ui.nodes.integrations.children[0].children[4].listeners.click();
-oldStatus(response({ state: "reauth_required", message: "Stale status", details: [] }));
+oldStatus(
+  response({
+    snapshot: { state: "SESSION_STATE_REAUTHENTICATION_REQUIRED", ownerPresentation: { message: "Stale status" } },
+  })
+);
 await settle();
 assert.equal(ui.nodes.integrations.children[0].children[1].textContent, "Fresh status");
-assert.equal(ui.calls.findLast(({ url }) => url === "/api/integrations/one/verify").options.method, "POST");
-ui.replies.set("/api/integrations/one/verify", response({}, 401));
+assert.equal(ui.calls.findLast(({ url }) => url === probe).options.method, "POST");
+ui.replies.set(probe, response({}, 401));
 await ui.nodes.integrations.children[0].children[4].listeners.click();
 assert.equal(ui.redirect(), "/auth/login");
 
-// Generic outcomes and detail names are rendered by the frontend.
+// Generic protobuf outcomes and detail names are rendered by the frontend.
 const generic = page([entry("generic", "example")]);
 await settle();
 await settle();
 generic.replies.set(
-  "/api/integrations/generic",
+  "/api/v1/instances/generic/session",
   response({
-    state: "reauth_required",
-    outcome: "reauth_required",
-    details: [{ key: "outcome", value: "reauth_required" }],
+    snapshot: {
+      state: "SESSION_STATE_REAUTHENTICATION_REQUIRED",
+      lastProbe: { outcome: "PROBE_OUTCOME_FAILURE", failure: { reason: "PROBE_FAILURE_REASON_STORAGE_ERROR" } },
+    },
   })
 );
 generic.timers[0]();
@@ -230,49 +271,13 @@ await settle();
 await settle();
 const genericCard = generic.nodes.integrations.children[0];
 assert.equal(genericCard.children[1].textContent, "Session needs reauthentication");
-assert.equal(genericCard.children[3].children[0].textContent, "Last check result");
-assert.equal(genericCard.children[3].children[1].textContent, "reauth required");
-
-const grpcUi = page([entry("account", "alpha")], true);
-await settle();
-await settle();
-assert.equal(grpcUi.nodes.integrations.children[0].children[1].textContent, "Connected");
-grpcUi.replies.set(
-  "/api/v1/instances/account/session",
-  response({
-    snapshot: {
-      state: "SESSION_STATE_UNVERIFIED",
-      lastProbe: { outcome: "PROBE_OUTCOME_FAILURE", failure: { reason: "PROBE_FAILURE_REASON_STORAGE_ERROR" } },
-    },
-  })
-);
-grpcUi.timers[0]();
-await settle();
-await settle();
-assert.equal(grpcUi.nodes.integrations.children[0].children[3].children[7].textContent, "storage error");
-grpcUi.replies.set(
-  "/api/v1/instances/account/session",
+assert.equal(genericCard.children[3].children[0].textContent, "Imported");
+assert.equal(genericCard.children[3].children[7].textContent, "storage error");
+generic.replies.set(
+  "/api/v1/instances/generic/session",
   response({ snapshot: { state: "SESSION_STATE_UNVERIFIED", lastProbe: { outcome: 999 } } })
 );
-grpcUi.timers[0]();
+generic.timers[0]();
 await settle();
 await settle();
-assert.equal(grpcUi.nodes.integrations.children[0].children[3].children[7].textContent, "Check outcome unknown");
-grpcUi.nodes.session.value = exportedSession("alpha", { cookie: "synthetic" });
-grpcUi.replies.set("/api/v1/instances/account:importSession", response({ outcome: "IMPORT_OUTCOME_INSTALLED" }));
-await grpcUi.nodes["session-form"].listeners.submit(event);
-const grpcRequest = grpcUi.calls.findLast(({ url }) => url.endsWith(":importSession"));
-const grpcBody = JSON.parse(grpcRequest.options.body);
-assert.equal(grpcBody.mediaType, "application/json");
-assert.deepEqual(
-  JSON.parse(Buffer.from(grpcBody.candidate, "base64").toString()),
-  JSON.parse(exportedSession("alpha", { cookie: "synthetic" }))
-);
-assert.match(grpcUi.nodes.result.textContent, /session imported/);
-grpcUi.nodes.session.value = exportedSession("alpha", { cookie: "synthetic" });
-grpcUi.replies.set(
-  "/api/v1/instances/account:importSession",
-  response({ outcome: "IMPORT_OUTCOME_UNKNOWN", outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_TIMEOUT" } })
-);
-await grpcUi.nodes["session-form"].listeners.submit(event);
-assert.match(grpcUi.nodes.result.textContent, /may have completed/);
+assert.equal(genericCard.children[3].children[7].textContent, "Check outcome unknown");
