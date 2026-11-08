@@ -941,8 +941,13 @@ it("labels a resolved Codex parent_thread_id link and navigates to the captured 
     findControl(related, "Captured Codex parent").click();
     await flush();
   });
-  expect(view.textContent).toContain("Captured Codex parent");
-  expect(view.querySelector(".session-browser-related-trigger")).toBeNull();
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await flush();
+    });
+    expect(view.querySelector("h2")?.textContent).toBe("Captured Codex parent");
+    expect(view.querySelector(".session-browser-related-trigger")).toBeNull();
+  });
 });
 
 it("does not prepend an older event page after switching sessions", async () => {
