@@ -192,10 +192,10 @@ moved from a temporary HDD claim to `ovh-ns1001419`:
    HDD source only after acceptance.
 
 The deployed operator exposes a shared master persistence template, not an
-ordinal-specific SC selector, and that template still names `local-path-ovh-ssd`.
-Pod deletion reuses a pre-created Piraeus claim; **PVC deletion does not preserve
-the override**. A template-default change must handle immutable StatefulSet
-claim templates without rolling unaffected masters.
+ordinal-specific SC selector; its template names `piraeus-ssd-local`. Pod deletion
+reuses the existing claim. Deleting a PVC does not guarantee its data or Raft
+identity will be reattached; follow the cold-copy procedure above. A template-default change must handle
+immutable StatefulSet claim templates without rolling unaffected masters.
 
 For later master handoffs, use the same cold-copy/identity checks with explicit
 member control. The last-ordinal scale trick applies to master-2 only. Do not
