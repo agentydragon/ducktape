@@ -8,6 +8,7 @@ on:
   push:
     branches: [devel]
     paths:
+      - ".github/actions/finish-attic-upload/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-environment-firecracker-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
@@ -34,6 +35,7 @@ on:
   pull_request:
     paths:
       # keep-sorted start
+      - ".github/actions/finish-attic-upload/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-environment-firecracker-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
@@ -62,6 +64,7 @@ on:
     branches: [devel]
     paths:
       # keep-sorted start
+      - ".github/actions/finish-attic-upload/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-environment-firecracker-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"

@@ -9,6 +9,7 @@ on:
     branches: [devel]
     paths:
       # keep-sorted start
+      - ".github/actions/finish-attic-upload/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-sandbox-image.yml"
       - ".github/workflows/nix-image.yml"
@@ -26,6 +27,7 @@ on:
   pull_request:
     paths:
       # keep-sorted start
+      - ".github/actions/finish-attic-upload/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-sandbox-image.yml"
       - ".github/workflows/nix-image.yml"
@@ -44,6 +46,7 @@ on:
     branches: [devel]
     paths:
       # keep-sorted start
+      - ".github/actions/finish-attic-upload/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-sandbox-image.yml"
       - ".github/workflows/nix-image.yml"

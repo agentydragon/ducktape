@@ -85,11 +85,6 @@ jobs:
       - name: Build containerDisk image
         run: nix build ".#$FLAKE_OUTPUT" --print-build-logs
 
-      # watch-store may still be uploading; this covers the image's full closure.
-      - name: Push to Attic
-        if: inputs.attic && github.event_name != 'pull_request_target'
-        run: attic push ducktape:main result
-
       - name: Compute tag
         id: meta
         shell: bash
@@ -128,3 +123,7 @@ jobs:
             "docker-archive:$(readlink -f result)" \
             "docker://$ref"
           echo "pushed $ref" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Finish Attic upload
+        if: always() && inputs.attic && github.event_name != 'pull_request_target'
+        uses: ./.github/actions/finish-attic-upload
