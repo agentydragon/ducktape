@@ -119,6 +119,57 @@ fn settled_single_spread_reads_shape_and_properties_and_preserves_order_and_iden
 }
 
 #[test]
+fn candidate_that_moves_source_write_before_spread_is_typed_as_conflicting() {
+    let source = "const source = { alpha: 3 };\nconst copied = { ...source };\nconst observed = helper();\nfunction helper() { return 1; }\nsource.alpha = 4;\n";
+    // The eager helper call makes `a_copy` import `b_writer`; the own-property
+    // frontier makes `b_writer` import `a_copy`. The concrete ESM cycle is
+    // entered at `a_copy`, so it executes the writer before the spread.
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("a_copy", &[Member::new("copied"), Member::new("observed")]),
+            logical_module_with_anon("b_writer", &[Member::new("helper")], &["source.alpha = 4;"]),
+            logical_module("z_source", &[Member::new("source")]),
+        ],
+    ));
+
+    let graph = rejected.dependency_graph();
+    assert_property_frontier(&graph, 4, 1, "alpha");
+    let report = rejected.candidate_relocation_assessment();
+    let unit_id = |ordinal| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == ordinal)
+            .unwrap_or_else(|| panic!("missing source unit {ordinal}: {graph:#?}"))
+            .id
+            .strip_prefix("unit:")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+    };
+    let position = |ordinal| {
+        report["emitted_order"]
+            .as_array()
+            .expect("candidate emitted order")
+            .iter()
+            .position(|unit| unit.as_u64() == Some(unit_id(ordinal)))
+            .unwrap_or_else(|| panic!("candidate omitted unit {ordinal}: {report:#}"))
+    };
+    assert!(
+        position(4) < position(1),
+        "the concrete candidate must move the alpha write before the spread: {report:#}"
+    );
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    assert_eq!(
+        report["decision"]["uncovered_modeled_may_conflict"], true,
+        "the moved write must be refused for its own-property conflict: {report:#}"
+    );
+    assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
+}
+
+#[test]
 fn changed_or_nondata_enumerability_keeps_the_conservative_spread_path() {
     let cases = [
         (
@@ -130,6 +181,11 @@ fn changed_or_nondata_enumerability_keeps_the_conservative_spread_path() {
             "callable delete invalidates retained source shape",
             "const source = { first: 1, second: 2 };\nfunction removeFirst() { delete source.first; }\nremoveFirst();\nconst copied = { ...source };\nconsole.log(Object.keys(copied).join(\",\"), copied.first);\n",
             "second undefined\n",
+        ),
+        (
+            "unresolved binding dynamic receiver revokes candidates",
+            "const source = { alpha: 3 };\nglobalThis.unknownReceiver = {};\nconst target = globalThis.unknownReceiver;\nconst key = \"unrelated\";\ntarget[key] = 4;\nconst copied = { ...source };\nconsole.log(copied.alpha, source.alpha);\n",
+            "3 3\n",
         ),
         (
             "mixed literal spread remains conservative",

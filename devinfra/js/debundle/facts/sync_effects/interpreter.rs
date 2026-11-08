@@ -7898,13 +7898,42 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().mark_unknown_enumerability(object);
     }
 
+    fn invalidate_all_enumerability_candidates(&mut self) {
+        let mut objects: BTreeSet<_> = self
+            .state
+            .prefix_object_properties
+            .keys()
+            .copied()
+            .collect();
+        objects.extend(self.inputs.index.own_descriptor_shapes.keys().copied());
+        objects.extend(self.inputs.index.exact_object_spread_copies.iter().copied());
+        objects.extend(self.state.runtime_spread_shapes.keys().copied());
+        for object in objects {
+            self.invalidate_enumerability_object(object);
+        }
+    }
+
     fn invalidate_enumerability_values(&mut self, values: &Values) {
+        let mut unresolved_receiver = values.is_empty();
         for value in values {
-            if let AbstractValue::Value(Value::Alloc(kind, object)) = value
-                && kind.tracks_prefix_own_properties()
-            {
-                self.invalidate_enumerability_object(*object);
+            match value {
+                AbstractValue::Value(Value::Prim(_))
+                | AbstractValue::GlobalObject
+                | AbstractValue::ArrayIntrinsic => {}
+                AbstractValue::Value(Value::Alloc(kind, object)) => {
+                    if kind.tracks_prefix_own_properties() {
+                        self.invalidate_enumerability_object(*object);
+                    }
+                }
+                // A mixed or unavailable receiver set may also name any
+                // settled record in the current prefix. Concrete allocations
+                // above are invalidated individually; revoke every candidate
+                // when the set includes an unresolved alias.
+                _ => unresolved_receiver = true,
             }
+        }
+        if unresolved_receiver {
+            self.invalidate_all_enumerability_candidates();
         }
     }
 
@@ -7930,18 +7959,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         if invalidate_all_candidates {
-            let mut objects: BTreeSet<_> = self
-                .state
-                .prefix_object_properties
-                .keys()
-                .copied()
-                .collect();
-            objects.extend(self.inputs.index.own_descriptor_shapes.keys().copied());
-            objects.extend(self.inputs.index.exact_object_spread_copies.iter().copied());
-            objects.extend(self.state.runtime_spread_shapes.keys().copied());
-            for object in objects {
-                self.invalidate_enumerability_object(object);
-            }
+            self.invalidate_all_enumerability_candidates();
         }
     }
 
