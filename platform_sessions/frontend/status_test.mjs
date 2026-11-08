@@ -148,7 +148,7 @@ for (const [result, message] of [
       outcome: "IMPORT_OUTCOME_UNKNOWN",
       outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR", upstreamHttpStatus: 999 },
     },
-    /Could not connect.*may have completed/,
+    /HTTP error.*outcome is unknown/,
   ],
   [
     { outcome: "IMPORT_OUTCOME_UNKNOWN", outcomeUnknown: { reason: "UNKNOWN_OUTCOME_REASON_TIMEOUT" } },
