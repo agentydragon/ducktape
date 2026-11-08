@@ -106,5 +106,6 @@ Operator review is the scarce resource. Split into small, independently approvab
 - `@aspect_rules_js`; never run `pnpm install`. New dep: add to `package.json`, build (updates lockfile, fails), build again, commit `pnpm-lock.yaml`.
 - Never depend on bare `//:node_modules` in BUILD/`.bzl`; use exact `//:node_modules/<pkg>` targets (imports in `deps`, runtime-only in `data`). Check: `rg -n '"//:node_modules"' --glob 'BUILD*' --glob '*.bzl' .`
 - Frontend conventions: <props/frontend/AGENTS.md>.
+- Web tools use Mantine as the default UI library and set `defaultColorScheme="auto"` on `MantineProvider` so light and dark mode follow the user's browser preference. Example: `finance/plaid/spend/ui/main.tsx`.
 
 @STYLE.md
