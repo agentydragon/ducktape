@@ -5,7 +5,7 @@ use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
-use swc_common::{BytePos, DUMMY_SP, Spanned};
+use swc_common::{BytePos, DUMMY_SP, Spanned, SyntaxContext};
 
 use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
@@ -23,7 +23,7 @@ use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
-use crate::visitors::IdentifierRenamer;
+use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::paths::join_module_path;
@@ -35,7 +35,7 @@ use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_valu
 use output_layout::{CHUNK_REPORT, REPORTS_DIR, TREE_DIR};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
-use swc_ecma_visit::VisitMutWith;
+use swc_ecma_visit::{VisitMutWith, VisitWith};
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -173,40 +173,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         missing_residual_exports,
         &mut import_rename_sink,
     )?;
-    // Seal the per-plan import ledger; the Module-scope projection is
-    // the import-local rename map the pre-ledger code accumulated
-    // across the two minting passes above. Seal asserts the mints
-    // stayed clear of every name bound anywhere in the body.
-    let module_import_renames = import_ledger
-        .seal(&SealValidation {
-            occupancy: BTreeMap::from([(
-                RenameScope::Module(module),
-                ScopeOccupancy::Body {
-                    label: plan.id.clone(),
-                    root: BTreeSet::new(),
-                    nested: module_local_names,
-                    captured: BTreeSet::new(),
-                },
-            )]),
-            reserved: BTreeSet::new(),
-        })?
-        .scope_renames(&RenameScope::Module(module))
-        .unwrap_or_default();
-    if !module_import_renames.is_empty() {
-        let mut renamer = IdentifierRenamer::new(&module_import_renames);
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut renamer);
-        }
-        // Import-local renames are minted from the ledger's taken set,
-        // which seal validated against every name bound anywhere in the
-        // body — a capture here would mean seal's guarantee broke.
-        debug_assert!(
-            renamer.captured.is_empty(),
-            "import-local renames for module {} captured despite seal validation: {:?}",
-            plan.id,
-            renamer.captured,
-        );
-    }
+    let unresolved_context = SyntaxContext::empty().apply_mark(runtime_ast.unresolved_mark);
     // Vendor consultation for the planned runtime re-imports: named re-imports whose source
     // directive targets a partially / bundled-partially swapped chunk
     // are constructed as package / facade imports straight from the
@@ -288,8 +255,54 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         .map(|(_, item)| item)
         .collect();
     combined.append(&mut runtime_reimports);
+    let original_module_body_start = combined.len();
     combined.append(&mut body);
     body = combined;
+    // Seal the per-plan import ledger against the exact assembled body;
+    // the Module-scope projection is the import-local rename map the
+    // pre-ledger code accumulated across the two minting passes above.
+    // Besides binding occupancy, the shared read-only probe finds an
+    // unchanged unresolved reference that a minted target would capture.
+    let pending_import_renames = import_ledger.pending_renames(&RenameScope::Module(module));
+    let mut import_capture_probe =
+        RenameCaptureProbe::new(&pending_import_renames, unresolved_context);
+    if !pending_import_renames.is_empty() {
+        for item in &body {
+            item.visit_with(&mut import_capture_probe);
+        }
+    }
+    let module_import_renames = import_ledger
+        .seal(&SealValidation {
+            occupancy: BTreeMap::from([(
+                RenameScope::Module(module),
+                ScopeOccupancy::Body {
+                    label: plan.id.clone(),
+                    root: BTreeSet::new(),
+                    nested: module_local_names,
+                    captured: import_capture_probe.captured,
+                },
+            )]),
+            reserved: BTreeSet::new(),
+        })?
+        .scope_renames(&RenameScope::Module(module))
+        .unwrap_or_default();
+    if !module_import_renames.is_empty() {
+        let mut renamer = IdentifierRenamer::new(&module_import_renames, unresolved_context);
+        // Preserve the existing execution boundary: synthesized import
+        // declarations already carry their minted locals, so only the
+        // original module body receives the source-Id rewrites.
+        for item in body.iter_mut().skip(original_module_body_start) {
+            item.visit_mut_with(&mut renamer);
+        }
+        // Import-local renames are minted from the ledger's taken-name set;
+        // a capture here means the seal probe and executor diverged.
+        debug_assert!(
+            renamer.captured.is_empty(),
+            "import-local renames for module {} captured despite seal validation: {:?}",
+            plan.id,
+            renamer.captured,
+        );
+    }
     // Apply chunk_renames to the assembled module body so that
     // import-specifier aliases and references in the moved code
     // both pick up the spec's rename. Without this, residual
@@ -307,16 +320,18 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
                 )
             })
             .collect();
-        let mut renamer = IdentifierRenamer::new(&cross_module_chunk_renames_by_id);
+        let mut renamer =
+            IdentifierRenamer::new(&cross_module_chunk_renames_by_id, unresolved_context);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
         if !renamer.captured.is_empty() {
             // The entry-side chunk_renames validation only sees
-            // entry's post-split body; a target can still collide
-            // with a binding nested inside this moved module body.
+            // entry's post-split body; a target can still conflict with a
+            // nested binding or capture an unresolved reference inside
+            // this moved module body.
             bail!(
-                "chunk_renames applied to module {} would be captured by a nested binding: {:?}",
+                "chunk_renames applied to module {} would change reference resolution: {:?}",
                 plan.id,
                 renamer.captured,
             );

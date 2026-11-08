@@ -15,7 +15,7 @@ use artifact::{ArtifactIndexes, ChunkBundle};
 use binding_targets::module_export_name;
 use js_ast::is_binding_identifier;
 use std::collections::{BTreeMap, BTreeSet};
-use swc_common::DUMMY_SP;
+use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMutWith, VisitWith};
 
@@ -221,7 +221,8 @@ pub fn naturalize_cross_chunk_imports(
             });
         }
         let pending_renames = ledger.pending_renames(&RenameScope::Chunk);
-        let mut capture_probe = RenameCaptureProbe::new(&pending_renames);
+        let unresolved_context = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+        let mut capture_probe = RenameCaptureProbe::new(&pending_renames, unresolved_context);
         for item in &parsed.module.body {
             item.visit_with(&mut capture_probe);
         }
@@ -259,7 +260,7 @@ pub fn naturalize_cross_chunk_imports(
             })
             .collect();
         if !renames.is_empty() {
-            let mut renamer = IdentifierRenamer::new(&renames);
+            let mut renamer = IdentifierRenamer::new(&renames, unresolved_context);
             for item in &mut parsed.module.body {
                 item.visit_mut_with(&mut renamer);
             }

@@ -1094,6 +1094,13 @@ without claiming or moving them. They do not change module-tree selector scope
 or graph-reported ownership. `chunk_renames` is the sole source for these names
 in every chunk, including the main chunk.
 
+Explicit binding renames must preserve reference resolution after JavaScript
+emission erases parser identity. A rename is rejected when its introduced
+target spelling would capture an unchanged reference that the parser resolved
+as unbound; resolved references already being renamed remain governed by their
+exact binding identity. This applies to `chunk_renames` and logical-module
+member renames.
+
 `selector.binding.kind: import_specifier` names an imported local. Source checks
 recognize named, default, and namespace imports. Logical-module member
 re-exports currently materialize named imported locals only; member claims for

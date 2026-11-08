@@ -700,6 +700,63 @@ fn staged(opts: FixtureOpts<'_>) -> (Staged, ValidateFixture) {
     (staged, fixture)
 }
 
+/// Parser-owned unresolved identity must survive both fresh and restored
+/// analysis paths. The explicit member rename introduces `unbound_value` in
+/// the same moved module as an unchanged `typeof unbound_value` reference.
+#[test]
+fn unresolved_target_capture_refusal_matches_direct_and_saved_analysis() {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        r#"const source_value = "A";
+function read() {
+  return source_value + typeof unbound_value;
+}
+console.log(read());
+export { source_value, read };
+"#,
+        vec![logical_module(
+            "values",
+            &[
+                Member::renamed("unbound_value", "source_value"),
+                Member::new("read"),
+            ],
+        )],
+    ));
+
+    for (label, invocation) in [
+        ("direct", staged.run(&[])),
+        (
+            "saved analysis",
+            staged.run(&["--analysis", path(&staged.artifact)]),
+        ),
+    ] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(1),
+            "{label} rename refusal exited {:?}\nstderr:\n{}",
+            invocation.result.status.code(),
+            invocation.result.stderr,
+        );
+        assert!(
+            invocation.result.stderr.contains("source_value"),
+            "{label} diagnostic omitted the rename source:\n{}",
+            invocation.result.stderr,
+        );
+        assert!(
+            invocation.result.stderr.contains("unbound_value"),
+            "{label} diagnostic omitted the introduced target:\n{}",
+            invocation.result.stderr,
+        );
+        assert!(
+            invocation
+                .result
+                .stderr
+                .contains("change reference resolution"),
+            "{label} diagnostic omitted the reason:\n{}",
+            invocation.result.stderr,
+        );
+    }
+}
+
 #[test]
 fn projection_rejects_unresolved_and_duplicate_selectors_before_writing() {
     let source = "function first() { return 'same'; }\nfunction second() { return 'same'; }\n";

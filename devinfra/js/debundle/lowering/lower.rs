@@ -46,6 +46,7 @@ use frontend_elaboration::source_ast::RuntimeImportFacts;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMutWith, VisitWith};
 
@@ -168,6 +169,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         pre_existing_entry_exports,
         pre_existing_public_export_names,
     } = spec_facts;
+    let unresolved_context = SyntaxContext::empty().apply_mark(runtime_ast.unresolved_mark);
     let is_module_owned = |name: &str| -> bool {
         binding_assignment.contains_key(&top_level_id(name, chunk_top_level_mark))
     };
@@ -333,15 +335,15 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .sort_entry_imports(&mut entry_imports);
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     // Capture probe: a read-only walk of the un-renamed entry body with
-    // the pending Chunk-scope map, reporting the precise capture facts
-    // seal validates (a target bound nested is harmless when the source
-    // is shadowed there — only a scope-aware walk can decide that). The
+    // the pending Chunk-scope map, reporting the reference-resolution
+    // conflicts seal validates. It uses parser-owned unresolved identity
+    // for reverse capture and scope tracking for target-shadow capture. The
     // probe replaces the pre-seal trial application; the body is mutated
     // only by the post-seal executor below.
     let entry_candidate_renames = entry_ledger.pending_renames(&RenameScope::Chunk);
     let mut entry_captured = BTreeSet::new();
     if !entry_candidate_renames.is_empty() {
-        let mut probe = RenameCaptureProbe::new(&entry_candidate_renames);
+        let mut probe = RenameCaptureProbe::new(&entry_candidate_renames, unresolved_context);
         for item in entry_body.iter() {
             item.visit_with(&mut probe);
         }
@@ -361,6 +363,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 module,
                 sealed_renames.module_renames_by_name(module),
                 chunk_top_level_mark,
+                unresolved_context,
             )
         })
         .collect::<Result<Vec<_>>>()?;
@@ -404,7 +407,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // entry-side rename. Chunk scope: conflicting targets (target name
     // already taken by a body local that isn't being renamed away, or
     // chosen by another chunk_renames entry, invalid as an identifier,
-    // or captured by a nested binding per the probe above) bail here
+    // or would change reference resolution per the probe above) bail here
     // with every violation listed, rather than producing invalid JS
     // silently. EntryPublicExports scope: a single contributor over a
     // set-deduped source set cannot conflict; the occupancy check
@@ -451,7 +454,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         for item in entry_body.iter_mut() {
             preserve_export_specifier_names(item, &entry_binding_renames_by_id);
         }
-        let mut renamer = IdentifierRenamer::new(&entry_binding_renames_by_id);
+        let mut renamer = IdentifierRenamer::new(&entry_binding_renames_by_id, unresolved_context);
         for item in entry_body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
