@@ -38,3 +38,117 @@ membership check runs before both. The artifacts do not record the actual subgro
 so they do not establish why the corrected check failed. The shutdown diagnostic contains no
 ACPI request or ordered shutdown proof: this is another probe setup failure, not a reproduced
 shutdown stall. No conclusion about the original stall's cause or frequency follows from it.
+
+## Membership investigation
+
+An uncached [one-guest smoke](https://app.buildbuddy.io/invocation/7aa2d165-8e35-464c-8d28-778b9533514b)
+at `5823f06ebfab8bd3e9427bfc1ab7e6d6e5e5fcc1` used a shell-only membership read and recorded
+three subgroup members: writer PID 532 and BusyBox PIDs 537 and 541. It exited unexercised
+before the controller transitions or requested ACPI shutdown; cleanup reported success. Its
+VMI UID was `52df93a4-ca67-414c-9a59-98aa7335da16`. The retained console identifies the
+process names but does not establish their command lines or ancestry.
+
+Separately, the same guest BusyBox binary was run locally as
+`busybox timeout -s TERM 10 busybox true`. After the command returned, a BusyBox `timeout`
+watchdog remained alive, reparented to PID 1. The probe calls BusyBox `timeout` twice with
+three-second deadlines just before checking membership. A second [guest smoke](https://app.buildbuddy.io/invocation/9ab207e2-502a-4b5b-9c53-1e9560b2ae43)
+at `8ff0ca988bde194a32ec4adf556f29a555386d64` confirmed the extra processes: PIDs 558 and
+562, both reparented to PID 1, were the BusyBox `timeout` watchdogs for `systemctl show`
+`ControlGroup` and `DelegateSubgroup`, respectively. Its VMI UID was
+`8911e4fc-fd84-464f-b0b2-429f77016883`. Like the first smoke, it stopped before transitions
+and the ACPI request and reported successful cleanup.
+
+The current probe reads membership without forking and waits up to five seconds
+for transient processes to leave; it still refuses to proceed unless the writer is the sole
+member. It records bounded PID, process-name, ancestry and command-line evidence if that
+condition is not met. A successful setup does not by itself establish the original shutdown
+stall's cause.
+
+The [next smoke](https://app.buildbuddy.io/invocation/0f241f5f-529e-4a60-9536-bda0717e287d)
+at `500f9bbac350f86ff0dc49f9f84b2004fe39179a` waited once, verified writer PID 536 was the
+sole subgroup member, enabled the service's `io` propagation, and established the empty
+manager, writer and resident fixture. It then stopped at `trace_buffer_size_unavailable`
+before the trace witness, stress pairs, or requested ACPI shutdown. Cleanup reported success.
+Its VMI UID was `70f207f3-4a96-4510-90f4-e415160be48b`.
+
+That run did not record the actual buffer-size string. The Linux 6.12
+[tracefs implementation](https://github.com/torvalds/linux/blob/v6.12/kernel/trace/trace.c)
+can report an unexpanded default as `<size> (expanded: <size>)` or `X` for differing
+per-CPU sizes; treating all non-numeric output as an unavailable trace facility is therefore
+incorrect. The follow-up uses a disposable tracefs instance for the trace buffer and removes
+it during cleanup. The function-graph filters remain global kernel controls; the probe checks
+they are empty before use and resets them during cleanup.
+
+The [first private-instance smoke](https://app.buildbuddy.io/invocation/f65257e4-fb14-4919-9d97-56bdd519fb57)
+at `706bc24fcd129c36bf45b25cede1225a12730ad1` reached the fixture and stopped at
+`preexisting_or_unsupported_filter_set_ftrace_notrace`. The guest's actual filter content was
+not captured, but [Linux 6.12](https://github.com/torvalds/linux/blob/v6.12/kernel/trace/ftrace.c)
+represents an empty exclusion list as `#### no functions disabled ####`, which the probe did
+not accept. Its VMI UID was `423775af-6f1b-4232-9342-1229971e7958`; cleanup reported success.
+The follow-up accepts that exact sentinel but continues to reject nonempty filter lists.
+
+The [next smoke](https://app.buildbuddy.io/invocation/3b82e516-d013-4c77-aa79-2dee2068edde)
+at `8c4e6163b5d8d9f8cc501e0d5b00eb789b2c712e` reached the private trace and the first
+controller write, then stopped with `trace_overrun_or_incomplete_stats`. The console did not
+retain the before/after counters, so this does not distinguish lost events from a stats-check
+problem. Its VMI UID was `e6490a39-d99a-4d1e-b8b5-d806e4b6a076`. Neither the collected
+serial nor the sampled console contained a probe cleanup-complete marker; the retained host
+summary does not prove why, and the test did not request measured ACPI shutdown. The next
+diagnostic records per-CPU before/after counters and trace size on failure and adds cleanup
+progress markers.
+
+The [instrumented 64 KiB run](https://app.buildbuddy.io/invocation/d8e0c954-c3f3-4d7f-983d-8a3bf61c9e1a)
+at `49d9ab11b0de89966024c45324a8d43c8e18be70` reported CPU 0 counters unchanged at
+`0 0 0`, while CPU 1's overrun counter increased from 0 to 1,839; its commit-overrun and
+dropped-event counters stayed at 0. The retained 55,583-byte trace had 1,096 lines. This
+establishes a ring overrun in that run, so the probe now uses the 1 MiB per-CPU ring and
+bounded 20,000-line scan established by the [earlier cgroup pilot](standalone_kubevirt/cgroup_two_pair_pilot.md).
+
+The [1 MiB smoke](https://app.buildbuddy.io/invocation/2bc92fed-5a81-4454-86f1-be7b2a6c3cde)
+at `a693016ff7ed6bccabf27ad8d431056696ee2cd6` passed trace integrity but reported
+`complete_writer_pid_trace_path_not_proven`. Its VMI UID was
+`5a8a6ada-bc1c-4e47-9d82-c957a1ecab19`. Cleanup started, but the retained early capture did
+not contain its completion marker. The parser requires the writer PID in graph lines;
+Linux's function-graph tracer does not show the process by default. The probe now temporarily
+enables `funcgraph-proc`, restores its initial value, and records bounded root lines if the
+witness still fails. The failed smoke did not retain trace lines, so the missing PID label is
+a hypothesis rather than a proven explanation for that specific run.
+
+The [PID-labelled smoke](https://app.buildbuddy.io/invocation/bad6743e-546f-4efd-a53a-a001534f2d12)
+at `94d39c50595b9ca30bae33c73f369720aeeb03e6` captured a clean, closed writer-PID-539
+`cgroup_subtree_control_write > cgroup_update_dfl_csses > percpu_down_write > rcu_sync_enter`
+tree (108,836 bytes and 1,660 trace lines). The guest recorded all 40 verified transitions,
+trace cleanup, service-controller restoration, and `SUCCESS`. Its VMI UID was
+`124b5670-3d0c-460c-98ee-7eebd75eeb47`.
+
+The host nevertheless timed out waiting for that success and did not request the measured ACPI
+shutdown. The guest emitted two spaces before `service_controller_restored=yes`; the host
+parser expected exactly one. Running the actual retained console through the parser reproduced
+the rejection, while normalizing that space made the same console pass. The parser now checks
+the individual cleanup fields regardless of whitespace, and still rejects a missing or failed
+restoration field. This run exercises the probe but does not validate normal VM shutdown.
+
+## Successful delegated-cgroup smoke
+
+The uncached [one-guest smoke](https://app.buildbuddy.io/invocation/6bb926b5-b040-4761-9ced-eceb01a579e5)
+at `66483602ffdcabf1a6caf032c52271b1ccc72019` passed with one Bazel test attempt and one
+TestRunner execution. Its VMI UID was `8b1fd037-b034-4e2c-ae37-1d4fdab3b642`, launcher Pod
+UID `860679d1-ef8e-4148-a634-e5dcb818fdcc`. QMP reported `enabled: false` for KVM and the
+domain was `type='qemu'`.
+
+After one membership wait, writer PID 518 was the sole manager member. The probe recorded a
+closed, PID-matched `cgroup_subtree_control_write > cgroup_update_dfl_csses >
+percpu_down_write > rcu_sync_enter` tree with clean trace integrity, 132,993 bytes and 1,988
+lines. With tracing disabled, it recorded all 20 on/off pairs, then successful trace and
+service-controller restoration and owned-child cleanup. The host accepted the receipt,
+requested VMI shutdown, and observed ordered guest shutdown proof and `reboot: Power down`.
+UID-correlated virt-handler evidence reported `Shutoff reason Shutdown`, without a recorded
+grace-expiry, forced domain destruction, or launcher kill; the lifecycle ended in
+`sandbox_deleted`.
+
+The run used `//agentplane/system_tests/vm:test_tcg_vmi_shutdown` with
+`--test_tag_filters=manual --nocache_test_results --flaky_test_attempts=1`, one cycle,
+`AGENTPLANE_TCG_VMI_BOOT_RCU_OBSERVER=1`, and
+`AGENTPLANE_TCG_VMI_DELEGATED_CGROUP_STRESS=1`. This proves the reduced probe and normal
+shutdown were exercised once; it does not reproduce or resolve the historical full-stack
+shutdown stall.

@@ -21,3 +21,15 @@ cgroup_has_only_pid() {
 	exec 3<&-
 	[ "$cgroup_member_count" -eq 1 ] && [ "$cgroup_only_expected" = yes ]
 }
+
+filter_is_empty() {
+	filter_file=$1
+	[ -r "$filter_file" ] || return 1
+	filter_bytes=$("$busybox" wc -c <"$filter_file")
+	[ "$filter_bytes" -le 256 ] || return 1
+	filter_value=$("$busybox" cat "$filter_file")
+	case $filter_value in
+		'' | '#### all functions enabled ####' | '#### no functions disabled ####' | 'no pid') return 0 ;;
+	esac
+	return 1
+}

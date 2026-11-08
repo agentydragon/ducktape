@@ -767,10 +767,7 @@ def _delegated_cgroup_stress_complete(console: str) -> bool:
     ready = unique(f"{prefix}_READY ")
     proof = unique(f"{prefix}_TRACE_PROOF ")
     trace_disabled = unique(f"{prefix}_TRACE_DISABLED tracing_on=0 current_tracer=nop before_stress=yes")
-    cleanup = unique(
-        f"{prefix}_CLEANUP owned_children_removed=yes resident_alive=no trace_restored=yes "
-        "service_controller_restored=yes"
-    )
+    cleanup = unique(f"{prefix}_CLEANUP ")
     success = unique(
         f"{prefix}_SUCCESS transitions={_DELEGATED_CGROUP_STRESS_PAIRS * 2} "
         "delegated_subtree_only=yes tracing_during_pairs=no"
@@ -784,6 +781,18 @@ def _delegated_cgroup_stress_complete(console: str) -> bool:
     assert trace_disabled is not None
     assert cleanup is not None
     assert success is not None
+
+    cleanup_fields = fields(cleanup[1])
+    if any(
+        cleanup_fields.get(name) != value
+        for name, value in (
+            ("owned_children_removed", "yes"),
+            ("resident_alive", "no"),
+            ("trace_restored", "yes"),
+            ("service_controller_restored", "yes"),
+        )
+    ):
+        return False
 
     ready_fields = fields(ready[1])
     propagation_fields = fields(propagation[1])
@@ -1523,6 +1532,12 @@ def test_delegated_cgroup_stress_requires_owned_descendant_witness_and_clean_pai
     records = _delegated_cgroup_stress_records()
     complete = "\n".join(records) + "\n"
     assert _delegated_cgroup_stress_complete(complete)
+    # The guest emit helper joins arguments with a space, while the first
+    # cleanup argument already ends in one. Preserve this actual receipt form.
+    actual_cleanup_spacing = complete.replace(
+        "trace_restored=yes service_controller_restored=yes", "trace_restored=yes  service_controller_restored=yes"
+    )
+    assert _delegated_cgroup_stress_complete(actual_cleanup_spacing)
 
     bad_pid = complete.replace("pid_match=yes", "pid_match=no")
     assert not _delegated_cgroup_stress_complete(bad_pid)

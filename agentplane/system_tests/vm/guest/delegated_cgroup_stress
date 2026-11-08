@@ -8,12 +8,16 @@ busybox=/usr/bin/busybox
 unit=agentplane-delegated-cgroup-stress.service
 marker=AGENTPLANE_DELEGATED_CGROUP_STRESS
 cg_root=/sys/fs/cgroup
-tracefs=/sys/kernel/tracing
+trace_root=/sys/kernel/tracing
+tracefs=$trace_root
+trace_instance_owned=no
 pairs=20
 active_budget_seconds=75
-trace_buffer_kib=64
-trace_byte_limit=131072
-trace_line_limit=2000
+# The earlier PID 1 cgroup pilot overran a 64 KiB ring and needed 1 MiB
+# to capture the closed call tree; only a compact witness reaches serial.
+trace_buffer_kib=1024
+trace_byte_limit=2097152
+trace_line_limit=20000
 scratch=$("$busybox" mktemp -d /run/agentplane-delegated-cgroup-stress.XXXXXX)
 record_file=$scratch/record
 service_cgroup=
@@ -32,6 +36,7 @@ trace_mounted=no
 trace_owned=no
 trace_on_initial=
 trace_buffer_initial=
+trace_proc_initial=
 trace_configured=no
 trace_recording_stopped=no
 cleanup_ok=yes
@@ -58,17 +63,25 @@ unexercised() {
 	exit 1
 }
 
+restore_graph_proc() {
+	[ -n "$trace_proc_initial" ] || return 0
+	printf '%s\n' "$trace_proc_initial" >"$tracefs/options/funcgraph-proc" || return 1
+	[ "$("$busybox" cat "$tracefs/options/funcgraph-proc")" = "$trace_proc_initial" ] || return 1
+	trace_proc_initial=
+}
+
 trace_cleanup() {
 	[ "$trace_owned" = yes ] || return 0
 	if [ "$trace_configured" = yes ]; then
 		printf '0\n' >"$tracefs/tracing_on" || return 1
+		restore_graph_proc || return 1
 		printf 'nop\n' >"$tracefs/current_tracer" || return 1
 		printf '\n' >"$tracefs/set_ftrace_pid" || return 1
 		printf '\n' >"$tracefs/set_ftrace_notrace_pid" || return 1
 		printf '\n' >"$tracefs/set_ftrace_filter" || return 1
 		printf '\n' >"$tracefs/set_ftrace_notrace" || return 1
-		printf '\n' >"$tracefs/set_graph_function" || return 1
-		printf '\n' >"$tracefs/set_graph_notrace" || return 1
+		printf '\n' >"$trace_root/set_graph_function" || return 1
+		printf '\n' >"$trace_root/set_graph_notrace" || return 1
 		printf '%s\n' "$trace_buffer_initial" >"$tracefs/buffer_size_kb" || return 1
 	elif [ "$trace_recording_stopped" = yes ]; then
 		# We stopped an otherwise idle tracefs but detected retained records before
@@ -88,8 +101,8 @@ trace_cleanup() {
 			"$tracefs/set_ftrace_notrace" \
 			"$tracefs/set_ftrace_pid" \
 			"$tracefs/set_ftrace_notrace_pid" \
-			"$tracefs/set_graph_function" \
-			"$tracefs/set_graph_notrace"; do
+			"$trace_root/set_graph_function" \
+			"$trace_root/set_graph_notrace"; do
 			filter_is_empty "$filter_file" || return 1
 		done
 	fi
@@ -155,6 +168,20 @@ trace_integrity() {
 	[ "$found" = yes ]
 }
 
+emit_trace_integrity_diagnostics() {
+	for before_file in "$scratch"/trace-stats-before-cpu*; do
+		[ -f "$before_file" ] || continue
+		cpu=${before_file##*trace-stats-before-}
+		after_file=$scratch/trace-stats-after-$cpu
+		before=$("$busybox" cat "$before_file") || before=unavailable
+		after=$("$busybox" cat "$after_file" 2>/dev/null) || after=unavailable
+		emit "TRACE_STATS cpu=$cpu before=$before after=$after"
+	done
+	trace_bytes=$("$busybox" wc -c <"$tracefs/trace") || trace_bytes=unavailable
+	trace_lines=$("$busybox" wc -l <"$tracefs/trace") || trace_lines=unavailable
+	emit "TRACE_SIZE bytes=$trace_bytes lines=$trace_lines"
+}
+
 trace_buffers_empty() {
 	found=no
 	for stats_file in "$tracefs"/per_cpu/cpu*/stats; do
@@ -169,33 +196,6 @@ trace_buffers_empty() {
 	[ "$found" = yes ]
 }
 
-trace_snapshot_empty() {
-	[ -e "$tracefs/snapshot" ] || return 0
-	[ -r "$tracefs/snapshot" ] || return 1
-	snapshot_header=$(
-		"$busybox" head -n 6 "$tracefs/snapshot" | "$busybox" grep 'entries-in-buffer/entries-written:'
-	) || snapshot_header=
-	if [ -n "$snapshot_header" ]; then
-		printf '%s\n' "$snapshot_header" | "$busybox" awk '
-			{
-				split($0, fields, ":")
-				split(fields[2], counts, "/")
-				sub(/[[:space:]].*/, "", counts[2])
-				if (counts[1] != "0" || counts[2] != "0")
-					bad = 1
-				else
-					found = 1
-			}
-			END {exit !(found && !bad)}
-		'
-		return $?
-	fi
-	case $("$busybox" head -n 1 "$tracefs/snapshot") in
-		'' | 'Snapshot is empty'*) return 0 ;;
-		*) return 1 ;;
-	esac
-}
-
 trace_events_disabled() {
 	for event_enable_file in "$tracefs"/events/enable "$tracefs"/events/*/enable "$tracefs"/events/*/*/enable; do
 		[ -r "$event_enable_file" ] || continue
@@ -204,25 +204,16 @@ trace_events_disabled() {
 	return 0
 }
 
-filter_is_empty() {
-	filter_file=$1
-	[ -r "$filter_file" ] || return 1
-	filter_bytes=$("$busybox" wc -c <"$filter_file")
-	[ "$filter_bytes" -le 256 ] || return 1
-	filter_value=$("$busybox" cat "$filter_file")
-	case $filter_value in '' | '#### all functions enabled ####' | 'no pid') return 0 ;; esac
-	return 1
-}
-
 disable_trace_for_stress() {
 	printf '0\n' >"$tracefs/tracing_on"
+	restore_graph_proc
 	printf 'nop\n' >"$tracefs/current_tracer"
 	printf '\n' >"$tracefs/set_ftrace_pid"
 	printf '\n' >"$tracefs/set_ftrace_notrace_pid"
 	printf '\n' >"$tracefs/set_ftrace_filter"
 	printf '\n' >"$tracefs/set_ftrace_notrace"
-	printf '\n' >"$tracefs/set_graph_function"
-	printf '\n' >"$tracefs/set_graph_notrace"
+	printf '\n' >"$trace_root/set_graph_function"
+	printf '\n' >"$trace_root/set_graph_notrace"
 	printf '%s\n' "$trace_buffer_initial" >"$tracefs/buffer_size_kb"
 	[ "$("$busybox" cat "$tracefs/tracing_on")" = 0 ]
 	[ "$("$busybox" cat "$tracefs/current_tracer")" = nop ]
@@ -232,8 +223,8 @@ disable_trace_for_stress() {
 		"$tracefs/set_ftrace_notrace" \
 		"$tracefs/set_ftrace_pid" \
 		"$tracefs/set_ftrace_notrace_pid" \
-		"$tracefs/set_graph_function" \
-		"$tracefs/set_graph_notrace"; do
+		"$trace_root/set_graph_function" \
+		"$trace_root/set_graph_notrace"; do
 		filter_is_empty "$filter_file"
 	done
 	trace_configured=no
@@ -305,11 +296,13 @@ finish() {
 	rc=$?
 	trap - EXIT
 	set +e
+	emit "CLEANUP_BEGIN"
 	if [ -n "$resident_pid" ] && [ -d "/proc/$resident_pid" ]; then
 		kill "$resident_pid" 2>/dev/null
 		wait "$resident_pid" 2>/dev/null
 	fi
 	trace_cleanup || cleanup_ok=no
+	emit "CLEANUP_TRACE result=$cleanup_ok"
 	if [ -n "$delegated_parent" ] && [ -d "$delegated_parent" ]; then
 		if has_io "$delegated_parent/cgroup.subtree_control"; then
 			if manager_is_empty; then
@@ -353,8 +346,11 @@ finish() {
 		service_controller_restored=no
 		[ "$service_subtree_captured" = no ] || cleanup_ok=no
 	fi
+	if [ "$trace_instance_owned" = yes ]; then
+		"$busybox" rmdir "$tracefs" || cleanup_ok=no
+	fi
 	if [ "$trace_mounted" = yes ]; then
-		"$busybox" umount "$tracefs" || cleanup_ok=no
+		"$busybox" umount "$trace_root" || cleanup_ok=no
 	fi
 	if [ -n "$payload" ] && [ -e "$payload" ]; then cleanup_ok=no; fi
 	if [ -n "$driver" ] && [ -e "$driver" ]; then cleanup_ok=no; fi
@@ -474,21 +470,26 @@ emit "READY service_parent_empty=yes manager_empty=yes io_available=yes writer_i
 	"service_io_propagated=yes service_cgroup=$service_cgroup manager_cgroup=$service_cgroup/manager "\
 	"resident_pid=$resident_pid"
 
-if [ ! -r "$tracefs/available_filter_functions" ]; then
-	if "$busybox" mount -t tracefs tracefs "$tracefs" 2>/dev/null; then
+if [ ! -r "$trace_root/available_filter_functions" ]; then
+	if "$busybox" mount -t tracefs tracefs "$trace_root" 2>/dev/null; then
 		trace_mounted=yes
 	else
 		unexercised tracefs_unavailable
 	fi
 fi
-[ -r "$tracefs/set_graph_function" ] || unexercised function_graph_unavailable
+[ -r "$trace_root/set_graph_function" ] || unexercised function_graph_unavailable
+[ "$("$busybox" cat "$trace_root/current_tracer")" = nop ] || unexercised global_tracer_busy
+tracefs=$trace_root/instances/agentplane-delegated-cgroup-$$
+[ ! -e "$tracefs" ] || unexercised trace_instance_name_in_use
+"$busybox" mkdir "$tracefs" || unexercised trace_instance_unavailable
+trace_instance_owned=yes
 "$busybox" grep -qw function_graph "$tracefs/available_tracers" || unexercised function_graph_tracer_unavailable
 for trace_function in \
 	cgroup_subtree_control_write \
 	cgroup_update_dfl_csses \
 	percpu_down_write \
 	rcu_sync_enter; do
-	"$busybox" grep -Eq "^$trace_function([[:space:]]|$)" "$tracefs/available_filter_functions" ||
+	"$busybox" grep -Eq "^$trace_function([[:space:]]|$)" "$trace_root/available_filter_functions" ||
 		unexercised "trace_function_unavailable_$trace_function"
 done
 [ "$("$busybox" cat "$tracefs/current_tracer")" = nop ] || unexercised tracer_busy
@@ -501,21 +502,26 @@ for filter_file in \
 	"$tracefs/set_ftrace_notrace" \
 	"$tracefs/set_ftrace_pid" \
 	"$tracefs/set_ftrace_notrace_pid" \
-	"$tracefs/set_graph_function" \
-	"$tracefs/set_graph_notrace"; do
+	"$trace_root/set_graph_function" \
+	"$trace_root/set_graph_notrace"; do
 	filter_is_empty "$filter_file" || unexercised "preexisting_or_unsupported_filter_${filter_file##*/}"
 done
 trace_events_disabled || unexercised preexisting_event_tracing
-trace_snapshot_empty || unexercised preexisting_snapshot_records
+# This instance was created exclusively by the probe, so there is no prior
+# snapshot to preserve. The global tracefs snapshot is never touched.
 trace_owned=yes
 trace_recording_stopped=yes
 printf '0\n' >"$tracefs/tracing_on"
 trace_buffers_empty || unexercised preexisting_trace_records
 trace_configured=yes
 printf '%s\n' "$trace_buffer_kib" >"$tracefs/buffer_size_kb"
-printf 'cgroup_subtree_control_write\n' >"$tracefs/set_graph_function"
+printf 'cgroup_subtree_control_write\n' >"$trace_root/set_graph_function"
 printf '%s\n' "$$" >"$tracefs/set_ftrace_pid"
 printf 'function_graph\n' >"$tracefs/current_tracer"
+trace_proc_value=$("$busybox" cat "$tracefs/options/funcgraph-proc") || unexercised graph_proc_option_unavailable
+case $trace_proc_value in 0 | 1) trace_proc_initial=$trace_proc_value ;; *) unexercised graph_proc_option_unavailable ;; esac
+printf '1\n' >"$tracefs/options/funcgraph-proc" || unexercised graph_proc_option_write_failed
+[ "$("$busybox" cat "$tracefs/options/funcgraph-proc")" = 1 ] || unexercised graph_proc_option_not_enabled
 capture_trace_stats before || unexercised trace_stats_unavailable
 printf '\n' >"$tracefs/trace"
 printf '1\n' >"$tracefs/tracing_on"
@@ -527,7 +533,10 @@ has_io "$delegated_parent/cgroup.subtree_control" || unexercised proof_transitio
 has_io "$payload/cgroup.controllers" || unexercised proof_transition_not_visible_to_payload
 verify_live_fixture || unexercised proof_fixture_lost_after_transition
 capture_trace_stats after || unexercised trace_stats_unavailable_after_witness
-trace_integrity || unexercised trace_overrun_or_incomplete_stats
+if ! trace_integrity; then
+	emit_trace_integrity_diagnostics
+	unexercised trace_overrun_or_incomplete_stats
+fi
 trace_bytes=$("$busybox" wc -c <"$tracefs/trace")
 trace_lines=$("$busybox" wc -l <"$tracefs/trace")
 [ "$trace_bytes" -lt "$trace_byte_limit" ] || unexercised trace_byte_limit
@@ -540,7 +549,12 @@ fi
 trace_chain=$("$busybox" head -n 1 "$scratch/trace-chain")
 case $trace_chain in
 	"status=proven "*) ;;
-	*) unexercised "complete_writer_pid_trace_path_not_proven" ;;
+	*)
+		emit "TRACE_WITNESS_UNPROVEN $trace_chain"
+		"$busybox" grep 'cgroup_subtree_control_write' "$scratch/trace" | "$busybox" head -n 3 |
+			while IFS= read -r trace_root_line; do emit "TRACE_ROOT $trace_root_line"; done
+		unexercised "complete_writer_pid_trace_path_not_proven"
+		;;
 esac
 disable_trace_for_stress || unexercised trace_disable_failed
 emit "TRACE_PROOF step=proof_on io=yes verified=yes writer_pid=$$ pid_match=yes trace_integrity=clean "\
