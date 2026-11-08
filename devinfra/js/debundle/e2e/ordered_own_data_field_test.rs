@@ -300,6 +300,102 @@ fn root_reads_stay_on_both_sides_of_an_alias_write() {
 }
 
 #[test]
+fn root_ordinary_object_write_records_a_possible_own_property_cell() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const record = { value: 7 };\nconst before = record.value;\nrecord.value = 42;\nconst after = record.value;\nconsole.log(before, after);\n",
+        vec![
+            logical_module("record", &[Member::new("record")]),
+            logical_module("before", &[Member::new("before")]),
+            logical_module_with_anon("write", &[], &["record.value = 42;"]),
+            logical_module("after", &[Member::new("after")]),
+            logical_module_with_anon("observe", &[], &["console.log(before, after);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "7 42\n");
+
+    let graph = fixture.dependency_graph();
+    let before = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == "before")
+        })
+        .expect("before read source unit");
+    let before_heap = before
+        .synchronous_execution
+        .as_ref()
+        .expect("before read execution")
+        .heap_frontier
+        .as_ref()
+        .expect("before read heap frontier");
+    let reads = &before_heap.non_assumed_heap_accesses.reads;
+    let origin = reads
+        .sample
+        .iter()
+        .find_map(|cell| match cell {
+            EffectCellReport::OwnProperty { origin, property } if property == "value" => {
+                Some(*origin)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("before read lacks its own-property cell: {reads:#?}"));
+
+    let writer = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 2)
+        .expect("member-write source unit");
+    let writes = &writer
+        .synchronous_execution
+        .as_ref()
+        .expect("member-write execution")
+        .heap_frontier
+        .as_ref()
+        .expect("member-write heap frontier")
+        .non_assumed_heap_accesses
+        .writes;
+    assert!(
+        writes.sample.iter().any(|cell| matches!(
+            cell,
+            EffectCellReport::OwnProperty {
+                origin: observed_origin,
+                property,
+            } if *observed_origin == origin && property == "value"
+        )),
+        "possible write must preserve the read's exact cell: {writes:#?}"
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && &edge.source == &writer.id
+                && &edge.target == &before.id
+                && serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
+                    .as_array()
+                    .is_some_and(|conflicts| {
+                        conflicts.iter().any(|conflict| {
+                            conflict["cell"]["kind"] == "own_property"
+                                && conflict["cell"]["origin"] == origin
+                                && conflict["cell"]["property"] == "value"
+                        })
+                    })
+        }),
+        "writer 2 must conflict with read 1 on its exact cell: {:#?}",
+        graph.edges
+    );
+
+    let coverage = fixture.effect_translation_validation();
+    assert!(
+        coverage["coverage"]["unknown_coverage"]["general_heap"]
+            .as_u64()
+            .unwrap()
+            > 0,
+        "the exact cell must not erase general-heap uncertainty: {coverage:#}"
+    );
+}
+
+#[test]
 fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
     let fixture = run_fixture(FixtureOpts::new(
         "const record = { value: 7 };\nfunction mutate() { record.value = 42; return 1; }\nconst combined = record.value + mutate();\nconst after = record.value;\nconsole.log(combined, after);\n",
