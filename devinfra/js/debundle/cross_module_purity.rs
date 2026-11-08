@@ -221,19 +221,36 @@ fn selected_array_declarator<'a>(
     let var = var_decl_for_source_item(item).ok_or_else(|| {
         anyhow::anyhow!("{request} must select a direct var/let/const declaration")
     })?;
-    let [declarator] = var.decls.as_slice() else {
-        bail!("{request} must select one simple top-level declarator");
+    let mut matching_declarators =
+        var.decls
+            .iter()
+            .enumerate()
+            .filter_map(|(index, declarator)| {
+                let Pat::Ident(binding) = &declarator.name else {
+                    return None;
+                };
+                (binding.id.sym.as_ref() == declaration.binding).then_some((
+                    index,
+                    declarator,
+                    binding.id.to_id(),
+                ))
+            });
+    let Some((selected_index, declarator, binding_id)) = matching_declarators.next() else {
+        bail!("{request} must select a simple identifier declarator for its source binding");
     };
-    let Pat::Ident(binding) = &declarator.name else {
-        bail!("{request} must select a simple identifier declarator");
-    };
-    if binding.id.sym.as_ref() != declaration.binding {
-        bail!("{request} no longer selects its declared binding");
+    if matching_declarators.next().is_some() {
+        bail!("{request} has duplicate simple declarators for its selected binding");
+    }
+    if var.decls.iter().enumerate().any(|(index, sibling)| {
+        index != selected_index
+            && binding_targets::binding_names(&sibling.name).any(|binding| binding == binding_id)
+    }) {
+        bail!("{request} has another declarator that defines its selected binding");
     }
     let Some(Expr::Array(_)) = declarator.init.as_deref().map(Expr::unwrap_parens) else {
         bail!("{request} must select a direct array literal initializer");
     };
-    Ok((declarator, binding.id.to_id()))
+    Ok((declarator, binding_id))
 }
 
 fn primitive_array_kinds(array: &swc_ecma_ast::ArrayLit, request: &str) -> Result<Vec<PrimKinds>> {
@@ -528,6 +545,12 @@ impl<'a> ModulePurityFacts<'a> {
                 let mut known_eager_rebindings = BTreeMap::<_, BTreeSet<_>>::new();
                 let mut known_lazy_rebindings = BTreeSet::new();
                 let mut known_member_write_roots = BTreeMap::<_, BTreeSet<_>>::new();
+                let mut var_initializer_totals = BTreeMap::<_, usize>::new();
+                for statement in &structural.per_statement {
+                    for (binding, count) in &statement.var_initializer_counts {
+                        *var_initializer_totals.entry(binding.clone()).or_default() += *count;
+                    }
+                }
                 for statement in &structural.per_statement {
                     let write_position = views
                         .get(statement.ordinal.0)
@@ -538,6 +561,18 @@ impl<'a> ModulePurityFacts<'a> {
                             .entry(binding.clone())
                             .or_default()
                             .insert(write_position);
+                    }
+                    for (binding, count) in &statement.var_initializer_counts {
+                        if *count > 0
+                            && var_initializer_totals
+                                .get(binding)
+                                .is_some_and(|total| *total > 1)
+                        {
+                            known_eager_rebindings
+                                .entry(binding.clone())
+                                .or_default()
+                                .insert(write_position);
+                        }
                     }
                     known_lazy_rebindings.extend(statement.rebinds.lazy.iter().cloned());
                     for binding in &statement.member_write_roots {

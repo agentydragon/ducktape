@@ -131,6 +131,21 @@ fn run_rejected(
     })
 }
 
+fn run_rejected_without_provider_ownership(
+    consumer: &str,
+    provider: &str,
+    contract: ImportedPrimitiveArraySpreadInputContract,
+) -> RejectedFixture {
+    let chunks = [("static/provider", provider)];
+    let provider_logical_modules = [("static/provider", Vec::new())];
+    run_rejection_fixture(
+        FixtureOpts::new(consumer, empty_consumer_modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_chunk_logical_modules(&provider_logical_modules)
+            .with_imported_primitive_array_spread_inputs("static/app", vec![contract]),
+    )
+}
+
 fn empty_consumer() -> String {
     format!(
         "{CONSUMER_IMPORTS}{CONSUMER_SPREAD}\
@@ -251,6 +266,110 @@ fn nonempty_imported_spread_keeps_callback_effects_and_later_provider_mutation()
         .imported_primitive_array_spread_input_uses;
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].evidence.operands[0].primitive_slots.len(), 1);
+}
+
+#[test]
+fn grouped_provider_declarators_select_each_array_and_keep_sibling_writes_visible() {
+    let consumer = nonempty_consumer();
+    let grouped_provider =
+        "var first = ['a'], second = ['b'];\nexport { first as left, second as right };\n";
+    let fixture = run_configured(
+        &consumer,
+        grouped_provider,
+        nonempty_consumer_modules(),
+        input(
+            &consumer,
+            grouped_provider,
+            None,
+            None,
+            "var values = ['a'], sibling = ['b'];",
+            "var sibling = ['a'], values = ['b'];",
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "a b true 2 2\n");
+
+    let mutation_consumer = empty_consumer();
+    let sibling_write_provider = "var first = ['a'], second = ['b'], sibling = (first[0] = 'changed');\nexport { first as left, second as right };\n";
+    let contract = input(
+        &mutation_consumer,
+        sibling_write_provider,
+        None,
+        None,
+        "var values = ['a'], other = ['b'], sibling = (values[0] = 'changed');",
+        "var other = ['a'], values = ['b'], sibling = (other[0] = 'changed');",
+    );
+    let rejected = run_rejected(&mutation_consumer, sibling_write_provider, Some(contract));
+    assert!(
+        rejected
+            .stderr
+            .contains("known indexed/member write in provider"),
+        "the selected array's write in a sibling declarator must remain visible:\n{}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn duplicate_provider_declarators_in_one_grouped_item_reject_ambiguity() {
+    let consumer = empty_consumer();
+    let grouped_duplicate = "var first = ['a'], first = ['b'];\nconst second = ['b'];\nexport { first as left, second as right };\n";
+    let contract = input(
+        &consumer,
+        grouped_duplicate,
+        None,
+        None,
+        "var values = ['a'], ANYTHING = ANYTHING;",
+        "const values = ['b'];",
+    );
+    let rejected = run_rejected(&consumer, grouped_duplicate, Some(contract));
+    assert!(
+        rejected
+            .stderr
+            .contains("has duplicate simple declarators for its selected binding"),
+        "the selected body item must reject duplicate simple declarators for the provider binding:\n{}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn destructuring_sibling_cannot_rebind_the_selected_provider_binding() {
+    let consumer = empty_consumer();
+    let provider = "var first = ['a'], { first } = { first: ['changed'] };\nconst second = ['b'];\nexport { first as left, second as right };\n";
+    let contract = input(
+        &consumer,
+        provider,
+        None,
+        None,
+        "var values = ['a'], DECLARATORS_AFTER = null;",
+        "const values = ['b'];",
+    );
+    let rejected = run_rejected_without_provider_ownership(&consumer, provider, contract);
+    assert!(
+        rejected
+            .stderr
+            .contains("has another declarator that defines its selected binding"),
+        "a destructuring sibling rebinding the selected name must be rejected:\n{}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn cross_statement_var_reinitialization_of_provider_array_is_rejected() {
+    let consumer = empty_consumer();
+    let provider = "var first = ['a'];\nvar first = ['changed'];\nconst second = ['b'];\nexport { first as left, second as right };\n";
+    let contract = input(
+        &consumer,
+        provider,
+        None,
+        None,
+        "var values = ['a'];",
+        "const values = ['b'];",
+    );
+    let rejected = run_rejected_without_provider_ownership(&consumer, provider, contract);
+    assert!(
+        rejected.stderr.contains("known source rebind in provider"),
+        "a second initialized var declaration must be surfaced as a known rebind:\n{}",
+        rejected.stderr
+    );
 }
 
 #[test]
