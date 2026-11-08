@@ -319,7 +319,7 @@ fn project_analysis_rejects_missing_and_foreign_resolved_members() {
                 "chunk_analysis_options.static/app.native_operation_inputs[0]",
                 &format!("module {module}"),
                 &format!("member {name}"),
-                "chunk-relative",
+                "resolved_member names no logical module member",
             ],
         );
     }
@@ -342,7 +342,7 @@ fn project_analysis_rejects_missing_and_foreign_resolved_members() {
             "module peer",
             "member alias",
             "static/peer",
-            "chunk-relative",
+            "resolved_member belongs to another chunk",
         ],
     );
 }
@@ -385,7 +385,7 @@ fn resolved_member_cannot_reference_another_provider_chunk() {
                 "static/app",
                 vec![relational_input(CONSUMER, "peer", "alias")],
             ),
-        &["resolved_member belongs to another provider"],
+        &["resolved_member belongs to another chunk"],
     );
 }
 
