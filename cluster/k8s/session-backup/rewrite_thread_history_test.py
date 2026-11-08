@@ -45,15 +45,21 @@ def test_stages_and_verifies_only_projection(repository: Path, tmp_path: Path, r
     (stage / "memories_1.sqlite").write_text("keep memory")
     run("backup", ".codex", ".local", cwd=repository)
     original = json.loads(run("snapshots", "--json"))[0]["id"]
+    (codex / "thread_history_1.sqlite").write_text("second projection")
+    run("backup", ".codex", ".local", cwd=repository)
+    originals = json.loads(run("snapshots", "--json"))
+    assert len(originals) == 2
+    assert any(row.get("parent") == original for row in originals)
     plan = tmp_path / "plan.json"
     report = tmp_path / "report.json"
     rewrite.plan(plan)
-    assert len(json.loads(run("snapshots", "--json"))) == 1
+    assert len(json.loads(run("snapshots", "--json"))) == 2
     rewrite.stage(plan)
     rewrite.stage(plan)  # An interrupted run can be resumed without duplicating replacements.
     rewrite.verify(plan, report)
     replacement = json.loads(report.read_text())["replacements"][original]
-    assert len(json.loads(run("snapshots", "--json"))) == 2
+    assert len(json.loads(report.read_text())["replacements"]) == 2
+    assert len(json.loads(run("snapshots", "--json"))) == 4
     assert run("dump", original, "/.codex/thread_history_1.sqlite") == "projection"
     assert run("dump", replacement, "/.codex/session.jsonl") == "keep journal"
     assert (
