@@ -50,25 +50,18 @@ def _database(chart: Chart) -> None:
         chart,
         "archive-database",
         ref=DATABASE,
-        annotations={
-            "description": (
-                "Imported workstation AI session history, independently protected by CNPG backups and WAL archive."
-            )
-        },
-        # During migration existing SSD PVCs stay attached to their original instances.
-        # HDD replicas may run on any OVH node while CNPG maintains pod anti-affinity.
+        annotations={"description": "Disposable, Restic-derived view of workstation AI session history."},
         profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
         size="100Gi",
         resize_in_use_volumes=False,
-        instances=3,
+        instances=1,
         # The default 5s replication timeouts disconnect the HDD standby during
         # observed multi-second storage and network stalls.
         postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
         initdb=cluster.same_owner_initdb("ai_session_archive"),
         wal_archive=True,
     )
-    # Retain weekly base backups and continuous WAL for 30 days; the imported database can outlive
-    # source repository retention and must not rely on Restic replay as its only recovery path.
+    # Backups are a recovery convenience; retained Restic snapshots are the source of truth.
     backup.CnpgBackup(
         chart,
         "archive-database-backup",
@@ -361,8 +354,5 @@ def archive(
             forgejo_image_automation,
         ),
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        description=(
-            "CNPG-backed historical Restic session imports and owner-authenticated browser, with independent 30-day "
-            "CNPG backup and WAL retention."
-        ),
+        description="Disposable CNPG-backed view of Restic session imports and owner-authenticated browser.",
     )
