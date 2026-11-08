@@ -456,6 +456,12 @@ crate.annotation(
     crate_features = ["serde"],
     deps = ["@crates//:serde"],
 )
+crate.annotation(
+    crate = "swc_ecma_transforms_base",
+    patch_args = ["-p1"],
+    patches = ["//patches:swc_ecma_transforms_base_49_0_1.patch"],
+    version = "49.0.1",
+)
 
 # expose the generated repo (↑ name="crates")
 use_repo(crate, "crates")

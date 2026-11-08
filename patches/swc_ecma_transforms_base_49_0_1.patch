@@ -1,0 +1,20 @@
+--- a/src/resolver/mod.rs
++++ b/src/resolver/mod.rs
+@@ -372,12 +372,16 @@ impl<'a> Resolver<'a> {
+     fn try_resolving_as_type(&mut self, i: &mut Ident) {
+         if i.ctxt.outer() == self.config.unresolved_mark {
+             i.ctxt = SyntaxContext::empty()
+         }
+
++        let old_ident_type = self.ident_type;
++        let old_in_type = self.in_type;
++        self.ident_type = IdentType::Ref;
+         self.in_type = true;
+         i.visit_mut_with(self);
+-        self.in_type = false;
++        self.ident_type = old_ident_type;
++        self.in_type = old_in_type;
+     }
+ }
+
+ macro_rules! typed {

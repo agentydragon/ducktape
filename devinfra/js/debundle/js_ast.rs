@@ -827,7 +827,89 @@ pub fn named_export_module_item(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swc_common::{DUMMY_SP, Spanned};
+    use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
+
+    fn default_export_ident(parsed: &ParsedJsModule) -> &Ident {
+        parsed
+            .module
+            .body
+            .iter()
+            .find_map(|item| match item {
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) => {
+                    if let Expr::Ident(ident) = &*export.expr {
+                        Some(ident)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .expect("default export expression identifier")
+    }
+
+    #[test]
+    fn default_export_identifier_preserves_value_and_type_resolution() {
+        with_swc_globals(|| {
+            let unresolved = parse_js_module(
+                "unresolved-default.js",
+                "import remote from './dep.js'; export default defaultRead;",
+            )
+            .unwrap();
+            assert_eq!(
+                default_export_ident(&unresolved).ctxt,
+                SyntaxContext::empty().apply_mark(unresolved.unresolved_mark),
+            );
+
+            let bound = parse_js_module(
+                "bound-default.js",
+                "import remote from './dep.js'; const defaultValue = 1; export default defaultValue;",
+            )
+            .unwrap();
+            let binding = bound
+                .module
+                .body
+                .iter()
+                .find_map(|item| match item {
+                    ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => {
+                        declaration.decls.iter().find_map(|declarator| {
+                            if let swc_ecma_ast::Pat::Ident(binding) = &declarator.name
+                                && binding.id.sym == *"defaultValue"
+                            {
+                                Some(&binding.id)
+                            } else {
+                                None
+                            }
+                        })
+                    }
+                    _ => None,
+                })
+                .expect("default value binding");
+            assert_eq!(default_export_ident(&bound).to_id(), binding.to_id());
+
+            let type_only = parse_js_module(
+                "type-only-default.js",
+                "import remote from './dep.js'; interface TypeOnlyDefault {} export default TypeOnlyDefault;",
+            )
+            .unwrap();
+            let type_binding = type_only
+                .module
+                .body
+                .iter()
+                .find_map(|item| match item {
+                    ModuleItem::Stmt(Stmt::Decl(Decl::TsInterface(interface)))
+                        if interface.id.sym == *"TypeOnlyDefault" =>
+                    {
+                        Some(&interface.id)
+                    }
+                    _ => None,
+                })
+                .expect("type-only binding");
+            assert_eq!(
+                default_export_ident(&type_only).to_id(),
+                type_binding.to_id(),
+            );
+        });
+    }
 
     #[test]
     fn batch_source_unit_ordinals_map_to_raw_body_items() {
