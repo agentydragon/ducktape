@@ -179,16 +179,6 @@ trace_events_disabled() {
 	return 0
 }
 
-filter_is_empty() {
-	filter_file=$1
-	[ -r "$filter_file" ] || return 1
-	filter_bytes=$("$busybox" wc -c <"$filter_file")
-	[ "$filter_bytes" -le 256 ] || return 1
-	filter_value=$("$busybox" cat "$filter_file")
-	case $filter_value in '' | '#### all functions enabled ####' | 'no pid') return 0 ;; esac
-	return 1
-}
-
 disable_trace_for_stress() {
 	printf '0\n' >"$tracefs/tracing_on"
 	printf 'nop\n' >"$tracefs/current_tracer"

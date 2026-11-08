@@ -58,6 +58,26 @@ fi
     subprocess.run([str(_busybox(tmp_path)), "sh", "-c", shell, "sh", str(helper), str(proc_file)], check=True)
 
 
+def test_trace_filter_empty_sentinels_do_not_accept_real_filters(tmp_path: Path) -> None:
+    helper = _runfile("DELEGATED_CGROUP_STRESS_HELPERS_RLOCATION")
+    busybox = _busybox(tmp_path)
+    trace_filter = tmp_path / "filter"
+    shell = r"""
+busybox=$1
+. "$2"
+file=$3
+for value in '' '#### all functions enabled ####' '#### no functions disabled ####' 'no pid'; do
+    printf '%s\n' "$value" >"$file"
+    filter_is_empty "$file" || exit 1
+done
+printf '%s\n' '#### no functions disabled ####' 'do_not_trace_me' >"$file"
+if filter_is_empty "$file"; then exit 1; fi
+printf '%s\n' 'do_not_trace_me' >"$file"
+if filter_is_empty "$file"; then exit 1; fi
+"""
+    subprocess.run([str(busybox), "sh", "-c", shell, "sh", str(busybox), str(helper), str(trace_filter)], check=True)
+
+
 def test_unit_uses_an_opt_in_systemd_delegation_boundary() -> None:
     service = _runfile("DELEGATED_CGROUP_STRESS_SERVICE_RLOCATION").read_text().splitlines()
     timer = _runfile("DELEGATED_CGROUP_STRESS_TIMER_RLOCATION").read_text().splitlines()
