@@ -823,7 +823,7 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
                     .cloned()
                     .map(|property| (property, OwnPropertyDescriptorSyntax::Data))
                     .collect(),
-                creation_order: source_order,
+                creation_order: source_order.clone(),
             };
             if !context
                 .heap()
