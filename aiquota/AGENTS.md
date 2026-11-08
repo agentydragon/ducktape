@@ -40,8 +40,9 @@ The scenarios feed GNOME renders (`gnome/test_render.py`) and dashboard screensh
 themes (`frontend:screenshots`).
 
 **The board must survive embedding**: `frontend/board.css` is `aiquota-`-prefixed with the
-palette scoped to `.aiquota-scope`; the component neither fetches nor reads a clock (host
-passes `now`). No bare element selectors, `:root` tokens or `useEffect` fetches.
+palette scoped to `.aiquota-scope` and derived from the host Mantine theme; the host supplies
+`MantineProvider` and Mantine styles. The component neither fetches nor reads a clock (host passes
+`now`). No bare element selectors, `:root` tokens or `useEffect` fetches.
 
 ## Provider API quirks
 

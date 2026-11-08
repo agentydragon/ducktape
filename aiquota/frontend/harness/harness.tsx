@@ -10,6 +10,7 @@
  * the same picture on every run.
  */
 
+import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import type { AllQuotasView } from "../schema";
@@ -17,6 +18,7 @@ import { App } from "../app";
 import { Dashboard } from "../dashboard";
 import scenes from "../fixtures/scenes.json";
 
+import "@mantine/core/styles.css";
 import "../board.css";
 import "../page.css";
 
@@ -60,16 +62,18 @@ if (query.has("live")) {
 }
 
 createRoot(root).render(
-  query.has("live") ? (
-    <App />
-  ) : (
-    <Dashboard
-      quotas={quotas}
-      now={Date.parse(quotas.presentation_at ?? quotas.fetched_at)}
-      error={null}
-      connecting={false}
-      stopped={false}
-      onRefresh={() => undefined}
-    />
-  )
+  <MantineProvider defaultColorScheme="auto">
+    {query.has("live") ? (
+      <App />
+    ) : (
+      <Dashboard
+        quotas={quotas}
+        now={Date.parse(quotas.presentation_at ?? quotas.fetched_at)}
+        error={null}
+        connecting={false}
+        stopped={false}
+        onRefresh={() => undefined}
+      />
+    )}
+  </MantineProvider>
 );

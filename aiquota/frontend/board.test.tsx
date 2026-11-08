@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +24,13 @@ afterEach(() => {
 });
 
 function render(quotas: AllQuotasView, now = Date.parse("2026-01-15T12:00:00Z")): void {
-  act(() => root.render(<QuotaBoard quotas={quotas} now={now} />));
+  act(() =>
+    root.render(
+      <MantineProvider env="test">
+        <QuotaBoard quotas={quotas} now={now} />
+      </MantineProvider>
+    )
+  );
 }
 
 function sampleQuotas(): AllQuotasView {
@@ -173,7 +180,7 @@ describe("QuotaBoard", () => {
     );
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("On pace");
 
-    act(() => root.render(<QuotaBoard quotas={quotas} now={Date.parse("2026-01-15T14:31:00Z")} />));
+    render(quotas, Date.parse("2026-01-15T14:31:00Z"));
 
     const codex = container.querySelector('.aiquota-card[aria-label="Codex quota"]');
     expect(codex?.textContent).toContain("Awaiting updated usage");

@@ -3,6 +3,7 @@
  * the host owns fetching.
  */
 
+import { Badge, Paper } from "@mantine/core";
 import { type JSX } from "react";
 
 import type { AllQuotasView, BalanceView, BurnStatus, GrantView, ProviderView, WindowView } from "./schema";
@@ -100,7 +101,14 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
   const quotaExhausted = windows.some(({ window, resetPending: pending }) => window.exhausted && !pending);
 
   return (
-    <article className={`aiquota-card aiquota-tint-${tint}`} aria-label={`${label} quota`}>
+    <Paper
+      component="article"
+      withBorder
+      radius="md"
+      p="md"
+      className={`aiquota-card aiquota-tint-${tint}`}
+      aria-label={`${label} quota`}
+    >
       <header className="aiquota-card-head">
         <h3 className="aiquota-card-title">
           <span className={`aiquota-dot aiquota-tint-${tint}`} aria-hidden="true" />
@@ -108,11 +116,15 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
         </h3>
         <div className="aiquota-card-status">
           {staleSince !== null ? (
-            <span className="aiquota-badge aiquota-badge-stale">
+            <Badge color="yellow" variant="light" className="aiquota-badge-stale">
               Data stale · {formatAge((now - staleSince) / 1000)}
-            </span>
+            </Badge>
           ) : null}
-          {errorSummary !== null && <span className="aiquota-badge aiquota-badge-error">{errorSummary}</span>}
+          {errorSummary !== null && (
+            <Badge color="red" variant="light" className="aiquota-badge-error">
+              {errorSummary}
+            </Badge>
+          )}
         </div>
       </header>
 
@@ -145,7 +157,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
                 : "No quota, balance, or grant readings are available for this provider."}
             </p>
           )}
-    </article>
+    </Paper>
   );
 }
 

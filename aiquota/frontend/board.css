@@ -9,51 +9,24 @@
  * vocabulary — cool / ok / warn / hot / unknown / stale / error — because the panel icon and
  * this board are read as the same signal.
  */
+/* Theme tokens come from the embedding MantineProvider, including its chosen color scheme. */
 .aiquota-scope {
-  --aiquota-surface: #ffffff;
-  --aiquota-surface-sunken: #eef0f4;
-  --aiquota-border: #dfe3ea;
-  --aiquota-bg: #f6f7f9;
-  --aiquota-text: #10141c;
-  --aiquota-muted: #5d6779;
-  --aiquota-accent: #0d8f7c;
-  --aiquota-track: #e2e6ee;
-  --aiquota-tick: #7c8798;
-
-  --aiquota-cool: #2f7fd4;
-  --aiquota-ok: #0d8f7c;
-  --aiquota-warn: #b8860b;
-  --aiquota-hot: #d92b36;
-  --aiquota-unknown: #8b95a6;
-  --aiquota-stale: #8b95a6;
-  --aiquota-error: #d92b36;
-
-  --aiquota-shadow: 0 1px 2px rgb(16 20 28 / 6%), 0 8px 24px rgb(16 20 28 / 4%);
-}
-
-/* Follow the viewer's system color preference. */
-@media (prefers-color-scheme: dark) {
-  .aiquota-scope {
-    --aiquota-surface: #171d28;
-    --aiquota-surface-sunken: #131922;
-    --aiquota-border: #2a3140;
-    --aiquota-bg: #0e121a;
-    --aiquota-text: #e8ecf2;
-    --aiquota-muted: #97a2b6;
-    --aiquota-accent: #71d4c2;
-    --aiquota-track: #2b3445;
-    --aiquota-tick: #8492a8;
-
-    --aiquota-cool: #5ea8f0;
-    --aiquota-ok: #71d4c2;
-    --aiquota-warn: #f4c95d;
-    --aiquota-hot: #fb7185;
-    --aiquota-unknown: #78849a;
-    --aiquota-stale: #78849a;
-    --aiquota-error: #fb7185;
-
-    --aiquota-shadow: none;
-  }
+  --aiquota-surface: var(--mantine-color-body);
+  --aiquota-surface-sunken: var(--mantine-color-default-hover);
+  --aiquota-border: var(--mantine-color-default-border);
+  --aiquota-bg: var(--mantine-color-body);
+  --aiquota-text: var(--mantine-color-text);
+  --aiquota-muted: var(--mantine-color-dimmed);
+  --aiquota-accent: var(--mantine-primary-color-filled);
+  --aiquota-track: var(--mantine-color-gray-light);
+  --aiquota-tick: var(--mantine-color-dimmed);
+  --aiquota-cool: var(--mantine-color-blue-text);
+  --aiquota-ok: var(--mantine-color-teal-text);
+  --aiquota-warn: var(--mantine-color-yellow-text);
+  --aiquota-hot: var(--mantine-color-red-text);
+  --aiquota-unknown: var(--mantine-color-dimmed);
+  --aiquota-stale: var(--mantine-color-dimmed);
+  --aiquota-error: var(--mantine-color-red-text);
 }
 
 .aiquota-tint-cool {
@@ -118,11 +91,6 @@
 }
 
 .aiquota-card {
-  background: var(--aiquota-surface);
-  border: 1px solid var(--aiquota-border);
-  border-radius: 14px;
-  box-shadow: var(--aiquota-shadow);
-  padding: 16px 18px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -176,29 +144,6 @@
   justify-content: flex-end;
   /* Stays in the corner even when it is too wide to share the title's line and wraps below it. */
   margin-left: auto;
-}
-
-.aiquota-badge {
-  border-radius: 99px;
-  font-size: 0.7rem;
-  font-weight: 650;
-  padding: 3px 8px;
-  white-space: nowrap;
-}
-
-.aiquota-badge-stale {
-  background: color-mix(in srgb, var(--aiquota-warn) 18%, transparent);
-  color: var(--aiquota-warn);
-}
-
-.aiquota-badge-fresh {
-  background: color-mix(in srgb, var(--aiquota-ok) 12%, transparent);
-  color: var(--aiquota-ok);
-}
-
-.aiquota-badge-error {
-  background: color-mix(in srgb, var(--aiquota-hot) 16%, transparent);
-  color: var(--aiquota-hot);
 }
 
 .aiquota-error {

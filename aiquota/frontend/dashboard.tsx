@@ -5,6 +5,7 @@
  * QuotaBoard owns quota rendering; this component supplies the standalone page controls.
  */
 
+import { Button, Title } from "@mantine/core";
 import { type JSX } from "react";
 
 import type { AllQuotasView } from "./schema";
@@ -28,21 +29,22 @@ export function Dashboard({
   return (
     <main id="app">
       <header className="aiquota-page-heading">
-        <h1>AI quota</h1>
+        <Title order={1}>AI quota</Title>
         <div className="aiquota-page-status">
           <span className="aiquota-connection" role="status">
             {connecting ? "Connecting to live updates…" : error ? "Live updates unavailable" : "Live updates connected"}
           </span>
-          <button
+          <Button
+            variant="default"
+            leftSection={<RefreshIcon />}
             type="button"
             className="aiquota-refresh"
             onClick={onRefresh}
             disabled={connecting}
             aria-busy={connecting}
           >
-            <RefreshIcon />
-            <span>Reconnect</span>
-          </button>
+            Reconnect
+          </Button>
         </div>
       </header>
       <p className="aiquota-connection-help">
