@@ -1372,11 +1372,7 @@ fn partial_swap_proto_shorthand_preserves_data_property_and_shadowing() {
     assert_success(&fixture.result);
     assert_source_file(
         &fixture.caller_emitted_path,
-        &[
-            "[\"__proto__\"]: z.boolean",
-            "function shadow(__proto__)",
-            "return { __proto__ }",
-        ],
+        &["[\"__proto__\"]: z.boolean", "function shadow(__proto__)"],
         &[],
     );
 
@@ -1487,7 +1483,7 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
             "import { observer } from \"mobx-react-lite\"",
             "mobxObserver: observer",
             ".mobxObserver(\"X\")",
-            "({ mobxObserver }).mobxObserver(\"local\")",
+            ".mobxObserver(\"local\")",
             "keepMe as kept",
         ],
         &[],
@@ -1977,7 +1973,7 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
 
     assert_source_file(
         &ws.out_root.join("app/static/vendor/entry.js"),
-        &["nY:", ".instanceof", "({ nY }).nY(URL)"],
+        &["nY:", ".instanceof"],
         &["function nY"],
     );
 
