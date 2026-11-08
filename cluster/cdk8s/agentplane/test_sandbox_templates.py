@@ -15,9 +15,9 @@ from cdk8s_plus_34 import k8s
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import sandbox_pod, staging
+from cluster.cdk8s.agentplane import platform_routes, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
 
@@ -340,23 +340,25 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
         if source["serviceAccountToken"]["path"] == "token"
     )
     assert auth["token_file"] == f"{token_mount['mountPath']}/{hop_token['path']}"
+
     runner_routes = runner_settings["platform_routes"]
     launcher_routes = launcher_settings["platform_routes"]
-    runner_listener = _host_port(runner_routes["listen_address"])
-    launcher_listener = _host_port(launcher_routes["listen_address"])
-    assert runner_listener[0] == "127.0.0.1"
-    assert launcher_listener[0] == "0.0.0.0"
-    assert runner_listener[1] == launcher_listener[1]
+    runner_listener = ("127.0.0.1", PLATFORM_ROUTES_PORT)
+    assert runner_routes["listen_address"] == f"{runner_listener[0]}:{runner_listener[1]}"
+    assert launcher_routes["listen_address"] == f"0.0.0.0:{PLATFORM_ROUTES_PORT}"
     routes = runner_routes["routes"]
-    launcher_route_config = launcher_routes["routes"]
     ingress_route = routes["ingress"]
     assert ingress_route["service_prefixes"] == ["/agentplane.history_service.SessionJournalIngress/"]
     assert ingress_route["upstream"] == "history-service.agentplane-staging.svc.cluster.local:8081"
-    assert ingress_route["token_file"].endswith("/runner-ingress-token")
+    assert ingress_route["transport"] == {
+        "mode": "plaintext",
+        "token_file": f"{token_mount['mountPath']}/runner-ingress-token",
+    }
     rules_route = routes["egress-rules"]
     assert rules_route["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
-    assert rules_route["token_file"] == auth["token_file"]
+    assert rules_route["transport"] == {"mode": "plaintext", "token_file": auth["token_file"]}
     assert rules_route["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
+
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     env = {entry["name"]: entry.get("value") for entry in runner["env"]}
     assert _host_port(env["AGENTPLANE_EGRESS_GRPC_URL"]) == runner_listener
@@ -364,37 +366,82 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     model_config_route = routes["model-config"]
     assert model_config_route["service_prefixes"] == ["/agentplane.llm_ingress.v1.ModelConfigService/"]
     assert model_config_route["upstream"] == "llm-ingress.agentplane-staging.svc.cluster.local:8081"
-    assert model_config_route["token_file"] == sandbox_pod.audience_token_file(WORKLOAD_TOKEN_AUDIENCE)
+    assert model_config_route["transport"] == {"mode": "plaintext", "token_file": f"{token_mount['mountPath']}/token"}
     notifications_route = routes["notifications"]
     assert notifications_route["service_prefixes"] == ["/agentplane.notification_service.Notifications/"]
     assert notifications_route["upstream"] == "notifications.agentplane-staging.svc.cluster.local:8080"
-    assert notifications_route["token_file"] == f"{token_mount['mountPath']}/notifications-token"
+    assert notifications_route["transport"] == {
+        "mode": "plaintext",
+        "token_file": f"{token_mount['mountPath']}/notifications-token",
+    }
     assert _host_port(env["AGENTPLANE_NOTIFICATIONS_GRPC_URL"]) == runner_listener
     assert env["AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL"] == "platform-route"
     runner_configuration = _runner_configuration(staging_manifests, pod)
     assert _host_port(runner_configuration["model_config_target"]) == runner_listener
     assert "model_config_service" not in runner_configuration
     assert _host_port(env["OTEL_EXPORTER_OTLP_ENDPOINT"]) == runner_listener
-    telemetry_prefixes = routes["telemetry"]["service_prefixes"]
-    assert "token_file" not in routes["telemetry"]
-    assert telemetry_prefixes == [
+    assert routes["telemetry"]["service_prefixes"] == [
         "/opentelemetry.proto.collector.trace.v1.TraceService/",
         "/opentelemetry.proto.collector.metrics.v1.MetricsService/",
         "/opentelemetry.proto.collector.logs.v1.LogsService/",
     ]
-    for name, route in routes.items():
-        assert launcher_route_config[name] == route
-    assert launcher_routes["listen_address"] == "0.0.0.0:3130"
-    del launcher_routes["listen_address"]
-    del runner_routes["listen_address"]
-    del launcher_settings["listen_address"]
-    del runner_settings["listen_address"]
+    assert routes["telemetry"]["transport"] == {"mode": "plaintext"}
+    assert launcher_routes["routes"] == runner_routes["routes"]
+    launcher_routes["listen_address"] = runner_routes["listen_address"]
+    launcher_settings["listen_address"] = runner_settings["listen_address"]
     assert launcher_settings == runner_settings
 
     policy = _by_name(staging_manifests, "ClusterPolicy", f"{staging.ENV.namespace}-launcher-relay")
     inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
     volumes = inject["mutate"]["patchStrategicMerge"]["spec"]["volumes"]
     assert {"name": "egress-sidecar-settings", "configMap": {"name": "launcher-relay-egress-sidecar"}} in volumes
+
+
+def test_runner_egress_mtls_uses_tls_connect_only_for_rules(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "runner-mtls-template-test")
+    EnvironmentSandboxTemplate(
+        chart,
+        "runner-template",
+        replace(staging.ENV, runner_egress_mtls=True),
+        name="runner-mtls-template",
+        image="example.invalid/runner",
+    )
+    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
+    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
+    pod = template["spec"]["pod"]["spec"]
+    settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
+    settings_map = _by_name(docs, "ConfigMap", settings_volume["configMap"]["name"])
+    settings = cast(dict[str, Any], yaml.safe_load(settings_map["data"]["settings.yaml"]))
+
+    proxy_transport = settings["proxy"]["transport"]
+    assert proxy_transport == {
+        "mode": "tls",
+        "ca_file": "/run/agentplane/environment-runtime-tls/ca.crt",
+        "auth": {
+            "mode": "spiffe",
+            "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
+            "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
+        },
+    }
+    route_settings = settings["platform_routes"]
+    assert route_settings["listen_address"] == f"127.0.0.1:{PLATFORM_ROUTES_PORT}"
+    routes = route_settings["routes"]
+    assert routes["ingress"]["transport"]["mode"] == "plaintext"
+    assert routes["notifications"]["transport"]["mode"] == "plaintext"
+    assert routes["model-config"]["transport"]["mode"] == "plaintext"
+    assert routes["telemetry"]["transport"] == {"mode": "plaintext"}
+    assert routes["egress-rules"]["transport"] == {
+        "mode": "tls_connect",
+        "server_uri": platform_routes.EGRESS_PROXY_URI,
+    }
+    assert routes["egress-rules"]["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
+    assert routes["egress-rules"]["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
+    runtime = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
+    runtime_env = {entry["name"]: entry.get("value") for entry in runtime["env"]}
+    assert runtime_env["AGENTPLANE_EGRESS_GRPC_URL"] == f"http://127.0.0.1:{PLATFORM_ROUTES_PORT}"
+    assert runtime_env["AGENTPLANE_EGRESS_GRPC_CREDENTIAL"] == "platform-route"
+    sidecar = one(container for container in pod["initContainers"] if container["name"] == "egress-sidecar")
+    assert all(mount["name"] != "buildbuddy-api-key" for mount in sidecar["volumeMounts"])
 
 
 def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifests: list[dict[str, Any]]) -> None:

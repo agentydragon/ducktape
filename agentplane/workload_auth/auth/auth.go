@@ -51,7 +51,8 @@ func (a *Account) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// Principal is the Pod-bound ServiceAccount identity proven by one TokenReview.
+// Principal is the account and Pod binding established by verified workload credentials.
+// ServiceAccountUID is populated only when the resolver also verifies the canonical account UID.
 type Principal struct {
 	Account           Account
 	ServiceAccountUID string
@@ -59,7 +60,7 @@ type Principal struct {
 	PodUID            string
 }
 
-// IsPodBound reports whether TokenReview proved the singular Pod binding required by
+// IsPodBound reports whether the resolver proved the singular Pod binding required by
 // destinations that preserve an explicit Pod-bound backend caller path.
 func (p Principal) IsPodBound() bool { return p.PodName != "" && p.PodUID != "" }
 
@@ -107,6 +108,13 @@ type Resolver struct {
 	audience   string
 	namespaces map[string]struct{}
 	verdicts   authenticator.Token
+}
+
+// PrincipalResolver resolves the principal admitted by an AnyAccount rule.
+// Resolver implements it with Kubernetes TokenReview; service-owned resolvers may provide another
+// verified source while using the same method policy.
+type PrincipalResolver interface {
+	Resolve(context.Context) (Principal, error)
 }
 
 // Option tunes a Resolver.

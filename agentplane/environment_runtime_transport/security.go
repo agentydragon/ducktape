@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,17 +33,8 @@ func (s Security) Validate() error {
 		if s.TLS == nil {
 			return errors.New("TLS configuration is required for mtls security")
 		}
-		for _, file := range []struct{ name, path string }{
-			{name: "cert_file", path: s.TLS.CertFile},
-			{name: "key_file", path: s.TLS.KeyFile},
-			{name: "ca_file", path: s.TLS.CAFile},
-		} {
-			if file.path == "" {
-				return fmt.Errorf("TLS %s is required for mtls security", file.name)
-			}
-			if !filepath.IsAbs(file.path) {
-				return fmt.Errorf("TLS %s must be an absolute path", file.name)
-			}
+		if err := s.TLS.Validate(); err != nil {
+			return err
 		}
 	case Insecure:
 		if s.TLS != nil {

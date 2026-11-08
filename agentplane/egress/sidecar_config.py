@@ -3,29 +3,49 @@
 from enum import StrEnum
 from ipaddress import AddressValueError, IPv6Address
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoutes
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoutes, TLSConnectRouteTransport
 
 CONTAINER_NAME = "egress-sidecar"
 READINESS_PATH = "/readyz"
 READINESS_HOST = "0.0.0.0"
 READINESS_PORT = 3129
 READINESS_LISTEN_ADDRESS = f"{READINESS_HOST}:{READINESS_PORT}"
+RUNNER_TLS_MOUNT_PATH = "/run/agentplane/environment-runtime-tls"
 
 
 class ProxyAuthMode(StrEnum):
     KUBERNETES_BEARER = "kubernetes_bearer"
+    SPIFFE = "spiffe"
 
 
 class ProxyTransportMode(StrEnum):
     PLAINTEXT = "plaintext"
+    TLS = "tls"
+
+
+class SpiffeProxyAuth(BaseModel):
+    """The Runtime SVID presented to the central proxy."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    mode: Literal[ProxyAuthMode.SPIFFE] = ProxyAuthMode.SPIFFE
+    cert_file: Path
+    key_file: Path
+
+    @field_validator("cert_file", "key_file")
+    @classmethod
+    def absolute_path(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError("SPIFFE proxy authentication paths must be absolute")
+        return value
 
 
 class KubernetesBearerProxyAuth(BaseModel):
-    """The projected bearer token used for the sidecar's central-proxy hop."""
+    """The sidecar-only projected bearer used to authenticate the central proxy hop."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -40,8 +60,11 @@ class KubernetesBearerProxyAuth(BaseModel):
         return value
 
 
+ProxyAuth = Annotated[SpiffeProxyAuth | KubernetesBearerProxyAuth, Field(discriminator="mode")]
+
+
 class PlaintextProxyTransport(BaseModel):
-    """The in-cluster plaintext connection to the central proxy."""
+    """The legacy in-cluster plaintext connection to the central proxy."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -49,13 +72,33 @@ class PlaintextProxyTransport(BaseModel):
     auth: KubernetesBearerProxyAuth
 
 
+class TLSProxyTransport(BaseModel):
+    """TLS to the central proxy, with explicit roots and tagged hop authentication."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    mode: Literal[ProxyTransportMode.TLS] = ProxyTransportMode.TLS
+    ca_file: Path
+    auth: ProxyAuth
+
+    @field_validator("ca_file")
+    @classmethod
+    def absolute_path(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError("proxy transport ca_file must be an absolute path")
+        return value
+
+
+ProxyTransport = Annotated[PlaintextProxyTransport | TLSProxyTransport, Field(discriminator="mode")]
+
+
 class Proxy(BaseModel):
-    """The central proxy endpoint, hop authentication, and connection transport."""
+    """Central proxy endpoint, hop authentication, and connection transport."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     address: str = Field(description="Central proxy host:port.")
-    transport: PlaintextProxyTransport
+    transport: ProxyTransport = Field(description="Plaintext or server-authenticated TLS to the proxy.")
 
     @field_validator("address")
     @classmethod
@@ -88,15 +131,27 @@ class Settings(BaseModel):
     audience_token_files: dict[str, Path] = Field(
         default_factory=dict,
         description="Audience to the projected token file holding this Pod's identity for it, offered to the "
-        "central proxy to substitute where a rule names that audience. The hop token above is not one of "
-        "these: it carries the proxy's own audience, which a destination validating its own refuses.",
+        "central proxy to substitute where a rule names that audience. Destination tokens are independent "
+        "of the proxy hop authentication.",
     )
     platform_routes: PlatformRoutes = Field(
         default_factory=lambda: PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS),
         description="One local gRPC listener dispatching allowlisted service prefixes to isolated upstream "
-        "connections and their own token audiences, bypassing the central proxy.",
+        "connections and their own route authentication.",
     )
     listen_address: str = Field(
         default="127.0.0.1:3128", description="Address the runner container's HTTP(S)_PROXY names."
     )
     readiness_listen_address: str = Field(default=READINESS_LISTEN_ADDRESS, description="HTTP address serving /readyz.")
+
+    @model_validator(mode="after")
+    def tls_routes_require_spiffe_proxy_auth(self) -> Settings:
+        has_tls_route = any(
+            isinstance(route.transport, TLSConnectRouteTransport) for route in self.platform_routes.routes.values()
+        )
+        if has_tls_route and not (
+            isinstance(self.proxy.transport, TLSProxyTransport)
+            and isinstance(self.proxy.transport.auth, SpiffeProxyAuth)
+        ):
+            raise ValueError("TLS CONNECT platform routes require TLS proxy transport with SPIFFE authentication")
+        return self

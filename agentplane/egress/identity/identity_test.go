@@ -158,3 +158,32 @@ func TestVerifyProjectedKeepsOnlyTokensProvenForThePresentingPod(t *testing.T) {
 		t.Errorf("a token for the presenting Pod: kept %v", got)
 	}
 }
+
+func TestVerifyProjectedForSandboxRequiresMatchingAccountAndStatusPodUID(t *testing.T) {
+	a, b := pod(t, runner), pod(t, runner)
+	otherAccount := auth.Account{Namespace: testNamespace, Name: "another-runner"}
+	c := pod(t, otherAccount)
+	tokens := map[string]string{
+		"same-account-different-pod": token(t, b, projectedAudience),
+		"different-account":          token(t, c, projectedAudience),
+	}
+	v := verifier(t, api.TokenReviews(), api.TokenReviews())
+	got := v.VerifyProjectedForSandbox(t.Context(), map[string]string{
+		projectedAudience: tokens["same-account-different-pod"],
+	}, runner, string(a.UID))
+	if len(got) != 0 {
+		t.Fatalf("kept a token from a different Pod: %v", got)
+	}
+	got = v.VerifyProjectedForSandbox(t.Context(), map[string]string{
+		projectedAudience: token(t, a, projectedAudience),
+	}, runner, string(a.UID))
+	if got[projectedAudience] == "" {
+		t.Fatal("dropped the matching account and Pod token")
+	}
+	got = v.VerifyProjectedForSandbox(t.Context(), map[string]string{
+		projectedAudience: tokens["different-account"],
+	}, runner, string(a.UID))
+	if len(got) != 0 {
+		t.Fatalf("kept a token from a different account: %v", got)
+	}
+}

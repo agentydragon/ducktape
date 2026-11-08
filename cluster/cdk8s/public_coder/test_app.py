@@ -173,7 +173,10 @@ def test_rules_route_wires_workload_identity_without_mounting_the_token_into_ope
     assert route["listen_address"] == "127.0.0.1:3130"
     assert route_config["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
     assert route_config["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
-    assert route_config["token_file"] == settings["proxy"]["transport"]["auth"]["token_file"]
+    assert route_config["transport"] == {
+        "mode": "plaintext",
+        "token_file": settings["proxy"]["transport"]["auth"]["token_file"],
+    }
     pod = _one(app_objects, "Deployment", "public-coder-agent")["spec"]["template"]["spec"]
     app = one(c for c in pod["containers"] if c["name"] == "openclaw")
     env = {item["name"]: item.get("value") for item in app["env"]}

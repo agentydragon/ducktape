@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "httpconnect",
+    srcs = ["connect.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/net/httpconnect",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "httpconnect_test",
+    srcs = ["connect_test.go"],
+    embed = [":httpconnect"],
+)

@@ -70,7 +70,7 @@ def add_relay_settings(scope: Construct) -> PodWiring:
                 RULES_ROUTE.name: PlatformRoute(
                     service_prefixes=RULES_ROUTE.service_prefixes,
                     upstream=f"{RULES_ROUTE.service.fqdn}:{RULES_ROUTE.service.pod_port}",
-                    token_file=Path(_TOKEN_DIR) / "token",
+                    transport=RULES_ROUTE.transport,
                 )
             },
         ),

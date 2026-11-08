@@ -13,7 +13,7 @@ import aiohttp
 import yaml
 from python.runfiles import Runfiles
 
-from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoute, PlatformRoutes
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoutes
 from agentplane.egress.sidecar_config import Proxy, Settings
 from util.net import Listener, listen_tcp
 
@@ -26,11 +26,11 @@ class SidecarProcess:
         *,
         proxy: Proxy,
         audience_token_files: Mapping[str, Path] = MappingProxyType({}),
-        platform_routes: Mapping[str, PlatformRoute] = MappingProxyType({}),
+        platform_routes: PlatformRoutes | None = None,
     ) -> None:
         self._proxy = proxy
         self._audience_token_files = audience_token_files
-        self._platform_routes = platform_routes
+        self._platform_routes = platform_routes or PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS)
         self._listener_stack = ExitStack()
         self._proxy_listener: Listener | None = None
         self._readiness_listener: Listener | None = None
@@ -44,14 +44,10 @@ class SidecarProcess:
         try:
             self._proxy_listener = self._listener_stack.enter_context(listen_tcp())
             self._readiness_listener = self._listener_stack.enter_context(listen_tcp())
-            routes = self._platform_routes
-            if routes:
-                self._platform_route_listener = self._listener_stack.enter_context(listen_tcp())
-                routes_config = PlatformRoutes(
-                    listen_address=self._fd_address(self._platform_route_listener), routes=dict(routes)
-                )
-            else:
-                routes_config = PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS)
+            self._platform_route_listener = self._listener_stack.enter_context(listen_tcp())
+            routes_config = PlatformRoutes(
+                listen_address=self._fd_address(self._platform_route_listener), routes=self._platform_routes.routes
+            )
 
             settings = Settings(
                 proxy=self._proxy,
@@ -63,9 +59,7 @@ class SidecarProcess:
             settings_path = Path(self._settings_dir.name) / "settings.yaml"
             settings_path.write_text(yaml.safe_dump(settings.model_dump(mode="json", exclude_none=True)))
             env = {Settings.config_file_env: str(settings_path)}
-            listeners = [self.proxy_listener, self.readiness_listener]
-            if self._platform_route_listener is not None:
-                listeners.append(self._platform_route_listener)
+            listeners = [self.proxy_listener, self.readiness_listener, self.platform_route_listener]
             pass_fds = tuple(listener.socket.fileno() for listener in listeners)
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(

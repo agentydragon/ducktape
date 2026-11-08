@@ -1545,10 +1545,11 @@ creating subscriptions or inbox entries. Record the result once; no exhaustive p
 Runner Gateway and to the central egress proxy, not Kubernetes ServiceAccount tokens. The SVIDs are
 the cert-manager certificates the Sandbox Controller already requests per incarnation
 (`spiffe://agentplane/environment-runtime/<ns>/<sandbox-uid>/<credential-id>`), which Environment
-Runtime already presents on the control connection and the Firecracker launcher serves over the
-Workload API; no SPIRE install, Cilium mutual authentication or mesh is implied. The egress sidecar
-or relay presents the same SVID on its hop in place of the projected proxy-audience token, and the
-proxy resolves the caller from the verified SPIFFE ID with the transport package the Gateway uses.
+Runtime already presents on the control connection; Firecracker launcher delivery over the Workload
+API remains part of the launcher integration. No SPIRE install, Cilium mutual authentication or mesh is
+implied. The egress sidecar or relay presents the same SVID on its hop in place of the projected
+proxy-audience token; the proxy resolves the caller from the verified SPIFFE ID with the transport
+package the Gateway uses.
 Platform routes that substitute per-audience projected tokens today (Notification, Dispatcher,
 runner ingress) need a replacement the destination verifies itself, never a proxy-asserted caller;
 design that before removing the projected tokens. Consequence for `AGENT_PRINCIPAL_MODEL_DESIGN`:
@@ -3020,7 +3021,7 @@ start them early.
 
 ```mermaid
 flowchart LR
-    IDENTITY_KINDS[Ready: identity and grant kinds] --> SVID_EGRESS_HOP[Blocked: SVID on the egress hop]
+    SVID_EGRESS_HOP[In flight: SVID on the egress hop]
     IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
@@ -3050,24 +3051,33 @@ tests of untouched kinds still pass.
 
 ### `SVID_EGRESS_HOP` — the sidecar and relay present the SVID to the proxy
 
-**Blocked on `IDENTITY_KINDS`.** The central proxy accepts a client certificate on the hop,
-verified with `environment_runtime_transport` against the trust-manager roots, parses the SPIFFE
-path, resolves the Sandbox UID to the live Sandbox, checks the credential ID against its status
-(question 2 of the plan decides whether the sidecar shares Runtime's Secret or gets a second
-certificate under the same path), and reads `spec.identity`; this gives the proxy a Sandbox read.
-The Pod sidecar and the Firecracker relay present it instead of the proxy-audience projected token.
-Behind a proxy setting, off in staging. **Exit:** the egress test harness (`test_proxy.py`, real
-binaries, envtest) admits an SVID-authenticated request under the identity's rules, refuses a
-certificate for a deleted or replaced Sandbox, and refuses a name in any header as identity.
+**In flight; Codex, 2026-11-06.** The combined enablement PR configures the central proxy's single
+forward listener with an explicit authentication allowlist. Optional SPIFFE verifies client certificates
+with `environment_runtime_transport` against the trust-manager roots. It parses the
+Runtime SPIFFE URI, resolves the UID and credential ID against the live Sandbox and its current
+runner binding, then derives the existing policy subject from that Sandbox's own ServiceAccount
+namespace/name. This first slice does not read `spec.identity`, require an `Identity` kind or
+reference, read a Pod or ServiceAccount object, or trust a caller header. SPIFFE, its certificate,
+trust bundle and Sandbox-read permission are off by default. Both modes use port 8888; no new
+Cilium port is needed. The sidecar shares Runtime's certificate Secret and selects token or TLS
+explicitly. Staging stays in token mode and Pod system tests select TLS. A mixed TLS listener admits
+one certificate or Kubernetes bearer, never both; destination tokens remain separate. The
+KubeVirt relay gets the certificate through its existing injection. Firecracker follows the service
+cutover and carries its own credential-delivery changes. Staging cutover remains held on
+authentication for active non-Sandbox callers, with all five services and the Rules API switching
+together. **Exit:** the egress test harness
+(`test_proxy.py`, real binaries, envtest) admits an SVID-authenticated request under the Sandbox
+ServiceAccount's rules, refuses stale, deleted or replaced Sandbox bindings, rejects a projected
+token bound to another Pod, and refuses a caller-supplied subject header.
 
 ### `SVID_PLATFORM_ROUTES` — first-party services verify SVIDs themselves
 
 **Blocked on `SVID_EGRESS_HOP`.** Decided 2026-11-05: the proxy tunnels the TLS connection through
 and each of Notification, Dispatcher, runner ingress, the Action Service and LLM ingress verifies
 the client certificate with the shared transport package and resolves the identity through the
-live Sandbox; the proxy never asserts an identity. Each service drops its Pod-bound projected-token
-path for sandbox callers and keeps its own authorization as the whole gate; `authenticatedWorkloadToken`
-and the per-audience `projectedWorkloadToken` entries go. The central sampler's zero-environment
+live Sandbox; the proxy never asserts an identity. Each service drops the egress proxy's
+projected-token credential path for sandbox callers and keeps its own authorization as the whole
+gate. The central sampler's zero-environment
 path stays on delegation with an identity reference (`SERVICES_IDENTITY_PRINCIPAL`). **Exit:** one
 platform route per service authenticates an SVID end to end in the k3s stack, and a forged or
 expired leaf is refused before any handler runs.

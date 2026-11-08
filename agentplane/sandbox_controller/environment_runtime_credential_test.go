@@ -2,10 +2,12 @@ package sandboxcontroller
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -58,6 +60,10 @@ func TestRunnerCertificateSpecMatchesCertManagerDefaults(t *testing.T) {
 	privateKey["encoding"] = "PKCS8"
 	if !runnerCertificateSpecMatches(withDefaults, expected) {
 		t.Fatal("cert-manager defaults or canonical durations rejected an otherwise matching certificate")
+	}
+	usages, found, err := unstructured.NestedStringSlice(expected, "usages")
+	if err != nil || !found || !slices.Contains(usages, "client auth") {
+		t.Fatalf("runner certificate usages = %v (found=%v, err=%v), want client auth for the egress hop", usages, found, err)
 	}
 
 	tests := map[string]func(map[string]interface{}){
@@ -121,10 +127,67 @@ func TestEnsureRunnerCertificateAcceptsOnlyReadyMatchingSecret(t *testing.T) {
 	}
 }
 
+func TestEnsureRunnerCertificateUpgradesOnlyClientAuthUsage(t *testing.T) {
+	ctx := context.Background()
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
+	certificate := runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID)
+	spec, _, _ := unstructured.NestedMap(certificate.Object, "spec")
+	spec["usages"] = []interface{}{"digital signature", "server auth"}
+	if err := unstructured.SetNestedMap(certificate.Object, spec, "spec"); err != nil {
+		t.Fatal(err)
+	}
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, certificate).Build()
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	if pending, err := r.ensureRunnerCertificate(ctx, sandbox, runnerCredentialTestID); err != nil || pending == nil || pending.reason != "CertificatePending" {
+		t.Fatalf("client-auth upgrade = pending %v, err %v; want certificate rotation pending", pending, err)
+	}
+	var got unstructured.Unstructured
+	got.SetGroupVersionKind(runnerCertificateGVK)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(certificate), &got); err != nil {
+		t.Fatal(err)
+	}
+	gotSpec, _, _ := unstructured.NestedStringSlice(got.Object, "spec", "usages")
+	if !equality.Semantic.DeepEqual(gotSpec, []string{"digital signature", "server auth", "client auth"}) {
+		t.Fatalf("upgraded certificate usages = %v", gotSpec)
+	}
+}
+
+func TestEnsureRunnerCertificateDoesNotRepairIdentityDriftDuringEKUUpgrade(t *testing.T) {
+	ctx := context.Background()
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
+	certificate := runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID)
+	spec, _, _ := unstructured.NestedMap(certificate.Object, "spec")
+	spec["usages"] = []interface{}{"digital signature", "server auth"}
+	spec["dnsNames"] = []interface{}{"other.example"}
+	if err := unstructured.SetNestedMap(certificate.Object, spec, "spec"); err != nil {
+		t.Fatal(err)
+	}
+	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, certificate).Build()
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	if pending, err := r.ensureRunnerCertificate(ctx, sandbox, runnerCredentialTestID); err != nil || pending == nil || pending.reason != "CertificateIdentityConflict" {
+		t.Fatalf("SAN drift = pending %v, err %v; want an identity conflict", pending, err)
+	}
+	var got unstructured.Unstructured
+	got.SetGroupVersionKind(runnerCertificateGVK)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(certificate), &got); err != nil {
+		t.Fatal(err)
+	}
+	gotUsages, _, _ := unstructured.NestedStringSlice(got.Object, "spec", "usages")
+	if !equality.Semantic.DeepEqual(gotUsages, []string{"digital signature", "server auth"}) {
+		t.Fatalf("identity conflict changed usages to %v", gotUsages)
+	}
+}
+
 func TestPodRunnerTLSVolumeUsesCredentialSpecificSecret(t *testing.T) {
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
 	template := &sandboxapi.SandboxTemplate{ObjectMeta: metav1.ObjectMeta{Namespace: sandbox.Namespace, Name: "environment-runtime"}}
-	podSpec := corev1.PodSpec{Containers: []corev1.Container{{Name: EnvironmentRuntimeContainer}}}
+	podSpec := corev1.PodSpec{
+		Containers: []corev1.Container{
+			{Name: EnvironmentRuntimeContainer},
+			{Name: "workload"},
+		},
+		InitContainers: []corev1.Container{{Name: EnvironmentRuntimeEgressSidecar}},
+	}
 	if blocked := withRunnerTLS(sandbox, template, &podSpec, runnerCredentialTestID); blocked != nil {
 		t.Fatalf("runner TLS projection: %v", blocked)
 	}
@@ -140,6 +203,33 @@ func TestPodRunnerTLSVolumeUsesCredentialSpecificSecret(t *testing.T) {
 	}
 	if got := volume.Projected.Sources[1].ConfigMap.Items[0].Path; got != "ca.crt" {
 		t.Fatalf("trust bundle path = %q, want ca.crt", got)
+	}
+	if len(podSpec.Containers[0].VolumeMounts) != 1 || podSpec.Containers[0].VolumeMounts[0].Name != volume.Name {
+		t.Fatalf("runtime did not receive exactly the runner TLS mount: %#v", podSpec.Containers[0].VolumeMounts)
+	}
+	if len(podSpec.InitContainers[0].VolumeMounts) != 1 || podSpec.InitContainers[0].VolumeMounts[0].Name != volume.Name {
+		t.Fatalf("egress sidecar did not receive exactly the runner TLS mount: %#v", podSpec.InitContainers[0].VolumeMounts)
+	}
+	if len(podSpec.Containers[1].VolumeMounts) != 0 {
+		t.Fatalf("workload received the runner TLS volume: %#v", podSpec.Containers[1].VolumeMounts)
+	}
+}
+
+func TestPodRunnerTLSWithoutEgressSidecarMountsOnlyRuntime(t *testing.T) {
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
+	template := &sandboxapi.SandboxTemplate{ObjectMeta: metav1.ObjectMeta{Namespace: sandbox.Namespace, Name: "runtime-only"}}
+	podSpec := corev1.PodSpec{Containers: []corev1.Container{{Name: EnvironmentRuntimeContainer}, {Name: "workload"}}}
+	if blocked := withRunnerTLS(sandbox, template, &podSpec, runnerCredentialTestID); blocked != nil {
+		t.Fatalf("runtime-only template was rejected: %v", blocked)
+	}
+	if len(podSpec.Volumes) != 1 || podSpec.Volumes[0].Name != EnvironmentRuntimeTLSVolumeName {
+		t.Fatalf("runtime TLS volume = %+v", podSpec.Volumes)
+	}
+	if len(podSpec.Containers[0].VolumeMounts) != 1 || podSpec.Containers[0].VolumeMounts[0].Name != EnvironmentRuntimeTLSVolumeName {
+		t.Fatalf("Runtime TLS mounts = %+v", podSpec.Containers[0].VolumeMounts)
+	}
+	if len(podSpec.Containers[1].VolumeMounts) != 0 {
+		t.Fatalf("workload received a TLS mount: %+v", podSpec.Containers[1].VolumeMounts)
 	}
 }
 

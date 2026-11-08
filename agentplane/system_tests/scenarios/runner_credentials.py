@@ -37,7 +37,7 @@ async def _ready_certificate(
         spec = certificate["spec"]
         assert spec["secretName"] == f"runner-{credential_id}"
         assert spec["uris"] == [f"spiffe://agentplane/environment-runtime/{namespace}/{sandbox_uid}/{credential_id}"]
-        assert set(spec["usages"]) == {"digital signature", "server auth"}
+        assert set(spec["usages"]) == {"digital signature", "server auth", "client auth"}
         assert any(
             condition["type"] == "Ready" and condition["status"] == "True"
             for condition in certificate["status"]["conditions"]

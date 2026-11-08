@@ -59,6 +59,226 @@ func TestGatewayClientAuthenticatesEnvironmentRuntimeServer(t *testing.T) {
 	}
 }
 
+func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	clientConfig := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	serverTLS, err := serverConfig.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := clientConfig.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientState, serverState, err := tlsHandshake(t, clientTLS, serverTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := environment_runtime_transport.PeerIdentityFromTLSState(clientState, x509.ExtKeyUsageServerAuth); err != nil || got != environment_runtime_transport.EgressProxyURI {
+		t.Fatalf("server identity = %q, error %v", got, err)
+	}
+	if got, err := environment_runtime_transport.PeerIdentityFromTLSState(serverState, x509.ExtKeyUsageClientAuth); err != nil || got != runtimeURI {
+		t.Fatalf("client identity = %q, error %v", got, err)
+	}
+	if _, err := environment_runtime_transport.PeerIdentityFromTLSState(serverState, x509.ExtKeyUsageServerAuth); err == nil {
+		t.Fatal("peer helper accepted a certificate without the requested EKU")
+	}
+	if _, err := clientConfig.ClientTLSConfig(environment_runtime_transport.GatewayURI); err == nil {
+		t.Fatal("client config accepted a non-egress peer URI")
+	}
+	if _, err := serverConfig.WorkloadServerTLSConfig(environment_runtime_transport.GatewayURI); err == nil {
+		t.Fatal("server config accepted a non-egress local URI")
+	}
+
+	wrongEKU := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageServerAuth)
+	if _, err := wrongEKU.ClientTLSConfig(environment_runtime_transport.EgressProxyURI); err == nil {
+		t.Fatal("client config accepted local certificate without clientAuth")
+	}
+	wrongIdentity := ca.IssueWithUsage(t, environment_runtime_transport.GatewayURI, x509.ExtKeyUsageClientAuth)
+	wrongClientTLS, err := wrongIdentity.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tlsHandshake(t, wrongClientTLS, serverTLS); err == nil {
+		t.Fatal("egress proxy accepted a non-runtime client identity")
+	}
+}
+
+func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	uri, err := environment_runtime_transport.EnvironmentRuntimeURI("test-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	client := ca.IssueWithUsage(t, uri, x509.ExtKeyUsageClientAuth)
+	clientTLS, err := client.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutCertificate := clientTLS.Clone()
+	withoutCertificate.GetClientCertificate = nil
+	withoutCertificate.Certificates = nil
+	optional, err := server.WorkloadServerTLSConfigWithBearer(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, config := range map[string]*tls.Config{"certificate": clientTLS, "bearer transport": withoutCertificate} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := tlsHandshake(t, config, optional); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	otherCA := environmentruntimetransporttesting.NewCA(t)
+	for name, bad := range map[string]environment_runtime_transport.Config{
+		"forged":         otherCA.IssueWithUsage(t, uri, x509.ExtKeyUsageClientAuth),
+		"wrong EKU":      ca.IssueWithUsage(t, uri, x509.ExtKeyUsageServerAuth),
+		"wrong identity": ca.IssueWithUsage(t, environment_runtime_transport.GatewayURI, x509.ExtKeyUsageClientAuth),
+		"expired":        ca.IssueWithValidity(t, uri, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour), x509.ExtKeyUsageClientAuth),
+	} {
+		t.Run(name, func(t *testing.T) {
+			pair, err := tls.LoadX509KeyPair(bad.CertFile, bad.KeyFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			config := withoutCertificate.Clone()
+			config.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &pair, nil }
+			if _, _, err := tlsHandshake(t, config, optional); err == nil {
+				t.Fatal("invalid presented certificate accepted")
+			}
+		})
+	}
+	mandatory, err := server.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tlsHandshake(t, withoutCertificate, mandatory); err == nil {
+		t.Fatal("SPIFFE-only listener accepted no certificate")
+	}
+	bearerOnly, err := (environment_runtime_transport.Config{CertFile: server.CertFile, KeyFile: server.KeyFile}).BearerServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tlsHandshake(t, withoutCertificate, bearerOnly); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tlsHandshake(t, clientTLS, bearerOnly); err == nil {
+		t.Fatal("bearer-only listener accepted certificate authentication")
+	}
+}
+
+func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherRuntimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "rotated-credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	client := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	proxyTLS, err := proxy.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := client.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, beforeServerState, err := tlsHandshake(t, clientTLS, proxyTLS)
+	if err != nil {
+		t.Fatalf("initial handshake: %v", err)
+	}
+	if len(beforeServerState.PeerCertificates) == 0 {
+		t.Fatal("initial handshake returned no client certificate to the proxy")
+	}
+	before := beforeServerState.PeerCertificates[0]
+	if got, err := environment_runtime_transport.PeerIdentityFromTLSState(beforeServerState, x509.ExtKeyUsageClientAuth); err != nil || got != runtimeURI {
+		t.Fatalf("initial client identity = %q, error %v", got, err)
+	}
+
+	rotatedClient := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
+	copyFile(t, rotatedClient.CertFile, client.CertFile)
+	copyFile(t, rotatedClient.KeyFile, client.KeyFile)
+	afterClientState, afterServerState, err := tlsHandshake(t, clientTLS, proxyTLS)
+	if err != nil {
+		t.Fatalf("same-identity rotated handshake: %v", err)
+	}
+	if len(afterClientState.PeerCertificates) == 0 {
+		t.Fatal("rotated handshake returned no proxy identity")
+	}
+	if got, err := environment_runtime_transport.PeerIdentityFromTLSState(afterClientState, x509.ExtKeyUsageServerAuth); err != nil || got != environment_runtime_transport.EgressProxyURI {
+		t.Fatalf("rotated proxy identity = %q, error %v", got, err)
+	}
+	if len(afterServerState.PeerCertificates) == 0 {
+		t.Fatal("rotated handshake returned no client certificate to the proxy")
+	}
+	after := afterServerState.PeerCertificates[0]
+	if string(before.Raw) == string(after.Raw) {
+		t.Fatal("rotated handshake reused the old client certificate")
+	}
+	if got, err := environment_runtime_transport.PeerIdentityFromTLSState(afterServerState, x509.ExtKeyUsageClientAuth); err != nil || got != runtimeURI {
+		t.Fatalf("rotated client identity = %q, error %v", got, err)
+	}
+
+	changedIdentity := ca.IssueWithUsage(t, otherRuntimeURI, x509.ExtKeyUsageClientAuth)
+	copyFile(t, changedIdentity.CertFile, client.CertFile)
+	copyFile(t, changedIdentity.KeyFile, client.KeyFile)
+	if _, _, err := tlsHandshake(t, clientTLS, proxyTLS); err == nil {
+		t.Fatal("rotated handshake accepted a changed local SPIFFE identity")
+	}
+}
+
+func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.ConnectionState, tls.ConnectionState, error) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	clientRaw, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverRaw, err := listener.Accept()
+	if err != nil {
+		_ = clientRaw.Close()
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	_ = clientRaw.SetDeadline(deadline)
+	_ = serverRaw.SetDeadline(deadline)
+	client := tls.Client(clientRaw, clientConfig)
+	server := tls.Server(serverRaw, serverConfig)
+	serverResult := make(chan error, 1)
+	go func() { serverResult <- server.Handshake() }()
+	clientErr := client.Handshake()
+	if clientErr != nil {
+		_ = clientRaw.Close()
+		_ = serverRaw.Close()
+	}
+	serverErr := <-serverResult
+	clientState, serverState := client.ConnectionState(), server.ConnectionState()
+	_ = clientRaw.Close()
+	_ = serverRaw.Close()
+	if clientErr != nil {
+		return tls.ConnectionState{}, tls.ConnectionState{}, clientErr
+	}
+	if serverErr != nil {
+		return tls.ConnectionState{}, tls.ConnectionState{}, serverErr
+	}
+	return clientState, serverState, nil
+}
+
 func TestClientPinsExactPeerURI(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "pod-uid")

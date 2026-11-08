@@ -115,10 +115,10 @@ flowchart LR
     guest -->|local Codex JSON-RPC over WebSocket, isolated mode| vmexec
     guest -->|starts| guest_agent
     vmexec --> relay
-    runner --> sidecar --> egress
-    guest --> relay --> egress
-    sidecar -.->|rules gRPC| egress
-    relay -.->|rules gRPC| egress
+    runner --> sidecar -->|configured bearer or SVID TLS hop| egress
+    guest --> relay -->|configured bearer or SVID TLS hop| egress
+    sidecar -.->|rules gRPC: bearer or SVID TLS| egress
+    relay -.->|rules gRPC: bearer or SVID TLS| egress
     sidecar -.->|notifications gRPC| notif
     relay -.->|notifications gRPC| notif
     runner -.->|OTLP/gRPC telemetry route| sidecar
@@ -535,10 +535,10 @@ flowchart LR
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
     workload --> box_sidecar --> egress
-    runner --> sidecar --> egress
-    guest --> relay --> egress
-    sidecar -.->|rules gRPC, workload bearer| egress
-    relay -.->|rules gRPC, workload bearer| egress
+    runner --> sidecar -->|configured bearer or SVID TLS hop| egress
+    guest --> relay -->|configured bearer or SVID TLS hop| egress
+    sidecar -.->|rules gRPC: bearer or SVID TLS| egress
+    relay -.->|rules gRPC: bearer or SVID TLS| egress
     app -->|egress admin API| egress
     egress -->|policy and credential watches| k8s
     egress -->|workload Actions gRPC and MCP| actions
@@ -548,6 +548,12 @@ flowchart LR
     actions -->|MCP calls| mcp_servers
     actions -->|REST + web push| github
 ```
+
+The Rules RPC shares the forward hop's authentication policy. In SVID mode the sidecar or relay
+opens an opaque CONNECT through central and presents the runner certificate to the shared gRPC
+listener; that listener verifies the peer and live Sandbox itself. The workload dials the shared local gRPC
+listener on port 3130 and holds no certificate. Plaintext probes and operator bearer RPCs remain
+on the central shared port, with independent method authorization.
 
 The egress proxy substitutes a configured credential only for the destination covered by its
 policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
