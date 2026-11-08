@@ -827,7 +827,129 @@ pub fn named_export_module_item(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use binding_targets::{
+        TargetAccessRecorder, member_root_sym, record_assign_target, record_update_target,
+    };
     use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
+    use swc_ecma_ast::{AssignExpr, AssignTarget, Id, SimpleAssignTarget, UpdateExpr};
+    use swc_ecma_visit::Visit;
+
+    #[derive(Default)]
+    struct TargetRecorder {
+        binding_reads: Vec<String>,
+        binding_writes: Vec<String>,
+        member_writes: Vec<String>,
+    }
+
+    impl TargetAccessRecorder for TargetRecorder {
+        fn record_binding_read(&mut self, id: &Id) {
+            self.binding_reads.push(id.0.to_string());
+        }
+
+        fn record_binding_write(&mut self, id: &Id) {
+            self.binding_writes.push(id.0.to_string());
+        }
+
+        fn record_member_write(&mut self, id: &Id) {
+            self.member_writes.push(id.0.to_string());
+        }
+    }
+
+    #[derive(Default)]
+    struct TargetRecorderVisitor {
+        recorder: TargetRecorder,
+        wrapped_member_roots: Vec<String>,
+    }
+
+    impl Visit for TargetRecorderVisitor {
+        fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
+            record_assign_target(&assignment.left, &mut self.recorder);
+            if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left
+                && matches!(member.obj.unwrap_parens(), Expr::TsAs(_))
+                && let Some(root) = member_root_sym(&member.obj)
+            {
+                self.wrapped_member_roots.push(root.to_string());
+            }
+            assignment.visit_children_with(self);
+        }
+
+        fn visit_update_expr(&mut self, update: &UpdateExpr) {
+            record_update_target(&update.arg, &mut self.recorder);
+            update.visit_children_with(self);
+        }
+    }
+
+    #[test]
+    fn canonical_parser_targets_record_type_erased_wrappers() {
+        with_swc_globals(|| {
+            let parsed = parse_js_module(
+                "wrapped-targets.ts",
+                "let count = 0; const record = {}; \
+                 count as any = 'wrapped'; count!++; (count satisfies any)! = 'nested'; \
+                 count<string> = 'instantiated'; \
+                 record.value as any = 1; (record as any).value = 2; record.value!++; \
+                 (record as any).value++; count = 'plain'; record.value = 3; record.value++; \
+                 count + record.value;",
+            )
+            .expect("TypeScript wrapped assignment and update targets parse");
+            let mut visitor = TargetRecorderVisitor::default();
+            parsed.module.visit_with(&mut visitor);
+
+            assert_eq!(
+                visitor.recorder.binding_writes,
+                vec![
+                    "count".to_string(),
+                    "count".to_string(),
+                    "count".to_string(),
+                    "count".to_string(),
+                    "count".to_string()
+                ]
+            );
+            assert_eq!(
+                visitor.recorder.binding_reads,
+                vec![
+                    "count".to_string(),
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string()
+                ]
+            );
+            assert_eq!(
+                visitor.recorder.member_writes,
+                vec![
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string()
+                ]
+            );
+            assert_eq!(visitor.wrapped_member_roots, vec!["record".to_string()]);
+        });
+    }
+
+    #[test]
+    fn canonical_parser_optional_chain_targets_keep_existing_write_recording() {
+        with_swc_globals(|| {
+            // The configured parser accepts this target form. The recorder
+            // must preserve its conservative member-write fact; this supplies
+            // no execution or emitted-syntax acceptance proof.
+            let parsed = parse_js_module("optional-target.ts", "let count = 0; count?.value = 1;")
+                .expect("configured parser accepts optional-chain assignment targets");
+            let mut visitor = TargetRecorderVisitor::default();
+            parsed.module.visit_with(&mut visitor);
+            assert!(visitor.recorder.binding_writes.is_empty());
+            assert_eq!(visitor.recorder.member_writes, vec!["count".to_string()]);
+        });
+    }
+
+    #[test]
+    fn canonical_parser_rejects_literal_assignment_target() {
+        with_swc_globals(|| {
+            assert!(parse_js_module("invalid-target.ts", "1 = 2;").is_err());
+        });
+    }
 
     fn default_export_ident(parsed: &ParsedJsModule) -> &Ident {
         parsed

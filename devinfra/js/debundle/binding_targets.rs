@@ -142,12 +142,23 @@ fn record_simple_assign_target(
                 recorder.record_member_write(&id);
             }
         }
+        SimpleAssignTarget::TsAs(target) => record_assign_expr_target(&target.expr, recorder),
+        SimpleAssignTarget::TsSatisfies(target) => {
+            record_assign_expr_target(&target.expr, recorder)
+        }
+        SimpleAssignTarget::TsNonNull(target) => record_assign_expr_target(&target.expr, recorder),
+        SimpleAssignTarget::TsTypeAssertion(target) => {
+            record_assign_expr_target(&target.expr, recorder)
+        }
+        SimpleAssignTarget::TsInstantiation(target) => {
+            record_assign_expr_target(&target.expr, recorder)
+        }
         _ => {}
     }
 }
 
 fn record_assign_expr_target(target: &Expr, recorder: &mut impl TargetAccessRecorder) {
-    match target {
+    match type_erased_expr(target) {
         Expr::Ident(ident) => recorder.record_binding_write(&ident.to_id()),
         Expr::Member(member) => record_member_target(member, recorder),
         Expr::Paren(paren) => record_assign_expr_target(&paren.expr, recorder),
@@ -219,7 +230,7 @@ pub fn record_member_target(member: &MemberExpr, recorder: &mut impl TargetAcces
 }
 
 pub fn record_update_target(target: &Expr, recorder: &mut impl TargetAccessRecorder) {
-    match target {
+    match type_erased_expr(target) {
         Expr::Ident(ident) => {
             let id = ident.to_id();
             recorder.record_binding_read(&id);
@@ -247,7 +258,7 @@ pub fn record_update_target(target: &Expr, recorder: &mut impl TargetAccessRecor
 /// (atom + syntax context), or `None` if the head isn't a plain
 /// identifier (numeric literal, call expression, etc.).
 pub fn member_root_id(expr: &Expr) -> Option<Id> {
-    match expr {
+    match type_erased_expr(expr) {
         Expr::Ident(ident) => Some(ident.to_id()),
         Expr::Member(member) => member_root_id(&member.obj),
         Expr::OptChain(opt_chain) => match &*opt_chain.base {
@@ -265,7 +276,7 @@ pub fn member_root_id(expr: &Expr) -> Option<Id> {
 /// `window.foo` / `document.foo`. For binding-cell identity (graph
 /// edges, validator membership checks), use [`member_root_id`].
 pub fn member_root_sym(expr: &Expr) -> Option<&Atom> {
-    match expr {
+    match type_erased_expr(expr) {
         Expr::Ident(ident) => Some(&ident.sym),
         Expr::Member(member) => member_root_sym(&member.obj),
         Expr::OptChain(opt_chain) => match &*opt_chain.base {
@@ -274,6 +285,20 @@ pub fn member_root_sym(expr: &Expr) -> Option<&Atom> {
         },
         Expr::Paren(paren) => member_root_sym(&paren.expr),
         _ => None,
+    }
+}
+
+/// TypeScript type-erasure wrappers do not change the runtime value. Follow
+/// only these forms when recording target expressions and finding member
+/// roots; leave all other expressions conservative.
+fn type_erased_expr(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::TsAs(wrapper) => type_erased_expr(&wrapper.expr),
+        Expr::TsSatisfies(wrapper) => type_erased_expr(&wrapper.expr),
+        Expr::TsNonNull(wrapper) => type_erased_expr(&wrapper.expr),
+        Expr::TsTypeAssertion(wrapper) => type_erased_expr(&wrapper.expr),
+        Expr::TsInstantiation(wrapper) => type_erased_expr(&wrapper.expr),
+        _ => expr,
     }
 }
 
