@@ -1,0 +1,25 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "rewrite_thread_history",
+    srcs = ["rewrite_thread_history.py"],
+)
+
+py_test(
+    name = "rewrite_thread_history_test",
+    srcs = ["rewrite_thread_history_test.py"],
+    data = [
+        "rewrite_thread_history.py",
+        "//third_party/restic",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
