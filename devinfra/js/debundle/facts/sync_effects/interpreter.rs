@@ -7925,10 +7925,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.invalidate_enumerability_object(*object);
                     }
                 }
-                // A mixed or unavailable receiver set may also name any
-                // settled record in the current prefix. Concrete allocations
-                // above are invalidated individually; revoke every candidate
-                // when the set includes an unresolved alias.
+                // A mixed or opaque receiver set may also name any settled
+                // record in the current prefix. Concrete allocations above are
+                // invalidated individually; revoke every candidate when the
+                // set includes an unresolved alias.
                 _ => unresolved_receiver = true,
             }
         }
