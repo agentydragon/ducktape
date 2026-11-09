@@ -475,6 +475,47 @@ cannot change in place, and the new launch writes the identity.
     records live, so this plan is neutral across the [architecture directions](architecture_overview.md);
     `Identity`, grants and managed accounts move with the Sandbox family under D3.
 
+14. **Binding subjects after the cutover** (operator asked 2026-11-09). `PolicyBinding.spec.subject`
+    names exactly one `Identity`; no ServiceAccount, Group or selector subject. Grouping stays on the
+    policy side: a `PolicySet` bound to many identities is the set-of-identities mechanism, and a
+    Flux-rendered binding per standing identity is the roster. Open: whether a real case, many
+    short-lived identities needing one grant that cannot be their launch set, justifies an
+    `IdentityGroup` kind. Label selection is the shape this plan rejects elsewhere: namespaces are
+    named, never selected.
+15. **Who mints identities** (operator, 2026-11-09). Dispatcher owns a Session-scoped identity because
+    it is the one component that knows a Session is ending. Open: collapse the app-minted path into
+    Dispatcher's, so every non-Flux identity is Session-managed and the finish dialog deletes it
+    through the Session; the launch form already calls `CreateSession`, and the create-then-bind
+    sequence of `SANDBOX_IDENTITY_SPEC` makes the Sandbox-first order unnecessary. Recommendation:
+    collapse, so the app never writes an `Identity`.
+16. **API groups by domain** (operator asked 2026-11-09). The kinds fall into three domains:
+    environments (`Sandbox`, `SandboxTemplate`), Agentplane identity and affordances (`Identity`,
+    `PolicySet`, `PolicyBinding`, `EgressCredential`), and Kubernetes grants (`KubernetesRoleSet`,
+    `ServiceAccountGrant`, `ManagedServiceAccount`). All share one API group, and the Go packages only
+    partly follow the split (`sandboxes/api`, `policy/api`, `egress/api`; the grant kinds sit in
+    `policy/api`). Recommendation: three API groups at `IDENTITY_CUTOVER`, which already rewrites
+    every policy object, moving the grant kinds' Go package with them; no churn before that.
+17. **`EgressCredential` with an impersonation source: name kept** (recommendation, 2026-11-09). From
+    the agent's side it is still a credential it may present a placeholder for, listed by the rules
+    endpoint with a description; the source kind (Secret, projected token, impersonated
+    ServiceAccount) is the proxy's business. Rename only if a source appears that is not "present as
+    someone" from the agent's view.
+18. **`ManagedServiceAccount` rather than a plain ServiceAccount** (decided 2026-11-09). The
+    ServiceAccount lives in the accounts namespace, which stays separate from the policy namespace so
+    the proxy's `impersonate` Role cannot reach the controllers' own accounts. OwnerReferences cannot
+    cross namespaces, so neither identity → account nor account → owned grant, credential, set and
+    binding could hang off the ServiceAccount, and a labels-and-annotations encoding would have no
+    status. The holder object in the policy namespace is what makes the bundle garbage-collectable.
+19. **Authority outside Kubernetes** (operator raised 2026-11-09). A Session-bound identity lifetime
+    makes `Identity` the first object whose natural owner is a service database rather than the
+    apiserver, which is [direction D4](architecture_overview.md#four-directions)'s case; CRs could
+    remain as reconciled inputs for Flux-authored objects. Not decided here. This track keeps
+    Kubernetes authoritative because every enforcement point (proxy informers, `policy/reader`,
+    Action Service policies, MCP edge) consumes CRs by watch, and Dispatcher can own a CR's lifetime
+    as well as a row's. Constraint so D4 stays open: services reference an identity by name and UID
+    through the shared reader and nothing else, and no service's correctness depends on `Identity`
+    being a Kubernetes object.
+
 ## Exit
 
 The implementation is DAG section [14](task_dag.md#14-identity-and-kubernetes-accounts-cutover),
