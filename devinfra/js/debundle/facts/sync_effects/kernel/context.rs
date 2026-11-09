@@ -2,6 +2,7 @@
 //! operation order and semantics.
 
 use super::super::allocation_transfer::AllocationValue;
+use super::super::alternatives::PathState;
 use super::super::array_transfer::ArrayPushSelection;
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
@@ -217,6 +218,25 @@ impl<C: BindingContext + CallContext + HeapContext + NativeContext + ControlCont
 {
 }
 
+/// What a consumer does with a body whose next test is undecided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::facts::sync_effects) enum ForkPolicy {
+    /// A scalar consumer has one result and nowhere to join: the body is
+    /// refused at the fork.
+    Refuse,
+    /// Run every feasible path to the end of the body and join the family.
+    Explore,
+}
+
 pub(in crate::facts::sync_effects) trait ControlContext {
     fn unproved(&mut self, frame: &mut LocalFrame, what: Unproved<'_>) -> Disposition;
+    fn fork_policy(&self) -> ForkPolicy;
+    /// Everything a later operation on the same path reads back from this
+    /// adapter. Identity allocators and run-wide may-accumulators are not
+    /// path state: they stay live across leaves.
+    type Branch: PathState + Clone;
+    /// A copy of the live path state.
+    fn branch(&self) -> Self::Branch;
+    /// Replace the live path state.
+    fn enter(&mut self, branch: Self::Branch);
 }

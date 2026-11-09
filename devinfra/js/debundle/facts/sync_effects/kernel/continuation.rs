@@ -9,7 +9,7 @@ use super::super::allocation_transfer::{
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::local_operations::{
     DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCallee,
-    LocalExpression, LocalOperation,
+    LocalExpression, LocalOperation, LogicalOperator,
 };
 use super::super::own_data_transfer::{self, OwnDataOwnership, OwnDataSlot};
 use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
@@ -17,6 +17,7 @@ use super::super::value_model::{
     AbstractValue, CallSite, HeapAddress, LiteralPropertyKind, PropertyDefinition, ValueExpr,
     Values,
 };
+use super::branch;
 use super::cells;
 use super::closure;
 use super::construct;
@@ -36,8 +37,18 @@ use swc_ecma_ast::{BinaryOp, Id};
 pub(in crate::facts::sync_effects) enum LocalSuspension {
     Call(LocalCallRequest),
     Complete(LocalExecutionAttempt),
+    /// The body continues on every one of these paths from the same state.
+    /// Each child holds the whole remaining body; the polled continuation is
+    /// spent.
+    Fork(Vec<LocalContinuation>),
 }
 
+/// Leaves one activation may fork into. Past it the kernel refuses the body
+/// instead of branching: path count is otherwise exponential in the number
+/// of undecided tests.
+const BRANCH_BUDGET: usize = 8;
+
+#[derive(Clone)]
 enum Aggregate {
     Record {
         transfer: RecordTransfer,
@@ -50,6 +61,7 @@ enum Aggregate {
     Array(Box<ArrayTransfer>),
 }
 
+#[derive(Clone)]
 enum Step {
     Prepare,
     Parameter(usize),
@@ -132,6 +144,19 @@ enum Step {
         property: String,
         span: Span,
     },
+    /// The test has run; continue with the arm its truthiness selects.
+    ConditionalSelect {
+        consequent: LocalExpression,
+        alternate: LocalExpression,
+    },
+    /// The left operand has run; keep it where it short-circuits and run
+    /// `right` where it does not.
+    LogicalSelect {
+        op: LogicalOperator,
+        right: LocalExpression,
+    },
+    /// The value a fork leaf starts from.
+    Selected(SelectedValue),
 }
 
 impl Step {
@@ -145,6 +170,7 @@ impl Step {
     }
 }
 
+#[derive(Clone)]
 pub(in crate::facts::sync_effects) struct LocalContinuation {
     pub(in crate::facts::sync_effects) frame: LocalFrame,
     steps: Vec<Step>,
@@ -154,6 +180,8 @@ pub(in crate::facts::sync_effects) struct LocalContinuation {
     refused: Option<RemainderDisposition>,
     aggregates: BTreeMap<usize, Aggregate>,
     next_aggregate: usize,
+    /// Leaves this path may still fork into, itself included.
+    branch_budget: usize,
 }
 
 impl LocalContinuation {
@@ -165,7 +193,31 @@ impl LocalContinuation {
             refused: None,
             aggregates: BTreeMap::new(),
             next_aggregate: 0,
+            branch_budget: BRANCH_BUDGET,
         }
+    }
+
+    /// A scalar consumer has one result and no join: the body is refused at
+    /// its first undecided test and nothing after it runs.
+    pub(in crate::facts::sync_effects) fn refuse_branching(&mut self) {
+        self.frame.ledger.allocation = AllocationJudgment::Opaque;
+        self.refused = Some(RemainderDisposition::NeedsSummary);
+    }
+
+    /// Two paths from this state: the remaining steps after `left` and after
+    /// `right`. The budget is split so the leaves of one activation stay
+    /// bounded however the forks nest.
+    fn fork(&self, left: Step, right: Step) -> Result<LocalSuspension, RemainderDisposition> {
+        if self.branch_budget < 2 {
+            return Err(RemainderDisposition::NeedsSummary);
+        }
+        let mut left_path = self.clone();
+        let mut right_path = self.clone();
+        left_path.branch_budget = self.branch_budget / 2;
+        right_path.branch_budget = self.branch_budget - left_path.branch_budget;
+        left_path.steps.push(left);
+        right_path.steps.push(right);
+        Ok(LocalSuspension::Fork(vec![left_path, right_path]))
     }
 
     pub(in crate::facts::sync_effects) fn resume_call(
@@ -195,7 +247,7 @@ impl LocalContinuation {
             }
             match self.step(context, body, step) {
                 Ok(None) => {}
-                Ok(Some(request)) => return LocalSuspension::Call(request),
+                Ok(Some(suspension)) => return suspension,
                 Err(remainder) => {
                     self.refused = Some(remainder);
                     return LocalSuspension::Complete(LocalExecutionAttempt::Refused(remainder));
@@ -225,7 +277,7 @@ impl LocalContinuation {
         context: &mut impl KernelContext,
         body: &LocalBody,
         step: Step,
-    ) -> Result<Option<LocalCallRequest>, RemainderDisposition> {
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
         match step {
             Step::Prepare => {
                 self.steps.push(Step::Operation(0));
@@ -762,12 +814,12 @@ impl LocalContinuation {
                         self.steps.push(Step::Expression(argument));
                     }
                     None => {
-                        return Ok(Some(LocalCallRequest {
+                        return Ok(Some(LocalSuspension::Call(LocalCallRequest {
                             callee,
                             arguments,
                             span,
                             invocation,
-                        }));
+                        })));
                     }
                 }
             }
@@ -817,6 +869,67 @@ impl LocalContinuation {
                 )?;
                 self.value = Some(selected);
             }
+            Step::ConditionalSelect {
+                consequent,
+                alternate,
+            } => {
+                let test = self.take_value();
+                if test.values.is_empty() {
+                    self.frame.stop_normal_path();
+                    return Ok(None);
+                }
+                // A truncated arm can still reach the tested value.
+                self.frame.inputs.extend(test.values.iter().cloned());
+                branch::test_selected(&mut self.frame);
+                let (truthy, falsy) = branch::split_truthiness(&test.values);
+                match (truthy.is_empty(), falsy.is_empty()) {
+                    (false, true) => self.steps.push(Step::Expression(consequent)),
+                    (true, false) => self.steps.push(Step::Expression(alternate)),
+                    _ => {
+                        return self
+                            .fork(Step::Expression(consequent), Step::Expression(alternate))
+                            .map(Some);
+                    }
+                }
+            }
+            Step::LogicalSelect { op, right } => {
+                let left = self.take_value();
+                if left.values.is_empty() {
+                    self.frame.stop_normal_path();
+                    return Ok(None);
+                }
+                self.frame.inputs.extend(left.values.iter().cloned());
+                branch::test_selected(&mut self.frame);
+                let (retained, runs_right) = match op {
+                    LogicalOperator::And => {
+                        let (truthy, falsy) = branch::split_truthiness(&left.values);
+                        (falsy, !truthy.is_empty())
+                    }
+                    LogicalOperator::Or => {
+                        let (truthy, falsy) = branch::split_truthiness(&left.values);
+                        (truthy, !falsy.is_empty())
+                    }
+                    LogicalOperator::NullishCoalescing => branch::split_nullish(&left.values),
+                };
+                if retained.is_empty() {
+                    self.steps.push(Step::Expression(right));
+                    return Ok(None);
+                }
+                let selection = left
+                    .selection
+                    .filter(|selection| selection.matches(&retained));
+                let retained = SelectedValue {
+                    values: retained,
+                    selection,
+                };
+                if runs_right {
+                    return self
+                        .fork(Step::Selected(retained), Step::Expression(right))
+                        .map(Some);
+                }
+                self.value = Some(retained);
+            }
+            Step::Selected(selected) => self.value = Some(selected),
         }
         Ok(None)
     }
@@ -826,7 +939,7 @@ impl LocalContinuation {
         context: &mut impl KernelContext,
         body: &LocalBody,
         node: LocalExpression,
-    ) -> Result<Option<LocalCallRequest>, RemainderDisposition> {
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
         match node {
             LocalExpression::Value(node) => {
                 self.value = Some(value_expression(context, &node, &mut self.frame)?);
@@ -992,7 +1105,9 @@ impl LocalContinuation {
                     return Ok(None);
                 }
                 self.frame.inputs.extend(callee.targets().iter().cloned());
-                return Ok(self.invoke(callee, arguments, span, Invocation::Call));
+                return Ok(self
+                    .invoke(callee, arguments, span, Invocation::Call)
+                    .map(LocalSuspension::Call));
             }
             LocalExpression::Construct {
                 callee,
@@ -1007,12 +1122,14 @@ impl LocalContinuation {
                     return Ok(None);
                 }
                 self.frame.inputs.extend(callee.values.iter().cloned());
-                return Ok(self.invoke(
-                    EvaluatedCallee::Direct(callee),
-                    arguments,
-                    span,
-                    Invocation::Construct,
-                ));
+                return Ok(self
+                    .invoke(
+                        EvaluatedCallee::Direct(callee),
+                        arguments,
+                        span,
+                        Invocation::Construct,
+                    )
+                    .map(LocalSuspension::Call));
             }
             LocalExpression::ReadField {
                 receiver,
@@ -1056,6 +1173,24 @@ impl LocalContinuation {
                     span,
                 });
                 self.steps.push(Step::Expression(value.as_ref().clone()));
+            }
+            LocalExpression::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                self.steps.push(Step::ConditionalSelect {
+                    consequent: consequent.as_ref().clone(),
+                    alternate: alternate.as_ref().clone(),
+                });
+                self.steps.push(Step::Expression(test.as_ref().clone()));
+            }
+            LocalExpression::Logical { op, left, right } => {
+                self.steps.push(Step::LogicalSelect {
+                    op,
+                    right: right.as_ref().clone(),
+                });
+                self.steps.push(Step::Expression(left.as_ref().clone()));
             }
             LocalExpression::DefineThisField { property, value } => {
                 self.steps.push(Step::DefineThisField(property));

@@ -25,6 +25,19 @@ impl DomainCoverage {
             _ => *self = Self::Unknown,
         }
     }
+
+    /// Covered only when every alternative covers the domain, under all of
+    /// their conditions together.
+    fn join<'a>(alternatives: impl IntoIterator<Item = &'a Self>) -> Self {
+        let mut dependencies = ProofDependencies::default();
+        for alternative in alternatives {
+            let Self::Covered(covered) = alternative else {
+                return Self::Unknown;
+            };
+            dependencies.extend(covered);
+        }
+        Self::Covered(Box::new(dependencies))
+    }
 }
 
 /// Exact identity for the one root initializer whose ordered execution may
@@ -621,6 +634,73 @@ impl EffectCoverageFragment {
         })
     }
 
+    /// The receipt of a body that ran exactly one of `fragments`. A domain is
+    /// covered only when every path covers it. The selected-call edges are a
+    /// definite set the root seal compares with the root's source calls, so
+    /// the lexical receipt survives only when every path selected the same
+    /// edges; a call on some paths only leaves it unknown. Completion is kept
+    /// only where every path agrees.
+    pub(super) fn join_alternatives(fragments: &[&Self]) -> Self {
+        let Some(first) = fragments.first() else {
+            return Self::default();
+        };
+        let initializations: Option<Vec<_>> = fragments
+            .iter()
+            .map(|fragment| fragment.initialization.as_deref())
+            .collect();
+        let initialization = initializations.map(|domains| {
+            Box::new(InitializationEffectCoverage {
+                global_properties: DomainCoverage::join(
+                    domains.iter().map(|domain| &domain.global_properties),
+                ),
+                general_heap: DomainCoverage::join(
+                    domains.iter().map(|domain| &domain.general_heap),
+                ),
+                host_effects: DomainCoverage::join(
+                    domains.iter().map(|domain| &domain.host_effects),
+                ),
+            })
+        });
+        let lexicals: Option<Vec<_>> = fragments
+            .iter()
+            .map(|fragment| fragment.lexical.as_deref())
+            .collect();
+        let lexical = lexicals
+            .filter(|lexicals| {
+                lexicals
+                    .iter()
+                    .all(|lexical| lexical.calls.keys().eq(lexicals[0].calls.keys()))
+            })
+            .map(|lexicals| {
+                let mut calls = lexicals[0].calls.clone();
+                for lexical in &lexicals[1..] {
+                    for (key, call) in &lexical.calls {
+                        if let Some(joined) = calls.get_mut(key) {
+                            joined.dependencies.extend(&call.dependencies);
+                        }
+                    }
+                }
+                Box::new(LexicalEffectCoverage {
+                    reads: DomainCoverage::join(lexicals.iter().map(|lexical| &lexical.reads)),
+                    rebinds: DomainCoverage::join(lexicals.iter().map(|lexical| &lexical.rebinds)),
+                    calls,
+                })
+            });
+        let completion = if fragments
+            .iter()
+            .all(|fragment| fragment.completion == first.completion)
+        {
+            first.completion.clone()
+        } else {
+            Completion::default()
+        };
+        Self {
+            initialization,
+            lexical,
+            completion,
+        }
+    }
+
     pub(super) fn abrupt(&mut self) {
         self.completion = Completion::Abrupt(());
     }
@@ -756,6 +836,60 @@ mod tests {
             }]),
             ..ProofDependencies::default()
         }
+    }
+
+    #[test]
+    fn alternatives_keep_only_what_every_path_covers() {
+        let dependency = captured_value_input(0);
+        let mut conditioned = EffectCoverageFragment::no_effects();
+        conditioned.depend_on(&dependency);
+
+        // Covered on every path, under the conditions of all of them.
+        let joined = EffectCoverageFragment::join_alternatives(&[
+            &EffectCoverageFragment::no_effects(),
+            &conditioned,
+        ]);
+        assert_eq!(joined.normal_dependencies(), Some(dependency.clone()));
+        assert_eq!(
+            joined.lexical_effect_dependencies(),
+            Some((dependency.clone(), dependency))
+        );
+
+        // One unknown path leaves every domain unknown.
+        let joined = EffectCoverageFragment::join_alternatives(&[
+            &EffectCoverageFragment::no_effects(),
+            &EffectCoverageFragment::default(),
+        ]);
+        assert_eq!(joined.normal_dependencies(), None);
+        assert_eq!(joined.lexical_effect_dependencies(), None);
+
+        // A path that throws leaves no agreed completion.
+        let mut abrupt = EffectCoverageFragment::no_effects();
+        abrupt.abrupt();
+        let joined = EffectCoverageFragment::join_alternatives(&[
+            &EffectCoverageFragment::no_effects(),
+            &abrupt,
+        ]);
+        assert_eq!(joined.normal_dependencies(), None);
+
+        // A call selected on one path only is not a definite edge: the
+        // lexical receipt is dropped rather than naming or omitting it.
+        let mut calling = EffectCoverageFragment::no_effects();
+        calling.selected_local_call(test_call(
+            test_callable(1, 0),
+            10,
+            20,
+            test_callable(2, 0),
+            ProofDependencies::default(),
+        ));
+        let joined = EffectCoverageFragment::join_alternatives(&[
+            &EffectCoverageFragment::no_effects(),
+            &calling,
+        ]);
+        assert_eq!(joined.lexical_effect_dependencies(), None);
+        assert!(joined.normal_dependencies().is_some());
+        let joined = EffectCoverageFragment::join_alternatives(&[&calling, &calling]);
+        assert!(joined.lexical_effect_dependencies().is_some());
     }
 
     #[test]

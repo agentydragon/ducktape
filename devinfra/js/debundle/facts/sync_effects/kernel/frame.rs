@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
+#[derive(Clone)]
 pub(in crate::facts::sync_effects) struct LocalFrame {
     pub(in crate::facts::sync_effects) environment: Context,
     pub(in crate::facts::sync_effects) binding_selections: BTreeMap<Id, CallableSelection>,

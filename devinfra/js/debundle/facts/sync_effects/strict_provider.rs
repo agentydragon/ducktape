@@ -2,10 +2,14 @@
 
 use super::adapters::provider::ProviderContext;
 use super::allocation_transfer::{AllocationJudgment, AllocationValue};
+use super::alternatives::outcome::join_allocation_judgments;
+use super::alternatives::{Family, Leaf};
 use super::execution_index::ExecutionIndex;
+use super::kernel::context::ForkPolicy;
 use super::kernel::continuation::{self, LocalContinuation};
 use super::kernel::driver;
 use super::kernel::frame::{LocalExecutionAttempt, LocalFrame};
+use super::local_operations::LocalBody;
 use super::value_model::{
     AbstractValue, CaptureInterner, Context, ProviderInput, ProviderScopeId, SymbolicInputId,
     Values,
@@ -17,6 +21,46 @@ use crate::facts::abstract_domain::value::{Kind, Value};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
+
+/// Run a provider body on every feasible path. The query has no summary to
+/// fall back on, so a refused leaf or a refused join refuses it; otherwise
+/// its result is what any path may return, allocation-only when every path
+/// is, and `context` holds the joined heap.
+fn complete_body(
+    context: &mut ProviderContext<'_>,
+    body: &LocalBody,
+    frame: LocalFrame,
+) -> Option<AllocationValue> {
+    let family = driver::drive(context, body, LocalContinuation::new(frame));
+    if !family.all_completed() {
+        return None;
+    }
+    let leaves = match family {
+        Family::One(leaf) => vec![(*leaf, None)],
+        Family::Forked(leaves) => leaves
+            .into_iter()
+            .map(|(leaf, path)| (leaf, Some(path)))
+            .collect(),
+    };
+    let mut values = Values::new();
+    let mut judgments = Vec::with_capacity(leaves.len());
+    let mut paths = Vec::with_capacity(leaves.len());
+    for (Leaf { frame, attempt }, path) in leaves {
+        let LocalExecutionAttempt::Completed(result) = attempt else {
+            return None;
+        };
+        values.extend(frame.returns());
+        judgments.push(result.ledger.allocation);
+        paths.extend(path);
+    }
+    if !paths.is_empty() && !context.join(paths) {
+        return None;
+    }
+    Some(AllocationValue {
+        values,
+        judgment: join_allocation_judgments(&judgments),
+    })
+}
 
 struct ClosureCaptureProjection {
     local_reads: BTreeMap<u32, BTreeSet<Id>>,
@@ -191,10 +235,15 @@ pub(super) fn derive(
         bindings.insert(param.binding.clone()?, Values::from([value.clone()]));
         argument_values.insert(value);
     }
+    // A body with an undecided test has one result per path: only the
+    // ordered plan can fork it, so the one-expression projection is not used.
+    let direct_return = body
+        .body_facts
+        .value_flow()
+        .direct_allocation_return()
+        .filter(|_| !closure_mode && !local_body.is_some_and(LocalBody::branches));
     let mut reads = BTreeSet::new();
-    if let Some(expression) = body.body_facts.value_flow().direct_allocation_return()
-        && !closure_mode
-    {
+    if let Some(expression) = direct_return {
         expression.bindings(&mut reads);
     } else {
         let local_body = local_body?;
@@ -252,23 +301,18 @@ pub(super) fn derive(
         shadowed: shadowed.clone(),
         native_constructions: BTreeSet::new(),
         world: World::new(WorldScope::IsolatedProvider),
+        fork_policy: if closure_mode {
+            ForkPolicy::Refuse
+        } else {
+            ForkPolicy::Explore
+        },
     };
     let frame = LocalFrame::new(std::mem::take(&mut context.bindings));
-    let result = if let Some(expression) = body.body_facts.value_flow().direct_allocation_return()
-        && !closure_mode
-    {
+    let result = if let Some(expression) = direct_return {
         let mut frame = frame;
         continuation::value_of(&mut context, &mut frame, expression).ok()?
     } else {
-        let (frame, attempt) =
-            driver::drive(&mut context, local_body?, LocalContinuation::new(frame));
-        let LocalExecutionAttempt::Completed(result) = attempt else {
-            return None;
-        };
-        AllocationValue {
-            values: frame.returns(),
-            judgment: result.ledger.allocation,
-        }
+        complete_body(&mut context, local_body?, frame)?
     };
     let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.judgment else {
         return None;
@@ -398,24 +442,22 @@ pub(super) fn derive_class(
         shadowed: shadowed.clone(),
         native_constructions: BTreeSet::new(),
         world: World::new(WorldScope::IsolatedProvider),
+        fork_policy: ForkPolicy::Explore,
     };
     let mut frame = LocalFrame::new(std::mem::take(&mut context.bindings));
     frame.this_values = Some(Values::from([AbstractValue::Value(Value::Alloc(
         Kind::Object,
         class,
     ))]));
-    let (frame, attempt) = driver::drive(&mut context, body, LocalContinuation::new(frame));
-    let LocalExecutionAttempt::Completed(result) = attempt else {
-        return None;
-    };
-    if !frame
-        .returns()
+    let result = complete_body(&mut context, body, frame)?;
+    if !result
+        .values
         .iter()
         .all(|value| matches!(value, AbstractValue::Value(Value::Prim(_))))
     {
         return None;
     }
-    let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.ledger.allocation else {
+    let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.judgment else {
         return None;
     };
     let mut retained_arguments = BTreeSet::new();

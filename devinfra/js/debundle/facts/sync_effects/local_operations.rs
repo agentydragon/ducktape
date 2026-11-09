@@ -158,6 +158,21 @@ pub(super) enum LocalExpression {
         value: Arc<Self>,
         span: Span,
     },
+    /// `test ? consequent : alternate`. The test runs first; exactly one arm
+    /// runs on each path, so the kernel forks when the test's truthiness is
+    /// not decided by its abstract value.
+    Conditional {
+        test: Arc<Self>,
+        consequent: Arc<Self>,
+        alternate: Arc<Self>,
+    },
+    /// `left && right`, `left || right` and `left ?? right`: the right
+    /// operand runs only on the paths the left value does not short-circuit.
+    Logical {
+        op: LogicalOperator,
+        left: Arc<Self>,
+        right: Arc<Self>,
+    },
     /// Class field definition and declared private-field assignment both
     /// contribute weak containment to the fresh-instance retention projection.
     /// This does not model public/private descriptor identity or authorize a
@@ -174,6 +189,13 @@ pub(super) enum LocalExpression {
         value: Arc<Self>,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LogicalOperator {
+    And,
+    Or,
+    NullishCoalescing,
 }
 
 #[derive(Debug, Clone)]
@@ -235,6 +257,9 @@ pub(super) struct LocalBody {
     /// Whether some operation can run code outside this body: a call, a
     /// construction or the iterator protocol of a spread.
     invokes: bool,
+    /// Whether some operation selects between paths: a conditional or a
+    /// short-circuiting logical operator.
+    branches: bool,
 }
 
 fn is_keyed_collection_new(value: &ValueExpr) -> bool {
@@ -342,8 +367,10 @@ fn literal_definition_name(name: &PropName) -> Option<String> {
     .flatten()
 }
 
-/// The central allocation transfer has no conditional-path provenance. Keep
-/// branches outside this ordered subset until their effects can be tagged.
+/// The value forms the central allocation transfer evaluates as one
+/// operation. A conditional or logical operator nested in any other value
+/// form has no fork point there, so that form stays outside the ordered
+/// subset; at an operand position the two lower as `Conditional`/`Logical`.
 fn unconditional_value(value: &ValueExpr) -> bool {
     match value {
         ValueExpr::Binding(_) | ValueExpr::NonCallable(_) | ValueExpr::Undefined => true,
@@ -533,6 +560,36 @@ impl LocalExpression {
                     })
                     .collect::<Option<Arc<[_]>>>()?,
             )),
+            Expr::Cond(conditional) => Some(Self::Conditional {
+                test: Arc::new(Self::lower_with_binary(
+                    &conditional.test,
+                    class_template,
+                    allow_binary,
+                )?),
+                consequent: Arc::new(Self::lower_with_binary(
+                    &conditional.cons,
+                    class_template,
+                    allow_binary,
+                )?),
+                alternate: Arc::new(Self::lower_with_binary(
+                    &conditional.alt,
+                    class_template,
+                    allow_binary,
+                )?),
+            }),
+            Expr::Bin(binary) if logical_operator(binary.op).is_some() => Some(Self::Logical {
+                op: logical_operator(binary.op)?,
+                left: Arc::new(Self::lower_with_binary(
+                    &binary.left,
+                    class_template,
+                    allow_binary,
+                )?),
+                right: Arc::new(Self::lower_with_binary(
+                    &binary.right,
+                    class_template,
+                    allow_binary,
+                )?),
+            }),
             Expr::Bin(binary) if allow_binary && ordered_primitive_binary(binary.op) => {
                 Some(Self::Binary {
                     op: binary.op,
@@ -702,9 +759,18 @@ impl LocalExpression {
                     expression.each(visit);
                 }
             }
-            Self::Binary { left, right, .. } => {
+            Self::Binary { left, right, .. } | Self::Logical { left, right, .. } => {
                 left.each(visit);
                 right.each(visit);
+            }
+            Self::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                test.each(visit);
+                consequent.each(visit);
+                alternate.each(visit);
             }
             Self::Record { properties, .. } => {
                 for property in properties.iter() {
@@ -747,9 +813,18 @@ impl LocalExpression {
                     expression.reads(reads);
                 }
             }
-            Self::Binary { left, right, .. } => {
+            Self::Binary { left, right, .. } | Self::Logical { left, right, .. } => {
                 left.reads(reads);
                 right.reads(reads);
+            }
+            Self::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                test.reads(reads);
+                consequent.reads(reads);
+                alternate.reads(reads);
             }
             Self::Assign { binding, value, .. } => {
                 reads.insert(binding.clone());
@@ -863,6 +938,23 @@ impl LocalExpression {
                 right.allocation_syntax(bindings, closure_sites);
                 (false, false)
             }
+            // Each path allocates only what its operands do. A closure
+            // literal on one path only has no retained-closure projection.
+            Self::Logical { left, right, .. } => {
+                let (left, _) = left.allocation_syntax(bindings, closure_sites);
+                let (right, _) = right.allocation_syntax(bindings, closure_sites);
+                (left && right, false)
+            }
+            Self::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                let (test, _) = test.allocation_syntax(bindings, closure_sites);
+                let (consequent, _) = consequent.allocation_syntax(bindings, closure_sites);
+                let (alternate, _) = alternate.allocation_syntax(bindings, closure_sites);
+                (test && consequent && alternate, false)
+            }
             Self::Assign { binding, value, .. } => {
                 let (allocation_only, closure_allowed) =
                     value.allocation_syntax(bindings, closure_sites);
@@ -897,8 +989,17 @@ impl LocalExpression {
                 substitutions: expressions,
                 ..
             } => expressions.iter().any(Self::requires_keyed_collection_new),
-            Self::Binary { left, right, .. } => {
+            Self::Binary { left, right, .. } | Self::Logical { left, right, .. } => {
                 left.requires_keyed_collection_new() || right.requires_keyed_collection_new()
+            }
+            Self::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                test.requires_keyed_collection_new()
+                    || consequent.requires_keyed_collection_new()
+                    || alternate.requires_keyed_collection_new()
             }
             Self::Assign { value, .. }
             | Self::AssignField { value, .. }
@@ -944,9 +1045,18 @@ impl LocalExpression {
                     expression.writes(writes);
                 }
             }
-            Self::Binary { left, right, .. } => {
+            Self::Binary { left, right, .. } | Self::Logical { left, right, .. } => {
                 left.writes(writes);
                 right.writes(writes);
+            }
+            Self::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                test.writes(writes);
+                consequent.writes(writes);
+                alternate.writes(writes);
             }
             Self::Call { arguments, .. } | Self::Construct { arguments, .. } => {
                 for argument in arguments.iter() {
@@ -962,6 +1072,15 @@ impl LocalExpression {
             | Self::ReadField { .. }
             | Self::Closure(_) => {}
         }
+    }
+}
+
+fn logical_operator(op: BinaryOp) -> Option<LogicalOperator> {
+    match op {
+        BinaryOp::LogicalAnd => Some(LogicalOperator::And),
+        BinaryOp::LogicalOr => Some(LogicalOperator::Or),
+        BinaryOp::NullishCoalescing => Some(LogicalOperator::NullishCoalescing),
+        _ => None,
     }
 }
 
@@ -1328,6 +1447,7 @@ impl LocalBody {
             expressions().any(LocalExpression::requires_keyed_collection_new);
         let mut construct_callees = BTreeSet::new();
         let mut invokes = false;
+        let mut branches = false;
         for expression in expressions() {
             expression.each(&mut |expression| match expression {
                 LocalExpression::Construct { callee, .. } => {
@@ -1335,6 +1455,9 @@ impl LocalBody {
                     invokes = true;
                 }
                 LocalExpression::Call { .. } => invokes = true,
+                LocalExpression::Conditional { .. } | LocalExpression::Logical { .. } => {
+                    branches = true;
+                }
                 LocalExpression::Array { elements, .. } => {
                     invokes |= elements
                         .iter()
@@ -1357,6 +1480,7 @@ impl LocalBody {
             requires_keyed_collection_new,
             construct_callees: construct_callees.into_iter().collect(),
             invokes,
+            branches,
         }
     }
 
@@ -1430,6 +1554,10 @@ impl LocalBody {
 
     pub(super) fn invokes(&self) -> bool {
         self.invokes
+    }
+
+    pub(super) fn branches(&self) -> bool {
+        self.branches
     }
 
     /// The exact root `new callee(...)` with no other root operation.

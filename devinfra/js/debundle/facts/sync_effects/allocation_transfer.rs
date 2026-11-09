@@ -414,7 +414,7 @@ pub(super) fn transfer(
     context: &mut impl AllocationContext,
     expression: &ValueExpr,
 ) -> Option<AllocationValue> {
-    let mut judgment = if context.source_covered() {
+    let judgment = if context.source_covered() {
         AllocationJudgment::CoveredAllocationOnly(Box::default())
     } else {
         AllocationJudgment::Opaque
@@ -487,44 +487,9 @@ pub(super) fn transfer(
                 |context, expression| context.child(expression),
             );
         }
-        ValueExpr::Conditional { test, alternatives } => {
-            context.unmodeled_effect_operation();
-            // Decide support before evaluating any child: application children
-            // have real effects and cannot be rolled back before a fallback.
-            if !alternatives.iter().all(|arm| {
-                matches!(
-                    arm,
-                    ValueExpr::Binding(_) | ValueExpr::Undefined | ValueExpr::NonCallable(_)
-                )
-            }) {
-                return None;
-            }
-            let test = context.child(test)?;
-            judgment.compose(&test.judgment);
-            let mut tested = test.values;
-            let may_throw = tested.remove(&AbstractValue::Value(Value::Unavailable));
-            if tested.is_empty() {
-                return Some(AllocationValue::opaque(Values::from([
-                    AbstractValue::Value(Value::Unavailable),
-                ])));
-            }
-            let mut values = Values::new();
-            for arm in alternatives.iter() {
-                let arm = context.child(arm)?;
-                judgment.compose(&arm.judgment);
-                if arm.values.is_empty() {
-                    values.insert(AbstractValue::Value(Value::Unavailable));
-                }
-                values.extend(arm.values);
-            }
-            if may_throw {
-                values.insert(AbstractValue::Value(Value::Unavailable));
-            }
-            if values.contains(&AbstractValue::Value(Value::Unavailable)) {
-                judgment = AllocationJudgment::Opaque;
-            }
-            values
-        }
+        // A conditional has one path per feasible test outcome; only the
+        // kernel's fork explores them (`LocalExpression::Conditional`).
+        ValueExpr::Conditional { .. } => return None,
         ValueExpr::ObjectLiteral(allocation, properties) => {
             context.unmodeled_effect_operation();
             let layout = context.literal_layout(*allocation);
@@ -573,6 +538,7 @@ pub(super) fn transfer(
 
 /// Source-ordered composition retains every child's effects and possible
 /// abrupt completion even though only the final completing value survives.
+#[derive(Clone)]
 pub(super) struct SequenceTransfer {
     values: Values,
     may_throw: bool,
@@ -660,6 +626,7 @@ fn primitive_operation<'a>(
 
 /// One record literal in progress. Children are recorded in source order;
 /// the heap entry exists only once every child completed normally.
+#[derive(Clone)]
 pub(super) struct RecordTransfer {
     allocation: u32,
     names: Vec<Option<String>>,
@@ -789,6 +756,7 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
 /// the context proves: exact slots keep the literal dense, primitive-only
 /// yields leave a primitive array with no slot or length claim, and an
 /// unproved or non-primitive spread taints the literal.
+#[derive(Clone)]
 pub(super) struct ArrayTransfer {
     allocation: u32,
     has_spread: bool,
