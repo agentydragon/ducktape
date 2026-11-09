@@ -33,6 +33,9 @@ pub const SELECTOR_DIAGNOSTICS_REPORT: &str = "selector_diagnostics.json";
 /// `commuting_statements` entries: the contradiction that failed the chunk,
 /// or one warning per unused entry.
 pub const COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT: &str = "commuting_statements_diagnostics.json";
+/// Written per chunk whenever a report directory is: the chunk's
+/// `reports::spec_lint::LintFinding`s, read back by `spec lint`.
+pub const SPEC_LINT_REPORT: &str = "spec_lint.json";
 pub const EXPORT_REENTRY_REPORT: &str = "export_reentry.json";
 pub const EXPORT_REENTRY_FULL_REPORT: &str = "export_reentry.full.json";
 /// Translation validation beside the gate's verdict; report only.
