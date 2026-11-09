@@ -68,7 +68,7 @@ def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tupl
     ]
 
 
-def test_kvm_workers_never_share_a_node_and_each_has_a_network_policy(
+def test_kvm_workers_never_share_a_node_and_each_has_a_network_policy_and_an_ssd_work_disk(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
@@ -84,16 +84,26 @@ def test_kvm_workers_never_share_a_node_and_each_has_a_network_policy(
         if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
     }
     assert isolated == workers.keys()
+    claims = {
+        doc["metadata"]["name"]: doc["spec"]
+        for doc in documents
+        if doc["kind"] == "PersistentVolumeClaim" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+    }
     for name, worker in workers.items():
         template = worker["spec"]["template"]
         assert template["metadata"]["labels"]["kubevirt.io/domain"] == name
-        assert not template["spec"].get("nodeSelector")
+        assert template["spec"]["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
         (term,) = template["spec"]["affinity"]["podAntiAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
         assert term["topologyKey"] == "kubernetes.io/hostname"
         (expression,) = term["labelSelector"]["matchExpressions"]
         assert expression["key"] == "kubevirt.io/domain"
         assert expression["operator"] == "In"
         assert set(expression["values"]) == workers.keys() - {name}
+        (work,) = [volume for volume in template["spec"]["volumes"] if volume["name"] == "work"]
+        claim = claims[work["persistentVolumeClaim"]["claimName"]]
+        assert claim["storageClassName"] == "piraeus-ssd-local"
+        assert claim["volumeMode"] == "Block"
+    assert len(claims) == len(workers)
 
 
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
@@ -107,7 +117,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     )
     guest = worker["spec"]["template"]["spec"]
     assert worker["spec"]["runStrategy"] == "Always"
-    assert not guest.get("nodeSelector")
+    assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
     kubevirt = next(doc["spec"] for doc in documents if doc["kind"] == "KubeVirt")
     control_plane_toleration = {
         "key": "node-role.kubernetes.io/control-plane",
@@ -142,7 +152,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     disks = {disk.get("serial"): disk["name"] for disk in guest["domain"]["devices"]["disks"]}
     volumes = {volume["name"]: volume for volume in guest["volumes"]}
     assert volumes[disks["bbkey"]]["secret"]["secretName"] == "buildbuddy-api-key"
-    assert "emptyDisk" in volumes[disks["work"]]
+    assert "persistentVolumeClaim" in volumes[disks["work"]]
     user_data = next(
         volume["cloudInitNoCloud"]["userData"] for volume in guest["volumes"] if "cloudInitNoCloud" in volume
     )
