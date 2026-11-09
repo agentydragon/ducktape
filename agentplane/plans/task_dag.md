@@ -3150,15 +3150,13 @@ identity reference plus the workload incarnation as provenance. The seam is `wor
 `Principal`: `SVIDResolver` currently returns the same ServiceAccount-shaped value a TokenReview
 does, reading the Sandbox and its controller-owned ServiceAccount uncached per request, so no
 handler can tell the two apart; the SVID path yields the identity reference and incarnation
-directly and stops reading the ServiceAccount; the central sampler delegates as
-the Session's identity and its own account never becomes the agent's; `CreateSession` names an
+directly and stops reading the ServiceAccount; `CreateSession` names an
 identity, Dispatcher is the authority for that association, and its delivery and wake path refuses
 a Session whose identity differs from its environment's current one, so a bypassed identity change
 strands Sessions rather than re-attributing them. Migrations rewrite rows whose
 Sandbox still exists and mark the rest historical, as History migration 8 did. **Exit:** the
 existing service tests pass with identity principals, a retained Session with a deleted Sandbox
-reads as historical, and the sampler scenario in the k3s stack submits an Action as an identity
-with no environment.
+reads as historical.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
