@@ -313,6 +313,7 @@ rust_library(
     crate_root = "selectors/resolution/selector_outcome.rs",
     edition = "2024",
     deps = [
+        ":spec",
         "@crates//:serde",
         "@crates//:strum",
     ],
@@ -879,6 +880,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":graph_provenance",
+        ":selector_outcome",
         ":spec",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -1717,6 +1719,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":selector_outcome",
         ":selector_resolve",
         ":source_match",
         ":spec",

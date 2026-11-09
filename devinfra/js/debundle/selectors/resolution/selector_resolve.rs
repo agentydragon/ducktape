@@ -24,7 +24,7 @@ use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
 };
-use selector_ir_lowering::{MemberSelectorProgramBuilder, MemberSelectorSpecRef};
+use selector_ir_lowering::MemberSelectorProgramBuilder;
 use selector_outcome::{
     Candidate, ConflictSourceUnit, Differentiator, Entity, EntityRef, FreeIdentifier,
     IdentifierMeaning, MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, OwnershipConflict,
@@ -107,33 +107,15 @@ pub struct Member {
 /// claim share their template and resolve as one group.
 #[derive(Debug, Clone)]
 pub enum MemberSelector {
-    /// A name pin. On an import specifier it names the import binding itself
-    /// and is not resolved.
-    Binding(spec::BindingSelector),
+    /// A validated `members[].selector`. A binding pin on an import specifier
+    /// names the import binding itself and is not resolved.
+    Authored(MemberSelectorSpec),
     SourceMatch(ParsedSourceMatchSelector),
-    CrossRef(spec::CrossRefTarget),
-    ReadsMember(spec::ReadsMemberTarget),
-    MemberOfModule(spec::MemberOfModuleTarget),
-    PassedToCall(spec::PassedToCallTarget),
-    MakesDecorateCall(spec::MakesDecorateCallTarget),
-    IntrinsicAlias(spec::IntrinsicAliasTarget),
 }
 
 impl MemberSelector {
-    pub fn from_spec(selector: MemberSelectorSpec) -> Self {
-        match selector {
-            MemberSelectorSpec::Binding(binding) => Self::Binding(binding),
-            MemberSelectorSpec::CrossRef(target) => Self::CrossRef(target),
-            MemberSelectorSpec::ReadsMember(target) => Self::ReadsMember(target),
-            MemberSelectorSpec::MemberOfModule(target) => Self::MemberOfModule(target),
-            MemberSelectorSpec::PassedToCall(target) => Self::PassedToCall(target),
-            MemberSelectorSpec::MakesDecorateCall(target) => Self::MakesDecorateCall(target),
-            MemberSelectorSpec::IntrinsicAlias(target) => Self::IntrinsicAlias(target),
-        }
-    }
-
     pub fn is_import_specifier(&self) -> bool {
-        matches!(self, Self::Binding(binding)
+        matches!(self, Self::Authored(MemberSelectorSpec::Binding(binding))
             if binding.kind == Some(BindingSourceKind::ImportSpecifier))
     }
 
@@ -146,37 +128,18 @@ impl MemberSelector {
 
     pub fn kind(&self) -> SelectorKind {
         match self {
-            Self::Binding(_) => SelectorKind::Binding,
+            Self::Authored(selector) => SelectorKind::from(selector),
             Self::SourceMatch(_) => SelectorKind::SourceMatches,
-            Self::CrossRef(_) => SelectorKind::CrossRef,
-            Self::ReadsMember(_) => SelectorKind::ReadsMember,
-            Self::MemberOfModule(_) => SelectorKind::MemberOfModule,
-            Self::PassedToCall(_) => SelectorKind::PassedToCall,
-            Self::MakesDecorateCall(_) => SelectorKind::MakesDecorateCall,
-            Self::IntrinsicAlias(_) => SelectorKind::IntrinsicAlias,
         }
     }
 
     fn preview(&self) -> String {
         match self {
-            Self::Binding(binding) => format!("{binding:?}"),
+            Self::Authored(MemberSelectorSpec::Binding(binding)) => format!("{binding:?}"),
             Self::SourceMatch(parsed) => {
                 source_match::source_match_preview(&parsed.selector().match_source)
             }
-            relational => format!("{relational:?}"),
-        }
-    }
-
-    fn spec_ref(&self) -> MemberSelectorSpecRef<'_> {
-        match self {
-            Self::Binding(binding) => MemberSelectorSpecRef::Binding(binding),
-            Self::SourceMatch(parsed) => MemberSelectorSpecRef::SourceMatch(parsed.selector()),
-            Self::CrossRef(target) => MemberSelectorSpecRef::CrossRef(target),
-            Self::ReadsMember(target) => MemberSelectorSpecRef::ReadsMember(target),
-            Self::MemberOfModule(target) => MemberSelectorSpecRef::MemberOfModule(target),
-            Self::PassedToCall(target) => MemberSelectorSpecRef::PassedToCall(target),
-            Self::MakesDecorateCall(target) => MemberSelectorSpecRef::MakesDecorateCall(target),
-            Self::IntrinsicAlias(target) => MemberSelectorSpecRef::IntrinsicAlias(target),
+            Self::Authored(relational) => format!("{relational:?}"),
         }
     }
 }
@@ -1078,11 +1041,11 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         source_matches.push((module_index, member_index));
                     }
                     selector if selector.is_import_specifier() => {}
-                    selector => {
+                    MemberSelector::Authored(selector) => {
                         let target = self.builder.declare_member_target(
                             &self.ids[module_index],
                             &member.export_name,
-                            selector.spec_ref(),
+                            selector,
                         )?;
                         self.members.insert(target, (module_index, member_index));
                         constrained.push((module_index, member_index));
@@ -1126,10 +1089,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
         self.project_collected(collected)?;
         for (module_index, member_index) in constrained {
             let member = &modules[module_index].members[member_index];
+            let MemberSelector::Authored(selector) = &member.selector else {
+                unreachable!("constrained members are authored selectors");
+            };
             self.builder.lower_member_constraints(
                 &self.ids[module_index],
                 &member.export_name,
-                member.selector.spec_ref(),
+                selector,
             )?;
         }
         let builder = std::mem::take(&mut self.builder);
@@ -1412,11 +1378,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     projected_by_member.get(&(module_index, member_index)),
                 ) {
                     (_, Some(index)) => Referent::Projected(*index),
-                    (MemberSelector::Binding(pin), None) => Referent::Pin {
-                        module_index,
-                        member_index,
-                        name: pin.name.clone(),
-                    },
+                    (MemberSelector::Authored(MemberSelectorSpec::Binding(pin)), None) => {
+                        Referent::Pin {
+                            module_index,
+                            member_index,
+                            name: pin.name.clone(),
+                        }
+                    }
                     (MemberSelector::SourceMatch(_), None) => Referent::Unprojected,
                     (_, None) => Referent::Relational {
                         module_index,
@@ -1729,11 +1697,9 @@ impl<'c, 'm> Resolve<'c, 'm> {
         match &entity.shape {
             CollectedShape::Member(member_index) => {
                 let member = &module.members[*member_index];
-                let target = self.builder.declare_member_target(
-                    &logical_module,
-                    &member.export_name,
-                    member.selector.spec_ref(),
-                )?;
+                let target = self
+                    .builder
+                    .declare_source_match_member_target(&logical_module, &member.export_name)?;
                 self.members
                     .insert(target, (entity.module_index, *member_index));
                 targets.push(target);
@@ -1744,7 +1710,6 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     let target = self.builder.declare_binding_group_member_target(
                         &logical_module,
                         &member.export_name,
-                        member.selector.spec_ref(),
                     )?;
                     self.members
                         .insert(target, (entity.module_index, *member_index));
@@ -1773,7 +1738,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         self.members
             .iter()
             .filter_map(|(target, (module_index, member_index))| {
-                let MemberSelector::Binding(pin) =
+                let MemberSelector::Authored(MemberSelectorSpec::Binding(pin)) =
                     &self.modules[*module_index].members[*member_index].selector
                 else {
                     return None;

@@ -1942,7 +1942,11 @@ fn binding_homes(modules_root: &Path, module_files: &[PathBuf]) -> Result<Vec<Bi
     for path in module_files {
         let module_path = module_path_from_file(path, modules_root);
         for member in read_module_file(path)?.members {
-            let Some(binding_selector) = member.selector.binding else {
+            let spec::MemberSelectorSpec::Binding(binding_selector) = member
+                .selector
+                .validate()
+                .with_context(|| format!("member selector in {}", path.display()))?
+            else {
                 continue;
             };
             let binding = binding_selector.name;

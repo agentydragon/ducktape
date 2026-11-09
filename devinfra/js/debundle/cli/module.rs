@@ -29,7 +29,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
-use spec::LogicalModule;
+use spec::{LogicalModule, MemberSelectorSpec};
 use spec_modules::{
     coalesce_source_match_claims, collect_module_files, is_module_yaml, module_path_from_file,
     read_module_file as read_module,
@@ -979,7 +979,15 @@ fn display_relative(root: &Path, abs: &Path) -> String {
 fn claim_names(module: &LogicalModule, path: &Path) -> Result<ModuleClaimNames> {
     let mut names = ModuleClaimNames::default();
     for (idx, member) in module.members.iter().enumerate() {
-        if let Some(binding) = member.selector.binding.as_ref()
+        let selector = member
+            .selector
+            .validate()
+            .with_context(|| format!("{} (entry {idx})", path.display()))?;
+        let binding = match &selector {
+            MemberSelectorSpec::Binding(binding) => Some(binding),
+            _ => None,
+        };
+        if let Some(binding) = binding
             && !names.selector_bindings.insert(binding.name.clone())
         {
             return Err(anyhow!(
@@ -989,13 +997,11 @@ fn claim_names(module: &LogicalModule, path: &Path) -> Result<ModuleClaimNames> 
                 idx
             ));
         }
-        if let Some(readable_name) = member.name.as_deref().or_else(|| {
-            member
-                .selector
-                .binding
-                .as_ref()
-                .map(|binding| binding.name.as_str())
-        }) && !names.readable_names.insert(readable_name.to_string())
+        if let Some(readable_name) = member
+            .name
+            .as_deref()
+            .or_else(|| binding.map(|binding| binding.name.as_str()))
+            && !names.readable_names.insert(readable_name.to_string())
         {
             return Err(anyhow!(
                 "duplicate member name \"{}\" within {} (entry {})",
