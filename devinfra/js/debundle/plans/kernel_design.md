@@ -70,9 +70,34 @@ pub trait ControlContext {
 
 `Unproved` enumerates field read, field write, operator, optional call,
 control flow, binding targets and refused object spread; `Disposition` is
-`Summarize | Refuse`. The effect sink (`record_property_read/write`) is not a
-trait method: the kernel records into `World.scope`'s sink, and an isolated
-provider scope discards (the policy behind `strict_provider.rs:545-546`).
+`Summarize | Refuse`. There is no effect sink: the kernel puts property reads
+and writes into the ledger it returns (§ Observations are returned), and the
+provider's scope filter applies where its ledger is adopted (the policy behind
+`strict_provider.rs:545-546`).
+
+### Observations are returned
+
+Two kinds of state cross the kernel boundary and they move differently:
+
+- **Stores** (heap, lexical cells, object surface, descriptors) are mutated in
+  place through `&mut World`. A missed store write shows up as a wrong value.
+- **Observations** (effects, completion, proof dependencies, inference uses,
+  native integrity and prototype checks, operation-support receipts) are only
+  ever **returned** and composed, never recorded into a context. A missed
+  observation would silently claim purity, so the shape makes it a type error:
+  a branch with nothing to return does not compile, and a dropped value is a
+  `#[must_use]` error. `EffectCoverageFragment`, `TransferLedger`,
+  `Completion` and `Joined` carry `#[must_use]`.
+
+Consequences: `ControlContext::{record_property_read, record_property_write,
+publish_throw}` do not exist; `TransferLedger.dependencies` is kept and
+replaces the `proof_dependencies: RefCell` (L2a dropped it as reader-less; the
+`RefCell` is the reader). The nine `RefCell` ledgers in `ExecutionState`
+(`interpreter.rs`, `native_*_checks`, `*_uses`, `proof_dependencies`,
+`record_factory_prototype_premises`) become returned values that ride the
+ledger upward; they are not relocated as a struct of `RefCell`s. A join
+consumes the whole family of alternatives as one value (`Family` or `Vec`), so
+an alternative cannot be left out of a join by omission.
 
 `OwnDataContext` collapses into `HeapContext::world` plus `heap_resolver`;
 every other method is an inherent `World` query. `AllocationContext`,
@@ -146,8 +171,8 @@ trait; **Delete**.
 | `object_spread_dependencies`      | 6080    | default | default | World                                              |
 | `literal_property_kind`           | 5982    | 952     | 891     | World (index)                                      |
 | `heap` (`LiteralHeap`)            | 6083    | 955     | 898     | Delete (L1b)                                       |
-| `record_property_read`            | 6086    | 958     | 545     | World scope sink                                   |
-| `record_property_write`           | 6112    | 963     | 546     | World scope sink                                   |
+| `record_property_read`            | 6086    | 958     | 545     | Returned in the ledger (§ Observations)            |
+| `record_property_write`           | 6112    | 963     | 546     | Returned in the ledger (§ Observations)            |
 | `create_class_data_property`      | 6117    | –       | –       | Kernel                                             |
 | `operation_support_receipt`       | 6091    | 968     | 547     | Adapter: Control                                   |
 | `record_operation_support`        | 6106    | default | default | Adapter: Control                                   |
@@ -332,11 +357,14 @@ unit tests. About 4.5k moved, 1.5k edited, 1k deleted.
 → `world/`; `conservative_world_join.rs` → `world/join.rs`;
 `transfer_alternatives.rs` → `alternatives/`. SP's private fields become a
 `World`. Deletes both `Deref` impls, the duplicate `join_callback_fallback`
-and `join_class_member_effects`, the two join panics. Moves the `RefCell`
-ledgers out of `ExecutionState` (`interpreter.rs:1796-1807`) into a
-run-scoped struct on `Executor`. Audits interner ids. Tests:
-`source_continuation`, `optional_call_timing`, join unit tests. About 6k
-moved, 1.2k edited, 0.4k deleted.
+and `join_class_member_effects`, the two join panics. Replaces the `RefCell`
+ledgers in `ExecutionState` (`interpreter.rs:1796-1807`) with returned
+observations per § Observations are returned, restoring
+`TransferLedger.dependencies`; deletes the L2a sink methods
+`record_property_{read,write}`/`publish_throw` and closes L2a's L2b-gated
+tombstones in a stacked second PR. Audits interner ids. Tests:
+`source_continuation`, `optional_call_timing`, join unit tests per refusal
+variant. About 6k moved, 1.2k edited, 0.4k deleted.
 
 **L2c — application adapter and `complete`** (needs L2b).
 `LocalExecutionContext` and helpers → `adapters/application.rs`;
@@ -344,8 +372,12 @@ moved, 1.2k edited, 0.4k deleted.
 finalize}.rs`; `execute_call_transfer_inner` (`:20966`) → operands-supplied
 mode in `roots/call_operands.rs`, self-evaluating mode in `legacy/` with a
 `CLEANUP` naming `evaluate_legacy_compat` (`:18349`) as last caller. Deletes
-`Outcome.complete` per § Completion after its precondition test. Tests:
-effect-translation positives with `swapped_pairs > 0` and Node parity;
+`Outcome.complete` per § Completion after its precondition test. Each
+`roots/` phase is a function over the `World` owners it needs (`&mut
+world.publication, &world.module, ...`, split borrows), not `&mut self` on
+`Executor`; what a phase may mutate is its signature. Each phase returns its
+observations (§ Observations are returned). Tests: effect-translation
+positives with `swapped_pairs > 0` and Node parity;
 `synchronous_precision_report_test` asserts the report projection. About
 3.5k moved, 1.8k edited, 0.6k deleted.
 
