@@ -151,6 +151,9 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 	}
 	c.log = c.log.With("session_id", sessionID)
 	var checkpoint storage.Checkpoint
+	if err := auth.RevalidateStream(ctx); err != nil {
+		return err
+	}
 	if sampler != nil {
 		executor := sampler.GetExecutor()
 		checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, writer,
@@ -163,6 +166,9 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 	}
 	if checkpoint.Seal != nil && announce.IncarnationUid != nil {
 		// An incarnation other than the one that sealed continues the journal; the same one gets the seal back.
+		if err := auth.RevalidateStream(ctx); err != nil {
+			return err
+		}
 		if checkpoint, err = c.history.ReopenSealed(ctx, sessionID, announce.GetIncarnationUid(), announce.GetLastCursor()); err != nil {
 			return err
 		}
@@ -194,6 +200,9 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 			if silent += c.timing.IdleAck; silent >= c.timing.SilenceLimit {
 				return status.Error(codes.Unavailable, "no frame within the silence limit")
 			}
+			if err := auth.RevalidateStream(ctx); err != nil {
+				return err
+			}
 			if err := c.acknowledge(j.committed, false); err != nil {
 				return err
 			}
@@ -206,6 +215,8 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 				if err := c.commitAndAcknowledge(ctx, j); err != nil {
 					return err
 				}
+			} else if err := auth.RevalidateStream(ctx); err != nil {
+				return err
 			}
 		case *session_ingresspb.PushFrame_Entry:
 			size := proto.Size(body.Entry)
@@ -302,6 +313,9 @@ func (j *journal) take(entry *eventlogpb.EventEntry, size int) error {
 
 func (j *journal) commit(ctx context.Context) error {
 	if len(j.batch) > 0 {
+		if err := auth.RevalidateStream(ctx); err != nil {
+			return err
+		}
 		committed, err := j.history.Append(ctx, j.sessionID, j.batch)
 		if err != nil {
 			return err
@@ -310,6 +324,9 @@ func (j *journal) commit(ctx context.Context) error {
 	}
 	// The announced snapshot is stored once history covers it.
 	if !j.snapshotRecorded && j.committed >= j.announce.GetLastCursor() {
+		if err := auth.RevalidateStream(ctx); err != nil {
+			return err
+		}
 		if err := j.history.RecordFeedState(ctx, j.sessionID, &historypb.SessionFeedState{Attached: j.announce}); err != nil {
 			return err
 		}
@@ -323,6 +340,9 @@ func (j *journal) seal(ctx context.Context, sealed *sessionpb.Sealed) error {
 		return status.Error(codes.InvalidArgument, "the seal does not follow the last entry")
 	}
 	if err := j.commit(ctx); err != nil {
+		return err
+	}
+	if err := auth.RevalidateStream(ctx); err != nil {
 		return err
 	}
 	return j.history.RecordFeedState(ctx, j.sessionID, &historypb.SessionFeedState{Attached: j.announce, Sealed: sealed})
