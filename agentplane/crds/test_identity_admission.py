@@ -13,7 +13,7 @@ from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
 NAMESPACE = "identity-admission"
-ACCOUNT = {"apiServer": "local", "namespace": "test-accounts", "name": "test-shared-account"}
+SERVICE_ACCOUNT = {"apiServer": "local", "namespace": "test-accounts", "name": "test-shared-account"}
 
 
 class Kinds:
@@ -91,16 +91,16 @@ async def _role_sets(kinds: Kinds) -> None:
 
 async def _grants(kinds: Kinds) -> None:
     await kinds.create(
-        "kubernetesaccountgrants",
-        "KubernetesAccountGrant",
+        "serviceaccountgrants",
+        "ServiceAccountGrant",
         "test-standing",
-        {"account": ACCOUNT, "roleSets": ["test-roles"]},
+        {"serviceAccount": SERVICE_ACCOUNT, "roleSets": ["test-roles"]},
     )
     grant = await kinds.create(
-        "kubernetesaccountgrants",
-        "KubernetesAccountGrant",
+        "serviceaccountgrants",
+        "ServiceAccountGrant",
         "test-expiring",
-        {"account": ACCOUNT, "roleSets": ["test-more-roles"], "expiresAt": "2026-11-05T13:00:00Z"},
+        {"serviceAccount": SERVICE_ACCOUNT, "roleSets": ["test-more-roles"], "expiresAt": "2026-11-05T13:00:00Z"},
     )
     condition = {
         "type": "KubernetesReady",
@@ -111,18 +111,18 @@ async def _grants(kinds: Kinds) -> None:
     }
     missing = {"kind": "ClusterRole", "name": "test-reader"}
     grant = await kinds.replace_status(
-        "kubernetesaccountgrants", grant, {"conditions": [condition], "missingRoles": [missing]}
+        "serviceaccountgrants", grant, {"conditions": [condition], "missingRoles": [missing]}
     )
     assert grant["status"]["missingRoles"] == [missing]
 
     for spec in (
-        {"account": ACCOUNT, "roleSets": []},
-        {"account": ACCOUNT},
-        {"account": ACCOUNT, "roleSets": [""]},
-        {"account": {k: v for k, v in ACCOUNT.items() if k != "apiServer"}, "roleSets": ["test-roles"]},
+        {"serviceAccount": SERVICE_ACCOUNT, "roleSets": []},
+        {"serviceAccount": SERVICE_ACCOUNT},
+        {"serviceAccount": SERVICE_ACCOUNT, "roleSets": [""]},
+        {"serviceAccount": {k: v for k, v in SERVICE_ACCOUNT.items() if k != "apiServer"}, "roleSets": ["test-roles"]},
         {"roleSets": ["test-roles"]},
     ):
-        await kinds.rejects_create("kubernetesaccountgrants", "KubernetesAccountGrant", spec)
+        await kinds.rejects_create("serviceaccountgrants", "ServiceAccountGrant", spec)
 
 
 async def _managed_service_accounts(kinds: Kinds, identity: dict[str, Any]) -> None:
@@ -140,8 +140,17 @@ async def _managed_service_accounts(kinds: Kinds, identity: dict[str, Any]) -> N
         ownerReferences=[owner],
     )
     created = {"namespace": "test-accounts", "name": "test-agent-extra", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"}
-    account = await kinds.replace_status("managedserviceaccounts", account, {"serviceAccount": created})
-    assert account["status"]["serviceAccount"] == created
+    collision = {
+        "type": "Ready",
+        "status": "False",
+        "reason": "NameConflict",
+        "message": "test foreign ServiceAccount",
+        "lastTransitionTime": "2026-11-05T12:00:00Z",
+    }
+    account = await kinds.replace_status(
+        "managedserviceaccounts", account, {"serviceAccount": created, "conditions": [collision]}
+    )
+    assert account["status"] == {"serviceAccount": created, "conditions": [collision]}
 
     await kinds.rejects_status("managedserviceaccounts", account, {"serviceAccount": {**created, "uid": "not-a-uid"}})
     for spec in ({}, {"apiServer": ""}):

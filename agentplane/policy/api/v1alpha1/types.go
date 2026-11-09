@@ -310,7 +310,9 @@ type KubernetesRoleSetSpec struct {
 	Rules []KubernetesRule `json:"rules" proto:"1"`
 }
 
-// KubernetesRoleSet is a reusable, named set of Kubernetes RBAC rules that grants attach to accounts.
+// KubernetesRoleSet is a reusable, named set of Kubernetes RBAC rules that grants attach to ServiceAccounts.
+// A set names no apiserver by design: each grant's ServiceAccount does, and the Policy Controller resolves the
+// set's roles on that apiserver, reporting any that do not exist there as missing.
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,path=kubernetesrolesets,singular=kubernetesroleset
@@ -328,8 +330,8 @@ type KubernetesRoleSetList struct {
 	Items           []KubernetesRoleSet `json:"items"`
 }
 
-// KubernetesAccount names a ServiceAccount on one of the apiservers Agentplane is configured to reach.
-type KubernetesAccount struct {
+// ServiceAccountTarget names a ServiceAccount on one of the apiservers Agentplane is configured to reach.
+type ServiceAccountTarget struct {
 	// APIServer names a configured apiserver; `local` is the cluster Agentplane runs in.
 	// +kubebuilder:validation:MinLength=1
 	APIServer string `json:"apiServer" proto:"1"`
@@ -339,9 +341,9 @@ type KubernetesAccount struct {
 	Name string `json:"name" proto:"3"`
 }
 
-type KubernetesAccountGrantSpec struct {
-	Account KubernetesAccount `json:"account" proto:"1"`
-	// RoleSets names KubernetesRoleSets in this grant's namespace. Grants on one account combine additively.
+type ServiceAccountGrantSpec struct {
+	ServiceAccount ServiceAccountTarget `json:"serviceAccount" proto:"1"`
+	// RoleSets names KubernetesRoleSets in this grant's namespace. Grants on one ServiceAccount combine additively.
 	// +listType=set
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:items:MinLength=1
@@ -351,7 +353,7 @@ type KubernetesAccountGrantSpec struct {
 	ExpiresAt *metav1.Time `json:"expiresAt,omitempty" proto:"3"`
 }
 
-type KubernetesAccountGrantStatus struct {
+type ServiceAccountGrantStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty" proto:"1"`
@@ -360,28 +362,28 @@ type KubernetesAccountGrantStatus struct {
 	MissingRoles []MissingRole `json:"missingRoles,omitempty" proto:"2"`
 }
 
-// KubernetesAccountGrant attaches KubernetesRoleSets to one ServiceAccount.
+// ServiceAccountGrant attaches KubernetesRoleSets to one ServiceAccount.
 // +genclient
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,path=kubernetesaccountgrants,singular=kubernetesaccountgrant
+// +kubebuilder:resource:scope=Namespaced,path=serviceaccountgrants,singular=serviceaccountgrant
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="API server",type=string,JSONPath=".spec.account.apiServer"
-// +kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=".spec.account.namespace"
-// +kubebuilder:printcolumn:name="Account",type=string,JSONPath=".spec.account.name"
+// +kubebuilder:printcolumn:name="API server",type=string,JSONPath=".spec.serviceAccount.apiServer"
+// +kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=".spec.serviceAccount.namespace"
+// +kubebuilder:printcolumn:name="ServiceAccount",type=string,JSONPath=".spec.serviceAccount.name"
 // +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".spec.expiresAt"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
-type KubernetesAccountGrant struct {
+type ServiceAccountGrant struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              KubernetesAccountGrantSpec   `json:"spec"`
-	Status            KubernetesAccountGrantStatus `json:"status,omitempty"`
+	Spec              ServiceAccountGrantSpec   `json:"spec"`
+	Status            ServiceAccountGrantStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-type KubernetesAccountGrantList struct {
+type ServiceAccountGrantList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []KubernetesAccountGrant `json:"items"`
+	Items           []ServiceAccountGrant `json:"items"`
 }
 
 type ManagedServiceAccountSpec struct {
@@ -404,6 +406,9 @@ type CreatedServiceAccount struct {
 
 type ManagedServiceAccountStatus struct {
 	ServiceAccount *CreatedServiceAccount `json:"serviceAccount,omitempty" proto:"1"`
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" proto:"2"`
 }
 
 // ManagedServiceAccount is a ServiceAccount Agentplane creates and deletes, holding the expiry and owner the
@@ -413,7 +418,7 @@ type ManagedServiceAccountStatus struct {
 // +kubebuilder:resource:scope=Namespaced,path=managedserviceaccounts,singular=managedserviceaccount
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="API server",type=string,JSONPath=".spec.apiServer"
-// +kubebuilder:printcolumn:name="Account",type=string,JSONPath=".status.serviceAccount.name"
+// +kubebuilder:printcolumn:name="ServiceAccount",type=string,JSONPath=".status.serviceAccount.name"
 // +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".spec.expiresAt"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type ManagedServiceAccount struct {

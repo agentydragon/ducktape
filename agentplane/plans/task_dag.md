@@ -3064,7 +3064,7 @@ flowchart LR
 
 **In review (PR from `claude/identity-kinds`, 2026-11-08).** Go types, controller-gen output,
 `crds/generate.py` manifests, generated clients, policy protobuf and admission tests for
-`Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant` and `ManagedServiceAccount`, and an
+`Identity`, `KubernetesRoleSet`, `ServiceAccountGrant` and `ManagedServiceAccount`, and an
 additive `PolicyBinding.spec.subject.identity` beside the ServiceAccount subject (exactly one), so
 identity readers can be built before the cutover. Flux applies CRDs to staging ahead of any reader,
 so nothing here removes or narrows a deployed field: `IDENTITY_CUTOVER` removes the ServiceAccount
@@ -3118,7 +3118,7 @@ The staging PR states rollback and verifies callers after image/config convergen
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
-**Blocked on `IDENTITY_KINDS`.** The Policy Controller reads `KubernetesAccountGrant` and
+**Blocked on `IDENTITY_KINDS`.** The Policy Controller reads `ServiceAccountGrant` and
 `KubernetesRoleSet` instead of `PolicyBinding` Kubernetes rules, keeping native RoleBindings per
 grant, role and namespace with the existing additive, pruned, never-adopt-on-name semantics;
 expiry extends to grants and managed accounts; `ManagedServiceAccount` creates the SA in the

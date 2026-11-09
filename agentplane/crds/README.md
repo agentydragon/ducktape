@@ -1,7 +1,7 @@
 # Agentplane CRDs
 
 `Sandbox`, `SandboxTemplate`, `EgressCredential`, `PolicySet`, `PolicyBinding`, `Identity`,
-`KubernetesRoleSet`, `KubernetesAccountGrant` and `ManagedServiceAccount` schemas come from their Go
+`KubernetesRoleSet`, `ServiceAccountGrant` and `ManagedServiceAccount` schemas come from their Go
 API types and kubebuilder markers. Bazel runs the pinned `controller-gen` with a declared
 Go SDK and GoPath. `generate.py` keeps `PersistentVolumeClaimSpec` opaque while retaining its
 generated `volumeMode` property, which the workspace CEL rule must inspect. PolicySet rule and

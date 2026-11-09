@@ -29,13 +29,13 @@ gives each role its own object:
 | Who the agent is            | ServiceAccount name and UID         | `Identity`                                                                           |
 | Proof of a workload         | Projected SA token, TokenReview     | SVID on the egress hop; SA token only for workloads without one                      |
 | What Agentplane enforces    | `PolicyBinding` to a ServiceAccount | `PolicyBinding` to an `Identity`; Kubernetes rule types leave `PolicySet`            |
-| What Kubernetes enforces    | RoleBindings for the Pod's own SA   | `KubernetesAccountGrant` for any SA on any configured apiserver                      |
+| What Kubernetes enforces    | RoleBindings for the Pod's own SA   | `ServiceAccountGrant` for any SA on any configured apiserver                         |
 | Kubernetes reach            | The Pod's own SA                    | An account the identity may present a credential for, through the proxy; none unless |
 | Execution principal records | ServiceAccount UID                  | Identity name and UID, plus the workload incarnation as provenance                   |
 
 Two systems fall out, each with one kind of input: Agentplane policy (`PolicySet`, `PolicyBinding`,
 `EgressCredential`, subject `Identity`) and a Kubernetes RBAC provisioner (`KubernetesRoleSet`,
-`KubernetesAccountGrant`, subject a ServiceAccount). The Policy Controller is the provisioner, as it
+`ServiceAccountGrant`, subject a ServiceAccount). The Policy Controller is the provisioner, as it
 already is for SA subjects today; the Crossplane managed-resource pattern is the same shape. The two
 meet in exactly one place: an `EgressCredential` whose source names a ServiceAccount.
 
@@ -106,7 +106,7 @@ spec:
   targets: [{ header: Authorization, method: schemeToken, scheme: Bearer }]
 ```
 
-### `KubernetesRoleSet` and `KubernetesAccountGrant`: the provisioner's input
+### `KubernetesRoleSet` and `ServiceAccountGrant`: the provisioner's input
 
 The two Kubernetes rule shapes move, unchanged, from `PolicySet` into a set of their own, so
 "cluster diagnostics" stays one reusable name. A grant attaches sets to one ServiceAccount, named by
@@ -120,23 +120,34 @@ spec:
     - { type: role_binding, role: { kind: ClusterRole, name: agent-diagnostics }, namespaces: [cnpg, forgejo] }
     - { type: cluster_role_binding, clusterRole: agent-node-reader }
 ---
-kind: KubernetesAccountGrant # Flux: standing roles on the shared account
+kind: ServiceAccountGrant # Flux: standing roles on the shared account
 metadata: { name: shared-diagnostics }
 spec:
-  account: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
+  serviceAccount: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
   roleSets: [cluster-diagnostics]
 ---
-kind: KubernetesAccountGrant # app: every agent on the shared account gets more for an hour
+kind: ServiceAccountGrant # app: every agent on the shared account gets more for an hour
 metadata: { name: shared-diagnostics-cnpg-read-20261105 }
 spec:
-  account: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
+  serviceAccount: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
   roleSets: [cnpg-read]
   expiresAt: "2026-11-05T13:00:00Z"
 ```
 
-Grants on one account combine additively; revoking one never removes what another grants, exactly as
-bindings do today. The Policy Controller reads grants and role sets and nothing else; whether a
-grant may instead list roles inline is open (question 10).
+Grants on one ServiceAccount combine additively; revoking one never removes what another grants,
+exactly as bindings do today. The Policy Controller reads grants and role sets and nothing else;
+whether a grant may instead list roles inline is open (question 10).
+
+Decided by the operator, 2026-11-09:
+
+- The grant kind is `ServiceAccountGrant`, and its target field is `spec.serviceAccount`. The proxy
+  impersonates ServiceAccounts only, so "account" names no second kind of thing.
+  `ManagedServiceAccount` and `source.kubernetesServiceAccount` already say ServiceAccount.
+  `Kubernetes` stays only where it tells an Agentplane concept apart (`KubernetesRoleSet` beside
+  `PolicySet`).
+- A `KubernetesRoleSet` names no apiserver. The grant's `serviceAccount.apiServer` does, and the
+  Policy Controller resolves a set's roles on that apiserver and reports the absent ones in
+  `missingRoles`.
 
 ### `ManagedServiceAccount`: optional, for accounts Agentplane creates
 
@@ -363,7 +374,7 @@ Who cleans what, and by which mechanism:
 | -------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `Identity`                                   | Nobody in Kubernetes: Flux, the app, or Dispatcher created it                            | Flux prune; the operator's explicit delete; Dispatcher with the Session |
 | `PolicyBinding`                              | Identity (launch sets and runtime grants), Flux, `ManagedServiceAccount` (temporary use) | GC with its owner; the controller at `expiresAt`                        |
-| `KubernetesAccountGrant`                     | Flux, Identity (runtime widening), `ManagedServiceAccount`                               | GC with its owner; the controller at `expiresAt`                        |
+| `ServiceAccountGrant`                        | Flux, Identity (runtime widening), `ManagedServiceAccount`                               | GC with its owner; the controller at `expiresAt`                        |
 | `ManagedServiceAccount`                      | Identity                                                                                 | GC with the identity; the controller at `expiresAt`                     |
 | Generated `EgressCredential` and `PolicySet` | `ManagedServiceAccount`, or Flux for a static account                                    | GC with the account; Flux prune                                         |
 | ServiceAccount in the accounts namespace     | Flux, or the controller (UID-labelled)                                                   | Flux prune; the controller's prune pass                                 |
@@ -395,7 +406,7 @@ disposable). No dual readers, no ServiceAccount binding subject, no tolerant dec
 rows. The change set lands together, and the PR states the rollback: revert the Flux pins and
 delete the objects of the new kinds.
 
-- **CRDs and catalog:** `Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant`,
+- **CRDs and catalog:** `Identity`, `KubernetesRoleSet`, `ServiceAccountGrant`,
   `ManagedServiceAccount`, the `Identity` binding subject, `PolicySet` without Kubernetes rule types,
   and the `kubernetesServiceAccount` credential source; Flux-rendered identities for the static
   agents (`claude-ai`, `haku-agent`) in place of their ServiceAccounts, the `shared-diagnostics`
@@ -469,8 +480,9 @@ cannot change in place, and the new launch writes the identity.
     `EgressCredential` per managed account is new authority; an admission rule limits it to the
     one-rule shape naming that account's own ServiceAccount and apiserver host.
 12. **Ending an identity.** The identities list and the finish-time offer above cover the operator
-    path. Open: whether a one-off agent's identity may carry an `expiresAt` the Policy Controller
-    honours, and what "referenced" means for a retired Sandbox that could still resume.
+    path. Decided by the operator, 2026-11-09: `Identity` carries no `expiresAt`. Bindings and grants
+    expire, and an identity is ended by its creator or the finish dialog. Still open: what
+    "referenced" means for a retired Sandbox that could still resume.
 13. **Second control plane.** Accounts live on target apiservers regardless of where Agentplane's
     records live, so this plan is neutral across the [architecture directions](architecture_overview.md);
     `Identity`, grants and managed accounts move with the Sandbox family under D3.

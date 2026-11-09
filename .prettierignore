@@ -62,7 +62,7 @@ agentplane/crds/manifests/crd-policysets.yaml
 agentplane/crds/manifests/crd-policybindings.yaml
 agentplane/crds/manifests/crd-identities.yaml
 agentplane/crds/manifests/crd-kubernetesrolesets.yaml
-agentplane/crds/manifests/crd-kubernetesaccountgrants.yaml
+agentplane/crds/manifests/crd-serviceaccountgrants.yaml
 agentplane/crds/manifests/crd-managedserviceaccounts.yaml
 
 # kubeconform schemas dumped from the Agentplane CRDs by `bb run //agentplane/crds:generate_bin`
