@@ -23216,5 +23216,608 @@
       "test_report.py": "import hashlib\n\nimport pytest\nimport pytest_bazel\nfrom playwright.async_api import expect\nfrom python.runfiles import Runfiles\n\nfrom util.testing.frontend_visual.capture import VisualHarness\nfrom util.testing.frontend_visual.viewports import Viewport\n\npytest_plugins = (\"util.testing.frontend_visual.fixtures\",)\npytestmark = pytest.mark.asyncio(loop_scope=\"session\")\n\n\n@pytest.mark.parametrize(\"viewport\", [Viewport(1280, 900), Viewport(390, 844)], ids=[\"desktop\", \"mobile\"])\nasync def test_report(visual: VisualHarness, viewport: Viewport) -> None:\n    root = Runfiles.CreateOrRaise().root() / \"ducktape/x/ci_latency_preview\"\n    async with visual.open(viewport=viewport) as view:\n        await expect(view.page.locator(\"h1\")).to_be_visible()\n        anchors = await view.page.locator('a[href^=\"#\"]').evaluate_all(\"links => links.map(a => a.hash.slice(1))\")\n        for anchor in anchors:\n            assert await view.page.locator(f'[id=\"{anchor}\"]').count() == 1\n        await view.capture(\"first-screen\")\n        for section in (\"feedback\", \"system-tests\", \"experiments\", \"options\"):\n            await view.page.locator(f\"#{section}\").scroll_into_view_if_needed()\n            await view.capture(section)\n        selector = view.page.locator(\"#trace-select\")\n        for index in range(await selector.locator(\"option\").count()):\n            await selector.select_option(str(index))\n            chart = view.page.locator(f\"#trace-{index}\")\n            await expect(chart).to_be_visible()\n            await view.capture(f\"phase-trace-{index}\", target=chart)\n        details = view.page.locator(\"details\")\n        for i in range(await details.count()):\n            await details.nth(i).locator(\"summary\").click()\n        assert await view.page.evaluate((root / \"layout.js\").read_text()) == []\n        view.outputs.publish(\n            role=\"diagnostics\",\n            suffix=\"txt\",\n            data=\"report_sha256=\" + hashlib.sha256((root / \"index.html\").read_bytes()).hexdigest(),\n        )\n\n\nif __name__ == \"__main__\":\n    pytest_bazel.main()\n",
       "layout.js": "() => {\n  const width = document.documentElement.clientWidth;\n  return [...document.querySelectorAll(\"body > *, main > *, section > *\")]\n    .filter((node) => {\n      const rect = node.getBoundingClientRect();\n      return rect.left < -1 || rect.right > width + 1;\n    })\n    .map((node) => node.id || node.tagName);\n};\n"
     }
+  },
+  "infrastructure_followup": {
+    "schema_version": 1,
+    "written_at_utc": "2026-11-09T07:58:37.193852+00:00",
+    "source_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
+    "latest_remote_devel_checked": "c0e14383893a1922d39da2999a5d9fa8a4848fb4",
+    "relevant_paths_unchanged_to_latest": true,
+    "scope": "Read-only infrastructure investigation; no deployment, scheduling-policy change, cancellation, or cache write. Connected tools discovery found no suitable Action; used own kubeconfig and admin API.",
+    "pool_snapshots": [
+      {
+        "observed_at_utc": "2026-11-09T07:12:31.641056+00:00",
+        "provenance": "prior parent supplied pool-reviewed.json",
+        "workers": 1,
+        "active_actions": 1,
+        "queued_reservations": 22
+      },
+      {
+        "observed_at_utc": "2026-11-09T07:50:32.948324+00:00",
+        "provenance": "fresh GetExecutionNodes read, preserved sanitized from tool result",
+        "workers": 1,
+        "active_actions": 1,
+        "queued_reservations": 24
+      },
+      {
+        "observed_at_utc": "2026-11-09T07:54:35.683475+00:00",
+        "provenance": "fresh GetExecutionNodes read",
+        "workers": 1,
+        "active_actions": 1,
+        "queued_reservations": 26
+      }
+    ],
+    "worker": {
+      "pool": "kvm-vm",
+      "executor_version": "v2.321.0",
+      "cpu_millicores": 4000,
+      "memory_bytes": 15032385536,
+      "max_concurrent_tasks": 1,
+      "vm_vcpus": 4,
+      "vm_memory_gib": 16,
+      "node": "wyrm2",
+      "local_file_cache_bytes": 40000000000,
+      "scratch_disk_gib": 80,
+      "outer_pod_cpu_request": 4.025,
+      "outer_pod_memory_request_gib": 16.47594475839287,
+      "outer_pod_ephemeral_storage_request_bytes": 100000000,
+      "shared_action_mount": "/buildbuddy/k3s -> /var/lib/k3s-env",
+      "same_guest_concurrency_safe_as_configured": false
+    },
+    "task_admission": {
+      "target": "//agentplane/system_tests/suites:test_firecracker",
+      "estimated_compute_units": 4,
+      "effective_requested_cpu_millicores": 4000,
+      "effective_requested_memory_bytes": 10000000000,
+      "estimated_free_disk_bytes": 50000000000,
+      "explicit_compute_units_disable_measured_task_sizing": true,
+      "scheduler_admission_checks": [
+        "task slots",
+        "CPU claims",
+        "RAM claims",
+        "GPU/custom claims"
+      ],
+      "same_vm_8cpu_16gib_unmodified_admission_slots": 1,
+      "same_vm_16cpu_16gib_unmodified_admission_slots": 1,
+      "unsafe_justification": "Both one-slot limit and shared K3s mutable data ownership must change before same-VM concurrency. CPU alone also cannot overcome RAM admission."
+    },
+    "node_inventory": [
+      {
+        "node": "iguana",
+        "cpu_allocatable": 12.0,
+        "cpu_requested": 0.17,
+        "cpu_request_headroom": 11.83,
+        "memory_allocatable_gib": 31.01016616821289,
+        "memory_requested_gib": 0.42,
+        "memory_request_headroom_gib": 30.59,
+        "current_cpu_cores": null,
+        "current_memory_gib": null,
+        "vmx": null,
+        "svm": null,
+        "kvm_capacity": null,
+        "unschedulable": false,
+        "taints": [
+          {
+            "effect": "NoSchedule",
+            "key": "node-role.kubernetes.io/roaming",
+            "value": "true"
+          },
+          {
+            "effect": "NoSchedule",
+            "key": "node.kubernetes.io/unreachable",
+            "timeAdded": "2026-07-18T11:18:18Z"
+          },
+          {
+            "effect": "NoSchedule",
+            "key": "node.cilium.io/agent-not-ready"
+          },
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/unreachable",
+            "timeAdded": "2026-10-28T09:07:25Z"
+          }
+        ],
+        "ready": "Unknown",
+        "kubevirt_schedulable": null,
+        "os": "NixOS 26.05 (Yarara)"
+      },
+      {
+        "node": "optiplex",
+        "cpu_allocatable": 5.95,
+        "cpu_requested": 2.663,
+        "cpu_request_headroom": 3.287,
+        "memory_allocatable_gib": 14.637088775634766,
+        "memory_requested_gib": 9.69,
+        "memory_request_headroom_gib": 4.95,
+        "current_cpu_cores": 1.989350619,
+        "current_memory_gib": 6.028736114501953,
+        "vmx": "true",
+        "svm": null,
+        "kvm_capacity": "1k",
+        "unschedulable": false,
+        "taints": [],
+        "ready": "True",
+        "kubevirt_schedulable": "true",
+        "os": "Talos (v1.14.0)"
+      },
+      {
+        "node": "ovh-ns1001419",
+        "cpu_allocatable": 11.950000000000001,
+        "cpu_requested": 2.487,
+        "cpu_request_headroom": 9.463,
+        "memory_allocatable_gib": 61.955692291259766,
+        "memory_requested_gib": 11.39,
+        "memory_request_headroom_gib": 50.56,
+        "current_cpu_cores": 1.634353052,
+        "current_memory_gib": 15.925457000732422,
+        "vmx": "true",
+        "svm": null,
+        "kvm_capacity": "1k",
+        "unschedulable": false,
+        "taints": [
+          {
+            "effect": "NoSchedule",
+            "key": "node-role.kubernetes.io/control-plane"
+          }
+        ],
+        "ready": "True",
+        "kubevirt_schedulable": "true",
+        "os": "Talos (v1.14.0)"
+      },
+      {
+        "node": "ovh-ns102453",
+        "cpu_allocatable": 7.95,
+        "cpu_requested": 5.159,
+        "cpu_request_headroom": 2.791,
+        "memory_allocatable_gib": 30.547897338867188,
+        "memory_requested_gib": 23.26,
+        "memory_request_headroom_gib": 7.29,
+        "current_cpu_cores": 2.131463046,
+        "current_memory_gib": 17.9437255859375,
+        "vmx": "true",
+        "svm": null,
+        "kvm_capacity": "1k",
+        "unschedulable": false,
+        "taints": [],
+        "ready": "True",
+        "kubevirt_schedulable": "true",
+        "os": "Talos (v1.14.0)"
+      },
+      {
+        "node": "ovh-ns103656",
+        "cpu_allocatable": 7.95,
+        "cpu_requested": 6.063,
+        "cpu_request_headroom": 1.887,
+        "memory_allocatable_gib": 30.54702377319336,
+        "memory_requested_gib": 23.47,
+        "memory_request_headroom_gib": 7.07,
+        "current_cpu_cores": 3.3180237380000004,
+        "current_memory_gib": 14.186767578125,
+        "vmx": "true",
+        "svm": null,
+        "kvm_capacity": "1k",
+        "unschedulable": false,
+        "taints": [],
+        "ready": "True",
+        "kubevirt_schedulable": "true",
+        "os": "Talos (v1.14.0)"
+      },
+      {
+        "node": "ovh-ns103711",
+        "cpu_allocatable": 7.95,
+        "cpu_requested": 4.684,
+        "cpu_request_headroom": 3.266,
+        "memory_allocatable_gib": 30.546844482421875,
+        "memory_requested_gib": 22.29,
+        "memory_request_headroom_gib": 8.26,
+        "current_cpu_cores": 2.31827759,
+        "current_memory_gib": 15.890922546386719,
+        "vmx": "true",
+        "svm": null,
+        "kvm_capacity": "1k",
+        "unschedulable": false,
+        "taints": [],
+        "ready": "True",
+        "kubevirt_schedulable": "true",
+        "os": "Talos (v1.14.0)"
+      },
+      {
+        "node": "ovh-ns104952",
+        "cpu_allocatable": 7.95,
+        "cpu_requested": 2.09,
+        "cpu_request_headroom": 5.86,
+        "memory_allocatable_gib": 61.8341064453125,
+        "memory_requested_gib": 8.12,
+        "memory_request_headroom_gib": 53.71,
+        "current_cpu_cores": 1.393618663,
+        "current_memory_gib": 12.284564971923828,
+        "vmx": "true",
+        "svm": null,
+        "kvm_capacity": "1k",
+        "unschedulable": false,
+        "taints": [
+          {
+            "effect": "NoSchedule",
+            "key": "node-role.kubernetes.io/control-plane"
+          }
+        ],
+        "ready": "True",
+        "kubevirt_schedulable": "true",
+        "os": "Talos (v1.14.0)"
+      },
+      {
+        "node": "ovh-ns104963",
+        "cpu_allocatable": 7.95,
+        "cpu_requested": 1.578,
+        "cpu_request_headroom": 6.372,
+        "memory_allocatable_gib": 61.83411407470703,
+        "memory_requested_gib": 8.23,
+        "memory_request_headroom_gib": 53.61,
+        "current_cpu_cores": 1.112054103,
+        "current_memory_gib": 13.032814025878906,
+        "vmx": "true",
+        "svm": null,
+        "kvm_capacity": "1k",
+        "unschedulable": false,
+        "taints": [
+          {
+            "effect": "NoSchedule",
+            "key": "node-role.kubernetes.io/control-plane"
+          }
+        ],
+        "ready": "True",
+        "kubevirt_schedulable": "true",
+        "os": "Talos (v1.14.0)"
+      },
+      {
+        "node": "rugged",
+        "cpu_allocatable": 8.0,
+        "cpu_requested": 0.448,
+        "cpu_request_headroom": 7.552,
+        "memory_allocatable_gib": 30.817272186279297,
+        "memory_requested_gib": 2.93,
+        "memory_request_headroom_gib": 27.89,
+        "current_cpu_cores": null,
+        "current_memory_gib": null,
+        "vmx": null,
+        "svm": null,
+        "kvm_capacity": null,
+        "unschedulable": false,
+        "taints": [
+          {
+            "effect": "NoSchedule",
+            "key": "node-role.kubernetes.io/roaming",
+            "value": "true"
+          },
+          {
+            "effect": "NoSchedule",
+            "key": "node.kubernetes.io/unreachable",
+            "timeAdded": "2026-11-09T04:33:19Z"
+          },
+          {
+            "effect": "NoSchedule",
+            "key": "node.cilium.io/agent-not-ready"
+          },
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/unreachable",
+            "timeAdded": "2026-11-09T04:33:19Z"
+          }
+        ],
+        "ready": "Unknown",
+        "kubevirt_schedulable": null,
+        "os": "NixOS 26.05 (Yarara)"
+      },
+      {
+        "node": "wyrm2",
+        "cpu_allocatable": 32.0,
+        "cpu_requested": 7.458,
+        "cpu_request_headroom": 24.542,
+        "memory_allocatable_gib": 94.1259765625,
+        "memory_requested_gib": 47.15,
+        "memory_request_headroom_gib": 46.98,
+        "current_cpu_cores": 8.199397147,
+        "current_memory_gib": 57.29004669189453,
+        "vmx": null,
+        "svm": "true",
+        "kvm_capacity": "1k",
+        "unschedulable": false,
+        "taints": [],
+        "ready": "True",
+        "kubevirt_schedulable": "true",
+        "os": "NixOS 26.05 (Yarara)"
+      }
+    ],
+    "node_inventory_limits": "Requests include effective init/sidecar requests and Pod overhead; ended Pods excluded. Values are point-in-time scheduler accounting, not peak usage or a capacity guarantee. Missing metrics are null. KVM allocation 1k is device-plugin accounting, not one thousand physical CPUs or usable slots.",
+    "live_domain_sample": {
+      "start_utc": "2026-11-09T07:52:11.414326+00:00",
+      "end_utc": "2026-11-09T07:52:41.893631+00:00",
+      "elapsed_s": 30.531460767844692,
+      "sample_rpc_seconds": [0.47904522786848247, 0.5833692657761276],
+      "average_vcpu_cores_used": 1.7139697441241732,
+      "vm_rss_gib": 16.00687026977539,
+      "guest_available_gib": 15.599830627441406,
+      "guest_usable_gib": 12.826164245605469,
+      "guest_page_cache_gib": 12.48836898803711,
+      "rd_ops": 651.0,
+      "rd_iops": 21.32226836279069,
+      "rd_total_time_s": 3.908384829,
+      "rd_mean_ms": 6.0036633317972345,
+      "rd_bytes_per_second": 2139799.353092398,
+      "wr_ops": 808.0,
+      "wr_iops": 26.464505126167246,
+      "wr_total_time_s": 18.233932037,
+      "wr_mean_ms": 22.566747570544553,
+      "wr_bytes_per_second": 8533841.796210691,
+      "fl_ops": 260.0,
+      "fl_iops": 8.515806104954807,
+      "fl_total_time_s": 11.891448297,
+      "fl_mean_ms": 45.736339603846154
+    },
+    "live_domain_limits": "Whole VM over 30.53 seconds, action identity/phase unknown. QEMU RSS includes guest RAM/page cache; not test peak RSS. Libvirt operation time can overlap and is not additive wall time. Some balloon counters update less frequently than sampling.",
+    "storage": {
+      "observed_node_fs": "/var/lib/kubelet on /dev/vdk, ext4",
+      "virtual_device_rotational_flag": 1,
+      "source_declared_proxmox_storage": "tank-hdd, virtio11, 500 GiB",
+      "host_fs_available_bytes": 421370388480,
+      "workdisk_observed_qcow2_allocation_bytes": 79981510656,
+      "workdisk_capacity_bytes": 85899345920,
+      "allocation_is_not_guest_used_space": true,
+      "io_pressure_samples": [
+        {
+          "source": "first SSH observation; timestamp from wyrm2-device-pressure.raw.txt mtime",
+          "some_avg60_percent": 19.32,
+          "full_avg60_percent": 14.1
+        },
+        {
+          "source": "later SSH observation; timestamp from wyrm2-filesystem-pressure.raw.txt mtime",
+          "some_avg60_percent": 16.68,
+          "full_avg60_percent": 11.48
+        }
+      ],
+      "nested_kvm_on_current_node": "/sys/module/kvm_amd/parameters/nested = 1",
+      "other_node_nested_kvm_proof": "No actual nested guest probe performed on other nodes. CPU labels and advertised KVM are eligibility evidence only.",
+      "physical_backing_confirmation_limit": "atlas DNS unresolved; documented VLAN SSH timed out. Live physical ZFS pool/drive health not obtained. Source and live virtio device mapping agree on HDD storage."
+    },
+    "physical_firecracker_sample": {
+      "actionDigest": {
+        "hash": "8cc65d9073579c3caba205e152524d17104ebc925020e831cd82104c5002c92b",
+        "sizeBytes": "550"
+      },
+      "executeResponseDigest": {
+        "hash": "3ff5d39a6e08c19bd2e3c2aa7eb485ea234fce0b07134dd8607eba0cb3d8bdab",
+        "sizeBytes": "120"
+      },
+      "stage": "COMPLETED",
+      "status": {},
+      "targetLabel": "//agentplane/system_tests/suites:test_firecracker",
+      "actionMnemonic": "TestRunner",
+      "primaryOutputPath": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_firecracker/test.exited_prematurely",
+      "invocationLinkType": 1,
+      "executedActionMetadata": {
+        "queuedTimestamp": "2026-11-09T00:53:15.170148Z",
+        "workerStartTimestamp": "2026-11-09T00:53:27.889668Z",
+        "workerCompletedTimestamp": "2026-11-09T01:06:14.352865Z",
+        "inputFetchStartTimestamp": "2026-11-09T00:53:29.651997Z",
+        "inputFetchCompletedTimestamp": "2026-11-09T00:53:31.286986Z",
+        "executionStartTimestamp": "2026-11-09T00:53:31.286987Z",
+        "executionCompletedTimestamp": "2026-11-09T01:06:13.708574Z",
+        "outputUploadStartTimestamp": "2026-11-09T01:06:13.708575Z",
+        "outputUploadCompletedTimestamp": "2026-11-09T01:06:14.352864Z",
+        "ioStats": {
+          "fileDownloadCount": "36",
+          "fileDownloadSizeBytes": "535912455",
+          "fileDownloadDurationUsec": "763932381",
+          "fileUploadCount": "57",
+          "fileUploadSizeBytes": "17875070",
+          "fileUploadDurationUsec": "643901"
+        },
+        "usageStats": {
+          "networkStats": {}
+        }
+      }
+    },
+    "historical_physical_action_comparison": [
+      {
+        "invocation": "8bff-executions.json",
+        "queue_s": 2234.643015,
+        "input_s": 1.730786,
+        "process_s": 877.077136,
+        "output_s": 0.656779,
+        "io_stats": {
+          "fileDownloadCount": "46",
+          "fileDownloadSizeBytes": "698234649",
+          "fileDownloadDurationUsec": "878550528",
+          "fileUploadCount": "57",
+          "fileUploadSizeBytes": "16262659",
+          "fileUploadDurationUsec": "656426"
+        },
+        "usage_stats": {
+          "networkStats": {}
+        },
+        "at": "2026-11-09T02:54:27.961083Z"
+      },
+      {
+        "invocation": "7075-executions.json",
+        "queue_s": 12.71952,
+        "input_s": 1.634989,
+        "process_s": 762.421587,
+        "output_s": 0.644289,
+        "io_stats": {
+          "fileDownloadCount": "36",
+          "fileDownloadSizeBytes": "535912455",
+          "fileDownloadDurationUsec": "763932381",
+          "fileUploadCount": "57",
+          "fileUploadSizeBytes": "17875070",
+          "fileUploadDurationUsec": "643901"
+        },
+        "usage_stats": {
+          "networkStats": {}
+        },
+        "at": "2026-11-09T00:53:31.286987Z"
+      }
+    ],
+    "historical_clock_defect": {
+      "observed_file_download_duration_s": 763.932381,
+      "actual_input_fetch_wall_s": 1.634989,
+      "actual_process_wall_s": 762.421587,
+      "mechanism": "runner.Run defers Workspace.TaskFinished until after command; TaskFinished calls treeFetcher.Wait a second time; Wait overwrites TransferDuration with time.Since(fetchStartTime), including intervening action execution. Source inspected at deployed v2.321.0.",
+      "limits": "This diagnoses reporting clock semantics from source and observed arithmetic, not total network activity. Do not treat download duration as critical-path CAS time."
+    },
+    "invocation_cache_stats": {
+      "invocation": "7075dbec-646a-5e9f-bbee-13db751d6ce5",
+      "download_outputs": "MINIMAL",
+      "stats": {
+        "actionCacheHits": "866",
+        "actionCacheMisses": "1695",
+        "actionCacheUploads": "1702",
+        "casCacheHits": "37523",
+        "casCacheUploads": "24227",
+        "totalDownloadSizeBytes": "53624951335",
+        "totalUploadSizeBytes": "41868780310",
+        "totalDownloadTransferredSizeBytes": "14758498433",
+        "totalUploadTransferredSizeBytes": "8481359978",
+        "totalDownloadUsec": "686307853",
+        "totalUploadUsec": "944175249",
+        "downloadThroughputBytesPerSecond": "78135418",
+        "uploadThroughputBytesPerSecond": "44344289",
+        "totalCachedActionExecUsec": "1310572",
+        "totalUncachedActionExecUsec": "10594224783"
+      },
+      "limits": "Invocation aggregate across hosted and self-hosted actions, parallel requests and uploads. Does not locate bytes in cluster or prove critical path. Scorecard first page100 only; not a complete census."
+    },
+    "autoscaling": {
+      "live_keda_version": "2.20.2",
+      "live_keda_watch_namespace": "haku-ci",
+      "kubevirt_scale_subresources": [
+        {
+          "crd": "virtualmachines.kubevirt.io",
+          "versions": [
+            {
+              "name": "v1",
+              "served": true,
+              "subresources": {
+                "status": {}
+              }
+            },
+            {
+              "name": "v1alpha3",
+              "served": true,
+              "subresources": {
+                "status": {}
+              }
+            }
+          ]
+        },
+        {
+          "crd": "virtualmachineinstancereplicasets.kubevirt.io",
+          "versions": [
+            {
+              "name": "v1",
+              "served": true,
+              "subresources": {
+                "scale": {
+                  "labelSelectorPath": ".status.labelSelector",
+                  "specReplicasPath": ".spec.replicas",
+                  "statusReplicasPath": ".status.replicas"
+                },
+                "status": {}
+              }
+            },
+            {
+              "name": "v1alpha3",
+              "served": true,
+              "subresources": {
+                "scale": {
+                  "labelSelectorPath": ".status.labelSelector",
+                  "specReplicasPath": ".spec.replicas",
+                  "statusReplicasPath": ".status.replicas"
+                },
+                "status": {}
+              }
+            }
+          ]
+        }
+      ],
+      "stock_buildbuddy_scaler": false,
+      "generic_options": [
+        "KEDA Prometheus scaler backed by authenticated pool-scoped adapter",
+        "KEDA metrics-api with pool-scoped adapter",
+        "custom external gRPC scaler",
+        "small pool controller with direct bounded polling",
+        "fixed two warm independent VMs"
+      ],
+      "cloud_metric_probe": {
+        "metric": "exported_buildbuddy_remote_execution_queue_length",
+        "sample_count": 629,
+        "label_keys": ["pod_name"],
+        "maximum_observed_queue": 1,
+        "matched_self_hosted_worker": false,
+        "usable_for_dedicated_pool_without_adapter": false
+      },
+      "drain_limits": {
+        "guest_service_docker_stop_seconds": 30,
+        "guest_service_timeout_stop_seconds": 45,
+        "current_drain_safe_for_762s_action": false,
+        "scheduler_behavior": "Graceful shutdown stops admission, waits active tasks until configured shutdown deadline minus cleanup duration, then cancels. A VMIRS/HPA deletion is not a BuildBuddy drain or exclusive lease proof."
+      }
+    },
+    "cache_topology": {
+      "main_bazel_location": "Hosted BuildBuddy remote runner started by bbr/GitHub Actions",
+      "main_bazel_remote_cache": "grpcs://remote.buildbuddy.io",
+      "main_bazel_remote_executor": "grpcs://remote.buildbuddy.io",
+      "dedicated_worker_cache_target": "unset; defaults to executor.app_target=remote.buildbuddy.io",
+      "dedicated_worker_existing_filecache_bytes": 40000000000,
+      "oci_registry_cache": "Zot already rewrites ghcr.io pulls inside dedicated worker and supplies nested K3s mirrors",
+      "recommended_cache_scope": "If proven worthwhile, only self-hosted executor.cache_target -> nearby gRPC proxy; keep hosted Bazel cache/executor endpoints hosted.",
+      "cas_input_stage_best_case_savings_upper_bound_in_sample_s": 1.634989,
+      "cas_output_stage_wall_s": 0.644289,
+      "scope_bound": "Bound excludes separately measured container pulls and unseen cold samples. Does not bound all possible future fleet cold-start traffic."
+    },
+    "checks": {
+      "raw_api_read_only": true,
+      "node_requests_recomputed": true,
+      "live_scale_subresources_checked": true,
+      "keda_watch_scope_checked": true,
+      "source_pin_relevant_paths_compared": true,
+      "production_mutations": false,
+      "new_builds_or_tests_submitted": false,
+      "sensitive_keys_written_or_printed": false,
+      "worker_api_identities_in_evidence": false
+    },
+    "sources": {
+      "worker_generator": "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/cluster/cdk8s/buildbuddy_kvm_worker.py",
+      "worker_config": "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/devinfra/buildbuddy/kvm/worker/executor.yaml",
+      "shared_k3s_directory": "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/system_tests/k3s/baseline.py#L158",
+      "task_properties": "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/system_tests/k3s/defs.bzl#L23",
+      "pod_storage_backing": "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/cluster/terraform/main/proxmox-vms.tf#L232",
+      "rbe_policy": "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/devinfra/bazel/rbe.bazelrc",
+      "keda_namespace": "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/cluster/cdk8s/keda.py#L62",
+      "buildbuddy_resources": "https://www.buildbuddy.io/docs/rbe-platforms/#runner-resource-allocation",
+      "buildbuddy_all_options": "https://www.buildbuddy.io/docs/config-all-options/",
+      "proxy_docs": "https://www.buildbuddy.io/docs/enterprise-proxy/",
+      "keda_scalers": "https://keda.sh/docs/2.20/scalers/",
+      "keda_custom_resource": "https://keda.sh/docs/2.20/reference/scaledobject-spec/#scaletargetref",
+      "keda_external": "https://keda.sh/docs/2.20/concepts/external-scalers/",
+      "keda_metrics_api": "https://keda.sh/docs/2.20/scalers/metrics-api/",
+      "kubevirt_replica_sets": "https://kubevirt.io/user-guide/user_workloads/replicaset/",
+      "cloud_metrics": "https://www.buildbuddy.io/docs/prometheus-metrics-for-cloud/",
+      "stock_executor_hpa": "https://github.com/buildbuddy-io/buildbuddy-helm/blob/master/charts/buildbuddy-executor/values.yaml",
+      "tasksize_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/tasksize/tasksize.go#L606",
+      "scheduler_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/scheduling/priority_task_scheduler/priority_task_scheduler.go#L804",
+      "shutdown_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/scheduling/priority_task_scheduler/priority_task_scheduler.go#L493",
+      "docker_resources_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/remote_execution/containers/docker/docker.go#L425",
+      "download_timer_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/server/cache/dirtools/dirtools.go#L1848",
+      "download_finish_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/remote_execution/workspace/workspace.go#L777",
+      "download_reporting_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/remote_execution/runner/runner.go#L486",
+      "proxy_ac_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/action_cache_server_proxy/action_cache_server_proxy.go#L233",
+      "proxy_auth_source": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/remoteauth/remoteauth.go"
+    }
+  },
+  "presentation": {
+    "framework": "Mantine9.6.1 withReact19.3.0 from pinnedCDNs",
+    "shared_assets": ["../report.js", "../report.css"],
+    "theme": "MantineProvider defaultColorScheme=auto;initial and liveOS/browser preference",
+    "measurement_refresh": "Original cohort window retained;infrastructure follow-up has separate07:50-07:54UTCclocks."
   }
 }

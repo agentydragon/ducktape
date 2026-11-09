@@ -2,1247 +2,214 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Ducktape Visual reliability · 30 October 2026</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --ink: #132d38;
-        --muted: #526772;
-        --accent: #006c67;
-        --line: #d5e0e3;
-        --paper: #fff;
-        --ground: #f3f6f7;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      html {
-        scroll-behavior: smooth;
-      }
-      body {
-        margin: 0;
-        background: var(--ground);
-        color: var(--ink);
-        font:
-          16px/1.65 system-ui,
-          sans-serif;
-      }
-      main {
-        max-width: 1140px;
-        margin: auto;
-        padding: 36px 28px 64px;
-      }
-      header {
-        padding: 28px;
-        background: var(--paper);
-        border-top: 6px solid var(--accent);
-        border-radius: 5px;
-      }
-      h1 {
-        font-size: clamp(1.8rem, 4vw, 2.65rem);
-        line-height: 1.15;
-        max-width: 30ch;
-        margin: 0.3em 0 0.65em;
-      }
-      h2 {
-        font-size: 1.45rem;
-        line-height: 1.25;
-        margin: 0 0 18px;
-      }
-      h3 {
-        font-size: 1.12rem;
-        margin: 26px 0 9px;
-      }
-      p {
-        margin: 10px 0 17px;
-      }
-      .eyebrow {
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        font-size: 0.76rem;
-        font-weight: 750;
-        color: var(--accent);
-      }
-      .lede {
-        font-size: 1.08rem;
-        max-width: 90ch;
-      }
-      .meta,
-      .note,
-      footer {
-        color: var(--muted);
-        font-size: 0.88rem;
-      }
-      a {
-        color: #00645f;
-        text-underline-offset: 3px;
-        overflow-wrap: anywhere;
-      }
-      a:focus-visible,
-      summary:focus-visible,
-      button:focus-visible,
-      input:focus-visible,
-      select:focus-visible {
-        outline: 3px solid #e9a219;
-        outline-offset: 4px;
-      }
-      nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 7px 18px;
-        margin: 22px 0;
-      }
-      nav a {
-        font-weight: 650;
-      }
-      section {
-        background: var(--paper);
-        border: 1px solid var(--line);
-        border-radius: 5px;
-        padding: 26px;
-        margin: 20px 0;
-        scroll-margin-top: 16px;
-      }
-      .cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-        gap: 14px;
-        margin: 24px 0 6px;
-      }
-      .card {
-        padding: 15px 18px;
-        border: 1px solid var(--line);
-        border-radius: 4px;
-        background: #f8fbfb;
-      }
-      .card strong {
-        display: block;
-        font-size: 1.7rem;
-        line-height: 1.3;
-        color: var(--accent);
-      }
-      .card span {
-        display: block;
-        font-size: 0.88rem;
-        color: var(--muted);
-        margin-top: 6px;
-      }
-      .scroll {
-        overflow-x: auto;
-        max-width: 100%;
-        margin: 16px 0;
-      }
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        font-size: 0.92rem;
-        text-align: left;
-      }
-      th,
-      td {
-        vertical-align: top;
-        overflow-wrap: anywhere;
-        padding: 12px 13px;
-        border-bottom: 1px solid var(--line);
-        min-width: 115px;
-      }
-      th {
-        background: #ecf3f3;
-        font-size: 0.84rem;
-      }
-      th:first-child,
-      td:first-child {
-        padding-left: 9px;
-      }
-      td p {
-        margin: 0 0 8px;
-      }
-      code {
-        font:
-          0.83em/1.5 ui-monospace,
-          monospace;
-        overflow-wrap: anywhere;
-        white-space: normal;
-      }
-      details {
-        border-top: 1px solid var(--line);
-        padding: 15px 0;
-        margin-top: 16px;
-      }
-      summary {
-        cursor: pointer;
-        font-weight: 700;
-        color: var(--accent);
-      }
-      details[open] > summary {
-        margin-bottom: 14px;
-      }
-      .callout {
-        border-left: 4px solid var(--accent);
-        padding: 12px 18px;
-        background: #eef7f5;
-        margin: 18px 0;
-      }
-      .caution {
-        border-left-color: #b87719;
-        background: #fff7e8;
-      }
-      label {
-        display: block;
-        font-weight: 650;
-        margin: 12px 0 5px;
-      }
-      input[type="range"] {
-        width: min(100%, 420px);
-        display: block;
-      }
-      select,
-      input[type="search"] {
-        font: inherit;
-        max-width: 100%;
-        padding: 7px;
-        border: 1px solid #93acb4;
-        background: white;
-        border-radius: 3px;
-      }
-      output {
-        display: block;
-        margin-top: 12px;
-        font-weight: 650;
-      }
-      .row-count {
-        font-size: 0.85rem;
-        color: var(--muted);
-      }
-      .bar {
-        height: 16px;
-        background: #b2d9d1;
-        border-radius: 3px;
-        margin-top: 4px;
-        width: var(--w);
-      }
-      footer {
-        margin-top: 24px;
-      }
-      li {
-        margin: 9px 0;
-      }
-      ul {
-        padding-left: 22px;
-      }
-      @media (max-width: 600px) {
-        main {
-          padding: 16px 12px 36px;
-        }
-        header,
-        section {
-          padding: 19px 16px;
-        }
-        h1 {
-          font-size: 1.95rem;
-        }
-        th,
-        td {
-          padding: 9px;
-          font-size: 0.88rem;
-        }
-        .cards {
-          gap: 9px;
-        }
-        .card {
-          padding: 12px 14px;
-        }
-        nav {
-          gap: 8px 14px;
-        }
-        .meta {
-          overflow-wrap: anywhere;
-        }
-        table,
-        tbody,
-        tr,
-        td {
-          display: block;
-          width: 100%;
-        }
-        thead {
-          display: none;
-        }
-        tr {
-          padding: 10px 0 18px;
-          border-bottom: 1px solid var(--line);
-        }
-        td {
-          min-width: 0;
-          border: 0;
-          padding: 9px 0 !important;
-          font-size: 0.92rem;
-        }
-        td::before {
-          content: attr(data-label);
-          display: block;
-          color: var(--muted);
-          font-size: 0.75rem;
-          line-height: 1.3;
-          font-weight: 750;
-          margin: 0 0 7px;
-          text-transform: uppercase;
-          letter-spacing: 0.025em;
-        }
-        .scroll {
-          overflow: visible;
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Visual reliability · 9 November 2026</title>
+
+    <meta name="color-scheme" content="light dark" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      integrity="sha384-i9tDmARQSxqmzSCjbU/VkZGPbv8PjopI///D0KBD2i8+Y/wjaqYR8TDcV69RytF8"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="../report.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19.3.0?target=es2022",
+          "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+          "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+          "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022"
         }
       }
-    </style>
+    </script>
+    <script>
+      document.documentElement.dataset.mantineColorScheme = matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches
+        ? "dark"
+        : "light";
+    </script>
   </head>
   <body>
-    <main>
+    <div id="report-content">
       <header>
-        <div class="eyebrow">
-          Ducktape · Visual reliability · 30 October 2026
-        </div>
-        <h1>
-          Viewport aliases and scroll framing destabilize image comparisons.
-        </h1>
-        <p class="lede">
-          Five fresh test passes still produced unstable review images: three
-          names mix viewports, and one desktop scene captures different scroll
-          framing. The browser setup race and publisher schema issue already
-          have landed repairs.
-        </p>
-        <p class="meta">
-          Latest 100 merges · 30 Oct 09:29:41 → 22:09:35 UTC; cutoff 22:10 UTC ·
-          inspected devel
-          <a
-            href="https://github.com/agentydragon/ducktape/commit/49475cae74abd6a669879908f63c04fa78f41242"
-            ><code>49475cae74ab</code></a
-          >. <a href="evidence.json">Reviewed measurements</a> ·
-          <a href="manifest.json">Source and window</a>.
-        </p>
-        <div class="cards">
-          <div class="card">
-            <strong>100 PRs</strong
-            ><span>Recent merged cohort; all exact heads inspected</span>
-          </div>
-          <div class="card">
-            <strong>3 names</strong
-            ><span
-              >Desktop/mobile identities collide in all five fresh runs</span
-            >
-          </div>
-          <div class="card">
-            <strong>1 desktop scene</strong
-            ><span>Three screenshot variants across five fresh test runs</span>
+        <div class="container">
+          <div class="link-row">
+            <div>
+              <p class="muted">
+                Ducktape · visual reliability · refreshed 9 November 2026
+              </p>
+              <h1>Current visual-test findings</h1>
+              <p class="muted">
+                Source review pinned to
+                <a
+                  href="https://github.com/agentydragon/ducktape/tree/69f35d736dc33f90f66f8345ff35806f04ed9399"
+                  ><code>devel 69f35d736dc3</code></a
+                >. The prior report’s completed items are removed from the open
+                list; one stale PR remains a revalidation decision.
+              </p>
+            </div>
+            <nav aria-label="Report evidence" class="link-row">
+              <a href="evidence.json">Evidence JSON</a>
+              <a href="manifest.json">Manifest</a>
+              <a
+                href="https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"
+                >Previous report · 30 Oct</a
+              >
+            </nav>
           </div>
         </div>
       </header>
-      <nav aria-label="Report sections">
-        <a href="#decisions">Recommendations</a><a href="#sample">Cohort</a
-        ><a href="#pixels">Image inspection</a
-        ><a href="#port">Setup mechanism</a><a href="#repeats">Fresh repeats</a
-        ><a href="#scroll-drift">Scroll variation</a
-        ><a href="#continuity">Prior work</a><a href="#limits">Limits</a>
-      </nav>
-      <section id="decisions">
-        <h2>Fix capture identity before treating changed pixels as flakes</h2>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Recommendation</th>
-                <th>Evidence and expected effect</th>
-                <th>Acceptance boundary</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Recommendation">
-                  Give explicit visual captures a unique viewport identity.
-                </td>
-                <td data-label="Evidence and expected effect">
-                  Three names, <code>single-tool-collapsed</code>,
-                  <code>single-tool-expanded</code> and <code>blockers</code>,
-                  are reused by desktop and mobile parameter cases. Inspected
-                  galleries swap the exact same desktop/mobile PNG digests
-                  between those names. Preserving parameter identity removes
-                  this comparison ambiguity; no CI-time saving is claimed.
-                </td>
-                <td data-label="Acceptance boundary">
-                  Include <code>view.capture_name</code> or a viewport suffix in
-                  all three explicit capture names. Keep both viewports and
-                  collapsed/expanded states. Repeat on unchanged source and
-                  require distinct manifest entries and stable dimensions, then
-                  compare each identity separately.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Recommendation">
-                  Normalize the expanded-output capture to its intended scroll
-                  anchor.
-                </td>
-                <td data-label="Evidence and expected effect">
-                  Five fresh same-source executions produced three desktop PNGs
-                  for one scene. Capture JSON has scrollTop 566–620 and target y
-                  697–751 px, with fonts/images/layout readiness satisfied. All
-                  functional assertions passed.
-                </td>
-                <td data-label="Acceptance boundary">
-                  After expansion, center the chosen output/control and assert
-                  its stable geometry before capture. Preserve the text,
-                  expansion and viewport checks. The candidate is untested; no
-                  failure-rate reduction or CI-time gain is claimed.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Recommendation">
-                  Use a matching merge-base baseline, or visibly classify
-                  unmatched comparisons.
-                </td>
-                <td data-label="Evidence and expected effect">
-                  Both product-frontend PR galleries used a latest-devel
-                  fallback whose SHA differs from the actual merge base. One
-                  inspected change is intended UI behavior; another is
-                  unassigned stale-baseline drift. Neither establishes a pixel
-                  flake.
-                </td>
-                <td data-label="Acceptance boundary">
-                  Retain review screenshots. Match source and capture identities
-                  before assigning a diff to the PR; label baseline distance
-                  when a matching baseline is unavailable. Storage/build cost
-                  and coverage of a base rebuild are not measured here.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Recommendation">
-                  Retain the landed listener-ownership and artifact-schema
-                  repairs.
-                </td>
-                <td data-label="Evidence and expected effect">
-                  The sampled browser failure happened before page readiness:
-                  the app and OIDC server selected the same port.
-                  <a href="https://github.com/agentydragon/ducktape/pull/12936"
-                    >#12936</a
-                  >
-                  owns the socket through child startup.
-                  <a href="https://github.com/agentydragon/ducktape/pull/13036"
-                    >#13036</a
-                  >
-                  excludes non-test artifact records from the publisher.
-                </td>
-                <td data-label="Acceptance boundary">
-                  Do not recommend these already-landed repairs again or count
-                  setup/publisher failures as screenshot nondeterminism.
-                  Post-fix tracker passes are not fresh repeat executions.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Recommendation">
-                  Keep older Chart.js work as an open candidate.
-                </td>
-                <td data-label="Evidence and expected effect">
-                  <a href="https://github.com/agentydragon/ducktape/pull/10753"
-                    >#10753</a
-                  >
-                  is still open. The old report’s broad repeated-pass result was
-                  on candidate source, not evidence that the candidate landed or
-                  that current devel is stable.
-                </td>
-                <td data-label="Acceptance boundary">
-                  Rebase and reproduce the specific chart invariant before
-                  adoption. Do not remove the chart screenshots or claim a
-                  fleet-wide five-run clean bill from one selected target.
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      <main class="container">
+        <blockquote>
+          <strong>No current visual failure was reproduced.</strong> #10753 is
+          still open, but its head is from 16 October, GitHub reports merge
+          state UNKNOWN, and no fresh candidate-source reproduction was made.
+          Treat it as rebase-and-revalidate work, not a confirmed present
+          regression.
+        </blockquote>
+        <div class="grid">
+          <div>
+            <article>
+              <div>
+                <div class="muted">Current decision</div>
+                <div>1 stale open PR</div>
+                <p>
+                  Chart.js layout-dependence candidate #10753 needs
+                  current-source review.
+                </p>
+              </div>
+            </article>
+          </div>
+          <div>
+            <article>
+              <div>
+                <div class="muted">Resolved from this list</div>
+                <div>Scroll and capture identity</div>
+                <p>
+                  #13169 stabilized history framing; #13730 established
+                  structured capture identities.
+                </p>
+              </div>
+            </article>
+          </div>
+          <div>
+            <article>
+              <div>
+                <div class="muted">Recurrence boundary</div>
+                <div>No absence claim</div>
+                <p>
+                  Target history has 959 mixed status rows, all PASSED; cache
+                  and physical runner exposure were not checked.
+                </p>
+              </div>
+            </article>
+          </div>
         </div>
-      </section>
-      <section id="sample">
-        <h2>A new merged-PR cohort, not a flake-rate denominator</h2>
+
+        <section aria-labelledby="open-title">
+          <h2 id="open-title">Open decision</h2>
+          <article>
+            <div>
+              <div class="link-row">
+                <h3>
+                  #10753 · Fix Chart.js layout dependence on previous updates
+                </h3>
+                <mark>OPEN · stale head</mark>
+              </div>
+              <p>
+                The audited source still uses Chart.js in the Spend history
+                chart; package metadata requests <code>^4.4.8</code> and the
+                lockfile resolves <code>4.5.1</code>. The PR head is
+                <code>519cd94a3ed4</code>, last updated 16 October. GitHub
+                currently reports merge state <code>UNKNOWN</code>. Its checks
+                passed on that old head, which is not current-source evidence.
+              </p>
+              <p>
+                <strong>Disposition.</strong> Rebase and revalidate against
+                current source before treating this PR as an active repair. The
+                old candidate is not a current failure report, and this refresh
+                did not reproduce layout instability.
+              </p>
+              <p>
+                <a href="https://github.com/agentydragon/ducktape/pull/10753"
+                  >Open PR #10753</a
+                >
+                <a
+                  href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/ui/SpendingHistoryChart.tsx"
+                  >Current chart source</a
+                >
+                <a
+                  href="https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/package.json"
+                  >Dependency declaration</a
+                >
+              </p>
+            </div>
+          </article>
+        </section>
+
         <p>
-          Latest 100 merges at or before 30 October 22:10 UTC, from a bounded
-          200-PR query:
-          <a href="https://github.com/agentydragon/ducktape/pull/13007"
-            >#13007</a
-          >–<a href="https://github.com/agentydragon/ducktape/pull/13109"
-            >#13109</a
-          >, merged 09:29:41–22:09:35 UTC. All 100 exact heads, changed-file
-          lists and comment collections were inspected. These merged PRs are
-          selected survivors; they exclude abandoned and still-open changes.
-        </p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Observed unit</th>
-                <th>Count</th>
-                <th>Interpretation</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Observed unit">
-                  PR visual review exact-head checks
-                </td>
-                <td data-label="Count">
-                  62 NEUTRAL; 18 SUCCESS; 1 FAILURE; 19 missing
-                </td>
-                <td data-label="Interpretation">
-                  Check state is pipeline exposure, not pixel determinism.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Observed unit">
-                  Current-head gallery summaries
-                </td>
-                <td data-label="Count">18: 10 modified, 8 unchanged</td>
-                <td data-label="Interpretation">
-                  One additional gallery comment was stale; three current-head
-                  comments reported no artifacts.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Observed unit">
-                  Modified-gallery image observations
-                </td>
-                <td data-label="Count">
-                  30 modified; 10,036 unchanged; 0 new/removed
-                </td>
-                <td data-label="Interpretation">
-                  Repeated images across PRs count again; these are not unique
-                  images or independent repeats.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Observed unit">Publisher-failure comments</td>
-                <td data-label="Count">2: one stale, one exact-head</td>
-                <td data-label="Interpretation">
-                  Artifact publication failure, not a browser rendering verdict.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Observed unit">
-                  Product frontend implementation PRs
-                </td>
-                <td data-label="Count">
-                  <a href="https://github.com/agentydragon/ducktape/pull/13060"
-                    >#13060</a
-                  >: 4 modified / 869 unchanged;
-                  <a href="https://github.com/agentydragon/ducktape/pull/13083"
-                    >#13083</a
-                  >: 6 / 867
-                </td>
-                <td data-label="Interpretation">
-                  Both explicitly used a latest-devel baseline fallback, rather
-                  than their actual merge base.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          The prior 15–16 October report counted 96 modified, 10 removed and
-          8,091 unchanged observations in a different cohort. The current
-          smaller count cannot establish improvement: target selection, artifact
-          identity and baseline provenance differ.
-        </p>
-      </section>
-      <section id="pixels">
-        <h2>What the inspected images actually show</h2>
-        <p>
-          Before/after/diff assets were downloaded and viewed for both
-          product-UI PRs. The findings below distinguish a source-backed UI
-          change, an artifact identity defect and an unattributed change. Large
-          gallery diffs in unrelated PRs are discovery leads, not a demonstrated
-          rendering race.
-        </p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Image / comparison</th>
-                <th>Pixels and source</th>
-                <th>Diagnosis</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Image / comparison">
-                  <a href="https://github.com/agentydragon/ducktape/pull/13060"
-                    >#13060</a
-                  >
-                  and
-                  <a href="https://github.com/agentydragon/ducktape/pull/13083"
-                    >#13083</a
-                  >
-                  · <code>single-tool-collapsed / expanded</code>
-                </td>
-                <td data-label="Pixels and source">
-                  The same two content digests are exchanged: one 1200×900
-                  desktop image, one 1082×2402 mobile image (412×915 at 2.625
-                  device scale).
-                  <a
-                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/app/frontend/test_visual_history.py#L32"
-                    ><code
-                      >agentplane/app/frontend/test_visual_history.py:32</code
-                    ></a
-                  >
-                  parametrizes both viewports but lines 44/57 explicitly reuse
-                  the two names.
-                </td>
-                <td data-label="Diagnosis">
-                  High-confidence artifact identity collision. The gallery’s
-                  one-entry-per-name identity can select different viewports
-                  across bundles. These comparisons do not compare the same
-                  scene and viewport.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Image / comparison">
-                  <a href="https://github.com/agentydragon/ducktape/pull/13083"
-                    >#13083</a
-                  >
-                  · <code>session_inventory_dropped</code>
-                </td>
-                <td data-label="Pixels and source">
-                  Both images 1200×900; 2,736 changed pixels (0.25%). Sidebar
-                  thread indicators change from active colors to gray/unknown.
-                  The test sets <code>INVENTORY_STREAM_DROPPED</code> and waits
-                  for stale state;
-                  <a
-                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/app/frontend/test_visual_scenes.py#L516"
-                    ><code
-                      >agentplane/app/frontend/test_visual_scenes.py:516</code
-                    ></a
-                  >. The PR combines snapshot and sandbox-inventory freshness in
-                  <code>thread_list.tsx</code>.
-                </td>
-                <td data-label="Diagnosis">
-                  Expected UI semantics supported by source and visible pixels.
-                  Baseline 9b6efa2c differs from merge base 4de44587, so the
-                  comparison still has provenance limits.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Image / comparison">
-                  <a href="https://github.com/agentydragon/ducktape/pull/13060"
-                    >#13060</a
-                  >
-                  ·
-                  <code
-                    >disclosure_control_reaches_card_edges[dark-expanded-focus-mobile]</code
-                  >
-                </td>
-                <td data-label="Pixels and source">
-                  Both 1082×2402; 73,676 changed pixels (2.83%), concentrated at
-                  the bottom sticky “Output · 122 lines” row. Fixed shell-call
-                  fixture. The PR’s frontend changes do not alter disclosure
-                  layout or this test; baseline a854463d differs from merge base
-                  2b5b2d24.
-                </td>
-                <td data-label="Diagnosis">
-                  Unattributed baseline drift, not a verified flake. Need
-                  matching-base images and the intervening layout change before
-                  assigning a cause.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          Image content digests, dimensions, gallery provenance and producer
-          references are retained in <a href="evidence.json">evidence</a>.
-          Screenshot-change percentages measure different pixels, not the
-          probability of nondeterminism.
-        </p>
-      </section>
-      <section id="asset-links">
-        <h2>Inspect the actual viewport exchange</h2>
-        <p>
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/util/testing/visual_capture.py#L258"
-            ><code>util/testing/visual_capture.py:258</code></a
+          Closed since the prior report:
+          <a href="https://github.com/agentydragon/ducktape/pull/13169"
+            >#13169, scroll framing</a
           >
-          turns each explicit name into the PNG and manifest path.
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/util/testing/visual_review.py#L41"
-            ><code>util/testing/visual_review.py:41</code></a
-          >
-          writes that path; sharded manifests share the same name and
-          invocation, and
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/devinfra/pr_visuals/publisher.py#L404"
-            ><code>devinfra/pr_visuals/publisher.py:404</code></a
-          >
-          aggregates their artifact candidates. This loses the viewport
-          discriminator at the review boundary. Two same-named entries from
-          different shards need distinct case identities, even when each test
-          itself passes.
+          and
+          <a href="https://github.com/agentydragon/ducktape/pull/13730"
+            >#13730, capture identity</a
+          >. Focused repeat/check receipts and older completed work remain in
+          <a href="evidence.json">the evidence</a>.
         </p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Comparison</th>
-                <th>Gallery</th>
-                <th>Before</th>
-                <th>After</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Comparison">
-                  <a href="https://github.com/agentydragon/ducktape/pull/13060"
-                    >#13060</a
-                  >
-                  · <code>single-tool-collapsed</code>
-                </td>
-                <td data-label="Gallery">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/reviews/47f59fbba6dc82c24785d00328cb3b1872fc8849/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html"
-                    >Exact gallery</a
-                  >
-                </td>
-                <td data-label="Before">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/assets/5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e.png"
-                    >mobile · 1082x2402</a
-                  ><br /><code>5dc92f5aea67</code>
-                </td>
-                <td data-label="After">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/assets/8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a.png"
-                    >desktop · 1200x900</a
-                  ><br /><code>8546199be735</code>
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Comparison">
-                  <a href="https://github.com/agentydragon/ducktape/pull/13083"
-                    >#13083</a
-                  >
-                  · <code>single-tool-collapsed</code>
-                </td>
-                <td data-label="Gallery">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/reviews/104649352c51b95b651572832c8885988eaa8bd0/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html"
-                    >Exact gallery</a
-                  >
-                </td>
-                <td data-label="Before">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/assets/8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a.png"
-                    >desktop · 1200x900</a
-                  ><br /><code>8546199be735</code>
-                </td>
-                <td data-label="After">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/assets/5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e.png"
-                    >mobile · 1082x2402</a
-                  ><br /><code>5dc92f5aea67</code>
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Comparison">
-                  <a href="https://github.com/agentydragon/ducktape/pull/13060"
-                    >#13060</a
-                  >
-                  · <code>single-tool-expanded</code>
-                </td>
-                <td data-label="Gallery">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/reviews/47f59fbba6dc82c24785d00328cb3b1872fc8849/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html"
-                    >Exact gallery</a
-                  >
-                </td>
-                <td data-label="Before">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/assets/5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401.png"
-                    >mobile · 1082x2402</a
-                  ><br /><code>5e6681a8ba83</code>
-                </td>
-                <td data-label="After">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/assets/b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878.png"
-                    >desktop · 1200x900</a
-                  ><br /><code>b29ff26fde29</code>
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Comparison">
-                  <a href="https://github.com/agentydragon/ducktape/pull/13083"
-                    >#13083</a
-                  >
-                  · <code>single-tool-expanded</code>
-                </td>
-                <td data-label="Gallery">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/reviews/104649352c51b95b651572832c8885988eaa8bd0/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html"
-                    >Exact gallery</a
-                  >
-                </td>
-                <td data-label="Before">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/assets/b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878.png"
-                    >desktop · 1200x900</a
-                  ><br /><code>b29ff26fde29</code>
-                </td>
-                <td data-label="After">
-                  <a
-                    href="https://s3.allegedly.works/pr-visuals/assets/5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401.png"
-                    >mobile · 1082x2402</a
-                  ><br /><code>5e6681a8ba83</code>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <section id="port">
-        <h2>Follow the setup failure through ownership</h2>
-        <p>
-          <a
-            href="https://app.buildbuddy.io/invocation/d548a8fe-e008-5861-a14d-69aae9768a02"
-            >d548a8fe</a
-          >
-          on <code>628b6fea657f</code>, shard 15/16 of
-          <code>//agentplane/app:test_thread_browser</code>, failed while
-          setting up
-          <code
-            >test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[phone-scrolling
-            up]</code
-          >. The app listener failed to bind <code>127.0.0.1:35711</code>; the
-          same fixture’s OIDC issuer was already
-          <code>https://127.0.0.1:35711</code>. No page-readiness, assertion or
-          screenshot code had run.
-        </p>
-        <p>
-          The old fixture chose a free port and closed the reservation before
-          spawning the Go app. OIDC startup between those operations could
-          acquire that port.
-          <a href="https://github.com/agentydragon/ducktape/pull/12936"
-            >#12936</a
-          >
-          (merged 30 October 01:54:37 UTC) keeps the listener open and passes
-          its file descriptor to the child via <code>fd:&lt;n&gt;</code>:
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/app/testing/replication_process.py#L234"
-            ><code>agentplane/app/testing/replication_process.py:234</code></a
-          >. Its real-app regression verifies <code>/readyz</code>,
-          competing-bind EADDRINUSE and parent ownership after child exit:
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/app/test_api.py#L19"
-            ><code>agentplane/app/test_api.py:19</code></a
-          >.
-        </p>
-        <p>
-          History returned 188 target rows (187 PASSED, 1 FAILED); exact source
-          ancestry identifies 106 post-fix rows, all PASSED. Cache and physical
-          execution exposure were not verified for those 106, so this is not 106
-          independent trials or a measured failure-rate reduction. The PR’s
-          linked 16-shard validation ran a different filter; it validates the
-          shared fixture path, not the exact failing case. Current source
-          addresses the confirmed ownership mechanism; no new repair is
-          proposed.
-        </p>
-      </section>
-      <section id="publisher">
-        <h2>Publisher failures and baseline limits</h2>
-        <p>
-          <a href="https://github.com/agentydragon/ducktape/pull/13005"
-            >#13005</a
-          >
-          has a publisher failure on a superseded head.
-          <a href="https://github.com/agentydragon/ducktape/pull/13037"
-            >#13037</a
-          >
-          has an exact-head failure validating build-symlink records without
-          <code>BuildBuddyArtifact.file.uri</code>. Its run started before
-          <a href="https://github.com/agentydragon/ducktape/pull/13036"
-            >#13036</a
-          >
-          merged. That repair selects test artifacts while retaining mandatory
-          URI validation for screenshots/manifests and covers mixed records with
-          a regression. Later sampled galleries published. This is a
-          schema/exposure failure, not screenshot nondeterminism.
-        </p>
-        <p>
-          Successful publication does not prove an image is correct. Missing
-          comments, no-artifact neutrals and a stale gallery must remain
-          separate from declared-image comparisons. The review set is the set of
-          PNGs declared in each <code>visual-review.json</code>, rather than
-          every diagnostic PNG in undeclared outputs.
-        </p>
-      </section>
-      <section id="repeats">
-        <h2>Five fresh passes; image determinism still fails</h2>
-        <p>
-          All five target invocations passed on frozen source
-          <code>49475cae74ab</code>:
-          <a
-            href="https://app.buildbuddy.io/invocation/723d0d18-8f31-409d-8abc-7d1902d537d1"
-            >1</a
-          >,
-          <a
-            href="https://app.buildbuddy.io/invocation/ff689d8e-6ccd-463f-ac54-0512100e4242"
-            >2</a
-          >,
-          <a
-            href="https://app.buildbuddy.io/invocation/13e5e8be-6945-4ada-ac43-3915691b2bf8"
-            >3</a
-          >,
-          <a
-            href="https://app.buildbuddy.io/invocation/7b314285-8c77-4cca-91ce-562b6b028a87"
-            >4</a
-          >,
-          <a
-            href="https://app.buildbuddy.io/invocation/ffd69094-8b9d-45fe-a612-5dc157165630"
-            >5</a
-          >. Each target summary records two shard runs and each shard has a
-          distinct physical TestRunner execution with
-          <code>doNotCache=true</code>: ten unique remote test executions.
-          Normal prerequisite/action-cache reads and RBE stayed enabled.
-        </p>
-        <p>
-          The target runs 103 pytest cases (52+51), publishing 143 review PNG
-          declarations (72+71) under 140 unique paths. Each invocation accounts
-          for 2,900 actions: 2,042 remote-cache hits, 856 internal actions and
-          two remote test processes. Observed shard wall time is 180.2–285.3 s.
-          This is real fixture mounting, browser interaction, assertions and
-          capture work across independent cases; sharing a page/session would
-          require preserving isolation and failure sensitivity. There is no
-          fixed sleep in the inspected open-tool path. This is one selected
-          scene family, not a full visual-fleet sweep.
-        </p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Repeat finding</th>
-                <th>Observed exposure</th>
-                <th>Meaning</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Repeat finding">
-                  Three same-named viewport aliases
-                </td>
-                <td data-label="Observed exposure">
-                  <code>single-tool-collapsed</code>,
-                  <code>single-tool-expanded</code>, <code>blockers</code>: each
-                  has both its desktop and mobile digest in all 5 invocations.
-                </td>
-                <td data-label="Meaning">
-                  The two 5/5 entries per name are deterministic cross-shard
-                  collisions, not intermittent same-viewport pixels. Preserve
-                  both cases by giving them distinct names.
-                  <code>blockers</code> comes from
-                  <a
-                    href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/app/frontend/test_visual_history.py#L104"
-                    ><code
-                      >agentplane/app/frontend/test_visual_history.py:104</code
-                    ></a
-                  >.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Repeat finding">
-                  One genuinely varying desktop capture
-                </td>
-                <td data-label="Observed exposure">
-                  <code
-                    >open_tool_calls_and_output_session_shell_calls_open[desktop]</code
-                  >: three 1200×900 PNG variants across 5 runs (3+1+1).
-                </td>
-                <td data-label="Meaning">
-                  All three images were downloaded and inspected. They show the
-                  same static expanded tool content with different vertical
-                  framing; the third includes an earlier account 2 block near
-                  the top. This is unchanged-source image variation, not an
-                  assertion failure.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          The first ordinary runner attempt
-          <a
-            href="https://app.buildbuddy.io/invocation/68444084-c386-4ea5-a62d-d0eef318a114"
-            >68444084</a
-          >
-          stopped before any test after three outer-runner
-          snapshot/workspace-sync failures. The successful sweep used a bounded
-          <code>recycle-runner=false</code> override on the outer diagnostic
-          runner, leaving RBE/action caches enabled. That experiment is not a
-          production policy change or a measured infrastructure failure rate.
-        </p>
-      </section>
-      <section id="scroll-drift">
-        <h2>The remaining desktop variation is scroll framing</h2>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Runs / PNG digest prefix</th>
-                <th>History scrollTop / scrollHeight</th>
-                <th>Target rectangle y; readiness</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Runs / PNG digest prefix">
-                  1,3,5 · <code>a2dc4dc68a05</code>
-                </td>
-                <td data-label="History scrollTop / scrollHeight">
-                  620 / 1415
-                </td>
-                <td data-label="Target rectangle y; readiness">
-                  697.125 px; fonts loaded, images decoded, layout-settled=true
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Runs / PNG digest prefix">
-                  2 · <code>b5ca1bea2ae0</code>
-                </td>
-                <td data-label="History scrollTop / scrollHeight">
-                  607 / 1415
-                </td>
-                <td data-label="Target rectangle y; readiness">
-                  710.125 px; fonts loaded, images decoded, layout-settled=true
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Runs / PNG digest prefix">
-                  4 · <code>2ec52e801ae0</code>
-                </td>
-                <td data-label="History scrollTop / scrollHeight">
-                  566 / 1397
-                </td>
-                <td data-label="Target rectangle y; readiness">
-                  751.125 px; fonts loaded, images decoded, layout-settled=true
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          The target’s 103-case assertions pass, but the same desktop screenshot
-          changes because the viewport predicate allows multiple positions.
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/app/frontend/test_visual_history.py#L865"
-            ><code>agentplane/app/frontend/test_visual_history.py:865</code></a
-          >
-          expands tool rows, asserts the output text and full visibility, then
-          captures.
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/app/frontend/testing/visual_assertions.py#L31"
-            ><code
-              >agentplane/app/frontend/testing/visual_assertions.py:31</code
-            ></a
-          >
-          checks visibility and viewport intersection; it does not normalize
-          scroll.
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/49475cae74abd6a669879908f63c04fa78f41242/agentplane/app/frontend/threads/virtualized_history.tsx#L420"
-            ><code
-              >agentplane/app/frontend/threads/virtualized_history.tsx:420</code
-            ></a
-          >
-          preserves the reading anchor while expanded rows change height.
-          Existing font/image/two-frame readiness is present; it does not
-          establish a canonical anchor or animation convergence.
-        </p>
-        <p>
-          Concrete candidate: after all expansion, center a defined
-          output/control with the existing <code>_focus</code> helper, wait for
-          render stability, and assert the intended rectangle/scroll state
-          before capturing. Keep output text, expanded-state and viewport
-          assertions. The exact event ordering that chooses the final anchor
-          remains unproven, and this candidate was not implemented or repeated
-          in this refresh. Do not add a fixed sleep or count these five
-          correlated test runs as a repository flake probability.
-        </p>
-      </section>
-      <section id="continuity">
-        <h2>Disposition of the previous report’s interventions</h2>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Prior item</th>
-                <th>Current state</th>
-                <th>Scope retained</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td data-label="Prior item">#10729</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Pinned screenshot time for GNOME Spend while preserving
-                  production clock behavior and hour-boundary coverage; separate
-                  D-Bus ServiceUnknown issue not re-probed.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10719 / #10725</td>
-                <td data-label="Current state">FIXED / MERGED</td>
-                <td data-label="Scope retained">
-                  Stabilized mobile virtualized command-thread scroll/order and
-                  independent scenes.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10762</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Added seeded tail-visible readiness wait.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10731</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Fixed recovery-heading geometry.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10732</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Stabilized pointer hover state.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10735</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Fixed notification drawer scrollbar/readiness.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10726</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">Added missing visual tags.</td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10753</td>
-                <td data-label="Current state">OPEN</td>
-                <td data-label="Scope retained">
-                  Chart.js layout dependency candidate; not a landed fix and not
-                  freshly reproduced in this refresh.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10763</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Added diagnostics; did not explain prior cold sync delay.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10595</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Removed screenshot outputs while retaining behavior
-                  assertions; not treated as a visual repair.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#10765</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Kept normal remote dependency-cache reads in uncached visual
-                  sweeps.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#12936</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Fixed fixture port ownership collision.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#13036</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Filtered publisher inputs to test artifacts and retained
-                  required URI validation.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#13066</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Symbol-stripped CLI debundle e2e landed.
-                </td>
-              </tr>
-              <tr>
-                <td data-label="Prior item">#13087</td>
-                <td data-label="Current state">MERGED</td>
-                <td data-label="Scope retained">
-                  Go race detection default landed.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          The older full-fleet claim of 590 visual targets repeated five times
-          applied to the then-proposed candidate set. This refresh neither
-          reuses it as current devel exposure nor treats removed screenshot
-          outputs as a reliability repair. Historical reports remain available
-          in Git at
-          <a
-            href="https://github.com/agentydragon/ducktape/tree/9baa4e498267bd726c7028b4ef036d53b2c033f5/visual-reliability"
-            >the prior report commit</a
-          >.
-        </p>
-      </section>
-      <section id="limits">
-        <h2>Confidence, coverage and what would change the recommendation</h2>
-        <p>
-          High confidence: the port collision and landed ownership fix; the
-          exact desktop/mobile digest exchange and duplicated capture names; the
-          observed inventory-staleness UI change. The older disclosure row’s
-          causal layout change and the exact event ordering behind the fresh
-          scroll variation remain unknown. No repository-wide pixel-flake rate,
-          unique-image count, complete uncached visual fleet exposure or
-          cold-run infrastructure rate was measured. No workflows were rerun,
-          screenshots removed or test/runner policy changed.
-        </p>
-        <p>
-          The next source changes are narrowly specified: preserve both
-          viewports under distinct identities, reject ambiguous manifest
-          aggregation, and normalize the varying desktop scene to its intended
-          scroll anchor. Validate unchanged-source stability without dropping
-          any case or screenshot. Then revisit matching-baseline comparisons
-          before interpreting remaining differences. The open Chart.js candidate
-          needs its own current-source reproduction; its older pass history is
-          not an adoption result.
-        </p>
-      </section>
-      <footer>
-        <p>
-          <a href="evidence.json">Evidence</a> ·
-          <a href="manifest.json">Manifest</a> ·
-          <a href="../latency/">Latency</a> ·
-          <a href="../reliability/">CI reliability</a> ·
-          <a href="../visual-reliability/">Visual reliability</a> ·
-          <a href="../">All reports</a>
-        </p>
-        <p>
-          Latest-only snapshot; historical measurements remain in Git. Source
-          and policy are frozen for this investigation. GitHub Pages updates
-          after the report PR merges. No production test, workflow or retry
-          policy was changed; experiments used isolated source patches and
-          remote execution.
-        </p>
-      </footer>
-    </main>
+
+        <section aria-labelledby="history-title">
+          <h2 id="history-title">Recent exposure and its limits</h2>
+          <article>
+            <div>
+              <p>
+                A BuildBuddy query for
+                <code>//agentplane/app/frontend:visual_history</code> with
+                <code>--since 2026-11-02</code> returned 959 status rows, all
+                <code>PASSED</code>. The response-reported target timing range
+                begins on 1 November and ends on 8 November. The history mixes
+                commits and PRs; this query did not inspect result-cache hits or
+                physical TestRunner executions. It is not 959 independent fresh
+                runs and cannot establish that a finding did not recur.
+              </p>
+              <p>
+                The previous report’s 100-PR gallery sample, five-repeat
+                experiment, image comparisons, and detailed per-item inventory
+                are preserved unchanged under <code>prior_snapshot</code> in
+                <a href="evidence.json">evidence.json</a>. They remain
+                historical measurements at their original source and window.
+              </p>
+            </div>
+          </article>
+        </section>
+
+        <section aria-labelledby="method-title">
+          <h2 id="method-title">Scope and evidence limits</h2>
+          <p>
+            This refresh checked current source at
+            <code>69f35d736dc33f90f66f8345ff35806f04ed9399</code>, GitHub state
+            for the open candidate and landed repairs, and the narrow
+            target-history query above. The prior sample and repeat evidence are
+            not silently rebased to this source. No fresh fleet run,
+            current-source repeat experiment, or post-merge recurrence absence
+            is claimed.
+          </p>
+          <p class="muted">
+            Previous full report:
+            <a
+              href="https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"
+              >gh-pages commit <code>8fa7340</code></a
+            >. Current checks, dispositions, and raw prior evidence are in
+            <a href="evidence.json">evidence.json</a>; source/time limits are in
+            <a href="manifest.json">manifest.json</a>.
+          </p>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="../report.js"></script>
   </body>
 </html>

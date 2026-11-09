@@ -1,0 +1,184 @@
+{
+  "report": "fixture-model-audit",
+  "audited_at_utc": "2026-11-09T08:07:23Z",
+  "source": {
+    "repository": "https://github.com/agentydragon/ducktape",
+    "branch": "devel",
+    "commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
+    "pinned": true,
+    "primary_checkout_modified": false
+  },
+  "previous_report": {
+    "commit": "552b8b2af66bc6cd94c30777f4594988a92bc5ca",
+    "published_at_utc": "2026-11-04",
+    "url": "https://github.com/agentydragon/ducktape/tree/552b8b2af66bc6cd94c30777f4594988a92bc5ca/fixture-model-audit"
+  },
+  "summary": {
+    "source_backed_opportunities": 7,
+    "observed_behavior_failures": 0,
+    "focused_tests_run_on_audited_commit": false,
+    "no_recurrence_claim": true
+  },
+  "dispositions": [
+    {
+      "id": "haku-preview-fixtures",
+      "status": "open_partial_coverage",
+      "finding": "The registry type is not a registry-wide runtime preflight; screenshot setup can still capture a fallback when a registered fixture fails runtime parsing.",
+      "source_refs": [
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/haku/console/frontend/tool_rendering/index.tsx#L100-L142",
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/haku/console/frontend/tool_rendering/screenshot/preview_visual.py"
+      ],
+      "landed_prs": [14595],
+      "why_not_closed": "#14595 adds Gmail runtime render coverage and representative examples; it does not walk every registered fixture or assert its specialized widget."
+    },
+    {
+      "id": "spend-card-summaries",
+      "status": "open_maintenance_duplication",
+      "finding": "Card summary values remain hand-authored beside transaction-ledger construction; existing parity test is an independent guard.",
+      "source_refs": [
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/testing/dashboard.py#L195-L255",
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/ui/testing/test_visual_data.py"
+      ],
+      "observed_mismatch": false,
+      "close_criteria": "Derive summary fields from ledger rows while retaining independent fixed expected outputs."
+    },
+    {
+      "id": "egress-sidecar-vectors",
+      "status": "open_cross_language_coverage_gap",
+      "finding": "Python model serialization to the actual Go process and Go loader tests exist, but Python validation and Go defaults/rejection tests do not consume shared vectors.",
+      "source_refs": [
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/egress/sidecar_config.py#L138",
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/egress/testing/sidecar_process.py#L54-L74",
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/egress/sidecar/config_test.go"
+      ],
+      "related_merged_prs": [14520, 14840],
+      "related_open_prs": [15075, 15095],
+      "why_not_closed": "Recent merged listener/auth work and open adjacent impersonation/config work do not change shared test inputs or the two test suites."
+    },
+    {
+      "id": "python-model-catalog-client",
+      "status": "open_manual_wire_decoding",
+      "finding": "models() indexes raw ProtoJSON dictionaries before domain validation although a generated ListModelsResponse message is available.",
+      "source_refs": [
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/testing/client.py#L99",
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/BUILD.bazel#L69-L72",
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/sandboxes/runtimeconfig/model_catalog.py"
+      ],
+      "matching_pr_found": false
+    },
+    {
+      "id": "python-thread-view-adapter",
+      "status": "open_python_test_adapter",
+      "finding": "The test adapter manually maps response dictionaries and maps unknown feed status to None.",
+      "source_refs": [
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/testing/models.py#L54-L99",
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/testing/client.py#L356-L376"
+      ],
+      "related_merged_pr": 14240,
+      "why_not_closed": "#14240 changes frontend generated-message handling; no Python testing client/model path is changed."
+    },
+    {
+      "id": "app-config-ui-projections",
+      "status": "open_low_priority_intentional_projection_decision",
+      "finding": "Generated AppService messages are decoded and mapped to separately declared UI projection interfaces.",
+      "source_refs": [
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/frontend/app_config_client.ts#L16-L75",
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/frontend/app_config_client.ts"
+      ],
+      "related_merged_prs": [14786, 14856],
+      "hosted_checks": "#14786 Bazel, build artifacts/imports, pre-commit SUCCESS; PR visual review SUCCESS. #14856 same three checks SUCCESS; PR visual review FAILURE (unclassified).",
+      "failed_log_lookup": "gh run view 128513324000 --log-failed returned HTTP 404; failure cause not established.",
+      "observed_behavior_failure": false
+    },
+    {
+      "id": "github-action-argument-schema",
+      "status": "open_local_type_schema_duplication",
+      "finding": "The local TypeScript argument type and strict Zod schema repeat fields; upstream MCP schema ownership remains external.",
+      "source_refs": [
+        "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/agentplane/app/frontend/actions/schemas/github/search_pull_requests.ts#L28-L53"
+      ],
+      "matching_pr_found": false,
+      "close_criteria": "Infer local TypeScript type from Zod while preserving strict and negative-input coverage; do not claim upstream compatibility."
+    }
+  ],
+  "pull_request_receipts": {
+    "14595": {
+      "state": "MERGED",
+      "head": "c63703e5e1281118c98c5938e9aa12d868c22228",
+      "merged_at_utc": "2026-11-07T01:38:45Z",
+      "checks": {
+        "bazel-ci": "SUCCESS",
+        "build-artifacts-imports": "SUCCESS",
+        "pre-commit": "SUCCESS",
+        "BuildBuddy Bazel ordinary tests (live)": "SUCCESS",
+        "PR visual review": "NEUTRAL"
+      }
+    },
+    "14520": {
+      "state": "MERGED",
+      "head": "46d9828434ea5bdbafe19ffd3ab8078ea8cdf19c",
+      "merged_at_utc": "2026-11-08T20:36:16Z",
+      "relevance": "adjacent listener/SVID work; not shared sidecar vectors"
+    },
+    "14840": {
+      "state": "MERGED",
+      "head": "e1b3ab8bf2f383d5fe8a5e42300f0bbc7ed100c4",
+      "merged_at_utc": "2026-11-07T18:08:19Z",
+      "relevance": "shared listener work; not shared sidecar vectors"
+    },
+    "14240": {
+      "state": "MERGED",
+      "merged_at_utc": "2026-11-04T07:47:07Z",
+      "relevance": "frontend-only generated thread views; Python helper untouched"
+    },
+    "14786": {
+      "state": "MERGED",
+      "head": "a5b41ab4b732da6fcf9b5c3425430b3df56a85aa",
+      "merged_at_utc": "2026-11-07T08:33:54Z",
+      "checks": {
+        "bazel-ci": "SUCCESS",
+        "build-artifacts-imports": "SUCCESS",
+        "pre-commit": "SUCCESS",
+        "PR visual review": "SUCCESS",
+        "PR visual diffs": "NEUTRAL"
+      }
+    },
+    "14856": {
+      "state": "MERGED",
+      "head": "ed21e6e66df17fa361c1ad0dbc03d6e1f5e5313d",
+      "merged_at_utc": "2026-11-07T20:08:07Z",
+      "checks": {
+        "bazel-ci": "SUCCESS",
+        "build-artifacts-imports": "SUCCESS",
+        "pre-commit": "SUCCESS",
+        "PR visual review": "FAILURE"
+      },
+      "failure_cause": "unavailable; attempted failed-log run lookup returned 404"
+    },
+    "15075": {
+      "state": "OPEN",
+      "head": "a37a8943644b2af1d2b68e962bc768febf403517",
+      "base": "devel",
+      "updated_at_utc": "2026-11-09T07:54:00Z",
+      "observed_checks_at_audit": "Bazel CI IN_PROGRESS; BuildBuddy Bazel ordinary tests FAILURE; unrelated to shared config vectors"
+    },
+    "15095": {
+      "state": "OPEN",
+      "head": "a43f9cf76fd755908cb3dbd754bfac2b00d146ea",
+      "base": "claude/egress-k8s-impersonation",
+      "merge_state": "UNSTABLE",
+      "updated_at_utc": "2026-11-09T07:58:45Z",
+      "observed_checks_at_audit": "Bazel CI IN_PROGRESS; BuildBuddy Bazel ordinary tests FAILURE; staging/proxy scope, not shared config vectors"
+    }
+  },
+  "method": {
+    "source_review": "Read-only inspection at pinned commit 69f35d736dc33f90f66f8345ff35806f04ed9399; selected preexisting findings checked individually.",
+    "pr_state": "Read-only GitHub CLI PR detail and check rollup queries on 2026-11-09 UTC.",
+    "test_run": "None at current source. CI receipts above refer to exact PR heads and are reported separately.",
+    "limits": [
+      "Selective source review is not an exhaustive schema inventory.",
+      "Open/merged PR check state does not prove the audited source has no recurrence.",
+      "No live runtime or deployment validation was performed."
+    ]
+  }
+}

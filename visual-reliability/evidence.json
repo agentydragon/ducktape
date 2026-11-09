@@ -1,1159 +1,1269 @@
 {
-  "source_devel_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-  "window_utc": {
-    "start": "2026-10-30T09:29:41Z",
-    "end": "2026-10-30T22:09:35Z"
+  "report": "visual-reliability",
+  "audited_at_utc": "2026-11-09T08:07:23Z",
+  "current_source": {
+    "repository": "https://github.com/agentydragon/ducktape",
+    "branch": "devel",
+    "commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
+    "pinned": true
   },
-  "cutoff_utc": "2026-10-30T22:10:00Z",
-  "prior_report_commit": "9baa4e498267bd726c7028b4ef036d53b2c033f5",
-  "investigation": {
-    "report": "Ducktape visual reliability refresh",
-    "generated_at_utc": "2026-10-30",
-    "source": {
-      "commit": "49475cae74abd6a669879908f63c04fa78f41242",
-      "frozen_production_and_test_source": true,
-      "primary_checkout_modified": false
+  "previous_report": {
+    "commit": "8fa7340f7fd559fef23427953fea5682fa44e190",
+    "published_at_utc": "2026-10-30",
+    "url": "https://github.com/agentydragon/ducktape/tree/8fa7340f7fd559fef23427953fea5682fa44e190/visual-reliability"
+  },
+  "current_summary": {
+    "open_decisions": 1,
+    "confirmed_current_failures": 0,
+    "current_source_repeat_runs": 0,
+    "absence_of_recurrence_claimed": false
+  },
+  "open_decision": {
+    "pr": 10753,
+    "title": "Fix Chart.js layout dependence on previous updates",
+    "state": "OPEN",
+    "head": "519cd94a3ed4abdb3a82e53c9aa71c564174a2a1",
+    "last_updated_utc": "2026-10-16T09:32:25Z",
+    "merge_state_status": "UNKNOWN",
+    "current_source_refs": [
+      "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/finance/plaid/spend/ui/SpendingHistoryChart.tsx",
+      "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/package.json",
+      "https://github.com/agentydragon/ducktape/blob/69f35d736dc33f90f66f8345ff35806f04ed9399/pnpm-lock.yaml"
+    ],
+    "current_source_finding": "Chart.js is still used by SpendingHistoryChart; package range is ^4.4.8 and lockfile resolves 4.5.1.",
+    "historical_head_checks": {
+      "bazel-ci": "SUCCESS",
+      "build-artifacts-imports": "SUCCESS",
+      "pre-commit": "SUCCESS",
+      "PR visual review": "SUCCESS",
+      "PR visual diffs": "NEUTRAL"
+    },
+    "disposition": "Old checks are on a stale PR head; rebase and test against current source before adopting. No current layout failure was reproduced."
+  },
+  "completed_dispositions": [
+    {
+      "pr": 13169,
+      "title": "Stabilize expanded history screenshot framing",
+      "merged_at_utc": "2026-10-31T00:30:00Z",
+      "source_fix": "Scrolls to semantic history bottom, waits for settled layout, asserts following mode and near-maximum scroll. Current source retains those checks.",
+      "focused_checks": "Focused RBE desktop/mobile smoke; five final-source repeated target runs produced 10/10 passing shard/run outcomes and stable per-viewport PNG and geometry.",
+      "hosted_checks": {
+        "bazel-ci": "SUCCESS",
+        "build-artifacts-imports": "SUCCESS",
+        "pre-commit": "SUCCESS",
+        "BuildBuddy Bazel ordinary tests": "SUCCESS",
+        "PR visual review": "SUCCESS"
+      },
+      "recurrence_limit": "Repeat evidence is at the PR source; no post-merge absence claim."
+    },
+    {
+      "pr": 13730,
+      "title": "Cut over visual reviews to structured test outputs",
+      "merged_at_utc": "2026-11-02T08:04:08Z",
+      "source_fix": "Output keys contain repository, target, pytest case_id, checkpoint, and role. Desktop/mobile case IDs remain distinct; collection tests exercise separate identities. Supersedes intermediate #13170 path patch.",
+      "focused_checks": "Current collection test source inspected; no post-refactor repeated capture run claimed.",
+      "hosted_checks": {
+        "bazel-ci": "SUCCESS",
+        "build-artifacts-imports": "SUCCESS",
+        "pre-commit": "SUCCESS",
+        "BuildBuddy Bazel ordinary tests": "SUCCESS",
+        "PR visual review": "NEUTRAL"
+      }
+    },
+    {
+      "pr": 12936,
+      "title": "Fixture port ownership collision",
+      "merged": true,
+      "source_fix": "Listening socket ownership is retained and passed to the child; regression covers competing bind.",
+      "evidence_status": "Previously verified in prior report; not independently rerun for this refresh."
+    },
+    {
+      "pr": 13036,
+      "title": "Visual artifact publisher input filtering",
+      "merged": true,
+      "source_fix": "Publisher accepts test-artifact inputs and retains URI validation.",
+      "evidence_status": "Previously verified in prior report; not a browser-render reliability claim."
+    }
+  ],
+  "target_history": {
+    "target": "//agentplane/app/frontend:visual_history",
+    "command": "bbapi target history --repo https://github.com/agentydragon/ducktape --label //agentplane/app/frontend:visual_history --since 2026-11-02 --json | jq ...",
+    "since_utc": "2026-11-02",
+    "status_row_count": 959,
+    "status_counts": {
+      "PASSED": 959
+    },
+    "cache_hit_exposure_checked": false,
+    "physical_testrunner_exposure_checked": false,
+    "independent_execution_count_known": false,
+    "interpretation": "The API query used --since 2026-11-02 but returned target timing records with a reported start range beginning 2026-11-01; record counts/statuses are reported as returned. Mixed commit/PR target status rows, not 959 independent fresh physical runs; cannot estimate rate or prove non-recurrence.",
+    "reported_timing_start_range_utc": [
+      "2026-11-01T21:38:29.432Z",
+      "2026-11-08T22:28:39.857Z"
+    ]
+  },
+  "method": {
+    "source": "Read-only review at the pinned target source SHA, plus current GitHub PR states and checks.",
+    "focused_source_test_run": "None during this refresh.",
+    "hosted_ci": "Reported separately for exact listed PR heads.",
+    "recurrence_proof": "No post-merge recurrence absence is claimed.",
+    "limits": [
+      "Previous sampled PR window and five-run experiment remain at their original source and cutoff.",
+      "No broad fleet test or current-source repeat run was performed.",
+      "Target-history statuses do not reveal cache use or physical runner executions."
+    ]
+  },
+  "prior_snapshot_provenance": {
+    "source_devel_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+    "window_utc": {
+      "start": "2026-10-30T09:29:41Z",
+      "end": "2026-10-30T22:09:35Z"
+    },
+    "preservation": "Original previous evidence object is retained unchanged below."
+  },
+  "prior_snapshot": {
+    "source_devel_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+    "window_utc": {
+      "start": "2026-10-30T09:29:41Z",
+      "end": "2026-10-30T22:09:35Z"
     },
     "cutoff_utc": "2026-10-30T22:10:00Z",
-    "prior_report": {
-      "fully_read": true,
-      "baseline_merged_pr_range": "#10618-#10723",
-      "baseline_window": "2026-10-15 to 2026-10-16",
-      "prior_counts": {
-        "visual_bot_comments": 39,
-        "galleries": 31,
-        "exact_head_neutral_no_manifest_checks": 61,
-        "modified_images": 96,
-        "removed_images": 10,
-        "unchanged_image_observations": 8091,
-        "target_instances": 245
-      }
-    },
-    "merged_pr_sample": {
-      "sample_method": "Latest 100 merged PRs at or before cutoff from GitHub query returning 200 merged PRs",
-      "pr_range": "#13007-#13109",
-      "merged_from_utc": "2026-10-30T09:29:41Z",
-      "merged_through_utc": "2026-10-30T22:09:35Z",
-      "query_returned_range_utc": [
-        "2026-10-29T22:04:44Z",
-        "2026-10-30T22:14:07Z"
-      ],
-      "selected_pr_count": 100,
-      "changed_file_queries_succeeded": 100,
-      "comment_queries_succeeded": 100,
-      "checks": {
-        "PR visual review": {
-          "NEUTRAL": 62,
-          "SUCCESS": 18,
-          "FAILURE": 1,
-          "MISSING": 19
-        },
-        "PR visual diffs": {
-          "SUCCESS": 8,
-          "NEUTRAL": 10,
-          "MISSING": 82
+    "prior_report_commit": "9baa4e498267bd726c7028b4ef036d53b2c033f5",
+    "investigation": {
+      "report": "Ducktape visual reliability refresh",
+      "generated_at_utc": "2026-10-30",
+      "source": {
+        "commit": "49475cae74abd6a669879908f63c04fa78f41242",
+        "frozen_production_and_test_source": true,
+        "primary_checkout_modified": false
+      },
+      "cutoff_utc": "2026-10-30T22:10:00Z",
+      "prior_report": {
+        "fully_read": true,
+        "baseline_merged_pr_range": "#10618-#10723",
+        "baseline_window": "2026-10-15 to 2026-10-16",
+        "prior_counts": {
+          "visual_bot_comments": 39,
+          "galleries": 31,
+          "exact_head_neutral_no_manifest_checks": 61,
+          "modified_images": 96,
+          "removed_images": 10,
+          "unchanged_image_observations": 8091,
+          "target_instances": 245
         }
       },
-      "visual_bot_comments": {
-        "total": 24,
-        "gallery_summaries": 19,
-        "gallery_current_head": 18,
-        "gallery_stale_head": 1,
-        "current_head_modified_gallery_summaries": 10,
-        "current_head_no_visual_change_summaries": 8,
-        "current_head_no_artifacts": 3,
-        "publisher_failure_comments": 2,
-        "publisher_failure_current_head": 1,
-        "publisher_failure_stale_head": 1
-      },
-      "modified_gallery_image_observations": {
-        "modified": 30,
-        "new": 0,
-        "removed": 0,
-        "unchanged": 10036,
-        "note": "Counts across PR gallery summaries; repeated images are counted again and are not unique assets."
-      },
-      "product_frontend_prs": [
-        {
-          "pr": 13060,
-          "title": "Agentplane informer health",
-          "frontend_paths_touched": 10,
-          "total_paths_touched": 102,
-          "gallery": {
-            "modified": 4,
-            "unchanged": 869,
-            "new": 0,
-            "removed": 0
-          },
-          "baseline_warning": "Gallery used latest-devel baseline because PR base had no output; exact merge base differed."
-        },
-        {
-          "pr": 13083,
-          "title": "agentplane frontend: read Sandboxes from one live stream",
-          "frontend_paths_touched": 15,
-          "total_paths_touched": 16,
-          "gallery": {
-            "modified": 6,
-            "unchanged": 867,
-            "new": 0,
-            "removed": 0
-          },
-          "baseline_warning": "Gallery used latest-devel baseline because PR base had no output; exact merge base differed."
-        }
-      ],
-      "interpretation": "The observed gallery/check summaries do not measure flake probability. Recurring large image changes on unrelated PRs plus explicit stale-baseline warnings indicate baseline drift, not demonstrated nondeterminism."
-    },
-    "port_collision": {
-      "failure": {
-        "invocation": "d548a8fe-e008-5861-a14d-69aae9768a02",
-        "source_commit": "628b6fea657fce92b978a2374c52204414aeb3a0",
-        "started_at_utc": "2026-10-30T00:32:57Z",
-        "target": "//agentplane/app:test_thread_browser",
-        "shard": "15/16",
-        "test": "test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[phone-scrolling up]",
-        "phase": "fixture setup before page readiness, assertions, or screenshot capture",
-        "error": "listen tcp 127.0.0.1:35711: bind: address already in use",
-        "app_config_port": 35711,
-        "oidc_issuer": "https://127.0.0.1:35711"
-      },
-      "old_mechanism": {
-        "app_port_selection": "pick_free_port() briefly bound then closed its socket before the Go child starts",
-        "oidc_startup": "OIDC provider starts after app port selection and can reuse the now-unowned port",
-        "conclusion": "TCP listener time-of-check/time-of-use collision at fixture startup; not a rendering or assertion failure"
-      },
-      "fix": {
-        "pr": 12936,
-        "url": "https://github.com/agentydragon/ducktape/pull/12936",
-        "merge_commit": "e9980fff1e3ec447644fe8ecb1b7a4357106d922",
-        "merged_at_utc": "2026-10-30T01:54:37Z",
-        "current_source_refs": {
-          "agentplane/app/testing/replication_process.py": "234-253, 485-495",
-          "agentplane/app/test_api.py": "19-36"
-        },
-        "change": "Keep a listening socket open, pass the file descriptor to the Go process, and configure the child to use fd:<n>.",
-        "regression": "Uses real Go app /readyz, verifies a competing bind returns EADDRINUSE, and verifies the parent retains its socket after child exit."
-      },
-      "post_fix_history": {
-        "total_timestamped_target_rows_through_cutoff": 188,
-        "all_history_statuses": {
-          "PASSED": 187,
-          "FAILED": 1
-        },
-        "source_ancestry_at_or_after_fix_rows": 106,
-        "source_ancestry_statuses": {
-          "PASSED": 106
-        },
-        "caveat": "BuildBuddy status verdicts only; not verified as fresh physical runs, cache misses, or statistically independent executions.",
-        "exact_case_fix_validation": "The 16-shard linked pass from PR #12936 used a different test filter; it validated the shared fixture path but was not the exact previously failing test."
-      },
-      "confidence": "High that the old failure was caused by the unowned-port race and that the corrective source change landed; no quantified post-fix rate or full uncached fleet proof."
-    },
-    "prior_fix_dispositions": [
-      {
-        "item": "#10729",
-        "state": "MERGED",
-        "disposition": "Pinned screenshot time for GNOME Spend while preserving production clock behavior and hour-boundary coverage; separate D-Bus ServiceUnknown issue not re-probed."
-      },
-      {
-        "item": "#10719 / #10725",
-        "state": "FIXED / MERGED",
-        "disposition": "Stabilized mobile virtualized command-thread scroll/order and independent scenes."
-      },
-      {
-        "item": "#10762",
-        "state": "MERGED",
-        "disposition": "Added seeded tail-visible readiness wait."
-      },
-      {
-        "item": "#10731",
-        "state": "MERGED",
-        "disposition": "Fixed recovery-heading geometry."
-      },
-      {
-        "item": "#10732",
-        "state": "MERGED",
-        "disposition": "Stabilized pointer hover state."
-      },
-      {
-        "item": "#10735",
-        "state": "MERGED",
-        "disposition": "Fixed notification drawer scrollbar/readiness."
-      },
-      {
-        "item": "#10726",
-        "state": "MERGED",
-        "disposition": "Added missing visual tags."
-      },
-      {
-        "item": "#10753",
-        "state": "OPEN",
-        "disposition": "Chart.js layout dependency candidate; not a landed fix and not freshly reproduced in this refresh."
-      },
-      {
-        "item": "#10763",
-        "state": "MERGED",
-        "disposition": "Added diagnostics; did not explain prior cold sync delay."
-      },
-      {
-        "item": "#10595",
-        "state": "MERGED",
-        "disposition": "Removed screenshot outputs while retaining behavior assertions; not treated as a visual repair."
-      },
-      {
-        "item": "#10765",
-        "state": "MERGED",
-        "disposition": "Kept normal remote dependency-cache reads in uncached visual sweeps."
-      },
-      {
-        "item": "#12936",
-        "state": "MERGED",
-        "disposition": "Fixed fixture port ownership collision."
-      },
-      {
-        "item": "#13036",
-        "state": "MERGED",
-        "disposition": "Filtered publisher inputs to test artifacts and retained required URI validation."
-      },
-      {
-        "item": "#13066",
-        "state": "MERGED",
-        "disposition": "Symbol-stripped CLI debundle e2e landed."
-      },
-      {
-        "item": "#13087",
-        "state": "MERGED",
-        "disposition": "Go race detection default landed."
-      }
-    ],
-    "determinism_attempt": {
-      "previous_ordinary_runner_attempt": {
-        "invocation": "68444084-c386-4ea5-a62d-d0eef318a114",
-        "outcome": "Stopped before reaching a test after three consecutive runner startup/sync failures.",
-        "infrastructure_errors": [
-          "VM health check failed",
-          "failed to sync workspace: failed to connect to VM: context deadline exceeded"
+      "merged_pr_sample": {
+        "sample_method": "Latest 100 merged PRs at or before cutoff from GitHub query returning 200 merged PRs",
+        "pr_range": "#13007-#13109",
+        "merged_from_utc": "2026-10-30T09:29:41Z",
+        "merged_through_utc": "2026-10-30T22:09:35Z",
+        "query_returned_range_utc": [
+          "2026-10-29T22:04:44Z",
+          "2026-10-30T22:14:07Z"
         ],
-        "local_exit_code": 130
+        "selected_pr_count": 100,
+        "changed_file_queries_succeeded": 100,
+        "comment_queries_succeeded": 100,
+        "checks": {
+          "PR visual review": {
+            "NEUTRAL": 62,
+            "SUCCESS": 18,
+            "FAILURE": 1,
+            "MISSING": 19
+          },
+          "PR visual diffs": {
+            "SUCCESS": 8,
+            "NEUTRAL": 10,
+            "MISSING": 82
+          }
+        },
+        "visual_bot_comments": {
+          "total": 24,
+          "gallery_summaries": 19,
+          "gallery_current_head": 18,
+          "gallery_stale_head": 1,
+          "current_head_modified_gallery_summaries": 10,
+          "current_head_no_visual_change_summaries": 8,
+          "current_head_no_artifacts": 3,
+          "publisher_failure_comments": 2,
+          "publisher_failure_current_head": 1,
+          "publisher_failure_stale_head": 1
+        },
+        "modified_gallery_image_observations": {
+          "modified": 30,
+          "new": 0,
+          "removed": 0,
+          "unchanged": 10036,
+          "note": "Counts across PR gallery summaries; repeated images are counted again and are not unique assets."
+        },
+        "product_frontend_prs": [
+          {
+            "pr": 13060,
+            "title": "Agentplane informer health",
+            "frontend_paths_touched": 10,
+            "total_paths_touched": 102,
+            "gallery": {
+              "modified": 4,
+              "unchanged": 869,
+              "new": 0,
+              "removed": 0
+            },
+            "baseline_warning": "Gallery used latest-devel baseline because PR base had no output; exact merge base differed."
+          },
+          {
+            "pr": 13083,
+            "title": "agentplane frontend: read Sandboxes from one live stream",
+            "frontend_paths_touched": 15,
+            "total_paths_touched": 16,
+            "gallery": {
+              "modified": 6,
+              "unchanged": 867,
+              "new": 0,
+              "removed": 0
+            },
+            "baseline_warning": "Gallery used latest-devel baseline because PR base had no output; exact merge base differed."
+          }
+        ],
+        "interpretation": "The observed gallery/check summaries do not measure flake probability. Recurring large image changes on unrelated PRs plus explicit stale-baseline warnings indicate baseline drift, not demonstrated nondeterminism."
       },
-      "visual_fleet_query": {
-        "outcome": "Cancelled after it stalled at remote runner startup.",
-        "invocation": "ec61444a-c3c9-4b60-bc71-7db1f5c0dd38",
-        "target_count_obtained": false
+      "port_collision": {
+        "failure": {
+          "invocation": "d548a8fe-e008-5861-a14d-69aae9768a02",
+          "source_commit": "628b6fea657fce92b978a2374c52204414aeb3a0",
+          "started_at_utc": "2026-10-30T00:32:57Z",
+          "target": "//agentplane/app:test_thread_browser",
+          "shard": "15/16",
+          "test": "test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[phone-scrolling up]",
+          "phase": "fixture setup before page readiness, assertions, or screenshot capture",
+          "error": "listen tcp 127.0.0.1:35711: bind: address already in use",
+          "app_config_port": 35711,
+          "oidc_issuer": "https://127.0.0.1:35711"
+        },
+        "old_mechanism": {
+          "app_port_selection": "pick_free_port() briefly bound then closed its socket before the Go child starts",
+          "oidc_startup": "OIDC provider starts after app port selection and can reuse the now-unowned port",
+          "conclusion": "TCP listener time-of-check/time-of-use collision at fixture startup; not a rendering or assertion failure"
+        },
+        "fix": {
+          "pr": 12936,
+          "url": "https://github.com/agentydragon/ducktape/pull/12936",
+          "merge_commit": "e9980fff1e3ec447644fe8ecb1b7a4357106d922",
+          "merged_at_utc": "2026-10-30T01:54:37Z",
+          "current_source_refs": {
+            "agentplane/app/testing/replication_process.py": "234-253, 485-495",
+            "agentplane/app/test_api.py": "19-36"
+          },
+          "change": "Keep a listening socket open, pass the file descriptor to the Go process, and configure the child to use fd:<n>.",
+          "regression": "Uses real Go app /readyz, verifies a competing bind returns EADDRINUSE, and verifies the parent retains its socket after child exit."
+        },
+        "post_fix_history": {
+          "total_timestamped_target_rows_through_cutoff": 188,
+          "all_history_statuses": {
+            "PASSED": 187,
+            "FAILED": 1
+          },
+          "source_ancestry_at_or_after_fix_rows": 106,
+          "source_ancestry_statuses": {
+            "PASSED": 106
+          },
+          "caveat": "BuildBuddy status verdicts only; not verified as fresh physical runs, cache misses, or statistically independent executions.",
+          "exact_case_fix_validation": "The 16-shard linked pass from PR #12936 used a different test filter; it validated the shared fixture path but was not the exact previously failing test."
+        },
+        "confidence": "High that the old failure was caused by the unowned-port race and that the corrective source change landed; no quantified post-fix rate or full uncached fleet proof."
       },
-      "requested_runs": 5,
-      "selected_target": "//agentplane/app/frontend:visual_history",
-      "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-      "runner_override": "--runner_exec_properties=recycle-runner=false",
-      "test_cache_policy": {
-        "uncached_test_results": true,
-        "normal_remote_prerequisite_cache_reads": true,
-        "no_rbe_or_remote_cache_disable": true
-      },
-      "outcome": "Five of five uncached target invocations passed. There are three viewport path collisions and one same-viewport screenshot name with three distinct PNGs; see five_run_evidence for source triage and pixel details.",
-      "five_run_evidence": {
-        "method": "Five independent uncached target-test invocations at frozen source commit. RBE and normal remote prerequisite-cache reads remained enabled; only test-result caching was disabled. The determinism tool compared manifest-declared review PNGs only.",
-        "bbr_runner_override": "--runner_exec_properties=recycle-runner=false",
-        "test_result_cache_policy": "--nocache_test_results; every observed TestRunner execution has doNotCache=true",
+      "prior_fix_dispositions": [
+        {
+          "item": "#10729",
+          "state": "MERGED",
+          "disposition": "Pinned screenshot time for GNOME Spend while preserving production clock behavior and hour-boundary coverage; separate D-Bus ServiceUnknown issue not re-probed."
+        },
+        {
+          "item": "#10719 / #10725",
+          "state": "FIXED / MERGED",
+          "disposition": "Stabilized mobile virtualized command-thread scroll/order and independent scenes."
+        },
+        {
+          "item": "#10762",
+          "state": "MERGED",
+          "disposition": "Added seeded tail-visible readiness wait."
+        },
+        {
+          "item": "#10731",
+          "state": "MERGED",
+          "disposition": "Fixed recovery-heading geometry."
+        },
+        {
+          "item": "#10732",
+          "state": "MERGED",
+          "disposition": "Stabilized pointer hover state."
+        },
+        {
+          "item": "#10735",
+          "state": "MERGED",
+          "disposition": "Fixed notification drawer scrollbar/readiness."
+        },
+        {
+          "item": "#10726",
+          "state": "MERGED",
+          "disposition": "Added missing visual tags."
+        },
+        {
+          "item": "#10753",
+          "state": "OPEN",
+          "disposition": "Chart.js layout dependency candidate; not a landed fix and not freshly reproduced in this refresh."
+        },
+        {
+          "item": "#10763",
+          "state": "MERGED",
+          "disposition": "Added diagnostics; did not explain prior cold sync delay."
+        },
+        {
+          "item": "#10595",
+          "state": "MERGED",
+          "disposition": "Removed screenshot outputs while retaining behavior assertions; not treated as a visual repair."
+        },
+        {
+          "item": "#10765",
+          "state": "MERGED",
+          "disposition": "Kept normal remote dependency-cache reads in uncached visual sweeps."
+        },
+        {
+          "item": "#12936",
+          "state": "MERGED",
+          "disposition": "Fixed fixture port ownership collision."
+        },
+        {
+          "item": "#13036",
+          "state": "MERGED",
+          "disposition": "Filtered publisher inputs to test artifacts and retained required URI validation."
+        },
+        {
+          "item": "#13066",
+          "state": "MERGED",
+          "disposition": "Symbol-stripped CLI debundle e2e landed."
+        },
+        {
+          "item": "#13087",
+          "state": "MERGED",
+          "disposition": "Go race detection default landed."
+        }
+      ],
+      "determinism_attempt": {
+        "previous_ordinary_runner_attempt": {
+          "invocation": "68444084-c386-4ea5-a62d-d0eef318a114",
+          "outcome": "Stopped before reaching a test after three consecutive runner startup/sync failures.",
+          "infrastructure_errors": [
+            "VM health check failed",
+            "failed to sync workspace: failed to connect to VM: context deadline exceeded"
+          ],
+          "local_exit_code": 130
+        },
+        "visual_fleet_query": {
+          "outcome": "Cancelled after it stalled at remote runner startup.",
+          "invocation": "ec61444a-c3c9-4b60-bc71-7db1f5c0dd38",
+          "target_count_obtained": false
+        },
+        "requested_runs": 5,
+        "selected_target": "//agentplane/app/frontend:visual_history",
         "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-        "target": "//agentplane/app/frontend:visual_history",
-        "all_five_invocations_passed": true,
-        "target_min_max_shard_duration_seconds": {
-          "min": 180.2,
-          "max": 285.3
+        "runner_override": "--runner_exec_properties=recycle-runner=false",
+        "test_cache_policy": {
+          "uncached_test_results": true,
+          "normal_remote_prerequisite_cache_reads": true,
+          "no_rbe_or_remote_cache_disable": true
         },
-        "pytest_cases_by_shard": {
-          "1": 52,
-          "2": 51
+        "outcome": "Five of five uncached target invocations passed. There are three viewport path collisions and one same-viewport screenshot name with three distinct PNGs; see five_run_evidence for source triage and pixel details.",
+        "five_run_evidence": {
+          "method": "Five independent uncached target-test invocations at frozen source commit. RBE and normal remote prerequisite-cache reads remained enabled; only test-result caching was disabled. The determinism tool compared manifest-declared review PNGs only.",
+          "bbr_runner_override": "--runner_exec_properties=recycle-runner=false",
+          "test_result_cache_policy": "--nocache_test_results; every observed TestRunner execution has doNotCache=true",
+          "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+          "target": "//agentplane/app/frontend:visual_history",
+          "all_five_invocations_passed": true,
+          "target_min_max_shard_duration_seconds": {
+            "min": 180.2,
+            "max": 285.3
+          },
+          "pytest_cases_by_shard": {
+            "1": 52,
+            "2": 51
+          },
+          "review_png_declarations_by_shard": {
+            "1": 72,
+            "2": 71,
+            "total": 143,
+            "distinct_path_count": 140,
+            "three_duplicate_paths_across_shards": [
+              "blockers.png",
+              "single-tool-collapsed.png",
+              "single-tool-expanded.png"
+            ]
+          },
+          "runs": [
+            {
+              "run": 1,
+              "test_invocation_id": "723d0d18-8f31-409d-8abc-7d1902d537d1",
+              "buildbuddy_url": "https://app.buildbuddy.io/invocation/723d0d18-8f31-409d-8abc-7d1902d537d1",
+              "status": "PASSED",
+              "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+              "target_summary": {
+                "overall_status": "PASSED",
+                "total_run_count": 2,
+                "run_count": 1,
+                "shard_count": 2,
+                "attempt_count": 1,
+                "total_shard_duration_seconds": 445.576
+              },
+              "action_accounting": {
+                "actions_executed": 2900,
+                "remote_cache_hits": 2042,
+                "internal_actions": 856,
+                "remote_actions": 2,
+                "test_result_cache_disabled": true
+              },
+              "test_runner_executions": [
+                {
+                  "shard": 2,
+                  "execution_id": "/uploads/5b65f94c-3e3a-4fd4-9849-cdf19ad304cc/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+                  "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T22:38:49.994634Z",
+                  "completed_utc": "2026-10-30T22:43:35.312834Z"
+                },
+                {
+                  "shard": 1,
+                  "execution_id": "/uploads/8064ae80-67d1-48f0-a01e-1f5a5d8dc682/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+                  "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T22:38:49.827752Z",
+                  "completed_utc": "2026-10-30T22:41:30.086567Z"
+                }
+              ],
+              "review_manifests": [
+                {
+                  "shard": 1,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
+                  "declared_review_pngs": 72
+                },
+                {
+                  "shard": 2,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
+                  "declared_review_pngs": 71
+                }
+              ]
+            },
+            {
+              "run": 2,
+              "test_invocation_id": "ff689d8e-6ccd-463f-ac54-0512100e4242",
+              "buildbuddy_url": "https://app.buildbuddy.io/invocation/ff689d8e-6ccd-463f-ac54-0512100e4242",
+              "status": "PASSED",
+              "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+              "target_summary": {
+                "overall_status": "PASSED",
+                "total_run_count": 2,
+                "run_count": 1,
+                "shard_count": 2,
+                "attempt_count": 1,
+                "total_shard_duration_seconds": 412.665
+              },
+              "action_accounting": {
+                "actions_executed": 2900,
+                "remote_cache_hits": 2042,
+                "internal_actions": 856,
+                "remote_actions": 2,
+                "test_result_cache_disabled": true
+              },
+              "test_runner_executions": [
+                {
+                  "shard": 2,
+                  "execution_id": "/uploads/d479e50c-15af-467c-9ba0-9eb1ae9e52b2/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+                  "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T22:44:59.668121Z",
+                  "completed_utc": "2026-10-30T22:47:29.716958Z"
+                },
+                {
+                  "shard": 1,
+                  "execution_id": "/uploads/87174a48-3c5f-4341-af3a-d568286096da/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+                  "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T22:44:58.499217Z",
+                  "completed_utc": "2026-10-30T22:49:21.116997Z"
+                }
+              ],
+              "review_manifests": [
+                {
+                  "shard": 2,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
+                  "declared_review_pngs": 71
+                },
+                {
+                  "shard": 1,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
+                  "declared_review_pngs": 72
+                }
+              ]
+            },
+            {
+              "run": 3,
+              "test_invocation_id": "13e5e8be-6945-4ada-ac43-3915691b2bf8",
+              "buildbuddy_url": "https://app.buildbuddy.io/invocation/13e5e8be-6945-4ada-ac43-3915691b2bf8",
+              "status": "PASSED",
+              "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+              "target_summary": {
+                "overall_status": "PASSED",
+                "total_run_count": 2,
+                "run_count": 1,
+                "shard_count": 2,
+                "attempt_count": 1,
+                "total_shard_duration_seconds": 442.968
+              },
+              "action_accounting": {
+                "actions_executed": 2900,
+                "remote_cache_hits": 2042,
+                "internal_actions": 856,
+                "remote_actions": 2,
+                "test_result_cache_disabled": true
+              },
+              "test_runner_executions": [
+                {
+                  "shard": 2,
+                  "execution_id": "/uploads/ff2f56f5-fa41-48d8-b19b-c074dd9b3db0/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+                  "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T22:50:47.203664Z",
+                  "completed_utc": "2026-10-30T22:53:25.356435Z"
+                },
+                {
+                  "shard": 1,
+                  "execution_id": "/uploads/fab0558f-fc78-46f9-bbd1-6770025047c5/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+                  "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T22:50:47.257896Z",
+                  "completed_utc": "2026-10-30T22:55:32.074285Z"
+                }
+              ],
+              "review_manifests": [
+                {
+                  "shard": 2,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
+                  "declared_review_pngs": 71
+                },
+                {
+                  "shard": 1,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
+                  "declared_review_pngs": 72
+                }
+              ]
+            },
+            {
+              "run": 4,
+              "test_invocation_id": "7b314285-8c77-4cca-91ce-562b6b028a87",
+              "buildbuddy_url": "https://app.buildbuddy.io/invocation/7b314285-8c77-4cca-91ce-562b6b028a87",
+              "status": "PASSED",
+              "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+              "target_summary": {
+                "overall_status": "PASSED",
+                "total_run_count": 2,
+                "run_count": 1,
+                "shard_count": 2,
+                "attempt_count": 1,
+                "total_shard_duration_seconds": 322.199
+              },
+              "action_accounting": {
+                "actions_executed": 2900,
+                "remote_cache_hits": 2042,
+                "internal_actions": 856,
+                "remote_actions": 2,
+                "test_result_cache_disabled": true
+              },
+              "test_runner_executions": [
+                {
+                  "shard": 2,
+                  "execution_id": "/uploads/25921b9a-ab51-4175-81f9-d0339f028597/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+                  "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T22:56:59.947862Z",
+                  "completed_utc": "2026-10-30T22:59:21.972871Z"
+                },
+                {
+                  "shard": 1,
+                  "execution_id": "/uploads/1428ca01-f290-408d-9f36-0abc5720113c/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+                  "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T22:56:59.951042Z",
+                  "completed_utc": "2026-10-30T23:00:00.125624Z"
+                }
+              ],
+              "review_manifests": [
+                {
+                  "shard": 2,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
+                  "declared_review_pngs": 71
+                },
+                {
+                  "shard": 1,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
+                  "declared_review_pngs": 72
+                }
+              ]
+            },
+            {
+              "run": 5,
+              "test_invocation_id": "ffd69094-8b9d-45fe-a612-5dc157165630",
+              "buildbuddy_url": "https://app.buildbuddy.io/invocation/ffd69094-8b9d-45fe-a612-5dc157165630",
+              "status": "PASSED",
+              "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
+              "target_summary": {
+                "overall_status": "PASSED",
+                "total_run_count": 2,
+                "run_count": 1,
+                "shard_count": 2,
+                "attempt_count": 1,
+                "total_shard_duration_seconds": 344.262
+              },
+              "action_accounting": {
+                "actions_executed": 2900,
+                "remote_cache_hits": 2042,
+                "internal_actions": 856,
+                "remote_actions": 2,
+                "test_result_cache_disabled": true
+              },
+              "test_runner_executions": [
+                {
+                  "shard": 2,
+                  "execution_id": "/uploads/4ee33db0-efc6-4f34-b3bb-2eb3da1bf279/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+                  "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T23:01:30.474934Z",
+                  "completed_utc": "2026-10-30T23:03:54.825157Z"
+                },
+                {
+                  "shard": 1,
+                  "execution_id": "/uploads/cc94e4b1-47d9-4674-950f-f570a35d9c70/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+                  "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+                  "do_not_cache": true,
+                  "started_utc": "2026-10-30T23:01:31.331965Z",
+                  "completed_utc": "2026-10-30T23:04:51.244727Z"
+                }
+              ],
+              "review_manifests": [
+                {
+                  "shard": 2,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
+                  "declared_review_pngs": 71
+                },
+                {
+                  "shard": 1,
+                  "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
+                  "declared_review_pngs": 72
+                }
+              ]
+            }
+          ],
+          "unique_test_runner_execution_count": 10,
+          "test_runner_execution_ids": [
+            {
+              "shard": 2,
+              "execution_id": "/uploads/5b65f94c-3e3a-4fd4-9849-cdf19ad304cc/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+              "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T22:38:49.994634Z",
+              "completed_utc": "2026-10-30T22:43:35.312834Z"
+            },
+            {
+              "shard": 1,
+              "execution_id": "/uploads/8064ae80-67d1-48f0-a01e-1f5a5d8dc682/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+              "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T22:38:49.827752Z",
+              "completed_utc": "2026-10-30T22:41:30.086567Z"
+            },
+            {
+              "shard": 2,
+              "execution_id": "/uploads/d479e50c-15af-467c-9ba0-9eb1ae9e52b2/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+              "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T22:44:59.668121Z",
+              "completed_utc": "2026-10-30T22:47:29.716958Z"
+            },
+            {
+              "shard": 1,
+              "execution_id": "/uploads/87174a48-3c5f-4341-af3a-d568286096da/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+              "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T22:44:58.499217Z",
+              "completed_utc": "2026-10-30T22:49:21.116997Z"
+            },
+            {
+              "shard": 2,
+              "execution_id": "/uploads/ff2f56f5-fa41-48d8-b19b-c074dd9b3db0/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+              "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T22:50:47.203664Z",
+              "completed_utc": "2026-10-30T22:53:25.356435Z"
+            },
+            {
+              "shard": 1,
+              "execution_id": "/uploads/fab0558f-fc78-46f9-bbd1-6770025047c5/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+              "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T22:50:47.257896Z",
+              "completed_utc": "2026-10-30T22:55:32.074285Z"
+            },
+            {
+              "shard": 2,
+              "execution_id": "/uploads/25921b9a-ab51-4175-81f9-d0339f028597/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+              "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T22:56:59.947862Z",
+              "completed_utc": "2026-10-30T22:59:21.972871Z"
+            },
+            {
+              "shard": 1,
+              "execution_id": "/uploads/1428ca01-f290-408d-9f36-0abc5720113c/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+              "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T22:56:59.951042Z",
+              "completed_utc": "2026-10-30T23:00:00.125624Z"
+            },
+            {
+              "shard": 2,
+              "execution_id": "/uploads/4ee33db0-efc6-4f34-b3bb-2eb3da1bf279/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
+              "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T23:01:30.474934Z",
+              "completed_utc": "2026-10-30T23:03:54.825157Z"
+            },
+            {
+              "shard": 1,
+              "execution_id": "/uploads/cc94e4b1-47d9-4674-950f-f570a35d9c70/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
+              "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
+              "do_not_cache": true,
+              "started_utc": "2026-10-30T23:01:31.331965Z",
+              "completed_utc": "2026-10-30T23:04:51.244727Z"
+            }
+          ],
+          "declared_image_repeat_observations": {
+            "blockers.png": {
+              "runs": "Each of 5 invocations has both outputs",
+              "desktop": {
+                "shard": 1,
+                "dimensions": "1200x900",
+                "sha256": "3163f4254e87bca75e5f0af5ca8a5d8ac62e0639293afb62c076be68fd8495ab",
+                "bytes": 70282
+              },
+              "mobile": {
+                "shard": 2,
+                "dimensions": "1082x2402",
+                "sha256": "85ecc30bb4e59444c000a7e82f0ff256a085e362beca75a2bce3ef4fcfbdc97a",
+                "bytes": 123584
+              },
+              "visual_inspection": "Both downloaded and viewed; same intended busy-blocker modal at distinct viewport dimensions. Duplicate declared path, not a same-viewport render flake."
+            },
+            "single-tool-collapsed.png": {
+              "runs": "Each of 5 invocations has both outputs",
+              "desktop": {
+                "shard": 1,
+                "dimensions": "1200x900",
+                "sha256": "8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a"
+              },
+              "mobile": {
+                "shard": 2,
+                "dimensions": "1082x2402",
+                "sha256": "5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e"
+              }
+            },
+            "single-tool-expanded.png": {
+              "runs": "Each of 5 invocations has both outputs",
+              "desktop": {
+                "shard": 1,
+                "dimensions": "1200x900",
+                "sha256": "b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878"
+              },
+              "mobile": {
+                "shard": 2,
+                "dimensions": "1082x2402",
+                "sha256": "5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401"
+              }
+            },
+            "open_tool_calls_and_output_session_shell_calls_open[desktop].png": {
+              "same_viewport": true,
+              "dimensions": "1200x900",
+              "variants": [
+                {
+                  "runs": [1, 3, 5],
+                  "sha256": "a2dc4dc68a055837e8e0796c6984b416526f7b3bf7e2a84798ccfda46550b1cc",
+                  "bytes": 120694,
+                  "artifact_uri_run1": "bytestream://remote.buildbuddy.io/blobs/a2dc4dc68a055837e8e0796c6984b416526f7b3bf7e2a84798ccfda46550b1cc/120694",
+                  "capture_metadata": {
+                    "viewport": {
+                      "width": 1200,
+                      "height": 900,
+                      "deviceScaleFactor": 1,
+                      "scrollX": 0,
+                      "scrollY": 0
+                    },
+                    "readiness": {
+                      "documentReadyState": "complete",
+                      "fontStatus": "loaded",
+                      "incompleteImageCount": 0
+                    },
+                    "history_region": {
+                      "scrollTop": 620,
+                      "scrollHeight": 1415,
+                      "clientHeight": 730,
+                      "data_layout_settled": "true",
+                      "data_scroll_mode": "reading"
+                    },
+                    "focused_disclosure_rect": {
+                      "x": 257,
+                      "y": 697.125,
+                      "width": 926,
+                      "height": 28
+                    }
+                  }
+                },
+                {
+                  "runs": [2],
+                  "sha256": "b5ca1bea2ae05558e2e52c12f3f16e5a191579aaf170148c78a71ce43781d003",
+                  "bytes": 117834,
+                  "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/b5ca1bea2ae05558e2e52c12f3f16e5a191579aaf170148c78a71ce43781d003/117834",
+                  "capture_metadata": {
+                    "viewport": {
+                      "width": 1200,
+                      "height": 900,
+                      "deviceScaleFactor": 1,
+                      "scrollX": 0,
+                      "scrollY": 0
+                    },
+                    "readiness": {
+                      "documentReadyState": "complete",
+                      "fontStatus": "loaded",
+                      "incompleteImageCount": 0
+                    },
+                    "history_region": {
+                      "scrollTop": 607,
+                      "scrollHeight": 1415,
+                      "clientHeight": 730,
+                      "data_layout_settled": "true",
+                      "data_scroll_mode": "reading"
+                    },
+                    "focused_disclosure_rect": {
+                      "x": 257,
+                      "y": 710.125,
+                      "width": 926,
+                      "height": 28
+                    }
+                  }
+                },
+                {
+                  "runs": [4],
+                  "sha256": "2ec52e801ae0edde501eab325da4f3d3c864fc870918f8ca5e9cc83ef58c00a3",
+                  "bytes": 119472,
+                  "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2ec52e801ae0edde501eab325da4f3d3c864fc870918f8ca5e9cc83ef58c00a3/119472",
+                  "capture_metadata": {
+                    "viewport": {
+                      "width": 1200,
+                      "height": 900,
+                      "deviceScaleFactor": 1,
+                      "scrollX": 0,
+                      "scrollY": 0
+                    },
+                    "readiness": {
+                      "documentReadyState": "complete",
+                      "fontStatus": "loaded",
+                      "incompleteImageCount": 0
+                    },
+                    "history_region": {
+                      "scrollTop": 566,
+                      "scrollHeight": 1397,
+                      "clientHeight": 730,
+                      "data_layout_settled": "true",
+                      "data_scroll_mode": "reading"
+                    },
+                    "focused_disclosure_rect": {
+                      "x": 257,
+                      "y": 751.125,
+                      "width": 926,
+                      "height": 28
+                    }
+                  }
+                }
+              ],
+              "capture_json_artifact_uris": {
+                "run1": "bytestream://remote.buildbuddy.io/blobs/19c577f0c335c7357b6b2a7a0f2be09cbb2ff78babd56a3d448fdd801fcd3d7f/4733",
+                "run2": "bytestream://remote.buildbuddy.io/blobs/3f686e835d1a8082179fb99dd163c33a3677a738100b12d0c0f014e08af53a99/4733",
+                "run4": "bytestream://remote.buildbuddy.io/blobs/a5c60ea8e8cd29a67d5d6a7ffceab4016db0f373c2797fac59e28220cc4900e4/4732"
+              },
+              "visual_inspection": "All three downloaded images viewed. The third includes the earlier account 2 output block near the top; content is the same static fixture with different vertical framing."
+            }
+          },
+          "source_triage": {
+            "test": "agentplane/app/frontend/test_visual_history.py:864-875",
+            "viewport_assertion": "agentplane/app/frontend/testing/visual_assertions.py:31-39 (`_in_viewport` checks visible plus full viewport ratio; it does not scroll to a canonical position)",
+            "setup_and_expansion": "agentplane/app/frontend/testing/visual_assertions.py:207-228 waits for aria-busy=false and data-layout-settled=true, then expands steps and waits for stable render",
+            "scroll_anchor": "agentplane/app/frontend/threads/virtualized_history.tsx:420-454,734-753 preserves the current reading anchor while expanded rows change height",
+            "capture_readiness": "util/testing/page_capture.py:85-102 waits for fonts, decoded images, and two animation frames; this does not fix scroll position or establish animation convergence",
+            "fixed_sleep": "No fixed sleep in the inspected test path",
+            "inference": "Capture JSON shows stable document/font/image readiness and varying history scrollTop/focused-target Y. This supports scroll-framing variation while leaving the exact event timing that selects the final anchor unproven."
+          },
+          "recommended_candidate": "After all tool rows are expanded, center a defined output/control using existing `_focus` or explicit centered scroll, wait for render stability, assert a stable target rect/scroll state, and capture. Preserve existing output text and viewport assertions.",
+          "manifest_records": {
+            "1": {
+              "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
+              "asset_count": 72,
+              "unique_path_count": 72,
+              "paths": [
+                "single-tool-collapsed.png",
+                "single-tool-expanded.png",
+                "completed_rollout_overview[desktop-light].png",
+                "completed_rollout_overview[desktop-dark].png",
+                "composer_autosuspend_countdown[desktop].png",
+                "composer_autosuspend_busy[desktop].png",
+                "blockers.png",
+                "composer_autosuspend_starting[desktop].png",
+                "completed_rollout_run[start-desktop-light].png",
+                "completed_rollout_run[start-desktop-dark].png",
+                "completed_rollout_run[end-mobile-light].png",
+                "reported_rollout_run[start].png",
+                "realistic_rollout_call[light-false-desktop].png",
+                "realistic_rollout_call[light-true-desktop].png",
+                "realistic_rollout_call[light-true-desktop]_output_preview.png",
+                "realistic_rollout_call[dark-false-desktop].png",
+                "realistic_rollout_call[dark-true-desktop].png",
+                "realistic_rollout_call[dark-true-desktop]_output_preview.png",
+                "recovery_messages_open[desktop].png",
+                "recovery_quiet_open.png",
+                "debug_history_latest_session_error_raw_phone[mobile].png",
+                "debug_history_latest_session_interleaved_raw[mobile].png",
+                "debug_history_latest_session_raw[mobile].png",
+                "command_progress_semantics[mobile].png",
+                "command_progress_semantics[mobile]_controls.png",
+                "command_progress_semantics[mobile]_detail.png",
+                "command_progress_semantics[mobile]_effort_detail.png",
+                "command_progress_semantics[mobile]_applied_input.png",
+                "dispatcher_queued_while_sandbox_wakes[mobile]_wake_composer_placeholder.png",
+                "dispatcher_queued_while_sandbox_wakes[mobile].png",
+                "detail_of_a_short_message_stays_on_the_page[desktop].png",
+                "cancel_unsent_input[desktop].png",
+                "debug_history_latest_session_pending_raw.png",
+                "thread_setup_live_progress.png",
+                "recovery_tool_lower_states[desktop].png",
+                "revised_recovery_tool_output[desktop].png",
+                "reasoning_inside_tool_run[light-desktop].png",
+                "reasoning_inside_tool_run[dark-desktop].png",
+                "consecutive_reasoning_group_inside_tool_run[light-desktop].png",
+                "consecutive_reasoning_group_inside_tool_run[light-desktop]_reasoning_items.png",
+                "consecutive_reasoning_group_inside_tool_run[dark-desktop].png",
+                "consecutive_reasoning_group_inside_tool_run[dark-desktop]_reasoning_items.png",
+                "reasoning_heading_sticks_at_history_bottom[light-desktop].png",
+                "reasoning_heading_sticks_at_history_bottom[light-desktop]_collapsed.png",
+                "reasoning_heading_sticks_at_history_bottom[dark-desktop].png",
+                "reasoning_heading_sticks_at_history_bottom[dark-desktop]_collapsed.png",
+                "standalone_reasoning_opens_session_standalone_reasoning_open.png",
+                "standalone_reasoning_compact_markdown_and_code_fence[mobile].png",
+                "standalone_reasoning_compact_markdown_and_code_fence[mobile]_expanded.png",
+                "shell_call_run_previews[mobile].png",
+                "thread_evidence_panel[user-message-light-mobile].png",
+                "thread_evidence_panel[user-message-light-mobile]_raw_frames.png",
+                "thread_evidence_panel[user-message-dark-mobile].png",
+                "thread_evidence_panel[user-message-dark-mobile]_raw_frames.png",
+                "thread_evidence_panel[assistant-text-light-mobile].png",
+                "thread_evidence_panel[assistant-text-light-mobile]_raw_frames.png",
+                "thread_evidence_panel[assistant-text-dark-mobile].png",
+                "thread_evidence_panel[assistant-text-dark-mobile]_raw_frames.png",
+                "bash_evidence_panel[light-mobile].png",
+                "bash_evidence_panel[light-mobile]_raw_frames.png",
+                "bash_evidence_panel[dark-mobile].png",
+                "bash_evidence_panel[dark-mobile]_raw_frames.png",
+                "evidence_button_reveals_on_hover[[data-thread-anchor=\"4\"] .agentplane-user-bubble].png",
+                "evidence_button_reveals_on_tap[mobile-touch].png",
+                "open_tool_calls_and_output_session_tool_payloads[mobile].png",
+                "open_tool_calls_and_output_session_shell_calls_open[mobile].png",
+                "shell_call_command_and_output[list every container and its status-bash-mobile].png",
+                "shell_call_command_and_output[test bank-shell-mobile].png",
+                "shell_call_raw_arguments_and_json_output[mobile].png",
+                "collapsed_steps_in_open_run_are_compact[mobile].png",
+                "expanded_command_uses_heading_to_collapse[mobile].png",
+                "expanded_shell_output_sticks_while_scrolling[mobile].png"
+              ]
+            },
+            "2": {
+              "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
+              "asset_count": 71,
+              "unique_path_count": 71,
+              "paths": [
+                "single-tool-collapsed.png",
+                "single-tool-expanded.png",
+                "completed_rollout_overview[mobile-light].png",
+                "reported_rollout_overview.png",
+                "composer_autosuspend_countdown[mobile].png",
+                "composer_autosuspend_busy[mobile].png",
+                "blockers.png",
+                "composer_autosuspend_starting[mobile].png",
+                "completed_rollout_run[start-mobile-light].png",
+                "completed_rollout_run[end-desktop-light].png",
+                "completed_rollout_run[end-desktop-dark].png",
+                "reported_rollout_run[end].png",
+                "realistic_rollout_call[light-false-mobile].png",
+                "realistic_rollout_call[light-true-mobile].png",
+                "realistic_rollout_call[light-true-mobile]_output_preview.png",
+                "realistic_rollout_call[dark-false-mobile].png",
+                "realistic_rollout_call[dark-true-mobile].png",
+                "realistic_rollout_call[dark-true-mobile]_output_preview.png",
+                "recovery_messages_open[mobile].png",
+                "debug_history_latest_session_error_raw.png",
+                "debug_history_latest_session_interleaved_raw[desktop].png",
+                "debug_history_latest_session_raw[desktop].png",
+                "command_progress_semantics[desktop].png",
+                "command_progress_semantics[desktop]_controls.png",
+                "command_progress_semantics[desktop]_detail.png",
+                "command_progress_semantics[desktop]_effort_detail.png",
+                "command_progress_semantics[desktop]_applied_input.png",
+                "dispatcher_queued_while_sandbox_wakes[desktop]_wake_composer_placeholder.png",
+                "dispatcher_queued_while_sandbox_wakes[desktop].png",
+                "dispatcher_reports_why_a_sandbox_wake_failed.png",
+                "detail_of_a_short_message_stays_on_the_page[mobile].png",
+                "cancel_unsent_input[mobile].png",
+                "debug_history_stderr_disclosure.png",
+                "thread_setup_output.png",
+                "recovery_tool_lower_states[mobile].png",
+                "revised_recovery_tool_output[mobile].png",
+                "reasoning_inside_tool_run[light-mobile].png",
+                "reasoning_inside_tool_run[dark-mobile].png",
+                "consecutive_reasoning_group_inside_tool_run[light-mobile].png",
+                "consecutive_reasoning_group_inside_tool_run[light-mobile]_reasoning_items.png",
+                "consecutive_reasoning_group_inside_tool_run[dark-mobile].png",
+                "consecutive_reasoning_group_inside_tool_run[dark-mobile]_reasoning_items.png",
+                "reasoning_heading_sticks_at_history_bottom[light-mobile].png",
+                "reasoning_heading_sticks_at_history_bottom[light-mobile]_collapsed.png",
+                "reasoning_heading_sticks_at_history_bottom[dark-mobile].png",
+                "reasoning_heading_sticks_at_history_bottom[dark-mobile]_collapsed.png",
+                "standalone_reasoning_compact_markdown_and_code_fence[desktop].png",
+                "standalone_reasoning_compact_markdown_and_code_fence[desktop]_expanded.png",
+                "shell_call_run_previews[desktop].png",
+                "thread_evidence_panel[user-message-light-desktop].png",
+                "thread_evidence_panel[user-message-light-desktop]_raw_frames.png",
+                "thread_evidence_panel[user-message-dark-desktop].png",
+                "thread_evidence_panel[user-message-dark-desktop]_raw_frames.png",
+                "thread_evidence_panel[assistant-text-light-desktop].png",
+                "thread_evidence_panel[assistant-text-light-desktop]_raw_frames.png",
+                "thread_evidence_panel[assistant-text-dark-desktop].png",
+                "thread_evidence_panel[assistant-text-dark-desktop]_raw_frames.png",
+                "bash_evidence_panel[light-desktop].png",
+                "bash_evidence_panel[light-desktop]_raw_frames.png",
+                "bash_evidence_panel[dark-desktop].png",
+                "bash_evidence_panel[dark-desktop]_raw_frames.png",
+                "bash_evidence_button_reveals_on_tap[mobile-touch].png",
+                "evidence_button_reveals_on_hover[[data-thread-anchor=\"34\"] .agentplane-evidence-owner].png",
+                "open_tool_calls_and_output_session_tool_payloads[desktop].png",
+                "open_tool_calls_and_output_session_shell_calls_open[desktop].png",
+                "shell_call_command_and_output[list every container and its status-bash-desktop].png",
+                "shell_call_command_and_output[test bank-shell-desktop].png",
+                "shell_call_raw_arguments_and_json_output[desktop].png",
+                "collapsed_steps_in_open_run_are_compact[desktop].png",
+                "expanded_command_uses_heading_to_collapse[desktop].png",
+                "expanded_shell_output_sticks_while_scrolling[desktop].png"
+              ]
+            }
+          }
         },
-        "review_png_declarations_by_shard": {
-          "1": 72,
-          "2": 71,
-          "total": 143,
-          "distinct_path_count": 140,
-          "three_duplicate_paths_across_shards": [
-            "blockers.png",
-            "single-tool-collapsed.png",
-            "single-tool-expanded.png"
+        "reproduction": "bb run //devinfra/pr_visuals:determinism_bin -- --runs=5 //agentplane/app/frontend:visual_history --bbr=<wrapper> --summary=<output>; wrapper executes bbr --runner_exec_properties=recycle-runner=false followed by the original arguments"
+      },
+      "recommendations": [
+        "Give each desktop/mobile history capture a distinct declared asset path, including `single-tool-collapsed`, `single-tool-expanded`, and `blockers`, so all viewport images remain separately reviewable.",
+        "Normalize the `open_tool_calls_and_output_session_shell_calls_open[desktop]` history scroll position after expansion, wait for render stability, and assert the final target rect or scroll state before capture while preserving existing content assertions.",
+        "Do not infer page-render flakiness from stale-baseline changes, missing artifacts, publisher failures, duplicate-path screenshots, or target-history PASS verdicts without same-source repeated uncached execution evidence."
+      ],
+      "open_boundaries": [
+        "The five-run repeat covers one 103-case visual_history target at one frozen source; it cannot estimate browser-fleet or repository-wide flake rates.",
+        "The proposed scroll normalization was source-triaged but not implemented or tested; the exact browser event timing that selected each final reading anchor remains unisolated.",
+        "Merged-only 100-PR sample cannot estimate fleet-wide flake rate.",
+        "Viewport-capture identity collision is confirmed by source, current galleries, and repeated shard artifacts; the rate of arbitrarily selected desktop/mobile output across every target is not quantified.",
+        "The #13060 disclosure change remains unattributed because its comparison baseline was explicitly stale. #10753 Chart.js and the old GNOME D-Bus ServiceUnknown issue were not re-probed."
+      ],
+      "gallery_image_inspection": {
+        "viewport_identity_collision": {
+          "confidence": "High: source reuses explicit output path across desktop/mobile cases; four current-head galleries show exact same viewport-specific PNG digests exchanged in before/candidate positions.",
+          "source": {
+            "agentplane/app/frontend/test_visual_history.py": "32-57",
+            "agentplane/app/frontend/testing/visual_fixtures.py": "10-12",
+            "util/testing/viewports.py": "22-24",
+            "util/testing/visual_capture.py": "226, 258-274",
+            "util/testing/visual_review.py": "41-49",
+            "devinfra/pr_visuals/publisher.py": "404-446, 501-515"
+          },
+          "mechanism": "The test uses @DESKTOP_AND_MOBILE with pytest IDs desktop/mobile but passes identical explicit checkpoint names. PNG path and manifest path therefore omit viewport identity. Sharded manifests with equal paths merge; review artifact selection is keyed by declared invocation, shared across shards, allowing either shard capture for the same path to surface.",
+          "recommendation": "Include the pytest viewport/case ID in all three same-name captures: the two single-tool checkpoints and blockers. Keep both viewport screenshots declared.",
+          "assets": [
+            {
+              "pr": 13060,
+              "head": "47f59fbba6dc82c24785d00328cb3b1872fc8849",
+              "target": "//agentplane/app/frontend:visual_history",
+              "label": "single-tool-collapsed",
+              "gallery": "https://s3.allegedly.works/pr-visuals/reviews/47f59fbba6dc82c24785d00328cb3b1872fc8849/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html",
+              "baseline": {
+                "sha256": "5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e",
+                "dimensions": "1082x2402",
+                "viewport": "mobile",
+                "url": "https://s3.allegedly.works/pr-visuals/assets/5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e.png",
+                "download": "image-review/p13060-visualhistory-base.png"
+              },
+              "candidate": {
+                "sha256": "8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a",
+                "dimensions": "1200x900",
+                "viewport": "desktop",
+                "url": "https://s3.allegedly.works/pr-visuals/assets/8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a.png",
+                "download": "image-review/p13060-visualhistory-candidate.png"
+              }
+            },
+            {
+              "pr": 13083,
+              "head": "104649352c51b95b651572832c8885988eaa8bd0",
+              "target": "//agentplane/app/frontend:visual_history",
+              "label": "single-tool-collapsed",
+              "gallery": "https://s3.allegedly.works/pr-visuals/reviews/104649352c51b95b651572832c8885988eaa8bd0/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html",
+              "baseline": {
+                "sha256": "8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a",
+                "dimensions": "1200x900",
+                "viewport": "desktop",
+                "url": "https://s3.allegedly.works/pr-visuals/assets/8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a.png",
+                "download": "image-review/p13083-visualhistory-base.png"
+              },
+              "candidate": {
+                "sha256": "5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e",
+                "dimensions": "1082x2402",
+                "viewport": "mobile",
+                "url": "https://s3.allegedly.works/pr-visuals/assets/5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e.png",
+                "download": "image-review/p13083-visualhistory-candidate.png"
+              }
+            },
+            {
+              "pr": 13060,
+              "head": "47f59fbba6dc82c24785d00328cb3b1872fc8849",
+              "target": "//agentplane/app/frontend:visual_history",
+              "label": "single-tool-expanded",
+              "gallery": "https://s3.allegedly.works/pr-visuals/reviews/47f59fbba6dc82c24785d00328cb3b1872fc8849/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html",
+              "baseline": {
+                "sha256": "5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401",
+                "dimensions": "1082x2402",
+                "viewport": "mobile",
+                "url": "https://s3.allegedly.works/pr-visuals/assets/5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401.png",
+                "download": "image-review/p13060-visualhistory-expanded-base.png"
+              },
+              "candidate": {
+                "sha256": "b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878",
+                "dimensions": "1200x900",
+                "viewport": "desktop",
+                "url": "https://s3.allegedly.works/pr-visuals/assets/b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878.png",
+                "download": "image-review/p13060-visualhistory-expanded-candidate.png"
+              }
+            },
+            {
+              "pr": 13083,
+              "head": "104649352c51b95b651572832c8885988eaa8bd0",
+              "target": "//agentplane/app/frontend:visual_history",
+              "label": "single-tool-expanded",
+              "gallery": "https://s3.allegedly.works/pr-visuals/reviews/104649352c51b95b651572832c8885988eaa8bd0/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html",
+              "baseline": {
+                "sha256": "b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878",
+                "dimensions": "1200x900",
+                "viewport": "desktop",
+                "url": "https://s3.allegedly.works/pr-visuals/assets/b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878.png"
+              },
+              "candidate": {
+                "sha256": "5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401",
+                "dimensions": "1082x2402",
+                "viewport": "mobile",
+                "url": "https://s3.allegedly.works/pr-visuals/assets/5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401.png"
+              }
+            }
           ]
         },
-        "runs": [
+        "source_inspected_pairs": [
           {
-            "run": 1,
-            "test_invocation_id": "723d0d18-8f31-409d-8abc-7d1902d537d1",
-            "buildbuddy_url": "https://app.buildbuddy.io/invocation/723d0d18-8f31-409d-8abc-7d1902d537d1",
-            "status": "PASSED",
-            "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-            "target_summary": {
-              "overall_status": "PASSED",
-              "total_run_count": 2,
-              "run_count": 1,
-              "shard_count": 2,
-              "attempt_count": 1,
-              "total_shard_duration_seconds": 445.576
-            },
-            "action_accounting": {
-              "actions_executed": 2900,
-              "remote_cache_hits": 2042,
-              "internal_actions": 856,
-              "remote_actions": 2,
-              "test_result_cache_disabled": true
-            },
-            "test_runner_executions": [
-              {
-                "shard": 2,
-                "execution_id": "/uploads/5b65f94c-3e3a-4fd4-9849-cdf19ad304cc/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-                "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T22:38:49.994634Z",
-                "completed_utc": "2026-10-30T22:43:35.312834Z"
-              },
-              {
-                "shard": 1,
-                "execution_id": "/uploads/8064ae80-67d1-48f0-a01e-1f5a5d8dc682/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-                "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T22:38:49.827752Z",
-                "completed_utc": "2026-10-30T22:41:30.086567Z"
-              }
-            ],
-            "review_manifests": [
-              {
-                "shard": 1,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
-                "declared_review_pngs": 72
-              },
-              {
-                "shard": 2,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
-                "declared_review_pngs": 71
-              }
-            ]
-          },
-          {
-            "run": 2,
-            "test_invocation_id": "ff689d8e-6ccd-463f-ac54-0512100e4242",
-            "buildbuddy_url": "https://app.buildbuddy.io/invocation/ff689d8e-6ccd-463f-ac54-0512100e4242",
-            "status": "PASSED",
-            "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-            "target_summary": {
-              "overall_status": "PASSED",
-              "total_run_count": 2,
-              "run_count": 1,
-              "shard_count": 2,
-              "attempt_count": 1,
-              "total_shard_duration_seconds": 412.665
-            },
-            "action_accounting": {
-              "actions_executed": 2900,
-              "remote_cache_hits": 2042,
-              "internal_actions": 856,
-              "remote_actions": 2,
-              "test_result_cache_disabled": true
-            },
-            "test_runner_executions": [
-              {
-                "shard": 2,
-                "execution_id": "/uploads/d479e50c-15af-467c-9ba0-9eb1ae9e52b2/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-                "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T22:44:59.668121Z",
-                "completed_utc": "2026-10-30T22:47:29.716958Z"
-              },
-              {
-                "shard": 1,
-                "execution_id": "/uploads/87174a48-3c5f-4341-af3a-d568286096da/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-                "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T22:44:58.499217Z",
-                "completed_utc": "2026-10-30T22:49:21.116997Z"
-              }
-            ],
-            "review_manifests": [
-              {
-                "shard": 2,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
-                "declared_review_pngs": 71
-              },
-              {
-                "shard": 1,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
-                "declared_review_pngs": 72
-              }
-            ]
-          },
-          {
-            "run": 3,
-            "test_invocation_id": "13e5e8be-6945-4ada-ac43-3915691b2bf8",
-            "buildbuddy_url": "https://app.buildbuddy.io/invocation/13e5e8be-6945-4ada-ac43-3915691b2bf8",
-            "status": "PASSED",
-            "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-            "target_summary": {
-              "overall_status": "PASSED",
-              "total_run_count": 2,
-              "run_count": 1,
-              "shard_count": 2,
-              "attempt_count": 1,
-              "total_shard_duration_seconds": 442.968
-            },
-            "action_accounting": {
-              "actions_executed": 2900,
-              "remote_cache_hits": 2042,
-              "internal_actions": 856,
-              "remote_actions": 2,
-              "test_result_cache_disabled": true
-            },
-            "test_runner_executions": [
-              {
-                "shard": 2,
-                "execution_id": "/uploads/ff2f56f5-fa41-48d8-b19b-c074dd9b3db0/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-                "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T22:50:47.203664Z",
-                "completed_utc": "2026-10-30T22:53:25.356435Z"
-              },
-              {
-                "shard": 1,
-                "execution_id": "/uploads/fab0558f-fc78-46f9-bbd1-6770025047c5/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-                "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T22:50:47.257896Z",
-                "completed_utc": "2026-10-30T22:55:32.074285Z"
-              }
-            ],
-            "review_manifests": [
-              {
-                "shard": 2,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
-                "declared_review_pngs": 71
-              },
-              {
-                "shard": 1,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
-                "declared_review_pngs": 72
-              }
-            ]
-          },
-          {
-            "run": 4,
-            "test_invocation_id": "7b314285-8c77-4cca-91ce-562b6b028a87",
-            "buildbuddy_url": "https://app.buildbuddy.io/invocation/7b314285-8c77-4cca-91ce-562b6b028a87",
-            "status": "PASSED",
-            "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-            "target_summary": {
-              "overall_status": "PASSED",
-              "total_run_count": 2,
-              "run_count": 1,
-              "shard_count": 2,
-              "attempt_count": 1,
-              "total_shard_duration_seconds": 322.199
-            },
-            "action_accounting": {
-              "actions_executed": 2900,
-              "remote_cache_hits": 2042,
-              "internal_actions": 856,
-              "remote_actions": 2,
-              "test_result_cache_disabled": true
-            },
-            "test_runner_executions": [
-              {
-                "shard": 2,
-                "execution_id": "/uploads/25921b9a-ab51-4175-81f9-d0339f028597/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-                "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T22:56:59.947862Z",
-                "completed_utc": "2026-10-30T22:59:21.972871Z"
-              },
-              {
-                "shard": 1,
-                "execution_id": "/uploads/1428ca01-f290-408d-9f36-0abc5720113c/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-                "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T22:56:59.951042Z",
-                "completed_utc": "2026-10-30T23:00:00.125624Z"
-              }
-            ],
-            "review_manifests": [
-              {
-                "shard": 2,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
-                "declared_review_pngs": 71
-              },
-              {
-                "shard": 1,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
-                "declared_review_pngs": 72
-              }
-            ]
-          },
-          {
-            "run": 5,
-            "test_invocation_id": "ffd69094-8b9d-45fe-a612-5dc157165630",
-            "buildbuddy_url": "https://app.buildbuddy.io/invocation/ffd69094-8b9d-45fe-a612-5dc157165630",
-            "status": "PASSED",
-            "source_commit": "49475cae74abd6a669879908f63c04fa78f41242",
-            "target_summary": {
-              "overall_status": "PASSED",
-              "total_run_count": 2,
-              "run_count": 1,
-              "shard_count": 2,
-              "attempt_count": 1,
-              "total_shard_duration_seconds": 344.262
-            },
-            "action_accounting": {
-              "actions_executed": 2900,
-              "remote_cache_hits": 2042,
-              "internal_actions": 856,
-              "remote_actions": 2,
-              "test_result_cache_disabled": true
-            },
-            "test_runner_executions": [
-              {
-                "shard": 2,
-                "execution_id": "/uploads/4ee33db0-efc6-4f34-b3bb-2eb3da1bf279/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-                "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T23:01:30.474934Z",
-                "completed_utc": "2026-10-30T23:03:54.825157Z"
-              },
-              {
-                "shard": 1,
-                "execution_id": "/uploads/cc94e4b1-47d9-4674-950f-f570a35d9c70/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-                "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-                "do_not_cache": true,
-                "started_utc": "2026-10-30T23:01:31.331965Z",
-                "completed_utc": "2026-10-30T23:04:51.244727Z"
-              }
-            ],
-            "review_manifests": [
-              {
-                "shard": 2,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
-                "declared_review_pngs": 71
-              },
-              {
-                "shard": 1,
-                "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
-                "declared_review_pngs": 72
-              }
-            ]
-          }
-        ],
-        "unique_test_runner_execution_count": 10,
-        "test_runner_execution_ids": [
-          {
-            "shard": 2,
-            "execution_id": "/uploads/5b65f94c-3e3a-4fd4-9849-cdf19ad304cc/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-            "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T22:38:49.994634Z",
-            "completed_utc": "2026-10-30T22:43:35.312834Z"
-          },
-          {
-            "shard": 1,
-            "execution_id": "/uploads/8064ae80-67d1-48f0-a01e-1f5a5d8dc682/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-            "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T22:38:49.827752Z",
-            "completed_utc": "2026-10-30T22:41:30.086567Z"
-          },
-          {
-            "shard": 2,
-            "execution_id": "/uploads/d479e50c-15af-467c-9ba0-9eb1ae9e52b2/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-            "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T22:44:59.668121Z",
-            "completed_utc": "2026-10-30T22:47:29.716958Z"
-          },
-          {
-            "shard": 1,
-            "execution_id": "/uploads/87174a48-3c5f-4341-af3a-d568286096da/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-            "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T22:44:58.499217Z",
-            "completed_utc": "2026-10-30T22:49:21.116997Z"
-          },
-          {
-            "shard": 2,
-            "execution_id": "/uploads/ff2f56f5-fa41-48d8-b19b-c074dd9b3db0/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-            "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T22:50:47.203664Z",
-            "completed_utc": "2026-10-30T22:53:25.356435Z"
-          },
-          {
-            "shard": 1,
-            "execution_id": "/uploads/fab0558f-fc78-46f9-bbd1-6770025047c5/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-            "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T22:50:47.257896Z",
-            "completed_utc": "2026-10-30T22:55:32.074285Z"
-          },
-          {
-            "shard": 2,
-            "execution_id": "/uploads/25921b9a-ab51-4175-81f9-d0339f028597/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-            "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T22:56:59.947862Z",
-            "completed_utc": "2026-10-30T22:59:21.972871Z"
-          },
-          {
-            "shard": 1,
-            "execution_id": "/uploads/1428ca01-f290-408d-9f36-0abc5720113c/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-            "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T22:56:59.951042Z",
-            "completed_utc": "2026-10-30T23:00:00.125624Z"
-          },
-          {
-            "shard": 2,
-            "execution_id": "/uploads/4ee33db0-efc6-4f34-b3bb-2eb3da1bf279/blobs/03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add/501",
-            "action_digest": "03cf3ab87e6082620bab17862653b3f0c3460413e97bd85e994f7ad5e72d1add",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T23:01:30.474934Z",
-            "completed_utc": "2026-10-30T23:03:54.825157Z"
-          },
-          {
-            "shard": 1,
-            "execution_id": "/uploads/cc94e4b1-47d9-4674-950f-f570a35d9c70/blobs/4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028/501",
-            "action_digest": "4c374e06e25477ff08e5a42c875e7329f7ab7dac45e120d7289b6c577d38f028",
-            "do_not_cache": true,
-            "started_utc": "2026-10-30T23:01:31.331965Z",
-            "completed_utc": "2026-10-30T23:04:51.244727Z"
-          }
-        ],
-        "declared_image_repeat_observations": {
-          "blockers.png": {
-            "runs": "Each of 5 invocations has both outputs",
-            "desktop": {
-              "shard": 1,
-              "dimensions": "1200x900",
-              "sha256": "3163f4254e87bca75e5f0af5ca8a5d8ac62e0639293afb62c076be68fd8495ab",
-              "bytes": 70282
-            },
-            "mobile": {
-              "shard": 2,
-              "dimensions": "1082x2402",
-              "sha256": "85ecc30bb4e59444c000a7e82f0ff256a085e362beca75a2bce3ef4fcfbdc97a",
-              "bytes": 123584
-            },
-            "visual_inspection": "Both downloaded and viewed; same intended busy-blocker modal at distinct viewport dimensions. Duplicate declared path, not a same-viewport render flake."
-          },
-          "single-tool-collapsed.png": {
-            "runs": "Each of 5 invocations has both outputs",
-            "desktop": {
-              "shard": 1,
-              "dimensions": "1200x900",
-              "sha256": "8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a"
-            },
-            "mobile": {
-              "shard": 2,
-              "dimensions": "1082x2402",
-              "sha256": "5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e"
-            }
-          },
-          "single-tool-expanded.png": {
-            "runs": "Each of 5 invocations has both outputs",
-            "desktop": {
-              "shard": 1,
-              "dimensions": "1200x900",
-              "sha256": "b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878"
-            },
-            "mobile": {
-              "shard": 2,
-              "dimensions": "1082x2402",
-              "sha256": "5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401"
-            }
-          },
-          "open_tool_calls_and_output_session_shell_calls_open[desktop].png": {
-            "same_viewport": true,
+            "pr": 13083,
+            "target": "//agentplane/app/frontend:visual_scenes",
+            "label": "session_inventory_dropped",
+            "gallery": "https://s3.allegedly.works/pr-visuals/reviews/104649352c51b95b651572832c8885988eaa8bd0/tests/agentplane-app-frontend-visual-scenes-3f8c995526/index.html",
+            "baseline_sha256": "d684176ab22fd609bd310c44c9e5e042f4ec8af24780aa5730d18db7bc4e2d50",
+            "candidate_sha256": "f9d8d36255ee8ba5f63f86792aef85b725b763118bb005d4205efd3143fde229",
+            "diff_sha256": "7a0db7a548e50ae0e786a14af478877541020e5ddc6ae9188079b74798876b8a",
             "dimensions": "1200x900",
-            "variants": [
-              {
-                "runs": [
-                  1,
-                  3,
-                  5
-                ],
-                "sha256": "a2dc4dc68a055837e8e0796c6984b416526f7b3bf7e2a84798ccfda46550b1cc",
-                "bytes": 120694,
-                "artifact_uri_run1": "bytestream://remote.buildbuddy.io/blobs/a2dc4dc68a055837e8e0796c6984b416526f7b3bf7e2a84798ccfda46550b1cc/120694",
-                "capture_metadata": {
-                  "viewport": {
-                    "width": 1200,
-                    "height": 900,
-                    "deviceScaleFactor": 1,
-                    "scrollX": 0,
-                    "scrollY": 0
-                  },
-                  "readiness": {
-                    "documentReadyState": "complete",
-                    "fontStatus": "loaded",
-                    "incompleteImageCount": 0
-                  },
-                  "history_region": {
-                    "scrollTop": 620,
-                    "scrollHeight": 1415,
-                    "clientHeight": 730,
-                    "data_layout_settled": "true",
-                    "data_scroll_mode": "reading"
-                  },
-                  "focused_disclosure_rect": {
-                    "x": 257,
-                    "y": 697.125,
-                    "width": 926,
-                    "height": 28
-                  }
-                }
-              },
-              {
-                "runs": [
-                  2
-                ],
-                "sha256": "b5ca1bea2ae05558e2e52c12f3f16e5a191579aaf170148c78a71ce43781d003",
-                "bytes": 117834,
-                "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/b5ca1bea2ae05558e2e52c12f3f16e5a191579aaf170148c78a71ce43781d003/117834",
-                "capture_metadata": {
-                  "viewport": {
-                    "width": 1200,
-                    "height": 900,
-                    "deviceScaleFactor": 1,
-                    "scrollX": 0,
-                    "scrollY": 0
-                  },
-                  "readiness": {
-                    "documentReadyState": "complete",
-                    "fontStatus": "loaded",
-                    "incompleteImageCount": 0
-                  },
-                  "history_region": {
-                    "scrollTop": 607,
-                    "scrollHeight": 1415,
-                    "clientHeight": 730,
-                    "data_layout_settled": "true",
-                    "data_scroll_mode": "reading"
-                  },
-                  "focused_disclosure_rect": {
-                    "x": 257,
-                    "y": 710.125,
-                    "width": 926,
-                    "height": 28
-                  }
-                }
-              },
-              {
-                "runs": [
-                  4
-                ],
-                "sha256": "2ec52e801ae0edde501eab325da4f3d3c864fc870918f8ca5e9cc83ef58c00a3",
-                "bytes": 119472,
-                "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2ec52e801ae0edde501eab325da4f3d3c864fc870918f8ca5e9cc83ef58c00a3/119472",
-                "capture_metadata": {
-                  "viewport": {
-                    "width": 1200,
-                    "height": 900,
-                    "deviceScaleFactor": 1,
-                    "scrollX": 0,
-                    "scrollY": 0
-                  },
-                  "readiness": {
-                    "documentReadyState": "complete",
-                    "fontStatus": "loaded",
-                    "incompleteImageCount": 0
-                  },
-                  "history_region": {
-                    "scrollTop": 566,
-                    "scrollHeight": 1397,
-                    "clientHeight": 730,
-                    "data_layout_settled": "true",
-                    "data_scroll_mode": "reading"
-                  },
-                  "focused_disclosure_rect": {
-                    "x": 257,
-                    "y": 751.125,
-                    "width": 926,
-                    "height": 28
-                  }
-                }
-              }
+            "source_refs": {
+              "agentplane/app/frontend/test_visual_scenes.py": "516-523",
+              "agentplane/app/frontend/threads/thread_list.tsx": "217-220",
+              "agentplane/app/frontend/threads/thread_status.ts": "22-27"
+            },
+            "visual_observation": "Selected sidebar item/background remains; thread and sandbox status glyphs shift from live colors to gray.",
+            "disposition": "Expected stale-state UI: test injects inventory stream drop, ages outage, waits for stale connection; status derives inactive/unknown when the combined inventory is stale."
+          },
+          {
+            "pr": 13060,
+            "target": "//agentplane/app/frontend:visual_disclosures",
+            "label": "disclosure_control_reaches_card_edges[dark-expanded-focus-mobile]",
+            "gallery": "https://s3.allegedly.works/pr-visuals/reviews/47f59fbba6dc82c24785d00328cb3b1872fc8849/tests/agentplane-app-frontend-visual-disclosures-57c1311057/index.html",
+            "baseline_sha256": "cc577988f4165f535ff02e51345836f7dbdc40668c62f44c4c8aaad43c15e788",
+            "candidate_sha256": "175ec2ca892a56a95546cf890ba224fa239ed6ee8af764ada46d18b9e448ec18",
+            "diff_sha256": "da88c81d26660fb3b314cd05f229a88ec5e61887cf0914a704083a476a34ec50",
+            "dimensions": "1082x2402",
+            "downloaded_files": [
+              "image-review/p13060-base.png",
+              "image-review/p13060-candidate.png",
+              "image-review/p13060-diff.png"
             ],
-            "capture_json_artifact_uris": {
-              "run1": "bytestream://remote.buildbuddy.io/blobs/19c577f0c335c7357b6b2a7a0f2be09cbb2ff78babd56a3d448fdd801fcd3d7f/4733",
-              "run2": "bytestream://remote.buildbuddy.io/blobs/3f686e835d1a8082179fb99dd163c33a3677a738100b12d0c0f014e08af53a99/4733",
-              "run4": "bytestream://remote.buildbuddy.io/blobs/a5c60ea8e8cd29a67d5d6a7ffceab4016db0f373c2797fac59e28220cc4900e4/4732"
-            },
-            "visual_inspection": "All three downloaded images viewed. The third includes the earlier account 2 output block near the top; content is the same static fixture with different vertical framing."
-          }
-        },
-        "source_triage": {
-          "test": "agentplane/app/frontend/test_visual_history.py:864-875",
-          "viewport_assertion": "agentplane/app/frontend/testing/visual_assertions.py:31-39 (`_in_viewport` checks visible plus full viewport ratio; it does not scroll to a canonical position)",
-          "setup_and_expansion": "agentplane/app/frontend/testing/visual_assertions.py:207-228 waits for aria-busy=false and data-layout-settled=true, then expands steps and waits for stable render",
-          "scroll_anchor": "agentplane/app/frontend/threads/virtualized_history.tsx:420-454,734-753 preserves the current reading anchor while expanded rows change height",
-          "capture_readiness": "util/testing/page_capture.py:85-102 waits for fonts, decoded images, and two animation frames; this does not fix scroll position or establish animation convergence",
-          "fixed_sleep": "No fixed sleep in the inspected test path",
-          "inference": "Capture JSON shows stable document/font/image readiness and varying history scrollTop/focused-target Y. This supports scroll-framing variation while leaving the exact event timing that selects the final anchor unproven."
-        },
-        "recommended_candidate": "After all tool rows are expanded, center a defined output/control using existing `_focus` or explicit centered scroll, wait for render stability, assert a stable target rect/scroll state, and capture. Preserve existing output text and viewport assertions.",
-        "manifest_records": {
-          "1": {
-            "uri": "bytestream://remote.buildbuddy.io/blobs/77772a84506d96461c0ef0b38a0f285f13b5004d366fd20735c9dbc82742e3d0/10660",
-            "asset_count": 72,
-            "unique_path_count": 72,
-            "paths": [
-              "single-tool-collapsed.png",
-              "single-tool-expanded.png",
-              "completed_rollout_overview[desktop-light].png",
-              "completed_rollout_overview[desktop-dark].png",
-              "composer_autosuspend_countdown[desktop].png",
-              "composer_autosuspend_busy[desktop].png",
-              "blockers.png",
-              "composer_autosuspend_starting[desktop].png",
-              "completed_rollout_run[start-desktop-light].png",
-              "completed_rollout_run[start-desktop-dark].png",
-              "completed_rollout_run[end-mobile-light].png",
-              "reported_rollout_run[start].png",
-              "realistic_rollout_call[light-false-desktop].png",
-              "realistic_rollout_call[light-true-desktop].png",
-              "realistic_rollout_call[light-true-desktop]_output_preview.png",
-              "realistic_rollout_call[dark-false-desktop].png",
-              "realistic_rollout_call[dark-true-desktop].png",
-              "realistic_rollout_call[dark-true-desktop]_output_preview.png",
-              "recovery_messages_open[desktop].png",
-              "recovery_quiet_open.png",
-              "debug_history_latest_session_error_raw_phone[mobile].png",
-              "debug_history_latest_session_interleaved_raw[mobile].png",
-              "debug_history_latest_session_raw[mobile].png",
-              "command_progress_semantics[mobile].png",
-              "command_progress_semantics[mobile]_controls.png",
-              "command_progress_semantics[mobile]_detail.png",
-              "command_progress_semantics[mobile]_effort_detail.png",
-              "command_progress_semantics[mobile]_applied_input.png",
-              "dispatcher_queued_while_sandbox_wakes[mobile]_wake_composer_placeholder.png",
-              "dispatcher_queued_while_sandbox_wakes[mobile].png",
-              "detail_of_a_short_message_stays_on_the_page[desktop].png",
-              "cancel_unsent_input[desktop].png",
-              "debug_history_latest_session_pending_raw.png",
-              "thread_setup_live_progress.png",
-              "recovery_tool_lower_states[desktop].png",
-              "revised_recovery_tool_output[desktop].png",
-              "reasoning_inside_tool_run[light-desktop].png",
-              "reasoning_inside_tool_run[dark-desktop].png",
-              "consecutive_reasoning_group_inside_tool_run[light-desktop].png",
-              "consecutive_reasoning_group_inside_tool_run[light-desktop]_reasoning_items.png",
-              "consecutive_reasoning_group_inside_tool_run[dark-desktop].png",
-              "consecutive_reasoning_group_inside_tool_run[dark-desktop]_reasoning_items.png",
-              "reasoning_heading_sticks_at_history_bottom[light-desktop].png",
-              "reasoning_heading_sticks_at_history_bottom[light-desktop]_collapsed.png",
-              "reasoning_heading_sticks_at_history_bottom[dark-desktop].png",
-              "reasoning_heading_sticks_at_history_bottom[dark-desktop]_collapsed.png",
-              "standalone_reasoning_opens_session_standalone_reasoning_open.png",
-              "standalone_reasoning_compact_markdown_and_code_fence[mobile].png",
-              "standalone_reasoning_compact_markdown_and_code_fence[mobile]_expanded.png",
-              "shell_call_run_previews[mobile].png",
-              "thread_evidence_panel[user-message-light-mobile].png",
-              "thread_evidence_panel[user-message-light-mobile]_raw_frames.png",
-              "thread_evidence_panel[user-message-dark-mobile].png",
-              "thread_evidence_panel[user-message-dark-mobile]_raw_frames.png",
-              "thread_evidence_panel[assistant-text-light-mobile].png",
-              "thread_evidence_panel[assistant-text-light-mobile]_raw_frames.png",
-              "thread_evidence_panel[assistant-text-dark-mobile].png",
-              "thread_evidence_panel[assistant-text-dark-mobile]_raw_frames.png",
-              "bash_evidence_panel[light-mobile].png",
-              "bash_evidence_panel[light-mobile]_raw_frames.png",
-              "bash_evidence_panel[dark-mobile].png",
-              "bash_evidence_panel[dark-mobile]_raw_frames.png",
-              "evidence_button_reveals_on_hover[[data-thread-anchor=\"4\"] .agentplane-user-bubble].png",
-              "evidence_button_reveals_on_tap[mobile-touch].png",
-              "open_tool_calls_and_output_session_tool_payloads[mobile].png",
-              "open_tool_calls_and_output_session_shell_calls_open[mobile].png",
-              "shell_call_command_and_output[list every container and its status-bash-mobile].png",
-              "shell_call_command_and_output[test bank-shell-mobile].png",
-              "shell_call_raw_arguments_and_json_output[mobile].png",
-              "collapsed_steps_in_open_run_are_compact[mobile].png",
-              "expanded_command_uses_heading_to_collapse[mobile].png",
-              "expanded_shell_output_sticks_while_scrolling[mobile].png"
-            ]
-          },
-          "2": {
-            "uri": "bytestream://remote.buildbuddy.io/blobs/9b5de0cff597b30d30733161608bc10cc16cacbda4ccfcacc34e64f43d363b4e/10471",
-            "asset_count": 71,
-            "unique_path_count": 71,
-            "paths": [
-              "single-tool-collapsed.png",
-              "single-tool-expanded.png",
-              "completed_rollout_overview[mobile-light].png",
-              "reported_rollout_overview.png",
-              "composer_autosuspend_countdown[mobile].png",
-              "composer_autosuspend_busy[mobile].png",
-              "blockers.png",
-              "composer_autosuspend_starting[mobile].png",
-              "completed_rollout_run[start-mobile-light].png",
-              "completed_rollout_run[end-desktop-light].png",
-              "completed_rollout_run[end-desktop-dark].png",
-              "reported_rollout_run[end].png",
-              "realistic_rollout_call[light-false-mobile].png",
-              "realistic_rollout_call[light-true-mobile].png",
-              "realistic_rollout_call[light-true-mobile]_output_preview.png",
-              "realistic_rollout_call[dark-false-mobile].png",
-              "realistic_rollout_call[dark-true-mobile].png",
-              "realistic_rollout_call[dark-true-mobile]_output_preview.png",
-              "recovery_messages_open[mobile].png",
-              "debug_history_latest_session_error_raw.png",
-              "debug_history_latest_session_interleaved_raw[desktop].png",
-              "debug_history_latest_session_raw[desktop].png",
-              "command_progress_semantics[desktop].png",
-              "command_progress_semantics[desktop]_controls.png",
-              "command_progress_semantics[desktop]_detail.png",
-              "command_progress_semantics[desktop]_effort_detail.png",
-              "command_progress_semantics[desktop]_applied_input.png",
-              "dispatcher_queued_while_sandbox_wakes[desktop]_wake_composer_placeholder.png",
-              "dispatcher_queued_while_sandbox_wakes[desktop].png",
-              "dispatcher_reports_why_a_sandbox_wake_failed.png",
-              "detail_of_a_short_message_stays_on_the_page[mobile].png",
-              "cancel_unsent_input[mobile].png",
-              "debug_history_stderr_disclosure.png",
-              "thread_setup_output.png",
-              "recovery_tool_lower_states[mobile].png",
-              "revised_recovery_tool_output[mobile].png",
-              "reasoning_inside_tool_run[light-mobile].png",
-              "reasoning_inside_tool_run[dark-mobile].png",
-              "consecutive_reasoning_group_inside_tool_run[light-mobile].png",
-              "consecutive_reasoning_group_inside_tool_run[light-mobile]_reasoning_items.png",
-              "consecutive_reasoning_group_inside_tool_run[dark-mobile].png",
-              "consecutive_reasoning_group_inside_tool_run[dark-mobile]_reasoning_items.png",
-              "reasoning_heading_sticks_at_history_bottom[light-mobile].png",
-              "reasoning_heading_sticks_at_history_bottom[light-mobile]_collapsed.png",
-              "reasoning_heading_sticks_at_history_bottom[dark-mobile].png",
-              "reasoning_heading_sticks_at_history_bottom[dark-mobile]_collapsed.png",
-              "standalone_reasoning_compact_markdown_and_code_fence[desktop].png",
-              "standalone_reasoning_compact_markdown_and_code_fence[desktop]_expanded.png",
-              "shell_call_run_previews[desktop].png",
-              "thread_evidence_panel[user-message-light-desktop].png",
-              "thread_evidence_panel[user-message-light-desktop]_raw_frames.png",
-              "thread_evidence_panel[user-message-dark-desktop].png",
-              "thread_evidence_panel[user-message-dark-desktop]_raw_frames.png",
-              "thread_evidence_panel[assistant-text-light-desktop].png",
-              "thread_evidence_panel[assistant-text-light-desktop]_raw_frames.png",
-              "thread_evidence_panel[assistant-text-dark-desktop].png",
-              "thread_evidence_panel[assistant-text-dark-desktop]_raw_frames.png",
-              "bash_evidence_panel[light-desktop].png",
-              "bash_evidence_panel[light-desktop]_raw_frames.png",
-              "bash_evidence_panel[dark-desktop].png",
-              "bash_evidence_panel[dark-desktop]_raw_frames.png",
-              "bash_evidence_button_reveals_on_tap[mobile-touch].png",
-              "evidence_button_reveals_on_hover[[data-thread-anchor=\"34\"] .agentplane-evidence-owner].png",
-              "open_tool_calls_and_output_session_tool_payloads[desktop].png",
-              "open_tool_calls_and_output_session_shell_calls_open[desktop].png",
-              "shell_call_command_and_output[list every container and its status-bash-desktop].png",
-              "shell_call_command_and_output[test bank-shell-desktop].png",
-              "shell_call_raw_arguments_and_json_output[desktop].png",
-              "collapsed_steps_in_open_run_are_compact[desktop].png",
-              "expanded_command_uses_heading_to_collapse[desktop].png",
-              "expanded_shell_output_sticks_while_scrolling[desktop].png"
-            ]
-          }
-        }
-      },
-      "reproduction": "bb run //devinfra/pr_visuals:determinism_bin -- --runs=5 //agentplane/app/frontend:visual_history --bbr=<wrapper> --summary=<output>; wrapper executes bbr --runner_exec_properties=recycle-runner=false followed by the original arguments"
-    },
-    "recommendations": [
-      "Give each desktop/mobile history capture a distinct declared asset path, including `single-tool-collapsed`, `single-tool-expanded`, and `blockers`, so all viewport images remain separately reviewable.",
-      "Normalize the `open_tool_calls_and_output_session_shell_calls_open[desktop]` history scroll position after expansion, wait for render stability, and assert the final target rect or scroll state before capture while preserving existing content assertions.",
-      "Do not infer page-render flakiness from stale-baseline changes, missing artifacts, publisher failures, duplicate-path screenshots, or target-history PASS verdicts without same-source repeated uncached execution evidence."
-    ],
-    "open_boundaries": [
-      "The five-run repeat covers one 103-case visual_history target at one frozen source; it cannot estimate browser-fleet or repository-wide flake rates.",
-      "The proposed scroll normalization was source-triaged but not implemented or tested; the exact browser event timing that selected each final reading anchor remains unisolated.",
-      "Merged-only 100-PR sample cannot estimate fleet-wide flake rate.",
-      "Viewport-capture identity collision is confirmed by source, current galleries, and repeated shard artifacts; the rate of arbitrarily selected desktop/mobile output across every target is not quantified.",
-      "The #13060 disclosure change remains unattributed because its comparison baseline was explicitly stale. #10753 Chart.js and the old GNOME D-Bus ServiceUnknown issue were not re-probed."
-    ],
-    "gallery_image_inspection": {
-      "viewport_identity_collision": {
-        "confidence": "High: source reuses explicit output path across desktop/mobile cases; four current-head galleries show exact same viewport-specific PNG digests exchanged in before/candidate positions.",
-        "source": {
-          "agentplane/app/frontend/test_visual_history.py": "32-57",
-          "agentplane/app/frontend/testing/visual_fixtures.py": "10-12",
-          "util/testing/viewports.py": "22-24",
-          "util/testing/visual_capture.py": "226, 258-274",
-          "util/testing/visual_review.py": "41-49",
-          "devinfra/pr_visuals/publisher.py": "404-446, 501-515"
-        },
-        "mechanism": "The test uses @DESKTOP_AND_MOBILE with pytest IDs desktop/mobile but passes identical explicit checkpoint names. PNG path and manifest path therefore omit viewport identity. Sharded manifests with equal paths merge; review artifact selection is keyed by declared invocation, shared across shards, allowing either shard capture for the same path to surface.",
-        "recommendation": "Include the pytest viewport/case ID in all three same-name captures: the two single-tool checkpoints and blockers. Keep both viewport screenshots declared.",
-        "assets": [
-          {
-            "pr": 13060,
-            "head": "47f59fbba6dc82c24785d00328cb3b1872fc8849",
-            "target": "//agentplane/app/frontend:visual_history",
-            "label": "single-tool-collapsed",
-            "gallery": "https://s3.allegedly.works/pr-visuals/reviews/47f59fbba6dc82c24785d00328cb3b1872fc8849/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html",
-            "baseline": {
-              "sha256": "5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e",
-              "dimensions": "1082x2402",
-              "viewport": "mobile",
-              "url": "https://s3.allegedly.works/pr-visuals/assets/5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e.png",
-              "download": "image-review/p13060-visualhistory-base.png"
-            },
-            "candidate": {
-              "sha256": "8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a",
-              "dimensions": "1200x900",
-              "viewport": "desktop",
-              "url": "https://s3.allegedly.works/pr-visuals/assets/8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a.png",
-              "download": "image-review/p13060-visualhistory-candidate.png"
-            }
-          },
-          {
-            "pr": 13083,
-            "head": "104649352c51b95b651572832c8885988eaa8bd0",
-            "target": "//agentplane/app/frontend:visual_history",
-            "label": "single-tool-collapsed",
-            "gallery": "https://s3.allegedly.works/pr-visuals/reviews/104649352c51b95b651572832c8885988eaa8bd0/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html",
-            "baseline": {
-              "sha256": "8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a",
-              "dimensions": "1200x900",
-              "viewport": "desktop",
-              "url": "https://s3.allegedly.works/pr-visuals/assets/8546199be735b43b4bfe054ef0abbbc5b005dac72492353c7d76c443a35ca62a.png",
-              "download": "image-review/p13083-visualhistory-base.png"
-            },
-            "candidate": {
-              "sha256": "5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e",
-              "dimensions": "1082x2402",
-              "viewport": "mobile",
-              "url": "https://s3.allegedly.works/pr-visuals/assets/5dc92f5aea67795254bf3922eea64a3dc9cd198848b37e92dcc065bb6e9ed32e.png",
-              "download": "image-review/p13083-visualhistory-candidate.png"
-            }
-          },
-          {
-            "pr": 13060,
-            "head": "47f59fbba6dc82c24785d00328cb3b1872fc8849",
-            "target": "//agentplane/app/frontend:visual_history",
-            "label": "single-tool-expanded",
-            "gallery": "https://s3.allegedly.works/pr-visuals/reviews/47f59fbba6dc82c24785d00328cb3b1872fc8849/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html",
-            "baseline": {
-              "sha256": "5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401",
-              "dimensions": "1082x2402",
-              "viewport": "mobile",
-              "url": "https://s3.allegedly.works/pr-visuals/assets/5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401.png",
-              "download": "image-review/p13060-visualhistory-expanded-base.png"
-            },
-            "candidate": {
-              "sha256": "b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878",
-              "dimensions": "1200x900",
-              "viewport": "desktop",
-              "url": "https://s3.allegedly.works/pr-visuals/assets/b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878.png",
-              "download": "image-review/p13060-visualhistory-expanded-candidate.png"
-            }
-          },
-          {
-            "pr": 13083,
-            "head": "104649352c51b95b651572832c8885988eaa8bd0",
-            "target": "//agentplane/app/frontend:visual_history",
-            "label": "single-tool-expanded",
-            "gallery": "https://s3.allegedly.works/pr-visuals/reviews/104649352c51b95b651572832c8885988eaa8bd0/tests/agentplane-app-frontend-visual-history-2fe2555ac1/index.html",
-            "baseline": {
-              "sha256": "b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878",
-              "dimensions": "1200x900",
-              "viewport": "desktop",
-              "url": "https://s3.allegedly.works/pr-visuals/assets/b29ff26fde29686a1b9b47c357e5a17cdb9b2aef260572e4857c6237765bf878.png"
-            },
-            "candidate": {
-              "sha256": "5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401",
-              "dimensions": "1082x2402",
-              "viewport": "mobile",
-              "url": "https://s3.allegedly.works/pr-visuals/assets/5e6681a8ba8386165a696362da477da5b58e34515b547e3133ebc0dfc28cc401.png"
-            }
+            "visual_observation": "Visible change is confined to the bottom sticky Output \u00b7 122 lines row, including red state and a small vertical/visible-height difference.",
+            "disposition": "Unattributed stale-baseline drift; gallery warns baseline a854463d differs from merge base 2b5b2d24. No causal pixel claim or flake conclusion."
           }
         ]
-      },
-      "source_inspected_pairs": [
+      }
+    },
+    "attribution": "not collected",
+    "report_validation": {
+      "html_sha256": "951f32effd53e3ada139a1eec9adffd9d4131fde72589f49c538cd27fe0e9cb8",
+      "invocation_id": "6b95f013-e868-4c78-a639-ae12f6061df2",
+      "target": "//devinfra/ci/reports/x/deep_probe:test_visual",
+      "target_result": "PASSED",
+      "browser_cases": 2,
+      "viewport_css_px": [
+        [1280, 900],
+        [390, 844]
+      ],
+      "checks": [
+        "heading and section readiness",
+        "internal anchor destinations",
+        "no horizontal overflow",
+        "all disclosures open",
+        "desktop and mobile screenshots reviewed"
+      ],
+      "screenshots": [
         {
-          "pr": 13083,
-          "target": "//agentplane/app/frontend:visual_scenes",
-          "label": "session_inventory_dropped",
-          "gallery": "https://s3.allegedly.works/pr-visuals/reviews/104649352c51b95b651572832c8885988eaa8bd0/tests/agentplane-app-frontend-visual-scenes-3f8c995526/index.html",
-          "baseline_sha256": "d684176ab22fd609bd310c44c9e5e042f4ec8af24780aa5730d18db7bc4e2d50",
-          "candidate_sha256": "f9d8d36255ee8ba5f63f86792aef85b725b763118bb005d4205efd3143fde229",
-          "diff_sha256": "7a0db7a548e50ae0e786a14af478877541020e5ddc6ae9188079b74798876b8a",
-          "dimensions": "1200x900",
-          "source_refs": {
-            "agentplane/app/frontend/test_visual_scenes.py": "516-523",
-            "agentplane/app/frontend/threads/thread_list.tsx": "217-220",
-            "agentplane/app/frontend/threads/thread_status.ts": "22-27"
-          },
-          "visual_observation": "Selected sidebar item/background remains; thread and sandbox status glyphs shift from live colors to gray.",
-          "disposition": "Expected stale-state UI: test injects inventory stream drop, ages outage, waits for stale connection; status derives inactive/unknown when the combined inventory is stale."
+          "name": "devinfra_ci_reports_x_deep_probe_test_visual__overview-1280.png",
+          "sha256": "72c7af5b1b8f179688c18c315eda6888900bcceff933e791a72985f9afe06700",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/72c7af5b1b8f179688c18c315eda6888900bcceff933e791a72985f9afe06700/140866",
+          "visually_reviewed": true
         },
         {
-          "pr": 13060,
-          "target": "//agentplane/app/frontend:visual_disclosures",
-          "label": "disclosure_control_reaches_card_edges[dark-expanded-focus-mobile]",
-          "gallery": "https://s3.allegedly.works/pr-visuals/reviews/47f59fbba6dc82c24785d00328cb3b1872fc8849/tests/agentplane-app-frontend-visual-disclosures-57c1311057/index.html",
-          "baseline_sha256": "cc577988f4165f535ff02e51345836f7dbdc40668c62f44c4c8aaad43c15e788",
-          "candidate_sha256": "175ec2ca892a56a95546cf890ba224fa239ed6ee8af764ada46d18b9e448ec18",
-          "diff_sha256": "da88c81d26660fb3b314cd05f229a88ec5e61887cf0914a704083a476a34ec50",
-          "dimensions": "1082x2402",
-          "downloaded_files": [
-            "image-review/p13060-base.png",
-            "image-review/p13060-candidate.png",
-            "image-review/p13060-diff.png"
-          ],
-          "visual_observation": "Visible change is confined to the bottom sticky Output \u00b7 122 lines row, including red state and a small vertical/visible-height difference.",
-          "disposition": "Unattributed stale-baseline drift; gallery warns baseline a854463d differs from merge base 2b5b2d24. No causal pixel claim or flake conclusion."
+          "name": "devinfra_ci_reports_x_deep_probe_test_visual__overview-390.png",
+          "sha256": "d628a6eaf4ccd12eca12e4a8ab978bc63db42ab01f6d72e0776f1b600a5a34f8",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/d628a6eaf4ccd12eca12e4a8ab978bc63db42ab01f6d72e0776f1b600a5a34f8/74045",
+          "visually_reviewed": true
+        },
+        {
+          "name": "devinfra_ci_reports_x_deep_probe_test_visual__recommendations-1280.png",
+          "sha256": "72c7af5b1b8f179688c18c315eda6888900bcceff933e791a72985f9afe06700",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/72c7af5b1b8f179688c18c315eda6888900bcceff933e791a72985f9afe06700/140866",
+          "visually_reviewed": true
+        },
+        {
+          "name": "devinfra_ci_reports_x_deep_probe_test_visual__recommendations-390.png",
+          "sha256": "bef1475d8e76633e050799ea0265df842ea8836e38cf7379b9dfe5e4f933326e",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/bef1475d8e76633e050799ea0265df842ea8836e38cf7379b9dfe5e4f933326e/70821",
+          "visually_reviewed": true
         }
-      ]
-    }
-  },
-  "attribution": "not collected",
-  "report_validation": {
-    "html_sha256": "951f32effd53e3ada139a1eec9adffd9d4131fde72589f49c538cd27fe0e9cb8",
-    "invocation_id": "6b95f013-e868-4c78-a639-ae12f6061df2",
-    "target": "//devinfra/ci/reports/x/deep_probe:test_visual",
-    "target_result": "PASSED",
-    "browser_cases": 2,
-    "viewport_css_px": [
-      [
-        1280,
-        900
       ],
-      [
-        390,
-        844
-      ]
-    ],
-    "checks": [
-      "heading and section readiness",
-      "internal anchor destinations",
-      "no horizontal overflow",
-      "all disclosures open",
-      "desktop and mobile screenshots reviewed"
-    ],
-    "screenshots": [
-      {
-        "name": "devinfra_ci_reports_x_deep_probe_test_visual__overview-1280.png",
-        "sha256": "72c7af5b1b8f179688c18c315eda6888900bcceff933e791a72985f9afe06700",
-        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/72c7af5b1b8f179688c18c315eda6888900bcceff933e791a72985f9afe06700/140866",
-        "visually_reviewed": true
-      },
-      {
-        "name": "devinfra_ci_reports_x_deep_probe_test_visual__overview-390.png",
-        "sha256": "d628a6eaf4ccd12eca12e4a8ab978bc63db42ab01f6d72e0776f1b600a5a34f8",
-        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/d628a6eaf4ccd12eca12e4a8ab978bc63db42ab01f6d72e0776f1b600a5a34f8/74045",
-        "visually_reviewed": true
-      },
-      {
-        "name": "devinfra_ci_reports_x_deep_probe_test_visual__recommendations-1280.png",
-        "sha256": "72c7af5b1b8f179688c18c315eda6888900bcceff933e791a72985f9afe06700",
-        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/72c7af5b1b8f179688c18c315eda6888900bcceff933e791a72985f9afe06700/140866",
-        "visually_reviewed": true
-      },
-      {
-        "name": "devinfra_ci_reports_x_deep_probe_test_visual__recommendations-390.png",
-        "sha256": "bef1475d8e76633e050799ea0265df842ea8836e38cf7379b9dfe5e4f933326e",
-        "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/bef1475d8e76633e050799ea0265df842ea8836e38cf7379b9dfe5e4f933326e/70821",
-        "visually_reviewed": true
-      }
-    ],
-    "invocation_scope_note": "This target passed. The shared invocation also contains a prior reliability-report mobile overflow failure, corrected and verified in the separate reliability invocation."
+      "invocation_scope_note": "This target passed. The shared invocation also contains a prior reliability-report mobile overflow failure, corrected and verified in the separate reliability invocation."
+    }
   }
 }
