@@ -166,10 +166,10 @@ def _active_worktree(repo: Path) -> Path | None:
     return Path(toplevel) if toplevel else None
 
 
-def _gather_prs(repo: Path, *, no_prs: bool, extra_branches: Set[str] = frozenset()) -> dict[str, PrInfo]:
+async def _gather_prs(repo: Path, *, no_prs: bool, extra_branches: Set[str] = frozenset()) -> dict[str, PrInfo]:
     if no_prs:
         return {}
-    return github_prs.pr_states(repo, workspace_scan.pr_branch_candidates(repo) | extra_branches)
+    return await github_prs.pr_states(repo, workspace_scan.pr_branch_candidates(repo) | extra_branches)
 
 
 @dataclass(slots=True)
@@ -485,7 +485,7 @@ async def _apply_foreign_clone_deletions(
 async def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool, workers: int) -> None:
     progress = _ProgressReporter()
     try:
-        prs = _gather_prs(repo, no_prs=no_prs)
+        prs = await _gather_prs(repo, no_prs=no_prs)
         with progress:
             scan = _scan(repo, prs=prs, output_user_root=None, session_bases=(), progress=progress, workers=workers)
     except GitError as error:
@@ -513,7 +513,7 @@ async def run_bases(
             bases = list(
                 output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases, progress=progress)
             )
-        prs = {} if no_prs else github_prs.pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
+        prs = {} if no_prs else await github_prs.pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
         with _ProgressReporter() as progress:
             bases = workspace_scan.annotate_bases(
                 repo,
@@ -587,7 +587,7 @@ async def run_all(
     try:
         foreign_roots = workspace_scan.foreign_clone_roots(repo, output_user_root, session_bases=session_bases)
         extra_branches = workspace_scan.foreign_clone_branch_candidates(foreign_roots)
-        prs = _gather_prs(repo, no_prs=no_prs, extra_branches=extra_branches)
+        prs = await _gather_prs(repo, no_prs=no_prs, extra_branches=extra_branches)
         with progress:
             scan = _scan(
                 repo,
