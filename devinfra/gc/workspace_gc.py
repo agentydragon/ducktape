@@ -27,6 +27,7 @@ itself is network-free.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import logging
@@ -37,7 +38,7 @@ import subprocess
 import sys
 import threading
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence, Set
+from collections.abc import Callable, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
@@ -395,16 +396,34 @@ def _scan(
     )
 
 
-def _apply_worktree_removals(repo: Path, worktrees: list[Classification]) -> bool:
+def _relative_to(path: Path, start: Path) -> str:
+    return os.path.relpath(path, start)
+
+
+async def _run_bounded[T, R](items: Sequence[T], function: Callable[[T], R], *, workers: int) -> list[R]:
+    """Run blocking `function` over `items` on worker threads, `workers` at a time; results are in
+    `items` order. `function` must be independent per item."""
+    semaphore = asyncio.Semaphore(workers)
+
+    async def run_one(item: T) -> R:
+        async with semaphore:
+            return await asyncio.to_thread(function, item)
+
+    return list(await asyncio.gather(*(run_one(item) for item in items)))
+
+
+async def _apply_worktree_removals(repo: Path, worktrees: list[Classification], *, workers: int) -> bool:
     """Remove every prunable worktree; returns whether all of them succeeded."""
     candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
     if not candidates:
         return True
     logger.info("Removing %d worktrees", len(candidates))
-    results = []
-    for index, item in enumerate(candidates, start=1):
-        logger.info("Removing worktree %d/%d %s", index, len(candidates), item.worktree.path)
-        results.append(worktree_gc.remove_worktree(repo, item.worktree.path))
+
+    def remove_one(item: PrunableWorktree) -> worktree_gc.RemovalResult:
+        logger.info("Removing worktree %s", item.worktree.path)
+        return worktree_gc.remove_worktree(repo, item.worktree.path)
+
+    results = await _run_bounded(candidates, remove_one, workers=workers)
     for result in results:
         if isinstance(result, RemovedWorktree):
             print(f"REMOVED worktree {_short(result.path)}")
@@ -443,13 +462,15 @@ class _BaseDeletions:
     deleted: frozenset[Path]
 
 
-def _apply_base_deletions(candidates: Sequence[PrunableBase], *, output_user_root: Path) -> _BaseDeletions:
+async def _apply_base_deletions(
+    candidates: Sequence[PrunableBase], *, output_user_root: Path, workers: int
+) -> _BaseDeletions:
     """Delete the given prunable output bases; `delete_prunable_bases` revalidates each one under
     its Bazel lock, so the caller's scan needs no refresh beyond what it already knows."""
     if not candidates:
         return _BaseDeletions(ok=True, deleted=frozenset())
     free_before = shutil.disk_usage(output_user_root).free
-    results = output_base_gc.delete_prunable_bases(candidates)
+    results = await _run_bounded(candidates, output_base_gc.delete_prunable_base, workers=workers)
     free_change = shutil.disk_usage(output_user_root).free - free_before
     for result in results:
         if isinstance(result, DeletedBase):
@@ -472,8 +493,13 @@ def _apply_base_deletions(candidates: Sequence[PrunableBase], *, output_user_roo
     )
 
 
-def _apply_repo_cache_deletions(
-    candidates: Sequence[PrunableEntry], *, output_user_root: Path, session_bases: Sequence[Path], verbose: bool
+async def _apply_repo_cache_deletions(
+    candidates: Sequence[PrunableEntry],
+    *,
+    output_user_root: Path,
+    session_bases: Sequence[Path],
+    verbose: bool,
+    workers: int,
 ) -> bool:
     """Delete the given unreferenced repo-cache entries; returns whether all of them succeeded.
 
@@ -484,13 +510,21 @@ def _apply_repo_cache_deletions(
         return True
     contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
     free_before = shutil.disk_usage(contents).free
-    results = repo_contents_cache_gc.delete_prunable_entries(
-        candidates, contents=contents, output_user_root=output_user_root, session_bases=session_bases
+    trashed = await asyncio.to_thread(
+        repo_contents_cache_gc.trash_prunable_entries,
+        candidates,
+        contents=contents,
+        output_user_root=output_user_root,
+        session_bases=session_bases,
     )
+    results = [
+        *trashed.results,
+        *await _run_bounded(trashed.trashed, lambda item: repo_contents_cache_gc.empty_trash(*item), workers=workers),
+    ]
     free_change = shutil.disk_usage(contents).free - free_before
     skip_reasons: Counter[str] = Counter()
     for result in results:
-        name = os.path.relpath(result.path, contents)
+        name = _relative_to(result.path, contents)
         if isinstance(result, DeletedEntry):
             if verbose:
                 print(f"DELETED repo-cache entry {name}")
@@ -514,7 +548,7 @@ def _apply_repo_cache_deletions(
     return skipped == 0 and failed == 0
 
 
-def _apply_foreign_clone_deletions(
+async def _apply_foreign_clone_deletions(
     repo: Path, output_user_root: Path, session_bases: Sequence[Path], prs: dict[str, PrInfo], workers: int
 ) -> bool:
     """Remove every prunable foreign clone; returns whether all of them succeeded.
@@ -543,7 +577,7 @@ def _apply_foreign_clone_deletions(
     if not candidates:
         return True
     logger.info("Removing %d foreign clones", len(candidates))
-    results = [foreign_clone_gc.prune_foreign_clone(clone) for clone in candidates]
+    results = await _run_bounded(candidates, foreign_clone_gc.prune_foreign_clone, workers=workers)
     for result in results:
         if isinstance(result, PrunedForeignClone):
             print(f"REMOVED foreign clone {_short(result.root)}")
@@ -555,7 +589,7 @@ def _apply_foreign_clone_deletions(
     return failed == 0
 
 
-def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool, workers: int) -> None:
+async def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool, workers: int) -> None:
     progress = _ProgressReporter()
     try:
         prs = _gather_prs(repo, no_prs=no_prs)
@@ -573,11 +607,11 @@ def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool, work
         rescanned = _scan(
             repo, prs=prs, output_user_root=None, session_bases=(), progress=progress, workers=workers
         ).worktrees
-    if not _apply_worktree_removals(repo, rescanned):
+    if not await _apply_worktree_removals(repo, rescanned, workers=workers):
         raise SystemExit(1)
 
 
-def run_bases(
+async def run_bases(
     repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, delete: bool, workers: int
 ) -> None:
     # Inspect the bases first: that filesystem pass alone decides every PRUNE/KEEP verdict.
@@ -610,11 +644,13 @@ def run_bases(
             print("Dry run only; pass --delete to remove the prunable bases.")
         return
     candidates = [item for item in bases if isinstance(item, PrunableBase)]
-    if not _apply_base_deletions(candidates, output_user_root=output_user_root).ok:
+    if not (await _apply_base_deletions(candidates, output_user_root=output_user_root, workers=workers)).ok:
         raise SystemExit(1)
 
 
-def run_repo_cache(*, output_user_root: Path, show_all: bool, sizes: bool, delete: bool, verbose: bool) -> None:
+async def run_repo_cache(
+    *, output_user_root: Path, show_all: bool, sizes: bool, delete: bool, verbose: bool, workers: int
+) -> None:
     # Entries are classified against every base's PRUNE/KEEP/REVIEW verdict, which the
     # filesystem alone decides; no worktree, branch, or PR state can change an entry's row.
     contents = repo_contents_cache_gc.repo_contents_cache(output_user_root)
@@ -638,13 +674,13 @@ def run_repo_cache(*, output_user_root: Path, show_all: bool, sizes: bool, delet
             print("Dry run only; pass --delete to remove the unreferenced entries.")
         return
     candidates = [item for item in entries if isinstance(item, PrunableEntry)]
-    if not _apply_repo_cache_deletions(
-        candidates, output_user_root=output_user_root, session_bases=session_bases, verbose=verbose
+    if not await _apply_repo_cache_deletions(
+        candidates, output_user_root=output_user_root, session_bases=session_bases, verbose=verbose, workers=workers
     ):
         raise SystemExit(1)
 
 
-def run_all(
+async def run_all(
     repo: Path,
     *,
     output_user_root: Path,
@@ -733,7 +769,7 @@ def run_all(
     # are re-classified because the removals change who holds them. Every step runs regardless
     # of an earlier one's failures — each domain is independent — and the combined outcome
     # decides the process exit status once, at the end.
-    worktrees_ok = _apply_worktree_removals(repo, scan.worktrees)
+    worktrees_ok = await _apply_worktree_removals(repo, scan.worktrees, workers=workers)
     branches_ok = _apply_branch_deletions(repo, rescan_branches())
     # Bases are rescanned because removing worktrees orphans bases the first scan kept. Cache
     # entries need no rescan: one is newly unreferenced exactly when every base linking to it
@@ -743,17 +779,18 @@ def run_all(
         for item in output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
         if isinstance(item, PrunableBase)
     ]
-    base_deletions = _apply_base_deletions(base_candidates, output_user_root=output_user_root)
-    repo_cache_ok = _apply_repo_cache_deletions(
+    base_deletions = await _apply_base_deletions(base_candidates, output_user_root=output_user_root, workers=workers)
+    repo_cache_ok = await _apply_repo_cache_deletions(
         repo_contents_cache_gc.unreferenced_after_deleting(entries, base_deletions.deleted),
         output_user_root=output_user_root,
         session_bases=session_bases,
         verbose=verbose,
+        workers=workers,
     )
     bases_ok = base_deletions.ok
     foreign_ok = True
     if delete_foreign_clones:
-        foreign_ok = _apply_foreign_clone_deletions(repo, output_user_root, session_bases, prs, workers)
+        foreign_ok = await _apply_foreign_clone_deletions(repo, output_user_root, session_bases, prs, workers)
     elif foreign_prunable:
         print("Foreign clones were left alone; pass --delete-foreign-clones to remove them too.")
     if not (worktrees_ok and branches_ok and bases_ok and repo_cache_ok and foreign_ok):
@@ -773,7 +810,7 @@ _WorkersOption = Annotated[
     typer.Option(
         "--workers",
         min=1,
-        help="worker threads for worktree/branch/foreign-clone classification (the right count depends on the machine and disk)",
+        help="worker threads for worktree/branch/foreign-clone classification and for removing worktrees, output bases, repo-cache entries and foreign clones (the right count depends on the machine and disk)",
     ),
 ]
 
@@ -808,16 +845,18 @@ def _all_command(
 ) -> None:
     """Classify worktrees, branches, and output bases together (the default command)."""
     _configure_logging(verbose=verbose)
-    run_all(
-        repo,
-        verbose=verbose,
-        output_user_root=output_user_root,
-        show_all=show_all,
-        no_prs=no_prs,
-        sizes=sizes,
-        prune=prune,
-        delete_foreign_clones=delete_foreign_clones,
-        workers=workers,
+    asyncio.run(
+        run_all(
+            repo,
+            verbose=verbose,
+            output_user_root=output_user_root,
+            show_all=show_all,
+            no_prs=no_prs,
+            sizes=sizes,
+            prune=prune,
+            delete_foreign_clones=delete_foreign_clones,
+            workers=workers,
+        )
     )
 
 
@@ -832,7 +871,7 @@ def _worktrees_command(
 ) -> None:
     """The worktree slice of the joint scan."""
     _configure_logging(verbose=verbose)
-    run_worktrees(repo, show_all=show_all, no_prs=no_prs, prune=prune, workers=workers)
+    asyncio.run(run_worktrees(repo, show_all=show_all, no_prs=no_prs, prune=prune, workers=workers))
 
 
 @app.command("bazel-bases")
@@ -848,14 +887,16 @@ def _bases_command(
 ) -> None:
     """The Bazel output-base slice of the joint scan."""
     _configure_logging(verbose=verbose)
-    run_bases(
-        repo,
-        output_user_root=output_user_root,
-        show_all=show_all,
-        no_prs=no_prs,
-        sizes=sizes,
-        delete=delete,
-        workers=workers,
+    asyncio.run(
+        run_bases(
+            repo,
+            output_user_root=output_user_root,
+            show_all=show_all,
+            no_prs=no_prs,
+            sizes=sizes,
+            delete=delete,
+            workers=workers,
+        )
     )
 
 
@@ -867,13 +908,23 @@ def _repo_cache_command(
         bool, typer.Option("--sizes", help="calculate entry sizes with du (slow: thousands of entries)")
     ] = False,
     verbose: _VerboseOption = False,
+    workers: _WorkersOption = workspace_scan.DEFAULT_CLASSIFY_WORKERS,
     delete: Annotated[
         bool, typer.Option("--delete", help="revalidate under Bazel's cache lock and remove unreferenced entries")
     ] = False,
 ) -> None:
     """The repo-contents-cache slice of the joint scan: entries no output base links to."""
     _configure_logging(verbose=verbose)
-    run_repo_cache(output_user_root=output_user_root, show_all=show_all, sizes=sizes, delete=delete, verbose=verbose)
+    asyncio.run(
+        run_repo_cache(
+            output_user_root=output_user_root,
+            show_all=show_all,
+            sizes=sizes,
+            delete=delete,
+            verbose=verbose,
+            workers=workers,
+        )
+    )
 
 
 _COMMANDS = {"all", "worktrees", "bazel-bases", "repo-cache"}
