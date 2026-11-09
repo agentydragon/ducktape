@@ -136,8 +136,8 @@ P1 scheduling and the remaining caller-privilege delegation work proceed in para
 CI product milestone needs both scheduled wake and Session creation/cooperation.
 
 **Remaining selected work, status checked 2026-11-02 UTC.** Landed Runtime lifecycle contracts are
-in the [Runtime specification](../env/runtime/SPEC.md); the native output-loss diagnosis and repair
-are in the [incident record](../debug/2026_11_01_native_command_output_loss.md). The
+in the [Runtime specification](../env/runtime/SPEC.md); the native output-loss regression is pinned by
+[`test_code_mode_output.py`](../native/codex/test_code_mode_output.py). The
 [delegation plan](session_delegation_workflows.md) records implemented tools and scripted external
 MCP/parent CLI acceptance. The [managed-guidance rollout record](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
 discharges that deployment hold. Staging tool exposure is active. Natural-agent usability remains
