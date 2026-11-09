@@ -66,6 +66,11 @@ _DRBD_ALLOY_CONFIG = (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/piraeus-drbd-metr
 _DRBD_ALLOY_CONFIG_MAP = "piraeus-drbd-alloy"
 _DRBD_ALLOY_IMAGE = "docker.io/grafana/alloy:v1.21.1"
 _DRBD_ALLOY_LABELS = {"app.kubernetes.io/name": "piraeus-drbd-metrics"}
+# Online discard hands blocks freed by deletes back to the overcommitted LVM-thin pools.
+# The CSI driver copies mountOpts into each volume's context at creation, so existing PVs
+# need spec.mountOptions instead. StorageClass parameters are immutable: changing this
+# means deleting the StorageClasses before the HelmRelease upgrade.
+_DISCARD_MOUNT_OPTS = {"linstor.csi.linbit.com/mountOpts": "discard"}
 # Reactor is loopback-only while the chart's satellite PodMonitor targets pod IP. This
 # release is scoped to piraeus-datastore; chart output omits metadata.namespace, so
 # the post-render target selects this one named monitor in this release.
@@ -633,6 +638,7 @@ def cluster_chart(app: App) -> Chart:
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
                     "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
                         "linstor.csi.linbit.com/storagePool": "ssd",
                         "linstor.csi.linbit.com/placementCount": "1",
                         "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
@@ -644,6 +650,7 @@ def cluster_chart(app: App) -> Chart:
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
                     "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
                         "linstor.csi.linbit.com/storagePool": "hdd",
                         "linstor.csi.linbit.com/placementCount": "1",
                         "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
@@ -664,6 +671,7 @@ def cluster_chart(app: App) -> Chart:
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
                     "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
                         "linstor.csi.linbit.com/storagePool": "ssd",
                         "linstor.csi.linbit.com/placementCount": "2",
                         "linstor.csi.linbit.com/replicasOnSame": (
@@ -686,6 +694,7 @@ def cluster_chart(app: App) -> Chart:
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
                     "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
                         "linstor.csi.linbit.com/storagePool": "hdd",
                         "linstor.csi.linbit.com/placementCount": "2",
                         "linstor.csi.linbit.com/replicasOnSame": (
