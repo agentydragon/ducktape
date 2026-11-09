@@ -1000,6 +1000,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: buildbuddy-kvm-worker
+        app.kubernetes.io/part-of: buildbuddy-kvm-workers
         kubevirt.io/domain: buildbuddy-kvm-worker
     spec:
       affinity:
@@ -1193,7 +1194,14 @@ spec:
     matchLabels:
       kubevirt.io/domain: buildbuddy-kvm-worker
   ingress:
-    - {}
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy-node
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -1224,6 +1232,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: buildbuddy-kvm-worker-2
+        app.kubernetes.io/part-of: buildbuddy-kvm-workers
         kubevirt.io/domain: buildbuddy-kvm-worker-2
     spec:
       affinity:
@@ -1417,4 +1426,59 @@ spec:
     matchLabels:
       kubevirt.io/domain: buildbuddy-kvm-worker-2
   ingress:
-    - {}
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy-node
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/part-of: buildbuddy-kvm-workers
+  name: buildbuddy-kvm-worker-metrics
+  namespace: buildbuddy-executor
+spec:
+  ports:
+    - name: metrics
+      port: 9090
+      protocol: TCP
+      targetPort: 9090
+  selector:
+    app.kubernetes.io/part-of: buildbuddy-kvm-workers
+  type: ClusterIP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: buildbuddy-kvm-workers
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  groups:
+    - name: buildbuddy-kvm-worker
+      rules:
+        - alert: BuildBuddyKvmPoolEmpty
+          annotations:
+            description: No BuildBuddy KVM worker has been scrapable for 5 minutes, so tests targeting pool kvm-vm fail immediately instead of queueing.
+            summary: No KVM worker is reachable
+          expr: absent(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics"} == 1)
+          for: 5m
+          labels:
+            severity: critical

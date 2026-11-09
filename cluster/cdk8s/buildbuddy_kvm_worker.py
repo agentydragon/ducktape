@@ -25,6 +25,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
@@ -33,13 +34,21 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.oci_cache import zot
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy, isolate_ingress
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 
 NAME = "buildbuddy-kvm-worker"
 # Each worker registers its own executor in the pool and runs one action at a time. The first keeps the
 # original name so its VM is not recreated.
 WORKER_NAMES = (NAME, f"{NAME}-2")
 NAMESPACE = "buildbuddy-executor"
+# The executor serves Prometheus metrics here (BuildBuddy's default monitoring port), on the guest.
+_METRICS_PORT = 9090
+_METRICS_PORT_NAME = "metrics"
+_METRICS_SERVICE = f"{NAME}-metrics"
+# Selects every worker's pods for one Service, whatever their names.
+_WORKER_LABELS = {"app.kubernetes.io/part-of": NAME + "s"}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
 _IMAGE = "quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4"
@@ -219,6 +228,7 @@ def chart(app: App) -> Chart:
                 ),
             },
             autoattach_graphics_device=False,
+            pod_labels=_WORKER_LABELS,
             annotations={
                 "description": (
                     "Static trusted-code BuildBuddy worker. Privileged Docker test actions run inside the guest; "
@@ -231,18 +241,72 @@ def chart(app: App) -> Chart:
             f"{name}-network",
             metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
             endpoint_selector=domain_labels(name),
-            ingress=isolate_ingress(),
+            ingress=[
+                IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT])
+            ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_fqdns(*_HTTPS_HOSTS),
                 EgressRule.to_endpoints(cilium.endpoint_labels(zot.HTTP.pods.namespace, "zot"), zot.HTTP.pod_port),
             ],
         )
+    k8s.KubeService(
+        chart,
+        "metrics-service",
+        metadata=k8s.ObjectMeta(name=_METRICS_SERVICE, namespace=NAMESPACE, labels=_WORKER_LABELS),
+        spec=k8s.ServiceSpec(
+            selector=_WORKER_LABELS,
+            ports=[
+                k8s.ServicePort(
+                    name=_METRICS_PORT_NAME,
+                    port=_METRICS_PORT,
+                    target_port=k8s.IntOrString.from_number(_METRICS_PORT),
+                    protocol="TCP",
+                )
+            ],
+            type="ClusterIP",
+        ),
+    )
+    ServiceMonitor(
+        chart,
+        "service-monitor",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
+        endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME)],
+    )
+    target = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}"'
+    PrometheusRule(
+        chart,
+        "prometheus-rule",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        groups=[
+            group(
+                NAME,
+                [
+                    Rule.alert(
+                        "BuildBuddyKvmPoolEmpty",
+                        f"absent(up{{{target}}} == 1)",
+                        for_="5m",
+                        labels={"severity": "critical"},
+                        summary="No KVM worker is reachable",
+                        description=(
+                            "No BuildBuddy KVM worker has been scrapable for 5 minutes, so tests targeting pool "
+                            "kvm-vm fail immediately instead of queueing."
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
     return chart
 
 
 def buildbuddy_kvm_worker(
-    chart: Chart, directory: RenderedDirectory, executor: Kustomization, kubevirt: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    executor: Kustomization,
+    kubevirt: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -250,5 +314,5 @@ def buildbuddy_kvm_worker(
         directory,
         timeout="15m",
         suspend=False,
-        depends_on=flux_kustomization_depends_on_many(executor, kubevirt),
+        depends_on=flux_kustomization_depends_on_many(executor, kubevirt, monitoring_crds),
     )
