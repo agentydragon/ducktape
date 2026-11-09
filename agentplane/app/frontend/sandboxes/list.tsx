@@ -27,12 +27,8 @@ import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { displayableError } from "../client";
-import {
-  getSandboxForm,
-  listSandboxPresets,
-  type NewSandboxDefaults,
-  type SandboxPresetView,
-} from "../app_config_client";
+import { getSandboxForm, listSandboxPresets } from "../app_config_client";
+import type { NewSandboxDefaults, SandboxPreset } from "../../app_service_pb";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
 import { useRequiredSandboxesLive } from "./live";
@@ -67,6 +63,15 @@ const EMPTY_FORM: NewSandboxForm = {
   bootstrap: "",
   wake_on_send: false,
 };
+/** The form fields the app's starting wake and idle suspension values fill; a preset leaves them alone. */
+type DefaultFields = Pick<NewSandboxForm, "wake_on_send" | "idle_suspend_after_seconds">;
+function defaultFields(defaults: NewSandboxDefaults): DefaultFields {
+  return {
+    wake_on_send: defaults.wakeOnSend,
+    idle_suspend_after_seconds:
+      defaults.idleSuspendAfterSeconds === undefined ? null : Number(defaults.idleSuspendAfterSeconds),
+  };
+}
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
@@ -85,12 +90,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandboxForm>(EMPTY_FORM);
-  // The app's starting wake and idle suspension values; a preset leaves them alone.
-  const [defaults, setDefaults] = useState<NewSandboxDefaults>({
+  const [defaults, setDefaults] = useState<DefaultFields>({
     wake_on_send: false,
     idle_suspend_after_seconds: null,
   });
-  const [presets, setPresets] = useState<SandboxPresetView[]>([]);
+  const [presets, setPresets] = useState<SandboxPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [templates, setTemplates] = useState<string[]>([]);
   // The PolicySets a new Sandbox may name; a preset pre-fills the pick and the operator edits it.
@@ -109,7 +113,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const nameError = sandboxNameError(form.name || placeholderName);
 
   /** Fill the Sandbox creation fields from a preset; session defaults remain app configuration. */
-  function pickPreset(preset: SandboxPresetView | null): void {
+  function pickPreset(preset: SandboxPreset | null): void {
     setSelectedPreset(preset?.name ?? null);
     if (!preset) {
       setForm((current) => ({
@@ -124,8 +128,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     setForm((current) => ({
       ...current,
       template: preset.template,
-      policy_sets: preset.policy_sets,
-      inbox_tags: preset.inbox_tags,
+      policy_sets: preset.policySets,
+      inbox_tags: preset.inboxTags,
       bootstrap: preset.bootstrap,
     }));
   }
@@ -141,9 +145,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     void (async () => {
       try {
         const sandboxForm = await getSandboxForm();
-        setPolicySets(sandboxForm.policy_sets);
-        setDefaults(sandboxForm.new_sandbox_defaults);
-        setForm((current) => ({ ...current, ...sandboxForm.new_sandbox_defaults }));
+        const fields = defaultFields(sandboxForm.newSandboxDefaults);
+        setPolicySets(sandboxForm.policySets);
+        setDefaults(fields);
+        setForm((current) => ({ ...current, ...fields }));
       } catch (failure) {
         setError(displayableError(failure));
       }

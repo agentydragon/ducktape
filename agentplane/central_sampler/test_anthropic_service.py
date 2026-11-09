@@ -3,7 +3,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -18,7 +18,15 @@ from agentplane.central_sampler.settings import (
     ConnectionConfig,
     ModelConfig,
 )
-from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
+from agentplane.central_sampler.testing import (
+    METADATA,
+    SESSION_ID,
+    Endpoint,
+    create_request,
+    service,
+    settings,
+    turn_completed,
+)
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.testing.model_endpoint import SseEvent
@@ -27,7 +35,6 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
 
 ROUTE = "anthropic-native-test"
-SESSION_ID = "079bd706-77b3-4b71-8c7e-605a7e19324c"
 TURN_ID = "anthropic-truncated"
 TIMEOUT_SECONDS = 40
 
@@ -89,19 +96,6 @@ def end_turn_events(message_id: str) -> tuple[SseEvent, ...]:
     )
 
 
-async def completed(stub: Any, turn_id: str) -> event_pb2.TurnCompleted:
-    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True), metadata=METADATA)
-    try:
-        async with asyncio.timeout(TIMEOUT_SECONDS):
-            async for frame in stream:
-                event = frame.entry.event
-                if event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
-                    return cast(event_pb2.TurnCompleted, event.turn_completed)
-    finally:
-        stream.cancel()
-    raise AssertionError("event stream ended before the turn completed")
-
-
 async def wait_until_blocked(stub: Any) -> None:
     async with asyncio.timeout(10):
         while True:
@@ -140,7 +134,9 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                     assert exchange.request.body["stream"] is True
                     assert exchange.headers.get("x-api-key") == "fixture-anthropic-key"
                     await exchange.send(*end_turn_events("msg_seed"))
-                assert (await completed(stub, "anthropic-seed")).status == event_pb2.TURN_STATUS_COMPLETED
+                assert (
+                    await turn_completed(stub, SESSION_ID, "anthropic-seed", timeout_s=TIMEOUT_SECONDS)
+                ).status == event_pb2.TURN_STATUS_COMPLETED
                 archive_before = await store.archive_items(SESSION_ID)
                 active_before = await store.active_context(SESSION_ID)
                 await stub.Compact(
@@ -212,7 +208,7 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
                         anthropic_event("message_delta", delta={"stop_reason": "tool_use"}, usage={"output_tokens": 4}),
                     )
                     await exchange.close()
-                terminal = await completed(stub, TURN_ID)
+                terminal = await turn_completed(stub, SESSION_ID, TURN_ID, timeout_s=TIMEOUT_SECONDS)
                 assert terminal.status == event_pb2.TURN_STATUS_FAILED
                 assert (await store.get_session(SESSION_ID)).blocked
                 intents = await store.intents()

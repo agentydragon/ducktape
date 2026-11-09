@@ -1,8 +1,12 @@
 //! Audited `host_behavior.reentry_free_operations` stay opt-in and shape-specific.
 
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::reflective_provider::{
+    REFLECT_CHUNKS, REFLECT_FILES, unknown_receiver_witness,
+};
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, json_execution_rows, json_has_unknown_call_target, json_node_declaring,
+};
 use debundle_e2e_support::*;
-use serde_json::Value;
 
 fn policy(operations: &[ReentryFreeOperation]) -> HostBehavior {
     HostBehavior {
@@ -25,9 +29,6 @@ fn split<'a>(source: &'a str, binding: &'static str) -> FixtureOpts<'a> {
     )
 }
 
-const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
-const REFLECT_CHUNKS: &[(&str, &str)] = &[("static/reflect", REFLECT_SOURCE)];
-const REFLECT_FILES: &[(&str, &str)] = &[("static/reflect.js", REFLECT_SOURCE)];
 const PROMISE_REENTRY_SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst gate = Promise.resolve();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst laterValue = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(Boolean(gate), laterValue.name, LaterError.name, globalThis.unrelatedKey);\nexport { gate, factory, LaterError, reflect };\n";
 
 fn promise_input(source: &str, binding: &str) -> NativeOperationInputContract {
@@ -61,80 +62,6 @@ fn promise_reentry_split() -> FixtureOpts<'static> {
     )
     .with_extra_chunks(REFLECT_CHUNKS)
     .with_extra_files(REFLECT_FILES)
-}
-
-fn native_input_uses(graph: &Value) -> Vec<Value> {
-    graph["nodes"]
-        .as_array()
-        .expect("dependency graph nodes")
-        .iter()
-        .flat_map(|node| {
-            node["synchronous_execution"]["native_operation_input_uses"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .cloned()
-        })
-        .collect()
-}
-
-fn host_contract_uses(graph: &Value) -> Vec<Value> {
-    graph["nodes"]
-        .as_array()
-        .expect("dependency graph nodes")
-        .iter()
-        .flat_map(|node| {
-            node["synchronous_execution"]["author_host_contract_uses"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .cloned()
-        })
-        .collect()
-}
-
-fn unknown_receiver_witness(program_graph: &Value) -> &Value {
-    program_graph["native_integrity_witnesses"]
-        .as_array()
-        .expect("native mutation witnesses")
-        .iter()
-        .find(|witness| {
-            witness["operation"] == "mutation_call"
-                && witness["receiver_roots"]
-                    .as_array()
-                    .is_some_and(|roots| roots.iter().any(|root| root == "unknown_global_value"))
-                && witness["source_location"]["source_path"] == "static/reflect.js"
-        })
-        .unwrap_or_else(|| {
-            panic!("reflective helper's unknown receiver is absent: {program_graph}")
-        })
-}
-
-fn node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
-    graph["nodes"]
-        .as_array()
-        .expect("dependency graph nodes")
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .is_some_and(|bindings| {
-                    bindings
-                        .iter()
-                        .any(|candidate| candidate["binding"] == binding)
-                })
-        })
-        .unwrap_or_else(|| panic!("no source node for {binding}: {graph}"))
-}
-
-fn has_unknown_call_target(node: &Value) -> bool {
-    node["synchronous_execution"]["precision_losses"]
-        .as_array()
-        .is_some_and(|losses| {
-            losses
-                .iter()
-                .any(|loss| loss["reason"]["code"] == "unknown_call_target")
-        })
 }
 
 fn assert_host_call_remains_impure(fixture: &Fixture, binding: &str) {
@@ -350,7 +277,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
         }),
         "the opaque receiver witness must create the baseline split conflict"
     );
-    assert!(has_unknown_call_target(node_for_binding(
+    assert!(json_has_unknown_call_target(json_node_declaring(
         &control_graph,
         "gate"
     )));
@@ -372,16 +299,16 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
     );
     let native_only_graph = serde_json::to_value(native_only.dependency_graph()).unwrap();
     assert!(
-        native_input_uses(&native_only_graph).is_empty(),
+        json_execution_rows(&native_only_graph, "native_operation_input_uses").is_empty(),
         "native identity alone must not report an admitted invocation"
     );
-    assert!(host_contract_uses(&native_only_graph).is_empty());
-    assert!(has_unknown_call_target(node_for_binding(
+    assert!(json_execution_rows(&native_only_graph, "author_host_contract_uses").is_empty());
+    assert!(json_has_unknown_call_target(json_node_declaring(
         &native_only_graph,
         "gate"
     )));
     assert!(
-        node_for_binding(&native_only_graph, "gate")["synchronous_execution"]["inference_uses"]
+        json_node_declaring(&native_only_graph, "gate")["synchronous_execution"]["inference_uses"]
             .as_array()
             .unwrap()
             .iter()
@@ -418,7 +345,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
-    let native_uses = native_input_uses(&graph);
+    let native_uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(
         native_uses.len(),
         1,
@@ -430,7 +357,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
         native_uses[0]["source_location"]["source_path"],
         "static/app.js"
     );
-    let host_uses = host_contract_uses(&graph);
+    let host_uses = json_execution_rows(&graph, "author_host_contract_uses");
     assert_eq!(host_uses.len(), 1, "the timing assertion is consumed once");
     assert_eq!(host_uses[0]["operation"], "promise_resolve");
 
@@ -448,7 +375,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
         "native identity is not a receiver refinement: {witness}"
     );
     assert!(
-        node_for_binding(&graph, "gate")["synchronous_execution"]["native_integrity_checks"]
+        json_node_declaring(&graph, "gate")["synchronous_execution"]["native_integrity_checks"]
             .as_array()
             .is_some_and(|checks| checks.iter().any(|check| {
                 check["guard"] == "host_promise_resolve"
@@ -494,11 +421,16 @@ fn unselected_promise_resolve_keeps_its_own_reentry_fallback() {
         "the unselected call must retain the atomic conflict: {:#?}",
         rejected.atomic_group_conflicts()
     );
-    assert!(has_unknown_call_target(node_for_binding(&graph, "other")));
-    let uses = native_input_uses(&graph);
+    assert!(json_has_unknown_call_target(json_node_declaring(
+        &graph, "other"
+    )));
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0]["evidence"]["selected_binding"], "gate");
-    assert_eq!(host_contract_uses(&graph).len(), 1);
+    assert_eq!(
+        json_execution_rows(&graph, "author_host_contract_uses").len(),
+        1
+    );
 }
 
 #[test]

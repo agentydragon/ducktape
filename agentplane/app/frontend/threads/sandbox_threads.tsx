@@ -1,5 +1,5 @@
 import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/core";
-import type { TraceSearchSettings } from "../app_config_client";
+import type { TraceSearchSettings } from "../../app_service_pb";
 import type { ThreadView } from "./client";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { IconDotsVertical } from "../icons";

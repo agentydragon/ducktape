@@ -45,7 +45,8 @@ use spec::{CommutingStatementsContract, ModulePath, ResolvedMemberSelector, Sour
 use spec_modules::{collect_module_files, module_path_from_file};
 use swc_atoms::Atom;
 
-use crate::{GraphCompatibilityScope, InspectionRoots, emit_report};
+use crate::{GraphCompatibilityScope, emit_report};
+use graph_provenance::CurrentRoots;
 
 /// Args for `debundle spec propose-commutations`.
 #[derive(Debug, ClapArgs)]
@@ -94,10 +95,7 @@ impl ProposeCommutationsArgs {
             .unwrap_or_else(|| crate::gate::sibling_cycles_path(&self.graph))
     }
 
-    pub(super) fn verify_graph(
-        &self,
-        roots: &InspectionRoots,
-    ) -> Result<VerifiedGraphSourceContext> {
+    pub(super) fn verify_graph(&self, roots: &CurrentRoots) -> Result<VerifiedGraphSourceContext> {
         let scope = match &self.modules {
             Some(_) => GraphCompatibilityScope::AuthoredModuleTree { tree_config: None },
             None => GraphCompatibilityScope::ExactSourceUnit,
@@ -106,9 +104,7 @@ impl ProposeCommutationsArgs {
             &self.graph,
             self.modules.as_deref(),
             Some(self.source_root.as_path()),
-            roots.spec_root.as_deref(),
-            roots.graph_source_root.as_deref(),
-            &roots.graph_package_roots,
+            roots,
             scope,
         )
     }

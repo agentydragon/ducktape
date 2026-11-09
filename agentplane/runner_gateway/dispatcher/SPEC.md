@@ -57,8 +57,7 @@ It scopes existing Sessions and existing environments; it does not create enviro
   are not represented by this cutover and remain future work.
 - Central sampler V1 keeps today's Sandbox-backed identity, admission, notification and wake
   semantics. Its executor environment is required and fixed for the Session. This is not an optional
-  attachment API, and it does not permit a central Session to open without an environment. See the
-  explicit [future central Session environment-independence task](../plans/task_dag.md#central-session-environment-independence).
+  attachment API, and it does not permit a central Session to open without an environment.
 - `CreateSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording a
   Session. Exact retries and authorized reads still find the record after its required Environment disappears.
   Explicit Session deletion is separate and not yet implemented; callers must not deliberately reuse a Session UUID
@@ -253,40 +252,27 @@ marker without a send remains conservatively uncertain.
 The migration adds the column without altering authored data or History. A rollback to old writers
 loses the forwarding-evidence guarantee even if the column remains present.
 
-## SessionSpec placement cutover
+## Session resource
 
-The placement and Session-resource wire contract in this cutover is coordinated and breaking.
-`SessionSpec` carries
-`environment_hosted` or `central_sampler_v1`; the previous flat harness field and Dispatcher-level
-placement/`initial_executor` fields are not a compatibility API. The former Dispatcher
-`OpenSession`, `GetSessionOpening` and `ListSessionOpenings` RPCs and `SessionOpening` type are
-removed without a compatibility route or adapter. Old clients and old Sandbox/runtime
-binaries must not overlap the new contract. Update the Dispatcher, sampler, app/CLI and other callers
-with the matching environment images.
+`SessionSpec.placement` carries `environment_hosted` or `central_sampler_v1`; there is no flat harness
+field and no Dispatcher-level placement or `initial_executor` field.
 
 The logical creation and read operations are `CreateSession`, `GetSession` and `ListSessions` across
 Dispatcher, App, Environment Runtime and central Sampler. `CreateSession` commits the Dispatcher
 Session before owner materialization; an exact retry with the same caller-chosen ID and immutable
-creation request returns that Session, and a conflicting reuse fails. The returned Dispatcher
-`Session` contains only `session_id`, `placement`, timestamps and `SessionStatus`; it does not expose
-the full spec or instructions. `SessionStatus.materialization` is owner progress, not harness state:
-`SESSION_MATERIALIZATION_ACCEPTED` means the owner durably admitted the logical Session, not that a
-harness is ready or a turn completed. Reconcile an uncertain create by reading the same ID; never
-blindly replay native or external effects. The distinct `Executor.OpenSession` stream remains the
-execution-connection handshake and is not a logical Session creation API.
+creation request returns that Session, and a conflicting reuse fails. Reconcile an uncertain create
+by reading the same ID; never blindly replay native, provider or executor effects. The distinct
+`Executor.OpenSession` stream is the execution-connection handshake, not a logical Session creation
+API.
 
-Before the baseline squash, Dispatcher migration 11 converted retained openings in place, deriving the new variant from the
-stored harness and exact Sandbox name/UID. It preserves other `SessionSpec` fields, delivery state,
-attribution and accepted receipts; it did not requeue work. Central sampler migration 10 converted
-the stored opening request using its retained executor target and preserves the conversation,
-commands, cursors and effect journal. History migration 8 retained a legacy archived harness as
-`historical_harness` where an exact placement cannot be reconstructed; it does not invent an
-environment identity or change event data/order. These migrations preserved central and History data
-while changing the live wire representation. Databases that have not completed these migrations must
-run the previous image before adopting the new baselines. The migrations do not make uncertain native, provider or executor
-effects safe to replay. `Session` is deliberately a minimal authorized projection containing its
-ID, placement, creation/update timestamps, nested materialization `status` and exact execution ServiceAccount identity when established; it does not expose
-the immutable `SessionSpec` or instructions. A missing identity means no exact owner is established; callers must not infer its UID from a current same-name account. `SESSION_MATERIALIZATION_ACCEPTED` means the placement owner admitted the
-logical Session, not that the harness is ready or work completed. These descriptions specify the
-coordinated change; they do not claim that matching service images have already been deployed
-together.
+`Session` is a minimal authorized projection: `session_id`, `placement`, creation/update timestamps,
+nested `SessionStatus` and the exact execution ServiceAccount identity once established. It does not
+expose the immutable `SessionSpec` or instructions. A missing identity means no exact owner is
+established; callers must not infer its UID from a current same-name account.
+`SessionStatus.materialization` is placement-owner progress, not harness state
+([values](#method-scope)): `SESSION_MATERIALIZATION_ACCEPTED` means the owner durably admitted the
+logical Session, not that a harness is ready, a turn completed or History projected a Thread.
+
+**Gotcha:** the current migration baselines assume Dispatcher migration 11, central sampler
+migration 10 and History migration 8 have run; a database restored from before them must run an
+image that still carries those migrations first.

@@ -124,6 +124,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
@@ -135,7 +136,6 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/environments/v1:environment_service_pb",
-        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -303,7 +303,6 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
         "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/testing:langfuse_search",
@@ -334,6 +333,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
@@ -341,6 +341,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -373,7 +374,6 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/environments/v1:environment_service_pb",
-        "//agentplane/proto:sandboxes_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],

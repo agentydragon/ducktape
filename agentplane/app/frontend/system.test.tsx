@@ -4,7 +4,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { SystemComponentStatus } from "./system_status_client";
+import { create } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+
+import { SystemComponentState, SystemComponentStatusSchema } from "../app_service_pb";
+import type { CheckedComponentStatus } from "./system_status_client";
 import * as systemStatusClient from "./system_status_client";
 import { SystemStatus } from "./system";
 
@@ -22,17 +26,18 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-const HEALTHY: SystemComponentStatus = {
-  name: "Healthy component",
-  state: "ok",
-  detail: null,
-  checked_at: "2026-01-01T00:00:00Z",
+const CHECKED_AT = timestampFromDate(new Date("2026-01-01T00:00:00Z"));
+const HEALTHY: CheckedComponentStatus = {
+  ...create(SystemComponentStatusSchema, { name: "Healthy component", state: SystemComponentState.OK }),
+  checkedAt: CHECKED_AT,
 };
-const DOWN: SystemComponentStatus = {
-  name: "Down component",
-  state: "down",
-  detail: "UNAVAILABLE: test connection refused",
-  checked_at: "2026-01-01T00:00:00Z",
+const DOWN: CheckedComponentStatus = {
+  ...create(SystemComponentStatusSchema, {
+    name: "Down component",
+    state: SystemComponentState.DOWN,
+    detail: "UNAVAILABLE: test connection refused",
+  }),
+  checkedAt: CHECKED_AT,
 };
 
 async function render(): Promise<HTMLDivElement> {
@@ -51,7 +56,7 @@ async function render(): Promise<HTMLDivElement> {
 }
 
 /** `getSystemStatus` answering its successive calls with the given lists. */
-function answer(...lists: SystemComponentStatus[][]) {
+function answer(...lists: CheckedComponentStatus[][]) {
   const get = vi.spyOn(systemStatusClient, "getSystemStatus");
   for (const data of lists) get.mockResolvedValueOnce(data);
   return get;

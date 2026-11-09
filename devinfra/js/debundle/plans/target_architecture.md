@@ -178,5 +178,5 @@ replay of the canonical inputs in gaffer-private.
   is fixed; the separate dense-array callback-promotion route is still an
   unproven candidate. Canonical attribution needs per-call target/contributor
   evidence that the batch report does not retain. See
-  <../debug/2026_11_02_global_object_callback_provenance.md>; the old batch
+  <../docs/lessons_learned/effect_coverage_and_calls.md> § Calls; the old batch
   counts do not establish membership in current residual components.

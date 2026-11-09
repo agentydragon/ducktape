@@ -11,7 +11,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/retained",
     visibility = ["//agentplane/env:__subpackages__"],
     deps = [
-        "//agentplane/env/cosi",
         "//agentplane/env/runtime/cosistate",
         "//agentplane/env/runtime/cosistate:persistent_go_proto",
         "//agentplane/env/runtime/lifecycle",

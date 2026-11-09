@@ -16,7 +16,7 @@ fn tools_id() -> Id {
 /// `tools`.
 fn settled(prefix: &str, statement: &str) -> Option<SettledElements> {
     let module = parse(&format!("{TOOLS}{prefix}{statement}\n"));
-    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
+    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None).facts;
     facts
         .last()
         .and_then(|fact| fact.synchronous_calls.as_ref())

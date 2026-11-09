@@ -174,30 +174,7 @@ impl ChunkCodeGraph {
         imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
     ) -> Self {
-        Self::build_full_with_locations(
-            body,
-            shadowed,
-            declared_pure,
-            declared_pure_new,
-            declared_pure_members,
-            imported_purities,
-            fluent_bindings,
-            None,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)] // The optional resolver extends the established build_full inputs.
-    pub(crate) fn build_full_with_locations(
-        body: &[TopLevelItemView<'_>],
-        shadowed: &BTreeSet<&'static str>,
-        declared_pure: &BTreeSet<String>,
-        declared_pure_new: &BTreeSet<String>,
-        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
-        imported_purities: &BTreeMap<String, Arc<Purity>>,
-        fluent_bindings: &BTreeSet<String>,
-        locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
-    ) -> Self {
-        Self::build_full_with_locations_and_stable_vars(
+        Self::build_full_with_stable_vars(
             body,
             shadowed,
             declared_pure,
@@ -206,12 +183,11 @@ impl ChunkCodeGraph {
             imported_purities,
             fluent_bindings,
             &BTreeSet::new(),
-            locate,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_full_with_locations_and_stable_vars(
+    pub(crate) fn build_full_with_stable_vars(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
@@ -220,7 +196,6 @@ impl ChunkCodeGraph {
         imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
-        locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
         let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
             body,
@@ -268,7 +243,7 @@ impl ChunkCodeGraph {
             &BTreeMap::new(),
             &plain_array_bindings,
             stable_var_number_candidates,
-            locate,
+            None,
         )
     }
 
@@ -294,7 +269,7 @@ impl ChunkCodeGraph {
         >,
         plain_array_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
-        mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+        locator: Option<SourceLocator<'_>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
         let shape_inputs = PurityShapeInputs {
@@ -330,13 +305,7 @@ impl ChunkCodeGraph {
             };
             bodies.insert(
                 key,
-                classify_function_body_transfer(
-                    function,
-                    shadowed,
-                    declared_pure,
-                    &graph,
-                    &mut locate,
-                ),
+                classify_function_body_transfer(function, shadowed, declared_pure, &graph, locator),
             );
         }
         let purities = PurityEffectRules::new(bodies).solve_to_purities();
@@ -395,7 +364,7 @@ impl ChunkCodeGraph {
         body: &[TopLevelItemView<'_>],
         shape_inputs: &PurityShapeInputs<'_>,
         call_context: &PurityCallContext<'_>,
-        mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+        locator: Option<SourceLocator<'_>>,
     ) -> BTreeMap<PurityFunctionKey, PurityBodyTransfer> {
         let functions = collect_chunk_functions(body);
         let graph =
@@ -413,7 +382,7 @@ impl ChunkCodeGraph {
                 shape_inputs.shadowed,
                 call_context.declared_pure,
                 &graph,
-                &mut locate,
+                locator,
             );
             transfers.insert(key, transfer);
         }
@@ -846,7 +815,7 @@ fn classify_function_body_transfer(
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-    locate: &mut Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+    locator: Option<SourceLocator<'_>>,
 ) -> PurityBodyTransfer {
     let obligations = graph
         .purity_call_obligations
@@ -855,18 +824,18 @@ fn classify_function_body_transfer(
     obligations.borrow_mut().clear();
     let mut purity = classify_function_body(function, shadowed, declared_pure, graph).project();
     if let Purity::NotPure { reasons } = &mut purity
-        && let Some(locate) = locate.as_deref_mut()
+        && let Some(locator) = locator
     {
         for reason in reasons {
-            reason.source_location = locate(reason.span);
+            reason.source_location = locator.span(reason.span);
         }
     }
     let mut captured = obligations.borrow_mut();
     let mut obligations = std::mem::take(&mut *captured);
     drop(captured);
-    if let Some(locate) = locate.as_deref_mut() {
+    if let Some(locator) = locator {
         for obligation in &mut obligations {
-            obligation.source_location = locate(obligation.span);
+            obligation.source_location = locator.span(obligation.span);
         }
     }
     PurityBodyTransfer::from_classification(purity, obligations)

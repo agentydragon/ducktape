@@ -46,7 +46,7 @@ pub(crate) fn is_anything_stmt_hole(stmt: &Stmt) -> bool {
 /// The name of a statement-list hole (`STMT_LIST` / `STMT_LIST_*;`) if
 /// `stmt` is one.
 pub(crate) fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
-    labeled_hole_name_for(statement_hole_name(stmt)?, STMT_LIST_HOLE_KEYWORD)
+    hole_name_for(statement_hole_name(stmt)?, STMT_LIST_HOLE_KEYWORD)
 }
 
 /// The name of a top-level statement-list hole (`STMT_LIST` /
@@ -67,8 +67,7 @@ pub(crate) fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&s
     let Pat::Ident(ident) = &declarator.name else {
         return None;
     };
-    labeled_hole_name_for(ident.id.sym.as_ref(), DECLARATORS_HOLE_KEYWORD)
-        .or_else(|| anything_hole_name(ident.id.sym.as_ref()))
+    source_match_holes::declarator_list_hole_name(ident.id.sym.as_ref())
 }
 
 pub(crate) fn is_anything_declarator_list_hole(declarator: &VarDeclarator) -> bool {
@@ -92,10 +91,6 @@ pub(crate) fn is_anything_object_pat_prop_hole(prop: &ObjectPatProp) -> bool {
         return false;
     };
     assign.value.is_none() && anything_hole_name(assign.key.id.sym.as_ref()).is_some()
-}
-
-pub(crate) fn anything_hole_name(name: &str) -> Option<&str> {
-    hole_name_for(name, ANYTHING_HOLE_KEYWORD)
 }
 
 pub(crate) fn is_anything_class_rest_hole(member: &ClassMember) -> bool {

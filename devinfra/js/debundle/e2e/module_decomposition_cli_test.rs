@@ -94,34 +94,6 @@ fn decomposition_path<'a>(report: &'a Value, source_unit_id: &Value) -> &'a str 
         .unwrap()
 }
 
-fn source_unit_id_for_binding(fixture: &GraphFixture, binding: &str) -> String {
-    fixture
-        .dependency_graph()
-        .nodes
-        .into_iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding.as_str() == binding)
-        })
-        .unwrap_or_else(|| panic!("missing source_unit for binding {binding:?}"))
-        .id
-}
-
-fn source_unit_id_for_line(fixture: &GraphFixture, line: usize) -> String {
-    fixture
-        .dependency_graph()
-        .nodes
-        .into_iter()
-        .find(|node| {
-            node.source_location
-                .as_ref()
-                .is_some_and(|location| location.start_line == line)
-        })
-        .unwrap_or_else(|| panic!("missing source_unit on source line {line}"))
-        .id
-}
-
 fn assert_source_unit_module(fixture: &GraphFixture, source_unit_id: &str, expected: &str) {
     assert_eq!(source_unit_module_path(fixture, source_unit_id), expected);
 }
@@ -221,7 +193,7 @@ fn include_unchanged_reports_current_named_module_without_changing_default_count
     );
     assert_eq!(
         stable["fragments"][0]["source_unit_ids"],
-        json!([source_unit_id_for_binding(&fixture, "stable")]),
+        json!([fixture.source_unit_for_binding("stable")]),
         "{report}"
     );
     assert_eq!(
@@ -230,7 +202,7 @@ fn include_unchanged_reports_current_named_module_without_changing_default_count
         "{report}"
     );
 
-    let residual_source_unit = source_unit_id_for_line(&fixture, 4);
+    let residual_source_unit = fixture.source_unit_for_line(4);
     let mut include_residual_args = base_args.to_vec();
     include_residual_args.push("--include-residual");
     let residual_default = fixture.json(&include_residual_args);
@@ -262,7 +234,7 @@ fn include_unchanged_reports_current_named_module_without_changing_default_count
 #[test]
 fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
     let fixture = ambiguous_decorator_fixture(true);
-    let anonymous_source_unit = source_unit_id_for_line(&fixture, 5);
+    let anonymous_source_unit = fixture.source_unit_for_line(5);
     assert_source_unit_module(&fixture, &anonymous_source_unit, "home");
     debundle_e2e_support::assert_node_output(&fixture.source_path(), "A\n", "");
 
@@ -288,8 +260,8 @@ fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
     );
     assert_eq!(relation["referenced_by"], "applyDecorators");
 
-    let helper_source_unit = source_unit_id_for_binding(&fixture, "decorateA");
-    let duplicate_source_unit = source_unit_id_for_binding(&fixture, "decorateB");
+    let helper_source_unit = fixture.source_unit_for_binding("decorateA");
+    let duplicate_source_unit = fixture.source_unit_for_binding("decorateB");
     assert_eq!(relation["source_unit_ids"][0], anonymous_source_unit);
     assert_eq!(relation["anchor_source_unit_ids"][0], helper_source_unit);
     assert_eq!(
@@ -309,7 +281,7 @@ fn decomposition_coheres_anonymous_call_with_ambiguous_local_helper() {
 #[test]
 fn decomposition_keeps_unique_anonymous_reference_separately_movable() {
     let fixture = ambiguous_decorator_fixture(false);
-    let anonymous_source_unit = source_unit_id_for_line(&fixture, 5);
+    let anonymous_source_unit = fixture.source_unit_for_line(5);
     assert_source_unit_module(&fixture, &anonymous_source_unit, "home");
     debundle_e2e_support::assert_node_output(&fixture.source_path(), "A\n", "");
 
@@ -325,7 +297,7 @@ fn decomposition_keeps_unique_anonymous_reference_separately_movable() {
     ]);
     assert_eq!(report["candidate_is_realizable"], true, "{report}");
     assert_eq!(report["selector_anchor_relations"], json!([]));
-    let helper_source_unit = source_unit_id_for_binding(&fixture, "decorateA");
+    let helper_source_unit = fixture.source_unit_for_binding("decorateA");
     assert_ne!(
         decomposition_path(&report, &json!(anonymous_source_unit)),
         decomposition_path(&report, &json!(helper_source_unit)),

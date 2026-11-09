@@ -440,6 +440,8 @@ func (b *systemdBackend) reap(p *Process) {
 		p.observeSystemd(b.name, b.invocationID, b.group, props, err)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) && readConn.Connected() {
+				// A slow manager read is not process loss: treating it as one once fenced a
+				// live harness under emulated-guest scheduling stalls (synthesized exit 125).
 				zap.L().Warn("native systemd process observation timed out; retrying", zap.String("unit", b.name), zap.Error(err))
 				if !b.waitChangeOn(readConn) {
 					break

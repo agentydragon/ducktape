@@ -301,10 +301,7 @@ GitOps gates and live rollout acceptance remain separate operational requirement
   is request metadata. It does **not** make `bb remote` credentialless: the CLI authenticates its
   local Remote Runner control RPC with the metadata, then also serialises the API key into the
   Bazel command run on a BuildBuddy-hosted runner. That runner is outside this proxy, so a
-  placeholder arrives there unsubstituted. The public-coder KubeVirt devbox that used `bbr` as a
-  `bb remote` client was retired on 2026-10-21, so it no longer needs a BuildBuddy credential or an
-  egress path. This does not change the remote-runner boundary for any future `bb remote` client;
-  the boundary and candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
+  placeholder arrives there unsubstituted. The remote-runner boundary and candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
 
 ## Sidecar platform routes
 

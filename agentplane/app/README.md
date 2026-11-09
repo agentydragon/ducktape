@@ -25,8 +25,7 @@ The mounted `app-config` YAML's optional `electric_url` enables the authenticate
 and Electric health probe. Omitting it leaves REST and SSE available without Electric; backend
 lifecycle and model-smoke fixtures use this composition. Electric configuration does not control
 static-file serving. `AGENTPLANE_CONFIG_FILE` is the only environment setting that selects the
-static configuration file; database and OIDC credentials are separate Secret inputs.
-The app no longer reads per-setting environment variables or configuration flags. Deploy the image
+static configuration file; database and OIDC credentials are separate Secret inputs. Deploy the image
 and `app-config` together; during a brief image/config mismatch the new binary fails startup until
 both converge.
 
@@ -41,7 +40,7 @@ policy and idle suspend policy. The app authenticates the operator and forwards 
 facade with its projected Pod-bound service token. The service applies configured default policy
 sets and fences mutations on Sandbox UID and resourceVersion. The app still reads Sandbox inventory
 through its existing read routes and watch. The Sandbox Controller reconciles the requested `spec`
-and owns `status`. The former Sandbox Service Deployment, API and server source are retired.
+and owns `status`.
 
 ## Dependency boundary
 
@@ -138,7 +137,7 @@ The BFF routes call generated gRPC methods
 with the app's rotating projected Dispatcher token. Unary routes return ProtoJSON; the watch keeps a
 bounded initial read before starting its streaming response and then relays frames until the operator
 session ends, the app drains or the browser goes. Reads carry no Thread check, so an operator can read
-the Dispatches of any Session id. Command writes no longer check the app's History feed state or model
+the Dispatches of any Session id. Command writes do not check the app's History feed state or model
 catalog before reaching the Dispatcher. The frontend model picker remains catalog-backed; the backend
 and executor report command failures after submission.
 
@@ -185,17 +184,11 @@ admission and cookie CSRF checks. Token admission also supports explicitly autho
 integration tests; it does not make this a backend service API. The app calls the Dispatcher over gRPC.
 
 The returned minimal `Session` contains its ID, placement, timestamps and nested `SessionStatus`; it
-does not expose the immutable spec or instructions. Its materialization state is one of
-`SESSION_MATERIALIZATION_WAITING`, `SESSION_MATERIALIZATION_IN_PROGRESS`,
-`SESSION_MATERIALIZATION_ACCEPTED`, `SESSION_MATERIALIZATION_FAILED` or
-`SESSION_MATERIALIZATION_UNKNOWN`, with reason, delivery blocker and wake assessment where present.
-This is placement-owner progress, not harness state. `SESSION_MATERIALIZATION_ACCEPTED` means the
-owner durably admitted the logical Session, not that its harness is ready or History has projected a
-Thread. The browser retains only its caller-minted Session ID after an uncertain response and
+does not expose the immutable spec or instructions. Its materialization state is placement-owner
+progress, not harness state ([Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#session-resource)).
+The browser retains only its caller-minted Session ID after an uncertain response and
 reconciles with `GetSession`, without replaying creation or setup. The app's `CreateSession` response
-returns `session` directly with POST 201. The former opening-specific Dispatcher RPC and projection
-are removed as part of the coordinated hard cutover; this describes the proposed PR contract, not
-evidence that deployment has completed.
+returns `session` directly with POST 201.
 
 The catalog's `HARNESS_CENTRAL_SAMPLER` model list adds **Central sampler** to the launch form alongside the
 native harness offerings. The Dispatcher selects the sampler service from deployment configuration;

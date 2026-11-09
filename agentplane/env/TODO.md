@@ -21,9 +21,7 @@ with a 733 MB root disk; production remains unchanged. Measure remaining populat
 latency, including the writes from unconditional restore. Establish required tools before selecting a smaller production guest;
 consider keeping heavy tools in an immutable disk. In every case,
 preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
-[system-test scenario](../system_tests/scenarios/firecracker.py) exercises the current CI guest. The
-[production Nix guest probe](../debug/2026_11_04_firecracker_storage_probe.md) records its separate
-image measurements and reduced-tool experiment.
+[system-test scenario](../system_tests/scenarios/firecracker.py) exercises the current CI guest.
 
 ## Explore keeping control services outside Firecracker guests
 
@@ -54,8 +52,11 @@ define parking and durable terminal release before promising indefinite process 
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the
   pre-fence settlement status and wakeups needed by the drain barrier.
 - Profile aggregate shutdown scans before adding cached inventory or generation-scoped scan state.
-  The [shutdown scan note](runtime/debug/shutdown-scan.md) counts per-Session and process reads but
-  records no profile. Measure a real shutdown with many retained Sessions and process attempts; use
+  After admissions settle, each non-Running reconciliation lists retained Session IDs, loads missing
+  Sessions and sorts the live inventory; a full pass reads each Session's lifecycle status twice and
+  inspection once, plus for a sealed shutdown the journal seal twice and the exact durable
+  acknowledgement, and each harness process needs its desired state, status and finalizer. No
+  profile exists. Measure a real shutdown with many retained Sessions and process attempts; use
   a Go CPU profile to separate inventory listing, sorting and COSI reads, and record resource counts
   and blocker transitions. Preserve the full membership and recovery proof if optimizing.
 

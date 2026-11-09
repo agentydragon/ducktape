@@ -4,7 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Self, override
@@ -18,13 +18,16 @@ from sqlalchemy.engine import make_url
 
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
+from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
-from agentplane.proto import identity_pb2, session_pb2
+from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.testing.go_process import go_process
 from util.net import listen_tcp
 
 METADATA = (("authorization", "Bearer test-token"),)
+# The Session `create_request` creates.
+SESSION_ID = "079bd706-77b3-4b71-8c7e-605a7e19324c"
 
 
 @dataclass
@@ -163,7 +166,7 @@ def settings(
 
 def create_request(cwd: Path) -> sampler_pb2.CreateSessionRequest:
     return sampler_pb2.CreateSessionRequest(
-        session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
+        session_id=SESSION_ID,
         spec=session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(
                 central_sampler_v1=session_pb2.CentralSamplerV1Placement(
@@ -232,6 +235,70 @@ async def service(config: Settings) -> AsyncIterator[sampler_pb2_grpc.SamplerAsy
         grpc.aio.insecure_channel(target) as channel,
     ):
         yield sampler_pb2_grpc.SamplerStub(channel)
+
+
+async def turn_completed(
+    stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, turn_id: str, *, timeout_s: float = 15
+) -> event_pb2.TurnCompleted:
+    """Follow the Session's events until `turn_id` completes."""
+    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA)
+    try:
+        async with asyncio.timeout(timeout_s):
+            async for frame in stream:
+                event = frame.entry.event
+                if event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
+                    return event.turn_completed
+    finally:
+        stream.cancel()
+    raise AssertionError(f"event stream ended before {turn_id=} completed")
+
+
+@dataclass
+class Turn:
+    completed: event_pb2.TurnCompleted
+    assistant_text: list[str] = field(default_factory=list)
+
+
+async def follow_turn(
+    stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, turn_id: str, *, timeout_s: float
+) -> Turn:
+    """The turn's completion and the assistant text it produced, ignoring every other turn's items."""
+    texts: dict[str, str] = {}
+    assistant_items: set[str] = set()
+    active = False
+    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA)
+    try:
+        async with asyncio.timeout(timeout_s):
+            async for frame in stream:
+                event = frame.entry.event
+                if event.HasField("turn_started"):
+                    active = event.turn_started.turn_id == turn_id
+                if not active:
+                    continue
+                if event.HasField("item_started") and event.item_started.kind == event_pb2.ITEM_KIND_ASSISTANT_TEXT:
+                    assistant_items.add(event.item_started.item_id)
+                elif event.HasField("item_completed") and event.item_completed.HasField("text"):
+                    texts[event.item_completed.item_id] = event.item_completed.text
+                elif event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
+                    return Turn(
+                        completed=event.turn_completed,
+                        assistant_text=[text for item, text in texts.items() if item in assistant_items],
+                    )
+    finally:
+        stream.cancel()
+    raise AssertionError(f"event stream ended before {turn_id=} completed")
+
+
+async def submit(
+    stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str, text: str, *, timeout_s: float
+) -> Turn:
+    """Submit one input and follow the turn it starts, which takes the command's ID."""
+    await stub.SubmitInput(
+        environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text),
+        metadata=METADATA,
+        timeout=10,
+    )
+    return await follow_turn(stub, session_id, command_id, timeout_s=timeout_s)
 
 
 # gazelle:include_dep @pypi//protobuf

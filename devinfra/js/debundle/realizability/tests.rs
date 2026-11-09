@@ -20,7 +20,7 @@ use source_identity::SourceUnitId;
 
 fn parse_and_build(source: &str) -> DependencyGraph {
     let module = raw_js_test_support::parse(source);
-    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
+    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None).facts;
     build_dependency_graph_with(&facts, Default::default(), &[]).unwrap()
 }
 

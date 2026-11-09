@@ -33,8 +33,8 @@ use regex::Regex;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD,
     AST_CONTAINS_STRING_PREDICATE, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    EXPR_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    STRING_LITERAL_REGEX_PREDICATE, hole_name_for, is_hole_keyword, labeled_hole_name_for,
+    SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, expr_hole_name,
+    hole_name_for, is_hole_keyword, stmt_hole_name,
 };
 
 /// A needle construct whose faithful encoding this matcher has not implemented.
@@ -718,15 +718,13 @@ pub fn is_declarator_run_hole(index: &Index, node: NodeId) -> bool {
 /// `EXPR[_label]` or `ANYTHING[_label]`: a single-node hole in **expression**
 /// position (an `Ident`). Labels are cosmetic and never bind.
 fn is_expr_single_hole(name: &str) -> bool {
-    hole_name_for(name, EXPR_HOLE_KEYWORD).is_some()
-        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+    expr_hole_name(name).is_some()
 }
 
 /// `STMT[_label]` or `ANYTHING[_label]`: a single-node hole in **statement**
 /// position. Labels are cosmetic and never bind.
 fn is_stmt_single_hole(name: &str) -> bool {
-    hole_name_for(name, STMT_HOLE_KEYWORD).is_some()
-        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
+    stmt_hole_name(name).is_some()
 }
 
 /// A single-node hole borne by `node`, parse-position polymorphic: an expression
@@ -766,13 +764,13 @@ const RUN_HOLE_KEYWORDS: [&str; 6] = [
 fn is_run_hole_keyword(name: &str) -> bool {
     RUN_HOLE_KEYWORDS
         .iter()
-        .any(|kw| labeled_hole_name_for(name, kw).is_some())
+        .any(|kw| hole_name_for(name, kw).is_some())
 }
 
 fn node_ident_hole(index: &Index, node: NodeId, keyword: &str) -> bool {
     index
         .ident_of(node)
-        .is_some_and(|name| labeled_hole_name_for(name, keyword).is_some())
+        .is_some_and(|name| hole_name_for(name, keyword).is_some())
 }
 
 /// True iff `child` is a variable-length run-hole carrier in a list under a
@@ -840,9 +838,9 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
             ck == NodeKind::SwitchCase && {
                 let kids = index.children_of(child);
                 kids.len() == 1
-                    && index.ident_of(kids[0]).is_some_and(|name| {
-                        labeled_hole_name_for(name, CASE_REST_HOLE_KEYWORD).is_some()
-                    })
+                    && index
+                        .ident_of(kids[0])
+                        .is_some_and(|name| hole_name_for(name, CASE_REST_HOLE_KEYWORD).is_some())
             }
         }
         // `const DECLARATORS` / `ANYTHING` — a declarator whose name binding is

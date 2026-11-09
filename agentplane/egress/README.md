@@ -162,7 +162,10 @@ A `kubernetesServiceAccount` credential acts as a ServiceAccount on the proxy's 
 impersonation (contract: <SPEC.md> § Decision). The deployment sets `local_api_server` (host, port,
 and the proxy's automounted token file) and renders the accounts namespace with a Role granting the
 proxy `impersonate` on `serviceaccounts` there and nowhere else
-(<../../cluster/cdk8s/agentplane/kubernetes_accounts.py>).
+(<../../cluster/cdk8s/agentplane/kubernetes_accounts.py>). Impersonating ServiceAccounts rather
+than users keeps OIDC users bound by name out of reach. A TokenRequest source (minted, cached
+account tokens) is not built: it is needed only for a remote API server that refuses the proxy
+impersonation rights.
 
 ## Rules API
 
@@ -251,9 +254,8 @@ The API's `at` field is the `decided_at` column; `ingested_at` is the row's inse
 1,000) inside the retention window and returns them oldest first.
 
 The schema is Goose SQL in `history_migrations/history/`, tracked by `egress_goose_version`.
-Staging and testing each hold an `egress` database in their CNPG cluster. Both use Goose;
-Alembic is no longer a migration owner. Existing history rows and
-the inert `egress_alembic_version` table remain in place. The proxy migrates before starting its
+Staging and testing each hold an `egress` database in their CNPG cluster. Both use Goose; existing
+history rows and the inert `egress_alembic_version` table remain in place. The proxy migrates before starting its
 listeners or workers, so a failed migration keeps that Pod unready while previous proxies keep enforcing.
 
 ## Open questions

@@ -1,6 +1,6 @@
 import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { displayableError, fetchWithLogin, HttpError } from "../client";
+import { displayableError, fetchJson, fetchText, fetchWithLogin, HttpError } from "../client";
 import { TurnStatusSchema } from "../../../proto/event_pb";
 import {
   Harness,
@@ -72,15 +72,11 @@ export interface ThreadListing {
   sandboxUID?: string;
 }
 export type ThreadWindow = { threads: ThreadView[]; more: boolean; archived_count: number };
-async function historyJson(path: string, init: RequestInit = {}): Promise<JsonValue> {
-  const response = await fetchWithLogin(new URL(`/upstream/history/v1${path}`, window.location.href), {
+function historyJson(path: string, init: RequestInit = {}): Promise<JsonValue> {
+  return fetchJson(new URL(`/upstream/history/v1${path}`, window.location.href), {
     ...init,
     headers: { Accept: "application/json", ...init.headers },
   });
-  if (!response.ok) {
-    throw new HttpError(response, await response.json().catch(() => null));
-  }
-  return (await response.json()) as JsonValue;
 }
 
 function bodyWithoutSessionId(value: JsonValue): string {
@@ -570,20 +566,19 @@ export async function listThreadWindow(
 /** Set or clear the operator-managed name. */
 export async function renameThread(threadId: string, name: string | null): Promise<ThreadMetadata> {
   const request = create(RenameThreadRequestSchema, { threadId, name: name ?? undefined });
-  const response = await fetchWithLogin(
+  const metadata = await fetchJson(
     new Request(new URL(`/upstream/app/v1/threads/${encodeURIComponent(threadId)}`, window.location.href), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(toJson(RenameThreadRequestSchema, request)),
     })
   );
-  if (!response.ok) throw new HttpError(response, await response.json().catch(() => null));
-  return fromJson(ThreadMetadataSchema, (await response.json()) as JsonValue);
+  return fromJson(ThreadMetadataSchema, metadata);
 }
 
 export async function archiveThread(threadId: string, archived: boolean): Promise<void> {
   const request = create(ThreadMetadataTargetSchema, { threadId });
-  const response = await fetchWithLogin(
+  await fetchText(
     new Request(
       new URL(
         `/upstream/app/v1/threads/${encodeURIComponent(threadId)}/${archived ? "archive" : "unarchive"}`,
@@ -596,5 +591,4 @@ export async function archiveThread(threadId: string, archived: boolean): Promis
       }
     )
   );
-  if (!response.ok) throw new HttpError(response, await response.json().catch(() => null));
 }

@@ -8,7 +8,7 @@ Run explicitly with ANTHROPIC_API_KEY available to the test action:
 import asyncio
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -29,7 +29,7 @@ from agentplane.central_sampler.settings import (
     ModelConfig,
     Settings,
 )
-from agentplane.central_sampler.testing import METADATA, create_request, service, settings
+from agentplane.central_sampler.testing import METADATA, create_request, follow_turn, service, settings, submit
 from agentplane.central_sampler.testing_store import IntentSnapshot, Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.proto import event_pb2
@@ -37,57 +37,17 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
 
 TURN_TIMEOUT_SECONDS = 150
+# Following a turn also covers the sampler's own turn deadline.
+FOLLOW_SECONDS = TURN_TIMEOUT_SECONDS + 30
 ROUTE = "anthropic-live"
 DEFAULT_MODEL = "claude-haiku-5-5"
 BASE_URL = "https://api.anthropic.com"
-
-
-@dataclass
-class Turn:
-    completed: event_pb2.TurnCompleted
-    assistant_text: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class SessionState:
     blocked: bool
     intents: list[IntentSnapshot]
-
-
-async def follow_turn(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, turn_id: str) -> Turn:
-    texts: dict[str, str] = {}
-    assistant_items: set[str] = set()
-    active = False
-    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA)
-    try:
-        async with asyncio.timeout(TURN_TIMEOUT_SECONDS + 30):
-            async for frame in stream:
-                event = frame.entry.event
-                if event.HasField("turn_started"):
-                    active = event.turn_started.turn_id == turn_id
-                if not active:
-                    continue
-                if event.HasField("item_started") and event.item_started.kind == event_pb2.ITEM_KIND_ASSISTANT_TEXT:
-                    assistant_items.add(event.item_started.item_id)
-                elif event.HasField("item_completed") and event.item_completed.HasField("text"):
-                    texts[event.item_completed.item_id] = event.item_completed.text
-                elif event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
-                    return Turn(
-                        completed=event.turn_completed,
-                        assistant_text=[text for item, text in texts.items() if item in assistant_items],
-                    )
-    finally:
-        stream.cancel()
-    raise AssertionError("event stream ended before the turn completed")
-
-
-async def submit(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str, text: str) -> Turn:
-    await stub.SubmitInput(
-        environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text),
-        metadata=METADATA,
-        timeout=10,
-    )
-    return await follow_turn(stub, session_id, command_id)
 
 
 async def wait_applied(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str) -> None:
@@ -255,6 +215,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
             "anthropic-first",
             f"{first_marker}: use the exec tool exactly once to call exec_command with a shell command that prints "
             f"{token}; then report the exact printed token.",
+            timeout_s=FOLLOW_SECONDS,
         )
         assert first.completed.status == event_pb2.TURN_STATUS_COMPLETED, first.completed.error
         assert any(token in text for text in first.assistant_text), first.assistant_text
@@ -271,6 +232,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
             request.session_id,
             "anthropic-second",
             f"{second_marker}: remember this explicit fact for the next turn: {fact}. Reply with the exact fact.",
+            timeout_s=FOLLOW_SECONDS,
         )
         assert second.completed.status == event_pb2.TURN_STATUS_COMPLETED, second.completed.error
         assert any(fact_token in text for text in second.assistant_text), second.assistant_text
@@ -280,6 +242,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
             "anthropic-third",
             f"{third_marker}: Testing starts March 3, 2026 (count that date as day 1), takes 10 weekdays, and pauses on March 9 and March 16. What date does it end? "
             "Return the ISO date and the exact vault word.",
+            timeout_s=FOLLOW_SECONDS,
         )
         assert third.completed.status == event_pb2.TURN_STATUS_COMPLETED, third.completed.error
         assert any(fact_token in text for text in third.assistant_text), third.assistant_text
@@ -399,7 +362,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
             metadata=METADATA,
             timeout=10,
         )
-        resumed = await follow_turn(stub, request.session_id, "anthropic-resume")
+        resumed = await follow_turn(stub, request.session_id, "anthropic-resume", timeout_s=FOLLOW_SECONDS)
         state = await sampler_session(request.session_id, database_url)
 
     assert resumed.completed.status == event_pb2.TURN_STATUS_COMPLETED, resumed.completed.error
@@ -477,8 +440,12 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
 
     async with service(config) as stub:
         await stub.CreateSession(request, metadata=METADATA, timeout=10)
-        first = await submit(stub, request.session_id, "cache-first", f"{markers[0]}: reply READY.")
-        second = await submit(stub, request.session_id, "cache-second", f"{markers[1]}: reply READY again.")
+        first = await submit(
+            stub, request.session_id, "cache-first", f"{markers[0]}: reply READY.", timeout_s=FOLLOW_SECONDS
+        )
+        second = await submit(
+            stub, request.session_id, "cache-second", f"{markers[1]}: reply READY again.", timeout_s=FOLLOW_SECONDS
+        )
         assert first.completed.status == event_pb2.TURN_STATUS_COMPLETED, first.completed.error
         assert second.completed.status == event_pb2.TURN_STATUS_COMPLETED, second.completed.error
 
@@ -490,7 +457,9 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
             timeout=10,
         )
         await wait_applied(stub, request.session_id, "cache-effort-change")
-        third = await submit(stub, request.session_id, "cache-third", f"{markers[2]}: reply READY once more.")
+        third = await submit(
+            stub, request.session_id, "cache-third", f"{markers[2]}: reply READY once more.", timeout_s=FOLLOW_SECONDS
+        )
         assert third.completed.status == event_pb2.TURN_STATUS_COMPLETED, third.completed.error
         state = await sampler_session(request.session_id, database_url)
 
@@ -561,6 +530,7 @@ async def test_live_anthropic_automatic_compaction_resumes_sampling(
             request.session_id,
             "automatic-compact-first",
             f"{initial_marker}: remember this exact fact: {fact}. Reply SAVED. Reference text: {stable_filler}",
+            timeout_s=FOLLOW_SECONDS,
         )
         assert first.completed.status == event_pb2.TURN_STATUS_COMPLETED, first.completed.error
         second = await submit(
@@ -568,6 +538,7 @@ async def test_live_anthropic_automatic_compaction_resumes_sampling(
             request.session_id,
             "automatic-compact-recall",
             f"{recall_marker}: what exact code did I ask you to remember? Reply with only the code.",
+            timeout_s=FOLLOW_SECONDS,
         )
         assert second.completed.status == event_pb2.TURN_STATUS_COMPLETED, second.completed.error
         state = await sampler_session(request.session_id, database_url)

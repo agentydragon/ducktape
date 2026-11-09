@@ -7,7 +7,7 @@ not establish a CI speedup. In particular, the identity's measured read time
 cannot simply be subtracted from CI elapsed time: another compilation branch
 already overlaps it.
 
-[Structured measurements](2026_11_04_ci_rust_chain.json) accompany this note.
+[Structured measurements](ci_rust_chain.json) accompany this note.
 Source inspection is at `d1b9fcbf2d`; temporary profiling commits are linked below.
 No compiler, concurrency, runner, snapshot or validation defaults were changed.
 

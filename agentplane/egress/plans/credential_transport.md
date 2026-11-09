@@ -7,11 +7,13 @@ remaining bearer and Secret-backed credentials.
 
 ## Current boundary
 
-`policy.Request` carries method, host, path, headers, and body, but no scheme or port
-(`policy/evaluate.go`). `proxy/gate.go` passes the port to address admission independently of
-credential selection. `proxy/proxy.go` distinguishes HTTP, HTTPS, and cleartext HTTP/2, then dials
-the admitted address. Its TLS transport verifies upstream certificates, but a matching rule can
-also substitute the same credential into plaintext HTTP. The HTTP/2 transport test deliberately
+`policy.Request` carries the upstream port and whether the proxy reaches it over verified TLS
+(`policy/evaluate.go`), but only the `kubernetesServiceAccount` source consults them: the proxy's
+own bearer goes only to the configured local API server's host and port over TLS (#15075). Every
+other source is chosen without them. `proxy/proxy.go` distinguishes HTTP, HTTPS, and cleartext
+HTTP/2, then dials the admitted address. Its TLS transport verifies upstream certificates, but a
+matching rule can also substitute a `secretRef` or `projectedWorkloadToken` credential into
+plaintext HTTP. The HTTP/2 transport test deliberately
 exercises that behavior with a local upstream.
 
 `clusterInternal` permits private DNS answers; it is not a transport-security declaration.

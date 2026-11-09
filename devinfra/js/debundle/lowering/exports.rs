@@ -5,9 +5,8 @@
 use crate::naturalize::NaturalizedModuleBody;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
-use frontend_elaboration::chunk_ast::{
-    ExportedNameOrigin, SourceExportIdentity, TopLevelDecl, binding_names,
-};
+use binding_targets::binding_name_strings;
+use frontend_elaboration::chunk_ast::{ExportedNameOrigin, SourceExportIdentity, TopLevelDecl};
 use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
 use source_identity::StatementId;
@@ -211,7 +210,7 @@ impl Visit for TargetedRefCollector<'_> {
         let shadowed = node
             .params
             .iter()
-            .flat_map(|param| binding_names(&param.pat))
+            .flat_map(|param| binding_name_strings(&param.pat))
             .collect::<BTreeSet<_>>();
         self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
     }
@@ -223,7 +222,7 @@ impl Visit for TargetedRefCollector<'_> {
         let shadowed = node
             .params
             .iter()
-            .flat_map(binding_names)
+            .flat_map(binding_name_strings)
             .collect::<BTreeSet<_>>();
         self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
     }

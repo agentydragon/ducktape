@@ -97,6 +97,40 @@ Runtime and the sidecar (for a VM, the launcher relay), replacing an incarnation
 through a fresh ID, and on routes that carry one, the forwarded Pod token must pass TokenReview. The
 cluster has no CRL or OCSP.
 
+### Why one issuer
+
+Owners only request; one component issues and every verifier links one resolver. The boundary is
+the `WorkloadCredential` kind, the URI form, and the rule that only the issuer creates workload
+Certificates and writes their status. Where the issuer runs is not: requesters see only the
+object, so moving it out of the Policy Controller later changes no requester or verifier. It is
+hosted there because that process already holds identity-scoped authority (binding expiry, grants,
+RoleBindings with `bind` in the subject namespaces), so Certificate create adds no new class of
+trust, and issuance is a reconcile with no serving path of its own.
+
+The constraints that rejected the alternatives:
+
+- **Each owner issuing for itself** gives every owner Certificate create against a CA that signs any
+  URI, restates the per-owner URI admission for each new owner, and makes every verifier read each
+  owner's objects.
+- **An RPC issuing service** cannot be called by Flux, so a standing workload would enroll with a
+  bearer or a pre-declared object, and it adds a serving dependency to every Sandbox start.
+- **SPIRE** attests only Pods; KubeVirt and Firecracker guests get their SVID through a launcher,
+  it has no per-incarnation acceptance, and it adds a second CA and a node agent.
+- **Bearers for non-Sandbox callers** need a ServiceAccount per identity once Sandboxes stop
+  creating them: a second subject model.
+- **`csi-driver-spiffe`** makes the ServiceAccount the identity again, and needs cert-manager's
+  default approver disabled cluster-wide; so does approver-policy in place of the Certificate
+  admission policy.
+- **An opaque `spiffe://agentplane/<credential-id>`** needs a per-request label list, a cache, or an
+  object per credential to find its record.
+- **A namespaced Issuer with External Secrets copying Secrets** adds a poll to every start, makes
+  the operator hold every workload key, and adds a controller to renewal. Revisit if push-based
+  cross-namespace delivery appears.
+
+The URI never names where the subject lives: under every architecture direction the record,
+Certificate, Secret and workload stay in the workload cluster, and only the subject reference
+crosses to wherever `Identity` lives.
+
 ## The workload CA
 
 Every Agentplane SVID, the Runtime certificates and the services' own, comes from the

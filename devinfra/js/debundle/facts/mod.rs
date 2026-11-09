@@ -38,7 +38,7 @@ pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 pub(crate) use crate::analysis_inputs::{
     AnalysisInputs, KnownEffect, LocalEffectPolicy, ValidatedNativeOperationFacts,
 };
-pub(crate) use crate::execution_evidence::SourceLocation;
+pub(crate) use crate::execution_evidence::{SourceLocation, SourceLocator};
 pub(crate) use crate::purity::{
     ChunkCodeGraph, Purity, RedundantPureMemberHint, RedundantPurityHint,
     classify_class_static_purity, classify_expr_purity, classify_var_decl_purity,
@@ -117,9 +117,7 @@ pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys}
 pub use analyze::{
     ExportReentryPolicy, analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy,
     analyze_vendor_prune_chunk, collect_chunk_source_facts, collect_chunk_source_facts_from_items,
-    complete_chunk_structural, complete_chunk_structural_with_argument_inputs,
-    complete_chunk_structural_with_inputs, complete_chunk_structural_with_native_allocations,
-    module_has_top_level_await,
+    complete_chunk_structural, complete_chunk_structural_with_inputs, module_has_top_level_await,
 };
 pub(crate) use analyze::{complete_chunk_structural_with_flow, structural_value_flow};
 pub use evaluation_effects::{
