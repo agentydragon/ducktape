@@ -370,6 +370,21 @@ impl LocalExpression {
                                 name: Some(binding.sym.to_string()),
                                 value: Self::Value(ValueExpr::Binding(binding.to_id())),
                             }),
+                            // `__proto__: null` sets no own property. It
+                            // occupies the dynamic-key slot, as the value
+                            // lowering records it, so no own-key projection
+                            // of the literal is proved; a non-null
+                            // prototype adds inherited lookups and stays out.
+                            Prop::KeyValue(pair)
+                                if static_property_name(&pair.key).as_deref()
+                                    == Some("__proto__") =>
+                            {
+                                matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_)))
+                                    .then_some(PropertyDefinition::Data {
+                                        name: None,
+                                        value: Self::PrimitiveLiteral(PrimKinds::NULL),
+                                    })
+                            }
                             Prop::KeyValue(pair) => Some(PropertyDefinition::Data {
                                 name: Some(literal_definition_name(&pair.key)?),
                                 value: Self::lower_with_binary(

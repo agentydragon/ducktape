@@ -427,8 +427,6 @@ pub enum NativeIntegrityGuard {
     ForeignCallSummary,
     /// `Object.fromEntries` over an Array `map` whose callbacks are retained.
     MappedFromEntries,
-    /// A private `Object.freeze` module-namespace record.
-    FrozenNamespace,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]

@@ -78,6 +78,34 @@ impl ObjectSurfaceStore {
         !self.tainted_objects.contains(&object) && !self.unsettled_objects.contains(&object)
     }
 
+    /// Whether the literal's writability witness still stands: no integrity
+    /// operation or descriptor definition has touched the object since its
+    /// first uninterrupted literal execution.
+    pub(in crate::facts::sync_effects) fn literal_writability_intact(&self, object: u32) -> bool {
+        matches!(
+            self.writable_prefix.get(&object),
+            Some(WritablePrefixState::InProgress | WritablePrefixState::Proven(_))
+        )
+    }
+
+    /// Store a data payload under a key the surface cannot name. Returns
+    /// whether the surface changed.
+    pub(in crate::facts::sync_effects) fn define_dynamic_key_data(
+        &mut self,
+        object: u32,
+        values: &Values,
+    ) -> bool {
+        let slot = self
+            .prefix_object_properties
+            .entry(object)
+            .or_default()
+            .entry(None)
+            .or_default();
+        let before = slot.len();
+        slot.extend(values.iter().cloned());
+        slot.len() != before
+    }
+
     /// Whether this object was allocated at this prefix and holds no own data
     /// payload yet.
     pub(in crate::facts::sync_effects) fn has_no_own_data(&self, object: u32) -> bool {

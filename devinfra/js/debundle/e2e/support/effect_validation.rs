@@ -89,3 +89,53 @@ pub fn examples(report: &Value) -> &[Value] {
         .as_array()
         .expect("effect conflict examples")
 }
+
+/// The per-chunk `candidate_relocation_assessment.json` of an accepted run.
+pub fn candidate_relocation_assessment(fixture: &Fixture) -> Value {
+    read_json(
+        &fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("candidate_relocation_assessment.json"),
+    )
+}
+
+/// A relocation the legacy gate accepted and the effect verdict proved: the
+/// candidate swaps at least one pair and the assessment accepts within its
+/// checked scope.
+pub fn assert_effect_verdict_accepts(fixture: &Fixture, case: &str) {
+    let assessment = assert_accepted_relocation(fixture, case);
+    assert_eq!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{case}: {assessment:#}"
+    );
+}
+
+/// A valid split (Node parity holds, the legacy gate accepts a relocation)
+/// the effect verdict cannot prove yet: the assessment must carry `pending`,
+/// the typed status of today's refusal. Once the verdict accepts, this fails
+/// so the caller converts the case to `assert_effect_verdict_accepts`.
+pub fn assert_effect_verdict_pending(fixture: &Fixture, pending: &str, case: &str) {
+    let assessment = assert_accepted_relocation(fixture, case);
+    assert_ne!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{case}: capability landed, convert to a positive: {assessment:#}"
+    );
+    assert_eq!(assessment["status"], pending, "{case}: {assessment:#}");
+}
+
+fn assert_accepted_relocation(fixture: &Fixture, case: &str) -> Value {
+    let assessment = candidate_relocation_assessment(fixture);
+    assert_eq!(
+        assessment["legacy_gate_accepts"], true,
+        "{case}: {assessment:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert!(
+        report["swapped_pairs"]
+            .as_u64()
+            .is_some_and(|pairs| pairs > 0),
+        "{case}: the candidate relocates nothing: {report:#}"
+    );
+    assessment
+}

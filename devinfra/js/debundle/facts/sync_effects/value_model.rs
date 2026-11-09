@@ -1,7 +1,6 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
 use super::world::WorldScope;
-use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::builtins::IterationRow;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::value_flow::static_prop as static_string_prop;
@@ -438,18 +437,6 @@ pub(super) struct FromEntriesMappedProof {
     pub(super) key: String,
     pub(super) map_call_site: CallSite,
     pub(super) object_intrinsic: Id,
-}
-
-/// A fresh, private Vite/Rollup style facade. Both intrinsic calls return the
-/// same ordinary object; its stored callable fields remain reachable if the
-/// facade is later published or consumed.
-pub(super) struct FrozenNamespaceProof {
-    pub(super) freeze_site: CallSite,
-    pub(super) define_site: CallSite,
-    pub(super) stored_bindings: BTreeSet<Id>,
-    /// Whole initializer effects additionally need the descriptor's inherited
-    /// properties to be ordinary; private callback retention alone does not.
-    pub(super) initialization_dependencies: Option<ProofDependencies>,
 }
 
 /// Ordered literal definitions keep accessor payloads distinct from data values.

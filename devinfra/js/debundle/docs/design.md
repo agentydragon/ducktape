@@ -954,11 +954,17 @@ globalThis`) marks the bindings it flows into (transitively,
   remain conservative. Neither timing completeness nor an empty ledger supplies
   this conjunction.
 
-  The exact private frozen-namespace shape supplies root-effect coverage only
-  with its native slot dependencies and intact Object.prototype. The latter
-  excludes inherited descriptor getters during `Object.defineProperty`.
-  Source identity, normal completion and initialized bindings still seal the
-  receipt; callback retention and explicit binding reads remain independent.
+  A root initializer whose every call is an exact native row runs in the
+  ordered lane, and each admitted row is its call's `native_operation`
+  receipt. `Object.defineProperty` is admitted only on an object literal of
+  the executing statement from a getter-free data-descriptor record with
+  `Object.prototype` intact, which excludes inherited descriptor getters;
+  `Object.freeze` only on primitives and on that statement's literals. Source
+  identity, normal completion and initialized bindings still seal the receipt.
+  A private declaration whose ledger covers every operation, ran no callable
+  and bound a statement literal or primitive withdraws the reachability roots
+  it added, so its stored callables stay lazy until publication or
+  consumption.
 
   The lexical dataflow bit is `dataflow_summarizable` in
   `facts/statement_facts.rs`. Only the bailing statements pay the conservative

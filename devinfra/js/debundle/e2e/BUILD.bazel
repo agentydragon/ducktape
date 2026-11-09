@@ -270,6 +270,14 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "effect_tv_descriptor_rows_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "effect_tv_class_owners_test",
     data = ["@debundle_bun_1_3_10//:bun"],
     env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},

@@ -5,16 +5,15 @@ and completes its purity afterward. A current-owner admission proof cannot depen
 on that completed verdict. Timing completeness, an empty access ledger, evaluation
 purity and capability privacy prove different properties.
 
-The interpreter's admission sites have these operation prerequisites. Four still
+The interpreter's admission sites have these operation prerequisites. Three still
 read `prepared_statement_is_pure`; lexical class heritage uses its own proof.
 
-| Consumer                             | Required evidence                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `private_frozen_namespace`           | Complete initializer syntax; intact `Object.freeze`, `Object.defineProperty` and `Symbol.toStringTag`; getter-free ordinary literal inputs; initialized payload reads; non-throwing descriptor application and freezing; mutation confined to the fresh private object. Stored callbacks stay lazy until publication or consumption. |
-| `fact_roots`                         | The whole owner does not publish an executable capability. Direct function creation, class definition, imported callback factories and local record factories have different evaluation premises. Exports, eager reads, calls and writes retain their own reachability paths.                                                        |
-| `closed_local_record_factory_result` | Exact callee and argument evaluation; a stable synchronous local callable; initialized capture reads; getter-free fresh own-data construction and writes; no invocation or publication of retained callbacks. The fresh-record certificate also checks ordered write coverage and allocation identity.                               |
-| `noninvoking_class_heritage_read`    | The canonical heritage expression is exactly a lexical read of an initialized, unique ordinary source class at the settled prefix. Its class identity is neither tainted nor escaped. Whole-statement purity of either class is unnecessary.                                                                                         |
-| `private_callback_factory_result`    | Exact canonical initializer and direct imported callee; one inline closure argument; definite private result binding; validated retention/result summary and its provenance; prepared classifier obligations and typed dependencies. `fact_roots` and `ClosedResultRoot` reporting consume this single decision.                     |
+| Consumer                             | Required evidence                                                                                                                                                                                                                                                                                                |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fact_roots`                         | The whole owner does not publish an executable capability. Direct function creation, class definition, imported callback factories and local record factories have different evaluation premises. Exports, eager reads, calls and writes retain their own reachability paths.                                    |
+| `closed_local_record_factory_result` | Exact callee and argument evaluation; a stable synchronous local callable; initialized capture reads; getter-free fresh own-data construction and writes; no invocation or publication of retained callbacks. The fresh-record certificate also checks ordered write coverage and allocation identity.           |
+| `noninvoking_class_heritage_read`    | The canonical heritage expression is exactly a lexical read of an initialized, unique ordinary source class at the settled prefix. Its class identity is neither tainted nor escaped. Whole-statement purity of either class is unnecessary.                                                                     |
+| `private_callback_factory_result`    | Exact canonical initializer and direct imported callee; one inline closure argument; definite private result binding; validated retention/result summary and its provenance; prepared classifier obligations and typed dependencies. `fact_roots` and `ClosedResultRoot` reporting consume this single decision. |
 
 ## Private callback-factory results
 
@@ -45,8 +44,7 @@ participates in this decision.
 the same proof's retained summary evidence. Reporting does not infer admission
 from absence in the root set or run another purity check. A direct imported call
 with one inline closure cannot also be a metadata expression statement, a global
-publication assignment, a two-call frozen namespace or a local hoisted
-constructor/record factory. Those exemptions keep their own decisions. Later
+publication assignment or a local hoisted constructor/record factory. Those exemptions keep their own decisions. Later
 consumption, writes and exports retain their normal callback reachability paths.
 
 ## Ordinary lexical class heritage

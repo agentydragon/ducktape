@@ -45,9 +45,9 @@ use super::runtime_inference::{
 };
 use super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
-    DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, HeapAddress, InstanceOrigin,
-    LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr,
-    Values, canonical_array_index,
+    DenseArray, DenseArrayIterationTransfer, HeapAddress, InstanceOrigin, LexicalCaptures,
+    LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
+    canonical_array_index,
 };
 use super::world::cells::{CellInitialization, CellTrace};
 use super::world::descriptor_heap::{
@@ -68,7 +68,8 @@ use crate::execution_evidence::{
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
 use crate::facts::abstract_domain::builtins::{
-    ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
+    self, ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row,
+    Throws,
 };
 use crate::facts::abstract_domain::effect::{CoerceOp, CoerceOperand};
 use crate::facts::abstract_domain::heap::Mutation;
@@ -122,7 +123,23 @@ enum NativeIdentitySource {
     },
     AuthorInput {
         evidence: Box<crate::analysis_inputs::NativeOperationInputEvidence>,
+        dependencies: Box<ProofDependencies>,
     },
+}
+
+impl NativeIdentitySource {
+    fn dependencies(&self) -> &ProofDependencies {
+        match self {
+            Self::Inferred { premise } => &premise.dependencies,
+            Self::AuthorInput { dependencies, .. } => dependencies,
+        }
+    }
+}
+
+enum NativeCallIdentity {
+    Proved(&'static Row, NativeIdentitySource),
+    /// The callee names an intrinsic row whose slots are not intact.
+    FailedGuard(&'static [IntrinsicSlot]),
 }
 
 fn from_flow(values: FlowValues) -> Values {
@@ -718,6 +735,10 @@ pub(super) struct NativeCallResolution {
     plan: CheckedNativePlan,
     iterable: Option<NativeIterableReceipt>,
     operation_coverage: Option<EffectCoverageFragment>,
+    /// Prerequisites of the admission: callee identity, operand proofs and
+    /// the prefix premises they read. The admitted row runs no user code, so
+    /// these also cover the operation's effect domains.
+    dependencies: ProofDependencies,
 }
 
 struct NewEvaluation {
@@ -1451,6 +1472,12 @@ impl DescriptorContext for Executor<'_, '_> {
 
     fn descriptor_conversion_is_ordinary(&mut self) -> bool {
         self.ordinary_object_prototype_intact()
+    }
+
+    fn statement_literal(&self, object: u32) -> bool {
+        self.state.current_top_owner.is_some()
+            && self.inputs.index.object_literal_owners.get(&object)
+                == self.state.current_top_owner.as_ref()
     }
 }
 
@@ -2240,6 +2267,37 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         }
         Some((selection, effects))
     }
+    fn native_callee(
+        &mut self,
+        receiver: &Id,
+        property: &str,
+        call_span: Span,
+    ) -> Option<LocalValueResult> {
+        // Only the exact canonical root call has an ordered execution witness.
+        if !matches!(self.scope, LocalExecutionScope::RootInitializer) {
+            return None;
+        }
+        let callee = ValueExpr::Member(
+            Arc::new(ValueExpr::Binding(receiver.clone())),
+            Some(property.to_owned()),
+            MemberKey::Static,
+            call_span.into(),
+        );
+        let (_, source) = self.executor.exact_native_call_row(
+            CallKind::Call,
+            &callee,
+            CallSite::from(call_span),
+        )?;
+        // Reading the intact intrinsic slot is the whole callee evaluation;
+        // operand admission and the row's mutations stay with the call.
+        let mut effects = EffectCoverageFragment::no_effects();
+        effects.depend_on(source.dependencies());
+        Some(LocalValueResult {
+            allocation: super::allocation_transfer::AllocationValue::opaque(unknown()),
+            effects,
+            selection: None,
+        })
+    }
     fn native_field_read(
         &mut self,
         frame: &mut LocalFrame,
@@ -2257,10 +2315,11 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
             MemberKey::Static,
             span.into(),
         );
-        object_own_data_read_property(&callee, |id| {
+        native_own_data_read_slots(&callee, |id| {
             self.executor.inputs.flow.is_declared(id)
                 || self.executor.inputs.shadowed.contains(id.0.as_ref())
         })?;
+        let data = builtins::data_property(receiver.0.as_ref(), property)?;
         self.calls().iter().find(|call| {
             call.kind == CallKind::LocalMemberRead
                 && call.span == span
@@ -2299,12 +2358,20 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
                     },
                 );
         }
-        // The source operands are declarative. This preserves the existing
-        // value projection without replaying receiver code or authorizing a
-        // later invocation through the returned reference.
-        let values = self
-            .executor
-            .evaluate(&callee, &frame.environment, &frame.environment);
+        let values = match data.value {
+            // A well-known symbol or numeric constant: the slot's value is
+            // its kind; the premise proves the slot was never written.
+            builtins::PropertyValue::Primitive(kinds) => {
+                Values::from([AbstractValue::Value(Value::Prim(kinds))])
+            }
+            // The source operands are declarative. This preserves the
+            // existing value projection without replaying receiver code or
+            // authorizing a later invocation through the returned reference.
+            builtins::PropertyValue::Function => {
+                self.executor
+                    .evaluate(&callee, &frame.environment, &frame.environment)
+            }
+        };
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(&dependencies);
         Some(LocalValueResult {
@@ -3011,6 +3078,37 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         callee: &ValueExpr,
         site: CallSite,
     ) -> Option<(&'static Row, NativeIdentitySource)> {
+        match self.native_call_identity(kind, callee, site)? {
+            NativeCallIdentity::FailedGuard(slots) => {
+                self.record_failed_native_guard(NativeIntegrityGuard::NativeCallIdentity, slots);
+                None
+            }
+            NativeCallIdentity::Proved(row, source) => {
+                match &source {
+                    NativeIdentitySource::AuthorInput { dependencies, .. } => self
+                        .record_proof_dependencies(
+                            NativeIntegrityGuard::NativeCallIdentity,
+                            dependencies,
+                        ),
+                    NativeIdentitySource::Inferred { premise } => self.record_inference_use(
+                        NativeIntegrityGuard::NativeCallIdentity,
+                        premise.inference_use.clone(),
+                        &premise.dependencies,
+                    ),
+                }
+                Some((row, source))
+            }
+        }
+    }
+
+    /// The identity decision of `exact_native_call_row` without recording
+    /// its premise use; `None` when the callee names no intrinsic row.
+    fn native_call_identity(
+        &self,
+        kind: CallKind,
+        callee: &ValueExpr,
+        site: CallSite,
+    ) -> Option<NativeCallIdentity> {
         let (row, callee) = super::execution_index::native_call_identity_key(kind, callee)?;
         if !names_intrinsic(
             &callee,
@@ -3027,8 +3125,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             Some(site.allocation_id()),
             InferenceRule::NativeCallIdentity,
         ) else {
-            self.record_failed_native_guard(NativeIntegrityGuard::NativeCallIdentity, row.requires);
-            return None;
+            return Some(NativeCallIdentity::FailedGuard(row.requires));
         };
         if !premise.census {
             let evidence = self
@@ -3037,23 +3134,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .native_operation_input_evidence
                 .get(&site)?
                 .clone();
-            self.record_proof_dependencies(
-                NativeIntegrityGuard::NativeCallIdentity,
-                &premise.dependencies,
-            );
-            return Some((
+            return Some(NativeCallIdentity::Proved(
                 row,
                 NativeIdentitySource::AuthorInput {
                     evidence: Box::new(evidence),
+                    dependencies: Box::new(premise.dependencies),
                 },
             ));
         }
-        self.record_inference_use(
-            NativeIntegrityGuard::NativeCallIdentity,
-            premise.inference_use.clone(),
-            &premise.dependencies,
-        );
-        Some((
+        Some(NativeCallIdentity::Proved(
             row,
             NativeIdentitySource::Inferred {
                 premise: Box::new(premise),
@@ -3194,16 +3283,51 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut ordinary_operands = BTreeSet::new();
         let mut own_property_projection = None;
         let mut application = None;
+        let mut definition = None;
         for mutation in row.mutates {
             match *mutation {
-                // Freezing is silent only on the fresh plain-data literal itself.
+                // SetIntegrityLevel runs only ordinary internal methods: it is
+                // silent on a primitive and on every exact object allocation.
+                // An allocation another statement already holds keeps its
+                // conservative barrier, since the attribute change would have
+                // to be ordered against that statement's writes.
                 Mutation::Integrity(ArgSel::Arg(index)) => {
-                    if !matches!(expressions.get(index), Some(ValueExpr::ObjectLiteral(object, _))
-                        if self.inputs.index.plain_data_objects.contains(object))
+                    let values = args.get(index)?;
+                    let literal = match expressions.get(index) {
+                        Some(ValueExpr::ObjectLiteral(object, _)) => Some(*object),
+                        _ => None,
+                    };
+                    if values.is_empty()
+                        || !values.iter().all(|value| {
+                            value.is_primitive()
+                                || matches!(value, AbstractValue::Value(Value::Alloc(kind, object))
+                                    if kind.tracks_prefix_own_properties()
+                                        && (literal == Some(*object)
+                                            || self.statement_literal(*object)))
+                        })
                     {
                         return None;
                     }
                     ordinary_operands.insert(index);
+                }
+                Mutation::DefineProperty {
+                    target: ArgSel::Arg(target),
+                    key: ArgSel::Arg(key),
+                    descriptor: ArgSel::Arg(descriptor),
+                } => {
+                    let (Some(target_values), Some(key_values), Some(descriptor_values)) =
+                        (args.get(target), args.get(key), args.get(descriptor))
+                    else {
+                        return None;
+                    };
+                    definition = Some(descriptor_heap::dynamic_key_definition(
+                        self,
+                        target_values,
+                        key_values,
+                        descriptor_values,
+                    )?);
+                    // The key stays with the primitive coercion check below.
+                    ordinary_operands.extend([target, descriptor]);
                 }
                 Mutation::DefineProperties {
                     target: ArgSel::Arg(target),
@@ -3280,7 +3404,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 return None;
             }
         }
-        if let NativeIdentitySource::AuthorInput { evidence } = source {
+        if let NativeIdentitySource::AuthorInput { evidence, .. } = source {
             let source_span = site.source_span();
             self.observations.record_native_operation_input_use(
                 source_span,
@@ -3312,13 +3436,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             args,
             own_property_projection.as_ref(),
             application,
+            definition,
             self.state.world.revision.prefix,
         )?;
+        let mut dependencies = self.observations.dependencies().clone();
+        dependencies.extend(&self.queries.dependencies());
         Some(NativeCallResolution {
             row,
             plan,
             iterable,
             operation_coverage,
+            dependencies,
         })
     }
 
@@ -3689,6 +3817,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             plan,
             iterable,
             operation_coverage,
+            dependencies: _,
         } = resolution;
         let fresh = match native_operation::execute(self, plan) {
             Ok(fresh) => fresh,
@@ -3844,7 +3973,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         AbstractValue::Value(Value::Top),
                     ]);
                 }
-                Mutation::Integrity(_) | Mutation::DefineProperties { .. } => {}
+                Mutation::Integrity(_)
+                | Mutation::DefineProperties { .. }
+                | Mutation::DefineProperty { .. } => {}
                 Mutation::FreshRetains(ArgSel::Rest(_)) => return unknown(),
             }
         }
@@ -5091,206 +5222,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         roots
     }
 
-    // CLEANUP(added 2026-11-09): Delete this recognizer once the native row
-    //   table decides the frozen-facade shape: a symbol-keyed three-argument
-    //   `Object.defineProperty` row, `Mutation::Integrity` admission on a
-    //   non-literal operand, and a coverage producer replacing
-    //   `FrozenNamespaceProof.initialization_dependencies` for the eight
-    //   `native_browser_reentry_test`/`local_array_push_order_test` cases.
-    fn private_frozen_namespace(&mut self, fact: &StatementFacts) -> Option<FrozenNamespaceProof> {
-        if !matches!(fact.kind, StatementKind::VarDecl)
-            || !self.queries.prepared_statement_is_pure(fact.ordinal)
-            || fact.declared.len() != 1
-            || !self.inputs.index.const_call_owners.contains(&fact.ordinal)
-            || self.inputs.exported_owners.contains(&fact.ordinal)
-            || self.state.world.reachability.incomplete
-            || !self.inputs.index.dynamic_scope_owners.is_empty()
-            || self.inputs.index.opaque_top.contains(&fact.ordinal)
-            || !self.inputs.index.top_property_writes[fact.ordinal.0].is_empty()
-            || !self.inputs.index.top_member_value_writes[fact.ordinal.0].is_empty()
-            || !self.inputs.index.top_callback_result_writes[fact.ordinal.0].is_empty()
-            || !self.inputs.index.top_exported_values[fact.ordinal.0].is_empty()
-            || self.inputs.shadowed.contains("Object")
-            || self.inputs.shadowed.contains("Symbol")
-            || !self.census_slots_intact(
-                NativeIntegrityGuard::FrozenNamespace,
-                &[
-                    IntrinsicSlot::Global(NativeIntrinsic::Object),
-                    IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
-                    IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
-                    IntrinsicSlot::Global(NativeIntrinsic::Symbol),
-                    IntrinsicSlot::Static(NativeIntrinsic::Symbol, "toStringTag"),
-                ],
-            )
-        {
-            return None;
-        }
-        let [(binding, ValueExpr::Call(freeze_callee, freeze_args, freeze_site))] =
-            self.inputs.index.top_assignments[fact.ordinal.0].as_slice()
-        else {
-            return None;
-        };
-        if !fact.declared.contains(binding)
-            || self.inputs.index.exported_bindings.contains(binding)
-            || !self.inputs.index.top_definite_initializers[fact.ordinal.0].contains(binding)
-        {
-            return None;
-        }
-        let ValueExpr::Member(freeze_receiver, Some(freeze_method), MemberKey::Static, _) =
-            freeze_callee.as_ref()
-        else {
-            return None;
-        };
-        let ValueExpr::Binding(object_intrinsic) = freeze_receiver.as_ref() else {
-            return None;
-        };
-        if freeze_method != "freeze" || object_intrinsic.0.as_ref() != "Object" {
-            return None;
-        }
-        if self.inputs.flow.is_declared(object_intrinsic) {
-            return None;
-        }
-        let [ValueExpr::Call(define_callee, define_args, define_site)] = freeze_args.as_ref()
-        else {
-            return None;
-        };
-        if !matches!(define_callee.as_ref(),
-            ValueExpr::Member(receiver, Some(method), MemberKey::Static, _)
-                if method == "defineProperty"
-                    && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
-        {
-            return None;
-        }
-        let [
-            ValueExpr::ObjectLiteral(object, fields),
-            ValueExpr::Member(symbol_receiver, Some(tag), MemberKey::Static, _),
-            ValueExpr::ObjectLiteral(descriptor, descriptor_fields),
-        ] = define_args.as_ref()
-        else {
-            return None;
-        };
-        let ValueExpr::Binding(symbol) = symbol_receiver.as_ref() else {
-            return None;
-        };
-        if symbol.0.as_ref() != "Symbol"
-            || tag != "toStringTag"
-            || self.inputs.flow.is_declared(symbol)
-            || !self.inputs.index.null_proto_data_objects.contains(object)
-            || !self.inputs.index.plain_data_objects.contains(descriptor)
-            || !matches!(descriptor_fields.as_ref(), [(Some(name), ValueExpr::NonCallable(_))] if name == "value")
-            || !self
-                .inputs
-                .index
-                .primitive_data_properties
-                .contains(&(*descriptor, "value".to_owned()))
-        {
-            return None;
-        }
-        let mut stored_bindings = BTreeSet::new();
-        let mut names = BTreeSet::new();
-        for (name, value) in fields.iter() {
-            let Some(name) = name else {
-                if self.inputs.index.null_proto_data_objects.contains(object)
-                    && !names.contains("__proto__")
-                    && matches!(value, ValueExpr::NonCallable(_))
-                {
-                    names.insert("__proto__".to_owned());
-                    continue;
-                }
-                return None;
-            };
-            if !names.insert(name.clone()) {
-                return None;
-            }
-            if name == "__proto__" {
-                if !self.inputs.index.null_proto_data_objects.contains(object)
-                    || !matches!(value, ValueExpr::NonCallable(_))
-                {
-                    return None;
-                }
-            } else {
-                match value {
-                    ValueExpr::Alloc(Kind::Function, _) => {}
-                    ValueExpr::Binding(id) => {
-                        if !self
-                            .state
-                            .world
-                            .module
-                            .prefix_values
-                            .get(id)
-                            .is_some_and(|values| {
-                                !values.is_empty()
-                                    && !values.contains(&AbstractValue::Value(Value::Unavailable))
-                            })
-                        {
-                            return None;
-                        }
-                        stored_bindings.insert(id.clone());
-                    }
-                    ValueExpr::NonCallable(_)
-                        if self
-                            .inputs
-                            .index
-                            .primitive_data_properties
-                            .contains(&(*object, name.clone())) => {}
-                    _ => return None,
-                }
-            }
-        }
-        let mut calls = self.inputs.index.top_calls[fact.ordinal.0].iter();
-        if !calls.all(|call| {
-            !call.has_spread
-                && (call.kind == CallKind::Call
-                    && (CallSite::from(call.span) == *freeze_site
-                        || CallSite::from(call.span) == *define_site)
-                    || call.kind == CallKind::AccessorCalleeLookup
-                        && matches!(&call.callee,
-                            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _)
-                                if matches!(property.as_str(), "freeze" | "defineProperty")
-                                    && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
-                    || call.kind == CallKind::LocalMemberRead
-                        && matches!(&call.callee,
-                            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _)
-                                if property == "toStringTag"
-                                    && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == symbol)))
-        }) {
-            return None;
-        }
-        // ToPropertyDescriptor checks inherited fields on this ordinary
-        // descriptor. Identity of defineProperty alone excludes no getter.
-        let initialization_slots = [
-            IntrinsicSlot::Global(NativeIntrinsic::Object),
-            IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
-            IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
-            IntrinsicSlot::Prototype(NativeIntrinsic::Object),
-            IntrinsicSlot::Global(NativeIntrinsic::Symbol),
-            IntrinsicSlot::Static(NativeIntrinsic::Symbol, "toStringTag"),
-        ];
-        let initialization_dependencies = if self
-            .census_slots_intact(NativeIntegrityGuard::FrozenNamespace, &initialization_slots)
-        {
-            self.inputs
-                .index
-                .integrity
-                .require(&initialization_slots, None)
-                .dependencies()
-        } else {
-            None
-        };
-        Some(FrozenNamespaceProof {
-            freeze_site: *freeze_site,
-            define_site: *define_site,
-            stored_bindings,
-            initialization_dependencies,
-        })
-    }
-
     fn fact_roots(
         &mut self,
         fact: &StatementFacts,
         metadata_target: Option<SourceUnitOrdinal>,
         private_constructor_result_owners: &BTreeSet<SourceUnitOrdinal>,
-        frozen_namespace: Option<&FrozenNamespaceProof>,
         closed_callback_factory_result: Option<&PrivateCallbackFactoryResult>,
     ) -> BTreeSet<SourceUnitOrdinal> {
         let mut roots = BTreeSet::new();
@@ -5326,7 +5262,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         && (fact.declares_direct_function
                             || matches!(fact.kind, StatementKind::ClassDecl)
                             || self.closed_local_record_factory_result(fact)))
-                    || frozen_namespace.is_some()
                     || !private_constructor_result_owners.is_empty()))
         {
             roots.insert(fact.ordinal);
@@ -5349,11 +5284,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     fact.reads
                         .eager
                         .iter()
-                        .filter(|id| {
-                            Some(*id) != inert_heritage.as_ref()
-                                && !frozen_namespace
-                                    .is_some_and(|proof| proof.stored_bindings.contains(*id))
-                        })
+                        .filter(|id| Some(*id) != inert_heritage.as_ref())
                         .chain(fact.rebinds.eager.iter()),
                 )
                 .into_iter()
@@ -9987,6 +9918,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Every call of the root is an exact intact intrinsic, so the ordered
+    /// lane runs no application code. Identity is decided here; the ordered
+    /// call transfer admits or refuses the operands.
+    fn ordered_root_calls_are_native(&self, calls: &[Call]) -> bool {
+        let mut calls = calls
+            .iter()
+            .filter(|call| call.kind == CallKind::Call)
+            .peekable();
+        calls.peek().is_some() && calls.all(|call| self.exact_native_root_call(call))
+    }
+
+    fn exact_native_root_call(&self, call: &Call) -> bool {
+        call.kind == CallKind::Call
+            && !call.has_spread
+            && matches!(
+                call.callee,
+                ValueExpr::Member(_, Some(_), MemberKey::Static, _)
+            )
+            && matches!(
+                self.native_call_identity(CallKind::Call, &call.callee, CallSite::from(call.span)),
+                Some(NativeCallIdentity::Proved(..))
+            )
+    }
+
     /// Native and imported calls whose proofs still project source operands
     /// retain their established whole-owner path. This chooses a source
     /// family before execution; the ordered call transfer still checks each
@@ -10553,15 +10508,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 values
             }
             ValueExpr::Call(callee, args, span) => {
-                if self
-                    .state
-                    .world
-                    .publication
-                    .frozen_namespace_calls
-                    .contains(span)
-                {
-                    return self.evaluate(&args[0], env, captures);
-                }
                 if let Some((proof, _, dense, _, _)) =
                     self.array_iteration_plan(*span, env, captures)
                 {
@@ -11011,9 +10957,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         let returns = frame.returns();
-        for value in &returns {
-            if let AbstractValue::OwnDescriptorMap(site) = value {
-                self.invalidate_own_descriptor_map(*site);
+        // A callable's caller cannot track a returned map; a root
+        // initializer's completion value is the declared binding's, whose
+        // map identity the prefix keeps.
+        if let LocalExecutionScope::Callable(_) = scope {
+            for value in &returns {
+                if let AbstractValue::OwnDescriptorMap(site) = value {
+                    self.invalidate_own_descriptor_map(*site);
+                }
             }
         }
         outcome.returns.extend(returns);
@@ -11790,19 +11741,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.unknown_call = true;
             return CallTransfer::EffectsOnly;
         }
-        if call.kind == CallKind::Call
-            && self
-                .state
-                .world
-                .publication
-                .frozen_namespace_calls
-                .contains(&CallSite::from(call.span))
-        {
-            return match operands {
-                Some(operands) => CallTransfer::Values(operands.arguments[0].clone()),
-                None => CallTransfer::EffectsOnly,
-            };
-        }
         if call.kind == CallKind::AccessorCalleeLookup {
             let ValueExpr::Member(receiver, property, _, _) = &call.callee else {
                 unreachable!("accessor callee lookup always records a member");
@@ -12244,6 +12182,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // This branch is the consumed runtime transfer: operands have
             // completed, and the admitted row's checked plan is committed to
             // this prefix whether or not the value is used.
+            if needs_value {
+                // The kernel's per-call outcome: the admitted row is the one
+                // operation it performed, with no application callback,
+                // accessor, host operation or exterior write.
+                let mut coverage =
+                    EffectCoverageFragment::native_operation(&resolution.dependencies);
+                if let (Some(caller), Some(intrinsic)) = (
+                    self.local_body_identity_for_call(call),
+                    resolution.row.family(),
+                ) {
+                    coverage.selected_local_call(LocalCallReceipt {
+                        caller,
+                        call_span: call.span,
+                        target: LocalBodyIdentity::Native {
+                            intrinsic,
+                            property: resolution.row.op.callee().1.map(str::to_owned),
+                        },
+                        dependencies: Box::new(resolution.dependencies.clone()),
+                    });
+                }
+                outcome.effect_coverage = coverage;
+            }
             if let Some(receipt) = &resolution.iterable {
                 outcome.effects.record_heap_contents(
                     &receipt.external_heap_contents(),
@@ -14286,19 +14246,6 @@ impl Executor<'_, '_> {
                 .accepted_deferred_global_writes
                 .insert(fact.ordinal);
         }
-        let frozen_namespace = self.private_frozen_namespace(fact);
-        if let Some(proof) = &frozen_namespace {
-            self.state
-                .world_mut()
-                .publication
-                .frozen_namespace_calls
-                .insert(proof.freeze_site);
-            self.state
-                .world_mut()
-                .publication
-                .frozen_namespace_calls
-                .insert(proof.define_site);
-        }
         let closed_result = self.private_callback_factory_result(fact);
         let private_constructor_result_owners = self
             .state
@@ -14310,15 +14257,18 @@ impl Executor<'_, '_> {
             fact,
             prevalidated_metadata.map(|validated| validated.target_owner),
             &private_constructor_result_owners,
-            frozen_namespace.as_ref(),
             closed_result.as_ref(),
         );
         if let Some(proof) = closed_result {
             self.record_callback_factory_use_fact(proof.proof_use);
         }
+        // Roots this statement adds while no opaque call has consumed them.
+        // A fully covered execution withdraws them again below.
+        let mut provisional_roots = BTreeSet::new();
         if self.state.world.reachability.unknown_call_seen {
             self.extend_reachable_owners(fact_roots.iter().copied());
         } else if let Some(roots) = &mut self.state.prior_reachability_roots {
+            provisional_roots.extend(fact_roots.difference(roots).copied());
             // Include the active call site before any nested unknown call can
             // consume the prefix roots.
             roots.extend(fact_roots.iter().copied());
@@ -14391,6 +14341,7 @@ impl Executor<'_, '_> {
                 }
                 inputs.initializer_call_effect_input(owner, binding, callee, span)
             });
+        let native_root_calls = self.ordered_root_calls_are_native(calls);
         let ordered_initializer = ((initializer_source.is_none()
             || checked_split_binding_copy
             || selected_audited_initializer.is_some())
@@ -14414,6 +14365,7 @@ impl Executor<'_, '_> {
             !body.requires_keyed_collection_new()
                 && body.captured_writes().is_empty()
                 && (self.ordered_root_calls_are_local(calls)
+                    || native_root_calls
                     || selected_audited_initializer.is_some())
                 && (calls
                     .iter()
@@ -14442,6 +14394,7 @@ impl Executor<'_, '_> {
                     || calls.iter().any(|call| {
                         call.kind == CallKind::ArraySpread && call.caller.is_none()
                     })
+                    || native_root_calls
                     || calls.iter().any(|call| {
                         call.kind == CallKind::LocalMemberRead
                             && call.owner == owner
@@ -14476,18 +14429,6 @@ impl Executor<'_, '_> {
                 source
                     .matches(owner, binding, source.initializer_span())
                     .then_some((source, binding, source.initializer_span()))
-            })
-            .or_else(|| {
-                let proof = frozen_namespace.as_ref()?;
-                proof.initialization_dependencies.as_ref()?;
-                let [(binding, _)] = assignments.as_slice() else {
-                    return None;
-                };
-                let source = index.initialization_source_identities.get(&owner)?;
-                let span = proof.freeze_site.source_span();
-                source
-                    .matches(owner, binding, span)
-                    .then_some((source, binding, span))
             });
         // Keep the selected result in this owner until publication. Operands
         // and calls execute once, at their position in the shared local plan.
@@ -14927,24 +14868,46 @@ impl Executor<'_, '_> {
             && outcome.effects.uninitialized_reads.is_empty()
             && let Some((source, binding, span)) = effect_initializer_source
         {
-            // The existing exact namespace proof covers every operand and
-            // both native calls in this whole initializer. Its result value
-            // and callback reachability keep their ordinary execution paths.
-            let namespace_coverage = frozen_namespace.as_ref().and_then(|proof| {
-                let dependencies = proof.initialization_dependencies.as_ref()?;
-                self.record_proof_dependencies(NativeIntegrityGuard::FrozenNamespace, dependencies);
-                Some(EffectCoverageFragment::native_operation(dependencies))
-            });
             outcome.effects.completed_initialization = CompletedInitialization::from_root_effects(
                 source,
                 owner,
                 binding,
                 span,
                 &self.state.world.module.initialized_bindings,
-                namespace_coverage
-                    .as_ref()
-                    .unwrap_or(&outcome.effect_coverage),
+                &outcome.effect_coverage,
             );
+        }
+        // A private declaration whose every operation the ledger covers ran
+        // no user code and exposed no capability: its own callables and the
+        // bindings it read into its result stay as unpublished as under a
+        // direct function declaration, provided the result is a literal of
+        // this statement or a primitive, so every stored callable is reached
+        // through its tracked own-property surface. A callable retained by an
+        // opaque carrier (a descriptor map, a native collection) is reached
+        // only through the roots and keeps them. Only roots this statement
+        // added are withdrawn, and only while no opaque call consumed them.
+        if !provisional_roots.is_empty()
+            && !self.state.world.reachability.unknown_call_seen
+            && !inputs.exported_owners.contains(&fact.ordinal)
+            && outcome.complete
+            && !outcome.unknown_call
+            && outcome.executed_owners.is_empty()
+            && outcome.effects.precision_losses.is_empty()
+            && outcome.effect_coverage.normal_dependencies().is_some()
+            && let [(binding, _)] = assignments.as_slice()
+            && self.state.world.module.prefix_values.get(binding).is_some_and(|values| {
+                !values.is_empty()
+                    && values.iter().all(|value| {
+                        value.is_primitive()
+                            || matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object))
+                                if self.statement_literal(*object))
+                    })
+            })
+            && let Some(roots) = &mut self.state.prior_reachability_roots
+        {
+            for root in &provisional_roots {
+                roots.remove(root);
+            }
         }
         if outcome.effects.completed_initialization.is_none() {
             if initialization_coverage_refusal.is_none() {

@@ -1528,8 +1528,9 @@ pub(crate) fn is_safe_property_key(
         Expr::Member(member) => static_member(member).is_some_and(|(recv, prop)| {
             !shadowed.contains(recv)
                 && !local_shadowed.contains(recv)
-                && builtins::data_property(recv, prop)
-                    .is_some_and(|property| property.value == builtins::PropertyValue::Primitive)
+                && builtins::data_property(recv, prop).is_some_and(|property| {
+                    matches!(property.value, builtins::PropertyValue::Primitive(_))
+                })
         }),
         _ => false,
     }

@@ -8,7 +8,9 @@
 
 use super::super::property_inference::{OwnPropertyProjection, OwnPropertyProof};
 use super::super::value_model::{AbstractValue, CallSite, Values};
-use super::super::world::descriptor_heap::{DescriptorApplication, DescriptorHeap};
+use super::super::world::descriptor_heap::{
+    DescriptorApplication, DescriptorHeap, DynamicKeyDefinition,
+};
 use crate::facts::abstract_domain::builtins::{ArgSel, Row};
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -32,6 +34,7 @@ pub(in crate::facts::sync_effects) enum NativeOperationCommit {
         names: Vec<String>,
     },
     DefineProperties(DescriptorApplication),
+    DefineDynamicKey(DynamicKeyDefinition),
 }
 
 /// A complete native operation after its callee, operands and current-prefix
@@ -56,19 +59,21 @@ pub(in crate::facts::sync_effects) trait NativeOperationContext {
 
 /// Materialize an admitted row's mutations against the current operands.
 /// `projection` is the admitted own-property proof of the inspected operand,
-/// `application` the admitted definition onto its target; a row that needs
-/// one without having it was not admitted.
+/// `application` and `definition` the admitted definitions onto their
+/// targets; a row that needs one without having it was not admitted.
 pub(in crate::facts::sync_effects) fn plan(
     row: &Row,
     site: CallSite,
     arguments: &[Values],
     projection: Option<&OwnPropertyProof>,
     application: Option<DescriptorApplication>,
+    definition: Option<DynamicKeyDefinition>,
     revision: u64,
 ) -> Option<CheckedNativePlan> {
     let mut commits = Vec::new();
     let mut fresh = None;
     let mut application = application;
+    let mut definition = definition;
     for mutation in row.mutates {
         match *mutation {
             Mutation::Integrity(ArgSel::Arg(index)) => {
@@ -88,6 +93,9 @@ pub(in crate::facts::sync_effects) fn plan(
             }
             Mutation::DefineProperties { .. } => {
                 commits.push(NativeOperationCommit::DefineProperties(application.take()?));
+            }
+            Mutation::DefineProperty { .. } => {
+                commits.push(NativeOperationCommit::DefineDynamicKey(definition.take()?));
             }
             Mutation::FreshOwnDescriptorsOf(_) => {
                 let OwnPropertyProjection::Descriptors(descriptors) = &projection?.projection
@@ -150,6 +158,7 @@ pub(in crate::facts::sync_effects) fn commit(
             heap.dense_array(allocation, slots);
         }
         NativeOperationCommit::DefineProperties(application) => heap.apply(&application),
+        NativeOperationCommit::DefineDynamicKey(definition) => heap.define_dynamic_key(&definition),
     }
 }
 
