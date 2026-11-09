@@ -38,7 +38,6 @@ from cluster.cdk8s.agentplane import (
     sandbox_pod,
     session_dispatcher,
     telemetry,
-    workload_certificate_admission,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
@@ -220,7 +219,6 @@ def environment_chart(
         gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=runner_gateway.control_target(env.namespace),
-        runner_certificate_issuer=workload_certificate_admission.RUNNER_CERTIFICATE_ISSUER,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

@@ -23,12 +23,6 @@ type config struct {
 	HealthProbeBindAddress string                                   `yaml:"health_probe_bind_address"`
 	RunnerGatewayTarget    string                                   `yaml:"runner_gateway_target"`
 	RunnerGatewayTokenFile string                                   `yaml:"runner_gateway_token_file"`
-	// CLEANUP(added 2026-11-09): remove with runner_certificate_issuer in settings.py, once the
-	//   manifests stop setting it; the previous image requires it, and this one reads nothing of it.
-	RunnerCertificateIssuer *struct {
-		Name string `yaml:"name"`
-		Kind string `yaml:"kind"`
-	} `yaml:"runner_certificate_issuer"`
 }
 
 func defaultConfig() config {

@@ -2,27 +2,12 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.environment_runtime_transport.config import ClientTLS
-
-
-class IssuerKind(StrEnum):
-    ISSUER = "Issuer"
-    CLUSTER_ISSUER = "ClusterIssuer"
-
-
-class CertificateIssuer(BaseModel):
-    """A cert-manager issuer, as a Certificate's `issuerRef` names it."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    name: str = Field(min_length=1)
-    kind: IssuerKind
 
 
 class Settings(BaseModel):
@@ -47,9 +32,4 @@ class Settings(BaseModel):
     )
     runner_gateway_token_file: Path = Field(
         description="Projected ServiceAccount token the Runner Gateway accepts from this controller."
-    )
-    # CLEANUP(added 2026-11-09): remove from the manifests and here once the controller image that
-    #   no longer reads it is deployed (the WorkloadCredential cutover); the previous image requires it.
-    runner_certificate_issuer: CertificateIssuer | None = Field(
-        default=None, description="Unused: the Policy Controller issues runner credentials."
     )

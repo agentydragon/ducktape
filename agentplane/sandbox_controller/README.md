@@ -26,7 +26,7 @@ sidecar's separately selected mTLS proxy hop. Pod projections go to Runtime and,
 egress-sidecar; runtime-only custom templates remain supported. Workload containers do not mount
 it. For a KubeVirt launcher relay, admission checks the record's accepted binding against the
 current VMI before mounting that Secret into the sidecar; it does not mount it into a workload
-container. `runner_certificate_issuer` is accepted and ignored until the manifests stop setting it.
+container.
 
 Because that condition is set only once the History Service's ingress has
 acknowledged every seal, deleting a Sandbox waits while the History Service is down or rolling;
