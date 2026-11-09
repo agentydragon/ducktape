@@ -112,7 +112,7 @@ def describe_reason(item: BranchClassification) -> str:
         case PrunableBranch(reason=PrunableBranchReason.CONTENT_IN_MAIN, main=main, pr=pr):
             return f"changes already in {main}" + (f" ({pr_phrase(pr)})" if pr is not None else "")
         case PrunableBranch(reason=PrunableBranchReason.PR_HEAD_REACHED, pr=PrInfo() as pr):
-            return f"{pr_phrase(pr)}; nothing beyond the {pr.state.value} head"
+            return f"{pr_phrase(pr)}; nothing beyond the {pr.state.lower()} head"
         case PrunableBranch(reason=PrunableBranchReason.PATCHES_IN_MAIN, main=main):
             return f"every commit has an equivalent already on {main}"
         case RetainedBranch(reason=RetainedBranchReason.DEFAULT_BRANCH):

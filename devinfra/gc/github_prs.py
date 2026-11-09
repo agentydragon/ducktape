@@ -60,7 +60,6 @@ def _repo_slug(repo: Path) -> str | None:
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _GRAPHQL_BATCH = 50  # aliased pullRequests fields per request; well under GraphQL node limits
 _MAX_CONCURRENT_REQUESTS = 4  # kept low: GitHub's secondary rate limits penalize bursts of concurrent requests
-_GRAPHQL_STATE = {"MERGED": PrState.MERGED, "OPEN": PrState.OPEN, "CLOSED": PrState.CLOSED}
 
 
 def _pr_query(owner: str, name: str, branches: list[str]) -> tuple[str, dict[str, str]]:
@@ -79,7 +78,7 @@ def _most_decisive(nodes: Iterable[Mapping[str, Any]]) -> PrInfo | None:
     """The merged > open > closed PR among `nodes` (a branch's `pullRequests.nodes`)."""
     best: PrInfo | None = None
     for node in nodes:
-        info = PrInfo(number=node["number"], state=_GRAPHQL_STATE[node["state"]], head_sha=node["headRefOid"])
+        info = PrInfo(number=node["number"], state=PrState(node["state"]), head_sha=node["headRefOid"])
         if best is None or _PR_RANK[info.state] > _PR_RANK[best.state]:
             best = info
     return best
