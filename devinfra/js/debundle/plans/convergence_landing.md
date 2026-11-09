@@ -171,7 +171,7 @@ Wave 3 is ordered from the hosted inventory below instead) and L1e (devel has
 no module-cell identities yet; the saved identities land with Wave 3 slice 6).
 Still open from this wave: the `private_frozen_namespace` recognizer
 tombstoned by #15052 (Wave 3 slice 1). Cleanups landed alongside: #15055,
-#15056, #15058, #15060, #15062, #15063, #15066.
+#15056, #15058, #15060, #15061, #15062, #15063, #15066, #15071, #15074.
 
 **Wave 2: the kernel.** Large by nature; the interfaces (five context traits,
 `World` and its join, the one driver, the completion ledger as sole coverage
@@ -204,9 +204,9 @@ driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
   `execute_call_transfer_inner` split by mode; delete `complete: bool`. needs
   L2b. Tests: effect-translation positives with `swapped_pairs > 0` and Node
   parity.
-- L2d. `execution_index.rs` stops nesting the interpreter (`#[path]` modules
-  become siblings; `ExecutionIndex` is an input struct); provider program
-  registry only if devel grows one. needs L2a; parallel to L2b.
+- L2d. **Landed as #15073** (2026-11-09): the six `#[path]` children of
+  `execution_index.rs` are sibling modules; `ExecutionIndex` fields the
+  interpreter reads are `pub(super)`; devel had no provider program registry.
 
 **IR growth.** Devel's ordered `LocalBody` IR covers fewer constructs than the
 reference's (no regions, `if`/`try`/`catch` bindings, array or argument spread,
