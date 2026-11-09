@@ -160,43 +160,17 @@ dependency direction is visible.
 Slices are independent within a wave unless a `needs` is stated. `src` names
 the #14552 code to port by reference.
 
-**Wave 0: stop the bleeding.**
-
-- L0a. Withdrawn. The reference head does not compile and the next layer of
-  errors is not mechanical: `lowering/` is a half-applied refactor (an undefined
-  `minted` in `prepare_candidate_emission_plan`, an out-of-scope `options`,
-  `cross_chunk_imports` returning `()` where naturalization receipts are
-  expected, a `lowering` → `staged_analysis` dependency that would cycle, a
-  non-`Clone` vendor plan placed in an `Arc`). No test run of the integrated
-  design exists after the 63 / 193 result. Wave 3 is ordered from the last
-  complete hosted inventory instead: the 51 failing targets at `ceaa8713`
-  (run `42382520793`), with the `5db57608` panic sites as the second input.
-- L0b. Split devel's `e2e/staged_analysis_test.rs` and
-  `e2e/effect_translation_validation_test.rs` into per-capability targets and
-  move receipt helpers to `e2e/support`. Makes every later slice's tests small.
-
-**Wave 1: independent, legacy gate authoritative.**
-
-- L1a. `completion.rs` + `TransferLedger`. src: `facts/sync_effects/completion.rs`.
-- L1b. World store: `object_surface.rs`, `descriptor_transfer.rs`,
-  `native_operation.rs`; one `DefineProperties` commit; delete the row
-  `Mutation` interpretation and the string-matched recognizer. needs L1a.
-  Tests: `own_descriptor_inspection`, `own_property_names`,
-  `own_data_object_spread`, `native_operation_input`.
-- L1c. Rebind-fold removal. src: `lowering/rebind_fold.rs` deletion,
-  `plan_builder.rs`, three `cross_module_emission_test` cases.
-- L1d. Preflight/emission-plan refactor without authority change. src:
-  `assignment_analysis.rs` `CandidatePreflight`, `lowering/candidate_emission.rs`,
-  gate types in `gate.rs`.
-- L1e. Withdrawn as a standalone slice: devel's saved analysis already keys
-  chunks by name and has no `ModuleCellId`, so `SavedChunk`/`SavedModuleCell`
-  and the chunk-table-borrowing `ContextOrdinals` would be dead code until
-  module cells exist. They land with the Wave 3 module-cell slice.
-- L1f. Final global-resolution check, report-only. src:
-  `final_global_resolution.rs`, `ParsedGlobalUses`, `vendor/strip.rs` recorder.
-  Tests: `final_global_resolution_*`, `bundle_owned_globals_test`.
-- L1g. CLI vocabulary (`claims_checked`, `needs_full_assessment`) with graph-only
-  writes still allowed plus a warning; `docs/cli.md`.
+**Waves 0 and 1: landed** on `devel` 2026-11-09 as #15046 (ownership-edit
+assessment vocabulary), #15047 (typed completion), #15048 (explicit claims
+replace rebind folding; companion spec change gaffer-private#1070), #15049
+(e2e split by capability), #15050 (preflight and emission draft without
+authority change), #15051 (report-only final global resolution), #15052
+(own-property surface, descriptor heap, one native plan/commit path).
+Withdrawn: L0a (the reference head's `lowering/` is a half-applied refactor;
+Wave 3 is ordered from the hosted inventory below instead) and L1e (devel has
+no module-cell identities yet; the saved identities land with Wave 3 slice 6).
+Still open from this wave: the `private_frozen_namespace` recognizer
+tombstoned by #15052 (Wave 3 slice 1).
 
 **Wave 2: the kernel.** Large by nature; the interfaces (five context traits,
 `World` and its join, the one driver, the completion ledger as sole coverage
