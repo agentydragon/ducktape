@@ -21,6 +21,7 @@ from external_secrets_crds.io.external_secrets import (
 from agentplane.action_service.policies.resources import CALLER_LABEL, parse_action_rule
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.crd_group import GROUP
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles as access, external_creds
 from cluster.cdk8s.agentplane.actions import ORCHESTRATION_GROUP, SANDBOX_GROUP
 from cluster.cdk8s.agentplane.egress import (
@@ -44,6 +45,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     grocy_sf_read_egress_rules,
     home_assistant_read_egress_rules,
 )
+from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.haku import ui_egress as haku_ui_egress
 from cluster.cdk8s.monitoring import mimir
@@ -51,7 +53,7 @@ from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.cdk8s.public_coder.egress import NAMESPACE, SERVICE_ACCOUNT
+from cluster.cdk8s.public_coder.egress import OPENCLAW
 
 _NAMESPACE = "agentplane-staging"
 # Exported: launch presets (staging_config.py) bind these by name.
@@ -76,6 +78,13 @@ ANKIWEB_SYNC_POLICY = "ankiweb-sync"
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 ORCHESTRATION_PRESETS_SET = "orchestration-presets"
+
+CLAUDE_AI = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="claude-ai"), identity="claude-ai")
+HAKU_AGENT = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="haku-agent"), identity="haku-agent")
+HAKU_UI = StandingCaller(
+    ServiceAccountRef(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
+    identity=haku_ui_egress.SERVICE_ACCOUNT,
+)
 
 
 def coinbase_egress_rules() -> list[PolicySetSpecRules]:
@@ -151,7 +160,9 @@ def _binding(
     PolicyBinding(scope, id, metadata=metadata, subject=subject, policy_sets=policy_sets)
 
 
-def _account_binding(scope: Construct, account: ServiceAccount, *, policies: Sequence[str]) -> None:
+def _account_binding(
+    scope: Construct, account: ServiceAccount, *, subject: PolicyBindingSpecSubject, policies: Sequence[str]
+) -> None:
     """What `account`, and every sandbox running as it, may reach and have auto-approved."""
     PolicyBinding(
         scope,
@@ -163,7 +174,7 @@ def _account_binding(scope: Construct, account: ServiceAccount, *, policies: Seq
                 "description": f"What the {account.name} ServiceAccount, and sandboxes running as it, may reach and have auto-approved."
             },
         ),
-        subject=PolicyBindingSpecSubject(namespace=_NAMESPACE, name=account.name),
+        subject=subject,
         policy_sets=policies,
     )
 
@@ -354,7 +365,7 @@ _GROCY_SF_READS_ACTIONS = [
 _KUBERNETES_INSPECTION_READS_ACTIONS = ["nodes_stats_summary", "nodes_top", "pods_top"]
 
 
-def add_staging_action_policies(scope: Construct) -> None:
+def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> None:
     # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
     # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
     # makes it an Action caller, and removing the label or the object is how it is disabled.
@@ -364,8 +375,8 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "serviceaccount-claude-ai",
         metadata=ApiObjectMetadata(
-            name="claude-ai",
-            namespace=_NAMESPACE,
+            name=CLAUDE_AI.service_account.name,
+            namespace=CLAUDE_AI.service_account.namespace,
             labels={CALLER_LABEL: "true"},
             annotations={
                 "description": "The principal for Connections enrolled from the Claude.ai MCP connector, selected at OAuth consent."
@@ -387,8 +398,8 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "serviceaccount-haku-agent",
         metadata=ApiObjectMetadata(
-            name="haku-agent",
-            namespace=_NAMESPACE,
+            name=HAKU_AGENT.service_account.name,
+            namespace=HAKU_AGENT.service_account.namespace,
             labels={CALLER_LABEL: "true"},
             annotations={
                 "description": "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
@@ -721,6 +732,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     _account_binding(
         scope,
         claude_ai,
+        subject=CLAUDE_AI.subject(identity_catalog=identity_catalog),
         policies=[
             *_HAKU_CLAUDE_BASE_POLICIES,
             BUILDBUDDY_POLICY,
@@ -757,12 +769,17 @@ def add_staging_action_policies(scope: Construct) -> None:
             namespace=_NAMESPACE,
             annotations={"description": "What haku-ui (haku-sandbox) may reach and have auto-approved."},
         ),
-        subject=PolicyBindingSpecSubject(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
+        subject=HAKU_UI.subject(identity_catalog=identity_catalog),
         policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
-    _account_binding(scope, haku_agent, policies=[*_HAKU_CLAUDE_BASE_POLICIES, *HAKU_SHARED_ACTION_SETS])
+    _account_binding(
+        scope,
+        haku_agent,
+        subject=HAKU_AGENT.subject(identity_catalog=identity_catalog),
+        policies=[*_HAKU_CLAUDE_BASE_POLICIES, *HAKU_SHARED_ACTION_SETS],
+    )
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a
     # boundary: a sandbox runs as the account that asked for it, so the whole group can do
@@ -919,6 +936,6 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Auto-approves the reviewed common GitHub reads for the OpenClaw ServiceAccount."
             },
         ),
-        subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
+        subject=OPENCLAW.subject(identity_catalog=identity_catalog),
         policy_sets=[COMMON_GITHUB_READ_SET],
     )

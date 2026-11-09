@@ -10,7 +10,6 @@ from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
-from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
 from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
@@ -21,11 +20,13 @@ from constructs import Construct
 
 from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PlaintextRouteTransport, PlatformRoute, PlatformRoutes
+from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress, platform_routes
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
+from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -38,6 +39,9 @@ from cluster.cdk8s.settings_file import PodWiring, SettingsFile
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": NAMESPACE}
 SERVICE_ACCOUNT = "openclaw"
+OPENCLAW = StandingCaller(
+    ServiceAccountRef(namespace=NAMESPACE, name=SERVICE_ACCOUNT), identity="public-coder-openclaw"
+)
 GATEWAY = egress.proxy("agentplane-staging")
 RULES_ROUTE = platform_routes.egress_rules("agentplane-staging")
 CA_BUNDLE_NAME = "agentplane-egress-ca"
@@ -134,7 +138,7 @@ def token_volume() -> k8s.Volume:
 
 
 def add_gateway_resources(
-    scope: Construct, *, namespace: str, credentials_namespace: str, reader: ServiceAccount
+    scope: Construct, *, namespace: str, credentials_namespace: str, reader: ServiceAccount, identity_catalog: bool
 ) -> None:
     """Copy canonical credentials into Agentplane's isolated store through exact-secret stores."""
     scope = Construct(scope, "public-coder-openclaw-egress")
@@ -234,7 +238,7 @@ def add_gateway_resources(
         scope,
         "binding",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
+        subject=OPENCLAW.subject(identity_catalog=identity_catalog),
         policy_sets=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
     )
     NetworkPolicy(

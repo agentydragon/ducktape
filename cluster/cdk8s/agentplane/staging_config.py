@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRules
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -26,6 +27,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     HAKU_SHARED_GITHUB_POLICIES,
     SANDBOX_SELF_SET,
     SSH_READS_SET,
+    coinbase_egress_rules,
 )
 from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runtime_catalog, settings
 from cluster.cdk8s.agentplane.egress import (
@@ -36,7 +38,11 @@ from cluster.cdk8s.agentplane.egress import (
     GITHUB_CLONE_POLICY,
     PACKAGES_POLICY,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, FORGEJO_FINANCE_AGENT_POLICY
+from cluster.cdk8s.agentplane.egress_staging_credentials import (
+    AIQUOTA_READ_POLICY,
+    FORGEJO_FINANCE_AGENT_POLICY,
+    PLAID_PGWEB_CREDENTIAL,
+)
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
@@ -74,6 +80,24 @@ def send_to(group: str) -> str:
     return f"send-to-{group}"
 
 
+def assignable_set_egress_rules() -> dict[str, list[PolicySetSpecRules]]:
+    """The non-Kubernetes rules of the assignable sets that have any, by set name. In the identity
+    catalog these are the sets that stay `PolicySet`s; the rest are only `KubernetesRoleSet`s."""
+    return {
+        agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
+        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
+            credential=PLAID_PGWEB_CREDENTIAL
+        ),
+    }
+
+
+def _launch_sets(grants: tuple[str, ...], *, identity_catalog: bool) -> list[str]:
+    """The assignable sets a launch binds for `grants`. In the identity catalog a launch binds only
+    their `PolicySet` halves: its Kubernetes reach is `basic`'s shared account."""
+    sets = agent_access_profiles.covering_policy_sets(grants)
+    return [name for name in sets if name in assignable_set_egress_rules()] if identity_catalog else sets
+
+
 def config(
     *,
     namespace: str,
@@ -86,6 +110,7 @@ def config(
     app_origin: str,
     oidc_issuer: str,
     electric_url: HttpEndpointUrl,
+    identity_catalog: bool,
 ) -> Settings:
     if runtime is None:
         runtime = runtime_catalog(
@@ -110,7 +135,7 @@ def config(
             # Its boxes run as the Sandbox's own ServiceAccount, so they hold its egress, the write-capable
             # agentydragon-agent GitHub token included, and nothing more (operator, 2026-10-24).
             SANDBOX_SELF_SET,
-            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
+            *_launch_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"], identity_catalog=identity_catalog),
         ],
         frontend_config=FrontendConfig(
             trace_search=TraceSearchSettings(
@@ -177,7 +202,7 @@ def config(
             # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
             # and the preset is the only thing that decides what this Haku may do without the operator.
             *HAKU_ACTION_POLICY_SETS,
-            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["haku"]),
+            *_launch_sets(agent_access_profiles.MANAGED_GRANTS["haku"], identity_catalog=identity_catalog),
         ],
         thread_preset=_THREAD_PRESET_HAKU_CODEX,
         # Each new Thread gets its own haku-state and ducktape checkout.
@@ -211,7 +236,7 @@ def config(
             GITHUB_IDENTITY_READS_SET,
             SSH_READS_SET,
             GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
-            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
+            *_launch_sets(agent_access_profiles.MANAGED_GRANTS["finance-agent"], identity_catalog=identity_catalog),
         ],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
     )
