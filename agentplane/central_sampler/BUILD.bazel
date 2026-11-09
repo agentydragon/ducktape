@@ -319,6 +319,7 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 

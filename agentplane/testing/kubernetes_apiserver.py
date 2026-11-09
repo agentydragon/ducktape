@@ -3,7 +3,6 @@
 import asyncio
 import subprocess
 import tempfile
-import time
 from collections.abc import AsyncIterator, Awaitable, Iterator
 from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
@@ -13,6 +12,7 @@ from uuid import uuid4
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.config import new_client_from_config
 from python.runfiles import Runfiles
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.subjects import ServiceAccountRef
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -98,13 +98,16 @@ def control_plane() -> Iterator[Path]:
             stderr=subprocess.STDOUT,
         )
         try:
-            deadline = time.monotonic() + 60
-            while not kubeconfig.exists():
-                if process.poll() is not None:
-                    raise RuntimeError(f"Kubernetes API server exited with {process.returncode}; see {log_path}")
-                if time.monotonic() > deadline:
-                    raise TimeoutError(f"Kubernetes API server was not ready within 60 s; see {log_path}")
-                time.sleep(0.05)
+            for attempt in Retrying(
+                stop=stop_after_delay(60),
+                wait=wait_fixed(0.05),
+                retry=retry_if_exception_type(AssertionError),
+                reraise=True,
+            ):
+                with attempt:
+                    if process.poll() is not None:
+                        raise RuntimeError(f"Kubernetes API server exited with {process.returncode}; see {log_path}")
+                    assert kubeconfig.exists(), f"Kubernetes API server is not ready; see {log_path}"
             yield kubeconfig
         finally:
             if process.poll() is None:

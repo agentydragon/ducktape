@@ -6,10 +6,10 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from time import monotonic, sleep
 
 import httpx
 from sqlalchemy import create_engine, text
+from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 
@@ -43,22 +43,23 @@ class BrowserPostgres:
     def _drop_replication_slots(self, database: str) -> None:
         engine = create_engine(self.admin_url, isolation_level="AUTOCOMMIT")
         try:
-            deadline = monotonic() + 30
             with engine.connect() as connection:
-                while True:
-                    slots = connection.execute(
-                        text("SELECT slot_name, active FROM pg_replication_slots WHERE database = :database"),
-                        {"database": database},
-                    ).all()
-                    if not any(active for _, active in slots):
-                        for slot_name, _ in slots:
-                            connection.execute(
-                                text("SELECT pg_drop_replication_slot(:slot_name)"), {"slot_name": slot_name}
-                            )
-                        return
-                    if monotonic() >= deadline:
-                        raise TimeoutError(f"Electric replication slots stayed active for {database!r}: {slots!r}")
-                    sleep(0.1)
+                for attempt in Retrying(
+                    stop=stop_after_delay(30),
+                    wait=wait_fixed(0.1),
+                    retry=retry_if_exception_type(AssertionError),
+                    reraise=True,
+                ):
+                    with attempt:
+                        slots = connection.execute(
+                            text("SELECT slot_name, active FROM pg_replication_slots WHERE database = :database"),
+                            {"database": database},
+                        ).all()
+                        assert not any(active for _, active in slots), (
+                            f"Electric replication slots stayed active for {database!r}: {slots!r}"
+                        )
+                for slot_name, _ in slots:
+                    connection.execute(text("SELECT pg_drop_replication_slot(:slot_name)"), {"slot_name": slot_name})
         finally:
             engine.dispose()
 
@@ -144,15 +145,16 @@ class ElectricService:
 
 
 async def _ready(url: str, *, timeout_s: float = 60) -> None:
-    async with asyncio.timeout(timeout_s), httpx.AsyncClient(base_url=url, timeout=2) as client:
-        while True:
-            try:
+    async with httpx.AsyncClient(base_url=url, timeout=2) as client:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(timeout_s),
+            wait=wait_fixed(0.1),
+            retry=retry_if_exception_type((httpx.TransportError, AssertionError)),
+            reraise=True,
+        ):
+            with attempt:
                 response = await client.get("/v1/health")
-                if response.status_code == 200:
-                    return
-            except httpx.TransportError:
-                pass
-            await asyncio.sleep(0.1)
+                assert response.status_code == 200, f"Electric is not healthy yet: {response.status_code=}"
 
 
 @asynccontextmanager

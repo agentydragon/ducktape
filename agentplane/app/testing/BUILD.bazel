@@ -218,6 +218,7 @@ py_library(
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
 )
 

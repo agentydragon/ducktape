@@ -5,7 +5,6 @@ import fcntl
 import json
 import os
 import signal
-import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -15,6 +14,7 @@ import grpc
 import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core import testcontainers_config
 
 from agentplane.env.config import Configuration, Endpoint, EnvironmentVariables, Harness, PodEnvironment
@@ -36,12 +36,14 @@ def _load_images() -> str:
     return load_oci_image(debian_slim.LAYOUT_RLOCATION)
 
 
-def _wait_ready(directory: Path) -> None:
-    deadline = time.monotonic() + 15
-    while not (directory / "ready").exists():
-        if time.monotonic() >= deadline:
-            raise TimeoutError("PID1 fixture did not become ready; see container.log")
-        time.sleep(0.01)
+def _wait_for_markers(directory: Path, *names: str) -> None:
+    """Wait for the fixture's marker files; the container's progress is in container.log."""
+    for attempt in Retrying(
+        stop=stop_after_delay(15), wait=wait_fixed(0.01), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            missing = [name for name in names if not (directory / name).exists()]
+            assert not missing, f"{missing=} in {directory}; see container.log"
 
 
 def _descendant_pids(container: LoggedContainer) -> list[int]:
@@ -125,7 +127,7 @@ async def test_pid1_container_fence_and_replacement(runfiles: Runfiles, tmp_path
         wrapped = container.get_wrapped_container()
         generations = []
         for generation in range(2):
-            await asyncio.to_thread(_wait_ready, tmp_path)
+            await asyncio.to_thread(_wait_for_markers, tmp_path, "ready")
             descendants = await asyncio.to_thread(_descendant_pids, container)
             assert len(descendants) == 2
             if mode == "native-exit":
@@ -193,7 +195,7 @@ async def test_production_runner_selects_pid1(
         wrapped = container.get_wrapped_container()
         await gateway.control.connect(host_control, "pid1-proof-uid")
         if abrupt:
-            await asyncio.to_thread(_wait_native_tree, tmp_path)
+            await asyncio.to_thread(_wait_for_markers, tmp_path, "native.pid", "group.pid", "escaped.pid")
             descendants = await asyncio.to_thread(_descendant_pids, container)
             assert len(descendants) == 2
         else:
@@ -275,7 +277,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
                 setup_script="exec /pid1-proof --pid1-proof-native host-setup",
             )
         )
-        await asyncio.to_thread(_wait_native_group, tmp_path)
+        await asyncio.to_thread(_wait_for_markers, tmp_path, "native.pid", "group.pid")
         descendants = await asyncio.to_thread(_descendant_pids, container)
         assert len(descendants) == 1
         os.kill(await asyncio.to_thread(_host_native_pid, container), signal.SIGUSR1)
@@ -289,22 +291,6 @@ async def test_production_pid1_embedded_host_reaps_setup(
             await asyncio.to_thread(wrapped.kill, signal="SIGQUIT")
             raise
         assert result["StatusCode"] == 0
-
-
-def _wait_native_tree(directory: Path) -> None:
-    deadline = time.monotonic() + 15
-    while not all((directory / f"{role}.pid").exists() for role in ("native", "group", "escaped")):
-        if time.monotonic() >= deadline:
-            raise TimeoutError("production Runner did not launch the native process tree; see container.log")
-        time.sleep(0.01)
-
-
-def _wait_native_group(directory: Path) -> None:
-    deadline = time.monotonic() + 15
-    while not all((directory / f"{role}.pid").exists() for role in ("native", "group")):
-        if time.monotonic() >= deadline:
-            raise TimeoutError("Host did not launch the native process group; see container.log")
-        time.sleep(0.01)
 
 
 if __name__ == "__main__":

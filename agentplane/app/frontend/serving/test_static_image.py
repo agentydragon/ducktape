@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import time
-
 import httpx
 import pytest_bazel
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
 from agentplane.app.frontend.serving.testing.image import LAYOUT_RLOCATION
@@ -11,15 +10,16 @@ from devinfra.oci.oci import load_oci_image
 
 
 def _wait_for_nginx(base_url: str) -> httpx.Response:
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        try:
+    for attempt in Retrying(
+        stop=stop_after_delay(15),
+        wait=wait_fixed(0.1),
+        retry=retry_if_exception_type((httpx.TransportError, AssertionError)),
+        reraise=True,
+    ):
+        with attempt:
             response = httpx.get(f"{base_url}/healthz", timeout=1)
-            if response.status_code == 200:
-                return response
-        except httpx.TransportError:
-            time.sleep(0.1)
-    raise TimeoutError("Agentplane static nginx did not become ready within 15 seconds")
+            assert response.status_code == 200, f"Agentplane static nginx is not ready: {response.status_code=}"
+    return response
 
 
 def test_static_image_serves_assets_without_revalidation() -> None:

@@ -5,7 +5,6 @@ import json
 import os
 import shlex
 import socket
-import time
 from collections.abc import Iterator
 from contextlib import closing
 from dataclasses import dataclass
@@ -13,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from python.runfiles import Runfiles
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.env.e2e.testing import launches
 from devinfra.oci.oci import load_oci_image
@@ -91,15 +91,10 @@ def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerConta
         )
     )
     with container:
-        deadline = time.monotonic() + 10
-        while True:
-            try:
-                inspect_codex_exec_server_container(socket_path)
-                break
-            except OSError:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("executor companion did not create its ownership socket") from None
-                time.sleep(0.05)
+        # Until the companion creates its ownership socket, inspecting it raises OSError.
+        Retrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(OSError), reraise=True
+        )(inspect_codex_exec_server_container, socket_path)
         companion = CodexExecServerContainer(url=url, socket=socket_path, container=container, health_port=health_port)
         companion.check_health()
         yield companion
