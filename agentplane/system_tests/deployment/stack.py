@@ -407,6 +407,7 @@ def running_stack(
             setup.add_event("node Ready")
             k3s.report_storage("before-import")
             cleanup.callback(k3s.report_storage, "final")
+            cleanup.enter_context(k3s.sample_working_sets())
             cluster = Cluster(
                 kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
             )
@@ -451,7 +452,10 @@ def running_stack(
             install_baseline = not baseline_warm
             # A later group may already have an ID alias while CRI is still publishing its tag.
             # Register every current runfile image before any of the import-group sweeps.
-            k3s.protect_image_layouts(pki_images | infrastructure_images | fixture_images | guest_images)
+            declared_images = pki_images | infrastructure_images | fixture_images | guest_images
+            k3s.protect_image_layouts(declared_images)
+            # A recycled node can hold another stack's images, e.g. the MCP fixtures on a Pod stack.
+            k3s.remove_undeclared_fixture_images(declared_images.keys())
             if virtualization is not None and install_baseline:
                 k3s.import_images(infrastructure_images)
             cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)

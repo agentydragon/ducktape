@@ -121,7 +121,7 @@ def add_database(scope: Construct, env: Environment) -> Construct:
             port=PORT, initial_delay_seconds=Duration.seconds(5), period_seconds=Duration.seconds(5)
         ),
         resources=ContainerResources(
-            cpu=CpuResources(request=Cpu.millis(100)), memory=MemoryResources(request=Size.mebibytes(256))
+            cpu=CpuResources(request=Cpu.millis(100)), memory=MemoryResources(request=Size.mebibytes(240))
         ),
         security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
     )

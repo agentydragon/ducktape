@@ -43,6 +43,7 @@ NAME = "mcp-edge"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset"
 _SECRET_DIR = "/etc/agentplane-mcp"
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -68,6 +69,7 @@ class McpEdge(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -123,7 +125,7 @@ class McpEdge(Construct):
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                memory=MemoryResources(request=memory_request, limit=Size.mebibytes(512)),
             ),
             termination_grace=Duration.seconds(30),
             placement=placement,

@@ -35,6 +35,7 @@ TOKEN_AUDIENCE = "agentplane-policy"
 _OVERDUE_SECONDS = 300
 
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(64)
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(256)
 
 
@@ -63,6 +64,7 @@ class PolicyController(Construct):
         workload_namespaces: Set[str],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
@@ -104,7 +106,7 @@ class PolicyController(Construct):
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(10)),
-                memory=MemoryResources(request=Size.mebibytes(64), limit=memory_limit),
+                memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
             placement=placement,

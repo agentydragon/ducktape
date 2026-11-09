@@ -80,6 +80,8 @@ _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_instal
 
 # Each entry is an OCI image target mapped to the reference used when importing it into k3s.
 # Keep suite selection here so its fixture, PKI, VM and guest import groups stay explicit.
+# Fixture and guest references stay under baseline.FIXTURE_IMAGE_REPOSITORY: a stack removes
+# such images that its manifest does not declare.
 _SERVICE_IMAGES = {
     "//agentplane/action_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
     "//agentplane/app:image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",

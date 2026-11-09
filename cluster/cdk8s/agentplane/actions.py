@@ -87,6 +87,7 @@ _LAUNCHER_ACTIONS = (
 )
 _PEER_TIMEOUT_SECONDS = 15
 _DELEGATED_PEER_TIMEOUT_SECONDS = 40
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
 
 
@@ -298,6 +299,7 @@ class Actions(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         container_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
@@ -314,6 +316,7 @@ class Actions(Construct):
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.image_pull_policy = image_pull_policy
+        self.memory_request = memory_request
         self.memory_limit = memory_limit
         self.service = service(env.namespace)
         self.mcp_oauth = mcp_oauth_secret(env.namespace)
@@ -595,7 +598,7 @@ class Actions(Construct):
             startup=startup,
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
+                memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
             ),
             # 20s execution drain + 5s forced persistence, with room for adapter teardown.
             termination_grace=Duration.seconds(60),
