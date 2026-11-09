@@ -588,6 +588,24 @@ rust_test(
     deps = ["@crates//:tempfile"],
 )
 
+rust_library(
+    name = "final_global_resolution",
+    srcs = ["final_global_resolution.rs"],
+    crate_root = "final_global_resolution.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":graph_provenance",
+        ":js_ast",
+        ":source_identity",
+        "@crates//:serde",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_transforms_base",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
 # The `globals` package's environment lists name the hosts' standard global
 # properties (SPEC.md § Predefined globals).
 genrule(
@@ -1326,11 +1344,13 @@ rust_library(
         ":analysis_projection",
         ":artifact",
         ":emit_harness",
+        ":final_global_resolution",
         ":frontend_elaboration",
         ":gate",
         ":graph_provenance",
         ":js_ast",
         ":lowering",
+        ":output_layout",
         ":prepare_chunks",
         ":reconstruction",
         ":source_identity",

@@ -23,7 +23,9 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::list_chunk_file_paths;
 use binding_targets::declaration_ids;
-pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
+pub use emission::{
+    EmissionRewriteOutput, apply_emission_rewrites_in_place, write_planned_vendor_outputs,
+};
 use export_surface::collect_local_idents_by_export_name;
 pub use import_rewrites::{
     DeferredImport, IdentRewriteTarget, PartialSwapIdentRewriter, VendorImportRewrites,

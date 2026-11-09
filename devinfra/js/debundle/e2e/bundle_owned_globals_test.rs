@@ -87,6 +87,7 @@ fn bundle_owned_globals_keep_native_slots() {
         let fixture = run_fixture(opts(&source, &members, &anonymous, true));
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_all_emitted_js_checks(&fixture);
+        assert_global_resolution_preserved(&fixture);
     }
 }
 
@@ -312,6 +313,7 @@ fn a_global_holding_a_fresh_binding_is_bundle_owned() {
     let fixture = run_fixture(opts(&published, &members, &anonymous, true));
     assert_preserved_entry_output(&fixture, "0 42\n");
     assert_all_emitted_js_checks(&fixture);
+    assert_global_resolution_preserved(&fixture);
     // A second write makes `handler` able to hold the global object.
     let swapped = source(&format!(
         "{PUBLISHED_HANDLER}\nfunction swap() {{ handler = globalThis; }}"
@@ -352,5 +354,6 @@ fn a_bun_host_predefines_its_own_globals() {
             PredefinedGlobals::Bun,
         ));
         assert_preserved_entry_output(&fixture, "0 42\n");
+        assert_global_resolution_preserved(&fixture);
     }
 }

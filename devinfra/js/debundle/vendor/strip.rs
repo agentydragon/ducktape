@@ -4,9 +4,9 @@ use std::fmt;
 use analysis::{EffectCell, StatementFacts, analyze_vendor_prune_chunk};
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
-use js_ast::item_var_decl;
+use js_ast::{GlobalUseElisions, ParsedGlobalUses, item_var_decl};
 use swc_common::sync::Lrc;
-use swc_common::{DUMMY_SP, SourceMap, Spanned};
+use swc_common::{BytePos, DUMMY_SP, SourceMap, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -20,7 +20,8 @@ fn strip_one_chunk(
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
 ) -> Result<()> {
-    strip_one_chunk_with_replacement_imports(module, symbols, chunk_path, &BTreeSet::new())
+    strip_one_chunk_with_replacement_imports(module, symbols, chunk_path, &BTreeSet::new(), None)
+        .map(|_| ())
 }
 
 /// Residual strip for one partially-swapped vendor entry: drops
@@ -36,11 +37,13 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
     replacement_import_locals: &BTreeSet<Id>,
-) -> Result<()> {
+    global_uses: Option<&ParsedGlobalUses>,
+) -> Result<GlobalUseElisions> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
+    let mut removed_global_uses = RemovedGlobalUseRecorder::new(global_uses);
 
     split_top_level_var_decls(module);
-    let stripped = strip_export_specifiers(module, symbols, chunk_path)?;
+    let stripped = strip_export_specifiers(module, symbols, chunk_path, &mut removed_global_uses)?;
     let post_strip_exports = super::export_surface::collect_exported_names(module);
 
     sweep_unreachable_top_level(
@@ -49,6 +52,7 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
         &stripped,
         chunk_path,
         replacement_import_locals,
+        &mut removed_global_uses,
     )?;
 
     // Phase 2 must not change the export surface relative to Phase 1.
@@ -78,7 +82,51 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
         );
     }
 
-    Ok(())
+    Ok(removed_global_uses.uses)
+}
+
+/// Mutation bookkeeping only: visit nodes the strip actually removes and
+/// intersect their identifier sites with the same chunk's prepared-parse
+/// inventory. This does not classify names or re-derive source uses. Sites
+/// match by span and spelling, so an AST re-parsed from the same bytes (with
+/// fresh hygiene marks) still lines up with the prepared parse.
+struct RemovedGlobalUseRecorder<'a> {
+    sites: BTreeMap<(BytePos, BytePos), &'a Id>,
+    uses: GlobalUseElisions,
+}
+
+impl<'a> RemovedGlobalUseRecorder<'a> {
+    fn new(manifest: Option<&'a ParsedGlobalUses>) -> Self {
+        let sites = manifest
+            .into_iter()
+            .flat_map(|manifest| &manifest.uses)
+            .flat_map(|(id, spans)| spans.iter().map(move |span| ((span.lo, span.hi), id)))
+            .collect();
+        Self {
+            sites,
+            uses: GlobalUseElisions::default(),
+        }
+    }
+
+    fn record<T: VisitWith<Self>>(&mut self, removed_node: &T) {
+        if !self.sites.is_empty() {
+            removed_node.visit_with(self);
+        }
+    }
+}
+
+impl Visit for RemovedGlobalUseRecorder<'_> {
+    fn visit_ident(&mut self, ident: &Ident) {
+        let Some(&id) = self.sites.get(&(ident.span.lo, ident.span.hi)) else {
+            return;
+        };
+        if id.0 == ident.sym {
+            let spans = self.uses.uses.entry(id.clone()).or_default();
+            if !spans.contains(&ident.span) {
+                spans.push(ident.span);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +153,7 @@ fn strip_export_specifiers(
     module: &mut Module,
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
+    removed_global_uses: &mut RemovedGlobalUseRecorder<'_>,
 ) -> Result<BTreeMap<String, StrippedExport>> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
     let mut found: BTreeMap<String, StrippedExport> = BTreeMap::new();
@@ -151,6 +200,7 @@ fn strip_export_specifiers(
                                 )]),
                             },
                         );
+                        removed_global_uses.record(&spec);
                     } else {
                         kept.push(spec);
                     }
@@ -307,6 +357,7 @@ fn sweep_unreachable_top_level(
     stripped: &BTreeMap<String, StrippedExport>,
     chunk_path: &str,
     replacement_import_locals: &BTreeSet<Id>,
+    removed_global_uses: &mut RemovedGlobalUseRecorder<'_>,
 ) -> Result<()> {
     let analyses = analyze_prune_items(module, chunk_path)?;
 
@@ -799,11 +850,18 @@ fn sweep_unreachable_top_level(
         );
     }
 
-    module.body = std::mem::take(&mut module.body)
+    let mut retained = Vec::with_capacity(module.body.len());
+    for (item, &is_live) in std::mem::take(&mut module.body)
         .into_iter()
         .zip(live.iter())
-        .filter_map(|(item, &is_live)| is_live.then_some(item))
-        .collect();
+    {
+        if is_live {
+            retained.push(item);
+        } else {
+            removed_global_uses.record(&item);
+        }
+    }
+    module.body = retained;
     Ok(())
 }
 
@@ -2666,6 +2724,7 @@ mod tests {
             &mk_symbols(&["swapped"]),
             "chunk.js",
             &replacement_import_locals,
+            None,
         )
         .unwrap();
         let emitted = emit(&module);
@@ -2691,6 +2750,7 @@ mod tests {
             &mk_symbols(&["swapped"]),
             "chunk.js",
             &replacement_import_locals,
+            None,
         )
         .unwrap();
         let emitted = emit(&module);

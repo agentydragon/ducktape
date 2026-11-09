@@ -111,6 +111,30 @@ impl Fixture {
                 .join("effect_translation_validation.json"),
         )
     }
+
+    /// `global_resolution.json`: the report-only check that every source
+    /// global of each emitted chunk is still unbound in the final output.
+    pub fn global_resolution(&self) -> Value {
+        read_json(&self.report_root.join("global_resolution.json"))
+    }
+}
+
+/// Every source global site of every emitted chunk is still unbound in the
+/// final output.
+pub fn assert_global_resolution_preserved(fixture: &Fixture) {
+    let report = fixture.global_resolution();
+    assert_eq!(report["status"], "preserved", "{report:#}");
+    for chunk in report["chunks"].as_object().expect("chunk map").values() {
+        assert_eq!(chunk["findings"], serde_json::json!([]), "{report:#}");
+        assert_eq!(
+            chunk["required_use_count"].as_u64(),
+            Some(
+                chunk["preserved_use_count"].as_u64().unwrap()
+                    + chunk["elided_use_count"].as_u64().unwrap()
+            ),
+            "{report:#}"
+        );
+    }
 }
 
 impl RejectedFixture {

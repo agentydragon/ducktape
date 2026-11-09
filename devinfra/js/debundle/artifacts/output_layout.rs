@@ -37,6 +37,8 @@ pub const EXPORT_REENTRY_FULL_REPORT: &str = "export_reentry.full.json";
 pub const EFFECT_CONFLICTS_JSONL: &str = "effect_conflicts.jsonl";
 pub const EFFECT_TRANSLATION_VALIDATION_REPORT: &str = "effect_translation_validation.json";
 pub const CANDIDATE_RELOCATION_ASSESSMENT_REPORT: &str = "candidate_relocation_assessment.json";
+/// Program-wide, written once at the report root of an accepted run.
+pub const GLOBAL_RESOLUTION_REPORT: &str = "global_resolution.json";
 pub const TRANSLATION_VALIDATION_REPORT: &str = "translation_validation.json";
 pub const TRANSLATION_VALIDATION_FULL_REPORT: &str = "translation_validation.full.jsonl";
 pub const INDEX_REPORT: &str = "index.json";

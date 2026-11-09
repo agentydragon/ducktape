@@ -546,6 +546,45 @@ fn accepted_split_matches_a_direct_run() {
 }
 
 #[test]
+fn final_global_resolution_matches_direct_and_saved_analysis() {
+    // The parameter default reads the global `undefined`, which the body's
+    // `var` does not scope over; `console` is the other source global.
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            "function read(value = typeof undefined) {\n\
+  var undefined = 1;\n\
+  return value + ':' + typeof undefined;\n\
+}\n\
+console.log(read());\n\
+export { read };\n",
+            vec![logical_module("a_reader", &[Member::new("read")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct global-resolution run");
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&saved.result, "saved global-resolution run");
+    assert_same_invocation_trees(&direct, &saved);
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "undefined:number\n",
+            "",
+        );
+        let report: Value = read_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/global_resolution.json"),
+        );
+        assert_eq!(report["status"], "preserved", "{report:#}");
+        let chunk = &report["chunks"]["static/app"];
+        assert_eq!(chunk["required_use_count"], 2, "{report:#}");
+        assert_eq!(chunk["preserved_use_count"], 2, "{report:#}");
+    }
+}
+
+#[test]
 fn callback_factory_privacy_decision_matches_saved_analysis() {
     for initializer in [
         "factory(() => later)",
