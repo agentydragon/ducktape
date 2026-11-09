@@ -163,8 +163,8 @@ fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Re
     let entry_file = get_chunk_entry_path(artifact, chunk_id)
         .with_context(|| format!("Missing chunk entry file for {chunk_name}"))?;
     let entry_path = app_root
-        .join(chunk_name.split('/').collect::<PathBuf>())
-        .join(entry_file.split('/').collect::<PathBuf>());
+        .join(path_from_module_path(chunk_name))
+        .join(path_from_module_path(&entry_file));
     Ok(artifact::paths::relative_module_specifier(
         app_root,
         &entry_path,

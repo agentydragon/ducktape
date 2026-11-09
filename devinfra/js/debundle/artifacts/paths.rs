@@ -152,6 +152,35 @@ pub fn module_path_dirname(path: &str) -> String {
         .to_string()
 }
 
+/// First segment of a module path; for an app-relative output file, its chunk id.
+pub fn module_path_first_segment(path: &str) -> Option<&str> {
+    RelativePath::new(path).iter().next()
+}
+
+/// The directory containing `path` and each of its ancestors, root (`""`) first.
+pub fn module_path_directory_ancestors(path: &str) -> Vec<String> {
+    let dir = module_path_dirname(path);
+    let mut ancestors: Vec<String> =
+        std::iter::successors(Some(RelativePath::new(&dir)), |dir| dir.parent())
+            .map(|dir| dir.as_str().to_string())
+            .collect();
+    ancestors.reverse();
+    ancestors
+}
+
+/// Whether `path` is `directory` or lies under it, comparing whole segments.
+pub fn module_path_is_within(path: &str, directory: &str) -> bool {
+    RelativePath::new(path).starts_with(directory)
+}
+
+/// The first segment of `path` below `directory`, and whether further segments
+/// follow it (i.e. the child is a directory).
+pub fn module_path_child_of<'a>(directory: &str, path: &'a str) -> Option<(&'a str, bool)> {
+    let mut rest = RelativePath::new(path).strip_prefix(directory).ok()?.iter();
+    let child = rest.next()?;
+    Some((child, rest.next().is_some()))
+}
+
 pub(super) fn resolve_chunk_source_path_reference(
     source: &str,
     caller_source_path: &str,
@@ -166,4 +195,54 @@ pub(super) fn resolve_chunk_source_path_reference(
         .ok()?
     };
     imported_path.ends_with(".js").then_some(imported_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn directory_ancestors_start_at_root() {
+        for (path, expected) in [
+            ("entry.js", vec![""]),
+            ("chunk/entry.js", vec!["", "chunk"]),
+            (
+                "chunk/a/b/file.js",
+                vec!["", "chunk", "chunk/a", "chunk/a/b"],
+            ),
+        ] {
+            assert_eq!(module_path_directory_ancestors(path), expected, "{path:?}");
+        }
+    }
+
+    #[test]
+    fn within_compares_whole_segments() {
+        assert!(module_path_is_within("chunk/a/file.js", ""));
+        assert!(module_path_is_within("chunk/a", "chunk/a"));
+        assert!(module_path_is_within("chunk/a/file.js", "chunk/a"));
+        assert!(!module_path_is_within("chunk/ab/file.js", "chunk/a"));
+    }
+
+    #[test]
+    fn child_of_reports_first_segment_below_directory() {
+        assert_eq!(
+            module_path_child_of("", "chunk/a.js"),
+            Some(("chunk", true))
+        );
+        assert_eq!(
+            module_path_child_of("chunk", "chunk/a.js"),
+            Some(("a.js", false))
+        );
+        assert_eq!(
+            module_path_child_of("chunk", "chunk/sub/a.js"),
+            Some(("sub", true))
+        );
+        assert_eq!(module_path_child_of("chunk", "chunkier/a.js"), None);
+    }
+
+    #[test]
+    fn first_segment_is_chunk_id() {
+        assert_eq!(module_path_first_segment("chunk/a/b.js"), Some("chunk"));
+        assert_eq!(module_path_first_segment("b.js"), Some("b.js"));
+    }
 }
