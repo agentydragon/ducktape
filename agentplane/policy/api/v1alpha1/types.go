@@ -311,8 +311,8 @@ type KubernetesRoleSetSpec struct {
 }
 
 // KubernetesRoleSet is a reusable, named set of Kubernetes RBAC rules that grants attach to ServiceAccounts.
-// A set names no apiserver by design: each grant's ServiceAccount does, and the Policy Controller resolves the
-// set's roles on that apiserver, reporting any that do not exist there as missing.
+// A set names no apiserver by design: the Policy Controller resolves its roles where each grant's ServiceAccount
+// is, reporting any that do not exist there as missing.
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,path=kubernetesrolesets,singular=kubernetesroleset
@@ -330,11 +330,11 @@ type KubernetesRoleSetList struct {
 	Items           []KubernetesRoleSet `json:"items"`
 }
 
-// ServiceAccountTarget names a ServiceAccount on one of the apiservers Agentplane is configured to reach.
+// ServiceAccountTarget names a ServiceAccount by namespace and name.
+// The account is on the apiserver the egress proxy and the Policy Controller themselves authenticate to: impersonation
+// only works there. A named apiserver field is the intended extension for remote clusters, left out because no
+// use case needs one yet, and additive when one does.
 type ServiceAccountTarget struct {
-	// APIServer names a configured apiserver; `local` is the cluster Agentplane runs in.
-	// +kubebuilder:validation:MinLength=1
-	APIServer string `json:"apiServer" proto:"1"`
 	// +kubebuilder:validation:MinLength=1
 	Namespace string `json:"namespace" proto:"2"`
 	// +kubebuilder:validation:MinLength=1
@@ -367,7 +367,6 @@ type ServiceAccountGrantStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,path=serviceaccountgrants,singular=serviceaccountgrant
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="API server",type=string,JSONPath=".spec.serviceAccount.apiServer"
 // +kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=".spec.serviceAccount.namespace"
 // +kubebuilder:printcolumn:name="ServiceAccount",type=string,JSONPath=".spec.serviceAccount.name"
 // +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".spec.expiresAt"
@@ -386,10 +385,10 @@ type ServiceAccountGrantList struct {
 	Items           []ServiceAccountGrant `json:"items"`
 }
 
+// The ServiceAccount is created on the apiserver the egress proxy and the Policy Controller themselves authenticate to: impersonation
+// only works there. A named apiserver field is the intended extension for remote clusters, left out because no
+// use case needs one yet, and additive when one does.
 type ManagedServiceAccountSpec struct {
-	// APIServer names the configured apiserver the ServiceAccount is created on.
-	// +kubebuilder:validation:MinLength=1
-	APIServer string `json:"apiServer" proto:"1"`
 	// The Policy Controller deletes the account, and with it everything it owns, at this instant.
 	ExpiresAt *metav1.Time `json:"expiresAt,omitempty" proto:"2"`
 }
@@ -417,7 +416,6 @@ type ManagedServiceAccountStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,path=managedserviceaccounts,singular=managedserviceaccount
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="API server",type=string,JSONPath=".spec.apiServer"
 // +kubebuilder:printcolumn:name="ServiceAccount",type=string,JSONPath=".status.serviceAccount.name"
 // +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".spec.expiresAt"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"

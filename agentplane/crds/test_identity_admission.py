@@ -13,7 +13,7 @@ from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
 NAMESPACE = "identity-admission"
-SERVICE_ACCOUNT = {"apiServer": "local", "namespace": "test-accounts", "name": "test-shared-account"}
+SERVICE_ACCOUNT = {"namespace": "test-accounts", "name": "test-shared-account"}
 
 
 class Kinds:
@@ -119,7 +119,7 @@ async def _grants(kinds: Kinds) -> None:
         {"serviceAccount": SERVICE_ACCOUNT, "roleSets": []},
         {"serviceAccount": SERVICE_ACCOUNT},
         {"serviceAccount": SERVICE_ACCOUNT, "roleSets": [""]},
-        {"serviceAccount": {k: v for k, v in SERVICE_ACCOUNT.items() if k != "apiServer"}, "roleSets": ["test-roles"]},
+        {"serviceAccount": {k: v for k, v in SERVICE_ACCOUNT.items() if k != "namespace"}, "roleSets": ["test-roles"]},
         {"roleSets": ["test-roles"]},
     ):
         await kinds.rejects_create("serviceaccountgrants", "ServiceAccountGrant", spec)
@@ -136,7 +136,7 @@ async def _managed_service_accounts(kinds: Kinds, identity: dict[str, Any]) -> N
         "managedserviceaccounts",
         "ManagedServiceAccount",
         "test-agent-extra",
-        {"apiServer": "local", "expiresAt": "2026-11-05T12:34:00Z"},
+        {"expiresAt": "2026-11-05T12:34:00Z"},
         ownerReferences=[owner],
     )
     created = {"namespace": "test-accounts", "name": "test-agent-extra", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"}
@@ -153,8 +153,8 @@ async def _managed_service_accounts(kinds: Kinds, identity: dict[str, Any]) -> N
     assert account["status"] == {"serviceAccount": created, "conditions": [collision]}
 
     await kinds.rejects_status("managedserviceaccounts", account, {"serviceAccount": {**created, "uid": "not-a-uid"}})
-    for spec in ({}, {"apiServer": ""}):
-        await kinds.rejects_create("managedserviceaccounts", "ManagedServiceAccount", spec)
+    # An account with no expiry stands until its owner goes.
+    await kinds.create("managedserviceaccounts", "ManagedServiceAccount", "test-standing-extra", {})
 
 
 async def _binding_subjects(kinds: Kinds) -> None:
