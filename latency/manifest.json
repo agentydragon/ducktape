@@ -18,8 +18,8 @@
     "prettier"
   ],
   "publication_scope": "Latency namespace only; current telemetry, experiment dispositions and reviewed visualizations.",
-  "report_html_sha256": "130e4cddc61a861c67bd5faab14fe6d720d7decc8bcc514f314545bf79521fe6",
-  "evidence_sha256": "837a8d611dd3a5121a0a12d906eefa390cadc0cdbcd6246e9f9927ed73dd1bc6",
+  "report_html_sha256": "83eb0e6bee605d8029ed56f56ceb659d08580c809a7be1882a12b965352fd4b7",
+  "evidence_sha256": "84e887f218b7c73cdab306a5e3e4a237fb156bd8e842579da166bcc301bd3e0b",
   "followup_source_devel_commit": "69f35d736dc33f90f66f8345ff35806f04ed9399",
   "followup_scope": "Live worker/capacity/cache/storage investigation at separately recorded clocks; original cohort and source retained.",
   "presentation_validation": "visual-validation.json",
@@ -32,7 +32,7 @@
     "devinfra/buildbuddy/kvm/worker/executor.yaml"
   ],
   "presentation_updated_at_utc": "2026-11-09",
-  "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements.",
+  "presentation_scope": "Passing VM architecture and Pod admission trials lead; completed startup repairs are folded into Mantine history; original CI cohort and telemetry windows are retained. Fresh trial clocks and source identities are separately recorded.",
   "resource_followup_source_devel_commit": "ce86bc39f2b4638aa0e273363ad4d2b238d430ff",
   "resource_followup_window": {
     "start_utc": "2026-11-08T10:03:00+00:00",
@@ -46,7 +46,7 @@
   "resource_followup_experiments_end_utc": "2026-11-09T10:18:16.722345Z",
   "resource_followup_visual_scope": "Desktop/mobile, initial light/dark and live preference changes; actual pinned CDNs, telemetry controls, line/bar charts and retained span timelines.",
   "prior_presentation_validation": "../presentation-validation.json",
-  "resource_module_sha256": "b1c30b64696a1e06c40ae07ce34d81c54aa660cf19f49b61818c078f1ac98a02",
+  "resource_module_sha256": "d99a6e09535e81ff6a7c40119dd739441f72c0807c74e9f6ffb2e8735d710d7d",
   "resource_timeline_png_sha256": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
   "resource_followup_pr_status_refreshed_at_utc": "2026-11-09T10:26:06.329368+00:00",
   "cpu_followup_assembled_at_utc": "2026-11-09T11:03:17.556787+00:00",
@@ -65,9 +65,9 @@
   },
   "vm_readiness_followup_recorded_at_utc": "2026-11-09T11:41:54.139960+00:00",
   "evidence_index": "evidence.md",
-  "evidence_index_sha256": "d0271f91f5193a2cebe3cb5ede82e17cfea5c7db0d96644d03fd283050970c09",
+  "evidence_index_sha256": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627",
   "prior_resource_visual_report_commit": "e849a33c8282ac5eeda9dbb4b2f5b43d46c67f69",
-  "vm_readiness_followup_scope": "Original early-kernel boundary unresolved; merged tag guard and failure-time capture; independent fixture CA reuse proven from public chains and reproduced by real two-cycle control, with repaired two-cycle pass and fresh full-suite CI pending.",
+  "vm_readiness_followup_scope": "Original early-kernel boundary unresolved; merged tag guard and failure-time capture; fixture CA reuse reproduced by real two-cycle control, repaired two-cycle pass and fresh full VM pass. CA repair merged; broader selected-head CI failed Pod admission and MCP executor transport.",
   "vm_pki_followup_recorded_at_utc": "2026-11-09T18:24:02.680894+00:00",
   "vm_pki_followup_source": "f087a487f781497c3c4542330960ce3102ff63d2",
   "vm_pki_followup_pr": "https://github.com/agentydragon/ducktape/pull/15193",
@@ -77,5 +77,22 @@
     "receipt": "visual-validation.json",
     "reviewed_at_utc": "2026-11-09T18:27:47.472300+00:00",
     "scope": "Four desktop/mobile and light/dark cases, live preference changes, populated charts and retained spans; CA section reviewed in all four cases and representative historical charts inspected."
-  }
+  },
+  "vm_hardware_trial_recorded_at_utc": "2026-11-09T19:11:40.825441+00:00",
+  "vm_hardware_trial_source": "fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+  "vm_hardware_trial_scope": "One passing TCG and one passing KVM physical VM-suite run with shared implementation/image pins; architecture confounds explicit, no complete-CI speedup claimed. Broader CI failed Pod memory admission and MCP executor transport.",
+  "pod_resource_trial_scope": "Frozen-input8CU trial passed20/20 with native capacity19543.824MiB/11CPU above intended request envelope and complete cleanup. SourcePR15212 applies only to test_pod; current-head CI pending; no optimal-sizing or complete-CI mean claim.",
+  "pod_resource_trial_recorded_at_utc": "2026-11-09T19:26:18.266911+00:00",
+  "pod_resource_trial_source_pr": "https://github.com/agentydragon/ducktape/pull/15212",
+  "pod_resource_trial_candidate_commit": "90387378dc2d2f6a533f797e75ea0098b5bf9d89",
+  "vm_pod_visual_validation": {
+    "status": "PASSED",
+    "invocation": "https://app.buildbuddy.io/invocation/34d5ec6e-ccda-43a2-8014-b3357736afdc",
+    "receipt": "visual-validation.json",
+    "reviewed_at_utc": "2026-11-09T19:30:16.216155+00:00",
+    "capture_count": 96,
+    "scope": "Reviewed Pod admission proof in all four theme/viewport cases and its table in light mobile and dark desktop; VM charts in light desktop and dark mobile; first screens in light mobile and dark desktop; expanded startup history in light desktop; CPU bars in light desktop and dark mobile, the light-mobile CPU table, and dark-desktop historical span timeline. Text and chart labels are readable; retained visualizations are populated. Other captures were not all manually inspected."
+  },
+  "current_followup_previous_report_commit": "6bfd9b139f55054073e040a306137e7e3fbe2ca4",
+  "current_followup_assembled_at_utc": "2026-11-09T19:30:55.276159+00:00"
 }

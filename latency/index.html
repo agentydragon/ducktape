@@ -89,17 +89,10 @@
           <header>
             <${Box}> ${"Ducktape · CI latency · 9 November 2026 UTC"} <//>
             <${Title} order=${1} mt="md" mb="sm">
-              ${" Keep 4 vCPU / 16 GiB; four-minute mean CI remains unproven "}
+              ${" KVM: 227s; Pod trial: 555s "}
             <//>
             <${Text} component="p" my="sm">
-              ${" The recorded production-pool snapshot at 09:21 UTC had "}
-              <strong>
-                ${"one active action and 41 queued reservations"}
-              </strong>
-              ${". The earlier telemetry window correlates two physical wyrm2 runs with modest CPU use and busy storage. The completed unpinned HIL experiment passed all three matched-state 4/8-CPU pairs: warm action means were 251.1s and 268.0s. Extra CPUs did not shorten the measured critical path. The fixture candidate separately passed in 214s; none of these action times establishes mean complete CI below four minutes. "}
-            <//>
-            <${Text} component="p" my="sm">
-              ${" Retain 4 vCPU / 16 GiB and one action per guest. The canary is drained and deleted. The current intervention repairs per-action CA cleanup: the real two-cycle control failed, while PR #15193 passed both cycles with fresh CA identities on retained controllers. Hosted full-suite CI is pending. The virtiofs tag guard and failure-time QEMU capture merged; the original early-kernel VM stop remains unresolved. Historical telemetry and CI cohorts retain their own windows. "}
+              ${" CA cleanup PR #15193 is merged. The KVM VM suite passed in 227 action seconds versus 423s for TCG. An eight-unit Pod trial then passed all 20 cases in 555s after the four-unit control failed memory admission at 749s. Actual Node capacity exceeds the intended request envelope; mean complete CI below four minutes remains unproven. Next: verify the Pod-only reservation on current-head CI, investigate its remaining setup and scenario work, and measure capacity for KVM routing. The original early-kernel stop and the separate MCP API/runtime stall remain unresolved. Historical telemetry and CI cohorts retain their own windows. "}
             <//>
             <${SimpleGrid}
               component=${"div"}
@@ -115,12 +108,12 @@
                   my="md"
                 >
                   <${Box}>
-                    <${Text} component="span" inherit> ${"37m46s"} <//>
+                    <${Text} component="span" inherit> ${"227s"} <//>
                     <${Text} component="p" my="sm">
-                      <strong> ${"Mean sampled system-suite feedback"} </strong>
+                      <strong> ${"Passing KVM VM action"} </strong>
                     <//>
                     <${Text} component="p" my="sm">
-                      ${" 19 successful, log-verified heads; retries included. All-PR green mean: 6m48s. This is a bounded sample, not a fleet forecast. "}
+                      ${" One architectural pilot versus a 423s TCG action. The KVM Bazel invocation took 278s before outer runner admission. This is not a mean complete-CI result. "}
                     <//>
                   <//>
                 <//>
@@ -134,14 +127,12 @@
                   my="md"
                 >
                   <${Box}>
-                    <${Text} component="span" inherit>
-                      ${"1 slot · 41 queued"}
+                    <${Text} component="span" inherit> ${"555s · 20/20"} <//>
+                    <${Text} component="p" my="sm">
+                      <strong> ${"Passing eight-unit Pod action"} </strong>
                     <//>
                     <${Text} component="p" my="sm">
-                      <strong> ${"Production snapshot, 09:21 UTC"} </strong>
-                    <//>
-                    <${Text} component="p" my="sm">
-                      ${" One 4-core / 16-GiB worker VM. These are executor reservations, not unique still-needed jobs. Only registered user-owned workers are enumerated. "}
+                      ${" Same test inputs as the failed four-unit control. Measured capacity now fits the intended request envelope. Setup took 221s and the concurrent case window 257s. "}
                     <//>
                   <//>
                 <//>
@@ -177,8 +168,11 @@
               >Resource telemetry and HIL trials<//
             >
             <${Anchor} href="#cpu-comparison">Completed CPU comparison<//>
-            <${Anchor} href="#vm-readiness-followup">VM readiness<//>
-            <${Anchor} href="#vm-pki-followup">CA lifecycle repair<//>
+            <${Anchor} href="#vm-startup-history"
+              >Startup evidence and repairs<//
+            >
+            <${Anchor} href="#vm-fresh-proof">Fresh VM timings<//>
+            <${Anchor} href="#pod-admission-proof">Pod admission trial<//>
             <${Anchor} href=${"#feedback"}> ${"Current feedback"} <//>
             <${Anchor} href=${"#system-tests"}> ${"System-test timeline"} <//>
             <${Anchor} href=${"#experiments"}> ${"Experiments"} <//>
