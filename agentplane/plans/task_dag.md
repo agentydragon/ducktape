@@ -3045,6 +3045,7 @@ flowchart LR
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
     WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC
+    WORKLOAD_CA_SERVER_TRUST[Ready: Agentplane server SVIDs verified against the workload CA alone]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
@@ -3084,6 +3085,26 @@ of the Sandbox Controller. The Action-box step's edge to `SANDBOX_IDENTITY_SPEC`
 boxes, Haku UI/Anki and future external callers, with no second subject model and no Sandbox
 dependency, preserving ServiceAccount subjects until `IDENTITY_CUTOVER`. **Exit:** the operator
 picks an alternative and the open questions' recommendations.
+
+### `WORKLOAD_CA_SERVER_TRUST` — clients verify Agentplane server SVIDs against the workload CA alone
+
+**Ready (2026-11-09).** Client-SVID verifiers trust `agentplane-workload-ca-bundle` alone (#15104,
+#15131). Clients that verify a `spiffe://agentplane/...` server SVID still trust
+`cluster-internal-ca-bundle`, the cluster root:
+
+- the Gateway's `runner_security`, dialing runners (`cluster/cdk8s/agentplane/runner_gateway_workload.py`);
+- the egress sidecar, dialing the proxy and services through its `TLSProxyTransport.ca_file`;
+- the backend clients built by `workload_tls.client_tls`.
+
+A leaf the cluster root signs, naming a runner or service URI, can therefore impersonate that server
+to any of these clients from a network position. Move verification of `spiffe://agentplane/...`
+server SVIDs to the workload bundle. Runners already have it as `workload-ca.crt` from the Sandbox
+Controller; the Gateway and backend services need it mounted. Keep non-Agentplane server
+verification on the cluster bundle. Each `ca_file` changed here also verifies its owner's local
+chain, which the workload CA issues, so that check still passes. A runner's `ca_file` also verifies
+the services it dials. **Exit:** a k3s case where a `cluster-internal-ca` leaf with a runner URI,
+served at the runner's address, is refused by the Gateway while the real runner connection keeps
+working.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
