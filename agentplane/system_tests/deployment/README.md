@@ -16,7 +16,10 @@ with VM Sandboxes ([measurements](../k3s/debug/stack_timings.md#image-layers-in-
 The stack pins its imported OCI images in containerd's CRI metadata. Kubelet image GC can otherwise
 delete an image before a later Sandbox uses it; these fixture-local tags cannot be pulled from a registry.
 At import-group boundaries, the stack removes untagged, unpinned CRI images
-that no container uses. Named caches stay warm, including k3s's own images. Cleanup also runs with
+that no container uses. Named caches stay warm, including k3s's own images. Before importing, it also
+removes unused fixture-local images (`git.allegedly.works/ducktape-ci/…`) the target's manifest does
+not declare: Pod and MCP suites share a recycling key, and pinned MCP layers would otherwise stay in a
+Pod stack's tmpfs. An MCP suite after a Pod suite reimports them. Cleanup also runs with
 the kubelet stopped during a cold rebuild, before restored obsolete layers can trigger evictions
 while a fresh kubelet waits for its image-GC minimum age. See the
 [storage-pressure reproduction](../k3s/debug/2026_11_02_image_store_pressure.md).

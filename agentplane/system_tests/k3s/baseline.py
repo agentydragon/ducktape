@@ -18,7 +18,7 @@ import tarfile
 import tempfile
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Sequence, Set
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,8 @@ POD_CIDR = "10.42.0.0/16"
 CONTAINERD_SOCKET = "/run/k3s/containerd/containerd.sock"
 CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
 WORKING_SET_SAMPLE_SECONDS = 10
+# k3s/defs.bzl imports every fixture and guest image under this repository with a fixture-local tag.
+FIXTURE_IMAGE_REPOSITORY = "git.allegedly.works/ducktape-ci/"
 
 
 def run(
@@ -319,19 +321,10 @@ class K3s:
         """Reclaim dangling CRI ID aliases, preserving named, pinned and in-use images."""
 
         def obsolete_images() -> set[str]:
-            images = json.loads(self.crictl("images", "-o", "json"))["images"]
-            containers = json.loads(self.crictl("ps", "-a", "-o", "json"))["containers"]
-            in_use = {container["imageRef"] for container in containers}
             return {
                 image["id"]
-                for image in images
-                if not image.get("repoTags")
-                and not image.get("repoDigests")
-                and not image.get("pinned")
-                and image["id"] not in in_use
-                # An import exposes its ID before its tag, and CRI RemoveImage by ID deletes every
-                # reference: pruning a just-imported fixture ID once removed its tag mid-publication.
-                and image["id"] not in self._fixture_image_ids
+                for image in self._unused_images()
+                if not image.get("repoTags") and not image.get("repoDigests") and not image.get("pinned")
             }
 
         obsolete = sorted(obsolete_images())
@@ -345,6 +338,32 @@ class K3s:
             # while its dangling alias is being removed. Recheck eligibility as well as identity.
             if surviving := obsolete_images().intersection(obsolete):
                 raise RuntimeError(f"obsolete containerd images survived cleanup: {sorted(surviving)}\n{output}")
+
+    def _unused_images(self) -> list[dict[str, Any]]:
+        """CRI images that no container uses and no current runfile layout protects."""
+        images = json.loads(self.crictl("images", "-o", "json"))["images"]
+        containers = json.loads(self.crictl("ps", "-a", "-o", "json"))["containers"]
+        in_use = {container["imageRef"] for container in containers}
+        # An import exposes its ID before its tag, and CRI RemoveImage by ID deletes every
+        # reference: pruning a just-imported fixture ID once removed its tag mid-publication.
+        return [image for image in images if image["id"] not in in_use and image["id"] not in self._fixture_image_ids]
+
+    @tracer.start_as_current_span("system_test.images.remove_undeclared")
+    def remove_undeclared_fixture_images(self, declared: Set[str]) -> None:
+        """Remove fixture images an earlier stack on this node imported but this target does not declare.
+
+        Imports pin them against kubelet image GC, and in-memory layers hold RAM the scheduler does not count.
+        """
+        undeclared = sorted(
+            image["id"]
+            for image in self._unused_images()
+            if image.get("repoTags")
+            and all(tag.startswith(FIXTURE_IMAGE_REPOSITORY) and tag not in declared for tag in image["repoTags"])
+        )
+        if undeclared:
+            output = self.crictl("rmi", *undeclared)
+            with (undeclared_outputs_dir() / "image-prune.log").open("a") as log:
+                log.write(json.dumps({"undeclared_images": undeclared, "output": output}) + "\n")
 
     def report_storage(self, stage: str) -> None:
         """Capture the filesystem and kubelet signals behind node-pressure evictions."""
