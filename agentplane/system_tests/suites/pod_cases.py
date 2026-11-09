@@ -244,6 +244,12 @@ async def a_non_sandbox_command_box_keeps_its_bearer_egress(resources: Resources
         await egress.a_non_sandbox_command_box_keeps_its_bearer_egress(resources.cluster, caller)
 
 
+async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(resources: Resources) -> None:
+    async with resources.open() as (_, sandboxes):
+        subject = await sandboxes("systest-standing-subject")
+        await egress.a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(resources.cluster, subject)
+
+
 async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources: Resources) -> None:
     async with resources.open() as (client, sandboxes):
         await egress.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources.cluster, client, sandboxes)
@@ -256,6 +262,7 @@ SCENARIOS = (
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
     ),
     pytest.param(a_non_sandbox_command_box_keeps_its_bearer_egress),
+    pytest.param(a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes),
     pytest.param(two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it),
     pytest.param(a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused),
     pytest.param(a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner),

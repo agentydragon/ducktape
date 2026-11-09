@@ -25,12 +25,14 @@ import json
 import secrets
 import textwrap
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.egress import sidecar_config
 from agentplane.egress.egress_admin_pb2 import Decision
 from agentplane.egress.resources import placeholder_of
 from agentplane.environments.v1 import environment_service_pb2
@@ -569,3 +571,144 @@ async def a_non_sandbox_command_box_keeps_its_bearer_egress(
         )
     finally:
         await cluster.kubectl("delete", "pod", name, "--wait=true", "--timeout=60s", "--ignore-not-found")
+
+
+# The sidecar's listener (agentplane/egress/sidecar_config.py `Settings.listen_address`).
+_SIDECAR_PROXY = "http://127.0.0.1:3128"
+_STANDING_SECONDS = 120.0
+
+
+async def _egress_refusal(cluster: Cluster, pod: str, url: str, *headers: str) -> str | None:
+    """The proxy's refusal reason for `url` from `pod`'s workload container; None when it refused nothing."""
+    response = await cluster.kubectl(
+        "exec",
+        pod,
+        "-c",
+        "workload",
+        "--",
+        "curl",
+        "--silent",
+        # The destination's TLS is the proxy's interception, which this test does not check.
+        "--insecure",
+        "--proxy",
+        _SIDECAR_PROXY,
+        "--output",
+        "/dev/null",
+        "--dump-header",
+        "-",
+        "--max-time",
+        "15",
+        *(argument for header in headers for argument in ("--header", header)),
+        url,
+    )
+    for line in response.splitlines():
+        name, _, value = line.partition(":")
+        if name.strip().lower() == "x-agentplane-egress":
+            return value.strip().removeprefix("denied; reason=")
+    return None
+
+
+def _standing_pod_spec(runner: dict[str, Any], box_labels: dict[str, str], secret: str) -> dict[str, Any]:
+    """The runner Pod's own egress sidecar, presenting the standing record's Secret in place of the
+    incarnation's, beside an idle workload container. Nothing else of the runner is copied."""
+    spec = runner["spec"]
+    sidecar = next(c for c in spec["initContainers"] if c["name"] == sidecar_config.CONTAINER_NAME)
+    mounted = {mount["name"] for mount in sidecar["volumeMounts"]}
+    (tls_volume,) = (
+        m["name"] for m in sidecar["volumeMounts"] if m["mountPath"] == sidecar_config.RUNNER_TLS_MOUNT_PATH
+    )
+    volumes = [
+        {"name": tls_volume, "secret": {"secretName": secret}} if volume["name"] == tls_volume else volume
+        for volume in spec["volumes"]
+        if volume["name"] in mounted
+    ]
+    runtime = spec["containers"][0]
+    workload = {
+        "name": "workload",
+        "image": runtime["image"],
+        "imagePullPolicy": "IfNotPresent",
+        "command": ["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
+        "securityContext": runtime.get("securityContext", {}),
+    }
+    copied = ("serviceAccountName", "automountServiceAccountToken", "securityContext", "imagePullSecrets")
+    return {
+        "metadata": {"labels": box_labels},
+        "spec": {
+            **{key: spec[key] for key in copied if key in spec},
+            "initContainers": [sidecar],
+            "containers": [workload],
+            "volumes": volumes,
+        },
+    }
+
+
+async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(
+    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
+) -> None:
+    """Two replicas of a Deployment share one standing WorkloadCredential, as Haku UI's do: no owner and
+    no binding, so its Secret name is stable and no Pod is proven. Both authenticate as its subject, no
+    forwarded Pod token is substituted for it, and deleting the record revokes both."""
+    name = "standing-" + secrets.token_hex(6)
+    subject = view.execution_account.account
+    await cluster.kubectl(
+        "create",
+        "-f",
+        "-",
+        body={
+            "apiVersion": f"{GROUP}/{VERSION}",
+            "kind": "WorkloadCredential",
+            "metadata": {"name": name},
+            "spec": {"subject": {"serviceAccount": subject.name}},
+        },
+    )
+    try:
+        async for attempt in AsyncRetrying(stop=stop_after_delay(_STANDING_SECONDS), wait=wait_fixed(1), reraise=True):
+            with attempt:
+                status = json.loads(await cluster.kubectl("get", "workloadcredential", name, "-o", "json"))["status"]
+                assert any(c["type"] == "Ready" and c["status"] == "True" for c in status["conditions"]), status
+        assert status["secretName"] == f"svid-{name}"
+        assert "acceptedBinding" not in status
+        runner = json.loads(await cluster.kubectl("get", "pod", view.kubernetes_diagnostics.pod.name, "-o", "json"))
+        box_labels = json.loads(await cluster.kubectl("get", "podtemplate", "sandbox", "-o", "json"))["template"][
+            "metadata"
+        ]["labels"]
+        template = _standing_pod_spec(runner, {**box_labels, "app": name}, status["secretName"])
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {"name": name},
+                "spec": {"replicas": 2, "selector": {"matchLabels": {"app": name}}, "template": template},
+            },
+        )
+        await cluster.kubectl("rollout", "status", f"deployment/{name}", "--timeout=180s", timeout_s=200)
+        pods = [
+            pod["metadata"]["name"]
+            for pod in json.loads(await cluster.kubectl("get", "pods", "-l", f"app={name}", "-o", "json"))["items"]
+            if not pod["metadata"].get("deletionTimestamp")
+        ]
+        assert len(pods) == 2, pods
+        for pod in pods:
+            # Authenticated as the subject, whose policies name no such host.
+            assert await _egress_refusal(cluster, pod, f"http://{UNLISTED_HOST}/") == "no-rule"
+            # The subject's own Pod-bound Kubernetes token is presented, but a standing record proves no Pod.
+            assert (
+                await _egress_refusal(
+                    cluster,
+                    pod,
+                    f"https://{KUBERNETES_HOST}/api",
+                    f"Authorization: Bearer {placeholder_of('kubernetes-workload')}",
+                )
+                == "credential-unavailable"
+            )
+        await cluster.kubectl("delete", "workloadcredential", name, "--wait=true", "--timeout=60s")
+        for pod in pods:
+            assert await _egress_refusal(cluster, pod, f"http://{UNLISTED_HOST}/") == "token-rejected"
+    finally:
+        await cluster.kubectl("delete", "deployment", name, "--ignore-not-found", "--wait=true", "--timeout=60s")
+        await cluster.kubectl(
+            "delete", "workloadcredential", name, "--ignore-not-found", "--wait=true", "--timeout=60s"
+        )

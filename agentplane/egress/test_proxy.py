@@ -422,6 +422,7 @@ class Egress:
     pod_uid: str
     mismatched_pod_token: str
     tmp_path: Path
+    database_url: str
 
     @property
     def proxy_listener(self) -> Listener:
@@ -478,6 +479,7 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
                 pod_uid=seeded.pod_uid,
                 mismatched_pod_token=seeded.mismatched_pod_token,
                 tmp_path=tmp_path,
+                database_url=history_db_url,
             )
 
 
@@ -810,6 +812,116 @@ async def test_svid_projected_token_must_match_sandbox_pod_uid(egress: Egress) -
     assert forwarded_headers["authorization"] == f"Bearer {egress.projected_token}"
 
 
+STANDING_RECORD = "standing-a"
+STANDING_CREDENTIAL_ID = "c" * 32
+
+
+async def _write_record(
+    custom: CustomObjectsClient,
+    name: str,
+    spec: dict[str, Any],
+    *,
+    owner_uid: str | None = None,
+    accepted_binding: dict[str, str] | None = None,
+) -> tuple[str, str]:
+    """A record as its requester writes it and the issuer accepts it; returns the URI and credential ID it issues."""
+    metadata: dict[str, Any] = {"name": name}
+    if owner_uid is not None:
+        metadata["ownerReferences"] = [
+            {"apiVersion": _API_VERSION, "kind": "Sandbox", "name": SANDBOX_A, "uid": owner_uid, "controller": True}
+        ]
+    body = {"apiVersion": _API_VERSION, "kind": "WorkloadCredential", "metadata": metadata, "spec": spec}
+    await custom.create_namespaced_custom_object(GROUP, VERSION, SANDBOX_NAMESPACE, WORKLOAD_CREDENTIALS_PLURAL, body)
+    uri = workload_uri(SANDBOX_NAMESPACE, name, STANDING_CREDENTIAL_ID)
+    status: dict[str, Any] = {
+        "observedGeneration": 1,
+        "credentialID": STANDING_CREDENTIAL_ID,
+        "uri": uri,
+        "secretName": f"svid-{name}",
+    }
+    if accepted_binding is not None:
+        status["acceptedBinding"] = accepted_binding
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        WORKLOAD_CREDENTIALS_PLURAL,
+        name,
+        {"status": status},
+        _content_type="application/merge-patch+json",
+    )
+    return uri, STANDING_CREDENTIAL_ID
+
+
+async def test_a_standing_record_authenticates_its_subject_without_a_pod(egress: Egress) -> None:
+    """A record with no owner and no binding proves its subject alone: it reaches that subject's rules,
+    no forwarded Pod token binds to it, and deleting the record revokes it."""
+    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
+    uri, _ = await _write_record(custom, STANDING_RECORD, {"subject": {"serviceAccount": SANDBOX_A}})
+    directory = egress.tmp_path / "standing-client"
+    directory.mkdir()
+    proxy_tls = proxy_svid_client_context(
+        egress, issue_workload_leaf(egress.runtime_ca, uri, directory, dns_name="localhost")
+    )
+    placeholder = placeholder_of("svid-projected-credential")
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/standing")
+        assert status == 200, headers
+        # The token is the subject's own and Pod-bound, which a bound record would accept.
+        status, headers = await svid_request(
+            client,
+            egress,
+            proxy_tls,
+            "/projected",
+            headers={
+                "Authorization": f"Bearer {placeholder}",
+                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.projected_token}",
+            },
+        )
+        assert status == 403, headers
+        assert headers["x-agentplane-egress"] == "denied; reason=credential-unavailable"
+
+        await custom.delete_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            SANDBOX_NAMESPACE,
+            WORKLOAD_CREDENTIALS_PLURAL,
+            STANDING_RECORD,
+            body=k8s_client.V1DeleteOptions(),
+        )
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/pruned")
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+    assert [path for _, path, _ in egress.upstream.requests] == ["/public/standing"]
+    # The two authenticated decisions name the subject and no Pod.
+    async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+        with attempt:
+            assert await asyncio.to_thread(_source_pod_uids, egress.database_url, SUBJECT_A) == [None, None]
+
+
+async def test_a_bound_record_still_needs_its_pod(egress: Egress) -> None:
+    """A bound incarnation authenticates only once its owner has named the Pod it runs in."""
+    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
+    binding = {"podUID": egress.pod_uid}
+    uri, _ = await _write_record(
+        custom,
+        "bound-without-pod",
+        {"subject": {"serviceAccount": SANDBOX_A}, "binding": binding},
+        owner_uid=egress.sandbox_uid,
+        accepted_binding=binding,
+    )
+    directory = egress.tmp_path / "bound-client"
+    directory.mkdir()
+    proxy_tls = proxy_svid_client_context(
+        egress, issue_workload_leaf(egress.runtime_ca, uri, directory, dns_name="localhost")
+    )
+    async with aiohttp.ClientSession() as client:
+        status, headers = await svid_request(client, egress, proxy_tls, "/public/no-pod")
+    assert status == 403, headers
+    assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
+    assert not egress.upstream.requests
+
+
 async def test_svid_certificate_expiry_denies_requests_inside_an_open_connect_tunnel(egress: Egress) -> None:
     certificate = issue_runner_svid(egress, egress.tmp_path / "svid-client", valid_for=datetime.timedelta(seconds=10))
     proxy_tls = proxy_svid_client_context(egress, certificate)
@@ -886,6 +998,21 @@ _SUBJECT_DECISIONS = text("""
 SELECT producer_id, connection_id, reason FROM egress_decision
 WHERE subject_namespace = :namespace AND subject_name = :name
 """)
+
+
+_SUBJECT_SOURCE_PODS = text("""
+SELECT source_pod_uid FROM egress_decision
+WHERE subject_namespace = :namespace AND subject_name = :name
+""")
+
+
+def _source_pod_uids(database_url: str, subject: ServiceAccountRef) -> list[str | None]:
+    """The source Pod UIDs the subject's decisions recorded in the shared history."""
+    with ExitStack() as stack:
+        engine = create_engine(database_url)
+        stack.callback(engine.dispose)
+        with engine.connect() as connection:
+            return [row.source_pod_uid for row in connection.execute(_SUBJECT_SOURCE_PODS, subject.model_dump())]
 
 
 def _decisions_of(database_url: str, subject: ServiceAccountRef) -> list[tuple[UUID, str, str | None]]:
