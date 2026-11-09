@@ -7,11 +7,17 @@ Read this reference when authoring or publishing either CI report.
 Before changing a report, read the current `gh-pages` root `README.md`, shared
 assets and sibling pages; reuse the framework and shell they document. The current
 site convention uses pinned CDN assets, React, Mantine and the shared `report.js`
-and `report.css`. Use `MantineProvider` with `defaultColorScheme="auto"` and
-Mantine's typography provider unless the current branch documents a change.
-Preserve report controls and limit custom CSS to report-specific layout, charts
-and small adjustments. Author actual standalone HTML; do not wrap Markdown in a
-preformatted block. Verify actual CDN loading, desktop and mobile layouts, both
+and `report.css`. Use `MantineProvider` with `defaultColorScheme="auto"` unless
+the current branch documents a change. Prefer normal Mantine components for
+layout, cards, typography, controls, tables and disclosures. Use the site's chart
+framework, currently Mantine Charts, for ordinary statistical charts; reserve
+custom SVG/CSS for visualizations the framework cannot express, such as nested
+wall-time spans. Do not recreate component styling in shared CSS. Preserve useful
+visualizations during refreshes and inspect the rendered screenshots: a passing
+test can still show empty bars, clipped labels or lost distinctions. Keep original
+chart windows, units and denominators when retaining historical measurements.
+Author standalone HTML; do not wrap Markdown in a preformatted block.
+Verify actual CDN loading, desktop and mobile layouts, both
 initial color schemes and a live OS or browser preference change. Keep
 styling-only work distinct from measurement or source updates.
 
