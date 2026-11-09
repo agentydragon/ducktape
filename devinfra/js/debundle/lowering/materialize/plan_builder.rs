@@ -31,6 +31,7 @@ use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
 use source_identity::ChunkId;
 use source_identity::SourceUnitId;
 use source_identity::StatementId;
+use spec::MemberSelectorSpec;
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -421,7 +422,10 @@ impl ChunkPlanBuilder {
                 }
             }
             if member.resolves_after_chunk_analysis() {
-                if matches!(member.selector, MemberSelector::Binding(_)) {
+                if matches!(
+                    member.selector,
+                    MemberSelector::Authored(MemberSelectorSpec::Binding(_))
+                ) {
                     let binding_id = top_level_id(&member.binding, ctx.chunk_top_level_mark);
                     if !ctx.declaration_by_name.contains_key(&binding_id) {
                         self.outcomes.record_selector_result(

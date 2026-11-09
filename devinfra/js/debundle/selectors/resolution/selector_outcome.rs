@@ -16,6 +16,7 @@ use std::fmt::Write;
 
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
+use spec::MemberSelectorSpec;
 
 /// A selector the shape matcher places at more than this many places is
 /// [`Outcome::TooBroad`], rejected without a solve: a selector that loose names
@@ -558,6 +559,21 @@ fn render_refs(refs: &[EntityRef]) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The one place an authored `members[].selector` is mapped to its kind.
+impl From<&MemberSelectorSpec> for SelectorKind {
+    fn from(selector: &MemberSelectorSpec) -> Self {
+        match selector {
+            MemberSelectorSpec::Binding(_) => Self::Binding,
+            MemberSelectorSpec::CrossRef(_) => Self::CrossRef,
+            MemberSelectorSpec::ReadsMember(_) => Self::ReadsMember,
+            MemberSelectorSpec::MemberOfModule(_) => Self::MemberOfModule,
+            MemberSelectorSpec::PassedToCall(_) => Self::PassedToCall,
+            MemberSelectorSpec::MakesDecorateCall(_) => Self::MakesDecorateCall,
+            MemberSelectorSpec::IntrinsicAlias(_) => Self::IntrinsicAlias,
+        }
+    }
 }
 
 impl SelectorKind {

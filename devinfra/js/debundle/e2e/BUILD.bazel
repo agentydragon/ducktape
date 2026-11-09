@@ -1191,6 +1191,11 @@ debundle_e2e_test(
 debundle_e2e_test(name = "intrinsic_alias_lowering_test")
 
 debundle_e2e_test(
+    name = "invalid_member_selector_test",
+    deps = [":graph_support"],
+)
+
+debundle_e2e_test(
     name = "module_merge_test",
     deps = [
         ":graph_support",

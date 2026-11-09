@@ -11,7 +11,7 @@ use selector_ir::{
     ClaimKind, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
     SelectorVariableId, SourceUnitTerm, StringTerm, VariableDomain,
 };
-use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation};
+use spec::{BindingSelector, BindingSourceKind, CrossRefRelation, MemberSelectorSpec};
 
 /// A projected `source_match` candidate: its place and, per reference column,
 /// the chunk identifier its template bound there.
@@ -40,18 +40,6 @@ pub struct MemberSelectorProgramBuilder {
     source_unit_injectivity_classes: BTreeMap<SelectorVariableId, String>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum MemberSelectorSpecRef<'a> {
-    Binding(&'a BindingSelector),
-    SourceMatch(&'a AnonymousStatementSelector),
-    CrossRef(&'a spec::CrossRefTarget),
-    ReadsMember(&'a spec::ReadsMemberTarget),
-    MemberOfModule(&'a spec::MemberOfModuleTarget),
-    PassedToCall(&'a spec::PassedToCallTarget),
-    MakesDecorateCall(&'a spec::MakesDecorateCallTarget),
-    IntrinsicAlias(&'a spec::IntrinsicAliasTarget),
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum SourceUnitInjectivityClass {
     SourceUnit(SelectorVariableId),
@@ -63,12 +51,29 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: impl Into<String>,
         export_name: &str,
-        selector: MemberSelectorSpecRef<'_>,
+        selector: &MemberSelectorSpec,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         self.declare_target(
             logical_module,
             export_name,
-            selector,
+            !matches!(selector, MemberSelectorSpec::Binding(_)),
+            ClaimKind::Binding {
+                export_name: Some(export_name.to_string()),
+            },
+        )
+    }
+
+    /// A `source_match` member outside a binding group: its candidates come
+    /// from the shape matcher, so the target has no selector atoms to lower.
+    pub fn declare_source_match_member_target(
+        &mut self,
+        logical_module: impl Into<String>,
+        export_name: &str,
+    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
+        self.declare_target(
+            logical_module,
+            export_name,
+            true,
             ClaimKind::Binding {
                 export_name: Some(export_name.to_string()),
             },
@@ -79,30 +84,31 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: impl Into<String>,
         export_name: &str,
-        selector: MemberSelectorSpecRef<'_>,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         self.declare_target(
             logical_module,
             export_name,
-            selector,
+            true,
             ClaimKind::BindingGroupMember {
                 export_name: export_name.to_string(),
             },
         )
     }
 
+    /// `source_unit_injective`: distinct targets must resolve to distinct
+    /// source units. Only a plain binding pin may share its source unit.
     fn declare_target(
         &mut self,
         logical_module: impl Into<String>,
         export_name: &str,
-        selector: MemberSelectorSpecRef<'_>,
+        source_unit_injective: bool,
         claim: ClaimKind,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         let logical_module = logical_module.into();
         let source_unit = self.source_unit_for_local_export(&logical_module, export_name);
         self.targeted_source_units
             .insert(source_unit, format!("{logical_module}::{export_name}"));
-        if !matches!(selector, MemberSelectorSpecRef::Binding(_)) {
+        if source_unit_injective {
             self.injective_targeted_source_units.insert(source_unit);
         }
         self.global_source_unit_by_export
@@ -173,7 +179,7 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: &str,
         export_name: &str,
-        selector: MemberSelectorSpecRef<'_>,
+        selector: &MemberSelectorSpec,
     ) -> Result<(), SelectorIrLoweringError> {
         let source_unit = self.source_unit_for_local_export(logical_module, export_name);
         self.lower_selector_atoms(logical_module, source_unit, selector)
@@ -402,18 +408,13 @@ impl MemberSelectorProgramBuilder {
         &mut self,
         logical_module: &str,
         source_unit: SelectorVariableId,
-        selector: MemberSelectorSpecRef<'_>,
+        selector: &MemberSelectorSpec,
     ) -> Result<(), SelectorIrLoweringError> {
         match selector {
-            MemberSelectorSpecRef::Binding(binding) => {
+            MemberSelectorSpec::Binding(binding) => {
                 self.lower_binding_selector(source_unit, binding)
             }
-            MemberSelectorSpecRef::SourceMatch(_) => Err(SelectorIrLoweringError::unsupported(
-                "source_match",
-                "source_match candidates come from the shape matcher \
-                 (lower_projected_source_match_candidates), not selector IR atoms",
-            )),
-            MemberSelectorSpecRef::CrossRef(target) => {
+            MemberSelectorSpec::CrossRef(target) => {
                 let anchor = self.source_unit_for_global_export(&target.anchor)?;
                 match target.relation {
                     CrossRefRelation::References => {
@@ -434,7 +435,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
-            MemberSelectorSpecRef::ReadsMember(target) => {
+            MemberSelectorSpec::ReadsMember(target) => {
                 if let Some(object) = &target.object {
                     let object = self.source_unit_for_global_export(object)?;
                     self.program
@@ -452,7 +453,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
-            MemberSelectorSpecRef::MemberOfModule(target) => {
+            MemberSelectorSpec::MemberOfModule(target) => {
                 self.program.add_atom(SelectorAtom::ConsumesModuleMember {
                     source_unit: source_unit_term(source_unit),
                     module: const_str(&target.module),
@@ -461,7 +462,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
-            MemberSelectorSpecRef::PassedToCall(target) => {
+            MemberSelectorSpec::PassedToCall(target) => {
                 let arg_index = optional_index(target.arg_index)?;
                 if let Some(object) = &target.object {
                     let object = self.source_unit_for_global_export(object)?;
@@ -482,7 +483,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
-            MemberSelectorSpecRef::MakesDecorateCall(target) => {
+            MemberSelectorSpec::MakesDecorateCall(target) => {
                 let class_anchor = self.source_unit_for_global_export(&target.class)?;
                 self.program
                     .add_atom(SelectorAtom::MakesDecorateCallForSourceUnit {
@@ -493,7 +494,7 @@ impl MemberSelectorProgramBuilder {
                 self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
-            MemberSelectorSpecRef::IntrinsicAlias(target) => {
+            MemberSelectorSpec::IntrinsicAlias(target) => {
                 let referenced_by =
                     self.source_unit_for_local_export(logical_module, &target.referenced_by);
                 self.program.add_atom(SelectorAtom::IntrinsicAlias {
@@ -622,7 +623,7 @@ mod tests {
     fn lower(
         builder: &mut MemberSelectorProgramBuilder,
         export_name: &str,
-        selector: MemberSelectorSpecRef<'_>,
+        selector: &MemberSelectorSpec,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         let target = builder.declare_member_target(MODULE, export_name, selector)?;
         builder.lower_member_constraints(MODULE, export_name, selector)?;
@@ -653,7 +654,7 @@ mod tests {
         let error = lower(
             &mut MemberSelectorProgramBuilder::default(),
             "ImportedWidget",
-            MemberSelectorSpecRef::Binding(&selector),
+            &MemberSelectorSpec::Binding(selector),
         )
         .unwrap_err();
 
@@ -672,13 +673,13 @@ mod tests {
         let anchor = lower(
             &mut builder,
             "Anchor",
-            MemberSelectorSpecRef::Binding(&binding("a")),
+            &MemberSelectorSpec::Binding(binding("a")),
         )
         .unwrap();
         let delegator = lower(
             &mut builder,
             "Delegator",
-            MemberSelectorSpecRef::CrossRef(&references("Anchor")),
+            &MemberSelectorSpec::CrossRef(references("Anchor")),
         )
         .unwrap();
 
@@ -706,19 +707,19 @@ mod tests {
         let anchor = lower(
             &mut builder,
             "Anchor",
-            MemberSelectorSpecRef::Binding(&binding("a")),
+            &MemberSelectorSpec::Binding(binding("a")),
         )
         .unwrap();
         let first = lower(
             &mut builder,
             "First",
-            MemberSelectorSpecRef::CrossRef(&references("Anchor")),
+            &MemberSelectorSpec::CrossRef(references("Anchor")),
         )
         .unwrap();
         let second = lower(
             &mut builder,
             "Second",
-            MemberSelectorSpecRef::CrossRef(&references("Anchor")),
+            &MemberSelectorSpec::CrossRef(references("Anchor")),
         )
         .unwrap();
 

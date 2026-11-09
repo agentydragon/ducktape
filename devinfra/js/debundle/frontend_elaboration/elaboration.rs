@@ -28,7 +28,7 @@ use source_identity::StatementId;
 use source_match::source_match_claim_member_selectors;
 use spec::{
     ChunkExportPurity, ChunkRenames, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,
-    LogicalModule, SourceMatchClaim, SourceUnitSelector, UnassignedMode,
+    LogicalModule, MemberSelectorSpec, SourceMatchClaim, SourceUnitSelector, UnassignedMode,
 };
 use spec_resolution::{
     LogicalRequest, ProjectedChunk, ResolvedChunk, logical_requests_for_chunk, project_chunk,
@@ -1027,8 +1027,10 @@ fn eligible_member_indices(
             }
             if member.resolves_after_chunk_analysis() {
                 let binding_id = analysis::top_level_id(&member.binding, top_level_mark);
-                if matches!(member.selector, MemberSelector::Binding(_))
-                    && !ast.declaration_by_name.contains_key(&binding_id)
+                if matches!(
+                    member.selector,
+                    MemberSelector::Authored(MemberSelectorSpec::Binding(_))
+                ) && !ast.declaration_by_name.contains_key(&binding_id)
                 {
                     continue;
                 }

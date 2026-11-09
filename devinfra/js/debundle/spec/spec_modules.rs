@@ -19,6 +19,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use selector_outcome::SelectorKind;
 
 use spec::{
     AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, ModulePath,
@@ -175,8 +176,8 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
             (Some(name), _) => name.clone(),
             (None, MemberSelectorSpec::Binding(binding)) => binding.name.clone(),
             (None, _) => anyhow::bail!(
-                "member using {} requires name",
-                selector.selector_kind_label()
+                "{} requires name",
+                SelectorKind::from(&selector).origin(None)
             ),
         };
         if let MemberSelectorSpec::Binding(binding) = &selector {
@@ -223,7 +224,11 @@ pub fn load_active_claims(modules_root: &Path) -> Result<BTreeMap<String, Module
         let module_path = ModulePath::parse(&raw_path, "")
             .with_context(|| format!("module path from {}", path.display()))?;
         for member in read_module_file(&path)?.members {
-            let Some(binding) = member.selector.binding else {
+            let MemberSelectorSpec::Binding(binding) = member
+                .selector
+                .validate()
+                .with_context(|| format!("member selector in {}", path.display()))?
+            else {
                 continue;
             };
             if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {

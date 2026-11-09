@@ -2657,22 +2657,6 @@ pub enum MemberSelectorSpec {
     IntrinsicAlias(IntrinsicAliasTarget),
 }
 
-impl MemberSelectorSpec {
-    /// The `members[].selector.<field>` key this selector deserializes from,
-    /// used to label the claim origin and the `name:`-required diagnostic.
-    pub fn selector_kind_label(&self) -> &'static str {
-        match self {
-            Self::Binding(_) => "binding",
-            Self::CrossRef(_) => "cross_ref",
-            Self::ReadsMember(_) => "reads_member",
-            Self::MemberOfModule(_) => "member_of_module",
-            Self::PassedToCall(_) => "passed_to_call",
-            Self::MakesDecorateCall(_) => "makes_decorate_call",
-            Self::IntrinsicAlias(_) => "intrinsic_alias",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
 #[error("{message}")]
 pub struct MemberSelectorError {

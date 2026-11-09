@@ -3,6 +3,7 @@
 use analysis::facts::StructuralChunkSourceFacts;
 use analysis::{AnalysisAssumptions, KnownEffect};
 use anyhow::{Result, bail};
+use selector_outcome::SelectorKind;
 use selector_resolve::{
     AnonymousStatement, Chunk, Member, MemberSelector, Projection, Resolution, SpecModule,
 };
@@ -247,19 +248,7 @@ pub fn build_members(
         .iter()
         .map(|m| {
             let selected = m.selector.validate()?;
-            let kind_label = selected.selector_kind_label();
-            // A solver-resolved member's public export name can't default to a
-            // binding name — the binding isn't known until the selector resolves
-            // — so `name:` is required. The kind label colors the message.
-            let require_name = || {
-                m.name.clone().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "logical_module {request_id}: members[].selector.{kind_label} requires \
-                         `name:` because the public export name cannot default to a binding name \
-                         until the selector is resolved"
-                    )
-                })
-            };
+            let origin = SelectorKind::from(&selected).origin(None);
             let binding = match &selected {
                 spec::MemberSelectorSpec::Binding(binding) => binding.name.clone(),
                 _ => String::new(),
@@ -268,21 +257,19 @@ pub fn build_members(
                 spec::MemberSelectorSpec::Binding(binding) => {
                     m.name.clone().unwrap_or_else(|| binding.name.clone())
                 }
-                _ => require_name()?,
-            };
-            let claim_origin = match &selected {
-                spec::MemberSelectorSpec::Binding(_) => {
-                    format!(
-                        "members[].selector.binding as `{}`",
-                        m.name.as_deref().unwrap_or(&binding)
+                // A solver-resolved member's public export name can't default to a
+                // binding name — the binding isn't known until the selector resolves
+                // — so `name:` is required.
+                _ => m.name.clone().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "logical_module {request_id}: {origin} requires `name:` because the \
+                         public export name cannot default to a binding name until the \
+                         selector is resolved"
                     )
-                }
-                _ => format!(
-                    "members[].selector.{kind_label} as `{}`",
-                    m.name.as_deref().unwrap_or("<unnamed>")
-                ),
+                })?,
             };
-            let selector = member_from_spec(export_name.clone(), selected).selector;
+            let claim_origin = format!("{origin} as `{export_name}`");
+            let selector = MemberSelector::Authored(selected);
             Ok(MemberRequest {
                 binding,
                 export_name,
@@ -476,7 +463,7 @@ pub fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffe
 
 /// Convert one parsed selector into the selector engine's module member.
 pub fn member_from_spec(export_name: String, selector: spec::MemberSelectorSpec) -> Member {
-    member_from_selector(export_name, MemberSelector::from_spec(selector))
+    member_from_selector(export_name, MemberSelector::Authored(selector))
 }
 
 /// Convert one compiled selector into the selector engine's module member.

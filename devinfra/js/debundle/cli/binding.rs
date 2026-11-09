@@ -23,7 +23,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::SelectorKind;
-use selector_resolve::MemberSelector;
 use serde::Deserialize;
 
 use crate::candidate_assessment::EffectAssessmentUnavailable;
@@ -194,7 +193,7 @@ pub(crate) fn binding_matches_in_doc(
                 BindingIdentity::DirectBindingIdentifier { name: binding.name }
             }
             Ok(structural) => BindingIdentity::StructuralMember {
-                selector: MemberSelector::from_spec(structural).kind(),
+                selector: SelectorKind::from(&structural),
             },
             // An invalid selector with a `binding.name` still resolves by that name.
             Err(_) if let Some(binding) = &member.selector.binding => {
