@@ -64,7 +64,7 @@ func (s *served) bind(t *testing.T, account auth.Account, rules ...policyapi.Rul
 	subject := policyapi.ServiceAccountRef{Namespace: account.Namespace, Name: account.Name}
 	if err := policyObjects.Create(t.Context(), &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: testPolicyBinder},
-		Spec:       policyapi.PolicyBindingSpec{Subject: subject, PolicySets: []string{"test-set"}},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: []string{"test-set"}},
 	}); err != nil {
 		t.Fatal(err)
 	}

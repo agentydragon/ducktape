@@ -41,7 +41,7 @@ func policyOf(rules ...policyapi.Rule) *Policy {
 	})
 	policy.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-binding"},
-		Spec:       policyapi.PolicyBindingSpec{Subject: sender, PolicySets: []string{"test-set"}},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: sender.Namespace, Name: sender.Name}, PolicySets: []string{"test-set"}},
 	})
 	return policy
 }

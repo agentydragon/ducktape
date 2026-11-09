@@ -215,7 +215,7 @@ func (i *Index[R]) Bindings(subject policyapi.ServiceAccountRef) []BindingResolu
 func (i *Index[R]) naming(subject policyapi.ServiceAccountRef) []string {
 	var names []string
 	for name, binding := range i.bindings {
-		if binding.Spec.Subject == subject {
+		if s := binding.Spec.Subject; s.Identity == nil && s.Namespace == subject.Namespace && s.Name == subject.Name {
 			names = append(names, name)
 		}
 	}

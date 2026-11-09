@@ -241,7 +241,7 @@ func (l *lab) allow(rules ...policyapi.Rule) {
 	l.index.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "rules"},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject: policyapi.ServiceAccountRef{Namespace: runner.Namespace, Name: runner.Name}, PolicySets: []string{"egress"},
+			Subject: policyapi.Subject{Namespace: runner.Namespace, Name: runner.Name}, PolicySets: []string{"egress"},
 		},
 	})
 }

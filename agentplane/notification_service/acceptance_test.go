@@ -432,7 +432,7 @@ func grantSend(t *testing.T, account string) *policyapi.PolicyBinding {
 	binding := &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: testNamespace, Name: account},
+			Subject:    policyapi.Subject{Namespace: testNamespace, Name: account},
 			PolicySets: []string{set.Name},
 		},
 	}

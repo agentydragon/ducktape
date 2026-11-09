@@ -94,7 +94,7 @@ func TestACredentialThatDoesNotParseIsRemoved(t *testing.T) {
 	})
 	index.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-grant"},
-		Spec:       policyapi.PolicyBindingSpec{Subject: subject, PolicySets: []string{"test-egress"}},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: []string{"test-egress"}},
 	})
 	index.PutSecret(resources.NewSecret("test-secret", map[string]string{"token": "test-value"}))
 	informer := &Informer{index: index}

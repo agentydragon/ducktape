@@ -184,10 +184,29 @@ type ServiceAccountRef struct {
 	Name string `json:"name"`
 }
 
+// IdentityRef names an Identity in the binding's namespace.
+type IdentityRef struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name" proto:"1"`
+}
+
+// Subject is who a binding grants to: a ServiceAccount by namespace and name, or an Identity. No
+// reader resolves an Identity subject yet; each treats such a binding as naming no caller.
+// CLEANUP(added 2026-11-08): remove the ServiceAccount variant (namespace, name) in IDENTITY_CUTOVER
+// (agentplane/plans/task_dag.md), which rewrites every binding to an Identity subject.
+// +kubebuilder:validation:XValidation:rule="has(self.identity) ? !has(self.namespace) && !has(self.name) : has(self.namespace) && has(self.name)",message="Name either a ServiceAccount (namespace and name) or an identity."
+type Subject struct {
+	// +kubebuilder:validation:MinLength=1
+	Namespace string `json:"namespace,omitempty" proto:"1"`
+	// +kubebuilder:validation:MinLength=1
+	Name     string       `json:"name,omitempty" proto:"2"`
+	Identity *IdentityRef `json:"identity,omitempty" proto:"3"`
+}
+
 type PolicyBindingSpec struct {
-	// The ServiceAccount this binding grants to. Native bindings also carry its UID so that
-	// recreating a same-named account replaces the grant.
-	Subject ServiceAccountRef `json:"subject" proto:"1"`
+	// The subject this binding grants to. Native bindings also carry a ServiceAccount subject's UID so
+	// that recreating a same-named account replaces the grant.
+	Subject Subject `json:"subject" proto:"1"`
 	// PolicySet names in this binding's namespace.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:items:MinLength=1

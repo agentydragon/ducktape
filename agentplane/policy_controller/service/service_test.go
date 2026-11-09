@@ -149,7 +149,7 @@ func tokenContext(t *testing.T, token string) context.Context {
 }
 
 func binding(name, subject string, sets ...string) *policyapi.PolicyBinding {
-	return &policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID("uid-" + name), ResourceVersion: "1", Generation: 1}, Spec: policyapi.PolicyBindingSpec{Subject: policyapi.ServiceAccountRef{Namespace: "tools", Name: subject}, PolicySets: sets}}
+	return &policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID("uid-" + name), ResourceVersion: "1", Generation: 1}, Spec: policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: "tools", Name: subject}, PolicySets: sets}}
 }
 
 func testSandbox(name, uid string) *sandboxapi.Sandbox {
@@ -299,7 +299,7 @@ func TestGrantDetectsSandboxReplacementAfterCreateAndCleansUp(t *testing.T) {
 
 func operatorBinding(sandboxUID string) *policyapi.PolicyBinding {
 	operator := binding("operator-grant", "worker", "base")
-	operator.Spec.Subject = policyapi.ServiceAccountRef{Namespace: "policies", Name: "worker"}
+	operator.Spec.Subject = policyapi.Subject{Namespace: "policies", Name: "worker"}
 	controller, blockOwnerDeletion := false, false
 	operator.OwnerReferences = []metav1.OwnerReference{{
 		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: "worker", UID: types.UID(sandboxUID),

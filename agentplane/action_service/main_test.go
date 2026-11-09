@@ -665,7 +665,7 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
 		&policyapi.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-policy-binding"},
 			Spec: policyapi.PolicyBindingSpec{
-				Subject:    policyapi.ServiceAccountRef{Namespace: caller.Namespace, Name: caller.Name},
+				Subject:    policyapi.Subject{Namespace: caller.Namespace, Name: caller.Name},
 				PolicySets: []string{"test-policy-set"},
 			},
 		},

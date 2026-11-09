@@ -351,7 +351,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		{"foreign-launch", "ConfigMapConflict", &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "foreign-launch-launch", Namespace: ns}}},
 		{"foreign-binding", "PolicyBindingConflict", &policyapi.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Name: "foreign-binding", Namespace: ns},
-			Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.ServiceAccountRef{Namespace: ns, Name: "foreign-binding"}, PolicySets: []string{"foreign-grant"}},
+			Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: ns, Name: "foreign-binding"}, PolicySets: []string{"foreign-grant"}},
 		}},
 		{"foreign-service", "ServiceConflict", &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "foreign-service-control", Namespace: ns}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}},
 	} {
