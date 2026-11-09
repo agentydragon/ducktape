@@ -1,3 +1,4 @@
+import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { Badge, Group, Stack, Text, Tooltip } from "@mantine/core";
 import type { JSX } from "react";
 
@@ -23,7 +24,7 @@ export function OriginBadge({ origin }: { origin: IdentityOrigin }): JSX.Element
 
 function expiry(binding: PolicyBinding): Date | null {
   const value = binding.spec?.expiresAt;
-  return value ? new Date(Number(value.seconds) * 1000 + value.nanos / 1e6) : null;
+  return value ? timestampDate(value) : null;
 }
 
 /** Each binding naming the identity, with when the Policy Controller deletes it. */

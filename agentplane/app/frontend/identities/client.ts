@@ -1,5 +1,5 @@
 import type { Identity } from "../../../policy/v1/policy_service_pb";
-import { displayableError, fetchWithLogin } from "../client";
+import { displayableError, fetchText, HttpError } from "../client";
 
 const PRECONDITION_FAILURE = "type.googleapis.com/google.rpc.PreconditionFailure";
 
@@ -37,19 +37,18 @@ function referencingBindings(body: unknown): string[] | null {
 export async function deleteIdentity(identity: Identity): Promise<DeleteOutcome> {
   const { namespace, name, uid } = identity.identity ?? {};
   if (!namespace || !name || !uid) return { case: "failed", error: "Identity has no namespace, name and UID" };
-  const response = await fetchWithLogin(
-    `/upstream/policy/v1/identities/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}?${new URLSearchParams({ uid })}`,
-    { method: "DELETE" }
-  );
-  if (response.ok) return { case: "deleted" };
-  let body: unknown;
   try {
-    body = await response.json();
-  } catch {
-    return { case: "failed", error: `Policy Service returned HTTP ${response.status}` };
+    await fetchText(
+      `/upstream/policy/v1/identities/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}?${new URLSearchParams({ uid })}`,
+      { method: "DELETE" }
+    );
+  } catch (error) {
+    if (!(error instanceof HttpError)) return { case: "failed", error: displayableError(error) };
+    const bindings = referencingBindings(error.body);
+    if (bindings?.length) return { case: "referenced", bindings };
+    const body = error.body;
+    const message = typeof body === "object" && body !== null && "message" in body ? body.message : null;
+    return { case: "failed", error: typeof message === "string" ? message : error.message };
   }
-  const bindings = referencingBindings(body);
-  if (bindings?.length) return { case: "referenced", bindings };
-  const message = typeof body === "object" && body !== null && "message" in body ? body.message : body;
-  return { case: "failed", error: displayableError(message) };
+  return { case: "deleted" };
 }

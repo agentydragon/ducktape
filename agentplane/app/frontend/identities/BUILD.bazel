@@ -104,6 +104,7 @@ ts_library(
     deps = [
         ":accounts",
         ":origin",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

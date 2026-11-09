@@ -46,7 +46,7 @@ it("names the bindings a refusal's PreconditionFailure lists", async () => {
 
 it.each([
   [Response.json({ code: 9, message: "Identity is managed by Flux" }, { status: 400 }), "Identity is managed by Flux"],
-  [new Response("not json", { status: 502 }), "Policy Service returned HTTP 502"],
+  [new Response("not json", { status: 502 }), "HTTP 502: not json"],
 ])("reports any other failure", async (response, error) => {
   answer(response);
   expect(await deleteIdentity(identity)).toEqual({ case: "failed", error });
