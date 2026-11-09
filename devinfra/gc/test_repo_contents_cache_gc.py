@@ -164,6 +164,27 @@ def test_entries_only_deleted_bases_linked_to_become_prunable(cache: FakeCache, 
     assert isinstance(by_path[cache.referenced], gc.RetainedEntry)  # the kept base still links to it
 
 
+def test_unreferenced_after_deleting_matches_a_rescan_after_the_bases_are_gone(
+    cache: FakeCache, proc: Path, mountinfo: Path
+) -> None:
+    before = list(_scan(cache, proc, mountinfo).values())
+    predicted = {item.entry.contents for item in gc.unreferenced_after_deleting(before, {cache.prunable_base})}
+    bases = [item for item in _bases(cache, proc, mountinfo) if isinstance(item, output_base_gc.PrunableBase)]
+    output_base_gc.delete_prunable_bases(bases, proc_root=proc, mountinfo_path=mountinfo)
+
+    rescanned = {item.entry.contents for item in _prunable(cache, proc, mountinfo)}
+
+    assert predicted == rescanned == {cache.unreferenced, cache.prunable_only}
+
+
+def test_unreferenced_after_deleting_nothing_keeps_only_the_prunable_entries(
+    cache: FakeCache, proc: Path, mountinfo: Path
+) -> None:
+    before = list(_scan(cache, proc, mountinfo).values())
+
+    assert {item.entry.contents for item in gc.unreferenced_after_deleting(before, set())} == {cache.unreferenced}
+
+
 def test_delete_removes_exactly_the_unreferenced_entries(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
     results = _delete(cache, _prunable(cache, proc, mountinfo), mountinfo)
 
