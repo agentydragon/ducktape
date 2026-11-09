@@ -57,6 +57,10 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
+    # CLEANUP(added 2026-11-09): the proxy's forward listener is TLS-only, so this plaintext bearer
+    # relay cannot authenticate; public-coder-agent is scaled to zero. Remove with the sidecar's
+    # bearer proxy-hop auth once no non-Sandbox workload projects a proxy-hop bearer, or port to
+    # TLS + SVID if the deployment is revived.
     settings = sidecar_config.Settings(
         proxy=sidecar_config.Proxy(
             address=f"{GATEWAY.fqdn}:{GATEWAY.pod_port}",

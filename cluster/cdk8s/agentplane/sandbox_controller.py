@@ -131,11 +131,12 @@ class SandboxController(Construct):
                 ),
                 RolePolicyRule(resources=[custom_resource("", "pods/proxy")], verbs=["get"]),
                 # Per-incarnation cert-manager requests. cert-manager owns every generated key and
-                # certificate; the controller only creates/deletes Certificate declarations and
-                # reads the resulting leaf Secret before attaching it to a workload.
+                # certificate; the controller creates/deletes Certificate declarations, updates only
+                # the usages of one it owns (environment_runtime_credential.go's client-auth upgrade)
+                # and reads the resulting leaf Secret before attaching it to a workload.
                 RolePolicyRule(
                     resources=[custom_resource("cert-manager.io", "certificates")],
-                    verbs=["get", "list", "watch", "create", "delete"],
+                    verbs=["get", "list", "watch", "create", "update", "delete"],
                 ),
                 RolePolicyRule(resources=[custom_resource("", "secrets")], verbs=["get", "list", "watch", "delete"]),
                 # Update adds and removes the Sandbox owner reference; patch backfills the durable
