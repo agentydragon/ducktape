@@ -117,7 +117,7 @@ func TestClientTLSConnectionWithoutClientCertificateExpiresAtPeerNotAfter(t *tes
 		t.Fatal(err)
 	}
 	serverTLS := &tls.Config{Certificates: []tls.Certificate{pair}, ClientAuth: tls.RequestClientCert}
-	clientTLS, err := (environment_runtime_transport.Config{CAFile: proxy.CAFile}).ProxyServerTLSConfig()
+	clientTLS, err := (environment_runtime_transport.ClientTLS{CAFile: proxy.CAFile, ServerURI: environment_runtime_transport.EgressProxyURI}).TLSConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestClientTLSConnectionRejectsConfiguredClientCertificateWithoutSelection(t
 		t.Fatal(err)
 	}
 	serverTLS := &tls.Config{Certificates: []tls.Certificate{pair}, ClientAuth: tls.RequestClientCert}
-	clientTLS, err := (environment_runtime_transport.Config{CAFile: proxy.CAFile}).ProxyServerTLSConfig()
+	clientTLS, err := (environment_runtime_transport.ClientTLS{CAFile: proxy.CAFile, ServerURI: environment_runtime_transport.EgressProxyURI}).TLSConfig()
 	if err != nil {
 		t.Fatal(err)
 	}

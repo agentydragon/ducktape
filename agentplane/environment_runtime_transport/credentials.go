@@ -216,25 +216,6 @@ func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 	return tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth)), nil
 }
 
-// ProxyServerTLSConfig creates verified TLS credentials for the egress proxy
-// without presenting a client certificate. The CA bundle is the same
-// reloadable file source used by file-backed SVID credentials, and the peer
-// must present the fixed egress-proxy SVID with serverAuth usage.
-func (c Config) ProxyServerTLSConfig() (*tls.Config, error) {
-	if c.CertFile != "" || c.KeyFile != "" || c.WorkloadAPISocket != "" {
-		return nil, errors.New("proxy server TLS without a client certificate accepts only ca_file")
-	}
-	source, err := newFileBundleSource(c.CAFile)
-	if err != nil {
-		return nil, err
-	}
-	expected, err := spiffeid.FromString(EgressProxyURI)
-	if err != nil {
-		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
-	}
-	return tlsconfig.TLSClientConfig(source, authorize(expected, x509.ExtKeyUsageServerAuth)), nil
-}
-
 // WorkloadServerTLSConfig creates mTLS server credentials for the egress
 // listener. It accepts only a current EnvironmentRuntime identity with an
 // explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
