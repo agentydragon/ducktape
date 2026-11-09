@@ -574,11 +574,8 @@ report's structure and retain useful explanations, comparisons and evidence navi
 as you revise it. Reorganization must preserve the reader's ability to understand and
 follow up on still-relevant prior work.
 
-Prefer a standard CSS framework from a version-pinned CDN for layout, typography,
-tables, cards and responsive utilities. Use its documented integrity and cross-origin
-attributes, and verify the stylesheet actually loads during browser review. Keep
-custom CSS limited to data visualizations and small report-specific adjustments;
-do not build a bespoke design system or add a build pipeline just to style a report.
+Apply the shared [reporting and publication contract](references/reporting.md)
+when authoring or publishing this report.
 
 A prolonged failure caused by an exhausted quota should lead with the incident,
 its impact, the evidence for the cause, and the decision needed to restore service.
@@ -606,18 +603,17 @@ different presentations; do not force either into the other's structure.
 
 ### Preserve the evidence behind the presentation
 
-Make the observation window, source commit, sample/coverage limits, and important
-unknowns easy to find. Include relevant PR-class feedback and agent-availability
-distributions, runner and remote-compute breakdowns, representative critical-path
-timelines, and current required checks where they support the diagnosis. Keep
-supporting measurements in the evidence rather than displaying every available
-metric. Do not invent findings or recommendations to fill a section. Include CodeQL/queued-Bazel overlaps
-only when current evidence supports that diagnosis. Generate `evidence.json` with
-`evidence.sh` as **supporting data**; review the derived evidence and explain its
-significance before publishing the report and evidence together as the latest
-history snapshot. Keep full API payloads, logs and profiles local unless a durable,
-reviewed fixture needs them. Publish small relevant excerpts and direct
-job/invocation URLs in the report.
+Apply the shared [reporting and publication contract](references/reporting.md) for
+provenance, privacy and history continuity. Include relevant PR-class feedback and
+agent-availability distributions, runner and remote-compute breakdowns,
+representative critical-path timelines, and current required checks where they
+support the diagnosis. Keep supporting measurements in the evidence rather than
+displaying every available metric. Do not invent findings or recommendations to
+fill a section. Include CodeQL/queued-Bazel overlaps only when current evidence
+supports that diagnosis. Generate `evidence.json` with `evidence.sh` as
+**supporting data**; review the derived evidence and explain its significance
+before publishing the report and evidence together as the latest history snapshot.
+Publish small relevant excerpts and direct job/invocation URLs in the report.
 
 Before publishing, compare the proposed report against the prior-work inventory.
 Account for each substantive prior finding, experiment and open follow-up: updated
@@ -644,20 +640,12 @@ covering queue/runtime arithmetic and CodeQL contention. Package and tests are u
 
 ## Durable history and test-cost attribution
 
-`agentydragon/ducktape`'s canonical [`gh-pages` branch](https://github.com/agentydragon/ducktape/tree/gh-pages)
-holds independent latest snapshots under `latency/` and `reliability/`. This skill
-owns `latency/`; the root `README.md` provides durable navigation. The latency
-directory contains `evidence.json`, `manifest.json`, a standalone `index.html`, and
-optionally `attribution.json`. `index.html` is the only published report. Author
-and visually review the standalone HTML according to the reader objectives above;
-do not commit a duplicate `report.md`. Escape
-external strings during authoring and never copy raw logs, payloads or scripts into
-the page blindly. Keep exactly one snapshot at
-the namespace root, with no dated run directories or generated archive index. Git
-commit history preserves earlier snapshots. Each new report replaces only its
-namespace's snapshot files; preserve the root README, sibling namespace, and
-unrelated files. If a new run has no attribution, remove the old `attribution.json`
-in that namespace so it cannot be mistaken for current evidence.
+Apply the shared [reporting and publication contract](references/reporting.md).
+This skill owns the `latency/` namespace. Its latest snapshot has a standalone
+`index.html`, `evidence.json`, and `manifest.json`, with `attribution.json` only
+when attribution was measured. `index.html` is the only published report; do not
+commit a duplicate `report.md`.
+
 The `gh-pages` branch is not a mirror of `devel`. Its earlier commits preserve the
 explicitly labeled _historical_ copy of the former maintained report, not a fresh
 cdk8s comparison. Before migration, latency snapshots lived at the branch root;
@@ -677,30 +665,6 @@ python3 devinfra/ci/reports/publish.py --source "$DEVEL_SHA" --kind latency \
   --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY"
 # Add --attribution "$ATTRIBUTION" only when measured attribution is available.
 ```
-
-Use `--kind reliability` to publish to `reliability/`; each invocation updates
-only its selected namespace. Compare observation windows with prior reports of the
-same kind because latency and reliability runs may cover different periods.
-
-The shared `devinfra/ci/reports/publish.py` (also packaged as `scripts/publish.py`
-in both reporting skills) copies the **already written and reviewed standalone HTML** to
-`latency/index.html` byte for byte; it does not render, sanitize or validate the
-report, investigate CI, rank fixes, or validate conclusions. Review the narrative
-and rendered page before publishing. The publisher replaces only the selected
-namespace's snapshot files, removes any leftover `report.md` there, and leaves the
-root README and sibling namespace intact. Do not mistake successful script
-execution for completion of the skill. Open a PR targeting the canonical
-`gh-pages` branch. Before submitting, fetch the
-branch again and confirm the PR includes its latest tip. If another run landed
-first, compare the observation windows within the same report kind and do not let
-an older run replace a newer snapshot; rebase or rebuild on that tip and republish
-when the new run is later. Never reset, amend, or force-push history. Review the report and diff for
-credentials, identities, raw logs, payloads and personal data before publishing.
-History updates go through a PR to `gh-pages`; changes to this skill or
-its scripts go through a normal source PR. GitHub Pages serves the branch at
-<https://agentydragon.github.io/ducktape/> (`latency/`, `reliability/`,
-`visual-reliability/`; root `index.html` is the landing page): link the published
-page, and note that it redeploys only when the PR merges.
 
 ### Quantifying who triggered work
 
