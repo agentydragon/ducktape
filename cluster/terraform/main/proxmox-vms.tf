@@ -25,6 +25,9 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   vm_id       = 110
   bios        = "ovmf"
   machine     = "q35" # Required for PCIe passthrough
+  operating_system {
+    type = "l26"
+  }
 
   # Terraform runs from inside wyrm2. Stage reboot-required VM changes in
   # Proxmox, then activate them with the coordinated Atlas host reboot instead
