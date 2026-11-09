@@ -168,7 +168,7 @@ spec:
       database: gitlabhq_production
       owner: gitlabhq_production
   imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
-  instances: 3
+  instances: 2
   managed:
     roles:
       - login: true
