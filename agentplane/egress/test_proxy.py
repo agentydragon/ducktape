@@ -38,12 +38,11 @@ from agentplane.egress.platform_routes import (
     PLATFORM_ROUTES_LISTEN_ADDRESS,
     PlatformRoute,
     PlatformRoutes,
-    TLSBearerConnectRouteTransport,
     TLSConnectRouteTransport,
 )
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, Proxy, SpiffeProxyAuth, TLSProxyTransport
+from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -61,7 +60,6 @@ from agentplane.testing.tls import (
     write_ca,
 )
 from agentplane.workload_auth import listener
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from util.net import Listener
 
 # Three namespaces, all different, so that a proxy reading one from the wrong one fails.
@@ -152,10 +150,7 @@ def replica_settings(
         forward=listener.Listener(
             listen_address="0.0.0.0:8888",
             tls=listener.TLS(cert_file=svid_cert[0], key_file=svid_cert[1]),
-            auth=[
-                listener.SPIFFEAuth(ca_file=svid_ca_file),
-                listener.KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
-            ],
+            auth=[listener.SPIFFEAuth(ca_file=svid_ca_file)],
         ),
         database_url=database_url,
         exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
@@ -617,68 +612,6 @@ async def test_rules_grpc_refuses_forged_and_expired_clients(egress: Egress) -> 
                 )
             assert failure.value.code() == grpc.StatusCode.UNAVAILABLE
     assert not egress.upstream.requests
-
-
-async def test_tls_bearer_hop_checks_the_audience(egress: Egress) -> None:
-    async with aiohttp.ClientSession() as client:
-        for audience, expected in ((WORKLOAD_TOKEN_AUDIENCE, 200), ("wrong-egress-hop", 403)):
-            token = await egress.api.pod_token(SANDBOX_NAMESPACE, f"{SANDBOX_A}-other-pod", [audience])
-            status, _ = await svid_request(
-                client,
-                egress,
-                client_tls_context(egress.runtime_ca),
-                "/public/bearer",
-                headers={"Proxy-Authorization": f"Bearer {token}"},
-            )
-            assert status == expected
-    assert len(egress.upstream.requests) == 1
-
-
-async def test_non_sandbox_sidecar_keeps_its_tls_bearer_hop(egress: Egress) -> None:
-    token_file = egress.tmp_path / "non-sandbox-hop-token"
-    # This Pod has no Sandbox object; its Pod-bound TokenReview is the identity proof.
-    token_file.write_text(
-        await egress.api.pod_token(SANDBOX_NAMESPACE, f"{SANDBOX_A}-other-pod", [WORKLOAD_TOKEN_AUDIENCE])
-    )
-    root = write_ca(egress.runtime_ca, egress.tmp_path, "bearer-sidecar-root")[0]
-    async with (
-        SidecarProcess(
-            proxy=Proxy(
-                address=f"localhost:{egress.proxy_listener.port}",
-                transport=TLSProxyTransport(ca_file=root, auth=KubernetesBearerProxyAuth(token_file=token_file)),
-            ),
-            platform_routes=PlatformRoutes(
-                listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
-                routes={
-                    "rules": PlatformRoute(
-                        service_prefixes=("/agentplane.egress.EgressRules/",),
-                        upstream=f"localhost:{egress.replica.admin_listener.port}",
-                        transport=TLSBearerConnectRouteTransport(server_uri=EGRESS_PROXY_URI, token_file=token_file),
-                    )
-                },
-            ),
-        ) as sidecar,
-        aiohttp.ClientSession() as client,
-    ):
-        async with client.get(
-            f"http://{UPSTREAM_HOST}:{egress.upstream.http_port}/public/bearer-sidecar",
-            proxy=f"http://localhost:{sidecar.proxy_listener.port}",
-        ) as response:
-            assert response.status == 200
-        async with grpc.aio.insecure_channel(f"localhost:{sidecar.platform_route_listener.port}") as channel:
-            rules_response = await egress_rules_pb2_grpc.EgressRulesStub(channel).GetRules(
-                egress_rules_pb2.GetRulesRequest(), timeout=10
-            )
-            assert rules_response.subject.namespace == SUBJECT_A.namespace
-            assert rules_response.subject.name == SUBJECT_A.name
-        token_file.write_text("forged")
-        async with client.get(
-            f"http://{UPSTREAM_HOST}:{egress.upstream.http_port}/public/bearer-rotated",
-            proxy=f"http://localhost:{sidecar.proxy_listener.port}",
-        ) as response:
-            assert response.status == 403
-            assert response.headers["X-Agentplane-Egress"] == "denied; reason=token-rejected"
-    assert len(egress.upstream.requests) == 1
 
 
 async def test_svid_listener_maps_live_sandbox_and_ignores_forged_subject_header(egress: Egress) -> None:

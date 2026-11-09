@@ -91,17 +91,17 @@ type idleHistory struct{}
 
 func (idleHistory) Health() history.Health { return history.Health{} }
 
+// testRulesAuth authenticates Rules callers by SVID; a plaintext admin listener carries none.
 func testRulesAuth(t *testing.T) (*identity.Authenticator, *policy.Index) {
 	t.Helper()
-	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{"test-ns"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ca := environmentruntimetransporttesting.NewCA(t)
+	proxySVID := ca.Issue(t, environment_runtime_transport.EgressProxyURI)
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
-		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}},
+		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	authentication, err := identity.NewAuthenticator(forward, identity.NewVerifier(resolver, nil), nil)
+	authentication, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil), testResolver(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,15 +138,14 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	if err != nil || !health.GetReady() {
 		t.Fatalf("GetHealth: %v, %v", health, err)
 	}
-	// The same listener serves workload rules without granting the workload admin access.
+	// A workload bearer neither reads rules, which authenticate SVIDs alone, nor administers.
 	workloadToken, err := api.WorkloadToken(context.Background(), auth.Account{Namespace: "test-ns", Name: "test-sandbox"}, testAudience)
 	if err != nil {
 		t.Fatal(err)
 	}
 	workload := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+workloadToken)
-	rules, err := egressrulespb.NewEgressRulesClient(connection).GetRules(workload, &egressrulespb.GetRulesRequest{})
-	if err != nil || rules.GetSubject().GetNamespace() != "test-ns" || rules.GetSubject().GetName() != "test-sandbox" {
-		t.Fatalf("workload rules: %v, %v", rules, err)
+	if _, err := egressrulespb.NewEgressRulesClient(connection).GetRules(workload, &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("workload bearer rules access: %v, want Unauthenticated", err)
 	}
 	if _, err := egressadminpb.NewEgressAdminClient(connection).GetHealth(workload, &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("workload admin access: %v, want PermissionDenied", err)
@@ -188,7 +187,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	workloadAuth, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil, nil), testResolver(t))
+	workloadAuth, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil), testResolver(t))
 	if err != nil {
 		t.Fatal(err)
 	}

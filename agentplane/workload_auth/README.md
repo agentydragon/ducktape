@@ -40,10 +40,9 @@ existing bearer or delegation credentials. They receive no SVID. The shared `grp
 binary checks the same listener through verified TLS without application credentials.
 
 Action command/build boxes and Haku's and `haku-ci`'s standing workloads present their own
-`WorkloadCredential`'s SVID. The egress proxy's `forward` listener still accepts the
-`agentplane-egress` audience for its Kubernetes bearer mode, which no workload uses. Sandbox Runtime
-templates use SVIDs and continue projecting Kubernetes destination-audience tokens where credential
-rules require them; they do not project the proxy-hop or first-party-service audiences.
+`WorkloadCredential`'s SVID; the egress proxy's `forward` listener authenticates SVIDs alone. Sandbox
+Runtime templates continue projecting Kubernetes destination-audience tokens where credential rules
+require them; they do not project first-party-service audiences.
 
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
 belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding

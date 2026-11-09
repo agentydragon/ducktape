@@ -6,12 +6,12 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Configuration
 
-The forward listener is configured by `forward.listen_address`, serving `forward.tls`, and an
-explicit `forward.auth` list containing `spiffe` with trust roots and/or `kubernetes_bearer`
-with its TokenReview audience. These structured settings
-are file-only. The sidecar names its central proxy as `proxy.address` (`host:port`) and selects
-TLS with an explicit SPIFFE certificate or projected bearer authentication mode. Unknown fields, unsupported or duplicate modes, incomplete
-credentials and incompatible transport/auth combinations fail startup.
+The forward listener is configured by `forward.listen_address`, serving `forward.tls`, and a
+`forward.auth` list naming `spiffe` alone, with its trust roots. These structured settings are
+file-only. The sidecar names its central proxy as `proxy.address` (`host:port`) and its
+`proxy.transport`: `mode: tls` with the CA file and `auth.mode: spiffe` with its certificate and key
+files. Unknown fields, unsupported or duplicate modes, any other `forward.auth` mode and incomplete
+credentials fail startup.
 
 The sidecar uses Go's `http.Server` parser and `httputil.ReverseProxy` for ordinary HTTP requests.
 Malformed request lines receive the standard `400` response without the sidecar refusal header;
@@ -21,16 +21,14 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
 
 ## Identity
 
-- The single forward listener requires TLS. Its authentication allowlist explicitly admits SPIFFE
-  trusting the Agentplane workload CA alone, and Pod-bound Kubernetes bearers for existing
-  non-Sandbox callers; a leaf of the cluster's internal CA naming a Runtime URI does not
+- The single forward listener requires mTLS and authenticates SPIFFE alone, trusting the Agentplane
+  workload CA alone; a leaf of the cluster's internal CA naming a Runtime URI does not
   authenticate. It presents `spiffe://agentplane/egress-proxy`, issued by the workload CA
   with serverAuth. The sidecar's `proxy.transport.ca_file` holds the workload CA alone; it verifies
   this SVID and the service SVIDs behind workload and platform routes. Clients require clientAuth and
   the canonical URI `spiffe://agentplane/<namespace>/<name>/<credential-id>` of a `WorkloadCredential`.
-  Plaintext is refused. Presenting both a certificate and bearer is refused; an invalid credential
-  never falls back to another authentication method. A bearer is reviewed for the configured audience
-  and allowed namespace, and its ServiceAccount is the unchanged policy subject.
+  Plaintext and a connection without a client certificate are refused. A request carrying
+  `Proxy-Authorization` is refused, whatever certificate the connection presented.
 - Each SVID-authenticated request, including requests inherited through a CONNECT tunnel, checks
   the leaf's validity and EKU again and resolves it through the shared resolver
   ([how a verifier resolves a peer](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)):
@@ -49,8 +47,7 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   every replica presenting its SVID is the same caller, and decisions record no source Pod. No
   forwarded projected token can be bound to it, so the proxy drops every one unreviewed and a rule
   needing one refuses with `credential-unavailable`. Deleting the record revokes it.
-- A request authenticated with SPIFFE does not need a hop bearer and must not carry one. A sidecar's
-  separately projected Kubernetes token is forwarded under `X-Agentplane-Workload-Token` for a
+- A sidecar's separately projected Kubernetes token is forwarded under `X-Agentplane-Workload-Token` for a
   `projectedWorkloadToken` credential. The proxy keeps it only when TokenReview proves the same
   ServiceAccount and Pod UID as the live Sandbox binding and the credential names its configured
   audience; a mismatched token is dropped and a rule needing it refuses with
@@ -113,8 +110,7 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
 - **Kubernetes keeps its projected workload credential.** The sidecar sends it as
   `X-Agentplane-Workload-Token: <audience> <token>`, and central consumes this header rather than
   forwarding it. TokenReview must resolve it to the record's subject and the Pod UID of its
-  `spec.pod` for SVID callers; a standing record has none, so none is kept. For bearer callers it must match the
-  authenticated hop's full TokenReview principal. Both require a configured audience. A failed review drops that token;
+  `spec.pod`; a standing record has none, so none is kept. It requires a configured audience. A failed review drops that token;
   a rule requiring it refuses with `credential-unavailable`. The sidecar replaces caller-supplied
   copies of the header, and the workload cannot read the projection. A tunnel's inner requests
   inherit the reviewed token from CONNECT. Other platform services verify SVIDs themselves.

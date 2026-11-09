@@ -35,7 +35,7 @@ func verifier(t *testing.T, reviews auth.TokenReviews) *Verifier {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewVerifier(nil, map[string]*auth.Resolver{projectedAudience: resolver})
+	return NewVerifier(map[string]*auth.Resolver{projectedAudience: resolver})
 }
 
 func pod(t *testing.T, account auth.Account) *corev1.Pod {
@@ -59,28 +59,6 @@ func tokenForAudience(t *testing.T, pod *corev1.Pod, audience string) string {
 		t.Fatal(err)
 	}
 	return token
-}
-
-func TestBearerToken(t *testing.T) {
-	for _, c := range []struct {
-		values []string
-		want   string
-		ok     bool
-	}{
-		{[]string{"Bearer abc.DEF-1_2~3+4/5="}, "abc.DEF-1_2~3+4/5=", true},
-		{[]string{"bearer   abc"}, "abc", true},
-		{nil, "", false},
-		{[]string{"Bearer a", "Bearer b"}, "", false},
-		{[]string{"Basic abc"}, "", false},
-		{[]string{"Bearer "}, "", false},
-		{[]string{"Bearer a b"}, "", false},
-		{[]string{"Bearer a, Bearer b"}, "", false},
-		{[]string{"Bearer a\r\nX: y"}, "", false},
-	} {
-		if got, ok := BearerToken(c.values); got != c.want || ok != c.ok {
-			t.Errorf("BearerToken(%q) = %q, %v; want %q, %v", c.values, got, ok, c.want, c.ok)
-		}
-	}
 }
 
 func TestParseProjectedTokensKeepsOnlyAudienceTokenPairs(t *testing.T) {

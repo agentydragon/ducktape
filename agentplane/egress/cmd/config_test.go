@@ -139,6 +139,16 @@ forward:
     - mode: spiffe
       ca_file: /svid/ca.crt
 `,
+		"bearer beside spiffe": `allowed_service_account_namespaces: [ns]
+forward:
+  listen_address: 127.0.0.1:8888
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
+  auth:
+    - mode: spiffe
+      ca_file: /svid/ca.crt
+    - mode: kubernetes_bearer
+      audiences: [test-non-sandbox]
+`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			environ := required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents))
@@ -159,8 +169,6 @@ forward:
   auth:
     - mode: spiffe
       ca_file: /svid/ca.crt
-    - mode: kubernetes_bearer
-      audiences: [test-non-sandbox]
 `),
 	))
 	if err != nil {
@@ -168,7 +176,7 @@ forward:
 	}
 	if configured.Forward.ListenAddress != "127.0.0.1:8888" || configured.Forward.TLS == nil ||
 		configured.Forward.TLS.CertFile != "/svid/tls.crt" || configured.Forward.TLS.KeyFile != "/svid/tls.key" ||
-		!configured.Forward.Has(listener.SPIFFE) || !configured.Forward.AllowsBearerAudience("test-non-sandbox") {
+		!configured.Forward.Has(listener.SPIFFE) {
 		t.Fatalf("unexpected forward listener settings: %+v", configured.Forward)
 	}
 }

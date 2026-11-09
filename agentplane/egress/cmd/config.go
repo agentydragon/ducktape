@@ -131,6 +131,9 @@ func (c *config) validate() error {
 	if c.Forward.TLS == nil {
 		return errors.New("forward listener requires TLS")
 	}
+	if !c.Forward.Has(listener.SPIFFE) || c.Forward.Has(listener.KubernetesBearer) {
+		return errors.New("forward listener authenticates SPIFFE alone")
+	}
 	for _, limit := range []bounded{
 		{"decision_history_size", c.DecisionHistorySize, 1, history.MaxCapacity},
 		{"decision_retention_days", c.DecisionRetentionDays, 1, 365},

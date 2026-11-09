@@ -217,7 +217,7 @@ func newLab(t *testing.T) *lab {
 		ListenAddress: "127.0.0.1:8888",
 		TLS:           &listener.TLS{CertFile: proxyLeaf.CertFile, KeyFile: proxyLeaf.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: proxyCA.RootFile}},
-	}, identity.NewVerifier(nil, map[string]*auth.Resolver{projectedAudience: projected}), svids)
+	}, identity.NewVerifier(map[string]*auth.Resolver{projectedAudience: projected}), svids)
 	if err != nil {
 		t.Fatal(err)
 	}

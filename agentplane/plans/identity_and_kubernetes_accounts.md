@@ -139,7 +139,7 @@ is additive if the edge's exposure warrants it; runtime-created identities needi
 move eligibility onto the `Identity`. `CENTRAL_SESSION_ACTING_DESIGN` should share this shape. Until
 `SERVICES_IDENTITY_PRINCIPAL`, the edge's `mintable_accounts` stays required with OAuth. Today a
 grant still resolves to its Connection's bound ServiceAccount, and the edge forwards a minted token
-for it ([lifecycle](workload_identity_lifecycle.md#remaining-paths) rows 3 and 4).
+for it ([lifecycle](workload_identity_lifecycle.md#remaining-paths) rows 1 and 2).
 
 ## Operator UI
 

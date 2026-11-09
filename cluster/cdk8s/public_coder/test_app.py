@@ -140,22 +140,22 @@ def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[st
     assert not {client.HTTP.fqdn, client.HTTP.host} & set(no_proxy)
 
 
-def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[str, Any]]) -> None:
+def test_openclaw_uses_relay_without_receiving_its_svid(app_objects: list[dict[str, Any]]) -> None:
     pod = _one(app_objects, "Deployment")["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == "openclaw"
     assert pod["automountServiceAccountToken"] is False
     account = _one(app_objects, "ServiceAccount", "openclaw")
     assert account["automountServiceAccountToken"] is False
     relay = one(c for c in pod["containers"] if c["name"] == "egress-sidecar")
-    assert "agentplane-egress-token" in {v["name"] for v in relay["volumeMounts"]}
+    assert public_coder_egress.SVID_VOLUME in {v["name"] for v in relay["volumeMounts"]}
     for container in pod["initContainers"] + [c for c in pod["containers"] if c != relay]:
-        assert "agentplane-egress-token" not in {v["name"] for v in container["volumeMounts"]}
+        assert public_coder_egress.SVID_VOLUME not in {v["name"] for v in container["volumeMounts"]}
 
 
 def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, Any]]) -> None:
     rules = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
-    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8081, 8888, 4000}
-    gateway = one(r for r in rules if {p["port"] for p in r["ports"]} == {8888, 8081})
+    assert {p["port"] for r in rules for p in r["ports"]} == {53, 8888, 4000}
+    gateway = one(r for r in rules if {p["port"] for p in r["ports"]} == {8888})
     assert gateway["to"] == [
         {
             "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "agentplane-staging"}},
@@ -164,7 +164,7 @@ def test_openclaw_cannot_bypass_agentplane_egress(app_objects: list[dict[str, An
     ]
 
 
-def test_rules_route_wires_workload_identity_without_mounting_the_token_into_openclaw(
+def test_rules_route_wires_workload_identity_without_mounting_the_svid_into_openclaw(
     app_objects: list[dict[str, Any]],
 ) -> None:
     settings = yaml.safe_load(_one(app_objects, "ConfigMap", "openclaw-egress-sidecar")["data"]["settings.yaml"])
@@ -173,16 +173,13 @@ def test_rules_route_wires_workload_identity_without_mounting_the_token_into_ope
     assert route["listen_address"] == "127.0.0.1:3130"
     assert route_config["service_prefixes"] == ["/agentplane.egress.EgressRules/"]
     assert route_config["upstream"] == "egress-admin.agentplane-staging.svc.cluster.local:8081"
-    assert route_config["transport"] == {
-        "mode": "plaintext",
-        "token_file": settings["proxy"]["transport"]["auth"]["token_file"],
-    }
+    assert route_config["transport"] == {"mode": "tls_connect", "server_uri": "spiffe://agentplane/egress-proxy"}
     pod = _one(app_objects, "Deployment", "public-coder-agent")["spec"]["template"]["spec"]
     app = one(c for c in pod["containers"] if c["name"] == "openclaw")
     env = {item["name"]: item.get("value") for item in app["env"]}
     assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3130"
     assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in env
-    assert "agentplane-egress-token" not in {mount["name"] for mount in app["volumeMounts"]}
+    assert public_coder_egress.SVID_VOLUME not in {mount["name"] for mount in app["volumeMounts"]}
 
 
 if __name__ == "__main__":

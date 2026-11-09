@@ -439,10 +439,12 @@ data:
     proxy:
       address: egress.agentplane-staging.svc.cluster.local:8888
       transport:
-        mode: plaintext
+        mode: tls
+        ca_file: /etc/agentplane-egress-ca/ca-certificates.crt
         auth:
-          mode: kubernetes_bearer
-          token_file: /var/run/agentplane-egress/token
+          mode: spiffe
+          cert_file: /var/run/agentplane-svid/tls.crt
+          key_file: /var/run/agentplane-svid/tls.key
     audience_token_files: {}
     workload_routes: {}
     platform_routes:
@@ -453,8 +455,8 @@ data:
             - /agentplane.egress.EgressRules/
           upstream: egress-admin.agentplane-staging.svc.cluster.local:8081
           transport:
-            mode: plaintext
-            token_file: /var/run/agentplane-egress/token
+            mode: tls_connect
+            server_uri: spiffe://agentplane/egress-proxy
     listen_address: 127.0.0.1:3128
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
@@ -618,8 +620,11 @@ spec:
             runAsNonRoot: true
             runAsUser: 1000
           volumeMounts:
-            - mountPath: /var/run/agentplane-egress
-              name: agentplane-egress-token
+            - mountPath: /var/run/agentplane-svid
+              name: agentplane-svid
+              readOnly: true
+            - mountPath: /etc/agentplane-egress-ca
+              name: agentplane-egress-ca
               readOnly: true
             - mountPath: /etc/agentplane-egress-sidecar
               name: egress-sidecar-settings
@@ -652,14 +657,13 @@ spec:
           type: RuntimeDefault
       serviceAccountName: openclaw
       volumes:
-        - name: agentplane-egress-token
-          projected:
+        - name: agentplane-svid
+          secret:
             defaultMode: 288
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 600
-                  path: token
+            secretName: svid-public-coder-agent
+        - configMap:
+            name: agentplane-egress-ca
+          name: agentplane-egress-ca
         - configMap:
             name: openclaw-egress-sidecar
           name: egress-sidecar-settings
@@ -713,8 +717,6 @@ spec:
               k8s-app: kube-dns
     - ports:
         - port: 8888
-          protocol: TCP
-        - port: 8081
           protocol: TCP
       to:
         - namespaceSelector:
