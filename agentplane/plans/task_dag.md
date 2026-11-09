@@ -3045,7 +3045,7 @@ flowchart LR
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
     WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC
-    WORKLOAD_CA[In review: dedicated workload CA] --> WORKLOAD_AUTH_CUTOVER
+    WORKLOAD_CA_CLIENT_TRUST[Ready once #15104 lands: runner-side client SVID trust on the workload CA]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
@@ -3086,16 +3086,17 @@ boxes, Haku UI/Anki and future external callers, with no second subject model an
 dependency, preserving ServiceAccount subjects until `IDENTITY_CUTOVER`. **Exit:** the operator
 picks an alternative and the open questions' recommendations.
 
-### `WORKLOAD_CA` — a dedicated workload CA
+### `WORKLOAD_CA_CLIENT_TRUST` — runner-side client SVID verifiers trust the workload CA alone
 
-**In review (PR #15104, 2026-11-09).** Migration step 1 of the
-[workload identity lifecycle](workload_identity_lifecycle.md#migration-and-rollback), which every
-alternative shares: every Agentplane SVID comes from the `agentplane-workload` ClusterIssuer, SVID
-listeners trust its CA alone, and a Certificate admission policy limits its requesters. Its CA,
-trust Bundle and admission reach staging with no live system test. **Exit:** once Flux applies it,
-the proxy and every service start, one Pod Sandbox works through the SVID route, and the proxy
-refuses a `cluster-internal-ca` Certificate carrying that Sandbox's URI; the observation is recorded
-and the node removed.
+**Ready once PR #15104 lands (2026-11-09).** That PR moves every Agentplane SVID to the
+`agentplane-workload` ClusterIssuer and points the egress proxy's and the services' client-SVID
+verifiers at `agentplane-workload-ca-bundle`. Three verifiers still accept a client or peer SVID
+through `cluster-internal-ca-bundle`, which now carries both the cluster root and the workload CA:
+the runner's control listener verifying the Gateway's client SVID through the projected `ca.crt`,
+the Gateway's `runner_security`, and the egress sidecar. Move them to the workload Bundle; the
+Sandbox Controller projects that Bundle into runners in place of the cluster bundle for these
+files. **Exit:** a k3s case where a `cluster-internal-ca` leaf naming
+`spiffe://agentplane/runner-gateway` is refused at a runner's control listener.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
