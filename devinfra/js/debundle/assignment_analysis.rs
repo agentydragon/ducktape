@@ -189,20 +189,47 @@ impl<'a> CandidatePreflight<'a> {
             &self.emitted_order,
             translation_validation_visitor,
         )?;
-        let effect = self.assignment_analysis.effect_assessment(
-            facts,
-            &translation_validation,
-            &self.emitted_order,
-            effect_visitor,
-        )?;
+        let mut audit = TvAudit::begin();
+        let effect = match audit.as_mut() {
+            None => self.assignment_analysis.effect_assessment(
+                facts,
+                &translation_validation,
+                &self.emitted_order,
+                effect_visitor,
+            )?,
+            Some(audit) => {
+                let mut effect_visitor = effect_visitor;
+                self.assignment_analysis.effect_assessment(
+                    facts,
+                    &translation_validation,
+                    &self.emitted_order,
+                    Some(&mut |row: &EffectConflictDiagnosticRow<'_>| {
+                        audit.conflict(row);
+                        effect_visitor
+                            .as_mut()
+                            .map_or(Ok(()), |visitor| visitor(row))
+                    }),
+                )?
+            }
+        };
+        let candidate_assessment = CandidateRelocationAssessment {
+            placement: self.placement,
+            effect,
+        };
+        if let Some(audit) = audit {
+            audit.finish(TvAuditRecord {
+                argv: std::env::args().collect(),
+                chunk_id: self.assignment_analysis.inputs.chunk_id(),
+                translation_validation: &translation_validation.report,
+                candidate: candidate_assessment.report(),
+                effect: &candidate_assessment.effect.report,
+            });
+        }
         Ok(CandidateEvaluation {
             assignment_analysis: self.assignment_analysis,
             legacy_validation: self.legacy_validation,
             translation_validation,
-            candidate_assessment: CandidateRelocationAssessment {
-                placement: self.placement,
-                effect,
-            },
+            candidate_assessment,
         })
     }
 }
@@ -762,6 +789,83 @@ fn emitted_modules(planned_module_count: usize, entry: ModuleId) -> BTreeSet<Mod
 fn tv_oracle_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var_os("DEBUNDLE_TV_ORACLE").is_some())
+}
+
+/// One candidate evaluation, as the legacy/effect discrepancy audit consumes
+/// it (`debug/2026_11_09_l4c_discrepancy_audit.md`): the legacy verdict, the
+/// edge-based and effect-based translation validations, and the combined
+/// relocation status.
+#[derive(Serialize)]
+struct TvAuditRecord<'a> {
+    /// The CLI invocation; e2e fixture paths name the test function.
+    argv: Vec<String>,
+    chunk_id: &'a str,
+    translation_validation: &'a TranslationValidationReport,
+    candidate: CandidateRelocationAssessmentReport,
+    effect: &'a crate::realizability::EffectTranslationValidationReport,
+}
+
+/// The `DEBUNDLE_TV_AUDIT` directory, when the audit is on ([`TvAudit`]).
+pub fn tv_audit_dir() -> Option<&'static std::path::Path> {
+    static DIR: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        std::env::var_os("DEBUNDLE_TV_AUDIT").map(|_| {
+            std::path::PathBuf::from(
+                std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
+                    .expect("DEBUNDLE_TV_AUDIT needs TEST_UNDECLARED_OUTPUTS_DIR"),
+            )
+            .join("debundle_tv_audit")
+        })
+    })
+    .as_deref()
+}
+
+/// With `DEBUNDLE_TV_AUDIT` set (`--test_env=DEBUNDLE_TV_AUDIT=1`), every
+/// candidate evaluation writes `<pid>-<n>.json` (a [`TvAuditRecord`]) and
+/// `<pid>-<n>.conflicts.jsonl` (every effect conflict row, as
+/// `--effect-conflicts-jsonl` exports them) under the Bazel test's
+/// `$TEST_UNDECLARED_OUTPUTS_DIR/debundle_tv_audit/`, beside the
+/// `<pid>.sources.json` input sources `debundle run` writes there. Process id
+/// and sequence keep the CLI runs of one test apart. Diagnostic only.
+struct TvAudit {
+    stem: std::path::PathBuf,
+    conflicts: std::io::BufWriter<std::fs::File>,
+}
+
+impl TvAudit {
+    fn begin() -> Option<Self> {
+        static SEQUENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let dir = tv_audit_dir()?;
+        let sequence = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let stem = dir.join(format!("{}-{sequence}", std::process::id()));
+        let path = stem.with_extension("conflicts.jsonl");
+        let conflicts = std::fs::create_dir_all(dir)
+            .and_then(|()| std::fs::File::create(&path))
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: create {path:?}: {error}"));
+        Some(Self {
+            stem,
+            conflicts: std::io::BufWriter::new(conflicts),
+        })
+    }
+
+    fn conflict(&mut self, row: &EffectConflictDiagnosticRow<'_>) {
+        use std::io::Write;
+        serde_json::to_writer(&mut self.conflicts, row)
+            .map_err(std::io::Error::from)
+            .and_then(|()| writeln!(self.conflicts))
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: write {:?}: {error}", self.stem));
+    }
+
+    fn finish(mut self, record: TvAuditRecord<'_>) {
+        use std::io::Write;
+        let path = self.stem.with_extension("json");
+        self.conflicts
+            .flush()
+            .and_then(|()| std::fs::File::create(&path))
+            .map_err(serde_json::Error::io)
+            .and_then(|file| serde_json::to_writer(std::io::BufWriter::new(file), &record))
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: write {path:?}: {error}"));
+    }
 }
 
 #[cfg(test)]

@@ -819,6 +819,7 @@ rust_library(
         "@crates//:rayon",
         "@crates//:rustc-hash",
         "@crates//:serde",
+        "@crates//:serde_json",
         "@crates//:swc_atoms",
         "@crates//:swc_ecma_ast",
         "@crates//:thiserror",

@@ -241,6 +241,15 @@ fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: 
     let entry_path = app_root
         .join(path_from_module_path(opts.chunk_id))
         .join("entry.js");
+    audit_node_parity(
+        "accepted",
+        &setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
+        &entry_path,
+        &setup
+            .report_root
+            .join(opts.chunk_id)
+            .join("effect_translation_validation.json"),
+    );
     Fixture {
         chunk_id: opts.chunk_id.to_string(),
         entry_path,
@@ -577,6 +586,7 @@ fn run_rejection_fixture_with_options(
         result.stdout,
         result.stderr,
     );
+    audit_rejected_node_parity(&setup, &args, opts.chunk_id);
     RejectedFixture {
         chunk_id: opts.chunk_id.to_string(),
         stderr: result.stderr,
@@ -1659,4 +1669,85 @@ fn run_node_script(path: &Path) -> CommandResult {
             .output()
             .unwrap_or_else(|e| panic!("spawn node {}: {e}", node.display())),
     )
+}
+
+/// With `DEBUNDLE_TV_AUDIT` (the L4c discrepancy audit, beside the CLI's
+/// `debundle_tv_audit/` records), write whether the source and the emitted
+/// entry behave the same under Node, with the effect verdict of the run that
+/// emitted it, to `$TEST_UNDECLARED_OUTPUTS_DIR/debundle_node_parity/`.
+fn audit_node_parity(kind: &str, source: &Path, entry: &Path, effect_report: &Path) {
+    let Some(dir) = std::env::var_os("DEBUNDLE_TV_AUDIT")
+        .and_then(|_| std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR"))
+    else {
+        return;
+    };
+    static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+    let dir = PathBuf::from(dir).join("debundle_node_parity");
+    let run = |path: &Path| {
+        let result = run_node_script(path);
+        serde_json::json!({
+            "code": result.status.code(),
+            "stdout": result.stdout,
+            "error": result.stderr.lines().find(|line| line.contains("Error")),
+        })
+    };
+    let effect = fs::read_to_string(effect_report).ok().map(|text| {
+        let report: Value = serde_json::from_str(&text).expect("effect report JSON");
+        serde_json::json!({
+            "legacy_gate_accepts": report["legacy_gate_accepts"],
+            "status": report["decision"]["status"],
+            "swapped_pairs": report["swapped_pairs"],
+            "emitted_order": report["emitted_order"],
+        })
+    });
+    let record = serde_json::json!({
+        "test": current_test_prefix(),
+        "kind": kind,
+        "source": run(source),
+        "emitted": entry.exists().then(|| run(entry)),
+        "effect": effect,
+    });
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join(format!(
+            "{}-{}.json",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        )),
+        record.to_string(),
+    )
+    .unwrap();
+}
+
+/// `audit_node_parity` for a refused fixture: rerun it with
+/// `--emit-on-rejection` into a sibling output root, restoring the refused
+/// run's reports for the caller's assertions.
+fn audit_rejected_node_parity(setup: &PreparedFixture, args: &[&str], chunk_id: &str) {
+    if std::env::var_os("DEBUNDLE_TV_AUDIT").is_none() || args.contains(&"--emit-on-rejection") {
+        return;
+    }
+    let refused = setup.out_root.with_extension("refused");
+    let emitted = setup.out_root.with_extension("emitted");
+    fs::rename(&setup.out_root, &refused).unwrap();
+    let rerun =
+        spawn_transform_with_args(&setup.spec_path, &[args, &["--emit-on-rejection"]].concat());
+    if setup.out_root.exists() {
+        fs::rename(&setup.out_root, &emitted).unwrap();
+    }
+    fs::rename(&refused, &setup.out_root).unwrap();
+    // Only a gate-only refusal (exit 3) lowers a runnable-shaped tree.
+    if rerun.status.code() == Some(3) {
+        audit_node_parity(
+            "rejected",
+            &setup.snapshot_root.join(format!("{chunk_id}.js")),
+            &emitted
+                .join(APP_DIR)
+                .join(path_from_module_path(chunk_id))
+                .join("entry.js"),
+            &emitted
+                .join(setup.report_root.strip_prefix(&setup.out_root).unwrap())
+                .join(chunk_id)
+                .join("effect_translation_validation.json"),
+        );
+    }
 }

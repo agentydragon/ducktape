@@ -259,11 +259,15 @@ parity tests green.
 - L4b. Slimmed correspondence checker from the declarative vendor plan and one
   indexed output walk, report-only, with the bug it catches named in the PR.
   needs L1f.
-- L4c. Discrepancy audit: every e2e target and the canonical inputs under
-  `DEBUNDLE_TV_ORACLE`, each legacy/effect disagreement classified as sharper
-  effects, missing coverage, unsafe legacy acceptance, or defect
-  (<translation_validation_gate.md> § Migration step 1). Canonical replay needs
-  separately authorized execution. Iterates with Wave 3.
+- L4c. Discrepancy audit (<translation_validation_gate.md> § Migration
+  step 1). First pass on `fa49ae5ed1`:
+  <../debug/2026_11_09_l4c_discrepancy_audit.md>. It found no unsafe legacy
+  acceptance and no gate defect. Every legacy-accepted / effect-refused case
+  is uncovered havoc. Rerun with `--test_env=DEBUNDLE_TV_AUDIT=1` after
+  each Wave 3 slice. Left: the premise-covered havoc policy (owned by L4d);
+  the full canonical conflict export; owners for anonymous-statement
+  coverage, the completed call-initializer seal and non-invoking literal
+  coverage, which no Wave 3 slice holds.
 - L4d. **Flip**: `preparation_readiness`, `emit_reports_and_resolve_gate`,
   `ensure_candidate_emittable_for_write`, plus the README/design/SPEC text that
   #14552 already drafted. Small. needs L4a–L4c green.
