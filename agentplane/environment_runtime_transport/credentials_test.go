@@ -744,6 +744,36 @@ func TestParseEnvironmentRuntimeURIRejectsNonCanonicalAndMalformedPaths(t *testi
 	}
 }
 
+func TestParseWorkloadURIAcceptsOnlyTheCanonicalForm(t *testing.T) {
+	workload := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "test-agent.box", CredentialID: "0123456789abcdef0123456789abcdef"}
+	valid, err := workload.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if valid != "spiffe://agentplane/agent-ns/test-agent.box/0123456789abcdef0123456789abcdef" {
+		t.Fatalf("URI = %q", valid)
+	}
+	if parsed, err := environment_runtime_transport.ParseWorkloadURI(valid); err != nil || parsed != workload {
+		t.Fatalf("parsed %+v, %v", parsed, err)
+	}
+	for _, invalid := range []string{
+		"spiffe://agentplane/agent-ns/test-agent",
+		"spiffe://agentplane/agent-ns/test-agent/0123456789abcdef0123456789abcdef/extra",
+		"spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/0123456789abcdef0123456789abcdef",
+		"spiffe://agentplane/Agent-ns/test-agent/0123456789abcdef0123456789abcdef",
+		"spiffe://agentplane/agent-ns/Test-agent/0123456789abcdef0123456789abcdef",
+		"spiffe://agentplane/agent-ns/test-agent/0123456789ABCDEF0123456789abcdef",
+		"spiffe://agentplane/agent-ns/test-agent/credential-id",
+		"spiffe://agentplane/agent-ns/-test-agent/0123456789abcdef0123456789abcdef",
+		"spiffe://other/agent-ns/test-agent/0123456789abcdef0123456789abcdef",
+		"spiffe://agentplane/actions",
+	} {
+		if _, err := environment_runtime_transport.ParseWorkloadURI(invalid); err == nil {
+			t.Errorf("ParseWorkloadURI accepted %q", invalid)
+		}
+	}
+}
+
 func handshake(t *testing.T, client, server credentials.TransportCredentials) (clientInfo, serverInfo credentials.AuthInfo, err error) {
 	return handshakeWithApplicationDataMode(t, client, server, false)
 }

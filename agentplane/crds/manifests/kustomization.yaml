@@ -10,3 +10,4 @@ resources:
   - crd-managedserviceaccounts.yaml
   - crd-sandboxtemplates.yaml
   - crd-sandboxes.yaml
+  - crd-workloadcredentials.yaml

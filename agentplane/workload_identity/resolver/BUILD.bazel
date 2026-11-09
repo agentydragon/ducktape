@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "resolver",
+    srcs = ["resolver.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/workload_identity/resolver",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/workload_identity/api/v1alpha1",
+        "@com_github_spiffe_go_spiffe_v2//svid/x509svid",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+    ],
+)
+
+go_test(
+    name = "resolver_test",
+    srcs = ["resolver_test.go"],
+    embed = [":resolver"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/testing/kubeapiserver",
+        "//agentplane/workload_auth/auth",
+        "//agentplane/workload_identity/api/v1alpha1",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/client/interceptor",
+    ],
+)
