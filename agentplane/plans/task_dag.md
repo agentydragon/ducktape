@@ -1444,26 +1444,27 @@ observations. New database work follows the task-specific review and rollout req
 ```mermaid
 flowchart LR
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
+    POLICY_GRANTS[Section 14: grants and role sets] --> MANAGED_SA_RBAC
+    POLICY_GRANTS --> PC_KUBERNETES_POLICY_SET
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
-    KUBERNETES_SA_DELEGATION_DESIGN[Decision, unscheduled: additional Kubernetes SA access]
-    KUBERNETES_SA_DELEGATION_DESIGN -. related permission workflow .-> AGENT_PERMISSION_REQUESTS
     SANDBOX_RBAC[Deferred: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Deferred: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Selected: SPIFFE workload authentication]
-    PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
+    PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one role set]
 ```
 
-### `PC_KUBERNETES_POLICY_SET` — public-coder's Kubernetes access as one PolicySet
+### `PC_KUBERNETES_POLICY_SET` — public-coder's Kubernetes access as one role set
 
-**Unscheduled; operator, 2026-10-12 PDT: wants it eventually.** Move public-coder-agent's whole set
-of RoleBindings and ClusterRoleBindings (logs, pods, node and cluster-metadata reads, VolSync status
-and the rest, in `cluster/cdk8s/public_coder/app.py` and its entries in
-`cluster/cdk8s/agent_access_profiles.py`) under one `PolicySet` of Kubernetes rules with a Flux-owned
-`PolicyBinding`. Open: `PolicyBinding` subjects are ServiceAccounts only, while some of these
-grants name the `haku:access-profile:public-coder` Group, so either the binding learns Group
-subjects or those grants move to the agent's ServiceAccount.
+**Unscheduled; operator, 2026-10-12 PDT: wants it eventually. Blocked on `POLICY_GRANTS`.** Move
+public-coder-agent's whole set of RoleBindings and ClusterRoleBindings (logs, pods, node and
+cluster-metadata reads, VolSync status and the rest, in `cluster/cdk8s/public_coder/app.py` and its
+entries in `cluster/cdk8s/agent_access_profiles.py`) into one `KubernetesRoleSet` with a Flux-owned
+`ServiceAccountGrant` on its ServiceAccount
+([identity plan](identity_and_kubernetes_accounts.md#kubernetesroleset-and-serviceaccountgrant-the-provisioners-input)).
+A grant names a ServiceAccount only, so the grants that name the `haku:access-profile:public-coder`
+Group either move to the agent's ServiceAccount or stay plain Flux RoleBindings.
 
 ### `CLAUDE_AI_SA` — review the external caller's actual authority
 
@@ -1487,38 +1488,20 @@ temporary PolicyBinding for the caller's current SA; approval, policy convergenc
 access are distinct. A dedicated request should make the target SA, PolicySets, duration and shared
 scope clear: every workload using that SA can acquire its grants. The same mechanism can grant an
 existing EgressCredential through an egress PolicySet, including the shared GitHub bot credential.
-Provisioning a different Kubernetes SA and using it from an existing Environment is a separate
-identity/credential design, not an automatic consequence of granting PolicySets.
-
-### `KUBERNETES_SA_DELEGATION_DESIGN` — additional Kubernetes SA access
-
-**Decision, unscheduled.** Explore allowing an agent to use a second Kubernetes ServiceAccount for
-specific work while retaining its existing Session and Environment identity. Compare Kubernetes
-impersonation by the agent's current SA with an egress credential source or broker that obtains and
-substitutes a token for the second SA. Prefer evaluating impersonation first: it uses Kubernetes's
-own delegation and audit model and need not give egress authority to mint target-SA tokens. The
-alternative remains relevant for an Agentplane principal that is not a Kubernetes SA. This decision
-does not block Session–Environment decoupling or permission requests for the existing SA.
-
-Trace a request through the existing Kubernetes egress credential and test whether impersonation
-headers reach the API server. Check whether policy reconciliation can grant impersonation of a
-specific named SA, what groups and extras the resulting request has, and cluster support for any
-more narrowly constrained impersonation. Compare target and grant ownership, approval, audit
-attribution, revocation and deletion/recreation behavior, including existing watches. Document that
-the grant applies to all callers sharing the original SA, not an individual Session, and that the
-target SA's Kubernetes RBAC controls its effective permissions. For a token broker, also review
-who can authorize and issue target credentials, destination and audience restrictions, token
-lifetime and exposure. Record the chosen contract and evidence before creating implementation work.
-Coordinate with [`AGENT_PRINCIPAL_MODEL_DESIGN`](#agent_principal_model_design--agentplane-principals-and-external-identities)
-and [`SESSION_IDENTITY_CONTRACT`](#session_identity_contract--session-identity-and-shared-environment-admission).
+Kubernetes access beyond the caller's own account is the identity plan's mechanism, decided
+2026-11-05: an approved request creates an expiring `ServiceAccountGrant` on a shared account or a
+`ManagedServiceAccount` owned by the identity, used through the proxy's impersonation source.
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
-**Blocked on the caller review.** The claude.ai caller gets a
-Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA` approves, of any rule type, replacing its
-remaining static per-namespace grants in `agent_access_profiles.py` (`STATIC_GRANTS["claude-ai"]`; the
-acceptance-testing RBAC already moved to a `PolicyBinding` in #10522). Static Group subjects (Haku OIDC;
-public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allowed and a denied request. Static caller accounts' bindings, this one among them, are Flux-owned, never Sandbox-owned.
+**Blocked on the caller review and on `POLICY_GRANTS`.** The claude.ai caller's Kubernetes access
+becomes a Flux-owned `ServiceAccountGrant` on its ServiceAccount, referencing the
+`KubernetesRoleSet`s `CLAUDE_AI_SA` approves, replacing its remaining static per-namespace grants
+in `agent_access_profiles.py` (`STATIC_GRANTS["claude-ai"]`; the acceptance-testing RBAC already
+moved to a `PolicyBinding` in #10522). Its egress and Action rules stay a Flux-owned `PolicyBinding`.
+Static Group subjects (Haku OIDC; public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux
+RoleBindings. Test an allowed and a denied request. Static caller accounts' grants and bindings are
+Flux-owned, never Sandbox-owned.
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
