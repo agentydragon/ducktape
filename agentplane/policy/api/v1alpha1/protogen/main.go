@@ -15,7 +15,12 @@ import (
 	"unicode"
 )
 
-var types = []string{"RoleRef", "Rule", "SandboxTargets", "SandboxTarget", "CredentialRef", "ActionPolicy", "PolicySetSpec", "MissingRole", "Status", "PolicyBindingSpec"}
+var types = []string{
+	"RoleRef", "Rule", "SandboxTargets", "SandboxTarget", "CredentialRef", "ActionPolicy", "PolicySetSpec", "MissingRole", "Status", "PolicyBindingSpec",
+	"IdentitySpec", "WorkloadCredential", "IdentityStatus", "KubernetesRule", "KubernetesRoleSetSpec", "KubernetesAccount",
+	"KubernetesAccountGrantSpec", "KubernetesAccountGrantStatus", "ManagedServiceAccountSpec", "CreatedServiceAccount",
+	"ManagedServiceAccountStatus",
+}
 
 func main() {
 	if len(os.Args) != 2 {
@@ -145,9 +150,11 @@ func protoType(expr ast.Expr) (string, error) {
 
 func snake(s string) string {
 	var b strings.Builder
-	for i, r := range s {
+	runes := []rune(s)
+	for i, r := range runes {
 		if unicode.IsUpper(r) {
-			if i > 0 {
+			// An acronym such as the ID in spiffeID is one word.
+			if i > 0 && !unicode.IsUpper(runes[i-1]) {
 				b.WriteByte('_')
 			}
 			b.WriteRune(unicode.ToLower(r))
