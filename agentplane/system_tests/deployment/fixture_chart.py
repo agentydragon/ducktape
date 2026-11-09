@@ -111,6 +111,10 @@ POD_TEMPLATE = "environment-tools"
 # imports into containerd under this reference. The runner binary itself still comes from the runner
 # disk image, as in staging.
 ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
+# A command box the sandbox Actions offer only here: the command box on the runner's images, which
+# stack.py imports, with the runner disk's `agentplane` CLI, so a scenario can drive the box's own
+# egress. Production's command box image is not imported into k3s.
+SVID_BOX_TEMPLATE = "systest-svid-box"
 APP_SERVICE = app_component.service(NAMESPACE)
 APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)
@@ -289,7 +293,10 @@ def environment(
                         kind="pod",
                         description="Created and exec'd by this service, as the caller, in its own namespace.",
                         namespace=NAMESPACE,
-                        templates=command_sandbox.TEMPLATES,
+                        templates={
+                            **command_sandbox.TEMPLATES,
+                            SVID_BOX_TEMPLATE: "The command box on fixture images, with the agentplane CLI.",
+                        },
                     ),
                 )
             },
@@ -390,6 +397,7 @@ def synthesize(chart: Chart, *, vm_sandboxes: bool) -> list[dict[str, Any]]:
     synthesized = list(Testing.synth(chart))
     if vm_sandboxes:
         _boot_test_guest(synthesized)
+    _add_svid_box_template(synthesized)
     _add_fixture_server_dns_names(synthesized)
     # Service-owned workload listeners render Cilium admission in production. Bare k3s has no
     # Cilium CRD or dataplane; network-policy validation remains a rendering/staging boundary.
@@ -789,6 +797,28 @@ def build_chart(
         app_login=app_login,
         mcp_linkage=mcp_linkage,
     )
+
+
+def _add_svid_box_template(objects: list[dict[str, Any]]) -> None:
+    """`SVID_BOX_TEMPLATE`: the rendered command box, its sidecar and credential wiring untouched, on
+    the runner's workload image and with the runner disk mounted where a runner has it."""
+    box = deepcopy(
+        one(doc for doc in objects if doc["kind"] == "PodTemplate" and doc["metadata"]["name"] == command_sandbox.NAME)
+    )
+    box["metadata"]["name"] = SVID_BOX_TEMPLATE
+    spec = box["template"]["spec"]
+    workload = one(c for c in spec["containers"] if c["name"] == command_sandbox.CONTAINER)
+    # The tag the runner's own reference carries, under which stack.py imports it.
+    workload["image"] = f"{ENVIRONMENT_TOOLS_IMAGE}:unset"
+    workload["imagePullPolicy"] = "IfNotPresent"
+    # Where a runner mounts its disk (cluster/cdk8s/agentplane/environment_sandbox.py, `_ENVIRONMENT_DIR`).
+    workload["volumeMounts"].append(
+        {"name": "environment", "mountPath": "/run/agentplane/environment", "readOnly": True}
+    )
+    spec["volumes"].append(
+        {"name": "environment", "image": {"reference": environment_vm.RUNNER_DISK_IMAGE, "pullPolicy": "IfNotPresent"}}
+    )
+    objects.append(box)
 
 
 def _boot_test_guest(objects: list[dict[str, Any]]) -> None:

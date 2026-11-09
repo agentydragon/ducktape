@@ -21,7 +21,6 @@ empty history behind a green unit suite -- was caught by a person noticing.
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
 import secrets
 import textwrap
@@ -43,7 +42,7 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.system_tests.deployment import runtime_grant
+from agentplane.system_tests.deployment import fixture_chart, runtime_grant
 from agentplane.system_tests.driver import egress_decisions
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.cluster import Cluster
@@ -64,9 +63,12 @@ UNLISTED_HOST = "example.com"
 BASIC_POLICY = "basic"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The sandbox Actions' group key in the fixture deployment (agentplane/system_tests/deployment/fixture_chart.py),
-# and the command box's PodTemplate it offers (cluster/cdk8s/agentplane/command_sandbox.py, `NAME`).
+# and a command box's workload container (cluster/cdk8s/agentplane/command_sandbox.py, `CONTAINER`).
 _SANDBOX_GROUP = "sandbox"
-_BOX_TEMPLATE = "sandbox"
+_BOX_CONTAINER = "sandbox"
+# The runner container, whose own `agentplane` CLI calls the Action Service as the Sandbox
+# (cluster/cdk8s/agentplane/environment_sandbox.py).
+_RUNNER_CONTAINER = "environment-runtime"
 # Where the Action Service mounts a box's SVID, in the sidecar alone (agentplane/action_service/sandbox/inventory.go).
 _BOX_SVID_DIR = "/run/agentplane/workload-svid"
 
@@ -503,44 +505,25 @@ async def a_command_box_presents_its_own_svid(
     configmap, namespace, expected = await _create_kubernetes_probe(cluster, view)
     caller = view.execution_account.account.name
     await policy_objects.bind(view, "box", [{"type": "exact_actions", "actions": {_SANDBOX_GROUP: ["create"]}}])
-    runner = json.loads(await cluster.kubectl("get", "pod", view.kubernetes_diagnostics.pod.name, "-o", "json"))
-    (runtime,) = (c for c in runner["spec"]["containers"] if c["name"] == "environment-runtime")
-    original = json.loads(await cluster.kubectl("get", "podtemplate", _BOX_TEMPLATE, "-o", "json"))
-    # Reuse already imported fixture images, exercising the rendered command-box credential wiring.
-    patched = copy.deepcopy(original)
-    spec = patched["template"]["spec"]
-    workload = spec["containers"][0]
-    workload["image"] = runtime["image"]
-    workload["imagePullPolicy"] = "IfNotPresent"
-    environment = next(v for v in runner["spec"]["volumes"] if v["name"] == "environment")
-    environment_mount = next(m for m in runtime["volumeMounts"] if m["name"] == "environment")
-    assert environment_mount["readOnly"] is True
-    spec["volumes"].append(environment)
-    workload["volumeMounts"].append(environment_mount)
-    runner_sidecar = next(c for c in runner["spec"]["initContainers"] if c["name"] == "egress-sidecar")
-    sidecar = next(c for c in spec["containers"] if c["name"] == "egress-sidecar")
-    sidecar["image"] = runner_sidecar["image"]
-    sidecar["imagePullPolicy"] = "IfNotPresent"
-    await cluster.kubectl("replace", "-f", "-", body=patched)
     box = "svid-" + secrets.token_hex(4)
     pod = f"{caller}-{box}"
 
     async def in_box(*command: str) -> str:
-        return await cluster.kubectl("exec", pod, "-c", workload["name"], "--", *command)
+        return await cluster.kubectl("exec", pod, "-c", _BOX_CONTAINER, "--", *command)
 
     try:
         printed = await cluster.kubectl(
             "exec",
             view.kubernetes_diagnostics.pod.name,
             "-c",
-            runtime["name"],
+            _RUNNER_CONTAINER,
             "--",
             CLI,
             "--json",
             *submission(
                 _SANDBOX_GROUP,
                 "create",
-                {"name": box, "template": _BOX_TEMPLATE},
+                {"name": box, "template": fixture_chart.SVID_BOX_TEMPLATE},
                 title="Create an SVID box",
                 wait=True,
             ),
@@ -554,9 +537,7 @@ async def a_command_box_presents_its_own_svid(
         assert record["spec"]["subject"] == {"serviceAccount": caller}
         assert record["spec"]["pod"]["name"] == pod
 
-        rules = json.loads(
-            await in_box(f"{environment_mount['mountPath']}/bin/agentplane", "egress", "rules", "--json")
-        )
+        rules = json.loads(await in_box(CLI, "egress", "rules", "--json"))
         assert rules["subject"] == {"namespace": namespace, "name": caller}
         actual = await in_box(
             "kubectl",
@@ -579,15 +560,10 @@ async def a_command_box_presents_its_own_svid(
 
         # Revoked, as dispose does first; orphaning keeps the Pod, whose SVID now names no record.
         await cluster.kubectl("delete", "workloadcredentials", pod, "--cascade=orphan", "--wait=true")
-        await in_box(
-            "/bin/bash", "-c", f"! {environment_mount['mountPath']}/bin/agentplane egress rules --json >/dev/null 2>&1"
-        )
+        await in_box("/bin/bash", "-c", f"! {CLI} egress rules --json >/dev/null 2>&1")
     finally:
         await cluster.kubectl("delete", "pod", pod, "--wait=true", "--timeout=60s", "--ignore-not-found")
         await cluster.kubectl("delete", "workloadcredentials", pod, "--ignore-not-found")
-        current = json.loads(await cluster.kubectl("get", "podtemplate", _BOX_TEMPLATE, "-o", "json"))
-        current["template"] = original["template"]
-        await cluster.kubectl("replace", "-f", "-", body=current)
 
 
 # The sidecar's listener (agentplane/egress/sidecar_config.py `Settings.listen_address`).

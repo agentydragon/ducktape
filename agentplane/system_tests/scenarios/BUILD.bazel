@@ -135,6 +135,7 @@ py_library(
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests/deployment:fixture_chart",
         "//agentplane/system_tests/deployment:runtime_grant",
         "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:cluster",
