@@ -7740,6 +7740,15 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - workloadcredentials
+    verbs:
+      - get
+      - create
+      - update
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - sandboxes
     verbs:
       - get

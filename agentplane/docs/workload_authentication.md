@@ -33,7 +33,8 @@ cleared or the Sandbox, and with it the record, is removed. See the [egress cont
 A workload's SVID is requested by its owner as a `WorkloadCredential`
 (`agentplane/workload_identity`), named after the owner and controlled by it. The owner writes
 `spec`; only the issuer, hosted in the Policy Controller, writes `status` and creates the
-Certificate. Today the Sandbox Controller is the one owner:
+Certificate. The Sandbox Controller requests one per Sandbox, and the Action Service one per command
+or build box ([sandbox Actions](../action_service/sandbox/README.md)). A Sandbox's record:
 
 ```yaml
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -67,8 +68,8 @@ The issuer reads the owner reference as data and never reads the owner. Its cont
   once.
 - **Subjects** change only together with a new binding, and `spec.pod` only with a new binding
   (CRD transition rules), so a running incarnation is never re-pointed.
-- **Who writes:** the Sandbox Controller may create, update and delete records in its namespace;
-  only the Policy Controller may write `workloadcredentials/status`.
+- **Who writes:** the Sandbox Controller and the Action Service may create, update and delete records
+  in their namespace; only the Policy Controller may write `workloadcredentials/status`.
 
 ### How a verifier resolves a peer
 

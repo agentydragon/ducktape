@@ -299,8 +299,19 @@ recovers it. Claimed work is never automatically replayed.
 
 Command/build PodTemplates may be offline, without an egress sidecar. Template admission requires
 `automountServiceAccountToken: false` and refuses projected ServiceAccount tokens mounted in workload
-containers; it checks those invariants at startup and again on creation. The deployed offline boxes
-retain their DNS-only network fence and receive no proxy settings or credentials.
+containers; it checks those invariants at startup and again on creation. It also refuses a template
+defining the `workload-svid` volume or a mount at `/run/agentplane/workload-svid`. The deployed
+offline boxes retain their DNS-only network fence and receive no proxy settings or credentials.
+
+Each box has a `WorkloadCredential` of the box Pod's name, subject the caller's ServiceAccount,
+bound to the box's Pod once it exists. Create waits for the record's unbound credential, starts the
+Pod with that credential's Secret mounted into its egress sidecar alone, and then binds the Pod,
+which accepts that credential ID. A box made from a template without a sidecar mounts nothing.
+The record is the box Pod's controller owner; the record's own owner is the caller account's
+controller (a Session Sandbox), else the account. Dispose deletes the record before the Pod, so the
+box's SVID stops resolving before the Pod has stopped; garbage collection of the Sandbox or account
+removes both. A new box of the same name gets a fresh credential ID, so the earlier box's SVID never
+resolves against it.
 
 ## Orchestration Actions (v1)
 

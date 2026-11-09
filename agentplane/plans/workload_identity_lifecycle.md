@@ -12,25 +12,26 @@ the workload bearer projections can be removed.
 
 ## Remaining callers
 
-| Caller                     | Created by                                                                | Proves its incarnation today                                                | Policy subject today          | Its request                                                                                                          |
-| -------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by the caller's SA | Pod-bound `agentplane-egress` bearer, TokenReview                           | the calling Sandbox's own SA  | a `WorkloadCredential` from the Action Service, named after and owned by the box Pod, subject the caller             |
-| Haku UI                    | Haku: a StatefulSet in `haku-state`, applied to `haku-sandbox` by Flux    | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, named after the StatefulSet, with no owner and no binding                  |
-| Anki                       | as Haku UI, a Deployment `haku-anki`                                      | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | its own record `haku-anki`, same subject ([below](#standing-workloads))                                              |
-| Central sampler            | Flux Deployment                                                           | Its own bearer; holds no SVID                                               | its own account               | out of scope; nothing acts as a central Session's identity yet (`CENTRAL_SESSION_ACTING_DESIGN` in the task freezer) |
-| OpenClaw, external callers | `public_coder` cdk8s; none yet                                            | None: its Deployment is at 0/0, and its dead relay config selects plaintext | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that                                                     |
+| Caller                     | Created by                                                             | Proves its incarnation today                                                | Policy subject today          | Its request                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by its record   | Pod-bound `agentplane-egress` bearer, TokenReview                           | the calling Sandbox's own SA  | its `WorkloadCredential`, requested by the Action Service; the sidecar does not present it yet                       |
+| Haku UI                    | Haku: a StatefulSet in `haku-state`, applied to `haku-sandbox` by Flux | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, named after the StatefulSet, with no owner and no binding                  |
+| Anki                       | as Haku UI, a Deployment `haku-anki`                                   | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | its own record `haku-anki`, same subject ([below](#standing-workloads))                                              |
+| Central sampler            | Flux Deployment                                                        | Its own bearer; holds no SVID                                               | its own account               | out of scope; nothing acts as a central Session's identity yet (`CENTRAL_SESSION_ACTING_DESIGN` in the task freezer) |
+| OpenClaw, external callers | `public_coder` cdk8s; none yet                                         | None: its Deployment is at 0/0, and its dead relay config selects plaintext | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that                                                     |
 
 ## The remaining records
 
 ```yaml
 metadata:
-  name: sandbox-agent-123-scratch # the box Pod's name
+  name: agent-123-scratch # the box Pod's name; the Pod's controller owner is this record
   namespace: agentplane-staging
-  ownerReferences: [{ kind: Pod, name: sandbox-agent-123-scratch, uid: <pod-uid>, controller: true }]
+  # the caller account's controller, else the account
+  ownerReferences: [{ kind: Sandbox, name: agent-123, uid: <sandbox-uid>, controller: true }]
 spec: # the caller
   subject: { serviceAccount: agent-123 }
   binding: { podUID: <pod-uid> }
-  pod: { name: sandbox-agent-123-scratch, uid: <pod-uid> }
+  pod: { name: agent-123-scratch, uid: <pod-uid> }
 ---
 metadata: { name: haku-ui, namespace: haku-sandbox } # rendered by cdk8s; no owner
 spec: { subject: { serviceAccount: haku-ui } } # no binding
@@ -127,10 +128,11 @@ tombstones it. `kubernetes_bearer` stays on service listeners for backend caller
 
 **With `IDENTITY_CUTOVER`; the ordering edge and the owner switch were decided by the operator on
 2026-11-09.** Box creation needs the caller's own ServiceAccount. `stamp` in
-`action_service/sandbox/inventory.go` reads it, runs the box as it, and sets the box's owner
-reference to it. `SANDBOX_IDENTITY_SPEC` stops creating that account, so step 3 is a technical
-prerequisite of that node, recorded in the DAG. In the same change, the box's owner becomes the
-caller's `Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the
+`action_service/sandbox/inventory.go` reads it, runs the box as it, names it as the record's
+subject, and makes its controller, the calling Sandbox, the record's owner, which owns the box.
+`SANDBOX_IDENTITY_SPEC` stops creating that account, so step 3 is a technical prerequisite of that
+node, recorded in the DAG. A Sandbox caller's boxes already hang off the Sandbox, not the account;
+in the same change, a caller with no Sandbox has its records owned by its `Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the
 cutover, requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches
 every requester's `subject` to an identity, and cdk8s renders `haku-ui` as an `Identity`. The
 resolver then reads `spec.subject.identity` through the shared policy reader, live with its UID, in

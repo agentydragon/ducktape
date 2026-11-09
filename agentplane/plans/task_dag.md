@@ -3095,8 +3095,10 @@ principals, a retained Session with a deleted Sandbox reads as historical.
 
 **Blocked on `WORKLOAD_AUTH_CUTOVER`'s Action-box step.** Action
 command/build boxes must authenticate by SVID first. Box creation reads the caller's own
-ServiceAccount, runs the box as it, and sets the box's owner reference to it
-(`action_service/sandbox/inventory.go`, `stamp`), and this node stops creating that account.
+ServiceAccount, runs the box as it and names it as the box record's subject
+(`action_service/sandbox/inventory.go`, `stamp`), and this node stops creating that account. The
+box's ownership already survives that: the box is its record's, and a Sandbox caller's record is
+the Sandbox's, the account's controller.
 `Sandbox.spec.identity` may be absent or changed only while nothing is
 running, a start without one is refused with `IdentityMissing`, a change discards any RAM
 snapshot and rotates the credential ID, and `EnvironmentService` refuses a change while a Session

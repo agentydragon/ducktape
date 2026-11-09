@@ -189,3 +189,26 @@ func TestAnEarlierOwnersRecordIsReplacedAndAForeignOneKept(t *testing.T) {
 		t.Fatalf("revoking a gone record: %v", err)
 	}
 }
+
+// An owner of several workloads, as a ServiceAccount is of its boxes, holds one record per
+// workload, each named after it; revoking one leaves the others.
+func TestAnOwnerHoldsARecordPerWorkloadName(t *testing.T) {
+	requester := newRequester(t)
+	account := OwnedBy(&metav1.ObjectMeta{Namespace: testNamespace, Name: "test-box-caller", UID: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"},
+		corev1.SchemeGroupVersion.WithKind("ServiceAccount"))
+	first, second := account, account
+	first.Name, second.Name = "test-box-caller-first", "test-box-caller-second"
+	for _, box := range []Owner{first, second} {
+		ensure(t, requester, Request{Owner: box, Subject: ServiceAccount{Name: "test-box-caller"}})
+		if controller := metav1.GetControllerOf(record(t, box.Name)); controller == nil || controller.UID != account.Reference.UID {
+			t.Fatalf("record %s is not the account's: %+v", box.Name, controller)
+		}
+	}
+	if err := requester.Revoke(t.Context(), first); err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: testNamespace, Name: first.Name}, &workloadapi.WorkloadCredential{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("revoked record survived: %v", err)
+	}
+	record(t, second.Name)
+}
