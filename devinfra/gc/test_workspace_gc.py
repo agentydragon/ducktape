@@ -1,5 +1,6 @@
 import asyncio
 import pathlib
+import shutil
 import subprocess
 import sys
 import threading
@@ -213,16 +214,15 @@ def test_busy_repo_cache_reports_skipped_entries_compactly(
     try:
         assert holder.stdout is not None
         assert holder.stdout.readline() == "locked\n"
-        with pytest.raises(SystemExit) as exit_info:
-            asyncio.run(
-                workspace_gc.run_repo_cache(
-                    output_user_root=root, show_all=False, sizes=False, delete=True, verbose=verbose, workers=1
-                )
+        # Skipped entries are reported but do not fail the run: no SystemExit.
+        asyncio.run(
+            workspace_gc.run_repo_cache(
+                output_user_root=root, show_all=False, sizes=False, delete=True, verbose=verbose, workers=1
             )
+        )
     finally:
         holder.communicate("x", timeout=5)
     captured = capsys.readouterr()
-    assert exit_info.value.code == 1
     assert "0 deleted, 2 skipped, 0 failed" in captured.out
     assert "a Bazel command holds the repo contents cache" in captured.err
     for entry in entries:
@@ -231,6 +231,26 @@ def test_busy_repo_cache_reports_skipped_entries_compactly(
         assert (entry.name in captured.err) is verbose
     if not verbose:
         assert "SKIPPED 2 repo-cache entries" in captured.err
+
+
+async def test_a_base_skipped_at_deletion_does_not_fail_the_run(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "output"
+    base = make_base(root, tmp_path / "gone")
+    candidates = [
+        item
+        for item in workspace_gc.output_base_gc.scan_output_user_root(root, session_bases=())
+        if isinstance(item, workspace_gc.PrunableBase)
+    ]
+    assert [item.path for item in candidates] == [base]
+    shutil.rmtree(base)  # vanishes between the scan and the deletion: its lock cannot be opened
+
+    deletions = await workspace_gc._apply_base_deletions(candidates, output_user_root=root, workers=1)
+
+    assert deletions.ok
+    assert deletions.deleted == frozenset()
+    assert "0 deleted, 1 skipped, 0 failed" in capsys.readouterr().out
 
 
 async def test_run_bounded_runs_items_concurrently_and_returns_results_in_item_order() -> None:

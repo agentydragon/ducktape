@@ -23,6 +23,7 @@ needs `--delete-foreign-clones`.
 Nothing is removed without an explicit flag. Each removal revalidates its candidate immediately
 beforehand and skips one that no longer qualifies: a worktree is re-classified, a branch must
 still be at the classified tip, a base or repo-cache entry is rechecked under its Bazel lock.
+Skipped items (no longer qualifying, or busy) are reported but exit 0; failed removals exit 1.
 Files that git ignores do not count as uncommitted work, so removing a worktree or foreign
 clone deletes them. `github_prs` owns GitHub access (PR state); the scan itself is
 network-free.
@@ -288,7 +289,8 @@ async def _run_bounded[T, R](items: Sequence[T], function: Callable[[T], R], *, 
 async def _apply_worktree_removals(
     repo: Path, worktrees: list[Classification], *, prs: dict[str, PrInfo], workers: int
 ) -> bool:
-    """Remove every prunable worktree that is still prunable now; returns whether all succeeded."""
+    """Remove every prunable worktree that is still prunable now; returns False if any removal failed.
+    Skipped worktrees (changed since the scan) are reported but do not fail the run."""
     candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
     if not candidates:
         return True
@@ -321,12 +323,12 @@ async def _apply_worktree_removals(
     skipped = sum(isinstance(result, SkippedWorktree) for result in results)
     failed = len(results) - removed - skipped
     print(f"Worktrees: {removed} removed, {skipped} skipped, {failed} failed")
-    return skipped == 0 and failed == 0
+    return failed == 0
 
 
 def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) -> bool:
-    """Delete every prunable branch that has not moved since it was classified; returns whether
-    all of them succeeded."""
+    """Delete every prunable branch that has not moved since it was classified; returns False if any
+    deletion failed. Skipped branches (moved since the scan) are reported but do not fail the run."""
     candidates = [item for item in branches if isinstance(item, PrunableBranch)]
     if not candidates:
         return True
@@ -346,12 +348,12 @@ def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) ->
     skipped = sum(isinstance(result, SkippedBranch) for result in results)
     failed = len(results) - deleted - skipped
     print(f"Branches: {deleted} deleted, {skipped} skipped, {failed} failed")
-    return skipped == 0 and failed == 0
+    return failed == 0
 
 
 @dataclass(frozen=True, slots=True)
 class _BaseDeletions:
-    ok: bool
+    ok: bool  # no deletion failed; skipped bases are reported but do not count
     deleted: frozenset[Path]
 
 
@@ -381,8 +383,7 @@ async def _apply_base_deletions(
         f"free-space change {humanize.naturalsize(free_change, binary=True)}"
     )
     return _BaseDeletions(
-        ok=skipped == 0 and failed == 0,
-        deleted=frozenset(result.path for result in results if isinstance(result, DeletedBase)),
+        ok=failed == 0, deleted=frozenset(result.path for result in results if isinstance(result, DeletedBase))
     )
 
 
@@ -394,7 +395,8 @@ async def _apply_repo_cache_deletions(
     verbose: bool,
     workers: int,
 ) -> bool:
-    """Delete the given unreferenced repo-cache entries; returns whether all of them succeeded.
+    """Delete the given unreferenced repo-cache entries; returns False if any deletion failed.
+    Skipped entries (now referenced, replaced, cache busy) are reported but do not fail the run.
 
     `delete_prunable_entries` revalidates each entry under Bazel's cache lock against a fresh
     link pass, so the caller's classification needs no refresh.
@@ -438,7 +440,7 @@ async def _apply_repo_cache_deletions(
         f"Repo cache: {deleted} deleted, {skipped} skipped, {failed} failed; "
         f"free-space change {humanize.naturalsize(free_change, binary=True)}"
     )
-    return skipped == 0 and failed == 0
+    return failed == 0
 
 
 async def _apply_foreign_clone_deletions(

@@ -36,6 +36,8 @@ Git or filesystem failures inspecting a worktree, branch, or foreign clone produ
 with the error, leaving that item intact while other items continue. This also applies during
 deletion revalidation. An existing directory with unreadable Git metadata is never treated as
 a missing worktree. Failures that block the entire command exit nonzero with a diagnostic.
+An item skipped at deletion (it no longer qualifies, or its Bazel lock or the cache is busy) is
+reported as `SKIPPED` and does not change the exit status; a failed removal does.
 
 **The tool automates what's easy to automate; you apply intelligence where the automation
 needs supplementation.** It makes the clear-cut calls — an ancestor merge, a merged PR, a
@@ -171,7 +173,7 @@ alone (so squash-merges the API would have confirmed fall to REVIEW).
   failed-quarantine issue. Never convert `REVIEW` into `rm -rf` without proving what the
   directory is and why removal is safe.
 
-Re-run the dry scan after deletion. A nonzero delete result or a `.bazel-output-base-gc-*`
+Re-run the dry scan after deletion. A nonzero delete result (a failed removal) or a `.bazel-output-base-gc-*`
 quarantine means cleanup is incomplete and needs inspection.
 
 ## Repo Contents Cache
