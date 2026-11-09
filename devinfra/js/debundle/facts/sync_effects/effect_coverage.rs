@@ -1,5 +1,6 @@
 //! Nonterminal receipts from operations executed by the ordered local kernel.
 
+use super::completion::Completion;
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::reports::schema::BindingEffectAuthorityReport;
 use analysis_codec::{ContextOrdinals, SavedBinding};
@@ -24,14 +25,6 @@ impl DomainCoverage {
             _ => *self = Self::Unknown,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) enum Completion {
-    #[default]
-    Unknown,
-    Normal,
-    Abrupt,
 }
 
 /// Exact identity for the one root initializer whose ordered execution may
@@ -338,7 +331,7 @@ impl LexicalBindingEffectReceipt {
 pub(super) struct EffectCoverageFragment {
     initialization: Option<Box<InitializationEffectCoverage>>,
     lexical: Option<Box<LexicalEffectCoverage>>,
-    completion: Completion,
+    completion: Completion<(), ()>,
 }
 
 /// The three existing initialization domains remain independent, but are
@@ -377,7 +370,7 @@ impl EffectCoverageFragment {
                 rebinds: DomainCoverage::Covered(Box::default()),
                 calls: BTreeMap::new(),
             })),
-            completion: Completion::Normal,
+            completion: Completion::Normal(()),
         }
     }
 
@@ -393,7 +386,7 @@ impl EffectCoverageFragment {
             })),
             // Native operands are outside the bounded lexical migration.
             lexical: None,
-            completion: Completion::Normal,
+            completion: Completion::Normal(()),
         }
     }
 
@@ -423,8 +416,8 @@ impl EffectCoverageFragment {
     /// caller also checks its actual normal result and execution path; an
     /// already observed abrupt completion cannot be replaced by this proof.
     pub(super) fn normal_completion_from_pure_initializer(&mut self) {
-        if self.completion != Completion::Abrupt {
-            self.completion = Completion::Normal;
+        if !self.completion.has_no_normal_path() {
+            self.completion = Completion::Normal(());
         }
     }
 
@@ -457,7 +450,7 @@ impl EffectCoverageFragment {
                 rebinds: DomainCoverage::Covered(Box::default()),
                 calls: BTreeMap::new(),
             })),
-            completion: Completion::Normal,
+            completion: Completion::Normal(()),
             ..Self::default()
         }
     }
@@ -465,7 +458,7 @@ impl EffectCoverageFragment {
     /// Proof prerequisites for a successfully consumed own-data selection.
     /// Unknown lexical coverage never becomes positive through dependencies.
     pub(super) fn lexical_selection_dependencies(&self) -> Option<Box<ProofDependencies>> {
-        if self.completion != Completion::Normal {
+        if !self.completion.is_exact_normal() {
             return None;
         }
         let lexical = self.lexical.as_ref()?;
@@ -504,11 +497,7 @@ impl EffectCoverageFragment {
             }
             _ => self.lexical = None,
         }
-        self.completion = match (self.completion, next.completion) {
-            (Completion::Unknown, _) | (_, Completion::Unknown) => Completion::Unknown,
-            (Completion::Abrupt, _) | (_, Completion::Abrupt) => Completion::Abrupt,
-            (Completion::Normal, Completion::Normal) => Completion::Normal,
-        };
+        self.completion = std::mem::take(&mut self.completion).then(next.completion.clone());
     }
 
     /// Prerequisites of selecting an already covered operation. Conditions
@@ -551,7 +540,7 @@ impl EffectCoverageFragment {
     pub(super) fn lexical_effect_dependencies(
         &self,
     ) -> Option<(ProofDependencies, ProofDependencies)> {
-        if self.completion != Completion::Normal {
+        if !self.completion.is_exact_normal() {
             return None;
         }
         let lexical = self.lexical.as_ref()?;
@@ -631,15 +620,15 @@ impl EffectCoverageFragment {
     }
 
     pub(super) fn abrupt(&mut self) {
-        self.completion = Completion::Abrupt;
+        self.completion = Completion::Abrupt(());
     }
 
     pub(super) fn uncertain_completion(&mut self) {
-        self.completion = Completion::Unknown;
+        self.completion = Completion::default();
     }
 
     pub(super) fn normal_dependencies(&self) -> Option<ProofDependencies> {
-        if self.completion != Completion::Normal {
+        if !self.completion.is_exact_normal() {
             return None;
         }
         let initialization = self.initialization.as_ref()?;
