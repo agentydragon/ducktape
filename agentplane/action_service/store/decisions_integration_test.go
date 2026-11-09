@@ -38,10 +38,9 @@ func TestDecideRecordsTheOperatorsVerdict(t *testing.T) {
 				t.Errorf("dispatch %v, state %s, version %d", dispatch, got.State, got.Version)
 			}
 			decided := got.Decision
-			if decided == nil || decided.Verdict != test.verdict || decided.Provider != HumanProvider ||
-				*decided.Operator != operator || *decided.DecisionNote != note || decided.ReasonCode != nil ||
-				decided.ReasonDescription != nil || decided.PolicyEvidence != nil || decided.IdempotencyKey != "test-decision" ||
-				!decided.DecidedAt.Equal(got.UpdatedAt) {
+			if decided == nil || decided.Verdict != test.verdict ||
+				!reflect.DeepEqual(decided.Decider, OperatorDecision{Operator: operator, DecisionNote: &note}) ||
+				decided.IdempotencyKey != "test-decision" || !decided.DecidedAt.Equal(got.UpdatedAt) {
 				t.Errorf("decision %+v", decided)
 			}
 			if (got.Execution != nil) != awaitsDispatch {
@@ -115,7 +114,8 @@ func TestADecisionKeyBelongsToItsOperatorAndItsFirstVerdict(t *testing.T) {
 
 	// Another operator's key is its own.
 	other := OperatorPrincipal{Issuer: operator.Issuer, Subject: "test-other-operator"}
-	if got, _, err := f.Decide(t.Context(), second.ID, decision(second, VerdictAllow, "shared-key"), other); err != nil || *got.Decision.Operator != other {
+	if got, _, err := f.Decide(t.Context(), second.ID, decision(second, VerdictAllow, "shared-key"), other); err != nil ||
+		got.Decision.Decider.(OperatorDecision).Operator != other {
 		t.Errorf("another operator's decision = %+v, %v", got.Decision, err)
 	}
 }

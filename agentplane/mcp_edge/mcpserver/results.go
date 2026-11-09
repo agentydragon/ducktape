@@ -85,9 +85,12 @@ func actionResult(request *pb.ActionRequest, executor pb.ExecutorKind, maxWaitSe
 			return nil, fmt.Errorf("core answered denied request %s without a Decision", id)
 		}
 		text := prefix + "was denied and did not run."
-		reason := decision.GetDecisionNote()
-		if reason == "" {
-			reason = decision.GetReasonDescription()
+		var reason string
+		switch decider := decision.GetDecider().(type) {
+		case *pb.Decision_Operator:
+			reason = decider.Operator.GetDecisionNote()
+		case *pb.Decision_Policy:
+			reason = decider.Policy.GetReasonDescription()
 		}
 		if reason != "" {
 			text += " Reason: " + reason

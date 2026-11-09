@@ -17,6 +17,30 @@ func storedStateNames() []string {
 	return states
 }
 
+func storedReasonCodeNames() []string {
+	codes := make([]string, len(storedReasonCodes))
+	for i, known := range storedReasonCodes {
+		codes[i] = known.text
+	}
+	return codes
+}
+
+func TestAReasonCodeThisReleaseDoesNotNameReadsAsUnknown(t *testing.T) {
+	if got := reasonCodeFromStored("policy_set_auto_approve"); got != action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE {
+		t.Errorf("a named code reads as %v", got)
+	}
+	if got := reasonCodeFromStored("test_future_reason"); got != action_servicepb.PolicyDecision_REASON_CODE_UNKNOWN {
+		t.Errorf("an unnamed code reads as %v", got)
+	}
+	for _, code := range []action_servicepb.PolicyDecision_ReasonCode{
+		action_servicepb.PolicyDecision_REASON_CODE_UNSPECIFIED, action_servicepb.PolicyDecision_REASON_CODE_UNKNOWN,
+	} {
+		if _, ok := reasonCodeStored(code); ok {
+			t.Errorf("%v has a stored form", code)
+		}
+	}
+}
+
 func TeststoredStateNamesRoundTrip(t *testing.T) {
 	pairs := []struct {
 		state action_servicepb.ActionState

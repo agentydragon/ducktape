@@ -20,6 +20,8 @@ func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 		"verdict":         {string(VerdictAllow), string(VerdictDeny)},
 		"policy_kind":     toStrings(policyKinds),
 		"policy_source":   {PolicySourceRules},
+		"provider":        {operatorProvider, policyProvider},
+		"reason_code":     storedReasonCodeNames(),
 	} {
 		if got := enums[column]; !slices.Equal(got, want) {
 			t.Errorf("%s: stored vocabulary has %v, the store %v", column, got, want)
@@ -124,10 +126,10 @@ func TestVotesRequireDecisiveOutcomes(t *testing.T) {
 			// A vote must decide; `no_opinion` defers to a human.
 			err := json.Unmarshal(vector.Input, &wire)
 			if err == nil {
-				err = ProviderVote{
-					Provider: "test-provider", Verdict: wire.Verdict, ReasonCode: wire.ReasonCode,
-					ReasonDescription: wire.ReasonDescription, Evidence: wire.Evidence,
-				}.Validate()
+				err = ProviderVote{Verdict: wire.Verdict, Policy: PolicyDecision{
+					ReasonCode: reasonCodeFromStored(wire.ReasonCode), ReasonDescription: wire.ReasonDescription,
+					Evidence: wire.Evidence,
+				}}.Validate()
 			}
 			if want := vector.Valid && vector.Decisive; want != (err == nil) {
 				t.Errorf("a vote that decides = %v, Validate = %v", want, err)

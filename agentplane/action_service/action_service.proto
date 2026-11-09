@@ -412,20 +412,36 @@ message Decision {
   // UUID.
   string id = 1;
   Verdict verdict = 2;
-  // Who decided: `human_operator` for an operator, `action_policy_set` for the policy objects.
-  string provider = 3;
-  // The operator who decided; absent when a provider did.
-  Operator operator = 4;
-  // The operator's note, shared unchanged with the caller and not secret; absent for a provider's Decision.
-  optional string decision_note = 5;
-  // A bounded code for a provider's reason; absent for an operator's Decision.
-  optional string reason_code = 6;
-  // A bounded explanation for a provider's reason, safe for the caller to read; absent for an operator's Decision.
-  optional string reason_description = 7;
-  // The policy objects a policy Decision evaluated; absent for any other.
-  PolicyEvidence policy_evidence = 8;
-  string idempotency_key = 9;
-  google.protobuf.Timestamp decided_at = 10;
+  // Who decided.
+  oneof decider {
+    OperatorDecision operator = 3;
+    PolicyDecision policy = 4;
+  }
+  string idempotency_key = 5;
+  google.protobuf.Timestamp decided_at = 6;
+}
+
+// A Decision an operator made.
+message OperatorDecision {
+  Operator operator = 1;
+  // The operator's note, shared unchanged with the caller and not secret.
+  optional string decision_note = 2;
+}
+
+// A Decision the caller's Action policy objects made at admission.
+message PolicyDecision {
+  enum ReasonCode {
+    REASON_CODE_UNSPECIFIED = 0;
+    // A policy bound to the caller auto-approved the request.
+    REASON_CODE_AUTO_APPROVE = 1;
+    // A newer release recorded a reason this release does not name.
+    REASON_CODE_UNKNOWN = 2;
+  }
+  ReasonCode reason_code = 1;
+  // A bounded explanation, safe for the caller to read.
+  optional string reason_description = 2;
+  // The policy objects the Decision evaluated.
+  PolicyEvidence evidence = 3;
 }
 
 enum Verdict {

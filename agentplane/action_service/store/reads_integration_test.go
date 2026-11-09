@@ -223,7 +223,7 @@ func (f fixture) decidedAt(t *testing.T, key string, admission Admission, verdic
 }
 
 func vote(verdict Verdict) *ProviderVote {
-	return &ProviderVote{Provider: "test-provider", Verdict: verdict, ReasonCode: "test_reason"}
+	return &ProviderVote{Verdict: verdict, Policy: PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE}}
 }
 
 func (f fixture) history(t *testing.T, page HistoryPage) ([]ActionRequest, *string) {

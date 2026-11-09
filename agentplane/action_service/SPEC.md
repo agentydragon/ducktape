@@ -150,6 +150,8 @@ auto-approves with an Execution; no match leaves the request on the human path; 
 has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
 Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
 bindings with their resource versions, the sets with their generations, and the matching policy.
+A Decision names exactly one decider: an operator, with the operator's note, or a policy, with its reason code,
+description and evidence. A reason code this release does not name reads as `REASON_CODE_UNKNOWN`.
 The request is persisted only once evaluation has finished, together with any auto-decision, so a
 request is observable as pending only while it waits for a human.
 
