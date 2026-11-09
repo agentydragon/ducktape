@@ -389,20 +389,21 @@ strict provider's `closure_captures`/`closure_*_reads`/`final_environment`
 side maps deleted in favor of cells and the value's own captures. Tests:
 `optional_call_timing` and the suite unchanged.
 
-**L2c — application adapter and `complete`** (needs L2b).
-`LocalExecutionContext` and helpers → `adapters/application.rs`;
-`execute_owner` (`interpreter.rs:23729`) → `roots/{operands,body,assignment,
-finalize}.rs`; `execute_call_transfer_inner` (`:20966`) → operands-supplied
-mode in `roots/call_operands.rs`, self-evaluating mode in `legacy/` with a
-`CLEANUP` naming `evaluate_legacy_compat` (`:18349`) as last caller. Deletes
-`Outcome.complete` per § Completion after its precondition test. Each
-`roots/` phase is a function over the `World` owners it needs (`&mut
-world.publication, &world.module, ...`, split borrows), not `&mut self` on
-`Executor`; what a phase may mutate is its signature. Each phase returns its
-observations (§ Observations are returned). Tests: effect-translation
+**L2c — application adapter and `complete`** (needs L2b). Landed:
+`LocalExecutionContext` and helpers → `adapters/application.rs` (#15116);
+`execute_owner` → `roots/{operands,body,assignment,finalize}.rs`, each phase
+returning what it observed (`RootOperands`, `RootBody`, `RootAssignment`, the
+owner's `SynchronousCalls`). `finalize` executes no source operation and
+takes `ExecutionInputs`, `ExecutionState`, `Observations`, `RuntimeQueries`
+and `EvaluationEffects` as split borrows. The three phases that execute
+source still take `&mut Executor`: the evaluator methods they call own the
+whole executor, so narrowing them to the `World` owners they touch waits for
+those methods to take split borrows. Left: `execute_call_transfer` →
+operands-supplied mode in `roots/call_operands.rs`, self-evaluating mode in
+`legacy/` with a `CLEANUP` naming its last caller. Deletes `Outcome.complete`
+per § Completion after its precondition test. Tests: effect-translation
 positives with `swapped_pairs > 0` and Node parity;
-`synchronous_precision_report_test` asserts the report projection. About
-3.5k moved, 1.8k edited, 0.6k deleted.
+`synchronous_precision_report_test` asserts the report projection.
 
 **L2d — un-nest the interpreter** (needs L2a; parallel to L2b). Removes
 `#[path = "interpreter.rs"]` at `execution_index.rs:16684` and the nested

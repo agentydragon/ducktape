@@ -24,8 +24,8 @@ use super::native::operation::{
     self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
 };
 use super::noninvoking_initialization::{
-    CompletedInitialization, NativeConstructorCandidate, NativeConstructorForm,
-    NativeConstructorKind, NativeConstructorTransfer, OriginalInitializer,
+    NativeConstructorCandidate, NativeConstructorForm, NativeConstructorKind,
+    NativeConstructorTransfer, OriginalInitializer,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::runtime_callbacks::{
@@ -89,9 +89,8 @@ use crate::facts::sync_effects::property_inference::{
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
     DataflowOpacityCause, LocalClassConstructionProof, LocalClassConstructionShapes,
-    NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic,
-    OwnerInitializationCoverageRefusalReason, SetIterableShapes, StatementPurityContext,
-    TopLevelNativeIterableOperandSite, set_iterables::SetIterableProof,
+    NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic, SetIterableShapes,
+    StatementPurityContext, TopLevelNativeIterableOperandSite, set_iterables::SetIterableProof,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Effects};
@@ -244,7 +243,12 @@ impl Outcome {
         }
     }
 
-    fn unsupported(&mut self, operation: ExecutionOperation, owner: SourceUnitOrdinal, span: Span) {
+    pub(super) fn unsupported(
+        &mut self,
+        operation: ExecutionOperation,
+        owner: SourceUnitOrdinal,
+        span: Span,
+    ) {
         self.lose_precision(
             ExecutionPrecisionLossReason::UnsupportedOperation {
                 operation,
@@ -467,8 +471,8 @@ struct NonInvokingClassHeritageRead<'a> {
 
 /// A checked non-publication decision, independent of owner completion and
 /// timing coverage. Both root suppression and use reporting consume it.
-struct PrivateCallbackFactoryResult {
-    proof_use: CallbackFactoryUseFact,
+pub(super) struct PrivateCallbackFactoryResult {
+    pub(super) proof_use: CallbackFactoryUseFact,
     dependencies: ProofDependencies,
 }
 
@@ -746,17 +750,17 @@ struct NewEvaluation {
 }
 
 #[derive(Clone, Default)]
-struct RecordFactoryPrototypePremises {
+pub(super) struct RecordFactoryPrototypePremises {
     constructor_fields: BTreeSet<(u32, String)>,
     missing_input_fields: BTreeSet<(u32, String)>,
 }
 
 impl RecordFactoryPrototypePremises {
-    fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.constructor_fields.is_empty() && self.missing_input_fields.is_empty()
     }
 
-    fn properties(&self) -> Vec<String> {
+    pub(super) fn properties(&self) -> Vec<String> {
         self.constructor_fields
             .iter()
             .chain(&self.missing_input_fields)
@@ -770,7 +774,7 @@ impl RecordFactoryPrototypePremises {
 pub(super) struct ExecutionInputs<'source> {
     pub(super) index: &'source ExecutionIndex,
     graph: &'source ChunkCodeGraph,
-    facts: &'source [StatementFacts],
+    pub(super) facts: &'source [StatementFacts],
     /// Each statement's source-only purity transfer, before its coercions
     /// resolve against the values settled at its program point.
     statement_effects: Vec<Effects>,
@@ -782,7 +786,7 @@ pub(super) struct ExecutionInputs<'source> {
     initializer_call_effect_inputs: &'source [ResolvedInitializerCallEffectInput],
     pub(super) declared_pure_initializers: &'source BTreeSet<String>,
     /// First-order pre-await body cells of each callable.
-    callable_heap_contents: &'source BTreeMap<u32, HeapContentCells>,
+    pub(super) callable_heap_contents: &'source BTreeMap<u32, HeapContentCells>,
     /// Hashed: effect promotion tests every lazy read of every promoted
     /// callable against it. `binding_owner` holds the same bindings in order.
     pub(super) top_bindings: FxHashSet<Id>,
@@ -793,7 +797,7 @@ pub(super) struct ExecutionInputs<'source> {
     /// with no other declaration site. Only its incoming read edge may wait.
     deferred_read_binding: Vec<Option<Id>>,
     synchronous_owner_effects: Vec<Option<&'source CallablePrefixEffects>>,
-    exported_owners: BTreeSet<SourceUnitOrdinal>,
+    pub(super) exported_owners: BTreeSet<SourceUnitOrdinal>,
     /// The exports code that reenters the module during its evaluation can
     /// read: their bindings, and whether the default export is among them.
     reentry_bindings: BTreeSet<Id>,
@@ -801,10 +805,10 @@ pub(super) struct ExecutionInputs<'source> {
     call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
     mutable_captures: BTreeSet<Id>,
     pub(super) captured_local_bindings: FxHashSet<Id>,
-    var_bindings: BTreeSet<Id>,
+    pub(super) var_bindings: BTreeSet<Id>,
     changed_member_roots: BTreeSet<Id>,
     export_reentry_enabled: bool,
-    needed_bindings: BTreeSet<Id>,
+    pub(super) needed_bindings: BTreeSet<Id>,
     /// Top-level bindings no statement but their declaring one writes. The
     /// prefix values of other bindings may miss a write the index does not
     /// model (a `for-of` head, an update), so coercions never resolve
@@ -1067,37 +1071,37 @@ pub(super) struct ExecutionState {
     pub(super) world: Arc<World>,
     native_point_effects: NativePointEffects,
     activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
-    author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
+    pub(super) author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
     active_class_member_promotions: BTreeSet<u32>,
-    prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
-    current_top_owner: Option<SourceUnitOrdinal>,
-    proof_uses: Vec<CallbackFactoryUseFact>,
-    returned_record_proof_uses: Vec<ReturnedRecordUseFact>,
-    checking_record_factory_contract: bool,
-    prior_effect_owners: BTreeSet<SourceUnitOrdinal>,
+    pub(super) prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
+    pub(super) current_top_owner: Option<SourceUnitOrdinal>,
+    pub(super) proof_uses: Vec<CallbackFactoryUseFact>,
+    pub(super) returned_record_proof_uses: Vec<ReturnedRecordUseFact>,
+    pub(super) checking_record_factory_contract: bool,
+    pub(super) prior_effect_owners: BTreeSet<SourceUnitOrdinal>,
     /// Callables run so far by the current top-level owner; joins
     /// `prior_effect_owners` when it finishes.
-    statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
+    pub(super) statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
     /// All invoked callable keys, including outcomes a proof probe discards.
     /// The root union preserves the conservative heap order independently of
     /// the per-invocation non-assumed premise subset.
-    statement_invoked_callables: BTreeSet<u32>,
+    pub(super) statement_invoked_callables: BTreeSet<u32>,
     array_iteration_depth: usize,
     array_iteration_protected_objects: BTreeSet<u32>,
     array_iteration_unsupported: bool,
     invocation_depth: usize,
-    invocation_count: usize,
+    pub(super) invocation_count: usize,
     callback_fallback: CallbackFallbackSummary,
-    fallback_outcome: Outcome,
+    pub(super) fallback_outcome: Outcome,
     /// The conservative path in force while it promotes or executes code the
     /// statement only may run; effects it contributes are assumed. Cleared
     /// inside each invocation, whose outcome (and memo) records provenance
     /// relative to itself.
     pub(super) assumption: Option<AssumedEffectReason>,
-    fallback_callback_sizes: Option<(usize, usize)>,
-    fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
-    fallback_local_deferred: BTreeMap<Id, SourceUnitOrdinal>,
+    pub(super) fallback_callback_sizes: Option<(usize, usize)>,
+    pub(super) fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
+    pub(super) fallback_local_deferred: BTreeMap<Id, SourceUnitOrdinal>,
     capture_contexts: CaptureInterner<LexicalCaptures>,
     callback_sets: CaptureInterner<Values>,
     active: BTreeSet<ActiveInvocation>,
@@ -1183,7 +1187,7 @@ impl Observations {
         self.dependencies.extend(dependencies);
     }
 
-    fn dependencies(&self) -> &ProofDependencies {
+    pub(super) fn dependencies(&self) -> &ProofDependencies {
         &self.dependencies
     }
 
@@ -1198,7 +1202,7 @@ impl Observations {
         self.inference_uses.extend(uses);
     }
 
-    fn record_factory_prototype_premises(&self) -> &RecordFactoryPrototypePremises {
+    pub(super) fn record_factory_prototype_premises(&self) -> &RecordFactoryPrototypePremises {
         &self.record_factory_prototype_premises
     }
 
@@ -1206,13 +1210,13 @@ impl Observations {
         &mut self.record_factory_prototype_premises
     }
 
-    fn clear_record_factory_prototype_premises(&mut self) {
+    pub(super) fn clear_record_factory_prototype_premises(&mut self) {
         self.record_factory_prototype_premises = RecordFactoryPrototypePremises::default();
     }
 
     /// Move the report-only facts into the owner's effects. `dependencies` and
     /// the record-factory premises are read after this by owner finalization.
-    fn drain_reports_into(&mut self, effects: &mut SynchronousCalls) {
+    pub(super) fn drain_reports_into(&mut self, effects: &mut SynchronousCalls) {
         effects.native_integrity_checks = std::mem::take(&mut self.native_integrity_checks)
             .into_iter()
             .collect();
@@ -1236,6 +1240,20 @@ impl Observations {
 }
 
 impl ExecutionState {
+    pub(super) fn clear_invocation_memos(&mut self, queries: &RuntimeQueries<'_, '_>) {
+        for (_, point) in std::mem::take(&mut self.invocation_memos) {
+            queries.retire_invocation_memo(point);
+        }
+        self.capture_contexts.sweep_dead();
+        self.callback_sets.sweep_dead();
+    }
+
+    /// An object literal of the source owner now executing.
+    pub(super) fn statement_literal(&self, index: &ExecutionIndex, object: u32) -> bool {
+        self.current_top_owner.is_some()
+            && index.object_literal_owners.get(&object) == self.current_top_owner.as_ref()
+    }
+
     /// Detach the world from any shared fork before writing to it.
     pub(super) fn world_mut(&mut self) -> &mut World {
         Arc::make_mut(&mut self.world)
@@ -1266,7 +1284,7 @@ pub(super) struct Executor<'source, 'rule> {
     pub(super) inputs: &'rule ExecutionInputs<'source>,
     pub(super) state: ExecutionStateSlot,
     pub(super) observations: Observations,
-    queries: RuntimeQueries<'source, 'rule>,
+    pub(super) queries: RuntimeQueries<'source, 'rule>,
     allocation_judgment: super::allocation_transfer::AllocationJudgment,
     source_covered: bool,
     pub(super) evaluation_effects: EvaluationEffects,
@@ -1299,14 +1317,14 @@ impl std::ops::DerefMut for ExecutionStateSlot {
 /// The source proof selected for one exact factory call. Kept separate from
 /// report structs so downstream purity uses a typed proof result rather than
 /// reconstructing trust from serialized synchronous-execution output.
-struct CheckedLocalConstructorFactory {
-    call_span: Span,
-    checked_owners: BTreeSet<SourceUnitOrdinal>,
+pub(super) struct CheckedLocalConstructorFactory {
+    pub(super) call_span: Span,
+    pub(super) checked_owners: BTreeSet<SourceUnitOrdinal>,
 }
 
 #[derive(Clone, Copy)]
 pub(super) struct ValidatedMetadataDecoration {
-    target_owner: SourceUnitOrdinal,
+    pub(super) target_owner: SourceUnitOrdinal,
 }
 
 struct ApplicationAllocationContext<'a, 'source, 'rule> {
@@ -1451,9 +1469,7 @@ impl DescriptorContext for Executor<'_, '_> {
     }
 
     fn statement_literal(&self, object: u32) -> bool {
-        self.state.current_top_owner.is_some()
-            && self.inputs.index.object_literal_owners.get(&object)
-                == self.state.current_top_owner.as_ref()
+        self.state.statement_literal(self.inputs.index, object)
     }
 }
 
@@ -1703,14 +1719,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn clear_invocation_memos(&mut self) {
-        for (_, point) in std::mem::take(&mut self.state.invocation_memos) {
-            self.queries.retire_invocation_memo(point);
-        }
-        self.state.capture_contexts.sweep_dead();
-        self.state.callback_sets.sweep_dead();
-    }
-
     /// The abstract callback-factory value also represents namespace members
     /// and aliases. Only a checked direct imported binding identifies the
     /// summary without changing value or cache semantics.
@@ -1744,7 +1752,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.record_callback_factory_use_fact(proof_use);
     }
 
-    fn record_callback_factory_use_fact(&mut self, proof_use: CallbackFactoryUseFact) {
+    pub(super) fn record_callback_factory_use_fact(&mut self, proof_use: CallbackFactoryUseFact) {
         if !self.state.proof_uses.contains(&proof_use) {
             self.state.proof_uses.push(proof_use);
         }
@@ -3036,7 +3044,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
     }
 
-    fn accepts_deferred_global_write(&mut self, owner: SourceUnitOrdinal, env: &Context) -> bool {
+    pub(super) fn accepts_deferred_global_write(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        env: &Context,
+    ) -> bool {
         if !self
             .inputs
             .index
@@ -3975,7 +3987,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some(self.callback_values(&source_values))
     }
 
-    fn validated_metadata_decoration(
+    pub(super) fn validated_metadata_decoration(
         &mut self,
         application: &MetadataDecorateCall,
         env: &Context,
@@ -4037,7 +4049,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         })
     }
 
-    fn summarize_metadata_decoration(
+    pub(super) fn summarize_metadata_decoration(
         &mut self,
         application: &MetadataDecorateCall,
         validated: ValidatedMetadataDecoration,
@@ -4091,7 +4103,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.inputs.facts.iter().map(|fact| fact.ordinal)
     }
 
-    fn promote_lazy_owner(
+    pub(super) fn promote_lazy_owner(
         &self,
         owner: SourceUnitOrdinal,
         effect_owner: SourceUnitOrdinal,
@@ -4218,7 +4230,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         roots
     }
 
-    fn fact_roots(
+    pub(super) fn fact_roots(
         &mut self,
         fact: &StatementFacts,
         metadata_target: Option<SourceUnitOrdinal>,
@@ -4295,7 +4307,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// A validated factory retains the inline callback only in its fresh
     /// returned graph. Creating that graph does not publish the callback;
     /// later calls, writes, and exports still flow through the value model.
-    fn private_callback_factory_result(
+    pub(super) fn private_callback_factory_result(
         &self,
         fact: &StatementFacts,
     ) -> Option<PrivateCallbackFactoryResult> {
@@ -4523,7 +4535,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// An author assertion is attached to the canonical top-level factory,
     /// and only supplies premises at an exact, syntactically fresh call site.
     /// `Err` names the refused argument shape of a direct annotated call.
-    fn annotated_record_factory(
+    pub(super) fn annotated_record_factory(
         &mut self,
         fact: &StatementFacts,
     ) -> Option<Result<(Id, Span), LocalRecordFactoryRejection>> {
@@ -4580,7 +4592,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// The first record property the checked constructor proof refused, for
     /// an annotated call whose argument passed the syntax check.
-    fn record_factory_input_rejection(
+    pub(super) fn record_factory_input_rejection(
         &mut self,
         fact: &StatementFacts,
     ) -> Option<(RecordFactoryRejectionReason, Option<String>)> {
@@ -4600,7 +4612,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// The failed check of the factory's returned top-level allocation, with
     /// its class identity when the source resolves one.
-    fn returned_class_construction_rejection(
+    pub(super) fn returned_class_construction_rejection(
         &mut self,
         factory: &Id,
     ) -> Option<(Option<u32>, ConstructionRejection)> {
@@ -4650,7 +4662,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// exposing them during the initializer. The ordinary executor still runs
     /// the wrapper and constructor. Exported results require a closure that
     /// rules out synchronous importer reentry during provider initialization.
-    fn closed_local_constructor_factory_result(
+    pub(super) fn closed_local_constructor_factory_result(
         &mut self,
         fact: &StatementFacts,
     ) -> Result<CheckedLocalConstructorFactory, RecordFactoryRejectionReason> {
@@ -5158,7 +5170,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         })
     }
 
-    fn extend_reachable_owners(
+    pub(super) fn extend_reachable_owners(
         &mut self,
         roots: impl IntoIterator<Item = SourceUnitOrdinal>,
     ) -> bool {
@@ -5266,7 +5278,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn promote_property_writes(
+    pub(super) fn promote_property_writes(
         &mut self,
         writes: &[(Option<Id>, Option<String>)],
         owner: SourceUnitOrdinal,
@@ -6301,7 +6313,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some(objects)
     }
 
-    fn apply_member_value_writes(
+    pub(super) fn apply_member_value_writes(
         &mut self,
         writes: &[MemberValueWrite],
         env: &Context,
@@ -6440,7 +6452,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    fn promote_callback_result_writes(
+    pub(super) fn promote_callback_result_writes(
         &mut self,
         writes: &[CallbackResultWrite],
         env: &Context,
@@ -8205,7 +8217,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         false
     }
 
-    fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, SourceUnitOrdinal)>) {
+    pub(super) fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, SourceUnitOrdinal)>) {
         for (id, _) in rebinds {
             self.state
                 .world_mut()
@@ -8926,7 +8938,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Every call of the root is an exact intact intrinsic, so the ordered
     /// lane runs no application code. Identity is decided here; the ordered
     /// call transfer admits or refuses the operands.
-    fn ordered_root_calls_are_native(&self, calls: &[Call]) -> bool {
+    pub(super) fn ordered_root_calls_are_native(&self, calls: &[Call]) -> bool {
         let mut calls = calls
             .iter()
             .filter(|call| call.kind == CallKind::Call)
@@ -8951,7 +8963,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// retain their established whole-owner path. This chooses a source
     /// family before execution; the ordered call transfer still checks each
     /// actual target and never retries a failed invocation.
-    fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
+    pub(super) fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
         calls
             .iter()
             .filter(|call| call.kind == CallKind::Call)
@@ -9853,7 +9865,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .insert(AbstractValue::Value(Value::Unavailable));
     }
 
-    fn execute_local_body(
+    pub(super) fn execute_local_body(
         &mut self,
         body: &LocalBody,
         environment: Context,
@@ -12890,14 +12902,18 @@ pub(crate) fn annotate_synchronous_calls(
 }
 
 impl Executor<'_, '_> {
-    fn widen_native_effects(&mut self) {
+    pub(super) fn widen_native_effects(&mut self) {
         if !self.state.world.native.uncertain_execution {
             self.state.native_point_effects = self.inputs.index.all_native_point_effects.clone();
             self.state.world_mut().native.uncertain_execution = true;
         }
     }
 
-    fn activate_native_effects(&mut self, owner: SourceUnitOrdinal, callable: Option<u32>) {
+    pub(super) fn activate_native_effects(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        callable: Option<u32>,
+    ) {
         if self.state.world.native.uncertain_execution
             || !self
                 .state
@@ -12934,7 +12950,10 @@ impl Executor<'_, '_> {
     /// The elements of each plain-array binding `fact` reads, settled at its
     /// program point: no element is tainted, and none is reachable from any
     /// other binding the statement reads, eagerly or in a nested body.
-    fn settled_array_elements(&self, fact: &StatementFacts) -> BTreeMap<Id, SettledElements> {
+    pub(super) fn settled_array_elements(
+        &self,
+        fact: &StatementFacts,
+    ) -> BTreeMap<Id, SettledElements> {
         let inputs = self.inputs;
         let reachable = |exclude: &Id| {
             let mut pending: Vec<AbstractValue> = fact
@@ -13046,7 +13065,11 @@ impl Executor<'_, '_> {
     /// An execution that could not complete may have run code the interpreter
     /// did not follow on any value the statement or its summarized callees
     /// read (purity_soundness § Settled heap taint).
-    fn unsettle_incomplete_reach(&mut self, fact: &StatementFacts, effects: &SynchronousCalls) {
+    pub(super) fn unsettle_incomplete_reach(
+        &mut self,
+        fact: &StatementFacts,
+        effects: &SynchronousCalls,
+    ) {
         let values: Values = fact
             .reads
             .eager
@@ -13063,7 +13086,7 @@ impl Executor<'_, '_> {
     /// The top-level bindings `fact` reads eagerly that may hold the global
     /// object at its program point: their settled values include it or a
     /// value the interpreter does not know, or are not complete.
-    fn global_object_aliases(&self, fact: &StatementFacts) -> Option<BTreeSet<Id>> {
+    pub(super) fn global_object_aliases(&self, fact: &StatementFacts) -> Option<BTreeSet<Id>> {
         fact.havoc
             .contains(&DataflowOpacityCause::GlobalObjectAliasEscape)
             .then(|| {
@@ -13093,890 +13116,5 @@ impl Executor<'_, '_> {
                     .cloned()
                     .collect()
             })
-    }
-
-    pub(super) fn execute_owner(&mut self, owner: SourceUnitOrdinal) -> SynchronousCalls {
-        let inputs = self.inputs;
-        let index = inputs.index;
-        let fact = &inputs.facts[owner.0];
-        let settled_array_elements = self.settled_array_elements(fact);
-        let global_object_aliases = self.global_object_aliases(fact);
-        let calls = &index.top_calls[owner.0];
-        let assignments = &index.top_assignments[owner.0];
-        let (initializer_source, mut initialization_coverage_refusal) = match index
-            .noninvoking_initializers
-            .get(&owner)
-        {
-            Some(source) if matches!(assignments.as_slice(), [(binding, _)] if source.matches_binding(owner, binding)) => {
-                (Some(source), None)
-            }
-            Some(_) => (
-                None,
-                Some(OwnerInitializationCoverageRefusalReason::OwnerBindingMismatch),
-            ),
-            None => (
-                None,
-                Some(
-                    index.initialization_coverage_refusals[owner.0]
-                        .unwrap_or(OwnerInitializationCoverageRefusalReason::RefusalUnavailable),
-                ),
-            ),
-        };
-        let mut evaluated_initializer = None;
-        let needed = &inputs.needed_bindings;
-        let mut top_env = std::mem::take(&mut self.state.world_mut().module.top_env);
-        let mut top_captures = std::mem::take(&mut self.state.world_mut().module.top_captures);
-        self.state.current_top_owner = Some(fact.ordinal);
-        self.activate_native_effects(fact.ordinal, None);
-        self.state.proof_uses.clear();
-        // Cache keys include this owner; previous statement snapshots cannot
-        // be reused and should not consume this statement's bounded budget.
-        self.clear_invocation_memos();
-        self.state.invocation_count = 0;
-        self.state.fallback_outcome = Outcome::default();
-        self.state.fallback_callback_sizes = None;
-        self.state.fallback_local_owners.clear();
-        self.state.fallback_local_deferred.clear();
-        self.state
-            .world_mut()
-            .publication
-            .returned_callback_owners
-            .clear();
-        let (annotated_record_factory, mut record_factory_rejection) =
-            match self.annotated_record_factory(fact) {
-                Some(Ok(factory)) => (Some(factory), None),
-                Some(Err(rejection)) => (None, Some(rejection)),
-                None => (None, None),
-            };
-        self.state.checking_record_factory_contract = annotated_record_factory.is_some();
-        let checked_local_constructor_factory = self.closed_local_constructor_factory_result(fact);
-        if let Err(reason) = &checked_local_constructor_factory
-            && let Some((factory, span)) = &annotated_record_factory
-        {
-            let (construction_class_key, construction) =
-                if *reason == RecordFactoryRejectionReason::ConstructorProof {
-                    self.returned_class_construction_rejection(factory)
-                        .map_or((None, None), |(class_key, rejection)| {
-                            (class_key, Some(rejection))
-                        })
-                } else {
-                    (None, None)
-                };
-            let (reason, property) = if *reason == RecordFactoryRejectionReason::UnsupportedValue {
-                self.record_factory_input_rejection(fact)
-                    .unwrap_or((*reason, None))
-            } else {
-                (*reason, None)
-            };
-            let first_callback_publication_owner =
-                if reason == RecordFactoryRejectionReason::FactoryEscaped {
-                    self.inputs
-                        .index
-                        .hoisted_bindings
-                        .get(factory)
-                        .and_then(|key| {
-                            self.state
-                                .world
-                                .publication
-                                .first_callback_publication_owners
-                                .get(key)
-                        })
-                        .copied()
-                } else {
-                    None
-                };
-            let first_class_members_publication = if matches!(
-                construction.as_ref(),
-                Some(ConstructionRejection::ClassMembersEscaped)
-            ) {
-                construction_class_key.and_then(|key| {
-                    self.state
-                        .world
-                        .classes
-                        .first_members_publications
-                        .get(&key)
-                        .cloned()
-                })
-            } else {
-                None
-            };
-            record_factory_rejection = Some(LocalRecordFactoryRejection {
-                factory_binding: factory.0.to_string(),
-                reason,
-                property,
-                construction,
-                first_callback_publication_owner,
-                first_class_members_publication,
-                lexical_statement_ordinal: fact.ordinal,
-                source_location: None,
-                span: *span,
-            });
-        }
-        let checked_local_constructor_factory = checked_local_constructor_factory.ok();
-        self.state
-            .world_mut()
-            .classes
-            .private_constructor_result_owners = checked_local_constructor_factory
-            .as_ref()
-            .map_or_else(BTreeSet::new, |proof| proof.checked_owners.clone());
-        self.state.checking_record_factory_contract = false;
-        if self
-            .state
-            .world
-            .classes
-            .private_constructor_result_owners
-            .is_empty()
-        {
-            self.observations.clear_record_factory_prototype_premises();
-        }
-        // A recognized metadata statement is a whole call expression. Its
-        // eligibility proof is stable across this statement's preparatory
-        // lanes, so use the same proof for reachability and call execution.
-        let metadata_application = index.top_metadata_decorations[fact.ordinal.0].as_ref();
-        let prevalidated_metadata = metadata_application
-            .filter(|_| {
-                !index.opaque_top.contains(&fact.ordinal)
-                    && index.top_assignments[fact.ordinal.0].is_empty()
-                    && index.top_member_value_writes[fact.ordinal.0].is_empty()
-                    && index.top_callback_result_writes[fact.ordinal.0].is_empty()
-            })
-            .and_then(|application| {
-                self.validated_metadata_decoration(application, &top_env, &top_captures)
-            });
-        let certified_deferred_write = self.accepts_deferred_global_write(fact.ordinal, &top_env);
-        if certified_deferred_write {
-            self.state
-                .world_mut()
-                .publication
-                .accepted_deferred_global_writes
-                .insert(fact.ordinal);
-        }
-        let closed_result = self.private_callback_factory_result(fact);
-        let private_constructor_result_owners = self
-            .state
-            .world
-            .classes
-            .private_constructor_result_owners
-            .clone();
-        let fact_roots = self.fact_roots(
-            fact,
-            prevalidated_metadata.map(|validated| validated.target_owner),
-            &private_constructor_result_owners,
-            closed_result.as_ref(),
-        );
-        if let Some(proof) = closed_result {
-            self.record_callback_factory_use_fact(proof.proof_use);
-        }
-        // Roots this statement adds while no opaque call has consumed them.
-        // A fully covered execution withdraws them again below.
-        let mut provisional_roots = BTreeSet::new();
-        if self.state.world.reachability.unknown_call_seen {
-            self.extend_reachable_owners(fact_roots.iter().copied());
-        } else if let Some(roots) = &mut self.state.prior_reachability_roots {
-            provisional_roots.extend(fact_roots.difference(roots).copied());
-            // Include the active call site before any nested unknown call can
-            // consume the prefix roots.
-            roots.extend(fact_roots.iter().copied());
-        }
-        // A class object keeps the superclass value from its definition.
-        // Snapshot a simple lexical heritage read from this source prefix so
-        // a later assignment to the binding cannot replace the base whose
-        // constructor the emitted class actually inherited.
-        for (key, class_binding) in &index.class_bindings {
-            let owns_needed_class = index.class_owners.get(key) == Some(&fact.ordinal)
-                && needed.contains(class_binding);
-            if !owns_needed_class {
-                continue;
-            }
-            let Some(class) = index.class_values.get(key) else {
-                continue;
-            };
-            let Some(super_class) = &class.super_class else {
-                continue;
-            };
-            let values = match super_class {
-                ValueExpr::Binding(_) => self.evaluate(super_class, &top_env, &top_captures),
-                _ => unknown(),
-            };
-            self.state
-                .world_mut()
-                .classes
-                .superclasses
-                .insert(*key, values);
-        }
-        let mut outcome = Outcome {
-            complete: true,
-            ..Outcome::default()
-        };
-        let checked_split_binding_copy = initializer_source
-            .and_then(|source| source.composed_expression())
-            .is_some_and(|expression| matches!(expression, ValueExpr::Binding(_)))
-            && index.ordered_initializers.get(&owner).is_some_and(|body| {
-                let [(binding, _)] = assignments.as_slice() else {
-                    return false;
-                };
-                body.initializer_span().is_some_and(|span| {
-                    index
-                        .initialization_source_identities
-                        .get(&owner)
-                        .is_some_and(|identity| identity.matches(owner, binding, span))
-                })
-            });
-        let selected_audited_initializer =
-            index.ordered_initializers.get(&owner).and_then(|body| {
-                let [(binding, _)] = assignments.as_slice() else {
-                    return None;
-                };
-                let (callee, span) =
-                    body.single_identifier_call_with_function_argument_initializer()?;
-                let source = index.initialization_source_identities.get(&owner)?;
-                if !source.matches(owner, binding, body.initializer_span()?) {
-                    return None;
-                }
-                let [call] = calls.as_slice() else {
-                    return None;
-                };
-                if call.kind != CallKind::Call
-                    || call.span != span
-                    || call.has_spread
-                    || call.args.len() != 1
-                    || !matches!(&call.callee, ValueExpr::Binding(actual) if actual == callee)
-                {
-                    return None;
-                }
-                inputs.initializer_call_effect_input(owner, binding, callee, span)
-            });
-        let native_root_calls = self.ordered_root_calls_are_native(calls);
-        let ordered_initializer = ((initializer_source.is_none()
-            || checked_split_binding_copy
-            || selected_audited_initializer.is_some())
-            && matches!(fact.kind, StatementKind::VarDecl)
-            && fact.declared.len() == 1
-            && matches!(assignments.as_slice(), [(binding, _)]
-                if fact.declared.contains(binding)
-                    && index.top_definite_initializers[owner.0].contains(binding))
-            && fact.rebinds.eager.is_empty()
-            && fact.global_writes.is_empty()
-            && !inputs.exported_owners.contains(&owner)
-            && index.dynamic_scope_owners.is_empty()
-            && !index.opaque_top.contains(&owner)
-            && index.top_property_writes[owner.0].is_empty()
-            && index.top_member_value_writes[owner.0].is_empty()
-            && index.top_callback_result_writes[owner.0].is_empty()
-            && index.top_exported_values[owner.0].is_empty())
-        .then(|| index.ordered_initializers.get(&owner))
-        .flatten()
-        .filter(|body| {
-            !body.requires_keyed_collection_new()
-                && body.captured_writes().is_empty()
-                && (self.ordered_root_calls_are_local(calls)
-                    || native_root_calls
-                    || selected_audited_initializer.is_some())
-                && (calls
-                    .iter()
-                    .filter(|call| call.kind == CallKind::Call)
-                    .nth(1)
-                    .is_some()
-                    || (calls.iter().any(|call| call.kind == CallKind::Call)
-                        && calls
-                            .iter()
-                            .any(|call| call.kind == CallKind::LocalMemberRead))
-                    || body
-                        .single_identifier_call_initializer()
-                        .is_some_and(|span| {
-                            matches!(calls.as_slice(), [call]
-                            if call.kind == CallKind::Call
-                                && call.span == span
-                                && !call.has_spread
-                                && call.args.is_empty()
-                                && matches!(call.callee, ValueExpr::Binding(_)))
-                        })
-                    || checked_split_binding_copy
-                    || selected_audited_initializer.is_some()
-                    // A spread's iterator protocol runs only through the
-                    // kernel's `IterateSpread` rule; the flattened lane has
-                    // no receipt for it.
-                    || calls.iter().any(|call| {
-                        call.kind == CallKind::ArraySpread && call.caller.is_none()
-                    })
-                    || native_root_calls
-                    || calls.iter().any(|call| {
-                        call.kind == CallKind::LocalMemberRead
-                            && call.owner == owner
-                            && call.caller.is_none()
-                            && body.initializer_span() == Some(call.span)
-                            && object_own_data_read_property(&call.callee, |id| {
-                                inputs.flow.is_declared(id)
-                                    || inputs.shadowed.contains(id.0.as_ref())
-                            })
-                            .is_some()
-                            && index.native_own_data_read_premise(call.span).is_some()
-                    }))
-        });
-        // Canonical source identity is independent of leaf/value admission.
-        // Retain the exact selected body span, not a lowered-value guess.
-        let effect_initializer_source = ordered_initializer
-            .and_then(|body| {
-                let [(binding, _)] = assignments.as_slice() else {
-                    return None;
-                };
-                let span = body.initializer_span()?;
-                let source = index.initialization_source_identities.get(&owner)?;
-                source
-                    .matches(owner, binding, span)
-                    .then_some((source, binding, span))
-            })
-            .or_else(|| {
-                let [(binding, expression)] = assignments.as_slice() else {
-                    return None;
-                };
-                let source = initializer_source?.operation_source(expression)?;
-                source
-                    .matches(owner, binding, source.initializer_span())
-                    .then_some((source, binding, source.initializer_span()))
-            });
-        // Keep the selected result in this owner until publication. Operands
-        // and calls execute once, at their position in the shared local plan.
-        let mut ordered_initializer_result = if let Some(body) = ordered_initializer {
-            let [(binding, _)] = assignments.as_slice() else {
-                unreachable!("ordered root initializer has one assignment");
-            };
-            outcome = self.execute_local_body(
-                body,
-                Context::new(),
-                None,
-                owner,
-                LocalExecutionScope::RootInitializer,
-                Some(RootInitializerIdentity {
-                    owner,
-                    binding: binding.clone(),
-                    initializer_span: body.initializer_span(),
-                }),
-            );
-            Some(SelectedValue {
-                values: std::mem::take(&mut outcome.returns),
-                selection: outcome.return_selection.take(),
-            })
-        } else {
-            None
-        };
-        if ordered_initializer.is_none() {
-            // A source owner is indivisible, but can assign an existing binding
-            // before one of its calls, e.g. `(reader = () => later, host())`.
-            // Join these possible values before the flattened calls. Keep the
-            // previous values and do not mark initialization definite until the
-            // owner finishes; assignments on skipped/later paths are only may
-            // values. A lexical TDZ still blocks publication through that binding.
-            for (id, expression) in assignments {
-                if !needed.contains(id)
-                    || !fact.rebinds.eager.contains(id)
-                    || !(self.inputs.var_bindings.contains(id)
-                        || self.state.world.module.initialized_bindings.contains(id))
-                {
-                    continue;
-                }
-                let values = self.evaluate(expression, &top_env, &top_captures);
-                top_env
-                    .entry(id.clone())
-                    .or_default()
-                    .extend(values.iter().cloned());
-                let possible = self
-                    .state
-                    .world_mut()
-                    .module
-                    .prefix_values
-                    .entry(id.clone())
-                    .or_default();
-                let before = possible.len();
-                possible.extend(values);
-                if possible.len() != before {
-                    self.state.world_mut().revision.bump_prefix();
-                }
-            }
-            // Like callable writes above, top-level property writes are kept in a
-            // separate visitor lane. Applying all of this statement's writes
-            // before its flattened call list may expose a later write early, which
-            // is conservative and avoids missing a callback assigned before an
-            // opaque call in the same statement.
-            let member_writes = &index.top_member_value_writes[fact.ordinal.0];
-            self.apply_member_value_writes(
-                member_writes,
-                &top_env,
-                &top_captures,
-                &BTreeSet::new(),
-                certified_deferred_write,
-            );
-            if !certified_deferred_write {
-                self.promote_callback_result_writes(
-                    &index.top_callback_result_writes[fact.ordinal.0],
-                    &top_env,
-                    &top_captures,
-                    fact.ordinal,
-                    &mut outcome,
-                    &BTreeSet::new(),
-                );
-            }
-            let validated_metadata = prevalidated_metadata.or_else(|| {
-                metadata_application.and_then(|application| {
-                    self.validated_metadata_decoration(application, &top_env, &top_captures)
-                })
-            });
-            if let (Some(application), Some(validated)) = (metadata_application, validated_metadata)
-            {
-                self.summarize_metadata_decoration(
-                    application,
-                    validated,
-                    fact.ordinal,
-                    &mut outcome,
-                );
-            } else {
-                for call in calls {
-                    self.execute_call(call, &top_env, &top_captures, &mut outcome);
-                }
-            }
-            // The fresh-instance proof applies only to this whole top-level
-            // assignment. Nested callable writes owned by the same statement
-            // still take the normal setter fallback when invoked later.
-            if !certified_deferred_write
-                && !index.fresh_instance_field_writes.contains(&fact.ordinal)
-            {
-                self.promote_property_writes(
-                    &index.top_property_writes[fact.ordinal.0],
-                    fact.ordinal,
-                    &mut outcome,
-                );
-            }
-        }
-        let mut fallback = std::mem::take(&mut self.state.fallback_outcome);
-        if fallback.unknown_call {
-            // Every effect only the fallback summary contributed is assumed
-            // by it, whichever path opened the summary.
-            let reason = AssumedEffectReason::FallbackSummary {
-                loss: fallback
-                    .effects
-                    .precision_losses
-                    .first()
-                    .expect("a fallback summary records the loss that opened it")
-                    .reason
-                    .clone(),
-            };
-            outcome.absorb_call_effects(&mut fallback.effects, Some(&reason));
-            outcome.executed_owners.extend(fallback.executed_owners);
-            outcome.unknown_call = true;
-            outcome.inherit_completeness(false, fallback.effects.precision_losses);
-        }
-        if index.opaque_top.contains(&fact.ordinal) {
-            outcome.unsupported(ExecutionOperation::OpaqueExecution, fact.ordinal, DUMMY_SP);
-        }
-        outcome.effects.complete = outcome.complete;
-        outcome.effects.settled_array_elements = settled_array_elements;
-        if !outcome.complete {
-            self.widen_native_effects();
-            self.unsettle_incomplete_reach(fact, &outcome.effects);
-        }
-        outcome.effects.global_object_aliases = global_object_aliases;
-        // A failed runtime path forfeits the prevalidated private-result proof.
-        // Keep the actual execution/effect outcome in either case.
-        if !self
-            .state
-            .world
-            .classes
-            .private_constructor_result_owners
-            .is_empty()
-            && (!outcome.complete || outcome.unknown_call)
-        {
-            let owners = std::mem::take(
-                &mut self
-                    .state
-                    .world_mut()
-                    .classes
-                    .private_constructor_result_owners,
-            );
-            self.observations.clear_record_factory_prototype_premises();
-            self.extend_reachable_owners(owners.into_iter().chain([fact.ordinal]));
-            // The source proof normally makes this unreachable. If an actual
-            // executor path fails, restore the current statement's omitted
-            // callback effects as well as all future reachability roots.
-            let mut restored = Outcome::default();
-            let reason = AssumedEffectReason::PrivateConstructorRestore;
-            for owner in self.state.world.reachability.owners.clone() {
-                self.promote_lazy_owner(owner, fact.ordinal, &mut restored);
-            }
-            outcome.absorb_call_effects(&mut restored.effects, Some(&reason));
-            self.apply_rebind_effects(&outcome.effects.rebinds);
-        }
-        // These are available roots for the remainder of this owner's value
-        // evaluation, independently of the completed prior-effect frontier.
-        let state = &mut *self.state;
-        if !state.world.reachability.unknown_call_seen
-            && let Some(roots) = &mut state.prior_reachability_roots
-        {
-            roots.extend(outcome.executed_owners.iter().copied().filter(|owner| {
-                !state
-                    .world
-                    .classes
-                    .private_constructor_result_owners
-                    .contains(owner)
-            }));
-        }
-        for (id, expression) in assignments {
-            if !needed.contains(id) && initializer_source.is_none() {
-                continue;
-            }
-            let (values, selection) = if let Some(result) = ordered_initializer_result.take() {
-                let selection = result.selection.filter(|selection| {
-                    selection.matches(&result.values)
-                        && outcome.complete
-                        && !outcome.unknown_call
-                        && outcome.effects.precision_losses.is_empty()
-                        && outcome
-                            .root_binding_effect_identity
-                            .as_ref()
-                            .is_some_and(|identity| {
-                                identity.owner == owner
-                                    && identity.binding == *id
-                                    && ordered_initializer.is_some_and(|body| {
-                                        identity.initializer_span == body.initializer_span()
-                                    })
-                            })
-                });
-                // This declaration is reached only on the module's normal
-                // continuation. Unavailable denotes an abrupt alternative of
-                // the initializer, not a value that can be stored in its
-                // lexical cell. Keep the initializer's incomplete outcome and
-                // retain Unavailable when it has no normal result at all.
-                let mut values = result.values;
-                if values.len() > 1 {
-                    values.remove(&AbstractValue::Value(Value::Unavailable));
-                }
-                (values, selection)
-            } else if let Some(source) = initializer_source {
-                let RuntimeValue::Initializer {
-                    values,
-                    evaluated,
-                    operation_coverage,
-                    refusal,
-                } = self.request(RuntimeOperation::EvaluateInitializer {
-                    source: source.clone(),
-                    expression: expression.clone(),
-                    environment: top_env.clone(),
-                    captures: top_captures.clone(),
-                })
-                else {
-                    unreachable!("checked initializer transfers produce initializer results");
-                };
-                evaluated_initializer = evaluated.map(|evaluated| *evaluated);
-                if let Some(coverage) = operation_coverage {
-                    outcome.effect_coverage = *coverage;
-                }
-                initialization_coverage_refusal = initialization_coverage_refusal.or(refusal);
-                (values, None)
-            } else {
-                (self.evaluate(expression, &top_env, &top_captures), None)
-            };
-            // A dead initializer is evaluated for coverage, while the normal
-            // needed-binding policy still owns retained prefix values.
-            if !needed.contains(id) {
-                continue;
-            }
-            if !self.inputs.top_bindings.contains(id) {
-                top_captures
-                    .entry(id.clone())
-                    .or_default()
-                    .extend(values.clone());
-            }
-            top_env
-                .entry(id.clone())
-                .or_default()
-                .extend(values.clone());
-            if self.inputs.top_bindings.contains(id) {
-                self.state
-                    .world_mut()
-                    .module
-                    .prefix_callable_selections
-                    .remove(id);
-                self.state
-                    .world_mut()
-                    .module
-                    .prefix_values
-                    .entry(id.clone())
-                    .or_default()
-                    .extend(values);
-                if let Some(selection) = selection
-                    && selection.matches(&self.state.world.module.prefix_values[id])
-                {
-                    self.state
-                        .world_mut()
-                        .module
-                        .prefix_callable_selections
-                        .insert(id.clone(), selection);
-                }
-                self.state.world_mut().revision.bump_prefix();
-            }
-        }
-        self.state.world_mut().module.initialized_bindings.extend(
-            index.top_definite_initializers[fact.ordinal.0]
-                .iter()
-                .cloned(),
-        );
-        for expression in &index.top_exported_values[fact.ordinal.0] {
-            let values = self.evaluate(expression, &top_env, &top_captures);
-            self.state
-                .world_mut()
-                .publication
-                .exported_runtime_values
-                .extend(values);
-            self.state.world_mut().revision.bump_prefix();
-        }
-        if !self
-            .state
-            .world
-            .classes
-            .private_constructor_result_owners
-            .is_empty()
-            && let Some((factory, span)) = annotated_record_factory
-            && !self
-                .observations
-                .record_factory_prototype_premises()
-                .is_empty()
-        {
-            outcome.effects.local_record_factory_uses.push(
-                crate::reports::schema::LocalRecordFactoryUse {
-                    factory_binding: factory.0.to_string(),
-                    prototype_properties: self
-                        .observations
-                        .record_factory_prototype_premises()
-                        .properties(),
-                    lexical_statement_ordinal: fact.ordinal,
-                    source_location: None,
-                    span,
-                },
-            );
-        }
-        outcome
-            .effects
-            .local_record_factory_rejections
-            .extend(record_factory_rejection);
-        // The certificate is minted from the source proof above only after
-        // the ordinary executor has completed this exact initializer without
-        // falling back. The settled purity projection consumes it to drop
-        // only the impure-callee effect at this call site.
-        outcome.effects.callback_factory_uses = std::mem::take(&mut self.state.proof_uses);
-        outcome.effects.returned_record_uses =
-            std::mem::take(&mut self.state.returned_record_proof_uses);
-        outcome.effects.author_host_contract_uses =
-            std::mem::take(&mut self.state.author_host_contract_uses);
-        self.observations.drain_reports_into(&mut outcome.effects);
-        if !self
-            .state
-            .world
-            .classes
-            .private_constructor_result_owners
-            .is_empty()
-            && outcome.complete
-            && !outcome.unknown_call
-            && outcome.effects.precision_losses.is_empty()
-            && outcome.effects.uninitialized_reads.is_empty()
-            && let Some(proof) = checked_local_constructor_factory
-        {
-            let dependencies = self.observations.dependencies().clone();
-            outcome.effects.local_record_factory_purity =
-                Some(crate::facts::LocalRecordFactoryPurityCertificate {
-                    call_span: proof.call_span,
-                    checked_owners: proof.checked_owners,
-                    dependencies,
-                });
-        }
-        self.state.world_mut().module.top_env = top_env;
-        self.state.world_mut().module.top_captures = top_captures;
-        self.clear_invocation_memos();
-        self.state.invocation_count = 0;
-        self.state.fallback_outcome = Outcome::default();
-        self.state.fallback_callback_sizes = None;
-        self.state.fallback_local_owners.clear();
-        self.state.fallback_local_deferred.clear();
-        for key in std::mem::take(&mut self.state.statement_invoked_callables) {
-            if let Some(cells) = inputs.callable_heap_contents.get(&key) {
-                outcome.effects.heap_contents.extend(cells);
-            }
-        }
-        outcome.effects.purity_disagreement = self
-            .queries
-            .complete_owner_purity(owner, outcome.effects.local_record_factory_purity.as_ref());
-        let mut prior_effect_owners = outcome.executed_owners.clone();
-        prior_effect_owners.retain(|owner| {
-            !self
-                .state
-                .world
-                .classes
-                .private_constructor_result_owners
-                .contains(owner)
-        });
-        // Ordered execution records the root too; the completed private-result proof covers it.
-        if outcome.effects.local_record_factory_purity.is_some() {
-            prior_effect_owners.remove(&fact.ordinal);
-        }
-        if !self.queries.completed_statement_is_pure(fact.ordinal)
-            && self
-                .state
-                .world
-                .classes
-                .private_constructor_result_owners
-                .is_empty()
-        {
-            prior_effect_owners.insert(fact.ordinal);
-        }
-        self.state.prior_effect_owners.extend(prior_effect_owners);
-        self.state.statement_executed_owners.clear();
-        self.state
-            .world_mut()
-            .publication
-            .returned_callback_owners
-            .clear();
-        self.state
-            .world_mut()
-            .classes
-            .private_constructor_result_owners
-            .clear();
-        self.observations.clear_record_factory_prototype_premises();
-        self.state.checking_record_factory_contract = false;
-        self.state.current_top_owner = None;
-        outcome
-            .effects
-            .evaluation_effects
-            .extend(&self.evaluation_effects);
-        outcome
-            .effects
-            .evaluation_effects
-            .depend_on(&self.state.world.prerequisites);
-        outcome
-            .effects
-            .evaluation_effects
-            .depend_on(&self.queries.dependencies());
-        let initializer_result_unproved = evaluated_initializer.is_none();
-        if outcome.complete
-            && !outcome.unknown_call
-            && outcome.effects.precision_losses.is_empty()
-            && outcome.effects.uninitialized_reads.is_empty()
-            && let (Some(source), Some(evaluated)) = (initializer_source, evaluated_initializer)
-        {
-            outcome.effects.completed_initialization = source.complete(
-                evaluated,
-                owner,
-                &self.state.world.module.initialized_bindings,
-            );
-        }
-        if outcome.effects.completed_initialization.is_none()
-            && outcome.complete
-            && !outcome.unknown_call
-            && outcome.effects.precision_losses.is_empty()
-            && outcome.effects.uninitialized_reads.is_empty()
-            && let Some((source, binding, span)) = effect_initializer_source
-        {
-            outcome.effects.completed_initialization = CompletedInitialization::from_root_effects(
-                source,
-                owner,
-                binding,
-                span,
-                &self.state.world.module.initialized_bindings,
-                &outcome.effect_coverage,
-            );
-        }
-        // A private declaration whose every operation the ledger covers ran
-        // no user code and exposed no capability: its own callables and the
-        // bindings it read into its result stay as unpublished as under a
-        // direct function declaration, provided the result is a literal of
-        // this statement or a primitive, so every stored callable is reached
-        // through its tracked own-property surface. A callable retained by an
-        // opaque carrier (a descriptor map, a native collection) is reached
-        // only through the roots and keeps them. Only roots this statement
-        // added are withdrawn, and only while no opaque call consumed them.
-        if !provisional_roots.is_empty()
-            && !self.state.world.reachability.unknown_call_seen
-            && !inputs.exported_owners.contains(&fact.ordinal)
-            && outcome.complete
-            && !outcome.unknown_call
-            && outcome.executed_owners.is_empty()
-            && outcome.effects.precision_losses.is_empty()
-            && outcome.effect_coverage.normal_dependencies().is_some()
-            && let [(binding, _)] = assignments.as_slice()
-            && self.state.world.module.prefix_values.get(binding).is_some_and(|values| {
-                !values.is_empty()
-                    && values.iter().all(|value| {
-                        value.is_primitive()
-                            || matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                                if self.statement_literal(*object))
-                    })
-            })
-            && let Some(roots) = &mut self.state.prior_reachability_roots
-        {
-            for root in &provisional_roots {
-                roots.remove(root);
-            }
-        }
-        if outcome.effects.completed_initialization.is_none() {
-            if initialization_coverage_refusal.is_none() {
-                initialization_coverage_refusal = Some(if outcome.unknown_call {
-                    OwnerInitializationCoverageRefusalReason::UnknownCall
-                } else if !outcome.effects.precision_losses.is_empty() {
-                    OwnerInitializationCoverageRefusalReason::PrecisionLoss
-                } else if !outcome.effects.uninitialized_reads.is_empty() {
-                    OwnerInitializationCoverageRefusalReason::UninitializedRead
-                } else if !outcome.complete {
-                    OwnerInitializationCoverageRefusalReason::IncompleteExecution
-                } else if initializer_result_unproved {
-                    OwnerInitializationCoverageRefusalReason::InitializerResultUnproved
-                } else {
-                    OwnerInitializationCoverageRefusalReason::BindingNotInitialized
-                });
-            }
-            outcome.effects.initialization_coverage_refusal = initialization_coverage_refusal;
-        }
-        if let Some(identity) = outcome.root_binding_effect_identity.take() {
-            let expected_root_calls: BTreeSet<_> = calls
-                .iter()
-                .filter(|call| call.kind == CallKind::Call)
-                .map(|call| (call.span.lo.0, call.span.hi.0))
-                .collect();
-            let receipt = effect_initializer_source.and_then(|(source, binding, span)| {
-                (identity.owner == owner
-                    && identity.binding == *binding
-                    && identity.initializer_span == Some(span)
-                    && source.matches(owner, binding, span)
-                    && self.state.world.module.initialized_bindings.contains(binding)
-                    // A later fallback/precision path may be absorbed after
-                    // the ordered kernel returned an apparently covered
-                    // fragment. Whole-owner lexical authority requires the
-                    // final execution outcome, not just that fragment, to
-                    // remain fully settled.
-                    && outcome.complete
-                    && !outcome.unknown_call
-                    && outcome.effects.precision_losses.is_empty()
-                    && outcome.effects.uninitialized_reads.is_empty()
-                    && outcome.effects.fallback_only.reads.is_empty()
-                    && outcome.effects.fallback_only.rebinds.is_empty())
-                .then(|| {
-                    outcome
-                        .effect_coverage
-                        .seal_lexical_binding_effects(identity.clone(), &expected_root_calls)
-                })
-                .flatten()
-            });
-            outcome.effects.binding_effect_coverage =
-                BindingEffectCoverage::OrderedRootInitializer {
-                    identity,
-                    receipt: receipt.map(Box::new),
-                };
-        } else if matches!(
-            &outcome.effects.binding_effect_coverage,
-            BindingEffectCoverage::Unclassified
-        ) {
-            // All executions outside the selected ordered-root path retain
-            // the explicitly named transitional authority. A selected root
-            // was marked before its first operation and can never regain this
-            // bool-based path if its receipt or identity is lost.
-            outcome.effects.binding_effect_coverage = BindingEffectCoverage::LegacyExecution;
-        }
-        outcome.effects
     }
 }
