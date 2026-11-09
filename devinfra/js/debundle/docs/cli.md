@@ -290,13 +290,14 @@ The mutating verbs (`bindings assign`, `bindings unassign`,
 one-line verdict (`<action>` plus move/file counts). Under a JSON format
 each verb prints **one outcome object** sharing a common schema core:
 
-| Field           | Values                                                                                                                             |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `verb`          | `assign` \| `unassign` \| `rename` \| `apply` \| `merge` \| `delete`                                                               |
-| `action`        | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                      |
-| `gate`          | `passed` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only |
-| `files_written` | Files written (or, under `--dry-run`, that would be written)                                                                       |
-| `files_deleted` | Files deleted (or, under `--dry-run`, that would be deleted)                                                                       |
+| Field                   | Values                                                                                                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verb`                  | `assign` \| `unassign` \| `rename` \| `apply` \| `merge` \| `delete`                                                                                                                           |
+| `action`                | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                                                                                  |
+| `gate`                  | `passed` \| `claims_checked` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only; see "Ownership-edit assessment states" |
+| `needs_full_assessment` | `true` when an ownership edit passed only the graph-backed checks (no `--analysis`); omitted otherwise                                                                                         |
+| `files_written`         | Files written (or, under `--dry-run`, that would be written)                                                                                                                                   |
+| `files_deleted`         | Files deleted (or, under `--dry-run`, that would be deleted)                                                                                                                                   |
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `identity` / `old_readable` /
@@ -480,9 +481,10 @@ name-collision detection; comment edits run shape preservation only (they take
 `--dry-run` but no `--no-verify`). If validation fails the command refuses
 with a structured diagnostic and **does not modify any file**.
 
-For these edit commands, a JSON result of `gate: "passed"` means the
-post-edit source-claim, assignment, and realizability checks passed. It does
-not mean the full reconstruction was accepted: `debundle run` remains the
+For these edit commands, a successful JSON result means the post-edit
+source-claim, assignment, and realizability checks passed. Neither
+`claims_checked` nor `passed` means the full reconstruction was accepted:
+`debundle run` remains the
 end-to-end acceptance path and checks vendor boundaries, exports,
 reconstruction, and browser planning. The source-claim check recognizes named,
 default, and namespace imports as import specifiers, while module emission
@@ -504,6 +506,23 @@ optional pre-check. There is no `run --no-verify` — if you want the pipeline
 to emit JS regardless of the gate, fix the spec first.
 
 Read-only commands take neither flag — they have no side effects.
+
+### Ownership-edit assessment states
+
+The ownership edits (`bindings assign`, `bindings unassign`, `modules apply`,
+`modules refine`, `modules merge`, `modules delete`) report these
+validated states:
+
+| `gate`           | `needs_full_assessment` | Meaning                                                                                                                                             |
+| ---------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claims_checked` | `true`                  | Graph-only: the post-edit source-claim, assignment, and legacy realizability + atom-split checks passed; no full candidate assessment ran.          |
+| `claims_checked` | omitted                 | `--analysis` assessed the full candidate (a dry run), but its placement is not mappable for canonical emission; see `effect_relocation_assessment`. |
+| `passed`         | omitted                 | The same graph checks passed, and the full candidate assessment (`--analysis`) found the candidate placement mappable for canonical emission.       |
+
+Graph-only writes are still permitted: the legacy edit gate remains the
+authority that vetoes an edit, and `--analysis` stays opt-in. A graph-only
+write (not `--dry-run`) prints one stderr line warning that it was not
+assessed against the full candidate.
 
 ## Running the pipeline
 
@@ -1097,7 +1116,9 @@ structural placement blockers, and `legacy_gate_ordering_veto` makes the
 remaining semantic-order gate veto explicit. Unresolved typed structural
 checks keep the overall result incomplete. This does not change the legacy edit
 gate or establish vendor replacement, privacy or singleton guarantees. Without
-`--analysis`, the normal graph-backed edit path remains unchanged.
+`--analysis`, the normal graph-backed edit path remains unchanged and reports
+`gate: claims_checked` with `needs_full_assessment: true` (see "Ownership-edit
+assessment states").
 
 ### `bindings assign --batch` JSON format
 

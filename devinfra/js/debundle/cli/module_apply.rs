@@ -446,13 +446,14 @@ pub fn run_modules_apply(
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &deleted, args.dry_run)?;
     let out = ApplyOutcome {
-        outcome: MutationOutcome {
-            verb: "apply",
-            action: if args.dry_run { "dry-run" } else { "applied" },
-            gate: gate.outcome(),
+        outcome: MutationOutcome::ownership_edit(
+            "apply",
+            if args.dry_run { "dry-run" } else { "applied" },
+            gate.outcome(),
+            effect_relocation_assessment.as_ref(),
             files_written,
             files_deleted,
-        },
+        ),
         proposals_applied: requests.len(),
         bindings_claimed,
         selector_reviews,
@@ -461,6 +462,7 @@ pub fn run_modules_apply(
             .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
         effect_relocation_assessment,
     };
+    out.outcome.warn_if_unassessed_write();
     match OutputFormat::resolve(args.format) {
         OutputFormat::Text => {
             println!(

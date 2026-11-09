@@ -41,7 +41,7 @@ fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
         .collect();
     let mut preview = args.to_vec();
     preview.push("--dry-run");
-    assert_eq!(fixture.json(&preview)["gate"], "passed");
+    assert_eq!(fixture.json(&preview)["gate"], "claims_checked");
     for (path, bytes) in paths.iter().zip(before) {
         assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
     }

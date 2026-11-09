@@ -4,7 +4,8 @@
 //! Every mutating verb prints one [`MutationOutcome`]-carrying object
 //! on stdout when a JSON format is selected (explicit `--format
 //! json|ndjson`, or stdout is a pipe): the shared core is
-//! `verb` / `action` / `gate` / `files_written` / `files_deleted`;
+//! `verb` / `action` / `gate` / `needs_full_assessment` (ownership edits
+//! only) / `files_written` / `files_deleted`;
 //! verb-specific fields (`moves_applied`, `binding`, …) flatten in
 //! alongside it. When the realizability gate refuses the edit, the
 //! verbs instead print a [`GateRejectionOutcome`] (`action:
@@ -25,9 +26,14 @@ use crate::edit_gate::{GateRejection, GateRejectionReport};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateOutcome {
-    /// The realizability + atom-split gate ran against the post-edit
-    /// spec and passed.
+    /// The graph-backed claim checks and legacy realizability + atom-split
+    /// gate passed, and the full candidate assessment (`--analysis`) found
+    /// the candidate placement mappable for canonical emission.
     Passed,
+    /// The graph-backed claim checks and legacy realizability + atom-split
+    /// gate passed; the full candidate was not assessed (or its assessment
+    /// did not accept the placement).
+    ClaimsChecked,
     /// Name-collision validation only (no graph-backed gate for this
     /// verb or edit).
     NamesOnly,
@@ -36,6 +42,25 @@ pub enum GateOutcome {
     /// No gate needed: the edit cannot change the assignment (e.g.
     /// deleting structurally empty modules, an empty batch).
     NotRequired,
+}
+
+impl GateOutcome {
+    /// Label for an ownership edit whose graph checks produced `self`:
+    /// `ClaimsChecked` becomes `Passed` only when the full candidate
+    /// assessment ran and its placement is mappable for canonical emission.
+    pub fn with_candidate_assessment(
+        self,
+        assessment: Option<&gate::CandidateRelocationAssessmentReport>,
+    ) -> Self {
+        match assessment {
+            Some(assessment)
+                if self == Self::ClaimsChecked && assessment.placement.emission_mappable =>
+            {
+                Self::Passed
+            }
+            _ => self,
+        }
+    }
 }
 
 /// The shared outcome core. Verb-specific outcome structs embed this
@@ -49,10 +74,50 @@ pub struct MutationOutcome {
     /// `applied` | `dry-run` | `noop` | `unchanged`.
     pub action: &'static str,
     pub gate: GateOutcome,
+    /// The edit passed only graph-backed claim checks; no full candidate
+    /// assessment (`--analysis`) ran. Such writes are still permitted while
+    /// the legacy gate is authoritative.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub needs_full_assessment: bool,
     /// Files written (or, under `--dry-run`, that would be written).
     pub files_written: Vec<String>,
     /// Files deleted (or, under `--dry-run`, that would be deleted).
     pub files_deleted: Vec<String>,
+}
+
+impl MutationOutcome {
+    /// The shared core for an ownership edit (`assign`, `unassign`, `apply`,
+    /// `refine`, `merge`, `delete`). `checks` is the label the graph-backed
+    /// checks produced; `assessment` is the full candidate assessment, when
+    /// `--analysis` supplied one.
+    pub fn ownership_edit(
+        verb: &'static str,
+        action: &'static str,
+        checks: GateOutcome,
+        assessment: Option<&gate::CandidateRelocationAssessmentReport>,
+        files_written: Vec<String>,
+        files_deleted: Vec<String>,
+    ) -> Self {
+        Self {
+            verb,
+            action,
+            gate: checks.with_candidate_assessment(assessment),
+            needs_full_assessment: checks == GateOutcome::ClaimsChecked && assessment.is_none(),
+            files_written,
+            files_deleted,
+        }
+    }
+
+    /// Warn on stderr when this outcome wrote ownership changes that only
+    /// graph-backed claim checks covered.
+    pub fn warn_if_unassessed_write(&self) {
+        if self.needs_full_assessment && self.action == "applied" {
+            eprintln!(
+                "warning: {}: write passed graph claim checks but was not assessed against the full candidate (needs_full_assessment; preview with --dry-run --analysis)",
+                self.verb
+            );
+        }
+    }
 }
 
 /// Stdout envelope for a realizability-gate rejection. `action:

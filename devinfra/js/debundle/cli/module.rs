@@ -326,20 +326,22 @@ pub fn run_merge(
     } else {
         "applied"
     };
-    let outcome = MutationOutcome {
-        verb: "merge",
+    let outcome = MutationOutcome::ownership_edit(
+        "merge",
         action,
-        gate: gate.outcome(),
-        files_written: plans
+        gate.outcome(),
+        effect_relocation_assessment.as_ref(),
+        plans
             .iter()
             .map(|p| p.summary.target.display().to_string())
             .collect(),
-        files_deleted: plans
+        plans
             .iter()
             .flat_map(|p| &p.summary.merged_sources)
             .map(|p| p.display().to_string())
             .collect(),
-    };
+    );
+    outcome.warn_if_unassessed_write();
     match OutputFormat::resolve(merge.edit.format) {
         OutputFormat::Text => {
             if is_batch {
@@ -826,23 +828,25 @@ pub fn run_delete(
 
     let summary = delete_modules(delete_paths, args.edit.dry_run)?;
     let delete_outcome = DeleteOutcome {
-        outcome: MutationOutcome {
-            verb: "delete",
-            action: if summary.dry_run {
+        outcome: MutationOutcome::ownership_edit(
+            "delete",
+            if summary.dry_run {
                 "dry-run"
             } else {
                 "applied"
             },
-            gate: gate_outcome,
-            files_written: Vec::new(),
-            files_deleted: summary
+            gate_outcome,
+            effect_relocation_assessment.as_ref(),
+            Vec::new(),
+            summary
                 .deleted
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect(),
-        },
+        ),
         effect_relocation_assessment,
     };
+    delete_outcome.outcome.warn_if_unassessed_write();
     match OutputFormat::resolve(args.edit.format) {
         OutputFormat::Text => println!("{}", summary.summary_line()),
         format => print_outcome_json(&delete_outcome, format)?,
