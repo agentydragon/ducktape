@@ -33,7 +33,6 @@ go_test(
     srcs = [
         "client_tls_test.go",
         "credentials_test.go",
-        "egress_proxy_client_test.go",
         "http_expiry_test.go",
         "http_server_expiry_test.go",
         "security_test.go",

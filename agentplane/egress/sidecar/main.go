@@ -115,7 +115,9 @@ func newProxyHop(config proxyConfig) (*proxyHop, error) {
 			transport = tlsProxyTransport{security: security, svid: &client}
 		case kubernetesBearerProxyAuth:
 			var err error
-			security, err = (environment_runtime_transport.Config{CAFile: configured.CAFile}).ProxyServerTLSConfig()
+			security, err = (environment_runtime_transport.ClientTLS{
+				CAFile: configured.CAFile, ServerURI: environment_runtime_transport.EgressProxyURI,
+			}).TLSConfig()
 			if err != nil {
 				return nil, fmt.Errorf("configure bearer proxy TLS: %w", err)
 			}
