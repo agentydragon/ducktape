@@ -221,5 +221,16 @@
         "download_hash_verified": true
       }
     ]
+  },
+  "post_tag_repair_validation": {
+    "invocation_id": "e77e85c9-4306-4e40-8593-6b5e0cb3a54c",
+    "source_commit": "d2e6f15c4af683a87a5b7dfc10c7d3758d1c2aa6",
+    "execution_start_utc": "2026-11-09T11:29:20.317538Z",
+    "execution_end_utc": "2026-11-09T11:39:37.692749Z",
+    "result": "FAILED during service bootstrap; VM scenarios did not execute",
+    "boundary": "Gateway local-chain verification and service probes rejected the certificate chain against test-k3s-runner-root with an ECDSA verification error.",
+    "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29/56213",
+    "test_log_sha256": "37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29",
+    "conclusion": "Does not validate guest boot after the tag repair or diagnose the original early-kernel stop."
   }
 }
