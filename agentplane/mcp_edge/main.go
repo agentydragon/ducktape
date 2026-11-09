@@ -112,7 +112,20 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	if err != nil {
 		return err
 	}
-	gate := api.NewGate(api.GateOptions{Operators: operators})
+	gate := api.NewGate(api.GateOptions{
+		Operators: operators,
+		AdditionalOperatorMethods: []string{
+			connection_servicepb.ConnectionService_ListCallerServiceAccounts_FullMethodName,
+			connection_servicepb.ConnectionService_ListConnections_FullMethodName,
+			connection_servicepb.ConnectionService_GetConnection_FullMethodName,
+			connection_servicepb.ConnectionService_UpdateConnection_FullMethodName,
+			connection_servicepb.ConnectionService_RebindConnection_FullMethodName,
+			connection_servicepb.ConnectionService_UnbindConnection_FullMethodName,
+			connection_servicepb.ConnectionService_WatchConnections_FullMethodName,
+			connection_servicepb.ConnectionService_PreviewConnectionEnrollment_FullMethodName,
+			connection_servicepb.ConnectionService_DecideConnectionEnrollment_FullMethodName,
+		},
+	})
 	connectionStore := connections.NewStore(db, callers)
 	grpcServer := grpc.NewServer(observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
