@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -276,7 +277,7 @@ func TestRenderVMRejectsVirtiofsTagsOverQEMULimit(t *testing.T) {
 	template.Spec.StateVolume.Name = strings.Repeat("s", maxVirtiofsTagBytes-1) + "é"
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName}}
 
-	vm, blocked := renderVM(sandbox, template, "test-credential")
+	vm, blocked := renderVM(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runnerCredentialTestSecret})
 	if vm != nil {
 		t.Fatal("rendered a VM with an overlength virtiofs tag")
 	}
