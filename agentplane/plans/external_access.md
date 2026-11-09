@@ -40,26 +40,23 @@ The common case is a mix, split by operation class rather than by system:
 
 - **Reads direct, mutations brokered.** A GET allowlist or read-only RBAC covers the high-volume,
   low-stakes traffic; writes go through the broker with approval.
-- **Broker mints delegated grants instead of executing calls.** The former Haku Console grants
-  system did this through `create_grant`: one approval yielded standing authority for exact origins
-  or Kubernetes namespaces and verbs. That integration has been retired; a replacement broker and
-  lifecycle owner would need to be selected before this pattern is available again.
+- **Broker mints delegated grants instead of executing calls.** One approval yields standing
+  authority for exact origins or Kubernetes namespaces and verbs. No broker does this today; for
+  Kubernetes the planned path is an app-approved expiring `ServiceAccountGrant` or
+  `ManagedServiceAccount` ([identity plan](identity_and_kubernetes_accounts.md), `APP_IDENTITIES_UI`).
 - **Agent-requested grants.** The agent asks for additional authority on its own identity, the
   operator approves once, and the target enforces from then on. This keeps the apiserver's
   authorization semantics where they belong; the risk is authority issued that cannot be revoked
   in time. See [the candidate revocation gate](#candidate-revocation-gate-for-minted-grants).
 - **Broker refuses what delegation already covers.** When the caller's own identity covers a
   request, the brokered path denies with a pointer to the direct path, so the privileged credential
-  is never spent where a scoped one works. Haku Console's Kubernetes redundancy auto-deny did this
-  (removed in #8877); the Action Service has no equivalent yet
+  is never spent where a scoped one works. The Action Service has no equivalent yet
   ([TODO](../action_service/TODO.md#refuse-an-action-the-callers-own-permissions-already-cover)).
 
-The Sandbox SA arrangement below describes current access, not a decision that future Session
-identities must be Kubernetes SAs. Compare SA-backed identity and independent Agentplane principals
-with verified workload-account mappings in
-[`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
-and [`AGENT_PRINCIPAL_MODEL_DESIGN`](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities).
-The initial Sandbox still keeps one fixed SA throughout its lifetime.
+The Sandbox SA arrangement below is current access. The
+[identity plan](identity_and_kubernetes_accounts.md) replaces it at `IDENTITY_CUTOVER`: an agent is
+an `Identity` with no ServiceAccount by default, and reaches Kubernetes only by the proxy
+impersonating an account its rules let it use.
 
 ## Kubernetes Sandbox access decisions
 
@@ -303,6 +300,5 @@ selected by this plan.
 
 - Whether raw direct traffic should be mirrored into the ledger from fence logs, or stay separate.
 - Per-agent identity provisioning per system: what it costs to mint, rotate, and revoke, and which
-  active products already cover it. Haku Console grants previously covered only a subset of these
-  cases and are retired.
+  active products already cover it.
 - Which of the unassessed systems have RBAC worth delegating to.
