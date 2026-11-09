@@ -101,7 +101,6 @@ def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[s
         .env_value(chart, "test-database-url"),
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=env.namespace, name="app")],
-        act_as_kubernetes_accounts=True,
         placement=None,
         registry_secret_name=None,
     ).add_platform_resources()

@@ -1571,6 +1571,10 @@ data:
       - agentplane-staging/app
     projected_token_audiences:
       - https://localhost:7445
+    local_api_server:
+      host: kubernetes.default.svc.cluster.local
+      port: 443
+      token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
     tls_passthrough_targets:
       - egress-admin.agentplane-staging.svc.cluster.local:8081
       - history-service.agentplane-staging.svc.cluster.local:8080
