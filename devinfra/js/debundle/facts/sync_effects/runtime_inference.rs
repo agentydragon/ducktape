@@ -1,17 +1,17 @@
 //! Position-specific execution facts. A later source prefix consumes the
 //! preceding prefix's settled state and never changes that earlier state.
 
-use super::super::allocation_transfer::AllocationJudgment;
-use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::kernel::frame::{CallableSelection, EvaluatedCallee};
-use super::super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
-use super::super::property_inference::OwnPropertyProof;
-use super::super::value_model::{CapturedContext, Context, ValueExpr, Values};
-use super::Call;
+use super::allocation_transfer::AllocationJudgment;
+use super::effect_coverage::EffectCoverageFragment;
+use super::execution_index::Call;
 use super::interpreter::{ExecutionInputs, ExecutionState, Executor, Outcome, OwnPropertyQuery};
+use super::kernel::frame::{CallableSelection, EvaluatedCallee};
+use super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
+use super::property_inference::OwnPropertyProof;
 use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
+use super::value_model::{CapturedContext, Context, ValueExpr, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::OrderedCallAdmissionRefusal;
 use crate::facts::evaluation_effects::EvaluationEffects;
@@ -556,7 +556,7 @@ impl RuntimeRules<'_, '_> {
                 };
                 let covered_operation = operation_source
                     && !values.is_empty()
-                    && !values.contains(&super::super::value_model::AbstractValue::Value(
+                    && !values.contains(&super::value_model::AbstractValue::Value(
                         crate::facts::abstract_domain::value::Value::Unavailable,
                     ))
                     && operation_coverage

@@ -14,8 +14,8 @@ use crate::facts::abstract_domain::value::{Kind, Value};
 pub(crate) struct HeapContentProofs<'a> {
     pub local_class: &'a LocalClassHeapProof,
     pub set_iterable: &'a SetIterableProof,
-    pub fresh_freeze: &'a sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
-    pub native_reads: &'a sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
+    pub fresh_freeze: &'a sync_effects::interpreter::FreshRecordFreezeHeapProof,
+    pub native_reads: &'a sync_effects::interpreter::PreparedSynchronousCallIndex,
     pub native_facts: &'a ValidatedNativeOperationFacts,
 }
 
@@ -158,9 +158,8 @@ struct ArrayContentCollector<'a> {
     statement_owner: source_identity::SourceUnitOrdinal,
     local_class_heap_proof: &'a LocalClassHeapProof,
     set_iterable_proof: &'a SetIterableProof,
-    fresh_freeze_proof: &'a sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
-    native_reads:
-        &'a super::sync_effects::execution_index::interpreter::PreparedSynchronousCallIndex,
+    fresh_freeze_proof: &'a sync_effects::interpreter::FreshRecordFreezeHeapProof,
+    native_reads: &'a super::sync_effects::interpreter::PreparedSynchronousCallIndex,
     native_facts: &'a ValidatedNativeOperationFacts,
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,

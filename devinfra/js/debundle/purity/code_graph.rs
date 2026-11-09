@@ -241,7 +241,7 @@ impl ChunkCodeGraph {
             dynamic_scope,
         );
         let prepared_sync_index =
-            crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
+            crate::facts::sync_effects::interpreter::prepare_synchronous_call_index(
                 body,
                 &value_flow,
                 &crate::analysis_inputs::AnalysisInputs::default(),
