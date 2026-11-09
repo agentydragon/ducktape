@@ -2157,7 +2157,7 @@ pass 2's simulator and pass. The simulator and the emitter share
 ONE ordering implementation — `esm_import_order::EsmImportOrder`,
 built from the canonical `ChunkConstrainingEdgeSet` — so the
 import order the gate simulates is structurally the order
-`lowering::lower_chunk` emits: the entry's import list and every
+`lowering::lower::prepare_candidate_emission_plan` emits: the entry's import list and every
 module's merged intra-chunk import list (cross-module binding
 imports, phantom side-effect imports, and the residual-entry
 import, interleaved by one sort) come from the same two sort
@@ -2637,14 +2637,14 @@ resulting DFS post-order is `L`. ∎
 above) computes `L` from the constraining-edge subgraph's toposort,
 reversed within each `I ∪ S` SCC so that the cycle dependent is
 imported first and DFS unwinds through the dependency.
-`lowering::lower_chunk` sorts entry's emitted `import` directives
+`lowering::lower::prepare_candidate_emission_plan` sorts entry's emitted `import` directives
 with `sort_entry_imports` and every module's merged intra-chunk
 import list with `sort_module_imports`; the realizability gate's
 evaluation simulator applies the same two sorts to its DFS neighbor
 order, so the simulated linker order and the emitted one cannot
 diverge. The validator rejects any spec the primitive's tightened
 clause-3 rule does not accept, so every spec the materializer
-reaches `lower_chunk` for has an `L` Lemma 2 can realize.
+reaches `prepare_candidate_emission_plan` for has an `L` Lemma 2 can realize.
 
 The remaining principled gap is the `(at-init forward, lazy back)`
 shape **where entry itself is a cycle member**. Lemma 2's
@@ -3498,9 +3498,11 @@ validation, and writing:
   facts, and resolve selectors against that input syntax. One read-only
   `VendorResolutionPlan` resolves and validates replacement marks, boundary
   mappings, package targets, and input-space consumer shapes.
-- **Reconstruct.** Plan assignment and linkage, lower selected syntax, then apply
-  cross-chunk naming, pass-through directive rewrites, vendor residual stripping,
-  and dead import/export pruning. All construction paths consult the same vendor
+- **Reconstruct.** Plan assignment and linkage, prepare each chunk's exact
+  entry and module bodies, then emit them. A `CandidateEmissionDraft` owns the
+  emitted files and alone runs cross-chunk naming, pass-through directive
+  rewrites, vendor residual stripping, and dead import/export pruning, in that
+  order. All construction paths consult the same vendor
   oracle. Fully swapped chunks are excluded from emission; replacement wrappers
   and facades remain planned outputs. For browser output, prepare the HTML entry
   and preload targets, bootstrap, rewritten HTML, and asset destinations before
@@ -3522,7 +3524,7 @@ validation, and writing:
 
 Preparation returns `SourceProgram`, which owns prepared chunks and their
 matching indexes. Resolution and vendor planning borrow it immutably. Lowering
-consumes its source bundle; a pass-through run instead converts it directly to
+consumes its source bundle; a pass-through draft instead converts it directly to
 `EmissionFiles`, reusing the indexes without rebuilding them. The mutable indexed
 file container is private to these phase types.
 
@@ -3580,7 +3582,8 @@ not rerun realizability or source analysis.
 `EmissionFiles` owns reconstructed syntax while body transformations are still
 allowed. Its output-path indexes are built once after lowering changes entry and
 module paths, then retained across body-only passes behind an indexed-layout
-check. Final validation consumes these files and the vendor plan; writers obtain
+check. Final validation consumes the finalized draft, which carries these files and
+the vendor plan; writers obtain
 both files and full-swap exclusions from the resulting `ValidatedPlan`. No disk
 reparse or splice back into prepared source occurs. `EmissionFiles` currently
 uses `ChunkBundle` internally for existing transformation helpers; phase ownership
@@ -4204,9 +4207,12 @@ returns the shared inputs; `module_quotient()` and `module_quotient_sccs()` expo
 the derived module graph. `ValidatedAssignment::assignment_analysis()` retains
 the accepted analysis while lowering projects its emission placement.
 
-`AssignmentAnalysis::validate_for_emission` returns a `ValidatedAssignment` only
-when atomic-group, schedule, and cross-destination rebinding checks pass. Lowering
-requires this immutable borrow of the checked assignment. Assignment inputs and
+`CandidatePreflight::prepare` computes the realizability validation, emitted
+order, and structural placement of one immutable assignment once; its
+`CandidateEvaluation` retains that validation beside the diagnostic sweeps and
+yields a `ValidatedAssignment` only when atomic-group, schedule, and
+cross-destination rebinding checks pass. Lowering requires this immutable borrow
+of the checked assignment. Assignment inputs and
 derived graph views are private and exposed only through immutable accessors, so
 callers cannot change the assignment independently of its cached import order or
 quotient. Rejection reports remain

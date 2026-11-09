@@ -9,14 +9,14 @@
 
 use source_identity::ChunkId;
 use std::collections::BTreeSet;
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
 use artifact::EmissionFiles;
 use artifact::reports::write_json;
-use serde::Serialize;
+use gate::{ChunkGateRejection, UnmatchedSpecClaim};
+use lowering::FinalizedCandidateEmissionDraft;
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     VendorResolutionPlan, VendorSwapsReport, validate_partial_swap_consumers,
@@ -47,68 +47,6 @@ impl VendorManifestOutput {
     }
 }
 
-/// A `define_logical_module` member whose `binding.name` did not
-/// resolve to a top-level declaration in the chunk. Collected across chunks
-/// and rejected at final validation before accepted output is written.
-#[derive(Debug, Clone, Serialize)]
-pub struct UnmatchedSpecClaim {
-    pub chunk_id: String,
-    /// Claiming module, by canonical [`spec::ModulePath`].
-    pub module_path: spec::ModulePath,
-    pub binding_name: String,
-    pub export_name: String,
-}
-
-/// Which realizability-gate check rejected a chunk's assignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GateVerdict {
-    /// Members of one atomic group were claimed by different modules.
-    AtomicGroupConflicts { count: usize },
-    /// Module-quotient SCCs with at-init / side-effect edges between members.
-    UnrealizableCycles { count: usize },
-}
-
-impl fmt::Display for GateVerdict {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AtomicGroupConflicts { count } => {
-                write!(f, "{count} atomic-group conflict(s)")
-            }
-            Self::UnrealizableCycles { count } => {
-                write!(f, "{count} unrealizable module SCC(s)")
-            }
-        }
-    }
-}
-
-/// A chunk the realizability gate rejected but lowering continued for, under
-/// `debundle run --emit-on-rejection`. Its files are readable, not runnable.
-#[derive(Debug, Clone)]
-pub struct ChunkGateRejection {
-    pub chunk_id: String,
-    pub verdict: GateVerdict,
-    /// `cycles.json` / `atomic_group_conflicts.json`, when the run has a
-    /// report directory.
-    pub evidence_report: Option<PathBuf>,
-    pub dependency_graph_report: Option<PathBuf>,
-    /// The rendered rejection the run fails with.
-    pub diagnostic: String,
-}
-
-impl ChunkGateRejection {
-    pub fn summary_line(&self) -> String {
-        let evidence = match &self.evidence_report {
-            Some(path) => format!("evidence: {}", path.display()),
-            None => "no report directory configured; see the run's stderr".to_string(),
-        };
-        format!(
-            "chunk {chunk}: {verdict}; {evidence}",
-            chunk = self.chunk_id,
-            verdict = self.verdict,
-        )
-    }
-}
-
 /// Ready-to-validate output syntax and replacement decisions for one program.
 /// Diagnostic reports are separate from the accepted output tree.
 pub struct ReconstructionPlan {
@@ -121,12 +59,12 @@ pub struct ReconstructionPlan {
 
 impl ReconstructionPlan {
     pub fn new(
-        files: EmissionFiles,
-        vendor: Arc<VendorResolutionPlan>,
+        candidate: FinalizedCandidateEmissionDraft,
         unresolved_claims: Vec<UnmatchedSpecClaim>,
         browser_options: Option<&spec::EmitBrowserHarnessConfig>,
         vendor_manifest: Option<VendorManifestOutput>,
     ) -> Result<Self> {
+        let (files, vendor) = candidate.into_files_and_vendor_plan();
         let browser_harness = browser_options
             .map(|options| {
                 BrowserHarnessPlan::prepare(
@@ -221,11 +159,11 @@ impl RejectedPlan {
     /// Fails, naming the gate's diagnostic too, on unresolved spec claims: a
     /// reading-only tree carries the gate's rejection and no other failure.
     pub fn new(
-        files: EmissionFiles,
-        vendor: &VendorResolutionPlan,
+        candidate: FinalizedCandidateEmissionDraft,
         rejections: Vec<ChunkGateRejection>,
         unresolved_claims: &[UnmatchedSpecClaim],
     ) -> Result<Self> {
+        let (files, vendor) = candidate.into_files_and_vendor_plan();
         ensure!(
             !rejections.is_empty(),
             "a rejected plan needs at least one gate rejection"

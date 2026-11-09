@@ -1,6 +1,7 @@
 use source_identity::ChunkId;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
 use rayon::prelude::*;
@@ -12,15 +13,14 @@ use analysis::reports::author_inputs::AuthorInputLocations;
 use analysis_projection::AnalysisSpec;
 
 use artifact::paths::normalize_module_path;
-use artifact::reports::SelectedModuleLowering;
+use artifact::reports::{ChunkDecompositionOutput, SelectedModuleLowering};
 use artifact::{
     ArtifactIndexes, ChunkBundle, export_policies, normalized_chunk_ids,
     prune_artifact_to_chunk_ids,
 };
-use gate::CandidateRelocationAssessmentReport;
+use gate::{CandidateRelocationAssessmentReport, ChunkGateRejection, UnmatchedSpecClaim};
 
 use output_layout::MODULES_REPORT;
-use reconstruction::{ChunkGateRejection, UnmatchedSpecClaim};
 
 use spec::{
     ChunkExportPurity, ChunkRenames, DependencyGraphOptions, LogicalModule, UnassignedMode,
@@ -28,6 +28,7 @@ use spec::{
 
 mod anonymous;
 mod body_facts;
+mod candidate_emission;
 mod chunk_renames;
 mod commuting_statements;
 mod exports;
@@ -50,7 +51,8 @@ mod scope_names;
 mod util;
 mod visitors;
 
-pub use imports::naturalize_cross_chunk_imports;
+pub use candidate_emission::{CandidateEmissionDraft, FinalizedCandidateEmissionDraft};
+use imports::naturalize_cross_chunk_imports;
 use ownership_subset::{OwnershipSubset, SelectedModule};
 
 use imports::VendorReimportOracle;
@@ -68,18 +70,12 @@ use staged_analysis::{
 use util::normalize_optional_relative_dir;
 
 pub struct MaterializeLogicalModulesResult {
-    /// Finalized lowered and pass-through files, kept outside a bundle until
-    /// the remaining post-lowering passes need their legacy input.
-    pub output: EmissionChunkOutputs,
+    /// Lowered and pass-through files whose whole-program rewrites have not
+    /// run yet; only the draft's own `finalize` can run them.
+    pub output: CandidateEmissionDraft,
+    pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
-    /// Per-symbol counts of vendor-swap rewrites applied at
-    /// construction time in materialized module bodies, keyed by
-    /// (swapped chunk, chunk export). Folded into the vendor waves'
-    /// `references_rewritten` manifest fields by the pipeline so the
-    /// manifest keeps counting emitted references across both
-    /// application sites.
-    pub vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
     /// Spec claims that named a binding for which no top-level
     /// declaration exists in the source chunk. Previously dropped
     /// silently — the binding would fall through to the residual and
@@ -320,7 +316,7 @@ pub struct MaterializeSpecInputs<'a> {
 pub fn materialize_logical_modules(
     mut artifact: ChunkBundle,
     spec_inputs: MaterializeSpecInputs<'_>,
-    vendor_plan: &vendor::VendorResolutionPlan,
+    vendor_plan: &Arc<vendor::VendorResolutionPlan>,
     options: MaterializeLogicalModulesOptions,
 ) -> Result<Materialized> {
     ensure!(
@@ -662,15 +658,25 @@ pub fn materialize_logical_modules(
             *vendor_reference_rewrites.entry(key.clone()).or_insert(0) += count;
         }
     }
-    let output = collect_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
+    let EmissionChunkOutputs {
+        files,
+        decomposition_by_chunk,
+    } = collect_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
+    let output = CandidateEmissionDraft::materialized(
+        files,
+        Arc::clone(vendor_plan),
+        applied.clone(),
+        options.chunk_ids.iter().cloned().collect(),
+        vendor_reference_rewrites,
+    );
 
     let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();
     Ok(Materialized::Lowered(Box::new(
         MaterializeLogicalModulesResult {
             output,
+            decomposition_by_chunk,
             selected_lowerings: applied,
             module_count,
-            vendor_reference_rewrites,
             unmatched_spec_claims,
             gate_rejections,
         },

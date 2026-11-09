@@ -1,5 +1,5 @@
 //! Per-chunk materialization: take an `DependencyGraphAndAtomicGroups` + spec plan, run the
-//! chunk through `lower_chunk`, and emit a `MaterializedLogicalChunk` whose
+//! chunk through candidate preparation/emission, and emit a `MaterializedLogicalChunk` whose
 //! files/applied/report stay separate from the source bundle until the
 //! finalized emit-stage file set is constructed.
 
@@ -22,7 +22,7 @@ use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
 use crate::lower::{
     LowerChunkAst, LowerChunkContext, LowerChunkInputs, LowerChunkPlan, LowerChunkSpecFacts,
-    LoweredChunk, lower_chunk,
+    LoweredChunk, prepare_candidate_emission_plan,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
 use crate::ownership_subset::{OwnershipSubset, SelectedModule};
@@ -50,8 +50,8 @@ use chunk_analysis::build_chunk_graph;
 use frontend_elaboration::chunk_ast::{ChunkAstAnalysis, SourceExportIdentity};
 use frontend_elaboration::{FrontendChunk, MemberClaimProjection};
 use gate::{
-    AssignmentAnalysis, RejectedAssignment, SccRejection, ValidatedAssignment,
-    render_atomic_group_conflict_summary, render_cycle_summary,
+    AssignmentAnalysis, ChunkGateRejection, GateVerdict, RejectedAssignment, SccRejection,
+    ValidatedAssignment, render_atomic_group_conflict_summary, render_cycle_summary,
 };
 use graph_provenance::GraphProvenance;
 use js_ast::{ParsedJsModule, format_comment_block_lines};
@@ -61,7 +61,6 @@ use output_layout::{
     EFFECT_TRANSLATION_VALIDATION_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
     SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
-use reconstruction::{ChunkGateRejection, GateVerdict};
 use spec::{ChunkRenames, UnassignedMode};
 use spec_resolution::LogicalRequest;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -682,9 +681,8 @@ pub(super) fn finish_logical_chunk(
         };
         let (evaluation, _) = evaluate_chunk_candidate(
             report_context,
-            &assignment_analysis,
+            gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection),
             &analysis.facts,
-            &placement_projection,
         )?;
         let assessment = evaluation.candidate_assessment().report();
         return Ok(FinishedLogicalChunk::Assessed {
@@ -711,9 +709,8 @@ pub(super) fn finish_logical_chunk(
     };
     let (evaluation, report_out_dir) = evaluate_chunk_candidate(
         report_context,
-        &assignment_analysis,
+        gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection),
         &analysis.facts,
-        &placement_projection,
     )?;
     let gate_outcome = emit_reports_and_resolve_gate(
         report_context,
@@ -723,17 +720,12 @@ pub(super) fn finish_logical_chunk(
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
-    let (header_lines, linker_order, gate_rejection) = match &gate_outcome {
-        GateOutcome::Accepted(validated) => {
-            (header_lines, validated.report().linker_order.clone(), None)
-        }
+    let (linker_order, gate_rejection) = match &gate_outcome {
+        GateOutcome::Accepted(validated) => (validated.report().linker_order.clone(), None),
         GateOutcome::Rejected {
             assignment,
             rejection,
         } => (
-            // The banner leads the entry file so a reader (or a loader) meets
-            // it before any code; the chunk's own header follows.
-            [gate_rejected_banner_lines(rejection), header_lines].concat(),
             assignment.report().linker_order.clone(),
             Some(rejection.clone()),
         ),
@@ -741,7 +733,7 @@ pub(super) fn finish_logical_chunk(
     let placement =
         EmissionPlacement::from_projection(&assignment_analysis, &placement_projection)?;
 
-    let lowered = lower_chunk(LowerChunkInputs {
+    let mut prepared_emission = prepare_candidate_emission_plan(LowerChunkInputs {
         context: LowerChunkContext {
             artifact,
             artifact_indexes,
@@ -770,12 +762,17 @@ pub(super) fn finish_logical_chunk(
             pre_existing_public_export_names: &pre_existing_public_export_names,
         },
     })?;
+    if let Some(rejection) = &gate_rejection {
+        // The banner leads the entry file so a reader (or a loader) meets
+        // it before any code; the chunk's own header follows.
+        prepared_emission.prepend_entry_header_lines(gate_rejected_banner_lines(rejection));
+    }
     let LoweredChunk {
         files,
         file_records,
         applied,
         vendor_reference_rewrites,
-    } = lowered;
+    } = prepared_emission.emit();
 
     let final_modules = build_final_module_report(
         &module_plans,
@@ -1232,13 +1229,13 @@ struct GraphSummary<'a> {
     full_graphs: bool,
 }
 
-/// Evaluate the gate and both diagnostic projections for one assignment.
-/// Report policy selects only output locations and full-detail evidence sinks.
+/// Evaluate both diagnostic projections for one prepared candidate whose
+/// gate verdict the preflight already carries. Report policy selects only
+/// output locations and full-detail evidence sinks.
 fn evaluate_chunk_candidate<'a, 'b>(
     context: ChunkReportContext<'b>,
-    assignment_analysis: &'a AssignmentAnalysis,
+    preflight: gate::CandidatePreflight<'a>,
     facts: &[analysis::facts::StatementFacts],
-    placement_projection: &analysis::PlacementProjection<'_>,
 ) -> Result<(gate::CandidateEvaluation<'a>, Option<&'b std::path::Path>)> {
     let ChunkReportContext {
         chunk_id,
@@ -1249,8 +1246,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
         full_export_reentry,
         ..
     } = context;
-    let validation = assignment_analysis.validate_for_emission();
-    let report_out_dir = if validation.is_err() {
+    let report_out_dir = if preflight.is_rejected() {
         report_emission.rejection_dir()
     } else {
         report_emission.full_dir()
@@ -1299,10 +1295,8 @@ fn evaluate_chunk_candidate<'a, 'b>(
                 .expect("active effect-conflict sink")
                 .write(row)
         };
-        gate::CandidateEvaluation::evaluate(
-            validation,
+        preflight.evaluate(
             facts,
-            placement_projection,
             full_translation_validation.then_some(&mut write_tv),
             effect_conflicts_jsonl.then_some(&mut write_effect),
         )?
@@ -1529,23 +1523,19 @@ fn emit_reports_and_resolve_gate<'a>(
             _ => Err(anyhow::anyhow!(diagnostic)),
         };
     }
-    // Defense-in-depth on the accept path: a cross-destination
-    // rebinding write (clause 2) always co-locates with its target in
-    // one atomic factor group, so a spec splitting them must have
-    // produced an `atomic_group_conflicts` rejection above. Reaching this
-    // point with a non-empty clause-2 verdict means the atomic-group
-    // glue and the realizability gate disagree — refuse to emit
-    // rather than materialize a bundle that reassigns an ESM import.
-    if let Ok(validated) = evaluation.validation()
-        && !validated.cross_destination_rebinds().is_empty()
-    {
-        bail!(
+    match evaluation.into_validation() {
+        // Defense-in-depth on the accept path: a cross-destination
+        // rebinding write (clause 2) always co-locates with its target in
+        // one atomic factor group, so a spec splitting them must have
+        // produced an `atomic_group_conflicts` rejection above. Reaching this
+        // point with a non-empty clause-2 verdict means the atomic-group
+        // glue and the realizability gate disagree — refuse to emit
+        // rather than materialize a bundle that reassigns an ESM import.
+        Ok(validated) if !validated.cross_destination_rebinds().is_empty() => bail!(
             "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-group conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor groups). Rebinds:\n  {rebinds}",
             n = validated.cross_destination_rebinds().len(),
-            rebinds = assignment_report.cross_rebinds.join("\n  "),
-        );
-    }
-    match evaluation.into_validation() {
+            rebinds = validated.report().cross_rebinds.join("\n  "),
+        ),
         Ok(validated) => Ok(GateOutcome::Accepted(validated)),
         Err(_) => {
             bail!("chunk {chunk_id}: assignment validation rejected without a rendered diagnostic")

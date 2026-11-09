@@ -96,7 +96,7 @@
 //!   below). It cannot merge downstream: its sealed Chunk projection is
 //!   an input to plan building and assignment analysis, which run before the
 //!   post-split bodies exist.
-//! - **Entry ledger** (`lower_chunk`): the chunk_renames entries staying
+//! - **Entry ledger** (`prepare_candidate_emission_plan`): the chunk_renames entries staying
 //!   in entry plus entry import-local mints (`Chunk` scope) AND the
 //!   auto-grown residual public exports (`EntryPublicExports` scope — a
 //!   separate namespace from local-binding renames). One seal validates
@@ -207,7 +207,7 @@
 //! - Import-local disambiguation (fresh-local `$N` minting) —
 //!   `imports/import_emit.rs::disambiguate_*` mint through
 //!   [`RenameLedger::mint`]. The entry-side call site in
-//!   `lower.rs::lower_chunk` submits into the entry ledger (scope:
+//!   `lower.rs::prepare_candidate_emission_plan` submits into the entry ledger (scope:
 //!   `Chunk`, origin: `ImportInduced`); the module-side call sites in
 //!   `imports/imports_cross.rs` submit into the per-plan import ledger (scope:
 //!   `Module`, origin: `ImportInduced`).
@@ -215,7 +215,7 @@
 //!   `exports.rs::auto_grown_residual_exports` (mints a grown public
 //!   export past pre-existing public names via [`RenameLedger::mint`];
 //!   scope: `EntryPublicExports`, origin: `ImportInduced`; sealed in
-//!   `lower_chunk`'s export-growth phase).
+//!   `prepare_candidate_emission_plan`'s export-growth phase).
 //!
 //! Vendor boundary renames (`vendor/`) run in a separate pipeline stage on
 //! different artifacts and are out of this ledger's scope.
