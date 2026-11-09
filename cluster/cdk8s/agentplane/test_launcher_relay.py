@@ -11,6 +11,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting  # Testing aliased so pyte
 from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.egress import sidecar_config
 from cluster.cdk8s.agentplane.launcher_relay import (
     CONTROLLER_USERNAME,
     LAUNCHER_LABELS,
@@ -308,9 +309,10 @@ def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Pat
     tls_volume = one(v for v in spec["volumes"] if v["name"] == RUNNER_TLS_VOLUME_NAME)
     assert tls_volume["projected"]["defaultMode"] == 292
     assert tls_volume["projected"]["sources"][0]["secret"]["name"] == RUNNER_SECRET
+    # The workload CA alone, at the file the relay's proxy transport verifies servers with.
     assert tls_volume["projected"]["sources"][1]["configMap"] == {
-        "name": "cluster-internal-ca-bundle",
-        "items": [{"key": "ca-certificates.crt", "path": "ca.crt"}],
+        "name": "agentplane-workload-ca-bundle",
+        "items": [{"key": "ca-certificates.crt", "path": sidecar_config.RUNNER_WORKLOAD_TRUST_FILE.name}],
     }
     relay = one(c for c in spec["initContainers"] if c["name"] == "egress-sidecar")
     assert {

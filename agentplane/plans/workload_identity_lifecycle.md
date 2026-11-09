@@ -83,7 +83,8 @@ does each owner issue for itself, or does one component issue on the owners' beh
 
 Landed in #15104, #15113, #15129 and #15131; the contract is
 [workload authentication § The workload CA](../docs/workload_authentication.md#the-workload-ca).
-Pod and VM runners' control listeners trust the workload CA alone (#15131). Firecracker's control
+Pod and VM runners' control listeners trust the workload CA alone (#15131), and so does every
+client verifying an Agentplane server SVID. Firecracker's control
 listener stays on the cluster root, tracked as
 [`WORKLOAD_CA_CLIENT_TRUST`](task_dag.md#workload_ca_client_trust--firecracker-runners-control-listener-trusts-the-workload-ca-alone).
 

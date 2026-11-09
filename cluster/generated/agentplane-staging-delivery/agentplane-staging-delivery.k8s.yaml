@@ -143,9 +143,6 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
-            - mountPath: /run/agentplane/workload-client-trust
-              name: workload-client-trust
-              readOnly: true
             - mountPath: /etc/agentplane-runner-gateway/settings
               name: configmap-runner-gateway-settings
               readOnly: true
@@ -179,11 +176,8 @@ spec:
           secret:
             secretName: runner-gateway-workload-tls
         - configMap:
-            name: cluster-internal-ca-bundle
-          name: workload-trust
-        - configMap:
             name: agentplane-workload-ca-bundle
-          name: workload-client-trust
+          name: workload-trust
         - configMap:
             name: runner-gateway-settings
           name: configmap-runner-gateway-settings
@@ -202,7 +196,7 @@ spec:
                   items:
                     - key: ca-certificates.crt
                       path: ca.crt
-                  name: cluster-internal-ca-bundle
+                  name: agentplane-workload-ca-bundle
         - name: runner-gateway-token
           projected:
             sources:
@@ -292,7 +286,7 @@ data:
             - agentplane-runner-gateway
             - session-dispatcher
         - mode: spiffe
-          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     central_sampler:
       target: central-sampler.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler

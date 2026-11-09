@@ -35,7 +35,6 @@ _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidec
 _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # Non-Sandbox bearer hop only; Sandbox templates do not project this token.
 EGRESS_TOKEN_FILE = f"{_EGRESS_TOKEN_DIR}/token"
-SIDECAR_TRUST_DIR = Path("/etc/agentplane-egress-ca")
 # Audiences the central proxy may substitute this Pod's identity for, and the file each is projected
 # to under `_EGRESS_TOKEN_DIR`. The volume and sidecar's mapping are both rendered from this, so
 # neither can name a file the other does not project. Platform service calls use SVID routes; the

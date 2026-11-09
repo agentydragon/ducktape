@@ -1328,9 +1328,6 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
-            - mountPath: /run/agentplane/workload-client-trust
-              name: workload-client-trust
-              readOnly: true
             - mountPath: /etc/agentplane-llm-ingress
               name: configmap-llm-ingress-settings
               readOnly: true
@@ -1365,11 +1362,8 @@ spec:
           secret:
             secretName: llm-ingress-workload-tls
         - configMap:
-            name: cluster-internal-ca-bundle
-          name: workload-trust
-        - configMap:
             name: agentplane-workload-ca-bundle
-          name: workload-client-trust
+          name: workload-trust
         - configMap:
             name: llm-ingress-settings
           name: configmap-llm-ingress-settings
@@ -1438,7 +1432,7 @@ data:
         key_file: /run/agentplane/workload-tls/tls.key
       auth:
         - mode: spiffe
-          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         - mode: kubernetes_bearer
           audiences:
             - agentplane-egress
@@ -2713,9 +2707,6 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
-            - mountPath: /run/agentplane/workload-client-trust
-              name: workload-client-trust
-              readOnly: true
             - mountPath: /etc/agentplane-history-service
               name: configmap-history-service-config
               readOnly: true
@@ -2743,11 +2734,8 @@ spec:
           secret:
             secretName: history-service-workload-tls
         - configMap:
-            name: cluster-internal-ca-bundle
-          name: workload-trust
-        - configMap:
             name: agentplane-workload-ca-bundle
-          name: workload-client-trust
+          name: workload-trust
         - configMap:
             name: history-service-config
           name: configmap-history-service-config
@@ -2852,7 +2840,7 @@ data:
             - agentplane-history-service
             - agentplane-runner-ingress
         - mode: spiffe
-          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
 immutable: false
 ---
 apiVersion: cilium.io/v2
@@ -3477,7 +3465,7 @@ spec:
         - emptyDir: {}
           name: logs
         - configMap:
-            name: cluster-internal-ca-bundle
+            name: agentplane-workload-ca-bundle
           name: workload-trust
         - name: secret-agentplane-staging-anthropic-api-key
           secret:
@@ -4381,7 +4369,7 @@ spec:
             name: app-config
           name: configmap-app-config
         - configMap:
-            name: cluster-internal-ca-bundle
+            name: agentplane-workload-ca-bundle
           name: workload-trust
         - name: runner-gateway-token
           projected:
@@ -4938,7 +4926,7 @@ data:
       address: egress.agentplane-staging.svc.cluster.local:8888
       transport:
         mode: tls
-        ca_file: /run/agentplane/environment-runtime-tls/ca.crt
+        ca_file: /run/agentplane/environment-runtime-tls/workload-ca.crt
         auth:
           mode: spiffe
           cert_file: /run/agentplane/environment-runtime-tls/tls.crt
@@ -5351,7 +5339,7 @@ data:
       address: egress.agentplane-staging.svc.cluster.local:8888
       transport:
         mode: tls
-        ca_file: /run/agentplane/environment-runtime-tls/ca.crt
+        ca_file: /run/agentplane/environment-runtime-tls/workload-ca.crt
         auth:
           mode: spiffe
           cert_file: /run/agentplane/environment-runtime-tls/tls.crt
@@ -5638,8 +5626,8 @@ spec:
                     - configMap:
                         items:
                           - key: ca-certificates.crt
-                            path: ca.crt
-                        name: cluster-internal-ca-bundle
+                            path: workload-ca.crt
+                        name: agentplane-workload-ca-bundle
       name: inject-relay
     - context:
         - name: relay
@@ -6408,7 +6396,7 @@ spec:
             name: sandbox-controller-settings
           name: configmap-sandbox-controller-settings
         - configMap:
-            name: cluster-internal-ca-bundle
+            name: agentplane-workload-ca-bundle
           name: workload-trust
         - name: runner-gateway-token
           projected:
@@ -6834,9 +6822,6 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
-            - mountPath: /run/agentplane/workload-client-trust
-              name: workload-client-trust
-              readOnly: true
             - mountPath: /etc/agentplane-actions
               name: configmap-actions-settings
               readOnly: true
@@ -6899,11 +6884,8 @@ spec:
           secret:
             secretName: actions-workload-tls
         - configMap:
-            name: cluster-internal-ca-bundle
-          name: workload-trust
-        - configMap:
             name: agentplane-workload-ca-bundle
-          name: workload-client-trust
+          name: workload-trust
         - configMap:
             name: actions-settings
           name: configmap-actions-settings
@@ -7589,7 +7571,7 @@ data:
           audiences:
             - agentplane-egress
         - mode: spiffe
-          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -8261,7 +8243,7 @@ spec:
             name: mcp-edge-settings
           name: configmap-mcp-edge-settings
         - configMap:
-            name: cluster-internal-ca-bundle
+            name: agentplane-workload-ca-bundle
           name: workload-trust
 ---
 apiVersion: v1
@@ -8687,9 +8669,6 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
-            - mountPath: /run/agentplane/workload-client-trust
-              name: workload-client-trust
-              readOnly: true
             - mountPath: /etc/agentplane-notifications
               name: configmap-notifications-settings
               readOnly: true
@@ -8720,11 +8699,8 @@ spec:
           secret:
             secretName: notifications-workload-tls
         - configMap:
-            name: cluster-internal-ca-bundle
-          name: workload-trust
-        - configMap:
             name: agentplane-workload-ca-bundle
-          name: workload-client-trust
+          name: workload-trust
         - configMap:
             name: notifications-settings
           name: configmap-notifications-settings
@@ -8857,7 +8833,7 @@ data:
           audiences:
             - agentplane-notifications
         - mode: spiffe
-          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -9180,7 +9156,7 @@ data:
       address: egress.agentplane-staging.svc.cluster.local:8888
       transport:
         mode: tls
-        ca_file: /etc/agentplane-egress-ca/ca-certificates.crt
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         auth:
           mode: kubernetes_bearer
           token_file: /var/run/agentplane-egress/token
@@ -9310,8 +9286,8 @@ template:
           - mountPath: /etc/agentplane-egress-sidecar
             name: egress-sidecar-settings
             readOnly: true
-          - mountPath: /etc/agentplane-egress-ca
-            name: egress-ca
+          - mountPath: /run/agentplane/workload-trust
+            name: workload-trust
             readOnly: true
     imagePullSecrets:
       - name: forgejo-images-creds
@@ -9348,6 +9324,9 @@ template:
       - configMap:
           name: sandbox-egress-sidecar
         name: egress-sidecar-settings
+      - configMap:
+          name: agentplane-workload-ca-bundle
+        name: workload-trust
 ---
 apiVersion: v1
 kind: PodTemplate
@@ -9459,8 +9438,8 @@ template:
           - mountPath: /etc/agentplane-egress-sidecar
             name: egress-sidecar-settings
             readOnly: true
-          - mountPath: /etc/agentplane-egress-ca
-            name: egress-ca
+          - mountPath: /run/agentplane/workload-trust
+            name: workload-trust
             readOnly: true
     imagePullSecrets:
       - name: forgejo-images-creds
@@ -9500,6 +9479,9 @@ template:
       - emptyDir:
           sizeLimit: 20Gi
         name: home
+      - configMap:
+          name: agentplane-workload-ca-bundle
+        name: workload-trust
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

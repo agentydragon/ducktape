@@ -248,14 +248,14 @@ class LlmIngress(Construct):
             ports=[self.service.port.container_port()],
             readiness=tls_grpc_probe(
                 port=self.service.pod_port,
-                ca_file="/run/agentplane/workload-trust/ca-certificates.crt",
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
                 server_uri=LLM_INGRESS_URI,
                 initial_delay_seconds=3,
                 period_seconds=10,
             ),
             liveness=tls_grpc_probe(
                 port=self.service.pod_port,
-                ca_file="/run/agentplane/workload-trust/ca-certificates.crt",
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
                 server_uri=LLM_INGRESS_URI,
                 initial_delay_seconds=20,
                 period_seconds=30,

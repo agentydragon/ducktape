@@ -68,6 +68,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress import sidecar_config
 from cluster.cdk8s.agentplane import sandbox_pod
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 
 LAUNCHER_LABELS = {"kubevirt.io": "virt-launcher"}
@@ -235,8 +236,13 @@ class LauncherRelayPolicy(ClusterPolicy):
                         },
                         {
                             "configMap": {
-                                "name": "cluster-internal-ca-bundle",
-                                "items": [{"key": "ca-certificates.crt", "path": "ca.crt"}],
+                                "name": cluster_ca.WORKLOAD_BUNDLE,
+                                "items": [
+                                    {
+                                        "key": cluster_ca.BUNDLE_KEY,
+                                        "path": sidecar_config.RUNNER_WORKLOAD_TRUST_FILE.name,
+                                    }
+                                ],
                             }
                         },
                     ],

@@ -105,9 +105,9 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   controller creates no Certificate and reads no Secret: it labels the workload with the issued
   credential ID and mounts the issued Secret by name. Two trust-manager bundles are mounted beside
   it: `cluster-internal-ca-bundle`, the cluster root, and `agentplane-workload-ca-bundle`, the
-  workload CA alone, which a runner's control listener can trust for the Gateway's client SVID. A
-  Pod template cannot declare or claim the reserved runner TLS volume name or mount path in any
-  regular or init container.
+  workload CA alone, which a runner's control listener trusts for the Gateway's client SVID and its
+  sidecar for the server SVIDs it dials. A Pod template cannot declare or claim the reserved runner
+  TLS volume name or mount path in any regular or init container.
 - A Pod projects the same per-incarnation Secret and both trust bundles, the workload CA as
   `workload-ca.crt` beside the cluster bundle's `ca.crt`, to the Environment Runtime and,
   when the template includes it, the `egress-sidecar` container. Runtime-only custom templates remain

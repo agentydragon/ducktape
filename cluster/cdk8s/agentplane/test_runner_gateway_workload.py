@@ -96,7 +96,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     bearer_auth = one(item for item in settings["rpc"]["auth"] if item["mode"] == "kubernetes_bearer")
     assert set(bearer_auth["audiences"]) == {session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE}
     spiffe_auth = one(item for item in settings["rpc"]["auth"] if item["mode"] == "spiffe")
-    assert spiffe_auth == {"mode": "spiffe", "ca_file": workload_tls.CLIENT_TRUST_BUNDLE_FILE}
+    assert spiffe_auth == {"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
     assert settings["gateway_tls"] == {
@@ -275,7 +275,8 @@ def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token(scratch
     assert secret_source["name"] == runner_gateway.GATEWAY_TLS_SECRET
     assert {item["path"] for item in secret_source["items"]} == {"tls.crt", "tls.key"}
     trust_source = one(source["configMap"] for source in tls_volume["sources"] if "configMap" in source)
-    assert trust_source["name"] == "cluster-internal-ca-bundle"
+    # Runners and the Gateway's own leaf come from the workload CA, so it verifies them alone.
+    assert trust_source["name"] == "agentplane-workload-ca-bundle"
     assert trust_source["items"] == [{"key": "ca-certificates.crt", "path": "ca.crt"}]
     assert volumes[mounted[str(path.parent)]]["configMap"]["name"] == settings_map["metadata"]["name"]
     assert path.name in settings_map["data"]

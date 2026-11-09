@@ -101,17 +101,24 @@ cluster has no CRL or OCSP.
 
 Every Agentplane SVID, the Runtime certificates and the services' own, comes from the
 `agentplane-workload` ClusterIssuer (`cluster/cdk8s/cert_manager/cluster_ca.py`). Its CA is an
-intermediate under the cluster root whose key lives in cert-manager's namespace, so its leaves still
-verify against `cluster-internal-ca-bundle` for clients checking a server. Every listener that
-verifies client SVIDs trusts the `agentplane-workload-ca-bundle` Bundle, which carries that
-intermediate alone: a `cluster-internal-ca` leaf naming a live Sandbox's URI does not authenticate,
-so the live record lookup is not the only check. That includes a runner's control listener,
-which refuses a `cluster-internal-ca` leaf naming the Runner Gateway; the Sandbox Controller
-projects the Bundle into runners beside the cluster bundle
-([runner control](runner_control.md#authentication-and-incarnation-binding), except Firecracker
-runners). A record's Certificate and Secret carry the
-record's UID in the `agentplane.allegedly.works/workload-credential-uid` label, by which the issuer
-deletes superseded generations' Secrets: cert-manager sets no owner on a Secret.
+intermediate under the cluster root whose key lives in cert-manager's namespace. Every verifier of an
+Agentplane SVID trusts the `agentplane-workload-ca-bundle` Bundle, which carries that intermediate
+alone, so a `cluster-internal-ca` leaf naming an Agentplane URI authenticates in neither direction:
+
+- Listeners verifying client SVIDs: a leaf naming a live Sandbox's URI does not authenticate, so the
+  live record lookup is not the only check. A runner's control listener refuses one naming the
+  Runner Gateway ([runner control](runner_control.md#authentication-and-incarnation-binding), except
+  Firecracker runners).
+- Clients verifying server SVIDs: the Gateway dialing runners (`runner_security`), the egress sidecar
+  and launcher relay dialing the proxy and services, and backend clients and probes through
+  `cluster/cdk8s/agentplane/workload_tls.py`. A leaf at a runner's or service's address naming its URI
+  is refused.
+
+The Sandbox Controller projects the Bundle into runners as `workload-ca.crt`, beside the cluster
+bundle, which verifies only the Environment Runtime's own chain. Clients of non-Agentplane servers
+(LiteLLM, the API server, Postgres, external hosts) keep their own roots. A record's Certificate and
+Secret carry the record's UID in the `agentplane.allegedly.works/workload-credential-uid` label, by
+which the issuer deletes superseded generations' Secrets: cert-manager sets no owner on a Secret.
 
 A `ValidatingAdmissionPolicy` (`cluster/cdk8s/agentplane/workload_certificate_admission.py`) on cert-manager `Certificate`s and `CertificateRequest`s that name the
 issuer keeps it from being a cluster-wide minting service. The Policy Controller may request only

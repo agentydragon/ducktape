@@ -20,6 +20,9 @@ READINESS_HOST = "0.0.0.0"
 READINESS_PORT = 3129
 READINESS_LISTEN_ADDRESS = f"{READINESS_HOST}:{READINESS_PORT}"
 RUNNER_TLS_MOUNT_PATH = "/run/agentplane/environment-runtime-tls"
+# The workload CA alone, projected by the Sandbox Controller beside the runner's credential
+# (`RunnerWorkloadTrustFile` in agentplane/sandbox_controller/environment_runtime_credential.go).
+RUNNER_WORKLOAD_TRUST_FILE = Path(RUNNER_TLS_MOUNT_PATH) / "workload-ca.crt"
 
 
 class ProxyAuthMode(StrEnum):

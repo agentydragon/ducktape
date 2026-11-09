@@ -420,6 +420,55 @@ func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 	}
 }
 
+// The workload CA is an intermediate, and a `ca_file` holding it alone is a complete trust anchor:
+// a client accepts the server SVIDs it issues and refuses its parent root's leaf naming the same URI.
+func TestClientsVerifyServerSVIDsAgainstTheWorkloadCAAlone(t *testing.T) {
+	root := environmentruntimetransporttesting.NewCA(t)
+	workload := root.Intermediate(t)
+	serving := func(config environment_runtime_transport.Config) *tls.Config {
+		pair, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &tls.Config{Certificates: []tls.Certificate{pair}}
+	}
+
+	backend, err := (environment_runtime_transport.ClientTLS{CAFile: workload.RootFile, ServerURI: environment_runtime_transport.HistoryIngressURI}).TLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tlsHandshake(t, backend, serving(workload.IssueWithUsage(t, environment_runtime_transport.HistoryIngressURI, x509.ExtKeyUsageServerAuth))); err != nil {
+		t.Fatalf("a backend client refused the workload CA's History SVID: %v", err)
+	}
+	if _, _, err := tlsHandshake(t, backend, serving(root.IssueWithUsage(t, environment_runtime_transport.HistoryIngressURI, x509.ExtKeyUsageServerAuth))); err == nil {
+		t.Fatal("a backend client accepted a root-signed leaf naming History")
+	}
+
+	// The Gateway dialing a runner: the same file also verifies the Gateway's own chain.
+	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := workload.IssueWithUsage(t, environment_runtime_transport.GatewayURI, x509.ExtKeyUsageClientAuth).ClientCredentials(runnerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerServer := func(runner environment_runtime_transport.Config) credentials.TransportCredentials {
+		runner.ClientCAFile = workload.RootFile
+		server, err := runner.ServerCredentials(environment_runtime_transport.GatewayURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return server
+	}
+	if _, _, err := handshake(t, gateway, runnerServer(workload.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth))); err != nil {
+		t.Fatalf("the Gateway refused the workload CA's runner SVID: %v", err)
+	}
+	if _, _, err := handshake(t, gateway, runnerServer(root.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth))); err == nil {
+		t.Fatal("the Gateway accepted a root-signed leaf naming the runner")
+	}
+}
+
 func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
 	trustedCA := environmentruntimetransporttesting.NewCA(t)
 	otherCA := environmentruntimetransporttesting.NewCA(t)
