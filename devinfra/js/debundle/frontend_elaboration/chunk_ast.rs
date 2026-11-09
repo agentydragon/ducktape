@@ -3,11 +3,7 @@
 //! introduce destructure siblings, etc. `ChunkAstAnalysis` is the
 //! input to selector projection and downstream planning.
 
-use binding_targets::binding_names as bt_binding_names;
-pub use binding_targets::{
-    binding_name_strings as binding_names, declaration_ids,
-    declaration_name_strings as declaration_names,
-};
+use binding_targets::{binding_names, declaration_ids, declaration_name_strings};
 use selector_outcome::{Declaration, DeclarationKind};
 use source_identity::StatementId;
 
@@ -263,7 +259,7 @@ fn record_exact_destructuring_groups(
         return;
     };
     for (declarator_offset, declarator) in var.decls.iter().enumerate() {
-        let bindings = binding_ids(&declarator.name);
+        let bindings: Vec<Id> = binding_names(&declarator.name).collect();
         if bindings.len() < 2 {
             continue;
         }
@@ -389,9 +385,9 @@ pub fn record_pre_existing_named_exports(
 
 pub fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bool) {
     match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => (declaration_names(decl), false),
+        ModuleItem::Stmt(Stmt::Decl(decl)) => (declaration_name_strings(decl), false),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            (declaration_names(&export_decl.decl), true)
+            (declaration_name_strings(&export_decl.decl), true)
         }
         // `var`s hoist to module scope out of `try`/`if`/loop blocks;
         // the enclosing statement is the declarer. Keeps
@@ -417,8 +413,4 @@ pub fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
         ModuleItem::Stmt(stmt) => binding_targets::hoisted_var_ids(stmt),
         _ => Vec::new(),
     }
-}
-
-pub fn binding_ids(pattern: &Pat) -> Vec<Id> {
-    bt_binding_names(pattern).collect()
 }
