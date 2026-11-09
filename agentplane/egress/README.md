@@ -162,7 +162,10 @@ A `kubernetesServiceAccount` credential acts as a ServiceAccount on the proxy's 
 impersonation (contract: <SPEC.md> § Decision). The deployment sets `local_api_server` (host, port,
 and the proxy's automounted token file) and renders the accounts namespace with a Role granting the
 proxy `impersonate` on `serviceaccounts` there and nowhere else
-(<../../cluster/cdk8s/agentplane/kubernetes_accounts.py>).
+(<../../cluster/cdk8s/agentplane/kubernetes_accounts.py>). Impersonating ServiceAccounts rather
+than users keeps OIDC users bound by name out of reach. A TokenRequest source (minted, cached
+account tokens) is not built: it is needed only for a remote API server that refuses the proxy
+impersonation rights.
 
 ## Rules API
 
