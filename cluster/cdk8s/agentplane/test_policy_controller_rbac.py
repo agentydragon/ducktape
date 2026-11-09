@@ -1,5 +1,6 @@
-"""The Policy Controller's RBAC matches what it writes: ServiceAccounts only in its accounts namespace, and the
-status of every policy kind it reports on."""
+"""The Policy Controller's RBAC matches what it writes: ServiceAccounts only in its accounts namespace,
+managed accounts' EgressCredentials and PolicySets only in its policy namespace, and the status of every
+policy kind it reports on."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -62,6 +63,16 @@ def test_service_account_writes_are_scoped_to_the_accounts_namespace(staging_man
     accounts_namespace = _settings(staging_manifests)[env_name(Settings, "accounts_namespace")]
     assert accounts_namespace != STAGING_NAMESPACE
     assert _allowed(staging_manifests, "", "serviceaccounts", {"create", "delete"}) == {accounts_namespace}
+
+
+@pytest.mark.parametrize("resource", ["egresscredentials", "policysets"])
+def test_managed_account_use_writes_are_scoped_to_the_policy_namespace(
+    staging_manifests: list[dict[str, Any]], resource: str
+) -> None:
+    policy_namespace = _settings(staging_manifests)[env_name(Settings, "policy_namespace")]
+    # Server-side apply creates or patches.
+    assert _allowed(staging_manifests, _GROUP, resource, {"create", "patch"}) == {policy_namespace}
+    assert not _allowed(staging_manifests, _GROUP, resource, {"delete", "deletecollection"})
 
 
 @pytest.mark.parametrize(

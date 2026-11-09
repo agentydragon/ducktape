@@ -10057,6 +10057,20 @@ rules:
     resources:
       - policysets
     verbs:
+      - create
+      - update
+      - patch
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresscredentials
+    verbs:
+      - create
+      - update
+      - patch
       - get
       - list
       - watch
@@ -10191,6 +10205,55 @@ subjects:
     kind: ServiceAccount
     name: policy-controller
     namespace: agentplane-staging
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agentplane-staging-managed-account-use
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: request.userInfo.username == 'system:serviceaccount:agentplane-staging:policy-controller'
+      name: policy-controller
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - agentplane.allegedly.works
+        apiVersions:
+          - "*"
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - egresscredentials
+          - policysets
+  validations:
+    - expression: variables.owned && object.metadata.name == 'k8s-account-' + variables.owner.name
+      message: The Policy Controller writes only a ManagedServiceAccount's use, named for and controlled by that account alone.
+    - expression: "!variables.owned || request.operation != 'UPDATE' || oldObject.metadata.?ownerReferences.orValue([]).exists(r, r.uid == variables.owner.uid && r.?controller.orValue(false))"
+      message: The Policy Controller never takes over an object its ManagedServiceAccount did not control.
+    - expression: "!variables.owned || !variables.credential || (has(object.spec.source.kubernetesServiceAccount) && object.spec.source.kubernetesServiceAccount.namespace == 'agentplane-staging-k8s-accounts' && object.spec.source.kubernetesServiceAccount.name == variables.owner.name)"
+      message: A managed account's EgressCredential acts as that account's ServiceAccount.
+    - expression: "!variables.owned || variables.credential || (size(object.spec.rules) == 1 && object.spec.rules[0].all(k, k in ['type', 'hosts', 'clusterInternal', 'credentialRef']) && object.spec.rules[0].type == 'egress' && object.spec.rules[0].hosts == ['kubernetes.default.svc.cluster.local'] && object.spec.rules[0].clusterInternal == true && object.spec.rules[0].credentialRef.name == object.metadata.name)"
+      message: A managed account's PolicySet is one egress rule to the local API server presenting the account's own credential.
+  variables:
+    - expression: object.metadata.?ownerReferences.orValue([])
+      name: owners
+    - expression: size(variables.owners) == 1 && variables.owners[0].apiVersion == 'agentplane.allegedly.works/v1alpha1' && variables.owners[0].kind == 'ManagedServiceAccount' && variables.owners[0].?controller.orValue(false)
+      name: owned
+    - expression: variables.owners[0]
+      name: owner
+    - expression: request.resource.resource == 'egresscredentials'
+      name: credential
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agentplane-staging-managed-account-use
+spec:
+  policyName: agentplane-staging-managed-account-use
+  validationActions:
+    - Deny
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

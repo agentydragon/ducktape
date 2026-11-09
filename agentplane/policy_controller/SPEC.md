@@ -102,12 +102,30 @@ precondition prevents deleting a binding edited or replaced after its read.
   fails, `status.serviceAccount` stays unset and `KubernetesReady` is `False` with reason
   `ServiceAccountConflict` until the name is free. One created for an earlier
   account of the same name is deleted and replaced.
+- It also keeps the account's use, as cdk8s renders it for a static account
+  (`cluster/cdk8s/agentplane/kubernetes_accounts.py`), both named `k8s-account-<name>` in the policy
+  namespace and controlled by the account, so garbage collection removes them with it: an
+  `EgressCredential` with source `kubernetesServiceAccount` naming the created ServiceAccount and
+  target `Authorization` `schemeToken` `Bearer`, and a one-rule `PolicySet`, an `egress` rule for the
+  local API server host with `clusterInternal`, whose `credentialRef` names that credential. A
+  binding naming the set lets its subject act as the account through the proxy. Both are written
+  only after the ServiceAccount is the account's own, and restored when edited or deleted by hand.
+- An `EgressCredential` or `PolicySet` at that name the account does not control, or one being
+  deleted, is never adopted: `KubernetesReady` is `False` with reason `EgressCredentialConflict` or
+  `PolicySetConflict` until the name is free. An earlier account's of the same name block a new one
+  until garbage collection removes them.
+- A `ValidatingAdmissionPolicy` (`cluster/cdk8s/agentplane/managed_account_admission.py`) admits the
+  controller's `EgressCredential` and `PolicySet` writes only in that shape, controlled by the one
+  `ManagedServiceAccount` they are named for, and never an update of an object that account did not
+  already control; its RBAC on both kinds cannot name objects and covers the whole policy namespace.
 - Once the account is gone, through expiry, its owner's deletion or by hand, the controller deletes
   the ServiceAccounts labeled with its UID and, in the same pass, every native binding on each of
   them, whichever binding or grant keeps it. No ownerReference reaches across namespaces, and no
-  finalizer holds the account. Grants and bindings the account owns go by garbage collection.
-- Its `KubernetesReady` condition is `Created`, `ServiceAccountConflict`, or `ConflictingExpiry`
-  naming each binding or grant it owns that sets its own `expiresAt`.
+  finalizer holds the account. Grants, bindings, the credential and the use set the account owns go
+  by garbage collection.
+- Its `KubernetesReady` condition is `Created`, `ServiceAccountConflict`, `EgressCredentialConflict`,
+  `PolicySetConflict`, or `ConflictingExpiry` naming each binding or grant it owns that sets its own
+  `expiresAt`.
 - Deleting the ServiceAccount is not revocation by itself: RBAC matches by name, and impersonation
   needs no ServiceAccount object. The native bindings are the authority, which is why they go in
   the same pass; a grant whose ServiceAccount is missing keeps none (`SubjectMissing`).

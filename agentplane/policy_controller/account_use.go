@@ -54,9 +54,11 @@ func (r *Reconciler) ensureAccountUse(ctx context.Context, account *policyapi.Ma
 			WithDescription(fmt.Sprintf(
 				"Kubernetes API server: %s, acting as the %s/%s ServiceAccount: %s Use kubectl --server %s --token %s "+
 					"for Kubernetes commands. Check agentplane egress rules for the live host and placeholder.",
-				host, serviceAccount.Namespace, serviceAccount.Name, accountDescription(account), host, resources.Placeholder(name))).
+				host, serviceAccount.Namespace, serviceAccount.Name, accountDescription(account), host, resources.Placeholder(name),
+			)).
 			WithSource(egressapplyv1.CredentialSource().WithKubernetesServiceAccount(
-				egressapplyv1.KubernetesServiceAccountSource().WithNamespace(serviceAccount.Namespace).WithName(serviceAccount.Name))).
+				egressapplyv1.KubernetesServiceAccountSource().WithNamespace(serviceAccount.Namespace).WithName(serviceAccount.Name),
+			)).
 			WithTargets(egressapplyv1.Target().WithHeader("Authorization").WithMethod(egressapi.SchemeToken).WithScheme("Bearer")))
 	if err := r.applyOwned(ctx, account, credential, EgressCredentialConflict); err != nil {
 		return err

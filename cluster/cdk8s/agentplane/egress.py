@@ -97,6 +97,8 @@ _LIVENESS_HEALTH_SERVICE = "livez"
 # Only the app's authenticated admin gRPC caller receives this audience.
 ADMIN_GRPC_AUDIENCE = "agentplane-egress-admin"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
+# Must equal localAPIServerHost in agentplane/policy_controller/account_use.go; the managed account
+# admission policy refuses that controller's use sets naming any other host.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The credential substituted there; agents discover its usage through the rules endpoint.
 KUBERNETES_CREDENTIAL = "kubernetes-workload"

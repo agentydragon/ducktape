@@ -244,7 +244,9 @@ py_library(
     srcs = ["policy_controller_rbac.py"],
     deps = [
         ":environment",
+        ":managed_account_admission",
         ":policy_controller",
+        "//agentplane:subjects",
         "//agentplane/sandboxes:kubernetes_grants",
         "//cluster/cdk8s:api_resource",
         "@pypi//cdk8s",
@@ -1262,6 +1264,42 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "managed_account_admission",
+    srcs = ["managed_account_admission.py"],
+    deps = [
+        ":egress",
+        ":kubernetes_account_ref",
+        "//agentplane:subjects",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_managed_account_admission",
+    # Starts an API server and synthesizes a chart.
+    size = "medium",
+    srcs = ["test_managed_account_admission.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":kubernetes_account_ref",
+        ":kubernetes_accounts",
+        ":managed_account_admission",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 

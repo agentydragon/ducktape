@@ -52,7 +52,7 @@ nothing authenticates as it, but its bindings stay latent authority for whoever 
 
 A managed account's `EgressCredential` and one-rule `PolicySet` are emitted by the controller and
 owned by the account, so a temporary account's grants, use bindings, credential and set go with its
-one clock (`MANAGED_ACCOUNT_CREDENTIALS`).
+one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-serviceaccounts)).
 
 ## Changing an environment's identity
 
@@ -147,30 +147,27 @@ place.
    reads of historical rows are unavailable.
 4. **Who authors role sets.** Whether the app may author `KubernetesRoleSet`s, or only grants to
    Flux-authored ones.
-5. **Admission for controller-written policy.** The controller writing a `PolicySet` and an
-   `EgressCredential` per managed account is new authority; an admission rule limits it to the
-   one-rule shape naming that account's own ServiceAccount and apiserver host.
-6. **Ending an identity.** `Identity` carries no `expiresAt` (operator, 2026-11-09). Open: what
+5. **Ending an identity.** `Identity` carries no `expiresAt` (operator, 2026-11-09). Open: what
    "referenced" means for a retired Sandbox that could still resume.
-7. **An `IdentityGroup` kind** (operator asked 2026-11-09), only if many short-lived identities need
+6. **An `IdentityGroup` kind** (operator asked 2026-11-09), only if many short-lived identities need
    one grant that cannot be their launch set. Label selection stays rejected: namespaces are named,
    never selected.
-8. **Who mints identities.** Recommendation: collapse the app-minted path into Dispatcher's, so every
+7. **Who mints identities.** Recommendation: collapse the app-minted path into Dispatcher's, so every
    non-Flux identity is Session-managed and the finish dialog deletes it through the Session; the
    launch form already calls `CreateSession`, and create-then-bind makes the Sandbox-first order
    unnecessary.
-9. **API groups by domain** (operator asked 2026-11-09). Environments, Agentplane identity and
+8. **API groups by domain** (operator asked 2026-11-09). Environments, Agentplane identity and
    affordances, and Kubernetes grants share one API group; the grant kinds' Go package sits in
    `policy/api`. Recommendation: three groups at `IDENTITY_CUTOVER`, which rewrites every policy
    object anyway, moving the grant kinds' package with them.
-10. **Authority outside Kubernetes** (operator raised 2026-11-09). A Session-bound lifetime makes
-    `Identity` the first object whose natural owner is a service database
-    ([direction D4](architecture_overview.md#four-directions)). This track keeps Kubernetes
-    authoritative, since every enforcement point consumes CRs by watch. Constraint so D4 stays open:
-    services reference an identity by name and UID through the shared reader only, and no service's
-    correctness depends on `Identity` being a Kubernetes object. Accounts live on the local apiserver
-    whichever direction is chosen.
-11. **Accounts per preset or per role set** (operator, 2026-11-09: per preset for now; reconsider).
+9. **Authority outside Kubernetes** (operator raised 2026-11-09). A Session-bound lifetime makes
+   `Identity` the first object whose natural owner is a service database
+   ([direction D4](architecture_overview.md#four-directions)). This track keeps Kubernetes
+   authoritative, since every enforcement point consumes CRs by watch. Constraint so D4 stays open:
+   services reference an identity by name and UID through the shared reader only, and no service's
+   correctness depends on `Identity` being a Kubernetes object. Accounts live on the local apiserver
+   whichever direction is chosen.
+10. **Accounts per preset or per role set** (operator, 2026-11-09: per preset for now; reconsider).
     Per role set is finer-grained, but an agent then needs a different token per command.
 
 ## Exit
