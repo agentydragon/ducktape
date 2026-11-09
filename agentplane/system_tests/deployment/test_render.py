@@ -104,7 +104,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         }
         for doc in docs
     )
-    assert _resource(docs, "Issuer", "agentplane-runner-ca")["spec"]["ca"]["secretName"] == "agentplane-runner-ca"
     gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
     assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
     assert set(gateway_certificate["spec"]["usages"]) == {"digital signature", "client auth"}

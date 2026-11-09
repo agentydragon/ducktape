@@ -31,8 +31,8 @@ def wait_for_issuance(kubectl: Kubectl, namespace: str, bundles: Sequence[str]) 
         f"--timeout={READY_SECONDS}s",
     )  # fmt: skip
     kubectl(
-        "-n", namespace, "wait", "--for=condition=Ready", "certificate/agentplane-runner-ca",
-        "certificate/agentplane-runner-gateway", f"--timeout={READY_SECONDS}s",
+        "-n", namespace, "wait", "--for=condition=Ready", "certificate/agentplane-runner-gateway",
+        f"--timeout={READY_SECONDS}s",
     )  # fmt: skip
     kubectl(
         "wait", "--for=condition=Synced", *(f"bundle/{bundle}" for bundle in bundles), f"--timeout={READY_SECONDS}s"

@@ -13,37 +13,6 @@ spec: {}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: agentplane-runner-ca
-  namespace: agentplane-staging
-spec:
-  commonName: agentplane-runner-ca
-  duration: 87600h
-  isCA: true
-  issuerRef:
-    kind: ClusterIssuer
-    name: cluster-internal-ca
-  privateKey:
-    algorithm: ECDSA
-    rotationPolicy: Always
-    size: 256
-  renewBefore: 8760h
-  secretName: agentplane-runner-ca
-  usages:
-    - cert sign
-    - crl sign
----
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: agentplane-runner-ca
-  namespace: agentplane-staging
-spec:
-  ca:
-    secretName: agentplane-runner-ca
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
   name: agentplane-runner-gateway
   namespace: agentplane-staging
 spec:

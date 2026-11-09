@@ -344,7 +344,7 @@ def _add_runner_root(chart: Chart) -> None:
     ClusterIssuer(
         chart,
         "runner-internal-issuer",
-        # add_runner_certificates uses the production issuer reference.
+        # add_workload_ca signs from the production issuer reference.
         metadata=ApiObjectMetadata(name="cluster-internal-ca"),
         ca=ClusterIssuerSpecCa(secret_name=root_secret),
     )

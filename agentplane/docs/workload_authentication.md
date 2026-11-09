@@ -45,9 +45,18 @@ Secrets carry the owning Sandbox's UID in the `agentplane.allegedly.works/sandbo
 A `ValidatingAdmissionPolicy` (`cluster/cdk8s/agentplane/workload_certificate_admission.py`) on cert-manager `Certificate`s and `CertificateRequest`s that name the
 issuer keeps it from being a cluster-wide minting service. The Sandbox Controller may request only
 `spiffe://agentplane/environment-runtime/<its namespace>/<Sandbox UID>/<credential ID>` URIs in its
-own namespace, and Flux's applier only one-segment service URIs such as `spiffe://agentplane/actions`.
-No requester gets a CA certificate, only cert-manager creates the `CertificateRequest`s, and every
+own namespace, the Policy Controller only `spiffe://agentplane/<namespace>/<name>/<credential ID>`
+URIs naming the Certificate's own namespace, and Flux's applier only one-segment service URIs such as
+`spiffe://agentplane/actions`. No requester gets a CA certificate, only cert-manager creates the `CertificateRequest`s, and every
 other Certificate against the issuer is refused. Certificates against other issuers are unaffected.
+
+## Workload credentials
+
+The `WorkloadCredential` kind records the credential a workload's owner requests, and the Policy
+Controller's [issuer](../policy_controller/SPEC.md#workload-credentials) issues it from the workload
+CA. Both are deployed but not yet in use: no manifest sets the issuer's settings, and no verifier
+reads records. The record, requester and resolver are described in
+[`workload_identity`](../workload_identity/README.md).
 
 ## TokenReview and projected credentials
 

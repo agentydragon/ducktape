@@ -108,8 +108,9 @@ async def cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
             "metadata": {"name": name},
             "spec": {
                 "secretName": name,
-                "issuerRef": {"name": "agentplane-runner-ca", "kind": "Issuer"},
-                "uris": [f"spiffe://agentplane/test-reissue/{name}"],
+                "issuerRef": {"name": "agentplane-workload", "kind": "ClusterIssuer"},
+                # A one-segment service URI: the admission policy lets the manifest applier request it.
+                "uris": [f"spiffe://agentplane/{name}"],
                 "privateKey": {"algorithm": "ECDSA", "size": 256, "rotationPolicy": "Always"},
                 "usages": ["digital signature", "server auth"],
             },

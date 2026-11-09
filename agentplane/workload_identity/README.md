@@ -1,7 +1,7 @@
 # Workload identity
 
-Issues and resolves the SVIDs Agentplane workloads present, per
-[the workload identity lifecycle](../plans/workload_identity_lifecycle.md).
+Issues and resolves the SVIDs Agentplane workloads present
+([workload authentication](../docs/workload_authentication.md#workload-credentials)).
 
 - `api/v1alpha1`: the `WorkloadCredential` kind. Its owner writes `spec`; only the issuer writes
   `status`. A record's subject changes only together with a new binding (a CRD transition rule).
