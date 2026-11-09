@@ -12,6 +12,7 @@ use super::super::value_model::{
     AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
     SymbolicInputId, ValueExpr, Values,
 };
+use super::super::world::object_surface::ObjectSurfaceStore;
 use super::ExecutionIndex;
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
 use crate::execution_evidence::OrderedFieldReadRefusal;
@@ -38,7 +39,7 @@ struct ProviderContext<'a> {
     local_bindings: BTreeSet<Id>,
     shadowed: BTreeSet<&'static str>,
     native_constructions: BTreeSet<NativeIntrinsic>,
-    properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    surface: ObjectSurfaceStore,
     arrays: OrdMap<u32, DenseArray>,
     revision: u64,
 }
@@ -65,10 +66,10 @@ impl AllocationContext for ProviderContext<'_> {
     }
     fn heap(&mut self) -> LiteralHeap<'_> {
         LiteralHeap {
-            properties: &mut self.properties,
+            surface: &mut self.surface,
             arrays: &mut self.arrays,
             revision: &mut self.revision,
-            writable_prefix: None,
+            track_writable_prefix: false,
         }
     }
     fn keyed_collection_new(
@@ -130,12 +131,10 @@ impl OwnDataContext for ProviderContext<'_> {
         true
     }
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
-        self.properties
-            .get(&allocation)?
-            .get(&Some(property.to_owned()))
+        self.surface.data_values(allocation, property)
     }
-    fn property_is_accessor(&self, _allocation: u32, _property: &str) -> bool {
-        false
+    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+        self.surface.has_accessor_property(allocation, property)
     }
     fn property_is_writable(&self, _allocation: u32, _property: &str) -> bool {
         false
@@ -395,8 +394,8 @@ fn retain_provider_values(
                 if visited_objects.insert(allocation) {
                     pending.extend(
                         context
-                            .properties
-                            .get(&allocation)?
+                            .surface
+                            .own_properties(allocation)?
                             .values()
                             .flatten()
                             .cloned(),
@@ -540,7 +539,7 @@ pub(super) fn derive(
             .unwrap_or_default(),
         shadowed: shadowed.clone(),
         native_constructions: BTreeSet::new(),
-        properties: OrdMap::new(),
+        surface: ObjectSurfaceStore::default(),
         arrays: OrdMap::new(),
         revision: 0,
     };
@@ -608,7 +607,7 @@ pub(super) fn derive(
             }
             AbstractValue::Value(Value::Alloc(Kind::Object, allocation)) => {
                 returns.insert(ForeignReturn::FreshAllocation);
-                let properties = context.properties.get(&allocation)?;
+                let properties = context.surface.own_properties(allocation)?;
                 retain_provider_values(
                     &context,
                     scope,
@@ -687,7 +686,7 @@ pub(super) fn derive_class(
         local_bindings: body.bindings.keys().cloned().collect(),
         shadowed: shadowed.clone(),
         native_constructions: BTreeSet::new(),
-        properties: OrdMap::new(),
+        surface: ObjectSurfaceStore::default(),
         arrays: OrdMap::new(),
         revision: 0,
     };
@@ -723,7 +722,7 @@ pub(super) fn derive_class(
                 if !visited_objects.insert(allocation) {
                     continue;
                 }
-                if let Some(properties) = context.properties.get(&allocation) {
+                if let Some(properties) = context.surface.own_properties(allocation) {
                     pending_values.extend(properties.values().flatten().cloned());
                 }
             }

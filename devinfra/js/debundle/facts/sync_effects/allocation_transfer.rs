@@ -8,6 +8,7 @@ use super::value_model::{
     AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PropertyDefinition,
     ProviderScopeId, ValueExpr, Values,
 };
+use super::world::object_surface::ObjectSurfaceStore;
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{
     ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
@@ -190,10 +191,12 @@ pub(super) fn keyed_collection_new(
 
 /// The real shared allocation store; neither consumer supplies app/native facts.
 pub(super) struct LiteralHeap<'a> {
-    pub(super) properties: &'a mut OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    pub(super) surface: &'a mut ObjectSurfaceStore,
     pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
     pub(super) revision: &'a mut u64,
-    pub(super) writable_prefix: Option<&'a mut OrdMap<u32, WritablePrefixState>>,
+    /// Only application execution follows a literal's writability; provider
+    /// queries never prove a normally completing write.
+    pub(super) track_writable_prefix: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,10 +214,14 @@ impl LiteralHeap<'_> {
     /// per-site proof because the heap does not distinguish allocation
     /// generations.
     pub(super) fn begin_literal(&mut self, allocation: u32) {
-        let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
+        if !self.track_writable_prefix {
             return;
-        };
-        let next = if !self.properties.contains_key(&allocation)
+        }
+        let writable_prefix = &mut self.surface.writable_prefix;
+        let next = if !self
+            .surface
+            .prefix_object_properties
+            .contains_key(&allocation)
             && !writable_prefix.contains_key(&allocation)
         {
             WritablePrefixState::InProgress
@@ -228,9 +235,10 @@ impl LiteralHeap<'_> {
     }
 
     pub(super) fn complete_array(&mut self, allocation: u32, length: usize) {
-        let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
+        if !self.track_writable_prefix {
             return;
-        };
+        }
+        let writable_prefix = &mut self.surface.writable_prefix;
         if writable_prefix.get(&allocation) == Some(&WritablePrefixState::InProgress) {
             let next = u32::try_from(length)
                 .map(|length| WritablePrefixState::DenseArray { length })
@@ -247,9 +255,10 @@ impl LiteralHeap<'_> {
         allocation: u32,
         writable_properties: BTreeSet<String>,
     ) {
-        let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
+        if !self.track_writable_prefix {
             return;
-        };
+        }
+        let writable_prefix = &mut self.surface.writable_prefix;
         if writable_prefix.get(&allocation) == Some(&WritablePrefixState::InProgress) {
             writable_prefix.insert(allocation, WritablePrefixState::Proven(writable_properties));
             *self.revision = self.revision.wrapping_add(1);
@@ -257,9 +266,10 @@ impl LiteralHeap<'_> {
     }
 
     pub(super) fn invalidate_writable(&mut self, allocation: u32) {
-        let Some(writable_prefix) = self.writable_prefix.as_deref_mut() else {
+        if !self.track_writable_prefix {
             return;
-        };
+        }
+        let writable_prefix = &mut self.surface.writable_prefix;
         if matches!(
             writable_prefix.get(&allocation),
             Some(
@@ -274,7 +284,11 @@ impl LiteralHeap<'_> {
     }
 
     pub(super) fn record(&mut self, allocation: u32, properties: BTreeMap<Option<String>, Values>) {
-        let current = self.properties.entry(allocation).or_default();
+        let current = self
+            .surface
+            .prefix_object_properties
+            .entry(allocation)
+            .or_default();
         let mut changed = false;
         for (property, values) in properties {
             let slot = current.entry(property).or_default();
@@ -296,7 +310,8 @@ impl LiteralHeap<'_> {
         values: &Values,
     ) {
         let slot = self
-            .properties
+            .surface
+            .prefix_object_properties
             .entry(allocation)
             .or_default()
             .entry(property)
@@ -315,7 +330,11 @@ impl LiteralHeap<'_> {
     }
 
     pub(super) fn dense_array(&mut self, allocation: u32, slots: Vec<Values>) {
-        let before = self.properties.get(&allocation).cloned();
+        let before = self
+            .surface
+            .prefix_object_properties
+            .get(&allocation)
+            .cloned();
         let dense = self.arrays.entry(allocation).or_insert_with(|| DenseArray {
             slots: slots.clone(),
         });
@@ -330,7 +349,11 @@ impl LiteralHeap<'_> {
                 current.insert(AbstractValue::UNDEFINED);
             }
         }
-        let properties = self.properties.entry(allocation).or_default();
+        let properties = self
+            .surface
+            .prefix_object_properties
+            .entry(allocation)
+            .or_default();
         properties
             .entry(Some("length".into()))
             .or_default()
@@ -726,9 +749,8 @@ mod tests {
 
     #[test]
     fn repeated_pooled_literal_site_cannot_restore_writable_prefix() {
-        let mut properties = OrdMap::new();
+        let mut surface = ObjectSurfaceStore::default();
         let mut arrays = OrdMap::new();
-        let mut writable_prefix = OrdMap::new();
         let mut revision = 0;
         let allocation = 7;
         let stored = BTreeMap::from([(
@@ -738,21 +760,21 @@ mod tests {
 
         {
             let mut heap = LiteralHeap {
-                properties: &mut properties,
+                surface: &mut surface,
                 arrays: &mut arrays,
                 revision: &mut revision,
-                writable_prefix: Some(&mut writable_prefix),
+                track_writable_prefix: true,
             };
             heap.begin_literal(allocation);
             assert_eq!(
-                heap.writable_prefix.as_deref().unwrap().get(&allocation),
+                heap.surface.writable_prefix.get(&allocation),
                 Some(&WritablePrefixState::InProgress)
             );
             heap.record(allocation, stored.clone());
             heap.complete_record(allocation, BTreeSet::from(["value".to_owned()]));
         }
         assert_eq!(
-            writable_prefix.get(&allocation),
+            surface.writable_prefix.get(&allocation),
             Some(&WritablePrefixState::Proven(BTreeSet::from([
                 "value".to_owned()
             ])))
@@ -761,20 +783,20 @@ mod tests {
 
         {
             let mut heap = LiteralHeap {
-                properties: &mut properties,
+                surface: &mut surface,
                 arrays: &mut arrays,
                 revision: &mut revision,
-                writable_prefix: Some(&mut writable_prefix),
+                track_writable_prefix: true,
             };
             heap.begin_literal(allocation);
             assert_eq!(
-                heap.writable_prefix.as_deref().unwrap().get(&allocation),
+                heap.surface.writable_prefix.get(&allocation),
                 Some(&WritablePrefixState::Unknown)
             );
             heap.complete_record(allocation, BTreeSet::from(["value".to_owned()]));
         }
         assert_eq!(
-            writable_prefix.get(&allocation),
+            surface.writable_prefix.get(&allocation),
             Some(&WritablePrefixState::Unknown)
         );
         assert_eq!(revision, proven_revision + 1);

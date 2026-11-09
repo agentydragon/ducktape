@@ -75,9 +75,6 @@ pub(super) enum HeapOperation {
         certified_data_receivers: BTreeSet<u32>,
         deferred_global_write: bool,
     },
-    ApplyDescriptors {
-        arguments: Vec<Values>,
-    },
     ResolveNative {
         kind: CallKind,
         callee: ValueExpr,
@@ -113,10 +110,6 @@ impl HeapOperation {
                     &certified_data_receivers,
                     deferred_global_write,
                 );
-                HeapResult::Updated
-            }
-            Self::ApplyDescriptors { arguments } => {
-                executor.apply_own_descriptor_map_transfer(&arguments);
                 HeapResult::Updated
             }
             Self::ResolveNative {

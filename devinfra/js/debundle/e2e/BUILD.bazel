@@ -680,6 +680,11 @@ debundle_e2e_test(
 debundle_e2e_test(name = "own_descriptor_inspection_test")
 
 debundle_e2e_test(
+    name = "own_data_object_spread_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
     name = "descriptor_copy_factory_test",
     deps = [":graph_support"],
 )
