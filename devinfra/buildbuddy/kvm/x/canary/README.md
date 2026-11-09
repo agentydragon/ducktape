@@ -40,11 +40,17 @@ nested guest execution with the first owned KVM workload. Run both arms from the
 same commit:
 
 ```bash
+bbr test //devinfra/buildbuddy/kvm:kvm_vm_test \
+  --define=kvm-canary-20261109=4 --nocache_test_results
 bbr test //agentplane/system_tests/suites:test_firecracker \
   --define=kvm-canary-20261109=4 --nocache_test_results
 ```
 
-The define changes only KVM suites' TestRunner properties: the pool, explicit
+The smoke check opens nested `/dev/kvm`, verifies API version 12, creates a VM
+and vCPU, and checks the Docker keyring/pivot-root permissions. It does not run
+nested guest code; the following Firecracker suite establishes that boundary.
+
+The define changes only KVM smoke/system TestRunner properties: the pool, explicit
 CPU request (four or eight), and fixed 10 GB action memory request. The VM and
 advertised executor CPU must match the selected arm. Explicit CPU and memory
 override compute units in BuildBuddy; changing advertised worker CPU alone would
