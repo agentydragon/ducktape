@@ -170,7 +170,8 @@ Withdrawn: L0a (the reference head's `lowering/` is a half-applied refactor;
 Wave 3 is ordered from the hosted inventory below instead) and L1e (devel has
 no module-cell identities yet; the saved identities land with Wave 3 slice 6).
 Still open from this wave: the `private_frozen_namespace` recognizer
-tombstoned by #15052 (Wave 3 slice 1).
+tombstoned by #15052 (Wave 3 slice 1). Cleanups landed alongside: #15055,
+#15056, #15058, #15060, #15062, #15063.
 
 **Wave 2: the kernel.** Large by nature; the interfaces (five context traits,
 `World` and its join, the one driver, the completion ledger as sole coverage
@@ -185,19 +186,27 @@ cold Tana analysis was about 320 seconds; a slice that regresses wall time or
 RSS by more than 10 percent is profiled with `perf` before it lands, and a
 persistent regression means the structure, not a budget knob, is wrong.
 
-- L2a. Narrow context traits and `kernel/continuation.rs` +
-  `local_transfer::execute` + the strict-provider driver as the one provider
-  executor. Deletes: the flat lane for bodies with an ordered plan, the legacy
-  `ValueExpr::Member` arm for covered reads. needs L1a, L1b. Tests:
-  `foreign_call_summary`, `local_class_construction`, continuation unit tests.
-- L2b. `alternatives/` + `World::join` (strict fast path, conservative fallback,
-  no panic). needs L2a. Tests: `source_continuation`, `optional_call_timing`.
+- L2a. **In review as #15069** (2026-11-09): `kernel/{context,continuation,
+driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
+  deleted. Tana cost gate: +3.3 % wall, +0.4 % RSS. Kept with tombstones gated
+  on L2b: the cell-owning `BindingContext` methods, `settled_dependencies`,
+  closure creation, the effect sink; gated on L2c: `AllocationContext` and the
+  value bridge; the `invoke_with_cells` flat lane with its four gates
+  (`requires_keyed_collection_new` needs an application keyed-collection lane).
+  Devel's IR had no fork producer, so `Fork`/`ForkPolicy` wait for the first
+  conditional-IR slice (§ IR growth).
+- L2b. `world/` (one `World` for both adapters, no `Deref`, copy-on-write) +
+  `alternatives/` + `World::join` (strict fast path, conservative fallback,
+  typed refusal, no panic); then closes L2a's L2b-gated tombstones in a
+  stacked second PR. needs L2a. Tests: `World::join` unit tests per refusal
+  variant, `source_continuation`, `optional_call_timing`.
 - L2c. Application adapter: `execute_owner` → `roots/` phases;
   `execute_call_transfer_inner` split by mode; delete `complete: bool`. needs
   L2b. Tests: effect-translation positives with `swapped_pairs > 0` and Node
   parity.
-- L2d. `execution_index.rs` stops nesting the interpreter; provider program
-  registry (`execution_index/provider_program.rs`). needs L2a.
+- L2d. `execution_index.rs` stops nesting the interpreter (`#[path]` modules
+  become siblings; `ExecutionIndex` is an input struct); provider program
+  registry only if devel grows one. needs L2a; parallel to L2b.
 
 **IR growth.** Devel's ordered `LocalBody` IR covers fewer constructs than the
 reference's (no regions, `if`/`try`/`catch` bindings, array or argument spread,
