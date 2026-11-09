@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import re
-import subprocess
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,14 +26,19 @@ logger = logging.getLogger(__name__)
 _PR_RANK = {PrState.MERGED: 3, PrState.OPEN: 2, PrState.CLOSED: 1}
 
 
-def _github_token() -> str | None:
+async def _github_token() -> str | None:
     if token := os.environ.get("GITHUB_TOKEN"):
         return token
     try:
-        token = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True).stdout.strip()
-    except OSError, subprocess.CalledProcessError:
+        process = await asyncio.create_subprocess_exec(
+            "gh", "auth", "token", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+        )
+    except OSError:
         return None
-    return token or None
+    stdout, _ = await process.communicate()
+    if process.returncode != 0:
+        return None
+    return stdout.decode().strip() or None
 
 
 _REMOTE_SLUG_RE = re.compile(r"(?:github\.com[:/])([^/]+/[^/]+?)(?:\.git)?/?$")
@@ -134,7 +138,7 @@ async def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
     if not branches:
         return {}
     slug = _repo_slug(repo)
-    token = await asyncio.to_thread(_github_token)
+    token = await _github_token()
     if slug is None:
         logger.warning("PR check skipped: origin is not a GitHub remote")
         return {}
