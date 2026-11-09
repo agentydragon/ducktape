@@ -12,7 +12,6 @@ NAME = "kvm-canary-20261109"
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--worker-manifest", type=Path, required=True)
-    parser.add_argument("--node", required=True)
     parser.add_argument("--cpu", type=int, choices=(4, 8), required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -41,12 +40,14 @@ def main() -> None:
     }
     template["metadata"]["labels"] = {"app.kubernetes.io/name": NAME, "kubevirt.io/domain": NAME}
     spec = template["spec"]
-    spec["nodeSelector"] = {"kubernetes.io/hostname": args.node}
+    spec["nodeSelector"] = {"topology.kubernetes.io/zone": "hil-ovh"}
     spec["domain"]["cpu"]["cores"] = args.cpu
     for resources in spec["domain"]["resources"].values():
         resources["cpu"] = str(args.cpu)
         if resources["memory"] != "16Gi":
             raise ValueError("The canary requires 16Gi guest memory")
+    # KubeVirt carries this into the launcher Pod and adds its own overhead.
+    spec["domain"]["resources"]["requests"]["ephemeral-storage"] = "80Gi"
     for volume in spec["volumes"]:
         if "configMap" in volume:
             volume["configMap"]["name"] = NAME
