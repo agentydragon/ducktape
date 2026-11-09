@@ -3,13 +3,17 @@ package api
 import (
 	"context"
 	"errors"
-	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
@@ -29,15 +33,6 @@ var errDraining = errors.New("Action Service is draining")
 // does not learn from the difference whether an account exists or carries the label.
 var unauthenticated = status.Error(codes.Unauthenticated, "invalid bearer")
 
-// The method prefixes of the services the Gate admits callers to; it lets every other call, such as the health
-// service's, through. The Connection service is served by the standalone MCP edge but uses this shared verifier.
-const (
-	actionService     = "/agentplane.action_service.ActionService/"
-	operatorService   = "/agentplane.action_service.OperatorActionService/"
-	webPushService    = "/agentplane.action_service.WebPushService/"
-	connectionService = "/agentplane.mcp_edge.ConnectionService/"
-)
-
 // GateOptions are whom a Gate admits.
 type GateOptions struct {
 	// Workloads reviews a workload's bearer; it admits only the namespaces whose ServiceAccounts may call.
@@ -49,17 +44,19 @@ type GateOptions struct {
 	ReaderAccounts []auth.Account
 	// Operators verifies an operator's token; nil admits no operator.
 	Operators *OperatorVerifier
+	// AdditionalOperatorMethods names methods owned by another service that this Gate serves.
+	AdditionalOperatorMethods []string
 }
 
-// Gate admits the calls of the Action Service's own services. It refuses every call while the service drains,
-// resolves the bearer to the principal the call acts as, and answers a failed call with the status code that
-// names its failure.
+// Gate admits only methods its service policy lists. It refuses every call while the service drains, resolves the
+// bearer to the principal the call acts as, and answers a failed call with the status code that names its failure.
 type Gate struct {
 	workloads *auth.Resolver
 	svid      *auth.SVIDResolver
 	callers   Callers
 	readers   map[auth.Account]struct{}
 	operators *OperatorVerifier
+	methods   map[string]func(context.Context) (admission, error)
 	// draining ends when the service stops accepting work; open watches end with it.
 	draining context.Context
 	drain    context.CancelFunc
@@ -71,10 +68,44 @@ func NewGate(options GateOptions) *Gate {
 		readers[account] = struct{}{}
 	}
 	draining, drain := context.WithCancel(context.Background())
-	return &Gate{
+	g := &Gate{
 		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: readers, operators: options.Operators,
 		draining: draining, drain: drain,
 	}
+	g.methods = map[string]func(context.Context) (admission, error){
+		action_servicepb.ActionService_SubmitActionRequest_FullMethodName:                    g.authenticate,
+		action_servicepb.ActionService_ListActionRequests_FullMethodName:                     g.authenticate,
+		action_servicepb.ActionService_ListActionRequestHistory_FullMethodName:               g.authenticate,
+		action_servicepb.ActionService_GetActionRequest_FullMethodName:                       g.authenticate,
+		action_servicepb.ActionService_WatchActionRequest_FullMethodName:                     g.authenticate,
+		action_servicepb.ActionService_WatchActionRequests_FullMethodName:                    g.authenticate,
+		action_servicepb.ActionService_CancelActionRequest_FullMethodName:                    g.authenticate,
+		action_servicepb.ActionService_ListActionRequestEvents_FullMethodName:                g.authenticate,
+		action_servicepb.ActionService_ListActionGroups_FullMethodName:                       g.authenticate,
+		action_servicepb.ActionService_WatchActionGroups_FullMethodName:                      g.authenticate,
+		action_servicepb.ActionService_GetAction_FullMethodName:                              g.authenticate,
+		action_servicepb.ActionService_GetActionPolicy_FullMethodName:                        g.authenticate,
+		action_servicepb.ActionService_WatchActionPolicy_FullMethodName:                      g.authenticate,
+		operator_action_servicepb.OperatorActionService_DecideActionRequest_FullMethodName:   g.authenticateOperator,
+		operator_action_servicepb.OperatorActionService_WatchMcpServers_FullMethodName:       g.authenticateOperator,
+		operator_action_servicepb.OperatorActionService_StartMcpServerLinkage_FullMethodName: g.authenticateOperator,
+		operator_action_servicepb.OperatorActionService_DisconnectMcpServer_FullMethodName:   g.authenticateOperator,
+		web_push_servicepb.WebPushService_GetPushConfig_FullMethodName:                       g.authenticateOperator,
+		web_push_servicepb.WebPushService_ListPushSubscriptions_FullMethodName:               g.authenticateOperator,
+		web_push_servicepb.WebPushService_WatchPushSubscriptions_FullMethodName:              g.authenticateOperator,
+		web_push_servicepb.WebPushService_CreatePushSubscription_FullMethodName:              g.authenticateOperator,
+		web_push_servicepb.WebPushService_DeletePushSubscription_FullMethodName:              g.authenticateOperator,
+		// The OAuth callback proves its own single-use state; the metadata document is public.
+		linkage_servicepb.LinkageService_CompleteCallback_FullMethodName:  nil,
+		linkage_servicepb.LinkageService_GetClientMetadata_FullMethodName: nil,
+		healthpb.Health_Check_FullMethodName:                              nil,
+		healthpb.Health_List_FullMethodName:                               nil,
+		healthpb.Health_Watch_FullMethodName:                              nil,
+	}
+	for _, method := range options.AdditionalOperatorMethods {
+		g.methods[method] = g.authenticateOperator
+	}
+	return g
 }
 
 // Drain refuses every call from now on and ends the open watches.
@@ -220,17 +251,10 @@ func (g *Gate) operator(ctx context.Context, token string) (admission, error) {
 	return admission{principal: operator}, nil
 }
 
-// authenticator is how the Gate resolves the bearer of a call to the method, or nil for a call it lets through.
-func (g *Gate) authenticator(method string) func(context.Context) (admission, error) {
-	switch {
-	case strings.HasPrefix(method, actionService):
-		return g.authenticate
-	case strings.HasPrefix(method, operatorService), strings.HasPrefix(method, webPushService),
-		strings.HasPrefix(method, connectionService):
-		return g.authenticateOperator
-	default:
-		return nil
-	}
+// authenticator resolves the method's bearer policy and reports whether the method is admitted at all.
+func (g *Gate) authenticator(method string) (func(context.Context) (admission, error), bool) {
+	authenticate, ok := g.methods[method]
+	return authenticate, ok
 }
 
 // admit is the Gate's work before a gated call runs: the context it runs in, which carries its principal.
@@ -250,7 +274,10 @@ func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 	if err := rejectMixedCredentials(ctx); err != nil {
 		return nil, err
 	}
-	authenticate := g.authenticator(info.FullMethod)
+	authenticate, ok := g.authenticator(info.FullMethod)
+	if !ok {
+		return nil, status.Error(codes.PermissionDenied, "method not allowed")
+	}
 	if authenticate == nil {
 		return handler(ctx, request)
 	}
@@ -270,7 +297,10 @@ func (g *Gate) StreamInterceptor(server any, stream grpc.ServerStream, info *grp
 	if err := rejectMixedCredentials(stream.Context()); err != nil {
 		return err
 	}
-	authenticate := g.authenticator(info.FullMethod)
+	authenticate, ok := g.authenticator(info.FullMethod)
+	if !ok {
+		return status.Error(codes.PermissionDenied, "method not allowed")
+	}
 	if authenticate == nil {
 		return handler(server, stream)
 	}

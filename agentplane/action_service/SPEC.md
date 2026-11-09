@@ -72,6 +72,13 @@ peer; deleted Sandboxes, stale credentials and invalid leaves fail before a hand
 ActionService admits SVIDs; operator RPCs on the same listener retain their OIDC verifier and
 refuse Sandbox certificates. Linkage callbacks retain their single-use state authorization.
 
+The Gate admits only explicitly listed full gRPC method names; any other method is denied before
+its handler runs. ActionService methods use workload admission, while OperatorActionService,
+WebPushService and the MCP Edge's explicitly supplied ConnectionService methods use operator OIDC.
+Health methods remain public. Linkage methods remain bearer-free because the callback verifies its
+single-use state itself and the client metadata document is public. A new RPC stays denied until it
+is assigned an explicit boundary.
+
 On the same listener, a Kubernetes token proves that account directly through TokenReview for the configured audience.
 The resolver requires an allowed namespace and ServiceAccount UID; Actions accepts tokens with or without a Pod binding. A supplied
 Pod binding must have exactly one name and UID. An external MCP bearer proves an active
