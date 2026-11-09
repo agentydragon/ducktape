@@ -85,6 +85,10 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if tlsConfig == nil {
 		return errors.New("rpc.tls is required")
 	}
+	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(tlsConfig)
+	if err != nil {
+		return err
+	}
 	tlsConfig.NextProtos = []string{"h2", "http/1.1"}
 	listener, err := net.Listen("tcp", c.RPC.ListenAddress)
 	if err != nil {
@@ -100,7 +104,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		Handler:           observability.HTTPHandler(rpcHandler(grpcServer, handler)),
 		ReadHeaderTimeout: 10 * time.Second,
 		TLSConfig:         tlsConfig,
-		ConnState:         environment_runtime_transport.HTTPServerTLSExpiryConnState(),
+		ConnState:         connState,
 	}
 	stopped := make(chan error, 1)
 	go func() { stopped <- server.ServeTLS(listener, "", "") }()

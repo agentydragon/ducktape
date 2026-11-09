@@ -94,6 +94,10 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
 	serverTLS.NextProtos = []string{"h2", "http/1.1"}
 	clientCredential := ca.Issue(t, workload.URI)
 	clientTLS, err := clientCredential.ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
@@ -111,7 +115,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 		Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			server.ServeHTTP(writer, request)
 		}),
-		TLSConfig: serverTLS, ConnState: environment_runtime_transport.HTTPServerTLSExpiryConnState(),
+		TLSConfig: serverTLS, ConnState: connState,
 	}
 	go func() { _ = httpServer.ServeTLS(listener, "", "") }()
 	t.Cleanup(func() {

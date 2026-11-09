@@ -12,35 +12,141 @@ import (
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 )
 
-func TestHTTPServerTLSExpiryConnStateUsesAuthenticatedPeerExpiry(t *testing.T) {
+func TestHTTPServerTLSExpiryConnStateUsesEarlierLeafExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		localLifetime time.Duration
+		peerLifetime  time.Duration
+		bearerOnly    bool
+	}{
+		{name: "peer expires first", localLifetime: 8 * time.Second, peerLifetime: 3 * time.Second},
+		{name: "local expires first", localLifetime: 3 * time.Second, peerLifetime: 8 * time.Second},
+		{name: "bearer only local expiry", localLifetime: 3 * time.Second, bearerOnly: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, server, connState, expiresAt := establishHTTPExpiryConnection(t, tc.localLifetime, tc.peerLifetime, tc.bearerOnly)
+			connState(server, http.StateActive)
+			assertClosesAtExpiry(t, client, expiresAt)
+			connState(server, http.StateClosed)
+		})
+	}
+}
+
+func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
+	localURI := environment_runtime_transport.EgressProxyURI
 	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
-	// X.509 encodes NotAfter at whole-second precision; leave time for setup
-	// after that truncation before testing the connection's expiry.
-	expires := now.Truncate(time.Second).Add(3 * time.Second)
-	runtime := ca.IssueWithValidity(t, runtimeURI, now.Add(-time.Minute), expires, x509.ExtKeyUsageClientAuth)
-	proxy := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
-	serverTLS, err := proxy.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	now := time.Now().UTC().Truncate(time.Second)
+	selectedExpiry := now.Add(3 * time.Second)
+	peerExpiry := now.Add(8 * time.Second)
+	local := ca.IssueWithValidity(t, localURI, now.Add(-time.Minute), selectedExpiry, x509.ExtKeyUsageServerAuth)
+	renewed := ca.IssueWithUsage(t, localURI, x509.ExtKeyUsageServerAuth)
+	runtime := ca.IssueWithValidity(t, runtimeURI, now.Add(-time.Minute), peerExpiry, x509.ExtKeyUsageClientAuth)
+	serverTLS, err := local.WorkloadServerTLSConfig(localURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	clientTLS, err := runtime.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := runtime.ClientTLSConfig(localURI)
 	if err != nil {
 		t.Fatal(err)
 	}
 	client, server := handshakeTLSConnections(t, clientTLS, serverTLS)
-	connState := environment_runtime_transport.HTTPServerTLSExpiryConnState()
-	connState(server, http.StateActive)
-	_ = client.SetReadDeadline(expires.Add(2 * time.Second))
-	_, err = client.Read(make([]byte, 1))
-	if err == nil || isTimeout(err) {
-		t.Fatalf("client read after peer expiry = %v; want the server to close at authenticated peer NotAfter", err)
+	if got := client.ConnectionState().PeerCertificates[0].NotAfter; !got.Equal(selectedExpiry) {
+		t.Fatalf("handshake selected server leaf expires at %s, want %s", got, selectedExpiry)
 	}
+	copyFile(t, renewed.CertFile, local.CertFile)
+	copyFile(t, renewed.KeyFile, local.KeyFile)
+	connState(server, http.StateActive)
+	assertClosesAtExpiry(t, client, selectedExpiry)
 	connState(server, http.StateClosed)
+}
+
+func TestConfigureHTTPServerTLSExpiryRejectsUntrackedCertificateSelection(t *testing.T) {
+	for _, config := range []*tls.Config{
+		{},
+		{Certificates: []tls.Certificate{{}}},
+		{GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return nil, nil }, GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) { return nil, nil }},
+	} {
+		if _, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(config); err == nil {
+			t.Fatalf("ConfigureHTTPServerTLSExpiry(%+v) succeeded without an observable certificate selector", config)
+		}
+	}
+}
+
+func establishHTTPExpiryConnection(
+	t *testing.T,
+	localLifetime, peerLifetime time.Duration,
+	bearerOnly bool,
+) (*tls.Conn, *tls.Conn, func(net.Conn, http.ConnState), time.Time) {
+	t.Helper()
+	ca := environmentruntimetransporttesting.NewCA(t)
+	localURI := environment_runtime_transport.EgressProxyURI
+	now := time.Now().UTC().Truncate(time.Second)
+	localExpiry := now.Add(localLifetime)
+	local := ca.IssueWithValidity(t, localURI, now.Add(-time.Minute), localExpiry, x509.ExtKeyUsageServerAuth)
+	var peerExpiry time.Time
+	var clientTLS *tls.Config
+	var err error
+	if bearerOnly {
+		clientTLS, err = (environment_runtime_transport.Config{CAFile: ca.RootFile}).ProxyServerTLSConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+		if err != nil {
+			t.Fatal(err)
+		}
+		peerExpiry = now.Add(peerLifetime)
+		runtime := ca.IssueWithValidity(t, runtimeURI, now.Add(-time.Minute), peerExpiry, x509.ExtKeyUsageClientAuth)
+		clientTLS, err = runtime.ClientTLSConfig(localURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var serverTLS *tls.Config
+	if bearerOnly {
+		serverTLS, err = local.WorkloadServerTLSConfigWithBearer(localURI)
+	} else {
+		serverTLS, err = local.WorkloadServerTLSConfig(localURI)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, server := handshakeTLSConnections(t, clientTLS, serverTLS)
+	if bearerOnly {
+		if len(server.ConnectionState().PeerCertificates) != 0 {
+			t.Fatalf("bearer-only TLS received %d peer certificates, want none", len(server.ConnectionState().PeerCertificates))
+		}
+	} else if len(server.ConnectionState().PeerCertificates) == 0 {
+		t.Fatal("mTLS handshake received no client certificate")
+	}
+	expiresAt := localExpiry
+	if !peerExpiry.IsZero() && peerExpiry.Before(expiresAt) {
+		expiresAt = peerExpiry
+	}
+	return client, server, connState, expiresAt
+}
+
+func assertClosesAtExpiry(t *testing.T, client *tls.Conn, expiresAt time.Time) {
+	t.Helper()
+	if err := client.SetReadDeadline(expiresAt.Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Read(make([]byte, 1)); err == nil || isTimeout(err) {
+		t.Fatalf("HTTP TLS connection survived leaf expiry %s: %v", expiresAt, err)
+	}
 }
 
 func handshakeTLSConnections(t *testing.T, clientConfig, serverConfig *tls.Config) (*tls.Conn, *tls.Conn) {
