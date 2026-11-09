@@ -1463,3 +1463,8 @@ debundle_e2e_test(
     name = "runtime_resource_closure_test",
     deps = ["@crates//:serde_json"],
 )
+
+debundle_e2e_test(
+    name = "call_initializer_seal_test",
+    deps = [":graph_support"],
+)
