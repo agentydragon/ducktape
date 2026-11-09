@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -135,8 +136,8 @@ func serveDiscoveryWithOptions(
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
 	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), nil, ManagementOptions{
-		Managers:  map[auth.Account]struct{}{{Namespace: discoveryNamespace, Name: "actions"}: {}},
-		Launchers: map[auth.Account]struct{}{{Namespace: discoveryNamespace, Name: "launcher"}: {}},
+		Managers:  sets.New(auth.Account{Namespace: discoveryNamespace, Name: "actions"}),
+		Launchers: sets.New(auth.Account{Namespace: discoveryNamespace, Name: "launcher"}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -932,7 +933,7 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 	terminating.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other, terminating)
 	reader := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), map[auth.Account]struct{}{reader: {}}, ManagementOptions{})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), sets.New(reader), ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -972,7 +973,7 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	other := sandboxObject("other-uid")
 	other.Name = "other"
 	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), map[auth.Account]struct{}{actor: {}}, ManagementOptions{})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), sets.New(actor), ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

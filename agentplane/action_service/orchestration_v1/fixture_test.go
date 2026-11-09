@@ -36,6 +36,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -130,7 +131,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	service, err := environments.New(namespace, objects, runtimeconfig.Catalog{}, manager, nil, environments.ManagementOptions{
-		Launchers: map[auth.Account]struct{}{{Namespace: namespace, Name: "actions"}: {}}, DefaultPolicySets: []string{testDefaultPolicy},
+		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}), DefaultPolicySets: []string{testDefaultPolicy},
 	})
 	if err != nil {
 		t.Fatal(err)

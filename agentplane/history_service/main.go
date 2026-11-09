@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -96,23 +97,16 @@ func openDatabase(ctx context.Context, databaseURL string, connections int) (*sq
 }
 
 func readerNamespaces(accounts []auth.Account, servedNamespaces []string, extra ...auth.Account) []string {
-	namespaces := make(map[string]struct{}, len(accounts)+len(servedNamespaces)+len(extra))
+	namespaces := sets.New(servedNamespaces...)
 	for _, account := range accounts {
-		namespaces[account.Namespace] = struct{}{}
-	}
-	for _, namespace := range servedNamespaces {
-		namespaces[namespace] = struct{}{}
+		namespaces.Insert(account.Namespace)
 	}
 	for _, account := range extra {
 		if account.Namespace != "" {
-			namespaces[account.Namespace] = struct{}{}
+			namespaces.Insert(account.Namespace)
 		}
 	}
-	result := make([]string, 0, len(namespaces))
-	for namespace := range namespaces {
-		result = append(result, namespace)
-	}
-	return result
+	return sets.List(namespaces)
 }
 
 // run serves on the configured addresses, authenticating callers with the cluster's TokenReview API.

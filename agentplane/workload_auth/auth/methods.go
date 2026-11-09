@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type ruleKind int
@@ -31,7 +32,7 @@ type Rule struct {
 	kind              ruleKind
 	resolver          *Resolver
 	principalResolver PrincipalResolver
-	accounts          map[Account]struct{}
+	accounts          sets.Set[Account]
 	delegation        *delegationPolicy
 }
 
@@ -51,11 +52,7 @@ func AnyAccount(principalResolver PrincipalResolver) Rule {
 
 // Accounts admits a caller proving, by a bearer resolver reviews, one of accounts. No accounts admits nobody.
 func Accounts(resolver *Resolver, accounts []Account) Rule {
-	allowed := make(map[Account]struct{}, len(accounts))
-	for _, account := range accounts {
-		allowed[account] = struct{}{}
-	}
-	return Rule{kind: ruleAccounts, resolver: resolver, accounts: allowed}
+	return Rule{kind: ruleAccounts, resolver: resolver, accounts: sets.New(accounts...)}
 }
 
 // SVIDOrAccounts admits a verified Sandbox SVID, or a bearer for one of the

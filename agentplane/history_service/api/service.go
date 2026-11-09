@@ -19,13 +19,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Service is the HistoryService server.
 type Service struct {
 	historypb.UnimplementedHistoryServiceServer
 	reader         *reads.Reader
-	readerAccounts map[auth.Account]struct{}
+	readerAccounts sets.Set[auth.Account]
 	wakeups        *wakeups.Hub
 	requestTimeout time.Duration
 	lease          time.Duration
@@ -83,12 +84,8 @@ func MethodsWithDelegation(
 
 func NewService(options Options) *Service {
 	draining, drain := context.WithCancel(context.Background())
-	readerAccounts := make(map[auth.Account]struct{}, len(options.ReaderAccounts))
-	for _, account := range options.ReaderAccounts {
-		readerAccounts[account] = struct{}{}
-	}
 	return &Service{
-		reader: options.Reader, readerAccounts: readerAccounts, wakeups: options.Wakeups,
+		reader: options.Reader, readerAccounts: sets.New(options.ReaderAccounts...), wakeups: options.Wakeups,
 		requestTimeout: options.RequestTimeout, lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
@@ -111,7 +108,7 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 		return nil, err
 	}
 	if direct, ok := admission.(auth.DirectAdmission); ok && direct.Pod != nil && direct.Pod.IsPodBound() {
-		if _, privileged := s.readerAccounts[auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}]; privileged {
+		if s.readerAccounts.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}) {
 			return s.reader.WithReadScope(storage.AllSessions()), nil
 		}
 	}

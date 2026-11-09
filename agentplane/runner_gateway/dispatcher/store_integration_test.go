@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 )
 
@@ -38,8 +39,8 @@ const sandboxUID = "00000000-0000-4000-8000-000000000001"
 // caller is the account the store tests' calls were admitted as.
 var caller = auth.Account{Namespace: "test-callers", Name: "test-app"}
 
-func configuredDispatcherCallers() map[auth.Account]struct{} {
-	return map[auth.Account]struct{}{caller: {}}
+func configuredDispatcherCallers() sets.Set[auth.Account] {
+	return sets.New(caller)
 }
 
 type admissionContextCapture struct {

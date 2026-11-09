@@ -19,6 +19,7 @@ go_library(
         "//agentplane/postgres/wakeups",
         "//agentplane/workload_auth/auth",
         "@com_github_google_uuid//:uuid",
+        "@io_k8s_apimachinery//pkg/util/sets",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
