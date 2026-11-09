@@ -257,6 +257,11 @@ Flux-owned grant, a credential and a one-rule use set `k8s-account-<name>`:
 - One each for `claude-ai` and `haku-agent`, holding exactly the role sets their bindings grant
   today.
 
+With the switch on, Sandbox Pods also project no Kubernetes-audience token: an agent reaches the
+API server only through the proxy as an account its use set names, and learns the `kubectl
+--server <host> --token <placeholder>` invocation from that credential's description on the rules
+endpoint. A Sandbox with no use rule has no Kubernetes access and nothing in the accounts namespace.
+
 `cluster/cdk8s/test_agent_rbac.py` checks both renderings, including that the proxy impersonates
 only these accounts, that each holds only its grants, and that no Flux binding's holder gains
 Kubernetes access on the switch.
