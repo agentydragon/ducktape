@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
-	"io"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -18,7 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/grpc/interop/grpc_testing"
 )
 
 func TestGateExplicitlyClassifiesEveryRegisteredMethod(t *testing.T) {
@@ -54,48 +52,27 @@ func TestGateExplicitlyClassifiesEveryRegisteredMethod(t *testing.T) {
 	}
 }
 
-type unlistedTestService interface{}
-
 type unlistedTestImplementation struct {
+	grpc_testing.UnimplementedTestServiceServer
 	calledUnary  atomic.Bool
 	calledStream atomic.Bool
 }
 
-var unlistedTestServiceDesc = grpc.ServiceDesc{
-	ServiceName: "test.unlisted.Service",
-	HandlerType: (*unlistedTestService)(nil),
-	Methods: []grpc.MethodDesc{{
-		MethodName: "Call",
-		Handler: func(server any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-			request := new(emptypb.Empty)
-			if err := decode(request); err != nil {
-				return nil, err
-			}
-			handler := func(context.Context, any) (any, error) {
-				server.(*unlistedTestImplementation).calledUnary.Store(true)
-				return &emptypb.Empty{}, nil
-			}
-			if interceptor == nil {
-				return handler(ctx, request)
-			}
-			return interceptor(ctx, request, &grpc.UnaryServerInfo{Server: server, FullMethod: "/test.unlisted.Service/Call"}, handler)
-		},
-	}},
-	Streams: []grpc.StreamDesc{{
-		StreamName:    "Watch",
-		ServerStreams: true,
-		Handler: func(server any, stream grpc.ServerStream) error {
-			server.(*unlistedTestImplementation).calledStream.Store(true)
-			return stream.SendMsg(&emptypb.Empty{})
-		},
-	}},
+func (s *unlistedTestImplementation) UnaryCall(context.Context, *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
+	s.calledUnary.Store(true)
+	return &grpc_testing.SimpleResponse{}, nil
+}
+
+func (s *unlistedTestImplementation) StreamingOutputCall(_ *grpc_testing.StreamingOutputCallRequest, stream grpc_testing.TestService_StreamingOutputCallServer) error {
+	s.calledStream.Store(true)
+	return stream.Send(&grpc_testing.StreamingOutputCallResponse{})
 }
 
 func TestGateDeniesUnlistedRegisteredMethodsBeforeTheirHandlers(t *testing.T) {
 	implementation := &unlistedTestImplementation{}
 	gate := NewGate(GateOptions{})
 	server := grpc.NewServer(grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
-	server.RegisterService(&unlistedTestServiceDesc, implementation)
+	grpc_testing.RegisterTestServiceServer(server, implementation)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -110,21 +87,15 @@ func TestGateDeniesUnlistedRegisteredMethodsBeforeTheirHandlers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
 
-	var response emptypb.Empty
-	err = connection.Invoke(ctx, "/test.unlisted.Service/Call", &emptypb.Empty{}, &response)
+	client := grpc_testing.NewTestServiceClient(connection)
+	_, err = client.UnaryCall(ctx, &grpc_testing.SimpleRequest{})
 	wantCode(t, "an unlisted registered unary method", err, codes.PermissionDenied)
-	stream, err := connection.NewStream(ctx, &grpc.StreamDesc{ServerStreams: true}, "/test.unlisted.Service/Watch")
+	stream, err := client.StreamingOutputCall(ctx, &grpc_testing.StreamingOutputCallRequest{})
 	if err != nil {
 		wantCode(t, "an unlisted registered server stream", err, codes.PermissionDenied)
 	} else {
-		sendErr := stream.SendMsg(&emptypb.Empty{})
-		if sendErr == nil {
-			sendErr = stream.CloseSend()
-		}
-		if sendErr == nil || errors.Is(sendErr, io.EOF) {
-			sendErr = stream.RecvMsg(&response)
-		}
-		wantCode(t, "an unlisted registered server stream", sendErr, codes.PermissionDenied)
+		_, err = stream.Recv()
+		wantCode(t, "an unlisted registered server stream", err, codes.PermissionDenied)
 	}
 	if implementation.calledUnary.Load() || implementation.calledStream.Load() {
 		t.Fatalf("unlisted handlers ran: unary=%t stream=%t", implementation.calledUnary.Load(), implementation.calledStream.Load())
