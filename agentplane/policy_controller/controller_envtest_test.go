@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
@@ -335,6 +336,9 @@ func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.
 	if err := policyapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	if err := egressapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
 	api, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		t.Fatal(err)
@@ -354,6 +358,7 @@ func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.
 			&policyapi.KubernetesRoleSet{}:     {Namespaces: map[string]cache.Config{policyNamespace: {}}},
 			&policyapi.ServiceAccountGrant{}:   {Namespaces: map[string]cache.Config{policyNamespace: {}}},
 			&policyapi.ManagedServiceAccount{}: {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&egressapi.EgressCredential{}:      {Namespaces: map[string]cache.Config{policyNamespace: {}}},
 			&corev1.ServiceAccount{}:           {Namespaces: map[string]cache.Config{subjectNamespace: {}, accountsNamespace: {}}},
 			&rbacv1.RoleBinding{}:              {Label: managed},
 			&rbacv1.ClusterRoleBinding{}:       {Label: managed},

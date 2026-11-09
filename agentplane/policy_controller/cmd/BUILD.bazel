@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller/cmd",
     visibility = ["//visibility:private"],
     deps = [
+        "//agentplane/egress/api/v1alpha1",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/v1:policy_service_go_proto",

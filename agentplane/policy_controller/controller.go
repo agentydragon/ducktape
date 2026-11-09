@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policyapply "github.com/agentydragon/ducktape/agentplane/policy/client/apply"
 	policyapplyv1 "github.com/agentydragon/ducktape/agentplane/policy/client/applyconfigurations/api/v1alpha1"
@@ -645,7 +646,7 @@ func clusterRoleKey(obj client.Object) string {
 }
 
 // SetupWithManager wires three controllers: PolicyBindings, ServiceAccountGrants and
-// ManagedServiceAccounts, each with whatever it reads mapped back to it.
+// ManagedServiceAccounts, each with whatever it reads or owns mapped back to it.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := r.IndexFields(context.Background(), mgr.GetFieldIndexer()); err != nil {
 		return err
@@ -678,6 +679,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&policyapi.ManagedServiceAccount{}).
 		Watches(&corev1.ServiceAccount{}, handler.EnqueueRequestsFromMapFunc(r.toManagedAccount)).
+		// Restores a hand-edited or deleted use object, and retries a successor account once its
+		// predecessor's are collected.
+		Owns(&egressapi.EgressCredential{}).
+		Owns(&policyapi.PolicySet{}).
 		Watches(&policyapi.PolicyBinding{}, toOwningAccount).
 		Watches(&policyapi.ServiceAccountGrant{}, toOwningAccount).
 		Complete(reconcile.Func(r.ReconcileManagedServiceAccount))
