@@ -202,7 +202,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   server; a destination it does not cover fails the connection rather than being carried unverified.
 - The connection is made to the address that was checked: a name is resolved once per admission
   window (30 seconds) and every dial in it goes to that address, so a name cannot be re-pointed
-  between the check and the connect. A dial for a target the gate did not admit is not made.
+  between the check and the connect. A dial for a target the gate did not admit is not made. An
+  upstream connection is reused only for a request whose admission pinned the same authority and
+  address.
 - The operator may exempt networks from the reachability rule (`--exempt-networks`); production
   exempts none.
 
