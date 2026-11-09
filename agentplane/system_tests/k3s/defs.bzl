@@ -256,7 +256,19 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         main = main,
         data = data,
         env = env,
-        exec_properties = K3S_EXEC_PROPERTIES | properties,
+        exec_properties = select({
+            "//devinfra/buildbuddy/kvm/x/canary:cpu4": K3S_EXEC_PROPERTIES | properties | {
+                "test.Pool": "kvm-canary-20261109",
+                "test.EstimatedCPU": "4",
+                "test.EstimatedMemory": "10GB",
+            },
+            "//devinfra/buildbuddy/kvm/x/canary:cpu8": K3S_EXEC_PROPERTIES | properties | {
+                "test.Pool": "kvm-canary-20261109",
+                "test.EstimatedCPU": "8",
+                "test.EstimatedMemory": "10GB",
+            },
+            "//conditions:default": K3S_EXEC_PROPERTIES | properties,
+        }) if require_kvm else K3S_EXEC_PROPERTIES | properties,
         tags = suite_tags,
         deps = deps + [
             "//agentplane/system_tests/deployment:system_test_target",
