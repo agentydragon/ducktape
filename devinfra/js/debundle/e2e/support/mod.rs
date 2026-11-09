@@ -5,6 +5,7 @@
 
 mod ast_assertions;
 mod fixture_spec;
+pub mod saved_analysis;
 
 pub use ast_assertions::{
     VariableDeclarationKind, VariableInitializerKind, assert_export_named_specifiers,
