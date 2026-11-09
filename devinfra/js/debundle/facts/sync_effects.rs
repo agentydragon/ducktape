@@ -12,6 +12,7 @@ pub(crate) use effect_coverage::{
 pub(crate) mod execution_index;
 pub(crate) mod interpreter;
 mod kernel;
+mod legacy;
 mod local_operations;
 mod namespace_wrapper;
 mod native;
