@@ -625,6 +625,18 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_certificates",
+    srcs = ["test_certificates.py"],
+    deps = [
+        ":certificates",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 genrule(
     name = "render_local_model_firecracker",
     testonly = True,
