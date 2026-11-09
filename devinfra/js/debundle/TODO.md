@@ -221,24 +221,20 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Encountered tooling friction
 
-- **F5 — One report of annotations the engine could have inferred.** Today
-  each annotation kind answers "was this needed?" differently:
-  `purity: pure` hints get a `modules.json.redundant_purity_hints` probe,
-  `admission_overrides` get a redundancy notice, an unused
-  `commuting_statements` entry is a warning by authored identity, and the other
-  premises (`host_behavior` keys, `native_operation_inputs`,
+- **F5 — Extend `spec lint` to the remaining premise kinds.** `spec lint`
+  (SPEC.md § Spec lint) reports unused `commuting_statements` entries and
+  redundant `admission_overrides` as `inferable`, and classifier-redundant
+  `purity: pure` hints as `inconclusive`. The other premises
+  (`host_behavior` keys, `native_operation_inputs`,
   `native_call_identity_inputs`, `initializer_call_effect_inputs`,
   `trusted_dataflow_summaries`, `deferred_global_publications`,
-  `program_premises`, `chunk_export_purity`) record uses only, which SPEC.md
-  says is not an unused-contract verdict. Give every author annotation the
-  same check: rerun the decision it feeds with the annotation withheld, and
-  report it as inferable when the verdict and emitted order are unchanged.
-  Report by authored identity (module, member, YAML path, source location)
-  with a removal suggestion, as a warning in `run` and `spec validate` output
-  and one machine-readable list; removal stays an explicit, reviewed spec
-  edit. An unused or inferable annotation is a warning, never a failure; a
-  contradicted premise still fails. Bound the cost: probe per annotation
-  against cached analysis, not a full rerun each.
+  `program_premises`, `chunk_export_purity`) record uses only. Most are
+  analysis inputs, so withholding one changes the facts: an `inferable` verdict
+  needs the chunk's facts recomputed without it and the resulting graph
+  compared, which is not a probe against cached analysis. Design that probe
+  (incremental re-analysis per annotation, or a no-use proof that implies an
+  identical graph) before adding a kind; the same probe would promote purity
+  hints from `inconclusive`. Report what it cannot decide as `inconclusive`.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
   failure. This caused an undercount until every saved rejection report was

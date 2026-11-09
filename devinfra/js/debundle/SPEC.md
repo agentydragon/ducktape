@@ -2330,6 +2330,35 @@ The per-chunk `modules.json.redundant_purity_hints` report disables each tested
 on retaining other chunk-local purity hints. These diagnostics do not change
 acceptance or edit the spec. Remove hints individually and revalidate. A missing
 entry is inconclusive. Probe scope: <docs/purity_soundness.md#redundant-purity-hints>.
+`spec lint` lists these hints as `inconclusive` (§ Spec lint).
+
+## Spec lint
+
+`debundle spec lint` lists the author annotations the engine may already
+infer, for one exact source/spec pair. It runs the `spec validate` pass (the
+ordinary dry-run pipeline with the shared resolver and gate) once and reads each
+chunk's `spec_lint.json`, which `run` writes whenever it writes a report
+directory. Every finding has `rule: inferable_annotation`, the chunk, the
+annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
+`commuting_statements`) and a `verdict`:
+
+- `inferable`: withholding the annotation leaves the dependency graph, and so
+  the gate verdict and emitted order, unchanged. An unused
+  `commuting_statements` entry (§ Commuting statements;
+  `reason` `no_sequenced_edge` or `summarized_endpoints`) and an
+  `admission_overrides` check the chunk does not violate
+  (`no_admission_violation`) are inferable.
+- `inconclusive`: a probe suggests the annotation is unnecessary but does not
+  establish that. A `purity: pure` hint the classifier infers without the hint
+  (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
+  hint are not rerun.
+
+Findings are warnings: lint exits 0 whenever the pass produced reports, never
+edits the spec, and removal stays a reviewed edit followed by validation. A
+chunk the pass stopped before is listed in `unlinted_chunks`; its annotations
+are unchecked, not clean. Annotations a run consumes, and the other premise
+kinds, produce no finding; no finding is not a verdict that an annotation is
+needed.
 
 ## Chunk-export contract audit
 
