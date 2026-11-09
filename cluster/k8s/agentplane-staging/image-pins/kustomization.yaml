@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261109193636-7a47224 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
+    newTag: devel-20261109225251-c20f46d # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261109195217-7dea701 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
@@ -31,11 +31,11 @@ images:
     newTag: devel-20261109124123-81a59b8 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   # Publication bootstrap: unused until the separate MCP edge cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
-    newTag: devel-20261109195457-7dea701 # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
+    newTag: devel-20261109225259-c20f46d # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261109195043-7dea701 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261109225302-c20f46d # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261109195455-7dea701 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261109225256-c20f46d # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
     newTag: devel-20261109195550-7dea701 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
