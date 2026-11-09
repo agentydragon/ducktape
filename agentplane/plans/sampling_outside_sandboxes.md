@@ -1,6 +1,6 @@
 # Sampling outside Sandboxes
 
-**Research and decision record (operator request, 2026-10-27).** Could Agentplane run the agent loop
+**Research record (operator request, 2026-10-27).** Could Agentplane run the agent loop
 (model sampling, prompt assembly, the native conversation store) outside Sandboxes, with a Sandbox only
 running the agent's processes and file operations? Rai: "could we run LLM sampling and talking to ai
 APIs outside of the sandboxes, just executing processes inside them? Iiuc, codex code mode has synergy
@@ -12,6 +12,11 @@ Codex evidence is read from [`openai/codex` at `rust-v0.162.1`][tag] (commit `09
 the 2.1.252 test pin and this session's installed 2.1.296, plus existing scripted-test source
 ([versioned evidence](../debug/claude_execution_placement.md)). The runner image uses independently
 pinned nixpkgs harnesses. No new inference or execution-placement probe was run for this research.
+
+The operator chose an Agentplane-owned loop, now the opt-in [central sampler](../central_sampler/README.md),
+whose README records the placement and coexistence rulings. What stays open here: central placement of
+upstream Codex (input to the [Session runtime model](session_runtime_model.md) attachment questions) and
+the Claude alternatives [below](#claude).
 
 ## Today
 
@@ -68,14 +73,10 @@ What stays on the harness host:
 
 ### First runnable slice
 
-Worker `/root/central_codex_spike`, 2026-10-27: a temporary subprocess/relay fixture passed on RBE
-in 16.3 seconds ([preserved evidence](../debug/central_codex_sampling.md)). It drove real code-mode
-shell, patch, image and remote instruction loading, kept native state outside the executor directory,
-and read conversation history after executor loss and sampler restart. The fixture source has since
-been retired. The host explicitly recorded unknown effects and interrupted a disconnected turn: a
-yielded shell session is not terminal failure evidence. The separate Pod/VM failure domain, real fence,
-authenticated Gateway path, spend attribution and comparable nested-call latency remain open. No
-deployment changes.
+A temporary subprocess/relay fixture passed on RBE, 2026-10-27
+([preserved evidence and open gates](../debug/central_codex_sampling.md)); its source is retired. The
+Pod/VM failure domain, real fence, authenticated Gateway path, spend attribution and nested-call latency
+remain unmeasured for upstream Codex.
 
 ### Reaching a Sandbox's exec-server
 
@@ -263,42 +264,13 @@ other's tables or a decision to delete services. The [current authorities](../do
 contracts. Central sampling alone does not replace them. Any extraction must preserve retained
 Sessions, identities, history and native state under the staging data-preservation procedure.
 
-### Bounded spike: measure the headless subset we need
+### Bounded spike
 
-Operator, 2026-10-27: investigate whether our own "Codex" is small enough to justify tighter tracking
-of OpenAI APIs. **Baseline merged in
-[PR #12207](https://github.com/agentydragon/ducktape/pull/12207), `/root/postgres_harness_spike`,
-2026-10-27.** The operator-authorized code-mode-only implementation was isolated under
-`agentplane/x/postgres_codex`; its source was later removed from the tree. The [recorded experiment and
-measured findings](../debug/postgres_codex_spike.md) preserve the results: 563 physical Python runtime
-lines, a separate upstream source/dependency inventory, and seven passing RBE cases. It reused real
-pinned upstream code-mode host, exec-server and apply-patch binaries.
-A persistence-focused Codex fork was not implemented or measured.
-
-The scripted model turn exercises remote shell and patch, then continues in a fresh sampler process
-from Postgres, without a native rollout or second Runner conversation journal. The database retains
-actual provider requests/responses, including opaque encrypted reasoning, and correlated tool intents
-and results. An independent full upstream Codex consumer also accepts the scripted wire. This does
-not establish live provider or subscription compatibility. The operator then chose a custom loop
-([central sampler](../central_sampler/README.md)).
-
-Crash checks distinguish committed intent, dispatch, effect and returned result. Database-clock leases
-and ownership generations fence stale sampler writes. Postgres cannot atomically commit a shell side
-effect: a real append followed by a lost reply remains uncertain and is not automatically replayed.
-Sampler and executor SIGKILL cases preserve readable conversation state and bound failure reporting
-([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)). A dispatch can race after
-committed intent; database fencing does not guarantee exactly-once remote effects. There is no
-reconciliation interface yet.
-
-The [process-control extension](../debug/postgres_codex_spike.md#process-control-extension),
-in [PR #12213](https://github.com/agentydragon/ducktape/pull/12213), adds real yielded-cell `wait`, durable shell session handles,
-interactive stdin, PTY EOF/Ctrl-C and external generation-targeted interruption. A retained host is
-required for live V8 state; process continuation uses the upstream executor session's 30-second
-detached retention window. These are explicit limits, not Postgres serialization of live processes.
-Compaction is a separate extension. Instruction discovery, persistent JavaScript storage, subagents,
-skills/MCP, approvals, hooks, memory, History export and frontend tracing remain omitted. A frontend
-trace was not an acceptance gate: the operator clarified that existing Langfuse links already provide
-partial visibility. Neither extension establishes production replacement or deployment.
+A code-mode-only Postgres sampler baseline merged in
+[PR #12207](https://github.com/agentydragon/ducktape/pull/12207) (source since removed); the
+[recorded experiment](../debug/postgres_codex_spike.md) preserves its line counts, crash/fencing
+findings and its process-control and compaction extensions. A persistence-focused Codex fork
+was not implemented or measured. The operator then chose a custom loop, the central sampler.
 
 ## Claude
 
@@ -335,15 +307,8 @@ instruction, cache or continuation semantics or prove live provider/account supp
 
 Operator agreement, 2026-10-27, implemented as the [central sampler](../central_sampler/README.md):
 an independent code-mode sampler with its own database, reaching the Sandbox only through the
-Runner's Executor API. Its README records the placement and coexistence rulings.
-
-### Anthropic extension
-
-The central sampler supports organization-paid Anthropic Messages directly, with native
-conversation storage, server-side on-demand compaction and request/response content in its own DB.
-The [acceptance record](../central_sampler/docs/anthropic_acceptance.md) records merged changes,
-live-test scope and the observed staging rollout. The [remaining plan](../central_sampler/plans/anthropic.md)
-covers deferred BuildBuddy credentials, background compaction, dynamic tools and optional Langfuse export.
+Runner's Executor API. Its README records the placement and coexistence rulings; its
+[SPEC](../central_sampler/SPEC.md) owns the contract, including the direct Anthropic adapter.
 
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs
 [env-add]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/environment.rs#L38-L53
