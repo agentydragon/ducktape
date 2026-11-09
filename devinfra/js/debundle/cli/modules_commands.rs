@@ -14,11 +14,11 @@ use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::VerifiedGraphSourceContext;
-use peel::propose::{
-    DEFAULT_SIZE_CAP_LINES, ModuleDecompositionCoarseningMode, ModuleDecompositionOptions,
-    ModuleDecompositionReport, ModuleDecompositionStrategy, ProposalOptions,
-    decompose_modules_from_files_with_options,
+use peel::decompose::{
+    ModuleDecompositionCoarseningMode, ModuleDecompositionOptions, ModuleDecompositionReport,
+    ModuleDecompositionStrategy, decompose_modules_from_files_with_options,
 };
+use peel::propose::{DEFAULT_SIZE_CAP_LINES, ProposalOptions};
 use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
 use std::path::PathBuf;
 use std::{fs, io::Read};
