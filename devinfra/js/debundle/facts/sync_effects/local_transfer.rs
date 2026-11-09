@@ -325,7 +325,7 @@ fn value(
     // domain cannot distinguish that generation from this invocation's record.
     let new_record = match expression {
         ValueExpr::ObjectLiteral(object, _) => {
-            !context.heap().properties.contains_key(object)
+            context.heap().surface.own_properties(*object).is_none()
                 && !frame.borrowed_records.contains(object)
         }
         _ => false,
@@ -701,7 +701,7 @@ fn record_expression(
     if !matches!(context.literal_layout(*allocation), LiteralLayout::Record) {
         return None;
     }
-    let mut new_record = !context.heap().properties.contains_key(allocation);
+    let mut new_record = context.heap().surface.own_properties(*allocation).is_none();
     let result = allocation_transfer::record(
         &mut LocalValueContext { context, frame },
         *allocation,
@@ -716,7 +716,12 @@ fn record_expression(
             context.frame.inputs.extend(selected.values.iter().cloned());
             // A child can reenter this allocation site. Its resulting
             // heap entry then also represents an older record.
-            new_record &= !context.context.heap().properties.contains_key(allocation);
+            new_record &= context
+                .context
+                .heap()
+                .surface
+                .own_properties(*allocation)
+                .is_none();
             Some(AllocationValue {
                 values: selected.values,
                 judgment,

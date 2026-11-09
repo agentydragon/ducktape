@@ -11,6 +11,9 @@ use super::super::local_transfer::{
     self, CallableSelection, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
     SelectedValue,
 };
+use super::super::native::operation::{
+    self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
+};
 use super::super::noninvoking_initialization::{
     CompletedInitialization, NativeConstructorCandidate, NativeConstructorForm,
     NativeConstructorKind, NativeConstructorTransfer, OriginalInitializer,
@@ -22,6 +25,10 @@ use super::super::value_model::{
     LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
     canonical_array_index,
 };
+use super::super::world::descriptor_heap::{
+    self, DescriptorApplication, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
+};
+use super::super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
 use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
     CallbackResult,
@@ -707,18 +714,11 @@ fn captured_local_bindings(index: &ExecutionIndex) -> FxHashSet<Id> {
 }
 
 #[derive(Debug, Clone)]
-struct OwnDescriptorMapState {
-    source_object: u32,
-    valid: bool,
-    property_order: Vec<String>,
-    properties: BTreeMap<String, CapturedPropertyDescriptor>,
-    retained_values: Values,
-}
-
-#[derive(Debug, Clone)]
 pub(super) struct NativeCallResolution {
     row: &'static Row,
-    own_property_projection: Option<OwnPropertyProof>,
+    /// Every heap mutation of the admitted row, checked against the prefix
+    /// the row was admitted in and not yet committed.
+    plan: CheckedNativePlan,
     iterable: Option<NativeIterableReceipt>,
     operation_coverage: Option<EffectCoverageFragment>,
 }
@@ -726,12 +726,6 @@ pub(super) struct NativeCallResolution {
 struct NewEvaluation {
     values: Values,
     operation_coverage: Option<EffectCoverageFragment>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-struct AppliedAccessor {
-    getter: Values,
-    setter: Values,
 }
 
 #[derive(Clone, Default)]
@@ -970,7 +964,7 @@ impl ExecutionInputs<'_> {
                 AbstractValue::Value(Value::Alloc(Kind::Object, object))
                     if state.parameter_initialized_objects.contains(object) =>
                 {
-                    let properties = state.prefix_object_properties.get(object)?;
+                    let properties = state.surface.prefix_object_properties.get(object)?;
                     values.extend(properties.get(&Some(property.to_string()))?.iter().cloned());
                     // A computed-key write may have stored under this key.
                     if let Some(dynamic) = properties.get(&None) {
@@ -1097,25 +1091,16 @@ pub(super) struct ExecutionState {
     first_class_members_publications: BTreeMap<u32, FirstClassMembersPublication>,
     top_env: Context,
     top_captures: Context,
-    prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
-    writable_prefix: OrdMap<u32, super::super::allocation_transfer::WritablePrefixState>,
-    own_descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
-    applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
+    surface: ObjectSurfaceStore,
+    descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
     dense_arrays: OrdMap<u32, DenseArray>,
     primitive_arrays: OrdMap<u32, ProofDependencies>,
     /// `reduce` results by call site allocation id.
     accumulated_values: OrdMap<u32, Values>,
-    ordinary_spread_copies: BTreeSet<u32>,
-    descriptor_copy_results: BTreeSet<u32>,
     array_iteration_depth: usize,
     array_iteration_protected_objects: BTreeSet<u32>,
     array_iteration_unsupported: bool,
     array_intrinsic_mutated: bool,
-    tainted_objects: BTreeSet<u32>,
-    /// Objects code the interpreter did not run may have reached and mutated.
-    /// This records possible mutation or escape, not an observed escape to
-    /// unknown code. Its properties and prototypes are no longer settled.
-    unsettled_objects: BTreeSet<u32>,
     tainted_native_sets: BTreeSet<u32>,
     tainted_functions: BTreeSet<u32>,
     /// A revoked identity is a semantic root: equal descriptions must retain
@@ -1328,7 +1313,7 @@ impl ExecutionState {
         trace.values(&self.global_escaped_callbacks);
         trace.values(&self.exported_runtime_values);
         trace.values(&self.fallback_outcome.returns);
-        for properties in self.prefix_object_properties.values() {
+        for properties in self.surface.prefix_object_properties.values() {
             for values in properties.values() {
                 trace.values(values);
             }
@@ -1338,13 +1323,13 @@ impl ExecutionState {
                 trace.values(values);
             }
         }
-        for properties in self.applied_accessors.values() {
+        for properties in self.surface.applied_accessors.values() {
             for accessor in properties.values() {
                 trace.values(&accessor.getter);
                 trace.values(&accessor.setter);
             }
         }
-        for descriptors in self.own_descriptor_maps.values() {
+        for descriptors in self.descriptor_maps.values() {
             trace.values(&descriptors.retained_values);
             for descriptor in descriptors.properties.values() {
                 match descriptor {
@@ -1377,7 +1362,7 @@ impl ExecutionState {
     }
 
     fn object_accessors_are_settled(&self, object: &u32) -> bool {
-        !self.tainted_objects.contains(object) && !self.unsettled_objects.contains(object)
+        self.surface.object_accessors_are_settled(*object)
     }
 }
 
@@ -1436,7 +1421,11 @@ struct ApplicationAllocationContext<'a, 'source, 'rule> {
 impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
     fn array_created(&mut self, allocation: u32, sparse: bool) {
         if sparse {
-            self.executor.state.tainted_objects.insert(allocation);
+            self.executor
+                .state
+                .surface
+                .tainted_objects
+                .insert(allocation);
         }
     }
     fn source_covered(&self) -> bool {
@@ -1521,34 +1510,28 @@ impl OwnDataContext for Executor<'_, '_> {
     }
 
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
-        self.state
-            .prefix_object_properties
-            .get(&allocation)?
-            .get(&Some(property.to_owned()))
+        self.state.surface.data_values(allocation, property)
     }
 
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
         self.state
-            .applied_accessors
-            .get(&allocation)
-            .is_some_and(|properties| properties.contains_key(property))
+            .surface
+            .has_accessor_property(allocation, property)
     }
 
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
-        let has_writable_property = match self.state.writable_prefix.get(&allocation) {
+        let has_writable_property = match self.state.surface.writable_prefix.get(&allocation) {
             Some(super::super::allocation_transfer::WritablePrefixState::Proven(properties)) => {
                 properties.contains(property)
             }
             _ => false,
         };
         has_writable_property
-            && !self.state.tainted_objects.contains(&allocation)
-            && !self.state.unsettled_objects.contains(&allocation)
+            && self.state.surface.object_accessors_are_settled(allocation)
             && !self
                 .state
-                .applied_accessors
-                .get(&allocation)
-                .is_some_and(|properties| properties.contains_key(property))
+                .surface
+                .has_accessor_property(allocation, property)
     }
 
     fn first_generation_dense_array_length(&self, allocation: u32) -> Option<u32> {
@@ -1557,7 +1540,7 @@ impl OwnDataContext for Executor<'_, '_> {
         {
             return None;
         }
-        match self.state.writable_prefix.get(&allocation) {
+        match self.state.surface.writable_prefix.get(&allocation) {
             Some(super::super::allocation_transfer::WritablePrefixState::DenseArray { length }) => {
                 Some(*length)
             }
@@ -1566,20 +1549,56 @@ impl OwnDataContext for Executor<'_, '_> {
     }
 }
 
+impl DescriptorContext for Executor<'_, '_> {
+    fn descriptor_map(&self, site: CallSite) -> Option<&OwnDescriptorMapState> {
+        self.state.descriptor_maps.get(&site)
+    }
+
+    fn object_surface(&self) -> &ObjectSurfaceStore {
+        &self.state.surface
+    }
+
+    fn plain_data_object(&self, object: u32) -> bool {
+        self.inputs.index.plain_data_objects.contains(&object)
+    }
+
+    fn descriptor_conversion_is_ordinary(&self) -> bool {
+        self.ordinary_object_prototype_intact()
+    }
+}
+
+impl NativeOperationContext for Executor<'_, '_> {
+    fn native_operation_revision(&self) -> u64 {
+        self.state.prefix_revision
+    }
+
+    fn descriptor_heap(&mut self) -> DescriptorHeap<'_> {
+        let state = &mut *self.state;
+        DescriptorHeap {
+            maps: &mut state.descriptor_maps,
+            surface: &mut state.surface,
+            arrays: &mut state.dense_arrays,
+            revision: &mut state.prefix_revision,
+            track_writable_prefix: true,
+        }
+    }
+}
+
 impl ArrayContext for Executor<'_, '_> {
     fn writable_array_length(&self, object: u32) -> Option<u32> {
         if !self.state.object_accessors_are_settled(&object)
-            || self.state.applied_accessors.contains_key(&object)
+            || self.state.surface.applied_accessors.contains_key(&object)
             || !self.state.dense_arrays.contains_key(&object)
             || self
                 .state
+                .surface
                 .prefix_object_properties
                 .get(&object)?
                 .contains_key(&Some("push".into()))
         {
             return None;
         }
-        match self.state.writable_prefix.get(&object)? {
+        match self.state.surface.writable_prefix.get(&object)? {
             super::super::allocation_transfer::WritablePrefixState::DenseArray { length } => {
                 Some(*length)
             }
@@ -1597,7 +1616,7 @@ impl ArrayContext for Executor<'_, '_> {
 
     fn append_primitives(&mut self, object: u32, length: u32, arguments: &[Values]) {
         self.state.unknown_array_contents.insert(object);
-        self.state.writable_prefix.insert(
+        self.state.surface.writable_prefix.insert(
             object,
             super::super::allocation_transfer::WritablePrefixState::DenseArray { length },
         );
@@ -1814,7 +1833,11 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
 
     fn array_created(&mut self, allocation: u32, sparse: bool) {
         if sparse {
-            self.executor.state.tainted_objects.insert(allocation);
+            self.executor
+                .state
+                .surface
+                .tainted_objects
+                .insert(allocation);
         }
     }
     fn array_push_callee(
@@ -3180,7 +3203,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if values.len() != 1 {
             return None;
         }
-        let properties = self.state.prefix_object_properties.get(object)?;
+        let properties = self.state.surface.prefix_object_properties.get(object)?;
         self.queries.project_own_property(OwnPropertyQuery {
             source_object: *object,
             source_values: values.clone(),
@@ -3194,71 +3217,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.own_property_projection(values, OwnPropertyRequest::Ordinary)
     }
 
-    fn capture_own_descriptor_map(
-        &mut self,
-        site: CallSite,
-        proof: Option<OwnPropertyProof>,
-    ) -> Option<AbstractValue> {
-        let OwnPropertyProjection::Descriptors(projection) = proof?.projection else {
-            return None;
-        };
-        let source_object = projection.source_object;
-        let property_order = projection.ordered_names;
-        let properties = projection.properties;
-        let retained_values = projection.retained_values;
-        match self.state.own_descriptor_maps.get_mut(&site) {
-            Some(existing) => {
-                if existing.source_object != source_object
-                    || existing.property_order != property_order
-                    || existing.properties != properties
-                {
-                    existing.valid = false;
-                    existing.retained_values.extend(retained_values);
-                }
-            }
-            None => {
-                self.state.own_descriptor_maps.insert(
-                    site,
-                    OwnDescriptorMapState {
-                        source_object,
-                        valid: true,
-                        property_order,
-                        properties,
-                        retained_values,
-                    },
-                );
-            }
-        }
-        Some(AbstractValue::OwnDescriptorMap(site))
-    }
-
-    fn own_property_names_array(
-        &mut self,
-        site: CallSite,
-        proof: Option<OwnPropertyProof>,
-    ) -> Option<AbstractValue> {
-        let OwnPropertyProjection::Names(projection) = proof?.projection else {
-            return None;
-        };
-        let object = site.allocation_id();
-        let slots = projection
-            .names
-            .into_iter()
-            .map(|_| Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]))
-            .collect();
-        self.retain_dense_array(object, slots);
-        Some(AbstractValue::Value(Value::Alloc(Kind::Object, object)))
-    }
-
     fn invalidate_own_descriptor_map(&mut self, site: CallSite) {
-        if let Some(map) = self.state.own_descriptor_maps.get_mut(&site) {
-            map.valid = false;
-        }
+        self.descriptor_heap().invalidate(site);
     }
 
     fn descriptor_map_callbacks(&self, site: CallSite) -> Values {
         self.state
-            .own_descriptor_maps
+            .descriptor_maps
             .get(&site)
             .map_or_else(Values::new, |map| map.retained_values.clone())
     }
@@ -3269,7 +3234,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let AbstractValue::Value(Value::Alloc(Kind::Object, object)) = value else {
                 continue;
             };
-            let Some(accessors) = self.state.applied_accessors.get(object) else {
+            let Some(accessors) = self.state.surface.applied_accessors.get(object) else {
                 continue;
             };
             if let Some(property) = property {
@@ -3285,78 +3250,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         getters
-    }
-
-    fn apply_own_descriptor_map(&mut self, args: &[Values]) {
-        let RuntimeValue::Heap(HeapResult::Updated) =
-            self.request(RuntimeOperation::Heap(HeapOperation::ApplyDescriptors {
-                arguments: args.to_vec(),
-            }))
-        else {
-            unreachable!("descriptor application produces a successor heap");
-        };
-    }
-
-    pub(super) fn apply_own_descriptor_map_transfer(&mut self, args: &[Values]) {
-        let [target_values, map_values] = args else {
-            return;
-        };
-        let [AbstractValue::Value(Value::Alloc(Kind::Object, target))] =
-            target_values.iter().collect::<Vec<_>>().as_slice()
-        else {
-            return;
-        };
-        let [AbstractValue::OwnDescriptorMap(site)] =
-            map_values.iter().collect::<Vec<_>>().as_slice()
-        else {
-            return;
-        };
-        self.invalidate_writable_object(*target);
-        let Some(map) = self
-            .state
-            .own_descriptor_maps
-            .get(site)
-            .filter(|map| map.valid)
-            .cloned()
-        else {
-            return;
-        };
-        let mut applied_accessors = BTreeMap::new();
-        let properties = self
-            .state
-            .prefix_object_properties
-            .entry(*target)
-            .or_default();
-        let before = properties.clone();
-        for name in map.property_order {
-            let Some(descriptor) = map.properties.get(&name).cloned() else {
-                continue;
-            };
-            match descriptor {
-                CapturedPropertyDescriptor::Data(values) => {
-                    properties.insert(Some(name), values);
-                }
-                CapturedPropertyDescriptor::Accessor { getter, setter } => {
-                    properties.insert(
-                        Some(name.clone()),
-                        if getter.is_empty() {
-                            Values::from([AbstractValue::UNDEFINED])
-                        } else {
-                            unknown()
-                        },
-                    );
-                    applied_accessors.insert(name, AppliedAccessor { getter, setter });
-                }
-            }
-        }
-        if before != *properties {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-        }
-        if !applied_accessors.is_empty() {
-            self.state
-                .applied_accessors
-                .insert(*target, applied_accessors);
-        }
     }
 
     /// Return a builtin row only after proving the source-level intrinsic
@@ -3555,6 +3448,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let mut ordinary_operands = BTreeSet::new();
         let mut own_property_projection = None;
+        let mut application = None;
         for mutation in row.mutates {
             match *mutation {
                 // Freezing is silent only on the fresh plain-data literal itself.
@@ -3575,21 +3469,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     else {
                         return None;
                     };
-                    if !(self.ordinary_object_prototype_intact()
-                        && matches!(target_values.iter().collect::<Vec<_>>().as_slice(),
-                            [AbstractValue::Value(Value::Alloc(Kind::Object, object))]
-                                if self.inputs.index.plain_data_objects.contains(object)
-                                    && self.state.object_properties_are_settled(object)
-                                    && self.state.prefix_object_properties.get(object)
-                                        .is_some_and(BTreeMap::is_empty)
-                                    && !self.state.applied_accessors.contains_key(object))
-                        && matches!(map_values.iter().collect::<Vec<_>>().as_slice(),
-                            [AbstractValue::OwnDescriptorMap(map_site)]
-                                if self.state.own_descriptor_maps.get(map_site)
-                                    .is_some_and(|map| map.valid)))
-                    {
-                        return None;
-                    }
+                    application = Some(descriptor_heap::application(
+                        self,
+                        target_values,
+                        map_values,
+                    )?);
                     ordinary_operands.extend([target, descriptors]);
                 }
                 Mutation::FreshOwnDescriptorsOf(ArgSel::Arg(index)) => {
@@ -3679,9 +3563,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } else {
             None
         };
+        let plan = native_operation::plan(
+            row,
+            site,
+            args,
+            own_property_projection.as_ref(),
+            application,
+            self.state.prefix_revision,
+        )?;
         Some(NativeCallResolution {
             row,
-            own_property_projection,
+            plan,
             iterable,
             operation_coverage,
         })
@@ -3828,7 +3720,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         if !self.state.object_accessors_are_settled(object)
             || self.state.unknown_array_contents.contains(object)
-            || self.state.applied_accessors.contains_key(object)
+            || self.state.surface.applied_accessors.contains_key(object)
             || self.state.tainted_native_sets.contains(object)
         {
             return None;
@@ -4035,7 +3927,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         true
     }
 
-    fn native_return_values(
+    /// Commit the admitted row's heap mutations to this prefix, then project
+    /// its normal return value. The mutations happen whether or not the
+    /// caller uses the value.
+    fn execute_native_resolution(
         &mut self,
         resolution: NativeCallResolution,
         args: &[Values],
@@ -4044,10 +3939,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) -> Values {
         let NativeCallResolution {
             row,
-            own_property_projection,
+            plan,
             iterable,
             operation_coverage,
         } = resolution;
+        let fresh = match native_operation::execute(self, plan) {
+            Ok(fresh) => fresh,
+            // The prefix moved between admission and execution: nothing was
+            // committed and no row fact describes this call's result.
+            Err(native_operation::StalePlan) => {
+                let mut values = unknown();
+                values.insert(AbstractValue::Value(Value::Unavailable));
+                return values;
+            }
+        };
         let mut values = match row.returns {
             Return::Unknown => unknown(),
             Return::Prim(kinds) => Values::from([AbstractValue::Value(Value::Prim(kinds))]),
@@ -4063,7 +3968,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 ))])
             }
             Return::Fresh if operation_coverage.is_some() => unknown(),
-            Return::Fresh => self.fresh_allocation_values(row, args, site, own_property_projection),
+            Return::Fresh => fresh.unwrap_or_else(|| self.fresh_allocation_values(row, args, site)),
         };
         if may_throw {
             values.insert(AbstractValue::Value(Value::Unavailable));
@@ -4154,7 +4059,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         row: &'static Row,
         args: &[Values],
         site: CallSite,
-        mut own_property_projection: Option<OwnPropertyProof>,
     ) -> Values {
         if args.is_empty()
             && super::super::allocation_transfer::keyed_collection_new(
@@ -4172,15 +4076,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut values = Values::new();
         for mutation in row.mutates {
             match *mutation {
-                Mutation::FreshOwnDescriptorsOf(_) => {
-                    values.extend(
-                        self.capture_own_descriptor_map(site, own_property_projection.take()),
-                    );
-                }
-                Mutation::FreshOwnKeysOf(_) => {
-                    values.extend(
-                        self.own_property_names_array(site, own_property_projection.take()),
-                    );
+                // The checked plan supplies these fresh allocations; a row
+                // reaching here without one has no tracked contents.
+                Mutation::FreshOwnDescriptorsOf(_) | Mutation::FreshOwnKeysOf(_) => {
+                    return unknown();
                 }
                 Mutation::FreshRetains(ArgSel::Arg(index)) => {
                     let Some(argument) = args.get(index) else {
@@ -4243,6 +4142,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return false;
         }
         self.state
+            .surface
             .prefix_object_properties
             .get(&object)
             .is_some_and(|properties| {
@@ -4278,6 +4178,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn payload_lookup_is_data(&self, object: u32, property: Option<&str>) -> bool {
         if self
             .state
+            .surface
             .applied_accessors
             .get(&object)
             .is_some_and(|accessors| {
@@ -4304,8 +4205,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // An ambiguous source literal has neither, so its pooled payload does
         // not establish the descriptor selected by a later property lookup.
         self.inputs.index.array_elements.contains_key(&object)
-            || self.state.ordinary_spread_copies.contains(&object)
-            || self.state.descriptor_copy_results.contains(&object)
+            || self.state.surface.ordinary_spread_copies.contains(&object)
+            || self.state.surface.descriptor_copy_results.contains(&object)
             || self.state.parameter_initialized_objects.contains(&object)
     }
 
@@ -4316,7 +4217,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for receiver in receivers {
             match receiver {
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    if let Some(properties) = self.state.prefix_object_properties.get(object) {
+                    if let Some(properties) =
+                        self.state.surface.prefix_object_properties.get(object)
+                    {
                         if let Some(property) = property {
                             selected.extend(
                                 properties
@@ -4391,13 +4294,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         if !self.state.object_properties_are_settled(object)
-            || self.state.applied_accessors.contains_key(object)
+            || self.state.surface.applied_accessors.contains_key(object)
             || (!self.inputs.index.plain_data_objects.contains(object)
-                && !self.state.ordinary_spread_copies.contains(object))
+                && !self.state.surface.ordinary_spread_copies.contains(object))
         {
             return None;
         }
-        let properties = self.state.prefix_object_properties.get(object)?;
+        let properties = self.state.surface.prefix_object_properties.get(object)?;
         if properties.contains_key(&None) {
             return None;
         }
@@ -4513,13 +4416,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn literal_heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
-        let state = &mut *self.state;
-        super::super::allocation_transfer::LiteralHeap {
-            properties: &mut state.prefix_object_properties,
-            arrays: &mut state.dense_arrays,
-            revision: &mut state.prefix_revision,
-            writable_prefix: Some(&mut state.writable_prefix),
-        }
+        self.descriptor_heap().into_literal()
     }
 
     fn evaluate_array(&mut self, object: u32, env: &Context, captures: &Context) -> Values {
@@ -4590,6 +4487,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             };
         }
         self.state
+            .surface
             .prefix_object_properties
             .entry(object)
             .or_default()
@@ -4610,7 +4508,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } else {
             self.state.primitive_arrays.remove(&object);
             self.literal_heap().invalidate_dense_array(object);
-            self.state.tainted_objects.insert(object);
+            self.state.surface.tainted_objects.insert(object);
         }
         let mut result = Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, object))]);
         if may_throw {
@@ -4650,7 +4548,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 || values.iter().any(|value| match value {
                     AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                         (!self.inputs.index.plain_data_objects.contains(object)
-                            && !self.state.ordinary_spread_copies.contains(object))
+                            && !self.state.surface.ordinary_spread_copies.contains(object))
                             || !self.state.object_properties_are_settled(object)
                     }
                     AbstractValue::Value(Value::Alloc(Kind::Function, key))
@@ -4764,7 +4662,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                 self.state.object_properties_are_settled(object)
                     && (self.inputs.index.plain_data_objects.contains(object)
-                        || self.state.ordinary_spread_copies.contains(object)
+                        || self.state.surface.ordinary_spread_copies.contains(object)
                         || self.state.dense_arrays.contains_key(object))
             }
             _ => false,
@@ -4876,8 +4774,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     },
                     |this| this.promote_lazy_owner(callback_owner, effect_owner, outcome),
                 );
-                self.state.tainted_objects.insert(result);
+                self.state.surface.tainted_objects.insert(result);
                 self.state
+                    .surface
                     .prefix_object_properties
                     .entry(result)
                     .or_default()
@@ -4906,6 +4805,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 IterationResult::Mapped => {
                     let contents = self
                         .state
+                        .surface
                         .prefix_object_properties
                         .entry(result)
                         .or_default()
@@ -4930,6 +4830,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         // reachable from the result's unknown contents.
                         let contents = self
                             .state
+                            .surface
                             .prefix_object_properties
                             .entry(result)
                             .or_default()
@@ -4945,7 +4846,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.literal_heap().invalidate_dense_array(result);
                         let primitive_removed =
                             self.state.primitive_arrays.remove(&result).is_some();
-                        let newly_tainted = self.state.tainted_objects.insert(result);
+                        let newly_tainted = self.state.surface.tainted_objects.insert(result);
                         if primitive_removed || newly_tainted {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
@@ -4985,6 +4886,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 }
                             }
                             self.state
+                                .surface
                                 .prefix_object_properties
                                 .entry(result)
                                 .or_default()
@@ -5009,7 +4911,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.literal_heap().invalidate_dense_array(result);
                         let primitive_removed =
                             self.state.primitive_arrays.remove(&result).is_some();
-                        let newly_tainted = self.state.tainted_objects.insert(result);
+                        let newly_tainted = self.state.surface.tainted_objects.insert(result);
                         if primitive_removed || newly_tainted {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
@@ -5144,6 +5046,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 let key_values = self
                     .state
+                    .surface
                     .prefix_object_properties
                     .get(&entry)
                     .and_then(|properties| properties.get(&Some(proof.key.clone())))?;
@@ -5155,6 +5058,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         let actual_entries = self
             .state
+            .surface
             .prefix_object_properties
             .get(array)
             .and_then(|properties| properties.get(&None))?;
@@ -5419,6 +5323,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         roots
     }
 
+    // CLEANUP(added 2026-11-09): Delete this recognizer once the native row
+    //   table decides the frozen-facade shape: a symbol-keyed three-argument
+    //   `Object.defineProperty` row, `Mutation::Integrity` admission on a
+    //   non-literal operand, and a coverage producer replacing
+    //   `FrozenNamespaceProof.initialization_dependencies` for the eight
+    //   `native_browser_reentry_test`/`local_array_push_order_test` cases.
     fn private_frozen_namespace(&self, fact: &StatementFacts) -> Option<FrozenNamespaceProof> {
         if !matches!(fact.kind, StatementKind::VarDecl)
             || !self.queries.prepared_statement_is_pure(fact.ordinal)
@@ -6326,6 +6236,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
             && self
                 .state
+                .surface
                 .prefix_object_properties
                 .get(&object)
                 .is_some_and(|properties| {
@@ -6933,7 +6844,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // does not make regex properties or prototype behavior
                     // an ordinary-record fact.
                     if include_object_properties
-                        && let Some(properties) = self.state.prefix_object_properties.get(object)
+                        && let Some(properties) =
+                            self.state.surface.prefix_object_properties.get(object)
                     {
                         for (property, values) in properties {
                             let edge = if matches!(kind, Kind::Array) {
@@ -6946,7 +6858,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             }
                         }
                     }
-                    if let Some(accessors) = self.state.applied_accessors.get(object) {
+                    if let Some(accessors) = self.state.surface.applied_accessors.get(object) {
                         for (property, accessor) in accessors {
                             for getter in &accessor.getter {
                                 visit(getter, StoredReferenceEdge::AppliedGetter(property));
@@ -6997,7 +6909,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
             AbstractValue::OwnDescriptorMap(site) => {
-                if let Some(map) = self.state.own_descriptor_maps.get(site) {
+                if let Some(map) = self.state.descriptor_maps.get(site) {
                     for value in &map.retained_values {
                         visit(value, StoredReferenceEdge::DescriptorMapRetainedValue);
                     }
@@ -7513,7 +7425,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .array_iteration_protected_objects
                     .contains(object)
                 || (!self.inputs.index.plain_data_objects.contains(object)
-                    && !self.state.ordinary_spread_copies.contains(object))
+                    && !self.state.surface.ordinary_spread_copies.contains(object))
                 || self.state.dense_arrays.contains_key(object)
             {
                 return BTreeSet::new();
@@ -7663,10 +7575,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Alloc(kind, object))
                         if kind.tracks_prefix_own_properties() =>
                     {
-                        let may_be_published = self.state.tainted_objects.contains(&object)
-                            || self.state.unsettled_objects.contains(&object);
+                        let may_be_published = self.state.surface.tainted_objects.contains(&object)
+                            || self.state.surface.unsettled_objects.contains(&object);
                         if !certified_data_receivers.contains(&object) {
-                            self.state.tainted_objects.insert(object);
+                            self.state.surface.tainted_objects.insert(object);
                         }
                         // RegExp slots share this heap only for callback
                         // containment. Ordinary-record shape and member-read
@@ -7839,8 +7751,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Alloc(kind, object))
                         if kind.tracks_prefix_own_properties() =>
                     {
-                        self.state.tainted_objects.contains(object)
-                            || self.state.unsettled_objects.contains(object)
+                        self.state.surface.tainted_objects.contains(object)
+                            || self.state.surface.unsettled_objects.contains(object)
                     }
                     AbstractValue::Value(Value::Top)
                     | AbstractValue::ForeignDeferredRecord
@@ -7862,6 +7774,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 let stored = self
                     .state
+                    .surface
                     .prefix_object_properties
                     .entry(*object)
                     .or_default()
@@ -8078,23 +7991,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().invalidate_writable(object);
     }
 
-    fn invalidate_writable_values(&mut self, values: &Values) {
-        let objects: BTreeSet<_> = values
-            .iter()
-            .filter_map(|value| match value {
-                AbstractValue::Value(Value::Alloc(kind, object))
-                    if kind.tracks_prefix_own_properties() =>
-                {
-                    Some(*object)
-                }
-                _ => None,
-            })
-            .collect();
-        for object in objects {
-            self.invalidate_writable_object(object);
-        }
-    }
-
     /// Code the interpreter did not run may have reached `values`: every
     /// object they reach, through stored references or through what a
     /// reachable body reads, may since hold anything.
@@ -8122,7 +8018,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if kind.tracks_prefix_own_properties() =>
                 {
-                    changed |= self.state.unsettled_objects.insert(*object);
+                    changed |= self.state.surface.unsettled_objects.insert(*object);
                     self.invalidate_writable_object(*object);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
@@ -8172,7 +8068,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if kind.tracks_prefix_own_properties() =>
                 {
                     self.invalidate_writable_object(*object);
-                    if !self.state.tainted_objects.insert(*object) {
+                    if !self.state.surface.tainted_objects.insert(*object) {
                         expand_stored_references = false;
                     }
                 }
@@ -8656,7 +8552,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.state.object_properties_are_settled(object)
                         && self.array_intrinsics_intact()
                         && (self.inputs.index.plain_data_objects.contains(object)
-                            || self.state.ordinary_spread_copies.contains(object)
+                            || self.state.surface.ordinary_spread_copies.contains(object)
                             || self.state.dense_arrays.contains_key(object))
                 }
                 _ => false,
@@ -9261,26 +9157,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         CallbackPoolObservation {
             prefix_revision: state.prefix_revision,
             reachability_revision: state.reachability.revision,
-            prefix_object_properties: state.prefix_object_properties.clone(),
+            prefix_object_properties: state.surface.prefix_object_properties.clone(),
             dense_arrays: state.dense_arrays.clone(),
             primitive_arrays: state.primitive_arrays.clone(),
             accumulated_values: state.accumulated_values.clone(),
-            applied_accessors: state.applied_accessors.clone(),
+            applied_accessors: state.surface.applied_accessors.clone(),
             class_superclasses: state.class_superclasses.clone(),
             set_sizes: [
                 state.global_escaped_callbacks.len(),
                 state.unknown_array_contents.len(),
                 state.exported_runtime_values.len(),
-                state.tainted_objects.len(),
+                state.surface.tainted_objects.len(),
                 state.tainted_native_sets.len(),
                 state.tainted_functions.len(),
                 state.revoked_audited_results.len(),
                 state.tainted_classes.len(),
                 state.escaped_class_capabilities.len(),
-                state.ordinary_spread_copies.len(),
-                state.descriptor_copy_results.len(),
+                state.surface.ordinary_spread_copies.len(),
+                state.surface.descriptor_copy_results.len(),
                 state
-                    .own_descriptor_maps
+                    .descriptor_maps
                     .values()
                     .filter(|map| map.valid)
                     .count(),
@@ -9387,7 +9283,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 return true;
             }
-            let writable_before = self.state.writable_prefix.clone();
+            let writable_before = self.state.surface.writable_prefix.clone();
             let nested = match callback {
                 AbstractValue::ClassMembers(key) => {
                     self.promote_class_members(key, outcome);
@@ -9425,9 +9321,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // post-state cannot replace the entry witness as though the call
             // occurred once. Widen before another member or fixed-point pass
             // observes it; otherwise pushes grow exact lengths to the budget.
-            if !self.state.writable_prefix.ptr_eq(&writable_before) {
+            if !self.state.surface.writable_prefix.ptr_eq(&writable_before) {
                 let changed: Vec<_> = self
                     .state
+                    .surface
                     .writable_prefix
                     .iter()
                     .filter_map(|(object, state)| {
@@ -9826,11 +9723,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         site: CallSite,
     ) -> Values {
         let result = site.allocation_id();
-        let Some(map) = self.capture_own_descriptor_map(site, Some(proof)) else {
+        let OwnPropertyProjection::Descriptors(projection) = proof.projection else {
             return Values::from([AbstractValue::Value(Value::Unavailable)]);
         };
-        let target = Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, result))]);
-        self.apply_own_descriptor_map_transfer(&[target.clone(), Values::from([map])]);
+        // The audited certificate admits this definition onto the factory's
+        // fresh result; the commit is the same one every native row uses.
+        self.descriptor_heap().capture(site, projection);
+        let application = self
+            .state
+            .descriptor_maps
+            .get(&site)
+            .and_then(|map| DescriptorApplication::from_map(result, map));
+        let commit = match application {
+            Some(application) => NativeOperationCommit::DefineProperties(application),
+            None => NativeOperationCommit::Integrity {
+                targets: BTreeSet::from([result]),
+            },
+        };
+        native_operation::commit(&mut self.descriptor_heap(), commit);
         let Some(certificate) = self.inputs.index.descriptor_copy_calls.get(&site) else {
             unreachable!()
         };
@@ -9840,18 +9750,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let method = Values::from([self.deferred_callbacks(captured)]);
         let properties = self
             .state
+            .surface
             .prefix_object_properties
             .entry(result)
             .or_default();
         for key in keys {
             properties.insert(Some(key.clone()), method.clone());
         }
-        if let Some(accessors) = self.state.applied_accessors.get_mut(&result) {
+        if let Some(accessors) = self.state.surface.applied_accessors.get_mut(&result) {
             for key in &certificate.signature.assigned_data_keys {
                 accessors.remove(key);
             }
         }
-        self.state.descriptor_copy_results.insert(result);
+        self.state.surface.descriptor_copy_results.insert(result);
         self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         // Provider code and native operations may still throw after argument
         // evaluation. Keep normal-return identity and abrupt completion apart.
@@ -10061,6 +9972,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .contains(&slot.object())
             || self
                 .state
+                .surface
                 .applied_accessors
                 .get(&slot.object())
                 .is_some_and(|accessors| accessors.contains_key(property))
@@ -10259,7 +10171,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if !args_may_throw {
                     operation_coverage = returns.operation_coverage.clone();
                 }
-                return self.native_return_values(returns, &successful_args, args_may_throw, span);
+                return self.execute_native_resolution(
+                    returns,
+                    &successful_args,
+                    args_may_throw,
+                    span,
+                );
             }
             // The iterable assertion does not bypass native-row checks:
             // if this exact request and indexed SetIterableProof do not
@@ -10409,8 +10326,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     let source = self.evaluate(source, env, captures);
                     if let Some(properties) = self.ordinary_data_properties(&source) {
-                        let previously_evaluated = self.state.ordinary_spread_copies.contains(key);
-                        let current = self.state.prefix_object_properties.entry(*key).or_default();
+                        let previously_evaluated =
+                            self.state.surface.ordinary_spread_copies.contains(key);
+                        let current = self
+                            .state
+                            .surface
+                            .prefix_object_properties
+                            .entry(*key)
+                            .or_default();
                         let mut changed = false;
                         if previously_evaluated {
                             for (property, values) in current.iter_mut() {
@@ -10432,13 +10355,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if changed {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
-                        self.state.ordinary_spread_copies.insert(*key);
+                        self.state.surface.ordinary_spread_copies.insert(*key);
                         return Values::from([AbstractValue::Value(Value::Alloc(
                             Kind::Object,
                             *key,
                         ))]);
                     }
-                    self.state.tainted_objects.insert(*key);
+                    self.state.surface.tainted_objects.insert(*key);
                     if self.state.array_iteration_depth > 0 {
                         self.state.array_iteration_unsupported = true;
                     }
@@ -10592,7 +10515,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             }
 
                             if let Some(properties) =
-                                self.state.prefix_object_properties.get(&object_id)
+                                self.state.surface.prefix_object_properties.get(&object_id)
                             {
                                 if let Some(property) = property {
                                     if let Some(found) = properties.get(&Some(property.clone())) {
@@ -10707,7 +10630,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if let Some(resolution) =
                     self.resolve_native_call(CallKind::Call, callee, *span, expressions, &args)
                 {
-                    return self.native_return_values(resolution, &args, args_may_throw, *span);
+                    return self.execute_native_resolution(
+                        resolution,
+                        &args,
+                        args_may_throw,
+                        *span,
+                    );
                 }
                 if args.len() == 2
                     && self.ordinary_object_prototype_intact()
@@ -11317,12 +11245,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             AbstractValue::Value(Value::Prim(_)) => false,
                             AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
                                 (!self.inputs.index.plain_data_objects.contains(object)
-                                    && !self.state.ordinary_spread_copies.contains(object)
+                                    && !self.state.surface.ordinary_spread_copies.contains(object)
                                     && !self.state.dense_arrays.contains_key(object))
                                     || !self.state.object_properties_are_settled(object)
-                                    || !self.state.prefix_object_properties.get(object).is_some_and(
-                                        |properties| properties.contains_key(&property),
-                                    )
+                                    || !self
+                                        .state
+                                        .surface
+                                        .prefix_object_properties
+                                        .get(object)
+                                        .is_some_and(|properties| {
+                                            properties.contains_key(&property)
+                                        })
                             }
                             AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
                                 self.class_may_run_on_borrowed_receiver(*key)
@@ -11544,6 +11477,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .any(|object| !self.state.object_properties_are_settled(object)))
         {
             self.state
+                .surface
                 .tainted_objects
                 .extend(certified_data_receivers.iter().copied());
             certified_data_receivers.clear();
@@ -11987,17 +11921,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     !self.state.object_properties_are_settled(object)
                         || ((!self.inputs.index.plain_data_objects.contains(object)
-                            && !self.state.ordinary_spread_copies.contains(object)
-                            && !self.state.descriptor_copy_results.contains(object)
+                            && !self.state.surface.ordinary_spread_copies.contains(object)
+                            && !self.state.surface.descriptor_copy_results.contains(object)
                             && !self.state.dense_arrays.contains_key(object))
-                            || !self.state.prefix_object_properties.get(object).is_some_and(
-                                |properties| {
+                            || !self
+                                .state
+                                .surface
+                                .prefix_object_properties
+                                .get(object)
+                                .is_some_and(|properties| {
                                     property.as_ref().is_some_and(|property| {
                                         properties.contains_key(&Some(property.clone()))
                                             || self.absent_plain_data_property(*object, property)
                                     })
-                                },
-                            ))
+                                }))
                 }
                 // Non-ordinary allocation kinds retain identity or containment
                 // only. Their own and inherited property semantics still
@@ -12019,7 +11956,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if values.iter().any(|value| {
                     matches!(value,
                     AbstractValue::Value(Value::Alloc(Kind::Object, object))
-                    if self.state.descriptor_copy_results.contains(object))
+                    if self.state.surface.descriptor_copy_results.contains(object))
                 }) {
                     self.promote_escaped_callbacks(&values, outcome);
                 }
@@ -12209,24 +12146,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &args,
             )
         {
-            // `resolve_native_call` is also used as a pure admission query.
             // This branch is the consumed runtime transfer: operands have
-            // completed, and the shared native row is applied to this prefix.
-            // Integrity and descriptor definitions can invalidate ordinary
-            // own-property writability without changing the abstract values.
-            for mutation in resolution.row.mutates.iter() {
-                let argument = match mutation {
-                    Mutation::Integrity(ArgSel::Arg(index)) => args.get(*index),
-                    Mutation::DefineProperties {
-                        target: ArgSel::Arg(index),
-                        ..
-                    } => args.get(*index),
-                    _ => None,
-                };
-                if let Some(values) = argument {
-                    self.invalidate_writable_values(values);
-                }
-            }
+            // completed, and the admitted row's checked plan is committed to
+            // this prefix whether or not the value is used.
             if let Some(receipt) = &resolution.iterable {
                 outcome.effects.record_heap_contents(
                     &receipt.external_heap_contents(),
@@ -12234,17 +12156,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
                 outcome.effect_coverage.compose(&receipt.coverage);
             }
-            if resolution
-                .row
-                .mutates
-                .iter()
-                .any(|mutation| matches!(mutation, Mutation::DefineProperties { .. }))
-            {
-                self.apply_own_descriptor_map(&args);
-            }
-            return CallTransfer::requested(needs_value, || {
-                self.native_return_values(resolution, &args, operands_may_throw, call.span.into())
-            });
+            let values = self.execute_native_resolution(
+                resolution,
+                &args,
+                operands_may_throw,
+                call.span.into(),
+            );
+            return CallTransfer::requested(needs_value, || values);
         }
         if self.host_call_does_not_reenter(call) {
             return CallTransfer::EffectsOnly;
@@ -13892,21 +13810,15 @@ pub(crate) fn annotate_synchronous_calls(
         first_class_members_publications: BTreeMap::new(),
         top_env: Context::new(),
         top_captures: Context::new(),
-        prefix_object_properties: OrdMap::new(),
-        writable_prefix: OrdMap::new(),
-        own_descriptor_maps: OrdMap::new(),
-        applied_accessors: OrdMap::new(),
+        surface: ObjectSurfaceStore::default(),
+        descriptor_maps: OrdMap::new(),
         dense_arrays: OrdMap::new(),
         primitive_arrays: OrdMap::new(),
         accumulated_values: OrdMap::new(),
-        ordinary_spread_copies: BTreeSet::new(),
-        descriptor_copy_results: BTreeSet::new(),
         array_iteration_depth: 0,
         array_iteration_protected_objects: BTreeSet::new(),
         array_iteration_unsupported: false,
         array_intrinsic_mutated: false,
-        tainted_objects: BTreeSet::new(),
-        unsettled_objects: BTreeSet::new(),
         tainted_native_sets: BTreeSet::new(),
         tainted_functions: BTreeSet::new(),
         revoked_audited_results: BTreeMap::new(),
@@ -14056,12 +13968,13 @@ impl Executor<'_, '_> {
             // array has only object elements.
             let records = elements.iter().all(|element| match element {
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                    let Some(properties) = self.state.prefix_object_properties.get(object) else {
+                    let Some(properties) = self.state.surface.prefix_object_properties.get(object)
+                    else {
                         return false;
                     };
                     if !inputs.index.plain_data_objects.contains(object)
                         || !self.state.object_properties_are_settled(object)
-                        || self.state.applied_accessors.contains_key(object)
+                        || self.state.surface.applied_accessors.contains_key(object)
                         || self.state.dense_arrays.contains_key(object)
                         || others.contains(element)
                         || properties.contains_key(&None)

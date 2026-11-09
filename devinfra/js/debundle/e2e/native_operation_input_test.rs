@@ -227,6 +227,39 @@ fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
 }
 
 #[test]
+fn direct_borrowed_root_keeps_its_runtime_prefix_and_contents_frontier() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { Box } from './box.js';\nconst input = ['a'];\nconst memo = new Box(() => 1);\nconst result = new Set(input);\nconsole.log(result.size, result.has('a'));\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/box",
+            "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
+            .with_pure_new_exports(&["Box"])
+            .with_retained_callback_constructor("Box", 1, &[0])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "1 true\n");
+    let graph = fixture.dependency_graph();
+    let result = source_unit_for_binding(&graph, "result");
+    let memo = source_unit_for_binding(&graph, "memo");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result && edge.target == memo && edge.edge_kind == DepKind::Sequenced
+        }),
+        "the borrowed input keeps its live ArrayContents frontier: {graph:#?}"
+    );
+    let graph = serde_json::to_value(graph).unwrap();
+    assert_eq!(
+        node_for_binding(&graph, "result")["synchronous_execution"]["complete"],
+        true
+    );
+}
+
+#[test]
 fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
     const DECLARATION: &str =
         "var seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);";
