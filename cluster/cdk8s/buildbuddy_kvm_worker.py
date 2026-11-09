@@ -132,12 +132,12 @@ def chart(app: App) -> Chart:
             ),
         },
     )
-    for index, name in enumerate(WORKER_NAMES):
+    for name in WORKER_NAMES:
         # Heavy scratch (Docker and containerd layers, K3s, action workspaces, cache) is rebuildable, so one
         # unreplicated copy on the node's SSD pool; the claim then keeps this VM on the node that holds it.
         k8s.KubePersistentVolumeClaim(
             chart,
-            "work-claim" if index == 0 else f"work-claim-{index + 1}",
+            f"{name}-work-claim",
             metadata=k8s.ObjectMeta(name=f"{name}-work", namespace=NAMESPACE),
             spec=k8s.PersistentVolumeClaimSpec(
                 access_modes=["ReadWriteOnce"],
@@ -148,7 +148,7 @@ def chart(app: App) -> Chart:
         )
         container_disk_vm(
             chart,
-            "worker" if index == 0 else f"worker-{index + 1}",
+            f"{name}-vm",
             name=name,
             namespace=NAMESPACE,
             image=_IMAGE,
@@ -228,7 +228,7 @@ def chart(app: App) -> Chart:
         )
         NetworkPolicy(
             chart,
-            "network" if index == 0 else f"network-{index + 1}",
+            f"{name}-network",
             metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
             endpoint_selector=domain_labels(name),
             ingress=isolate_ingress(),
