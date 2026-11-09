@@ -17,6 +17,9 @@ plans and evidence live here:
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
+- <plans/convergence_landing.md> — how the semantic-convergence refactor
+  (reference implementation: draft #14552) lands on `devel` in slices: debt
+  inventory, target code shape, dependency waves, exit gates.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
   onto one abstract interpreter, domain and builtin summary table.
 - <plans/synchronous_execution_fallback.md> — make modeled effects authoritative
@@ -36,10 +39,13 @@ Safety evidence outranks speculative deletion counts. Source inspection is not
 an end-to-end reproduction; performance candidates require fresh opt profiles.
 The sections below hold details, not competing priority queues.
 
-1. **Compositional semantic authority.** Start with AR1–AR3 in
-   [Architecture review follow-ups](#architecture-review-follow-ups), using one
-   demonstrated extraction blocker per slice. AR7's soundness-contract
-   investigation can proceed independently of those implementation changes.
+1. **Compositional semantic authority.** Follow the waves in
+   <plans/convergence_landing.md>: Wave 0 (compile the reference, split the
+   giant e2e targets), Wave 1 (independent slices under the legacy gate), Wave 2
+   (kernel), Wave 3 (coverage producers), Wave 4 (discrepancy audit, flip,
+   legacy deletion). AR1–AR4 close through those waves; AR7's soundness-contract
+   investigation can proceed independently. Draft #14552 is the source to port
+   from, not a branch to merge.
 2. **Single-input spec assistance.** Keep selector synthesis and repair
    diagnostics scoped to one configured input program and one exact spec.
    Prioritize correct edits and explicit skipped-candidate reasons. Proposed
