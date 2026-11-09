@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Callers says whether a ServiceAccount may call as a workload: whether it carries the
@@ -54,7 +55,7 @@ type Gate struct {
 	workloads *auth.Resolver
 	svid      *auth.SVIDResolver
 	callers   Callers
-	readers   map[auth.Account]struct{}
+	readers   sets.Set[auth.Account]
 	operators *OperatorVerifier
 	methods   map[string]func(context.Context) (admission, error)
 	// draining ends when the service stops accepting work; open watches end with it.
@@ -63,13 +64,9 @@ type Gate struct {
 }
 
 func NewGate(options GateOptions) *Gate {
-	readers := make(map[auth.Account]struct{}, len(options.ReaderAccounts))
-	for _, account := range options.ReaderAccounts {
-		readers[account] = struct{}{}
-	}
 	draining, drain := context.WithCancel(context.Background())
 	g := &Gate{
-		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: readers, operators: options.Operators,
+		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: sets.New(options.ReaderAccounts...), operators: options.Operators,
 		draining: draining, drain: drain,
 	}
 	g.methods = map[string]func(context.Context) (admission, error){
@@ -171,7 +168,7 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 // both authentication boundaries, including canonical ServiceAccount ownership.
 func (g *Gate) workloadAccount(accountRef auth.Account, uid string) (admission, error) {
 	account := store.ServiceAccount{Namespace: accountRef.Namespace, Name: accountRef.Name}
-	if _, reader := g.readers[accountRef]; reader {
+	if g.readers.Has(accountRef) {
 		return admission{principal: store.ServiceReaderPrincipal{Account: account}}, nil
 	}
 	if !g.callers.Admits(accountRef) {

@@ -2,8 +2,10 @@
 
 pub mod effect_validation;
 mod graph_fixture;
+pub mod reflective_provider;
 pub use graph_fixture::GraphFixture;
 
+use analysis::reports::schema::SourceUnitReport;
 use analysis::{DependencyGraphReport, ProgramGraphReport};
 use debundle_e2e_support::{Fixture, RejectedFixture, read_gzip_json};
 use serde_json::Value;
@@ -134,10 +136,10 @@ fn read_program_graph(graph_path: &Path) -> ProgramGraphReport {
     read_gzip_json(&program_graph_path(graph_path))
 }
 
-/// SourceUnit-graph node id that declares `binding`, panicking (with the node dump)
-/// if none does.
-pub fn source_unit_for_binding<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a str {
-    let node = graph
+/// The dependency-graph node that declares `binding`, panicking (with the node
+/// dump) if none does.
+pub fn node_declaring<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a SourceUnitReport {
+    graph
         .nodes
         .iter()
         .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
@@ -147,6 +149,82 @@ pub fn source_unit_for_binding<'a>(graph: &'a DependencyGraphReport, binding: &s
                  nodes: {:#?}",
                 graph.nodes,
             )
-        });
-    node.id.as_str()
+        })
+}
+
+/// SourceUnit-graph node id that declares `binding`.
+pub fn source_unit_for_binding<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a str {
+    node_declaring(graph, binding).id.as_str()
+}
+
+/// SourceUnit-graph node id at source-unit `ordinal`.
+pub fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {
+    graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == ordinal)
+        .unwrap_or_else(|| panic!("no dependency graph node with ordinal {ordinal}"))
+        .id
+        .as_str()
+}
+
+/// SourceUnit-graph node id whose statement starts on source `line`.
+pub fn source_unit_for_line(graph: &DependencyGraphReport, line: usize) -> &str {
+    graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.source_location
+                .as_ref()
+                .is_some_and(|location| location.start_line == line)
+        })
+        .unwrap_or_else(|| panic!("no dependency graph node starts on line {line}"))
+        .id
+        .as_str()
+}
+
+/// The serialized dependency-graph node that declares `binding`, for tests that
+/// assert on the report's JSON shape.
+pub fn json_node_declaring<'a>(graph: &'a Value, binding: &str) -> &'a Value {
+    graph["nodes"]
+        .as_array()
+        .expect("dependency graph nodes")
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|candidate| candidate["binding"] == binding)
+                })
+        })
+        .unwrap_or_else(|| panic!("no source node for {binding}: {graph}"))
+}
+
+/// Every serialized node's `synchronous_execution.<field>` rows, in node order.
+pub fn json_execution_rows(graph: &Value, field: &str) -> Vec<Value> {
+    graph["nodes"]
+        .as_array()
+        .expect("dependency graph nodes")
+        .iter()
+        .flat_map(|node| {
+            node["synchronous_execution"][field]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .cloned()
+        })
+        .collect()
+}
+
+/// Whether a serialized node's execution lost precision to an unknown call target.
+pub fn json_has_unknown_call_target(node: &Value) -> bool {
+    node["synchronous_execution"]["precision_losses"]
+        .as_array()
+        .is_some_and(|losses| {
+            losses
+                .iter()
+                .any(|loss| loss["reason"]["code"] == "unknown_call_target")
+        })
 }

@@ -11,11 +11,10 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::{
-    Decl, DefaultDecl, ExportDecl, ExportDefaultDecl, Module, ModuleDecl, ModuleItem, Stmt,
-    VarDecl, VarDeclarator,
+    Decl, ExportDecl, Module, ModuleDecl, ModuleItem, Stmt, VarDecl, VarDeclarator,
 };
 
-use binding_targets::{binding_name_strings, declaration_name_strings};
+use binding_targets::{binding_name_strings, top_level_binding_name_strings};
 use js_ast::{
     ParsedJsModule, emit_module_source, parse_js_module_consuming,
     source_unit_ordinal_for_statement, split_var_declarators, statements_for_source_unit_ordinals,
@@ -130,7 +129,7 @@ impl PreparedSource {
             .iter()
             .enumerate()
             .filter_map(|(index, item)| {
-                top_level_binding_names(item)
+                top_level_binding_name_strings(item)
                     .iter()
                     .any(|binding| binding == name)
                     .then_some(index)
@@ -349,7 +348,7 @@ impl PreparedSource {
             start_column: coordinates.start_column,
             end_line: coordinates.end_line,
             end_column: coordinates.end_column,
-            bindings: top_level_binding_names(item),
+            bindings: top_level_binding_name_strings(item),
             original_source,
             pretty_source,
         })
@@ -444,42 +443,6 @@ pub struct StatementRow {
     pub original_source: String,
     /// SWC codegen's readable rendering of this single AST item.
     pub pretty_source: String,
-}
-
-fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_name_strings(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => {
-            declaration_name_strings(decl)
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(ExportDefaultDecl {
-            decl, ..
-        })) => match decl {
-            DefaultDecl::Class(class) => class
-                .ident
-                .as_ref()
-                .map(|ident| vec![ident.sym.to_string()])
-                .unwrap_or_default(),
-            DefaultDecl::Fn(function) => function
-                .ident
-                .as_ref()
-                .map(|ident| vec![ident.sym.to_string()])
-                .unwrap_or_default(),
-            DefaultDecl::TsInterfaceDecl(_) => Vec::new(),
-        },
-        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
-            .specifiers
-            .iter()
-            .map(|specifier| match specifier {
-                swc_ecma_ast::ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                swc_ecma_ast::ImportSpecifier::Namespace(namespace) => {
-                    namespace.local.sym.to_string()
-                }
-                swc_ecma_ast::ImportSpecifier::Named(named) => named.local.sym.to_string(),
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
 }
 
 fn top_level_var_decl(item: &ModuleItem) -> Option<(&VarDecl, bool)> {

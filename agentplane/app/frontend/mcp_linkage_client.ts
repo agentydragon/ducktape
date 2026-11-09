@@ -1,5 +1,5 @@
 import { create, fromJson, fromJsonString, toJson } from "@bufbuild/protobuf";
-import { fetchWithLogin, HttpError } from "./client";
+import { fetchText, fetchWithLogin, type Fetcher } from "./client";
 import type { StreamConnection } from "./stream_reader";
 import { followWatch } from "./watch_stream";
 import {
@@ -19,14 +19,6 @@ export type McpLinkageWatchFrame =
   | { kind: "snapshot_complete" }
   | { kind: "upsert"; linkage: McpServerLinkage }
   | { kind: "reconnect_required" };
-
-type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-
-async function readText(url: string, init: RequestInit = {}, fetcher: Fetcher = fetchWithLogin): Promise<string> {
-  const response = await fetcher(url, init);
-  if (!response.ok) throw new HttpError(response, await response.text());
-  return response.text();
-}
 
 function required<T>(value: T | undefined, field: string): T {
   if (value === undefined) throw new Error(`The Action Service omitted ${field}.`);
@@ -69,7 +61,7 @@ export async function startMcpLinkage(
   const request = create(StartMcpServerLinkageRequestSchema, { scopes });
   const response = fromJsonString(
     StartMcpServerLinkageResponseSchema,
-    await readText(
+    await fetchText(
       `${ACTION_FACADE}/v1/operator/mcp-servers/${encodeURIComponent(serverId)}/linkage/start`,
       {
         method: "POST",
@@ -90,7 +82,7 @@ export async function disconnectMcpLinkage(
 ): Promise<McpServerLinkage> {
   const response = fromJsonString(
     DisconnectMcpServerResponseSchema,
-    await readText(
+    await fetchText(
       `${ACTION_FACADE}/v1/operator/mcp-servers/${encodeURIComponent(serverId)}/linkage/disconnect`,
       { method: "POST" },
       fetcher

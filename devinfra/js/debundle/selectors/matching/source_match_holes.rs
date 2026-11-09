@@ -93,9 +93,25 @@ pub fn hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
     Some(name)
 }
 
-/// Alias for readability at call sites that specifically handle run holes.
-pub fn labeled_hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
-    hole_name_for(name, keyword)
+/// `ANYTHING[_label]`, the position-polymorphic hole.
+pub fn anything_hole_name(name: &str) -> Option<&str> {
+    hole_name_for(name, ANYTHING_HOLE_KEYWORD)
+}
+
+/// A single-node hole in expression position: `EXPR[_label]` or `ANYTHING[_label]`.
+pub fn expr_hole_name(name: &str) -> Option<&str> {
+    hole_name_for(name, EXPR_HOLE_KEYWORD).or_else(|| anything_hole_name(name))
+}
+
+/// A single-node hole in statement position: `STMT[_label]` or `ANYTHING[_label]`.
+pub fn stmt_hole_name(name: &str) -> Option<&str> {
+    hole_name_for(name, STMT_HOLE_KEYWORD).or_else(|| anything_hole_name(name))
+}
+
+/// A declarator-list hole borne by a declarator name: `DECLARATORS[_label]` or
+/// `ANYTHING[_label]`.
+pub fn declarator_list_hole_name(name: &str) -> Option<&str> {
+    hole_name_for(name, DECLARATORS_HOLE_KEYWORD).or_else(|| anything_hole_name(name))
 }
 
 /// Canonical spellings, ordered so the longer `STMT_LIST` keyword wins over

@@ -154,7 +154,7 @@ The subsequent conversation-recovery failure is addressed separately in
 
   The sibling executor aggregate and its leaf each cap memory at 3072 MiB (3,221,225,472 bytes),
   CPU at one vCPU and PIDs at 512, with the same I/O caps. Its optional seed budget selects isolated
-  tools; see [Codex executor isolation](../runner/docs/codex_executor.md) for lifecycle and scope.
+  tools; see [Codex executor isolation](../env/runtime/execution/docs/codex_executor.md) for lifecycle and scope.
 
   Memory swap remains disabled. Aggregate and native-process cgroups use `memory.oom.group=0`,
   so a cgroup OOM selects individual process victims. A tool can be killed while its harness or

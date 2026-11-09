@@ -230,18 +230,6 @@ async def _object(cluster: Cluster, kind: str, name: str) -> dict:
     return decoded
 
 
-async def _sandbox_status(cluster: Cluster, name: str, *path: str) -> object:
-    """Poll the Sandbox until its status holds `path`, and return that value."""
-    async with asyncio.timeout(READY_SECONDS):
-        while True:
-            value: object = (await _object(cluster, f"sandboxes.{GROUP}", name)).get("status", {})
-            for key in path:
-                value = value.get(key) if isinstance(value, dict) else None
-            if value:
-                return value
-            await asyncio.sleep(1)
-
-
 async def _put_tls_secret(cluster: Cluster, name: str, crt: bytes, key: bytes) -> None:
     await cluster.kubectl(
         "apply",

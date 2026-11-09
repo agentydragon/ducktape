@@ -1,168 +1,62 @@
 # Session-addressed command authority
 
-Status: **directory membership selected; remaining authority and fencing details need review.**
-The selected public command address is a globally unique Session UUID. The native Session directory
-in Dispatcher PostgreSQL is the authority for its placement. This note specifies the native send
-path and the remaining decisions after the initial Session-ID cutover. The landed
-[Session resource and placement contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover)
-provides the current directory; [`HARNESS_IDENTITY_DESIGN`](task_dag.md#harness_identity_design--decide-private-session-to-store-and-native-mapping)
-tracks the remaining private harness-store and native-ID mapping work. It does not select a principal
-or send policy for a central Session without an environment.
+Status: **first native cutover implemented; outcome visibility, revocation, central Sessions and
+post-deletion inbox sends remain open.** Commands address a globally unique Session UUID, and the
+Dispatcher PostgreSQL Session directory is the placement authority. The implemented caller,
+binding, deletion-fence and possible-forwarding rules are the
+[Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md); delegated callers follow the
+[delegated authorization contract](../docs/delegated_authorization.md).
+[`HARNESS_IDENTITY_DESIGN`](task_dag.md#harness_identity_design--decide-private-session-to-store-and-native-mapping)
+tracks the private harness-store and native-ID mapping. Nothing here selects a principal or send
+policy for a central Session without an environment.
 
-## Current boundaries
-
-| Caller or boundary            | Current authority and behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App                           | Its Thread route and access checks precede Dispatcher submission. The Go bridge uses an exact Sandbox name and UID for opening and diagnostics; commands address a Session ID. The app's service token is a configured privileged Dispatcher caller, so the backend does not independently authenticate the browser user.                                                                                                                                                                                                 |
-| Direct CLI                    | Uses its workload token and supplies Session ID and command ID. Dispatcher resolves the recorded placement and checks a normal caller against the opening's execution ServiceAccount and the live Sandbox account.                                                                                                                                                                                                                                                                                                        |
-| Same-principal Actions        | `session_delegation` sends the retained caller's namespace, name and UID in the reviewed delegation envelope. Dispatcher checks the effective caller, not Actions' actor privilege. Action approval does not enlarge backend authority.                                                                                                                                                                                                                                                                                   |
-| Orchestration Actions         | `orchestration_v1` is a documented temporary privileged service exception after an Action Decision. It verifies the named Sandbox incarnation before commands; backend grants for each operation remain separate work.                                                                                                                                                                                                                                                                                                    |
-| Notification API and worker   | Subscriptions check source access, exact Sandbox ownership and live Session membership at creation. A separate `session_inbox_access.send_message` policy permits inbox append for a target Sandbox, which can lead to a service-authored notice under Notification's wake policy. It does not grant arbitrary Runtime commands or direct wake. The worker rechecks its stored destination and sends its UID with a notice command. Dispatcher authenticates Notification's service account, not the original subscriber. |
-| Dispatcher                    | Queued commands and interrupts require an authorized Session record, including for privileged Pod-bound backends; Dispatcher resolves its exact Sandbox placement. A normal caller must match its execution principal. The queue transaction rechecks the Session binding and retains actor/effective caller attribution.                                                                                                                                                                                                 |
-| Delivery, Gateway and Runtime | Dispatcher groups by Sandbox UID, rechecks live UID, lease and execution account, then calls the Gateway proxy. Gateway checks exact Sandbox UID, owner and ready Pod before forwarding and restricts Runtime Session mutation to the combined Gateway/Dispatcher ServiceAccount. Runtime journals admitted commands and rejects an unknown Session.                                                                                                                                                                      |
-
-Source anchors: [Dispatcher API](../runner_gateway/dispatcher/api.go),
-[queue transaction](../runner_gateway/dispatcher/store.go),
-[delivery worker](../runner_gateway/dispatcher/delivery.go),
-[Gateway proxy](../runner_gateway/gateway/proxy.go),
-[Notification worker](../notification_service/worker/deliver.go),
-[delegated authorization](../docs/delegated_authorization.md).
-
-The native cleanup and authorization rules below describe the first slice, not the final lifetime
-or authority of an Environment-independent Session. Coordinate Environment deletion with
+The native rules describe the first slice, not the final lifetime or authority of an
+Environment-independent Session. Coordinate Environment deletion with
 [`SESSION_AND_INBOX_LIFETIME`](task_dag.md#session_and_inbox_lifetime--decide-session-and-inbox-lifetimes)
 and cross-principal Session targets with
 [`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
 
-## Native command contract and remaining authority decisions
+## Gates before placement can move
 
-The external submit, model, reasoning-effort and interrupt requests name the Session UUID and a
-caller-held command ID (plus the operation's arguments and an interrupt's turn ID). A caller does
-not supply the Sandbox or its UID as a required public Session address. Opening still selects an
-exact environment at creation; environment lifecycle and execution APIs retain their own target.
-An internal delivery envelope carries the resolved namespace, name, **immutable UID** and Session
-UUID. A placement generation is optional for the first native slice, whose assigned environment
-cannot move. If placement can change or a retired UUID can be reused, a generation or equivalent
-backend-enforced fence becomes mandatory before such operations are exposed.
-
-At acceptance, Dispatcher authenticates the actor and derives the effective caller using the
-existing direct/delegated modes. It reads the live Sandbox and execution ServiceAccount through
-their existing owners; those Kubernetes reads cannot join a PostgreSQL transaction. Under the
-Session lock (or equivalent serializable compare-and-swap), one Dispatcher transaction resolves
-the UUID from the directory, checks the persisted placement and, for normal callers, the
-execution-principal binding against the admitted caller and live-read identity, and inserts the
-immutable command ID, operation/payload, exact placement UID and attribution. A concurrent directory retirement or
-placement update must order before or after that transaction. A live owner change racing this
-commit is caught by the persisted UID and subsequent live rechecks; no cross-store atomicity is
-claimed. An opening that durably reserves the native placement can accept commands before the
-owner is ready; the queue must deliver its opening first. Do not derive a new UID from a mutable
-Sandbox name after acceptance. An absent, retired, or unplaced Session is not an invitation to
-search History or a runner; return a stable refusal or a defined unavailable outcome. Unknown
-directory or live identity state fails closed without wake. A queued receipt means only durable
-Dispatcher acceptance.
-
-**Selected for the first native cutover:** preserve the existing caller and wake rules. For a
-normal direct or delegated caller, preserve the existing exact execution ServiceAccount
-namespace, name and UID check against the opening and live environment. A delegated actor's
-privileged allowlist membership never applies to its effective caller. Keep the existing named
-App, Notification and orchestration service exceptions at their current scopes while their
-caller-facing checks are separately audited; no new service or direct agent becomes privileged by
-using a Session UUID. Retain actor, effective caller UID, and Action provenance on accepted work.
-Resolving the directory, reading a Session or subscribing to a source is not send permission.
-Dispatcher now requires a Session record for every Session-targeted command, including privileged
-calls and interrupts. Gateway restricts direct Runtime Session mutation to the combined
-Gateway/Dispatcher workload. A Session record is distinct from a per-command receipt; this requirement
-does not itself define which operations are durably queued or journaled. Command requests address a
-Session ID; a broker may include an expected Sandbox UID as an authorization precondition.
-
-General destination/operation grants and revocation of previously accepted queued work remain in
-`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`; retaining the existing rules does not select a new
-revocation policy.
-
-Before any wake, the delivery worker rechecks the queued row against the current directory and
-live environment: Session still assigned to the **same UID**, execution account unchanged, and
-the row still owned by its fenced queue worker. Keep the existing `wakeOnSend`, `resumePolicy`,
-`wake_callers`, manual-stop and budget gates; a sender's ability to queue never supplies wake
-authority. Check again when claiming a queued command for send. Pass the persisted UID through
-the proxy, which must check the live Sandbox, owner and Pod immediately before forwarding.
-Runtime admission checks the Session is actually present and journals by the same command ID.
-If an environment is unavailable or suspended, leave authorized queued work queued under the
-existing retry/wake policy. A missing/replaced UID or changed execution principal fails that row
-without retargeting it. Do not send behind an unresolved opening. After an opening is settled,
-a reachable Runtime's unknown Session is terminal for the command.
-
-**Selected deletion-race outcomes:** once deletion closes admission, do not wake or deliver new
-work to the deleted environment. Fail accepted commands proven not to have left Dispatcher; if
-delivery may have reached Runtime and admission or effects cannot be established, make the outcome
-observable as unknown rather than claiming failure or replaying it. Dispatcher now retains a sticky
-possible-forwarding marker across requeue and deletion; actual admission entries/cursors remain
-evidence even when effects are unknown. Preserve any outcome established
-by durable evidence, and never redirect accepted work to a replacement environment. Deletion
-terminal snapshots currently reach connected `WatchDispatches` streams through transactional
-PostgreSQL notifications; cleanup removes the receipts, so later reads cannot recover those
-snapshots. A connected watcher behind an earlier terminal-row invalidation can also miss that
-outcome when cleanup removes the row; cleanup currently snapshots only outcomes it transitions.
-Broadcasting all retained receipts can overflow bounded subscriptions, so this remains a delivery
-design gap. Durable post-deletion outcome visibility and retention remain open Dispatcher/History
-decisions. Neither notification delivery nor Runtime admission proves that an uncertain effect failed.
-
-There remains a narrow race between Dispatcher's directory recheck and Runtime admission. For the
-first native slice, directory assignment is immutable for the lifetime of the exact environment
-UID; deletion/retirement must fence new sends, wake and forwarding, and settle queued work before
-the Runtime can be reused for another owner. If that invariant cannot be enforced, the receiver
-must validate an authoritative placement epoch or lease at admission. A local cached generation
-without such validation is not a fence. This is an implementation gate, not a reason to assume
-cross-service atomicity.
-
-An interrupt uses the same durable command admission and exact-UID delivery fence, with a required
-turn ID. The Runtime checks that target at admission, so delayed delivery cannot interrupt a successor.
-Cancellation and dispatch reads retain their own caller checks; they cannot be used to discover
-placement without read authority.
+The first slice relies on placement being immutable for the lifetime of the exact environment UID,
+with deletion fencing new sends, wake and forwarding before the Runtime can serve another owner. A
+narrow race remains between Dispatcher's directory recheck and Runtime admission. If placement can
+change or a retired UUID can be reused, a placement generation or equivalent backend-enforced fence
+validated by the receiver at admission becomes mandatory before such operations are exposed. A local
+cached generation without that validation is not a fence; do not assume cross-service atomicity.
 
 ## Recovery and decisions for review
 
-A retry of a command ID with the same Session UUID, operation and payload returns or reconciles
-the original row, including its original resolved UID. A conflicting reuse fails. Once delivery
-may have reached Runtime, a lost reply or worker failure is **unknown** until durable Dispatcher,
-Runtime journal or History evidence settles it; do not automatically replay an uncertain effect
-or redirect it to a new owner. A same-name replacement gets a different UID and cannot adopt the
-row. Preserve accepted work and the native store when handling deletion and service-store races.
-
-The outcome and initial caller/wake rules above are selected. Remaining design and verification:
-
-1. **Complete bounded outcome visibility.** The managed receiver fence is covered; durable
-   post-deletion outcomes and bounded watcher delivery remain unresolved as described above.
-   Session movement remains a separate decision; a local cached generation alone is not a fence.
-   After required-Environment deletion Dispatcher retains the Session and exact placement. Explicit
-   Session deletion is not implemented; callers must not deliberately reuse its UUID if added later.
-   Ordinary managed deletion waits for the exact Runtime incarnation's final Session cutoffs,
-   journal seals and History acknowledgements before removing its workload. The initial lameduck
-   is earlier and still permits exact-turn interrupts. Gateway refuses Session mutation after its
-   cache observes quiescing/deletion; that observation is asynchronous. The deployed
-   [Session deletion suite](../system_tests/suites/test_session_deletion.py) holds an exact-turn
-   interrupt after Gateway routing through completed Runtime quiescence, verifies the actual
-   receiver's sealed-journal refusal and unchanged sealed History, then proves old-UID refusal
-   against a healthy same-name replacement. `deletionTimestamp` is not a cross-service linearization point, and
-   manual finalizer removal or foreground deletion bypasses the managed handshake. The worker's
-   placement recheck can race deletion and forwarding; it does not replace the Runtime cutoff. See [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
+1. **Complete bounded outcome visibility.** Deletion terminal snapshots reach only connected
+   `WatchDispatches` streams, and a watcher behind an earlier terminal-row invalidation can miss
+   its outcome when cleanup removes the row ([SPEC](../runner_gateway/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes)).
+   Broadcasting all retained receipts can overflow bounded subscriptions. Durable post-deletion
+   outcome visibility and retention remain open Dispatcher/History decisions. Neither notification
+   delivery nor Runtime admission proves that an uncertain effect failed. Explicit Session deletion
+   is not implemented; callers must not deliberately reuse its UUID if added later.
+   `deletionTimestamp` is not a cross-service linearization point, and manual finalizer removal or
+   foreground deletion bypasses the managed handshake. See
+   [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
 2. **Queued sender revocation.** The first cutover retains current service trust and effective-caller
    checks. Whether an accepted command is cancelled on a later user grant revocation remains a
-   separate generalized-policy decision; a subscription is not a lasting send grant.
+   separate generalized-policy decision in
+   [`DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`](task_dag.md#dispatcher_send_authorization_generalize--replace-v0-service-trust-with-scoped-sender-grants);
+   a subscription is not a lasting send grant.
 3. **Central Sessions.** A central scope with no environment has no UID or current native
    execution principal. Decide its principal, command permission and wake behavior in the central
    Session/agent-principal designs; do not invent an environment or use a privileged service
    identity as its principal. This need not block the environment-hosted slice.
 
-Acceptance for the implementation: direct and delegated caller parity; denial for an unrelated
-caller despite a known UUID; actor privilege not leaking through delegation; current App,
-Notification and orchestration permissions unchanged; source-read grants unable to append, and
-inbox-append grants unable to submit arbitrary commands or bypass notice wake policy; exact same-ID
-and conflict behavior across restarts; denial of commands to an absent Session for privileged and
-ordinary callers, including interrupts; queue/deletion and
-same-name replacement races; failed directory read before wake; suspended, unavailable and
-unknown Runtime outcomes; interrupt delivery and unknown-result reconciliation; and continued
-coverage of the enforced Gateway proxy restriction. Use deterministic integration tests for the transaction and race boundary
-and a bounded system test for the actual Gateway/Runtime UID fence.
+Acceptance coverage to confirm for the implemented slice: direct and delegated caller parity;
+denial for an unrelated caller despite a known UUID; actor privilege not leaking through delegation;
+current App, Notification and orchestration permissions unchanged; source-read grants unable to
+append, and inbox-append grants unable to submit arbitrary commands or bypass notice wake policy;
+same-ID and conflict behavior across restarts; denial of commands, including interrupts, to an
+absent Session for privileged and ordinary callers; queue/deletion and same-name replacement races;
+failed directory read before wake; suspended, unavailable and unknown Runtime outcomes; and
+unknown-result reconciliation. Use deterministic integration tests for the transaction and race
+boundary; the deployed [Session deletion suite](../system_tests/suites/test_session_deletion.py)
+covers the Gateway/Runtime UID fence.
 
 ## Inbox sends after the required Environment is gone
 

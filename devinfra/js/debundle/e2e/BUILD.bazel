@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 load(":defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
@@ -87,14 +87,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "saved_analysis_parity_test",
-    data = [
-        "//devinfra/js/debundle:debundle_analyze",
-        "//devinfra/js/debundle:debundle_project_analysis",
-    ],
-    env = {
-        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
-        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
-    },
+    saved_analysis_tools = True,
     deps = [
         "@crates//:rmp-serde",
         "@crates//:serde_json",
@@ -104,14 +97,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "saved_analysis_identity_test",
-    data = [
-        "//devinfra/js/debundle:debundle_analyze",
-        "//devinfra/js/debundle:debundle_project_analysis",
-    ],
-    env = {
-        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
-        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
-    },
+    saved_analysis_tools = True,
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
@@ -124,14 +110,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "saved_analysis_resolved_member_test",
-    data = [
-        "//devinfra/js/debundle:debundle_analyze",
-        "//devinfra/js/debundle:debundle_project_analysis",
-    ],
-    env = {
-        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
-        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
-    },
+    saved_analysis_tools = True,
     deps = [
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -140,14 +119,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "saved_analysis_reports_test",
-    data = [
-        "//devinfra/js/debundle:debundle_analyze",
-        "//devinfra/js/debundle:debundle_project_analysis",
-    ],
-    env = {
-        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
-        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
-    },
+    saved_analysis_tools = True,
     deps = [
         "@crates//:serde_json",
     ],
@@ -155,14 +127,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "bindings_candidate_assessment_test",
-    data = [
-        "//devinfra/js/debundle:debundle_analyze",
-        "//devinfra/js/debundle:debundle_project_analysis",
-    ],
-    env = {
-        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
-        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
-    },
+    saved_analysis_tools = True,
     deps = [
         "//devinfra/js/debundle:staged_analysis",
         "@crates//:rmp-serde",
@@ -172,14 +137,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "modules_candidate_assessment_test",
-    data = [
-        "//devinfra/js/debundle:debundle_analyze",
-        "//devinfra/js/debundle:debundle_project_analysis",
-    ],
-    env = {
-        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
-        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
-    },
+    saved_analysis_tools = True,
     deps = [
         "@crates//:serde_json",
     ],
@@ -187,14 +145,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "initializer_source_only_test",
-    data = [
-        "//devinfra/js/debundle:debundle_analyze",
-        "//devinfra/js/debundle:debundle_project_analysis",
-    ],
-    env = {
-        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
-        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
-    },
+    saved_analysis_tools = True,
     deps = [
         "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
@@ -403,6 +354,7 @@ rust_library(
         "support/effect_validation.rs",
         "support/graph_fixture.rs",
         "support/graph_support.rs",
+        "support/reflective_provider.rs",
     ],
     crate_name = "debundle_e2e_graph_support",
     crate_root = "support/graph_support.rs",
@@ -987,21 +939,9 @@ debundle_e2e_test(
     ],
 )
 
-rust_test(
+debundle_e2e_test(
     name = "cross_chunk_readable_imports_test",
     size = "small",
-    srcs = ["cross_chunk_readable_imports_test.rs"],
-    crate_root = "cross_chunk_readable_imports_test.rs",
-    data = [
-        "//devinfra/js/debundle:debundle_e2e",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    edition = "2024",
-    env = {
-        "DEBUNDLE_TEST_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle_e2e)",
-        "DEBUNDLE_TV_ORACLE": "1",
-    },
-    deps = [":support"],
 )
 
 debundle_e2e_test(

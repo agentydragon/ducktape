@@ -217,7 +217,11 @@ fn static_member_write_root(member: &MemberExpr) -> Option<Id> {
     }
 }
 
-fn vendor_prune_intrinsic_local_effect_aliases(item: &ModuleItem) -> BTreeSet<Id> {
+/// Identifier declarators of `item` whose initializer satisfies `matches`.
+fn ident_declarators_initialized_by(
+    item: &ModuleItem,
+    matches: impl Fn(&Expr) -> bool,
+) -> BTreeSet<Id> {
     let Some(var) = var_decl_of_item(item) else {
         return BTreeSet::new();
     };
@@ -227,14 +231,13 @@ fn vendor_prune_intrinsic_local_effect_aliases(item: &ModuleItem) -> BTreeSet<Id
             let Pat::Ident(local) = &decl.name else {
                 return None;
             };
-            let init = decl.init.as_deref()?;
-            if vendor_prune_intrinsic_local_effect_member(init) {
-                Some(local.to_id())
-            } else {
-                None
-            }
+            matches(decl.init.as_deref()?).then(|| local.to_id())
         })
         .collect()
+}
+
+fn vendor_prune_intrinsic_local_effect_aliases(item: &ModuleItem) -> BTreeSet<Id> {
+    ident_declarators_initialized_by(item, vendor_prune_intrinsic_local_effect_member)
 }
 
 fn vendor_prune_intrinsic_local_effect_member(expr: &Expr) -> bool {
@@ -251,23 +254,7 @@ fn vendor_prune_intrinsic_local_effect_member(expr: &Expr) -> bool {
 }
 
 fn vendor_prune_commonjs_module_bindings(item: &ModuleItem) -> BTreeSet<Id> {
-    let Some(var) = var_decl_of_item(item) else {
-        return BTreeSet::new();
-    };
-    var.decls
-        .iter()
-        .filter_map(|decl| {
-            let Pat::Ident(local) = &decl.name else {
-                return None;
-            };
-            let init = decl.init.as_deref()?;
-            if vendor_prune_commonjs_module_init(init) {
-                Some(local.to_id())
-            } else {
-                None
-            }
-        })
-        .collect()
+    ident_declarators_initialized_by(item, vendor_prune_commonjs_module_init)
 }
 
 fn vendor_prune_commonjs_module_init(expr: &Expr) -> bool {
@@ -305,25 +292,9 @@ fn vendor_prune_target_first_local_effect_wrappers(
         {
             BTreeSet::from([function.ident.to_id()])
         }
-        _ => {
-            let Some(var) = var_decl_of_item(item) else {
-                return BTreeSet::new();
-            };
-            var.decls
-                .iter()
-                .filter_map(|decl| {
-                    let Pat::Ident(local) = &decl.name else {
-                        return None;
-                    };
-                    let init = decl.init.as_deref()?;
-                    if vendor_prune_target_first_wrapper_expr(init, local_effect_context) {
-                        Some(local.to_id())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        }
+        _ => ident_declarators_initialized_by(item, |init| {
+            vendor_prune_target_first_wrapper_expr(init, local_effect_context)
+        }),
     }
 }
 

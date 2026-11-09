@@ -20,8 +20,8 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
+from agentplane.central_sampler import sampler_pb2
+from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings, turn_completed
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
@@ -39,18 +39,6 @@ ResponseT = TypeVar("ResponseT")
 async def store(database_url: str) -> AsyncIterator[Store]:
     async with postgres_async_engine(database_url) as engine:
         yield Store(engine)
-
-
-async def wait_turn(stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, turn_id: str) -> event_pb2.TurnCompleted:
-    stream = stub.FollowEvents(sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA)
-    try:
-        async with asyncio.timeout(15):
-            async for frame in stream:
-                if frame.entry.event.HasField("turn_completed") and frame.entry.event.turn_completed.turn_id == turn_id:
-                    return frame.entry.event.turn_completed
-    finally:
-        stream.cancel()
-    raise AssertionError("event stream ended before turn completion")
 
 
 def _store_retries() -> AsyncRetrying:
@@ -279,14 +267,16 @@ async def test_turn_outcomes_preserve_safe_continuation(
                     await exchange.send(
                         *response_stream([Message("Continued after tool error")], model="test-model").events
                     )
-                assert (await wait_turn(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_COMPLETED
+                assert (
+                    await turn_completed(stub, request.session_id, "first")
+                ).status == event_pb2.TURN_STATUS_COMPLETED
                 observed = await stub.GetSession(
                     sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
                 )
                 assert not observed.blocked
                 assert not any(intent.result is None for intent in await store.intents())
                 return
-            assert (await wait_turn(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_FAILED
+            assert (await turn_completed(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_FAILED
             observed = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
@@ -323,7 +313,7 @@ async def test_turn_outcomes_preserve_safe_continuation(
             )
             async with await endpoint.next() as exchange:
                 await exchange.send(*response_stream([Message("Recovered")], model="test-model").events)
-            assert (await wait_turn(stub, request.session_id, "second")).status == event_pb2.TURN_STATUS_COMPLETED
+            assert (await turn_completed(stub, request.session_id, "second")).status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_lost_process_read_reply_resumes_same_process_and_cursor(
@@ -355,7 +345,7 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
                 assert output in json.dumps(exchange.request.body["input"])
                 await exchange.send(*response_stream([Message("completed after reconnect")], model="test-model").events)
             assert (
-                await wait_turn(stub, request.session_id, "read-recovery")
+                await turn_completed(stub, request.session_id, "read-recovery")
             ).status == event_pb2.TURN_STATUS_COMPLETED
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
@@ -478,7 +468,7 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
                     *response_stream([Message("continued after observed read fault")], model="test-model").events
                 )
             assert (
-                await wait_turn(stub, request.session_id, "observed-read-fault")
+                await turn_completed(stub, request.session_id, "observed-read-fault")
             ).status == event_pb2.TURN_STATUS_COMPLETED
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
@@ -571,7 +561,7 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
                     *response_stream([Message("caught tool error and continued")], model="test-model").events
                 )
             assert (
-                await wait_turn(stub, request.session_id, "start-ack-lost")
+                await turn_completed(stub, request.session_id, "start-ack-lost")
             ).status == event_pb2.TURN_STATUS_COMPLETED
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
@@ -662,7 +652,7 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
                     *response_stream([Message("continued after uncaught error")], model="test-model").events
                 )
             assert (
-                await wait_turn(stub, request.session_id, "uncaught-patch")
+                await turn_completed(stub, request.session_id, "uncaught-patch")
             ).status == event_pb2.TURN_STATUS_COMPLETED
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
@@ -732,7 +722,9 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
                     assert await store.has_live_cell(request.session_id), "the faulted cell never became live"
             os.killpg(host_pid, signal.SIGKILL)
 
-            assert (await wait_turn(stub, request.session_id, "recover-start")).status == event_pb2.TURN_STATUS_FAILED
+            assert (
+                await turn_completed(stub, request.session_id, "recover-start")
+            ).status == event_pb2.TURN_STATUS_FAILED
             async for attempt in _store_retries():
                 with attempt:
                     blocked = await stub.GetSession(
@@ -790,7 +782,7 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
                 assert "undefined" in json.dumps(exchange.request.body["input"])
                 await exchange.send(*response_stream([Message("continued after recovery")], model="test-model").events)
             assert (
-                await wait_turn(stub, request.session_id, "continue-after-recovery")
+                await turn_completed(stub, request.session_id, "continue-after-recovery")
             ).status == event_pb2.TURN_STATUS_COMPLETED
 
 
@@ -916,7 +908,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                     )
 
                 assert (
-                    await wait_turn(stub, request.session_id, "stale-json-cell")
+                    await turn_completed(stub, request.session_id, "stale-json-cell")
                 ).status == event_pb2.TURN_STATUS_COMPLETED
                 observed = await stub.GetSession(
                     sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
@@ -941,7 +933,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                         *response_stream([Message("The next input still works.")], model="test-model").events
                     )
                 assert (
-                    await wait_turn(stub, request.session_id, "after-stale-json-cell")
+                    await turn_completed(stub, request.session_id, "after-stale-json-cell")
                 ).status == event_pb2.TURN_STATUS_COMPLETED
             finally:
                 release.write_text("")

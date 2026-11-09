@@ -6,7 +6,7 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 # gazelle:exclude test_live_provider.py
 # gazelle:exclude test_live_anthropic_provider.py
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
-load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_ENV", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
@@ -50,8 +50,10 @@ py_library(
         ":settings",
         "//agentplane/central_sampler:sampler_pb2",
         "//agentplane/central_sampler:sampler_pb2_grpc",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/native/testing:model_endpoint",
+        "//agentplane/proto:event_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:go_process",
@@ -161,7 +163,6 @@ py_test(
         ":testing_store",
         "//:conftest",
         "//agentplane/central_sampler:sampler_pb2",
-        "//agentplane/central_sampler:sampler_pb2_grpc",
         "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/native/testing:model_endpoint",
@@ -226,7 +227,7 @@ py_test(
     name = "test_gateway_integration",
     size = "medium",
     srcs = ["test_gateway_integration.py"],
-    env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -305,7 +306,6 @@ py_test(
         ":testing_store",
         "//:conftest",
         "//agentplane/central_sampler:sampler_pb2",
-        "//agentplane/central_sampler:sampler_pb2_grpc",
         "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/env/runtime/execution:executor_pb2",
         "//agentplane/env/runtime/execution:executor_pb2_grpc",
@@ -404,6 +404,7 @@ go_library(
         "//agentplane/history_service:session_ingress_go_proto",
         "//agentplane/postgres",
         "//agentplane/postgres/lease",
+        "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
@@ -415,8 +416,6 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@com_github_invopop_jsonschema//:jsonschema",
         "@com_github_lib_pq//:pq",
-        "@com_github_pressly_goose_v3//:goose",
-        "@com_github_pressly_goose_v3//lock",
         "@io_k8s_client_go//util/workqueue",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

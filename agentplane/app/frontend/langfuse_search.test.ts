@@ -1,13 +1,13 @@
 import { expect, it } from "vitest";
 
-import type { LangfuseSearchSettings } from "./app_config_client";
+import type { LangfuseSearchSettings } from "../app_service_pb";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "./langfuse_search";
 import { LANGFUSE_SEARCH_SETTINGS } from "./testing/langfuse_search";
 
 const settings: LangfuseSearchSettings = {
   ...LANGFUSE_SEARCH_SETTINGS,
-  base_url: "https://langfuse.example.test/observability/",
-  project_id: "langfuse-litellm-project",
+  baseUrl: "https://langfuse.example.test/observability/",
+  projectId: "langfuse-litellm-project",
 };
 
 it("builds Langfuse's metadata-filter URL for the Sandbox namespace and ServiceAccount", () => {
@@ -26,8 +26,8 @@ it("builds Langfuse's metadata-filter URL for the Sandbox namespace and ServiceA
 it("escapes configured filter keys and metadata values before the outer URL encoding", () => {
   const adversarial: LangfuseSearchSettings = {
     ...settings,
-    project_id: "project;one,west",
-    sandbox_namespace_metadata_key: "metadata.agentplane;untrusted,namespace",
+    projectId: "project;one,west",
+    sandboxNamespaceMetadataKey: "metadata.agentplane;untrusted,namespace",
   };
   const url = new URL(
     langfuseSandboxTraceUrl(adversarial, {
@@ -46,7 +46,7 @@ it("escapes configured filter keys and metadata values before the outer URL enco
 it("uses the Langfuse origin when the configured base URL has no path", () => {
   const url = new URL(
     langfuseSandboxTraceUrl(
-      { ...settings, base_url: "https://langfuse.example.test" },
+      { ...settings, baseUrl: "https://langfuse.example.test" },
       {
         namespace: "agentplane-staging",
         serviceAccount: "ready-sandbox",
@@ -58,10 +58,7 @@ it("uses the Langfuse origin when the configured base URL has no path", () => {
 
 it("scopes central sampling traces to the public Session independently of its execution Sandbox", () => {
   const url = new URL(
-    langfuseSessionTraceUrl(
-      { ...settings, session_metadata_key: "attributes.agentplane.session_id" },
-      "central-session"
-    )
+    langfuseSessionTraceUrl({ ...settings, sessionMetadataKey: "attributes.agentplane.session_id" }, "central-session")
   );
   expect(url.searchParams.get("filter")).toBe(
     "metadata;stringObject;attributes.agentplane.session_id;=;central-session"

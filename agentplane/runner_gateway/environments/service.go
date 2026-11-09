@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -38,9 +39,9 @@ type Service struct {
 	sandboxes              *sandboxreader.Reader
 	runtime                runtimeconfig.Catalog
 	lifecycle              *lifecycle.Manager
-	readers                map[auth.Account]struct{}
-	managers               map[auth.Account]struct{}
-	launchers              map[auth.Account]struct{}
+	readers                sets.Set[auth.Account]
+	managers               sets.Set[auth.Account]
+	launchers              sets.Set[auth.Account]
 	defaultPolicySets      []string
 	collectionAuthInterval time.Duration
 }
@@ -50,7 +51,7 @@ func New(
 	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
 	lifecycleManager *lifecycle.Manager,
-	readers map[auth.Account]struct{},
+	readers sets.Set[auth.Account],
 	management ManagementOptions,
 ) (*Service, error) {
 	if namespace == "" || objects == nil || lifecycleManager == nil {
@@ -70,8 +71,8 @@ func New(
 
 // ManagementOptions grants mutation authority independently of inventory and resume grants.
 type ManagementOptions struct {
-	Managers          map[auth.Account]struct{}
-	Launchers         map[auth.Account]struct{}
+	Managers          sets.Set[auth.Account]
+	Launchers         sets.Set[auth.Account]
 	DefaultPolicySets []string
 }
 
@@ -130,7 +131,7 @@ func (s *Service) broadReader(ctx context.Context, identity *auth.ServiceAccount
 	if _, ok := admission.(auth.DirectAdmission); !ok {
 		return false
 	}
-	_, ok := s.readers[serviceAccountReference(identity)]
+	ok := s.readers.Has(serviceAccountReference(identity))
 	return ok
 }
 

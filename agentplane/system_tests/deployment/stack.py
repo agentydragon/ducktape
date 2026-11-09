@@ -355,6 +355,8 @@ def running_stack(
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
     crds = sorted((Runfiles.CreateOrRaise().root() / "ducktape/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
+    # Virtualized suites keep image layers on disk: a 2026-10-30 tmpfs trial beside six VM guests
+    # lost an executor without a reliable warm-start gain.
     uses_virtualization = fixture.vm_sandboxes or fixture.firecracker_sandboxes
     if fixture.firecracker_sandboxes and os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":
         raise ValueError("the Firecracker fixture requires a KVM-enabled executor")

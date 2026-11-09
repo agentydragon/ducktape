@@ -34,7 +34,6 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
         self.calls: list[ActionCall] = []
         self.policy = action_service_pb2.GetActionPolicyResponse()
         self.policy_by_subject: dict[tuple[str, str], action_service_pb2.GetActionPolicyResponse] = {}
-        self.policy_failures: list[grpc.StatusCode] = []
         self.policy_watch_frames: asyncio.Queue[action_service_pb2.GetActionPolicyResponse] = asyncio.Queue()
         self.policy_watch_cancelled = asyncio.Event()
         self.requests = action_service_pb2.ListActionRequestsResponse()
@@ -58,17 +57,12 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
             self.unary_started.set()
             await self.unary_gate.wait()
 
-    def fail_next_policy_unavailable(self) -> None:
-        self.policy_failures.append(grpc.StatusCode.UNAVAILABLE)
-
     @override
     async def GetActionPolicy(
         self, request: action_service_pb2.GetActionPolicyRequest, context: grpc.aio.ServicerContext
     ) -> action_service_pb2.GetActionPolicyResponse:
         self._record("GetActionPolicy", request, context)
         await self._hold_unary()
-        if self.policy_failures:
-            await context.abort(self.policy_failures.pop(0), "scripted Action Service failure")
         subject = request.subject
         return self.policy_by_subject.get((subject.namespace, subject.name), self.policy)
 

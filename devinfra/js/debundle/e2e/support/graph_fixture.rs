@@ -270,14 +270,7 @@ impl GraphFixture {
         Command::new(debundler_path())
             .arg("run")
             .arg("--graphs")
-            .arg("--tree-config")
-            .arg(root.join("spec_config.yaml"))
-            .arg("--tree-modules")
-            .arg(root.join("modules"))
-            .arg("--tree-vendor-marks")
-            .arg(root.join("vendor_marks.yaml"))
-            .arg("--tree-source-root")
-            .arg(root)
+            .args(tree_spec_args(root))
             .arg("--out-root")
             .arg(out_root)
             .output()
@@ -292,5 +285,15 @@ impl GraphFixture {
 
     pub fn program_graph(&self) -> ProgramGraphReport {
         read_program_graph(&self.graph)
+    }
+
+    /// Saved-graph source-unit id that declares `binding`.
+    pub fn source_unit_for_binding(&self, binding: &str) -> String {
+        source_unit_for_binding(&self.dependency_graph(), binding).to_string()
+    }
+
+    /// Saved-graph source-unit id whose statement starts on source `line`.
+    pub fn source_unit_for_line(&self, line: usize) -> String {
+        source_unit_for_line(&self.dependency_graph(), line).to_string()
     }
 }

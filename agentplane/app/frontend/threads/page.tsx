@@ -81,8 +81,8 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const topbarStatus = threadStatusFromSnapshot(snapshotThread, sandbox, snapshotFresh(threadsLive) && inventoryFresh);
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
-  const traceSearch = frontendConfig?.trace_search ?? null;
-  const langfuseSearch = frontendConfig?.langfuse_search ?? null;
+  const traceSearch = frontendConfig?.traceSearch ?? null;
+  const langfuseSearch = frontendConfig?.langfuseSearch ?? null;
   const { commandsRequireReadySandbox } = harnessBehavior(attachedHarness(thread?.summary.attached));
   const notice =
     !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)

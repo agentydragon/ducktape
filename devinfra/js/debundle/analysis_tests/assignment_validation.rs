@@ -449,19 +449,14 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
         "export const A = 1,\n             B = 2,\n             C = 3;\n",
     ] {
         let (module, cm) = parse_with_source_map(source);
+        let line_index = js_ast::SourceLineIndex::for_source_map(&cm);
         let analysis = analyze_chunk(
             &module,
             &AnalysisInputs::default(),
-            Some("test.js"),
-            |span| {
-                (span != swc_common::DUMMY_SP).then(|| {
-                    (
-                        cm.lookup_char_pos(span.lo()).line,
-                        cm.lookup_char_pos(span.hi()).line,
-                        cm.lookup_char_pos(span.lo()).col_display + 1,
-                    )
-                })
-            },
+            Some(analysis::execution_evidence::SourceLocator {
+                source_path: "test.js",
+                lines: &line_index,
+            }),
         );
         let lines: Vec<(usize, usize)> = analysis
             .facts

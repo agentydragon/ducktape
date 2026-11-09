@@ -159,11 +159,8 @@ Left out on purpose:
   fields use their generated protobuf value names too (for example, `mcp` becomes `EXECUTOR_KIND_MCP`).
   Dispatcher `Session` JSON is the minimal authorized projection: Session ID, placement, timestamps
   and nested `SessionStatus` with materialization, reason, delivery blocker and wake assessment where
-  present. It contains neither the full `SessionSpec` nor instructions. Materialization values are
-  `SESSION_MATERIALIZATION_WAITING`, `SESSION_MATERIALIZATION_IN_PROGRESS`,
-  `SESSION_MATERIALIZATION_ACCEPTED`, `SESSION_MATERIALIZATION_FAILED` and
-  `SESSION_MATERIALIZATION_UNKNOWN`; accepted means the placement owner durably admitted the logical
-  Session, not that a harness is ready or History has projected a Thread. Dispatch JSON retains its
+  present ([contract](../runner_gateway/dispatcher/SPEC.md#session-resource)). It contains neither
+  the full `SessionSpec` nor instructions. Dispatch JSON retains its
   delivery state, reason and timestamps where present. `sessions get` emits source-part states and
   each observed Session or summary as its service's ProtoJSON; `sessions read-turns` emits UUID command IDs,
   opaque provider turn/item IDs, ProtoJSON enum names and decimal-string cursor values. `observe-input`

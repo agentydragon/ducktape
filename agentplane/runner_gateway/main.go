@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -41,11 +42,11 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,27 +54,14 @@ import (
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
-	var kubeConfig *rest.Config
-	var err error
-	if c.Kubeconfig != "" {
-		kubeConfig, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
-	} else {
-		kubeConfig, err = rest.InClusterConfig()
-	}
+	kubeConfig, err := kubeclient.Config(c.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
+	// Zero keeps client-go's 5 QPS / burst 10 limiter, which once queued Dispatcher ownership Lease
+	// acquisitions for seconds each; the deployment sets -1 to disable it.
 	kubeConfig.QPS = c.KubernetesClientQPS
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	return kubeConfig, nil
-}
-
-func accountSet(accounts []auth.Account) map[auth.Account]struct{} {
-	result := make(map[auth.Account]struct{}, len(accounts))
-	for _, account := range accounts {
-		result[account] = struct{}{}
-	}
-	return result
 }
 
 // dispatcherAccount proves that the token used by delivery workers belongs to this
@@ -85,7 +73,7 @@ func dispatcherAccount(ctx context.Context, c config, resolver *auth.Resolver, o
 		return auth.Account{}, errors.New("could not read Dispatcher workload credential")
 	}
 	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+strings.TrimSpace(string(token))))
-	principal, err := resolver.RequireAccount(ctx, accountSet(c.GatewayCallers))
+	principal, err := resolver.RequireAccount(ctx, sets.New(c.GatewayCallers...))
 	if err != nil {
 		return auth.Account{}, fmt.Errorf("review Dispatcher workload credential: %w", err)
 	}
@@ -103,23 +91,19 @@ func dispatcherAccount(ctx context.Context, c config, resolver *auth.Resolver, o
 }
 
 func accountNamespaces(accounts []auth.Account, extra *auth.Account, additional ...auth.Account) []string {
-	names := make(map[string]struct{}, len(accounts)+1+len(additional))
+	names := sets.New[string]()
 	for _, account := range accounts {
-		names[account.Namespace] = struct{}{}
+		names.Insert(account.Namespace)
 	}
 	if extra != nil {
-		names[extra.Namespace] = struct{}{}
+		names.Insert(extra.Namespace)
 	}
 	for _, account := range additional {
 		if account.Namespace != "" {
-			names[account.Namespace] = struct{}{}
+			names.Insert(account.Namespace)
 		}
 	}
-	result := make([]string, 0, len(names))
-	for name := range names {
-		result = append(result, name)
-	}
-	return result
+	return sets.List(names)
 }
 
 type lifecycleWakeBudget struct {
@@ -256,8 +240,8 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, accountSet(c.EnvironmentReaders), environments.ManagementOptions{
-		Managers: accountSet(c.EnvironmentManagers), Launchers: accountSet(c.EnvironmentLaunchers), DefaultPolicySets: c.EnvironmentDefaultPolicySets,
+	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, sets.New(c.EnvironmentReaders...), environments.ManagementOptions{
+		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...), DefaultPolicySets: c.EnvironmentDefaultPolicySets,
 	})
 	if err != nil {
 		return err
@@ -352,7 +336,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return ctx.Err()
 	}
 	service := &dispatcher.Service{
-		Store: store, DispatcherCallers: accountSet(c.DispatcherCallers),
+		Store: store, DispatcherCallers: sets.New(c.DispatcherCallers...),
 		Sandboxes:     catalog,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}

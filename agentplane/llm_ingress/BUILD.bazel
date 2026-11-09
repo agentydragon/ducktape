@@ -69,6 +69,7 @@ go_library(
     deps = [
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/graceful",
+        "//agentplane/kubeclient",
         "//agentplane/llm_ingress/v1:model_config_go_proto",
         "//agentplane/observability",
         "//agentplane/workload_auth/auth",
@@ -78,7 +79,6 @@ go_library(
         "@com_github_spf13_viper//:viper",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
         "@io_k8s_client_go//rest",
-        "@io_k8s_client_go//tools/clientcmd",
         "@io_opentelemetry_go_otel//baggage",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

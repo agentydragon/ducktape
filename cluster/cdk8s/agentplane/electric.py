@@ -70,6 +70,10 @@ class Electric(Construct):
             "deployment",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=labels),
             pod_metadata=ApiObjectMetadata(labels=labels),
+            # Operator-accepted exception to the two-replica rolling target: a replacement briefly
+            # interrupts sync. Raising replicas alone does not add a useful replica: a second Pod on
+            # the same stream ID waits read-only with an empty emptyDir store, answers 503 for new
+            # shapes, and passes /v1/health readiness (202) while the Service routes to it.
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
             termination_grace_period=Duration.seconds(60),

@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -50,8 +51,8 @@ type Manager struct {
 	objects         client.Client
 	sandboxes       *sandboxreader.Reader
 	wakeBudget      WakeBudget
-	wakeCallers     map[auth.Account]struct{}
-	operatorCallers map[auth.Account]struct{}
+	wakeCallers     sets.Set[auth.Account]
+	operatorCallers sets.Set[auth.Account]
 }
 
 func NewManager(options Options) (*Manager, error) {
@@ -64,16 +65,8 @@ func NewManager(options Options) (*Manager, error) {
 	}
 	return &Manager{
 		namespace: options.Namespace, objects: options.Objects, sandboxes: sandboxes, wakeBudget: options.WakeBudget,
-		wakeCallers: accountSet(options.WakeCallers), operatorCallers: accountSet(options.OperatorCallers),
+		wakeCallers: sets.New(options.WakeCallers...), operatorCallers: sets.New(options.OperatorCallers...),
 	}, nil
-}
-
-func accountSet(accounts []auth.Account) map[auth.Account]struct{} {
-	result := make(map[auth.Account]struct{}, len(accounts))
-	for _, account := range accounts {
-		result[account] = struct{}{}
-	}
-	return result
 }
 
 // Eligibility reports the current explicit-resume authority and the generation from the same
@@ -367,7 +360,7 @@ func (s *Manager) isWakeBroker(caller *ServiceAccountIdentity) bool {
 	if account == nil {
 		return false
 	}
-	_, trustedBroker := s.wakeCallers[auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}]
+	trustedBroker := s.wakeCallers.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()})
 	return trustedBroker
 }
 
@@ -381,7 +374,7 @@ func (s *Manager) directOperator(ctx context.Context, caller *ServiceAccountIden
 		return false
 	}
 	account := direct.Caller.GetAccount()
-	_, configured := s.operatorCallers[auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}]
+	configured := s.operatorCallers.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()})
 	return configured
 }
 

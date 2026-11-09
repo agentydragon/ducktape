@@ -1,6 +1,6 @@
 import { create, fromJson, fromJsonString, toJson } from "@bufbuild/protobuf";
 
-import { fetchWithLogin, HttpError } from "../client";
+import { fetchText, fetchWithLogin, type Fetcher } from "../client";
 import type { StreamConnection } from "../stream_reader";
 import { followWatch } from "../watch_stream";
 import {
@@ -30,8 +30,6 @@ import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
 } from "../../../action_service/operator_action_service_pb";
-
-type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 const ACTIONS_PATH = "/upstream/actions";
 
@@ -152,12 +150,6 @@ function validateActionGroup(value: ActionGroup): ActionGroup {
   return value;
 }
 
-async function readText(url: string, init: RequestInit = {}, fetcher: Fetcher = fetchWithLogin): Promise<string> {
-  const response = await fetcher(url, init);
-  if (!response.ok) throw new HttpError(response, await response.text());
-  return response.text();
-}
-
 function actionStateJson(value: ActionState): string {
   const json = toJson(ListActionRequestsRequestSchema, create(ListActionRequestsRequestSchema, { state: [value] }));
   if (json === null || Array.isArray(json) || typeof json !== "object") {
@@ -176,20 +168,20 @@ export async function listActionRequests(
   if (state !== undefined) query.set("state", actionStateJson(state));
   const response = fromJsonString(
     ListActionRequestsResponseSchema,
-    await readText(`${ACTIONS_PATH}/v1/action-requests${query.size ? `?${query}` : ""}`, {}, fetcher)
+    await fetchText(`${ACTIONS_PATH}/v1/action-requests${query.size ? `?${query}` : ""}`, {}, fetcher)
   );
   return response.actionRequests.map(validateActionRequest);
 }
 
 export async function listActionGroups(): Promise<ActionGroup[]> {
-  const response = fromJsonString(ListActionGroupsResponseSchema, await readText(`${ACTIONS_PATH}/v1/action-groups`));
+  const response = fromJsonString(ListActionGroupsResponseSchema, await fetchText(`${ACTIONS_PATH}/v1/action-groups`));
   return response.actionGroups.map(validateActionGroup);
 }
 
 export async function getAction(requestId: string): Promise<ActionRequest> {
   const response = fromJsonString(
     GetActionRequestResponseSchema,
-    await readText(`${ACTIONS_PATH}/v1/action-requests/${encodeURIComponent(requestId)}`)
+    await fetchText(`${ACTIONS_PATH}/v1/action-requests/${encodeURIComponent(requestId)}`)
   );
   return validateActionRequest(required(response.actionRequest, "request"));
 }
@@ -202,7 +194,7 @@ export async function actionHistory(
   if (cursor !== undefined) query.set("cursor", cursor);
   const response = fromJsonString(
     ListActionRequestHistoryResponseSchema,
-    await readText(`${ACTIONS_PATH}/v1/action-requests:history?${query}`)
+    await fetchText(`${ACTIONS_PATH}/v1/action-requests:history?${query}`)
   );
   response.actionRequests.forEach(validateActionRequest);
   return response;
@@ -222,7 +214,7 @@ export async function decideActionById(
   });
   const response = fromJsonString(
     DecideActionRequestResponseSchema,
-    await readText(
+    await fetchText(
       `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}/decision`,
       {
         method: "POST",

@@ -23,17 +23,10 @@
 
 use analysis::DependencyGraphReport;
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, source_unit_for_binding, source_unit_for_ordinal,
+};
 use debundle_e2e_support::*;
-
-fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {
-    let node = graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == ordinal)
-        .unwrap_or_else(|| panic!("no dependency graph node with ordinal {ordinal}"));
-    node.id.as_str()
-}
 
 /// Assert a `Sequenced` edge `later → earlier` exists (the
 /// "earlier must evaluate first" constraint).

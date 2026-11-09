@@ -1,12 +1,21 @@
 // @vitest-environment happy-dom
 import { SandboxPhase, OperatingMode, ReadinessState } from "../../../environments/v1/environment_service_pb";
-import { toJson } from "@bufbuild/protobuf";
-import { ThreadMetadataSchema } from "../../app_service_pb";
+import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import {
+  FrontendConfigSchema,
+  HarnessModelOffersSchema,
+  GetFrontendConfigResponseSchema,
+  SandboxPresetSchema,
+  ThreadMetadataSchema,
+  TraceSearchSettingsSchema,
+  type LangfuseSearchSettings,
+  type SessionDefaultsSchema,
+  type TraceSearchSettings,
+} from "../../app_service_pb";
 import { FeedStatus, SessionSummarySchema } from "../../../history_service/history_service_pb";
 
 import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
-import type { LangfuseSearchSettings, TraceSearchSettings } from "../app_config_client";
 import type { ThreadView } from "../threads/client";
 import {
   TEST_REASONING_EFFORTS,
@@ -14,7 +23,6 @@ import {
   testModelCatalogProtoJSON,
   testSandboxPresetsProtoJSON,
 } from "../testing/model_catalog";
-import type { SandboxPresetView } from "../model_catalog";
 import { serveEventStreams } from "../testing/watch";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -24,7 +32,6 @@ import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 import * as sandboxClient from "./client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
-import type * as LiveModule from "../live";
 import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
@@ -74,14 +81,6 @@ const live = vi.hoisted(
       updates_connected: boolean;
     }>
 );
-vi.mock("../live", async (importOriginal) => ({
-  ...(await importOriginal<typeof LiveModule>()),
-  useLive: (url: string | null) =>
-    url?.includes("/other-test")
-      ? { ...live, snapshot: { ...live.snapshot, sandbox_uid: "00000000-0000-4000-8000-000000000002" } }
-      : live,
-}));
-
 vi.mock("../policy/watch", () => ({
   usePolicyResources: () => ({ resources: { bindings: [], sets: [] }, error: null }),
 }));
@@ -127,19 +126,20 @@ const readyStatus = readySandbox.kubernetesDiagnostics!.sandboxStatus;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 let rerender: () => Promise<void> = async () => {};
-const DEFAULT_PRESET_DEFAULTS = {
-  harness: "HARNESS_CLAUDE",
+type SessionDefaultsInit = MessageInitShape<typeof SessionDefaultsSchema>;
+const DEFAULT_PRESET_DEFAULTS: SessionDefaultsInit = {
+  harness: Harness.CLAUDE,
   model: "test-model",
-  reasoning_effort: "low",
+  reasoningEffort: "low",
 };
 let centralSamplerEnabled = false;
-let presetDefaults = { ...DEFAULT_PRESET_DEFAULTS } as Record<string, unknown>;
+let presetDefaults: SessionDefaultsInit = { ...DEFAULT_PRESET_DEFAULTS };
 let modelCatalogResponse: Promise<Response> | null = null;
-const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
-  grafana_base_url: "https://grafana.test.invalid",
-  tempo_datasource_uid: "tempo-test",
-  deployment_environment: "agentplane-test",
-};
+const TRACE_SEARCH_SETTINGS: TraceSearchSettings = create(TraceSearchSettingsSchema, {
+  grafanaBaseUrl: "https://grafana.test.invalid",
+  tempoDatasourceUid: "tempo-test",
+  deploymentEnvironment: "agentplane-test",
+});
 let traceSearchSettings: TraceSearchSettings | null = TRACE_SEARCH_SETTINGS;
 let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETTINGS;
 afterEach(async () => {
@@ -223,13 +223,15 @@ async function render(
     const path = new URL(request.url).pathname;
     if (path === "/upstream/app-config/v1/models") {
       if (modelCatalogResponse) return modelCatalogResponse;
-      const models = [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }];
+      const models = [{ model: "test-model", displayName: "Test Model", reasoningEfforts: TEST_REASONING_EFFORTS }];
       const codexModels = routeNavigation
-        ? [{ model: "codex-model", display_name: "Codex Model", reasoning_efforts: TEST_REASONING_EFFORTS }]
+        ? [{ model: "codex-model", displayName: "Codex Model", reasoningEfforts: TEST_REASONING_EFFORTS }]
         : [];
       const catalog = testModelCatalog(claudePaused ? [] : models, claudePaused ? models : codexModels);
       if (centralSamplerEnabled) {
-        catalog.harnesses.HARNESS_CENTRAL_SAMPLER = ["test-model"];
+        catalog.harnesses.push(
+          create(HarnessModelOffersSchema, { harness: Harness.CENTRAL_SAMPLER, models: ["test-model"] })
+        );
       }
       return Promise.resolve(Response.json(testModelCatalogProtoJSON(catalog)));
     }
@@ -238,48 +240,26 @@ async function render(
     }
     if (path === "/upstream/app-config/v1/frontend-config") {
       return Promise.resolve(
-        Response.json({
-          frontendConfig: {
-            traceSearch: traceSearchSettings
-              ? {
-                  grafanaBaseUrl: traceSearchSettings.grafana_base_url,
-                  tempoDatasourceUid: traceSearchSettings.tempo_datasource_uid,
-                  deploymentEnvironment: traceSearchSettings.deployment_environment,
-                }
-              : null,
-            langfuseSearch: langfuseSearchSettings
-              ? {
-                  baseUrl: langfuseSearchSettings.base_url,
-                  projectId: langfuseSearchSettings.project_id,
-                  sessionMetadataKey: langfuseSearchSettings.session_metadata_key,
-                  sandboxNamespaceMetadataKey: langfuseSearchSettings.sandbox_namespace_metadata_key,
-                  sandboxServiceAccountMetadataKey: langfuseSearchSettings.sandbox_service_account_metadata_key,
-                }
-              : null,
-          },
-        })
+        Response.json(
+          toJson(
+            GetFrontendConfigResponseSchema,
+            create(GetFrontendConfigResponseSchema, {
+              frontendConfig: create(FrontendConfigSchema, {
+                traceSearch: traceSearchSettings ?? undefined,
+                langfuseSearch: langfuseSearchSettings ?? undefined,
+              }),
+            })
+          )
+        )
       );
     }
     if (path === "/upstream/app-config/v1/presets") {
-      const preset: SandboxPresetView = {
+      const preset = create(SandboxPresetSchema, {
         name: "test-preset",
         title: "Test preset",
         template: "runner",
-        policy_sets: [],
-        inbox_tags: [],
-        session_defaults: {
-          harness: String(
-            presetDefaults.harness ?? "HARNESS_CLAUDE"
-          ) as SandboxPresetView["session_defaults"]["harness"],
-          model: String(presetDefaults.model ?? ""),
-          cwd: String(presetDefaults.cwd ?? ""),
-          reasoning_effort:
-            typeof presetDefaults.reasoning_effort === "string" ? presetDefaults.reasoning_effort : null,
-          instructions: String(presetDefaults.instructions ?? ""),
-          setup_script: String(presetDefaults.setup_script ?? ""),
-        },
-        bootstrap: "",
-      };
+        sessionDefaults: { harness: Harness.CLAUDE, ...presetDefaults },
+      });
       return Promise.resolve(Response.json(testSandboxPresetsProtoJSON([preset])));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/runner-status$/.test(path)) return runnerStatus();
@@ -624,7 +604,7 @@ async function postedBody(sessions: Mock<(request: Request) => Promise<Response>
 }
 
 it("preserves a Sandbox reasoning default through model loading and submits it on later Thread launch", async () => {
-  presetDefaults = { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" };
+  presetDefaults = { harness: Harness.CLAUDE, model: "test-model", reasoningEffort: "high" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
   );
@@ -636,10 +616,10 @@ it("preserves a Sandbox reasoning default through model loading and submits it o
 
 it("uses the configured preset working directory template and setup script for later Threads", async () => {
   presetDefaults = {
-    harness: "HARNESS_CLAUDE",
+    harness: Harness.CLAUDE,
     model: "test-model",
     cwd: "/state/custom/{session_id}/work",
-    setup_script: "printf 'ready\\n'",
+    setupScript: "printf 'ready\\n'",
   };
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
@@ -687,7 +667,7 @@ it("notes a Thread's setup only until it completes", async () => {
 });
 
 it("lets a later Thread override the preset reasoning default locally", async () => {
-  presetDefaults = { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" };
+  presetDefaults = { harness: Harness.CLAUDE, model: "test-model", reasoningEffort: "high" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
   );
@@ -1095,7 +1075,7 @@ it.each([
 
 it("defaults new threads to an offered harness while retaining existing Claude threads", async () => {
   live.snapshot.threads = [threadView({ metadata: { threadId: "old-session", name: "Existing Claude" } })];
-  presetDefaults = { harness: "HARNESS_CODEX", model: "test-model" };
+  presetDefaults = { harness: Harness.CODEX, model: "test-model" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
     request.method === "GET"
       ? Response.json([
@@ -1275,7 +1255,7 @@ it("does not show a previous incarnation's Threads after same-name Sandbox repla
 
 it("launches a configured central sampler while preserving the native offerings", async () => {
   centralSamplerEnabled = true;
-  presetDefaults = { harness: "HARNESS_CENTRAL_SAMPLER", model: "test-model", setup_script: "echo executor-setup" };
+  presetDefaults = { harness: Harness.CENTRAL_SAMPLER, model: "test-model", setupScript: "echo executor-setup" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async () =>
     Response.json({ detail: "Launch recorded" }, { status: 503 })
   );

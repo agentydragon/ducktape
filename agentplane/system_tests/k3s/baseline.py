@@ -326,6 +326,8 @@ class K3s:
                 and not image.get("repoDigests")
                 and not image.get("pinned")
                 and image["id"] not in in_use
+                # An import exposes its ID before its tag, and CRI RemoveImage by ID deletes every
+                # reference: pruning a just-imported fixture ID once removed its tag mid-publication.
                 and image["id"] not in self._fixture_image_ids
             }
 
@@ -571,6 +573,8 @@ _BASELINE_MARKER = _BASELINE_ROOT / "server.json"
 _RETAINED_LOG_LIMIT = 8 * 1024 * 1024
 # BuildBuddy reads this at the action workspace root to invalidate its snapshot family:
 # https://github.com/buildbuddy-io/buildbuddy/blob/798749e61eb83e2523ba06a48ff195b62b375198/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L3550-L3557
+# Invalidation is by the snapshot's branch key, so it can also discard other reusable snapshots in
+# that family, and the runner is not recycled. The Firecracker workspace root is `/workspace`.
 _INVALIDATE_SNAPSHOT_MARKER = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 _BAZEL_TEST_SETUP_INPUT = Path("external/bazel_tools/tools/test/test-setup.sh")
 

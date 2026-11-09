@@ -2,7 +2,7 @@ use analysis::AtomicGroupConflict;
 use analysis_model::DepKind;
 use anyhow::Result;
 use artifact::paths::{join_module_path, normalize_module_path};
-use frontend_elaboration::chunk_ast::{binding_ids, declaration_ids};
+use binding_targets::{binding_names, declaration_ids};
 use std::collections::{BTreeSet, HashMap};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
@@ -69,7 +69,7 @@ pub(super) fn split_var_decl(
 ) -> Option<ModuleItem> {
     let mut residual_decls = Vec::new();
     for declarator in &var.decls {
-        let ids = binding_ids(&declarator.name);
+        let ids: Vec<Id> = binding_names(&declarator.name).collect();
         if let Some(module_index) = assigned_module_for_ids(&ids, binding_assignment) {
             let selected_var = VarDecl {
                 // Binding comments are anchored by statement span `lo`

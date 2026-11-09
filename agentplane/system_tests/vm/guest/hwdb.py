@@ -1,4 +1,9 @@
-"""Compile the guest's udev hardware database from its Debian package closure."""
+"""Compile the guest's udev hardware database from its Debian package closure.
+
+The closure is extracted without package scripts, so it ships hwdb sources but no `hwdb.bin`;
+without this prebuilt file every fresh root overlay compiles it at boot, and `systemd-udevd`
+waits for that before discovering Runner's disks.
+"""
 
 import shutil
 import subprocess

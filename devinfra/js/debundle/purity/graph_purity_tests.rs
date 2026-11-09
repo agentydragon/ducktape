@@ -11,7 +11,7 @@ fn test_id(name: &str) -> Id {
 }
 
 fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
-    analyze_chunk(module, &AnalysisInputs::default(), None, |_| None).facts
+    analyze_chunk(module, &AnalysisInputs::default(), None).facts
 }
 
 #[test]
@@ -1196,7 +1196,6 @@ fn declared_pure_hint_applies_inside_chunk_function_bodies() {
                 ..AnalysisInputs::default()
             },
             None,
-            |_| None,
         )
         .facts
         .iter()

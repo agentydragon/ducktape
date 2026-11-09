@@ -5,31 +5,14 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"io/fs"
 
-	"github.com/pressly/goose/v3"
-	"github.com/pressly/goose/v3/lock"
+	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 )
 
 //go:embed mcp_edge/*.sql
 var scripts embed.FS
 
+var schema = migrate.Schema{Files: scripts, Dir: "mcp_edge", Table: "mcp_edge_goose_version", LockID: 0x4D43_5045}
+
 // Up applies the service-owned migrations before runtime startup.
-func Up(ctx context.Context, db *sql.DB) error {
-	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(0x4D43_5045))
-	if err != nil {
-		return err
-	}
-	files, err := fs.Sub(scripts, "mcp_edge")
-	if err != nil {
-		return err
-	}
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, files,
-		goose.WithTableName("mcp_edge_goose_version"), goose.WithSessionLocker(locker),
-		goose.WithDisableGlobalRegistry(true))
-	if err != nil {
-		return err
-	}
-	_, err = provider.Up(ctx)
-	return err
-}
+func Up(ctx context.Context, db *sql.DB) error { return schema.Up(ctx, db) }

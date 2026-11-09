@@ -3,6 +3,7 @@
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
     TreeFixture, assert_module_exports, assert_node_output, debundler_path, run_tree_graph_fixture,
+    tree_spec_args,
 };
 use serde_json::json;
 use std::fs;
@@ -221,14 +222,8 @@ fn apply_preserves_case_sensitive_chunk_root() {
     assert!(!modules.join("chunks/main/services/foo.yaml").exists());
     let out_root = run.root().join("rerun");
     let emitted = Command::new(debundler_path())
-        .args(["run", "--graphs", "--tree-config"])
-        .arg(&config)
-        .arg("--tree-modules")
-        .arg(&modules)
-        .arg("--tree-vendor-marks")
-        .arg(run.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(run.root())
+        .args(["run", "--graphs"])
+        .args(tree_spec_args(run.root()))
         .arg("--out-root")
         .arg(&out_root)
         .output()

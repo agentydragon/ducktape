@@ -19,8 +19,7 @@ admission nor the continuation database.
 
 This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
 deletion behavior. Its exact executor environment is required and fixed for the Session. It does not
-add optional attachments or allow an environment-free central Session; those changes require the
-separate [Session/environment task](../plans/task_dag.md#central-session-environment-independence).
+add optional attachments or allow an environment-free central Session.
 
 `spec.instructions` is the caller's briefing. Callers that expose an additive
 `additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.

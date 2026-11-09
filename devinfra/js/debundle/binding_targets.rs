@@ -170,6 +170,42 @@ pub fn declaration_name_strings(decl: &Decl) -> Vec<String> {
         .collect()
 }
 
+/// Names bound at module top level by `item`: function, class and variable
+/// declarations (also under `export` and `export default`) and import locals.
+pub fn top_level_binding_name_strings(item: &ModuleItem) -> Vec<String> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_name_strings(decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => {
+            declaration_name_strings(decl)
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(ExportDefaultDecl {
+            decl, ..
+        })) => match decl {
+            DefaultDecl::Class(class) => class
+                .ident
+                .as_ref()
+                .map(|ident| vec![ident.sym.to_string()])
+                .unwrap_or_default(),
+            DefaultDecl::Fn(function) => function
+                .ident
+                .as_ref()
+                .map(|ident| vec![ident.sym.to_string()])
+                .unwrap_or_default(),
+            DefaultDecl::TsInterfaceDecl(_) => Vec::new(),
+        },
+        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
+            .specifiers
+            .iter()
+            .map(|specifier| match specifier {
+                ImportSpecifier::Default(default) => default.local.sym.to_string(),
+                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
+                ImportSpecifier::Named(named) => named.local.sym.to_string(),
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// Extract the string value of a [`ModuleExportName`] (either an
 /// `Ident.atom` or a `Str.value`).
 pub fn module_export_name(name: &ModuleExportName) -> String {

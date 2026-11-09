@@ -1,4 +1,10 @@
-"""Keep remote command output pollable after its foreground process exits."""
+"""Keep remote command output pollable after its foreground process exits.
+
+Codex before 0.166.0 dropped the command handle once the foreground exited, even while output
+was still pending, so the model saw exit 0 with empty output and no `session_id` while the
+native completed item still held the full output (seen in the VM `codex_tool_oom` scenario).
+0.166.0's `OutputRetention::UntilCollected` keeps remote-execution handles until collected.
+"""
 
 from __future__ import annotations
 

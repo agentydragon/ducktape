@@ -1,19 +1,9 @@
 //! A local array content mutation must stay ordered before a separate reader.
 use analysis::DependencyGraphReport;
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_ordinal};
 use debundle_e2e_support::*;
 use spec::{IntrinsicFamilies, IntrinsicFamily, IntrinsicsNeverWritten};
-
-fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {
-    graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == ordinal)
-        .unwrap_or_else(|| panic!("no dependency graph node with ordinal {ordinal}"))
-        .id
-        .as_str()
-}
 
 fn assert_sequenced_edge(graph: &DependencyGraphReport, later: usize, earlier: usize) {
     let later = source_unit_for_ordinal(graph, later);

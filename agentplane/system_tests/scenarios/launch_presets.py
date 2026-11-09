@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from uuid import uuid4
+
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
@@ -21,6 +22,15 @@ from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import ShellCall, Text
 
 INSTRUCTIONS = "Test instructions that override the preset's for this session."
+
+
+def _polling(seconds: float) -> AsyncRetrying:
+    return AsyncRetrying(
+        stop=stop_after_delay(seconds),
+        wait=wait_fixed(0.2),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    )
 
 
 async def a_preset_launches_an_initialized_editable_codex_thread(
@@ -107,17 +117,13 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         "system_test.launch_preset.suspend_queue", record_exception=False, set_status_on_exception=False
     ):
         await client.suspend_sandbox(view.target)
-        suspend_deadline = time.monotonic() + SANDBOX_READY_SECONDS
-        while True:
-            suspended = await client.get_environment(view.target)
-            if (
-                suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
-                and not suspended.kubernetes_diagnostics.HasField("pod")
-            ):
-                break
-            if time.monotonic() >= suspend_deadline:
-                raise TimeoutError(f"Sandbox {view.target.name} did not suspend within {SANDBOX_READY_SECONDS:g}s")
-            await asyncio.sleep(0.2)
+        async for attempt in _polling(SANDBOX_READY_SECONDS):
+            with attempt:
+                suspended = await client.get_environment(view.target)
+                assert suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+                assert not suspended.kubernetes_diagnostics.HasField("pod"), (
+                    f"Sandbox {view.target.name} still has a Pod"
+                )
 
         suspended_id = uuid4()
         suspended_session = await client.create_session(view.target.name, suspended_id, sandbox_uid=view.target.uid)
@@ -127,25 +133,22 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         )
         assert not suspended_session.status.HasField("delivery_blocker")
         assert suspended_session.status.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_NOT_EVALUATED
-        session_deadline = time.monotonic() + RUNNER_ANSWERS_SECONDS
-        while True:
-            suspended_session = await dispatcher.get_session(str(suspended_id))
-            assert (
-                suspended_session.status.materialization
-                == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_WAITING
-            )
-            if (
-                suspended_session.status.HasField("delivery_blocker")
-                and suspended_session.status.delivery_blocker.kind
-                == environment_lifecycle_pb2.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
-                and suspended_session.status.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_DENIED
-                and suspended_session.status.wake_assessment.reason
-                == environment_lifecycle_pb2.WAKE_REASON_OPERATOR_REQUESTED_STOP
-            ):
-                break
-            if time.monotonic() >= session_deadline:
-                raise TimeoutError(f"Suspended Session {suspended_id} had no typed operator-stop assessment")
-            await asyncio.sleep(0.2)
+        async for attempt in _polling(RUNNER_ANSWERS_SECONDS):
+            with attempt:
+                suspended_session = await dispatcher.get_session(str(suspended_id))
+                if (
+                    suspended_session.status.materialization
+                    != session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_WAITING
+                ):
+                    raise RuntimeError(f"Suspended Session {suspended_id} left WAITING: {suspended_session.status}")
+                status = suspended_session.status
+                assert status.HasField("delivery_blocker"), f"Suspended Session {suspended_id}: {status}"
+                assert (
+                    status.delivery_blocker.kind
+                    == environment_lifecycle_pb2.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
+                )
+                assert status.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_DENIED
+                assert status.wake_assessment.reason == environment_lifecycle_pb2.WAKE_REASON_OPERATOR_REQUESTED_STOP
         still_suspended = await client.get_environment(view.target)
         assert still_suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
         assert not still_suspended.kubernetes_diagnostics.HasField("pod")

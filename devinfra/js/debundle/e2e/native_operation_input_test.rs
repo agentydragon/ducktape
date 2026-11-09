@@ -3,13 +3,16 @@
 
 use analysis::StatementKind;
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::reflective_provider::{
+    REFLECT_CHUNKS, REFLECT_FILES, unknown_receiver_witness,
+};
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, json_execution_rows, json_has_unknown_call_target, json_node_declaring,
+    source_unit_for_binding,
+};
 use debundle_e2e_support::*;
-use serde_json::Value;
 
 const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(marker.description, made.name, globalThis.unrelatedKey);\nexport { marker, factory, LaterError, reflect };\n";
-const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
-const REFLECT_CHUNKS: &[(&str, &str)] = &[("static/reflect", REFLECT_SOURCE)];
 const BASELINE_CONFLICT_MODULES: &[&str] = &["marker", "later"];
 
 fn input_for(source: &str, declaration: &str) -> NativeOperationInputContract {
@@ -194,16 +197,16 @@ fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
     );
     let graph = serde_json::to_value(graph).unwrap();
     assert_eq!(
-        node_for_binding(&graph, "seed")["synchronous_execution"]["complete"],
+        json_node_declaring(&graph, "seed")["synchronous_execution"]["complete"],
         true
     );
     assert_eq!(
-        node_for_binding(&graph, "unique")["purity"]["kind"],
+        json_node_declaring(&graph, "unique")["purity"]["kind"],
         "pure",
         "the static-member source keeps its existing native purity admission: {graph}"
     );
     assert_eq!(
-        node_for_binding(&graph, "unique")["synchronous_execution"]["complete"],
+        json_node_declaring(&graph, "unique")["synchronous_execution"]["complete"],
         true,
         "the static-member source keeps its existing effect frontier: {graph}"
     );
@@ -237,7 +240,7 @@ fn direct_borrowed_root_keeps_its_runtime_prefix_and_contents_frontier() {
     );
     let graph = serde_json::to_value(graph).unwrap();
     assert_eq!(
-        node_for_binding(&graph, "result")["synchronous_execution"]["complete"],
+        json_node_declaring(&graph, "result")["synchronous_execution"]["complete"],
         true
     );
 }
@@ -292,7 +295,7 @@ fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
     assert_preserved_entry_output(&inferred, "2 LaterError\n");
     let inferred_graph = serde_json::to_value(inferred.dependency_graph()).unwrap();
     assert!(
-        node_for_binding(&inferred_graph, "merged")["synchronous_execution"]["inference_uses"]
+        json_node_declaring(&inferred_graph, "merged")["synchronous_execution"]["inference_uses"]
             .as_array()
             .unwrap()
             .iter()
@@ -302,7 +305,7 @@ fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
     let fixture = run_fixture(opts().with_native_operation_inputs("static/app", inputs()));
     assert_preserved_entry_output(&fixture, "2 LaterError\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(
         uses.len(),
         3,
@@ -313,7 +316,7 @@ fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
             .any(|use_site| use_site["evidence"]["operation"] == "set_from_set_spread")
     );
     assert!(
-        !has_unknown_call_target(node_for_binding(&graph, "merged")),
+        !json_has_unknown_call_target(json_node_declaring(&graph, "merged")),
         "certified spread must remove its exact constructor frontier: {graph}"
     );
 }
@@ -600,7 +603,7 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
             ],
         )
         .with_extra_chunks(REFLECT_CHUNKS)
-        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+        .with_extra_files(REFLECT_FILES)
     };
     let control = run_rejection_fixture(opts());
     let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
@@ -618,7 +621,7 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
         "the unproved constructor must block this split: {conflicts:#?}"
     );
     assert!(
-        has_unknown_call_target(node_for_binding(&control_graph, "made")),
+        json_has_unknown_call_target(json_node_declaring(&control_graph, "made")),
         "unproved Set construction still has a call frontier: {control_graph}"
     );
     let fixture = run_fixture(
@@ -628,10 +631,10 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     assert!(
-        !has_unknown_call_target(node_for_binding(&graph, "made")),
+        !json_has_unknown_call_target(json_node_declaring(&graph, "made")),
         "the selected constructor should consume its native input: {graph}"
     );
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(
         uses.len(),
         1,
@@ -699,7 +702,7 @@ fn weak_map_empty_input_is_site_local_and_keeps_later_behavior_opaque() {
     let fallback = run_fixture(opts());
     assert_preserved_entry_output(&fallback, "false true\n");
     let fallback_graph = serde_json::to_value(fallback.dependency_graph()).unwrap();
-    assert!(has_unknown_call_target(node_for_binding(
+    assert!(json_has_unknown_call_target(json_node_declaring(
         &fallback_graph,
         "cache"
     )));
@@ -716,18 +719,18 @@ fn weak_map_empty_input_is_site_local_and_keeps_later_behavior_opaque() {
     assert_preserved_entry_output(&fixture, "false true\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert!(
-        !has_unknown_call_target(node_for_binding(&graph, "cache")),
+        !json_has_unknown_call_target(json_node_declaring(&graph, "cache")),
         "the selected empty constructor should consume its exact-site input: {graph}"
     );
     assert!(
-        has_unknown_call_target(node_for_binding(&graph, "other")),
+        json_has_unknown_call_target(json_node_declaring(&graph, "other")),
         "the input must not establish program-wide WeakMap integrity: {graph}"
     );
     assert!(
-        has_unknown_call_target(node_for_binding(&graph, "present")),
+        json_has_unknown_call_target(json_node_declaring(&graph, "present")),
         "empty construction must not certify later WeakMap methods: {graph}"
     );
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(
         uses.len(),
         1,
@@ -910,7 +913,10 @@ fn shadowed_local_set_receiver_does_not_contradict_native_construction() {
     );
     assert_preserved_entry_output(&fixture, "2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert_eq!(native_input_uses(&graph).len(), 1);
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
 }
 
 #[test]
@@ -960,7 +966,7 @@ fn split_opts(input: Option<NativeOperationInputContract>) -> FixtureOpts<'stati
     );
     let opts = opts
         .with_extra_chunks(REFLECT_CHUNKS)
-        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)]);
+        .with_extra_files(REFLECT_FILES);
     match input {
         Some(input) => opts.with_native_operation_inputs("static/app", vec![input]),
         None => opts,
@@ -977,65 +983,6 @@ fn rejected_opts<'a>(
         vec![logical_module("selected", &[Member::new(selected_binding)])],
     )
     .with_native_operation_inputs("static/app", vec![input])
-}
-
-fn native_input_uses(graph: &Value) -> Vec<Value> {
-    graph["nodes"]
-        .as_array()
-        .expect("dependency graph nodes")
-        .iter()
-        .flat_map(|node| {
-            node["synchronous_execution"]["native_operation_input_uses"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .cloned()
-        })
-        .collect()
-}
-
-fn node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
-    graph["nodes"]
-        .as_array()
-        .expect("dependency graph nodes")
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .is_some_and(|bindings| {
-                    bindings
-                        .iter()
-                        .any(|candidate| candidate["binding"] == binding)
-                })
-        })
-        .unwrap_or_else(|| panic!("no source node for {binding}: {graph}"))
-}
-
-fn has_unknown_call_target(node: &Value) -> bool {
-    node["synchronous_execution"]["precision_losses"]
-        .as_array()
-        .is_some_and(|losses| {
-            losses
-                .iter()
-                .any(|loss| loss["reason"]["code"] == "unknown_call_target")
-        })
-}
-
-fn unknown_receiver_witness(program_graph: &Value) -> &Value {
-    program_graph["native_integrity_witnesses"]
-        .as_array()
-        .expect("native mutation witnesses")
-        .iter()
-        .find(|witness| {
-            witness["operation"] == "mutation_call"
-                && witness["receiver_roots"]
-                    .as_array()
-                    .is_some_and(|roots| roots.iter().any(|root| root == "unknown_global_value"))
-                && witness["source_location"]["source_path"] == "static/reflect.js"
-        })
-        .unwrap_or_else(|| {
-            panic!("reflective helper's unknown receiver is absent: {program_graph}")
-        })
 }
 
 #[test]
@@ -1056,7 +1003,7 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
         "unexpected no-input atomic-group conflicts: {conflicts:#?}"
     );
     assert!(
-        has_unknown_call_target(node_for_binding(&control_graph, "marker")),
+        json_has_unknown_call_target(json_node_declaring(&control_graph, "marker")),
         "without the input, the selected initializer retains its unknown-call precision loss: {control_graph}"
     );
 
@@ -1070,7 +1017,7 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(
         uses.len(),
         1,
@@ -1120,13 +1067,13 @@ fn selected_symbol_for_call_removes_only_its_synthetic_reentry_barrier() {
         ],
     )
     .with_extra_chunks(REFLECT_CHUNKS)
-    .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+    .with_extra_files(REFLECT_FILES)
     .with_native_operation_inputs("static/app", vec![symbol_for_input(&source)]);
     let fixture = run_fixture(opts);
     assert_preserved_entry_output(&fixture, "marker LaterError safe\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0]["evidence"]["operation"], "symbol_for");
     assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
@@ -1153,11 +1100,11 @@ fn selected_literal_symbol_for_breaks_order_cycle_with_live_array_contents() {
     let baseline = run_rejection_fixture(FixtureOpts::new(source, modules()));
     let baseline_graph = serde_json::to_value(baseline.dependency_graph()).unwrap();
     assert_eq!(
-        node_for_binding(&baseline_graph, "marker")["purity"]["kind"],
+        json_node_declaring(&baseline_graph, "marker")["purity"]["kind"],
         "not_pure"
     );
     assert_eq!(
-        node_for_binding(&baseline_graph, "marker")["purity"]["reasons"][0]["rule"],
+        json_node_declaring(&baseline_graph, "marker")["purity"]["reasons"][0]["rule"],
         "unknown_call"
     );
     assert!(
@@ -1183,13 +1130,16 @@ fn selected_literal_symbol_for_breaks_order_cycle_with_live_array_contents() {
         "fixture.key true after\n",
     );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let marker = node_for_binding(&graph, "marker");
+    let marker = json_node_declaring(&graph, "marker");
     assert_eq!(marker["purity"]["kind"], "pure");
     assert_eq!(
         marker["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
         0
     );
-    assert_eq!(native_input_uses(&graph).len(), 1);
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
 
     for (call, description) in [
         ("Symbol()", "undefined"),
@@ -1207,13 +1157,13 @@ fn selected_literal_symbol_for_breaks_order_cycle_with_live_array_contents() {
             &format!("symbol {description} after\n"),
         );
         let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-        let marker = node_for_binding(&graph, "marker");
+        let marker = json_node_declaring(&graph, "marker");
         assert_eq!(marker["purity"]["kind"], "pure", "{call}: {graph}");
         assert_eq!(
             marker["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
             0
         );
-        let uses = native_input_uses(&graph);
+        let uses = json_execution_rows(&graph, "native_operation_input_uses");
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0]["evidence"]["operation"], "symbol");
     }
@@ -1307,9 +1257,12 @@ fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
     );
     assert_preserved_entry_error(&fixture, "TypeError");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert_eq!(native_input_uses(&graph).len(), 1);
     assert_eq!(
-        node_for_binding(&graph, "marker")["purity"]["kind"],
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
+    assert_eq!(
+        json_node_declaring(&graph, "marker")["purity"]["kind"],
         "not_pure"
     );
 
@@ -1322,7 +1275,10 @@ fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
     );
     assert_preserved_entry_output(&fixture, "1\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert_eq!(native_input_uses(&graph).len(), 1);
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
 }
 
 #[test]
@@ -1454,7 +1410,7 @@ fn unselected_symbol_site_keeps_the_strict_fallback() {
         ],
     )
     .with_extra_chunks(REFLECT_CHUNKS)
-    .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+    .with_extra_files(REFLECT_FILES)
     .with_native_operation_inputs("static/app", vec![marker_input(source)]);
     let rejected = run_rejection_fixture(opts);
     let conflicts = rejected.atomic_group_conflicts();
@@ -1471,10 +1427,10 @@ fn unselected_symbol_site_keeps_the_strict_fallback() {
     );
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
     assert!(
-        has_unknown_call_target(node_for_binding(&graph, "other")),
+        json_has_unknown_call_target(json_node_declaring(&graph, "other")),
         "the unselected primitive Symbol call must retain its unknown-call precision loss: {graph}"
     );
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(
         uses.len(),
         1,
@@ -1526,7 +1482,10 @@ fn unrelated_global_write_preserves_exact_symbol_input() {
     assert_preserved_entry_output(&fixture, "marker\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
-    assert_eq!(native_input_uses(&graph).len(), 1);
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
     // A literal source names only `unrelated`, which holds no intrinsic.
     assert!(
         program_graph["native_integrity_witnesses"].is_null(),
@@ -1573,7 +1532,7 @@ fn primitive_argument_throw_is_preserved_by_the_selected_call_path() {
     let fixture = run_fixture(opts);
     assert_preserved_entry_error(&fixture, "TypeError");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(uses.len(), 1, "the exact selected call is still reported");
     assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
 }
@@ -1595,7 +1554,7 @@ fn encoder_opts(source: &str) -> FixtureOpts<'_> {
     FixtureOpts::new(source, vec![])
         .with_unassigned_mode(unassigned_mode_inline())
         .with_extra_chunks(REFLECT_CHUNKS)
-        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+        .with_extra_files(REFLECT_FILES)
 }
 
 #[test]
@@ -1622,11 +1581,13 @@ fn exact_encoder_input_keeps_adjacent_construction_and_returned_methods_opaque()
         )
         .with_unassigned_mode(unassigned_mode_inline())
         .with_extra_chunks(REFLECT_CHUNKS)
-        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+        .with_extra_files(REFLECT_FILES)
     };
     let control = run_fixture(opts());
     let graph = serde_json::to_value(control.dependency_graph()).unwrap();
-    assert!(has_unknown_call_target(node_for_binding(&graph, "encoder")));
+    assert!(json_has_unknown_call_target(json_node_declaring(
+        &graph, "encoder"
+    )));
     let all = run_fixture(
         opts().with_program_premises(
             serde_json::from_value(serde_json::json!({
@@ -1637,7 +1598,7 @@ fn exact_encoder_input_keeps_adjacent_construction_and_returned_methods_opaque()
     );
     let all_graph = serde_json::to_value(all.dependency_graph()).unwrap();
     assert!(
-        has_unknown_call_target(node_for_binding(&all_graph, "encoder")),
+        json_has_unknown_call_target(json_node_declaring(&all_graph, "encoder")),
         "old all-family assertions cannot supply a new host identity: {all_graph}"
     );
     let mut input = encoder_input(source);
@@ -1651,18 +1612,18 @@ fn exact_encoder_input_keeps_adjacent_construction_and_returned_methods_opaque()
     let program = serde_json::to_value(fixture.program_graph()).unwrap();
     unknown_receiver_witness(&program);
     assert!(
-        !has_unknown_call_target(node_for_binding(&graph, "encoder")),
+        !json_has_unknown_call_target(json_node_declaring(&graph, "encoder")),
         "{graph}"
     );
     assert!(
-        has_unknown_call_target(node_for_binding(&graph, "adjacent")),
+        json_has_unknown_call_target(json_node_declaring(&graph, "adjacent")),
         "{graph}"
     );
     assert!(
-        has_unknown_call_target(node_for_binding(&graph, "encoded")),
+        json_has_unknown_call_target(json_node_declaring(&graph, "encoded")),
         "{graph}"
     );
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(uses.len(), 1, "{graph}");
     assert_eq!(uses[0]["evidence"]["operation"], "text_encoder_empty");
     assert_eq!(uses[0]["evidence"]["selected_binding"], "encoder");
@@ -1686,7 +1647,7 @@ fn exact_encoder_input_removes_only_selected_reentry_constraint() {
             ],
         )
         .with_extra_chunks(REFLECT_CHUNKS)
-        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+        .with_extra_files(REFLECT_FILES)
     };
     assert!(
         !run_rejection_fixture(opts())
@@ -1947,14 +1908,14 @@ fn unannotated_encoder_census_proves_timing_but_preserves_purity_fallback() {
     let fixture = run_fixture(opts());
     assert_preserved_entry_output(&fixture, "utf-8\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let node = node_for_binding(&graph, "encoder");
-    assert!(!has_unknown_call_target(node), "{graph}");
+    let node = json_node_declaring(&graph, "encoder");
+    assert!(!json_has_unknown_call_target(node), "{graph}");
     assert_eq!(node["purity"]["kind"], "not_pure");
-    assert!(native_input_uses(&graph).is_empty());
+    assert!(json_execution_rows(&graph, "native_operation_input_uses").is_empty());
     let fixture =
         run_fixture(opts().with_native_operation_inputs("static/app", vec![encoder_input(source)]));
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let node = node_for_binding(&graph, "encoder");
+    let node = json_node_declaring(&graph, "encoder");
     assert_eq!(node["purity"]["kind"], "pure");
     assert_eq!(
         node["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
@@ -1985,15 +1946,15 @@ fn encoder_input_selects_one_comma_declarator_without_parentheses() {
         run_fixture(encoder_opts(source).with_native_operation_inputs("static/app", vec![input]));
     assert_preserved_entry_output(&fixture, "10000 utf-8\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let uses = native_input_uses(&graph);
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
     assert_eq!(uses.len(), 1, "{graph}");
     assert_eq!(uses[0]["evidence"]["selected_binding"], "encoder");
     assert!(
-        !has_unknown_call_target(node_for_binding(&graph, "encoder")),
+        !json_has_unknown_call_target(json_node_declaring(&graph, "encoder")),
         "{graph}"
     );
     assert_eq!(
-        node_for_binding(&graph, "encoder")["purity"]["kind"],
+        json_node_declaring(&graph, "encoder")["purity"]["kind"],
         "pure"
     );
 }

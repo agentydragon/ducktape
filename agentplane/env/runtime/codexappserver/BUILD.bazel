@@ -17,7 +17,6 @@ go_library(
         "//agentplane/env/runtime/session:__pkg__",
     ],
     deps = [
-        "//agentplane/env/cosi",
         "//agentplane/env/oneoff",
         "//agentplane/env/runtime/codex",
         "//agentplane/env/runtime/harness",

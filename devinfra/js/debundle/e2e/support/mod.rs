@@ -47,6 +47,7 @@ pub use spec::{
 
 use artifact::paths::path_from_module_path;
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1584,6 +1585,21 @@ impl TreeRun {
     }
 }
 
+/// The `--tree-{config,modules,vendor-marks,source-root}` arguments for the
+/// tree-fixture layout [`run_tree_fixture`] writes under `root`.
+pub fn tree_spec_args(root: &Path) -> [OsString; 8] {
+    [
+        "--tree-config".into(),
+        root.join("spec_config.yaml").into(),
+        "--tree-modules".into(),
+        root.join("modules").into(),
+        "--tree-vendor-marks".into(),
+        root.join("vendor_marks.yaml").into(),
+        "--tree-source-root".into(),
+        root.into(),
+    ]
+}
+
 /// Writes `fixture` and runs `debundle run` on it in tree form with
 /// `extra_args`, writing the JS tree.
 /// A tree fixture for tests whose queries require full graph reports.
@@ -1640,14 +1656,7 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
     let bin = debundler_path();
     let output = Command::new(&bin)
         .arg("run")
-        .arg("--tree-config")
-        .arg(&config)
-        .arg("--tree-modules")
-        .arg(&modules)
-        .arg("--tree-vendor-marks")
-        .arg(&vendor_marks)
-        .arg("--tree-source-root")
-        .arg(root.path())
+        .args(tree_spec_args(root.path()))
         .arg("--out-root")
         .arg(&out_root)
         .args(extra_args)

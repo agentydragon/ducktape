@@ -14,7 +14,8 @@ while IFS= read -r line; do
 	printf '%s\n' "$line"
 	if [ "$line" = "KERNEL - the kernel uevent" ]; then
 		# The manager-tracked root shell stays alive draining this FIFO, so parent-credential
-		# notification needs no barrier to keep a short-lived sender attributable.
+		# notification needs no barrier to keep a short-lived sender attributable. The default
+		# barrier once timed out under emulation and, with `set -e`, killed this wrapper.
 		/usr/bin/systemd-notify --no-block --ready --status="block kernel and udev monitors are bound"
 		printf '%s\n' AGENTPLANE_UDEV_MONITOR_READY
 		printf '%s\n' AGENTPLANE_UDEV_MONITOR_READY >/dev/ttyS0

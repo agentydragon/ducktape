@@ -1,3 +1,5 @@
+import { durationMs, timestampDate } from "@bufbuild/protobuf/wkt";
+
 import type { AutosuspendBlocker } from "../../../proto/environment_lifecycle_pb";
 import { SandboxPhase, type EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 
@@ -64,7 +66,7 @@ export function autosuspendHint(
 
   const duration = sandbox.configuration?.idleSuspendAfter;
   if (duration === undefined) return { text: "Autosuspend off", deadline: null };
-  const suspendAfter = Number(duration.seconds) + duration.nanos / 1e9;
+  const suspendAfter = durationMs(duration) / 1000;
   if (!Number.isFinite(suspendAfter) || suspendAfter < 60) {
     return { text: "Autosuspend timing unavailable", deadline: null };
   }
@@ -91,7 +93,7 @@ export function autosuspendHint(
     return { text: `Autosuspend after ${compactDuration(suspendAfter)} idle`, deadline: null };
   }
 
-  const deadlineDate = new Date(Number(timestamp.seconds) * 1000 + timestamp.nanos / 1e6);
+  const deadlineDate = timestampDate(timestamp);
   const deadlineMs = deadlineDate.getTime();
   if (!Number.isFinite(deadlineMs)) return { text: "Autosuspend timing unavailable", deadline: null };
   const deadline = deadlineDate.toISOString();

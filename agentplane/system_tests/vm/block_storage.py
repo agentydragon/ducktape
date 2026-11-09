@@ -13,7 +13,6 @@ import os
 import stat
 import struct
 import threading
-import time
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
@@ -21,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kubernetes_asyncio import client as k8s
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.driver.cluster import Cluster
 
@@ -108,18 +108,21 @@ class _LoopDevice:
         # LOOP_CLR_FD honors AUTOCLEAR when a pod still has the block device open. Drop our descriptors
         # before checking sysfs so that only external users can keep the mapping alive.
         sysfs_backing_file = Path(f"/sys/block/loop{self.index}/loop/backing_file")
-        deadline = time.monotonic() + _DETACH_TIMEOUT_SECONDS
-        while True:
-            try:
-                backing_file = sysfs_backing_file.read_text().strip()
-            except FileNotFoundError:
-                backing_file = ""
-            if not backing_file or backing_file != str(self.backing_file):
-                self.attached = False
-                return
-            if time.monotonic() >= deadline:
-                raise RuntimeError(f"fixture loop remained attached after teardown: {self.path}")
-            time.sleep(_DETACH_POLL_SECONDS)
+        for attempt in Retrying(
+            stop=stop_after_delay(_DETACH_TIMEOUT_SECONDS),
+            wait=wait_fixed(_DETACH_POLL_SECONDS),
+            retry=retry_if_exception_type(AssertionError),
+            reraise=True,
+        ):
+            with attempt:
+                try:
+                    backing_file = sysfs_backing_file.read_text().strip()
+                except FileNotFoundError:
+                    backing_file = ""
+                assert backing_file != str(self.backing_file), (
+                    f"fixture loop remained attached after teardown: {self.path}"
+                )
+        self.attached = False
 
 
 class BlockStorage:

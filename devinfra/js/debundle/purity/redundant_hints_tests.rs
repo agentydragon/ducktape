@@ -35,7 +35,6 @@ fn analyze_redundant_hints(
             ..AnalysisInputs::default()
         },
         None,
-        |_| None,
     )
     .redundant_purity_hints
     .into_iter()
@@ -211,7 +210,7 @@ fn pure_member_hints(
         },
         ..AnalysisInputs::default()
     };
-    analyze_chunk(&module, &hints, None, |_| None)
+    analyze_chunk(&module, &hints, None)
         .redundant_pure_member_hints
         .into_iter()
         .map(|h| (h.binding_name, h.property, h.reason))

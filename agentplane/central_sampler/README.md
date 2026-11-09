@@ -13,11 +13,7 @@ retain their current paths. The optional Agentplane cdk8s construct deploys the 
 environment configures it; existing native Sessions are not migrated.
 
 Central sampler V1 is selected by `SessionSpec.placement=central_sampler_v1` and requires one exact,
-fixed executor environment. It retains the existing Sandbox-backed identity, admission, notification,
-wake and deletion behavior. This placement does not add optional attachments or allow opening a
-central Session without an environment. Native harness store selection and harness-native IDs remain
-separate future work; environment-independent central Sessions are tracked in the
-[Session/environment plan](../plans/session_environment_model.md#central-session-environment-independence).
+fixed executor environment; [SPEC.md](SPEC.md#identity-and-admission) defines its admission.
 The placement-owner RPC is `Sampler.CreateSession`; it receives the committed placement and retains
 these V1 admission semantics. `Executor.OpenSession` is separate: its stream owns one execution
 connection to the Runner and does not create the logical Session.

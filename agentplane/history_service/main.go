@@ -27,6 +27,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -40,9 +41,9 @@ import (
 	"google.golang.org/grpc/keepalive"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -55,17 +56,10 @@ const (
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
-	var kubeConfig *rest.Config
-	var err error
-	if c.Kubeconfig != "" {
-		kubeConfig, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
-	} else {
-		kubeConfig, err = rest.InClusterConfig()
-	}
+	kubeConfig, err := kubeclient.Config(c.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	// Every read and every push is a TokenReview; client-go's default of 5 requests per second (burst 10) would
 	// queue them client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1
@@ -96,23 +90,16 @@ func openDatabase(ctx context.Context, databaseURL string, connections int) (*sq
 }
 
 func readerNamespaces(accounts []auth.Account, servedNamespaces []string, extra ...auth.Account) []string {
-	namespaces := make(map[string]struct{}, len(accounts)+len(servedNamespaces)+len(extra))
+	namespaces := sets.New(servedNamespaces...)
 	for _, account := range accounts {
-		namespaces[account.Namespace] = struct{}{}
-	}
-	for _, namespace := range servedNamespaces {
-		namespaces[namespace] = struct{}{}
+		namespaces.Insert(account.Namespace)
 	}
 	for _, account := range extra {
 		if account.Namespace != "" {
-			namespaces[account.Namespace] = struct{}{}
+			namespaces.Insert(account.Namespace)
 		}
 	}
-	result := make([]string, 0, len(namespaces))
-	for namespace := range namespaces {
-		result = append(result, namespace)
-	}
-	return result
+	return sets.List(namespaces)
 }
 
 // run serves on the configured addresses, authenticating callers with the cluster's TokenReview API.

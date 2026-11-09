@@ -52,13 +52,5 @@ runs the runner as its own process so a crash takes its harnesses with it. No te
 image (<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header
 says what to run after a bump.
 
-`journal/journal_test.go` checks retained journal compatibility, command deduplication,
-transaction publication, coalesced receipts, rollback, and seals. `persistence_test.go` checks
-session metadata and initialization log compatibility. `session_test.go`
-checks native reply publication after translation commits and final frames at EOF.
-`ingress/client_test.go` exercises real loopback gRPC replay, durable acknowledgements,
-journal wakeups, backpressure and seal ordering; `ingress/supervisor_test.go` covers per-Session
-worker discovery and joins. `transport_test.go` covers Runner wiring, COSI acknowledgement
-observation and shutdown flushing. `process_test.go` checks parent-death fencing,
-native descendants, inherited state ownership, and cancellation during blocked input.
-These are not physical power-loss tests.
+Durability unit tests live beside the code in [`env/runtime/`](../runtime) (`journal/`, `ingress/`,
+`supervision/` and the Session process tests); none are physical power-loss tests.

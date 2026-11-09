@@ -84,41 +84,25 @@ impl Visit for TopLevelAwaitFinder {
 /// the retained item views. `vendor::strip` calls [`analyze_vendor_prune_chunk`]
 /// on transformed output syntax, for which the materializer's original facts
 /// do not apply.
-pub fn analyze_chunk_structural<'a, F>(
+pub fn analyze_chunk_structural<'a>(
     module: &'a Module,
-    source_path: Option<&str>,
-    line_range_for_span: F,
-) -> StructuralChunkAnalysis<'a>
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
-    complete_chunk_structural(collect_chunk_source_facts(
-        module,
-        source_path,
-        line_range_for_span,
-    ))
+    locator: Option<SourceLocator<'_>>,
+) -> StructuralChunkAnalysis<'a> {
+    complete_chunk_structural(collect_chunk_source_facts(module, locator))
 }
 
 /// Collect the source census once, before exact-site inputs are resolved.
-pub fn collect_chunk_source_facts<'a, F>(
+pub fn collect_chunk_source_facts<'a>(
     module: &'a Module,
-    source_path: Option<&str>,
-    line_range_for_span: F,
-) -> StructuralChunkSourceFacts<'a>
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
-    collect_chunk_source_facts_from_items(&module.body, source_path, line_range_for_span)
+    locator: Option<SourceLocator<'_>>,
+) -> StructuralChunkSourceFacts<'a> {
+    collect_chunk_source_facts_from_items(&module.body, locator)
 }
 
-pub fn collect_chunk_source_facts_from_items<'a, F>(
+pub fn collect_chunk_source_facts_from_items<'a>(
     items: &'a [ModuleItem],
-    source_path: Option<&str>,
-    mut line_range_for_span: F,
-) -> StructuralChunkSourceFacts<'a>
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
+    locator: Option<SourceLocator<'_>>,
+) -> StructuralChunkSourceFacts<'a> {
     let body = top_level_item_views(items);
     let stable_array_spread_shapes = StableArraySpreadShapes::collect(items, &body);
     let shadowed = compute_shadowed_globals(&body);
@@ -167,16 +151,7 @@ where
                     !shadowed.contains("Promise"),
                 )
             });
-            let source_location = source_path.and_then(|source_path| {
-                line_range_for_span(item.span()).map(|(start_line, end_line, start_column)| {
-                    SourceLocation {
-                        source_path: source_path.to_string(),
-                        start_line,
-                        end_line,
-                        start_column: Some(start_column),
-                    }
-                })
-            });
+            let source_location = locator.and_then(|locator| locator.span(item.span()));
             StructuralStatementFacts {
                 ordinal: SourceUnitOrdinal(ordinal),
                 export_linkage: match item {
@@ -246,33 +221,6 @@ pub fn complete_chunk_structural(
     source: StructuralChunkSourceFacts<'_>,
 ) -> StructuralChunkAnalysis<'_> {
     complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), &BTreeMap::new(), &[])
-}
-
-pub fn complete_chunk_structural_with_native_allocations<'a>(
-    source: StructuralChunkSourceFacts<'a>,
-    native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
-    stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
-) -> StructuralChunkAnalysis<'a> {
-    complete_chunk_structural_with_inputs(
-        source,
-        native_operation_inputs,
-        stable_spreads,
-        &BTreeMap::new(),
-        &[],
-    )
-}
-
-pub fn complete_chunk_structural_with_argument_inputs<'a>(
-    source: StructuralChunkSourceFacts<'a>,
-    argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
-) -> StructuralChunkAnalysis<'a> {
-    complete_chunk_structural_with_inputs(
-        source,
-        &[],
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        argument_inputs,
-    )
 }
 
 /// The canonical value flow `complete_chunk_structural_with_inputs` solves for
@@ -437,22 +385,17 @@ fn stable_top_level_var_candidates(
 /// per-statement purity classification, and the redundant-hint
 /// diagnostics. Folds the policy-independent facts in to produce the
 /// full [`ChunkFactAnalysis`].
-pub fn analyze_chunk_with_policy<F>(
+pub fn analyze_chunk_with_policy(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
     export_reentry_policy: &ExportReentryPolicy,
-    source_path: Option<&str>,
-    line_range_for_span: F,
-) -> ChunkFactAnalysis
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
+    locator: Option<SourceLocator<'_>>,
+) -> ChunkFactAnalysis {
     analyze_chunk_with_policy_and_sync(
         structural,
         hints,
         export_reentry_policy,
-        source_path,
-        line_range_for_span,
+        locator,
         SynchronousCallAnalysis::Include,
     )
 }
@@ -463,17 +406,13 @@ enum SynchronousCallAnalysis {
     Omit,
 }
 
-fn analyze_chunk_with_policy_and_sync<F>(
+fn analyze_chunk_with_policy_and_sync(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
     export_reentry_policy: &ExportReentryPolicy,
-    source_path: Option<&str>,
-    mut line_range_for_span: F,
+    locator: Option<SourceLocator<'_>>,
     synchronous_calls: SynchronousCallAnalysis,
-) -> ChunkFactAnalysis
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
+) -> ChunkFactAnalysis {
     let StructuralChunkAnalysis {
         body,
         stable_array_spread_shapes,
@@ -508,48 +447,27 @@ where
         );
     let native_facts =
         ValidatedNativeOperationFacts::new(prepared_sync_index.resolved_native_operation_inputs());
-    prepared_sync_index.locate_native_integrity_witnesses(|span| {
-        let source_path = source_path?;
-        let (start_line, end_line, start_column) = line_range_for_span(span)?;
-        Some(SourceLocation {
-            source_path: source_path.to_owned(),
-            start_line,
-            end_line,
-            start_column: Some(start_column),
-        })
-    });
+    prepared_sync_index.locate_native_integrity_witnesses(|span| locator?.span(span));
     let local_class_construction_proof =
         prepared_sync_index.local_class_construction_proof().clone();
     let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
-    let graph = {
-        let mut locate = |span| {
-            let source_path = source_path?;
-            let (start_line, end_line, start_column) = line_range_for_span(span)?;
-            Some(SourceLocation {
-                source_path: source_path.to_string(),
-                start_line,
-                end_line,
-                start_column: Some(start_column),
-            })
-        };
-        ChunkCodeGraph::build_full_with_prepared_plain_data(
-            &body,
-            &shadowed,
-            &hints.assumptions.declared_pure,
-            &hints.assumptions.declared_pure_new,
-            &hints.assumptions.declared_pure_members,
-            &hints.imported_purities,
-            &hints.assumptions.fluent_bindings,
-            &set_iterable_proof,
-            &local_class_construction_proof,
-            &plain_data_bindings,
-            &plain_data_dependencies,
-            &plain_data_inference_uses,
-            &plain_array_bindings,
-            &stable_var_number_candidates,
-            Some(&mut locate),
-        )
-    };
+    let graph = ChunkCodeGraph::build_full_with_prepared_plain_data(
+        &body,
+        &shadowed,
+        &hints.assumptions.declared_pure,
+        &hints.assumptions.declared_pure_new,
+        &hints.assumptions.declared_pure_members,
+        &hints.imported_purities,
+        &hints.assumptions.fluent_bindings,
+        &set_iterable_proof,
+        &local_class_construction_proof,
+        &plain_data_bindings,
+        &plain_data_dependencies,
+        &plain_data_inference_uses,
+        &plain_array_bindings,
+        &stable_var_number_candidates,
+        locator,
+    );
     let local_effect_context = local_effects::LocalEffectContext::for_body(
         &body,
         hints.local_effect_policy,
@@ -723,26 +641,18 @@ where
         eprintln!(
             "purity-completion-disagreement count={} source={} sites={:?}",
             disagreements.len(),
-            source_path.unwrap_or("<unknown>"),
+            locator.map_or("<unknown>", |locator| locator.source_path),
             disagreements
         );
     }
     for fact in &mut facts {
         // Resolve any reason spans on `fact.purity` to SourceLocations using
         // the same per-chunk line index; the classifier has no line resolver.
-        if let Some(source_path) = source_path
+        if let Some(locator) = locator
             && let Purity::NotPure { reasons } = &mut fact.purity
         {
             for reason in reasons.iter_mut() {
-                reason.source_location =
-                    line_range_for_span(reason.span).map(|(start_line, end_line, start_column)| {
-                        SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        }
-                    });
+                reason.source_location = locator.span(reason.span);
             }
         }
     }
@@ -760,7 +670,7 @@ where
             }
         }
     }
-    if let Some(source_path) = source_path {
+    if let Some(locator) = locator {
         let source_locations: Vec<_> = facts
             .iter()
             .map(|fact| fact.source_location.clone())
@@ -771,75 +681,26 @@ where
                     loss.source_location = if loss.span.is_dummy() {
                         source_locations[loss.statement_ordinal.0].clone()
                     } else {
-                        line_range_for_span(loss.span).map(
-                            |(start_line, end_line, start_column)| SourceLocation {
-                                source_path: source_path.to_string(),
-                                start_line,
-                                end_line,
-                                start_column: Some(start_column),
-                            },
-                        )
+                        locator.span(loss.span)
                     };
                 }
                 for proof_use in &mut calls.callback_factory_uses {
-                    proof_use.source_location = line_range_for_span(proof_use.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
+                    proof_use.source_location = locator.span(proof_use.span);
                 }
                 for proof_use in &mut calls.returned_record_uses {
-                    proof_use.source_location = line_range_for_span(proof_use.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
+                    proof_use.source_location = locator.span(proof_use.span);
                 }
                 for proof_use in &mut calls.local_record_factory_uses {
-                    proof_use.source_location = line_range_for_span(proof_use.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
+                    proof_use.source_location = locator.span(proof_use.span);
                 }
                 for rejection in &mut calls.local_record_factory_rejections {
-                    rejection.source_location = line_range_for_span(rejection.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
+                    rejection.source_location = locator.span(rejection.span);
                 }
                 for proof_use in &mut calls.author_host_contract_uses {
-                    proof_use.source_location = line_range_for_span(proof_use.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
+                    proof_use.source_location = locator.span(proof_use.span);
                 }
                 for proof_use in &mut calls.native_operation_input_uses {
-                    proof_use.source_location = line_range_for_span(proof_use.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
+                    proof_use.source_location = locator.span(proof_use.span);
                 }
             }
         }
@@ -861,13 +722,12 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
         ..AnalysisInputs::default()
     };
-    let structural = analyze_chunk_structural(module, None, |_| None);
+    let structural = analyze_chunk_structural(module, None);
     analyze_chunk_with_policy_and_sync(
         structural,
         &hints,
         &ExportReentryPolicy::Conservative,
         None,
-        |_| None,
         SynchronousCallAnalysis::Omit,
     )
 }
@@ -885,22 +745,17 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
 /// emitter splits the same comma-lists separately at lower-time
 /// (`split_var_decl` in `lowering/util.rs`); this pre-split
 /// just teaches the analyzer the same view.
-pub fn analyze_chunk<F>(
+pub fn analyze_chunk(
     module: &Module,
     hints: &AnalysisInputs,
-    source_path: Option<&str>,
-    mut line_range_for_span: F,
-) -> ChunkFactAnalysis
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
-    let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
+    locator: Option<SourceLocator<'_>>,
+) -> ChunkFactAnalysis {
+    let structural = analyze_chunk_structural(module, locator);
     analyze_chunk_with_policy(
         structural,
         hints,
         &ExportReentryPolicy::Conservative,
-        source_path,
-        line_range_for_span,
+        locator,
     )
 }
 

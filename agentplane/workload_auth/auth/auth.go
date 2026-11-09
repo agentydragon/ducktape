@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/token/cache"
 	"k8s.io/apiserver/pkg/authentication/user"
@@ -347,12 +348,12 @@ func (r *Resolver) resolveServiceAccountToken(ctx context.Context, token string)
 
 // RequireAccount applies an API/method-specific allowlist after token validation. It does not
 // grant wake or command permission merely because an account can call the Gateway proxy.
-func (r *Resolver) RequireAccount(ctx context.Context, allowed map[Account]struct{}) (Principal, error) {
+func (r *Resolver) RequireAccount(ctx context.Context, allowed sets.Set[Account]) (Principal, error) {
 	principal, err := r.Resolve(ctx)
 	if err != nil {
 		return Principal{}, err
 	}
-	if _, ok := allowed[principal.Account]; !ok {
+	if !allowed.Has(principal.Account) {
 		return Principal{}, status.Error(codes.PermissionDenied, "service caller not allowed")
 	}
 	return principal, nil

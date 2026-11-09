@@ -128,16 +128,6 @@ class History:
         snapshot.session_id = str(session_id)
         return snapshot
 
-    async def clear_sandbox_identity(self, session_id: UUID) -> None:
-        """Inject a committed History row without Sandbox identity for reader error tests."""
-        async with self.engine.begin() as connection:
-            result = await connection.execute(
-                text("UPDATE session_history SET sandbox_namespace = NULL, sandbox_name = NULL WHERE id = :id"),
-                {"id": session_id},
-            )
-        if result.rowcount != 1:
-            raise ValueError("record the Session first")
-
     async def fail_feed(self, session_id: UUID, *, error: str, error_cursor: int | None = None) -> None:
         """A folded failure state for UI tests, not a fake archive failure."""
         async with self.sessions.begin() as session:
@@ -179,11 +169,6 @@ class History:
             if row.first() is None:
                 raise ValueError(f"create Session {session_id} before fencing its ingress")
             yield
-
-    async def announce_fold_commit(self) -> None:
-        """Commit the notice a fold commit sends, without folding anything."""
-        async with self.sessions.begin() as session:
-            await session.execute(select(func.pg_notify(Channel.SUMMARIES, "")))
 
     async def _writer(self, session_id: UUID) -> ServiceAccountRef | None:
         async with self.engine.connect() as connection:

@@ -18,8 +18,8 @@ checks and durable queue until a replacement contract is reviewed.
 
 The earlier public `(Sandbox UID, Session ID)` destination in this note is superseded by the
 selected [Session UUID address](../plans/session_environment_model.md#address). Its code-path
-inventory remains useful; [Session command authority](../plans/session_send_authority.md) is the
-current candidate for the send and execution-fence decision. Neither plan authorizes a cutover.
+inventory remains useful; the implemented send and execution-fence rules are the
+[Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md).
 
 The current runner contracts remain in [Session layering](thread_layering.md), the
 [Dispatcher README](../runner_gateway/dispatcher/README.md), the

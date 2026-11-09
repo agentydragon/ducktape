@@ -6,14 +6,9 @@ alternatives in [API transports](../docs/runner_delivery_and_harness_design.md#a
 The per-service tracks are in the [task DAG](task_dag.md#service-api-transport-tracks). This plan
 holds what is still open.
 
-The four Thread command writes (`SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and
-`InterruptTurn`) use generated Dispatcher routes through the operator-session proxy. The duplicate
-Thread handlers and their History/model-catalog preflights were removed in
-[#13469](https://github.com/agentydragon/ducktape/pull/13469). New commands address a Session ID;
-Dispatcher resolves placement and fences accepted work to the exact Sandbox UID. Previously saved
-Sandbox-addressed commands retain their original target for reconciliation; uncertain outcomes
-reconcile against Dispatcher and History. The app serves the human frontend; agent and service
-callers use native gRPC at the owning backend.
+Thread command writes already use the generated Dispatcher facade
+([app README](../app/README.md#replica-safe-command-delivery)). The app serves the human frontend;
+agent and service callers use native gRPC at the owning backend.
 
 ## Open
 

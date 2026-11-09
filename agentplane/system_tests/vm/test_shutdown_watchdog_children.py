@@ -5,12 +5,12 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
-import time
 from contextlib import suppress
 from pathlib import Path
 
 import pytest_bazel
 from python.runfiles import Runfiles
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 
 def _write_process(
@@ -74,18 +74,15 @@ def test_watchdog_discovers_a_live_shebang_script_using_linux_comm(tmp_path: Pat
     proof_script.chmod(0o755)
     process = subprocess.Popen([str(proof_script)], start_new_session=True)
     try:
-        deadline = time.monotonic() + 2
-        comm = ""
-        cmdline = b""
-        while time.monotonic() < deadline:
-            comm_path = Path(f"/proc/{process.pid}/comm")
-            cmdline_path = Path(f"/proc/{process.pid}/cmdline")
-            if comm_path.exists() and cmdline_path.exists():
-                comm = comm_path.read_text().strip()
-                cmdline = cmdline_path.read_bytes()
-                if comm and cmdline:
-                    break
-            time.sleep(0.01)
+        # The kernel fills comm and cmdline once the exec completes.
+        for attempt in Retrying(
+            stop=stop_after_delay(2), wait=wait_fixed(0.01), retry=retry_if_exception_type(AssertionError), reraise=True
+        ):
+            with attempt:
+                comm = Path(f"/proc/{process.pid}/comm").read_text().strip()
+                cmdline = Path(f"/proc/{process.pid}/cmdline").read_bytes()
+                assert comm
+                assert cmdline
         assert comm.startswith("agentplane-shut")
         assert b"agentplane-shutdown-complete" in cmdline
 

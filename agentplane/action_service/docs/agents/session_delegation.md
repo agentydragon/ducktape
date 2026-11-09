@@ -40,7 +40,11 @@ Keep the complete namespace/name/UID tuple; a replacement with the same name is 
 Check the returned execution account, readiness, workspace, and
 `configurations`. Proceed only with a configured workspace root and offered harness/model; choose a
 listed reasoning effort when supplied. Use an absolute working directory under that root, with a
-separate directory per Session. If workspace or runtime choices are absent or unavailable, ask the
+separate directory per Session; a missing directory is created, but repository preparation is
+explicit (`setup_script` or your own commands), never a copy of the parent's checkout. Separate
+directories in a shared target do not isolate Sessions. **Gotcha:** native Runtime rejects a `cwd`
+outside or equal to the workspace root, but the central sampler does not apply that restriction, so
+stay under the root yourself. If workspace or runtime choices are absent or unavailable, ask the
 operator for a suitable target and settings. Do not substitute guessed runtime settings or another
 target's UID.
 

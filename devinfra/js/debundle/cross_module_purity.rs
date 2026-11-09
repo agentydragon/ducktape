@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use js_ast::SourceLineIndex;
-use swc_common::{BytePos, Span, Spanned};
+use swc_common::{BytePos, Spanned};
 use swc_ecma_ast::{Decl, Expr, Lit, ModuleDecl, ModuleItem, Pat, Stmt};
 
 use crate::analysis_inputs::{
@@ -44,7 +44,7 @@ use crate::analysis_inputs::{
     ResolvedNativeOperationInput, ReturnedRecordSummary, SelectedBindingValueInput,
     SelectedNativeOperationInput,
 };
-use crate::execution_evidence::SourceLocation;
+use crate::execution_evidence::SourceLocator;
 
 use crate::facts::abstract_domain::value::Value;
 use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
@@ -277,18 +277,6 @@ fn primitive_array_kinds(array: &swc_ecma_ast::ArrayLit, request: &str) -> Resul
         .collect()
 }
 
-fn source_location(module: &ModulePurityFacts<'_>, span: Span) -> Option<SourceLocation> {
-    let (source_path, line_index) = module.source.as_ref()?;
-    let (start_line, end_line, start_column) =
-        line_index.line_range_and_start_column_for_span(span)?;
-    Some(SourceLocation {
-        source_path: source_path.clone(),
-        start_line,
-        end_line,
-        start_column: Some(start_column),
-    })
-}
-
 fn resolve_imported_primitive_array_spread_inputs(
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     prepared: &BTreeMap<SourceModuleKey, PreparedModulePurityFacts<'_>>,
@@ -480,7 +468,9 @@ fn resolve_imported_primitive_array_spread_inputs(
                     provider_source_match: operand.provider_source_match.clone(),
                     provider_source_sha256: operand.audited_provider_source_sha256.clone(),
                     primitive_slots,
-                    provider_source_location: source_location(provider_facts, producer_array.span),
+                    provider_source_location: provider_facts
+                        .locator()
+                        .and_then(|locator| locator.span(producer_array.span)),
                 });
             }
             let evidence = ImportedPrimitiveArraySpreadInputEvidence {
@@ -492,7 +482,9 @@ fn resolve_imported_primitive_array_spread_inputs(
                 consumer_source_match: input.source_match.clone(),
                 consumer_source_sha256: input.audited_source_sha256.clone(),
                 selected_consumer_binding: input.consumer_declaration.binding.clone(),
-                consumer_source_location: source_location(consumer_facts, consumer_array.span),
+                consumer_source_location: consumer_facts
+                    .locator()
+                    .and_then(|locator| locator.span(consumer_array.span)),
                 operands: operand_evidence,
                 lifetime: input.lifetime.clone(),
                 note: input.note.clone(),
@@ -509,6 +501,12 @@ fn resolve_imported_primitive_array_spread_inputs(
 }
 
 impl<'a> ModulePurityFacts<'a> {
+    fn locator(&self) -> Option<SourceLocator<'_>> {
+        self.source
+            .as_ref()
+            .map(|(source_path, lines)| SourceLocator { source_path, lines })
+    }
+
     /// `structural_flow` is this body's flow under the same inputs, when the
     /// summary pass already solved it.
     fn prepare(
@@ -517,7 +515,7 @@ impl<'a> ModulePurityFacts<'a> {
         structural_flow: Option<ChunkValueFlow>,
         options: PreparationOptions,
     ) -> PreparedModulePurityFacts<'a> {
-        let source = crate::facts::collect_chunk_source_facts_from_items(self.body, None, |_| None);
+        let source = crate::facts::collect_chunk_source_facts_from_items(self.body, None);
         let structural = match structural_flow {
             Some(flow) => crate::facts::complete_chunk_structural_with_flow(
                 source,
@@ -633,17 +631,6 @@ impl<'a> ModulePurityFacts<'a> {
         prepared: &PreparedModulePurityFacts<'_>,
         imported: &BTreeMap<String, Arc<Purity>>,
     ) -> ChunkCodeGraph {
-        let mut locate = |span: Span| {
-            let (source_path, index) = self.source.as_ref()?;
-            let (start_line, end_line, start_column) =
-                index.line_range_and_start_column_for_span(span)?;
-            Some(SourceLocation {
-                source_path: source_path.clone(),
-                start_line,
-                end_line,
-                start_column: Some(start_column),
-            })
-        };
         ChunkCodeGraph::build_full_with_prepared_plain_data(
             &prepared.views,
             &prepared.shadowed,
@@ -659,7 +646,7 @@ impl<'a> ModulePurityFacts<'a> {
             &prepared.plain_data_inference_uses,
             &prepared.plain_array_bindings,
             &BTreeSet::new(),
-            Some(&mut locate),
+            self.locator(),
         )
     }
 
@@ -892,17 +879,6 @@ pub fn resolve_imported_purities(
             .filter(|(_, target)| pinned.contains(&(target.module.clone(), target.export.clone())))
             .map(|(local, _)| (local.clone(), Arc::new(Purity::pure())))
             .collect();
-        let mut locate = |span: Span| {
-            let (source_path, index) = facts.source.as_ref()?;
-            let (start_line, end_line, start_column) =
-                index.line_range_and_start_column_for_span(span)?;
-            Some(SourceLocation {
-                source_path: source_path.clone(),
-                start_line,
-                end_line,
-                start_column: Some(start_column),
-            })
-        };
         let shape_inputs = crate::purity::PurityShapeInputs {
             shadowed: &prepared_facts.shadowed,
             declared_pure_new: &no_declared_pure,
@@ -927,7 +903,7 @@ pub fn resolve_imported_purities(
             &prepared_facts.views,
             &shape_inputs,
             &call_context,
-            Some(&mut locate),
+            facts.locator(),
         );
         bodies.extend(transfers);
     }
@@ -1647,15 +1623,9 @@ pub fn resolve_imported_callable_summaries(
                 defining_module: module.clone(),
                 export: export.clone(),
                 local: local.clone(),
-                source_location: facts.source.as_ref().and_then(|(path, index)| {
-                    let (line, column) = index.line_and_column_for_pos(BytePos(*start))?;
-                    Some(SourceLocation {
-                        source_path: path.clone(),
-                        start_line: line,
-                        end_line: line,
-                        start_column: Some(column),
-                    })
-                }),
+                source_location: facts
+                    .locator()
+                    .and_then(|locator| locator.pos(BytePos(*start))),
             };
             let mut summary = CallableSummary::callback_factory(evidence.clone());
             summary.callback_object_arguments = Some(CallbackObjectArguments {
@@ -1902,16 +1872,9 @@ pub fn resolve_imported_callable_summaries(
                         defining_module: module.clone(),
                         export: export.clone(),
                         local: local.clone(),
-                        source_location: facts.source.as_ref().and_then(|(path, index)| {
-                            let (line, column) = index
-                                .line_and_column_for_pos(BytePos(factory.declaration_start))?;
-                            Some(SourceLocation {
-                                source_path: path.clone(),
-                                start_line: line,
-                                end_line: line,
-                                start_column: Some(column),
-                            })
-                        }),
+                        source_location: facts
+                            .locator()
+                            .and_then(|locator| locator.pos(BytePos(factory.declaration_start))),
                     },
                 ),
                 factory.dependencies.clone(),
@@ -1946,15 +1909,9 @@ pub fn resolve_imported_callable_summaries(
                 continue;
             }
             let locate = |start| {
-                facts.source.as_ref().and_then(|(path, index)| {
-                    let (line, column) = index.line_and_column_for_pos(BytePos(start))?;
-                    Some(SourceLocation {
-                        source_path: path.clone(),
-                        start_line: line,
-                        end_line: line,
-                        start_column: Some(column),
-                    })
-                })
+                facts
+                    .locator()
+                    .and_then(|locator| locator.pos(BytePos(start)))
             };
             if let Some(record) = &call.record {
                 export_summaries.entry(key.clone()).or_default().add(
@@ -2008,16 +1965,9 @@ pub fn resolve_imported_callable_summaries(
             let Some(wrapper) = inferred[module].namespace_wrappers.get(local) else {
                 continue;
             };
-            let source_location = facts.source.as_ref().and_then(|(path, index)| {
-                let (line, column) =
-                    index.line_and_column_for_pos(BytePos(wrapper.function_start))?;
-                Some(SourceLocation {
-                    source_path: path.clone(),
-                    start_line: line,
-                    end_line: line,
-                    start_column: Some(column),
-                })
-            });
+            let source_location = facts
+                .locator()
+                .and_then(|locator| locator.pos(BytePos(wrapper.function_start)));
             export_summaries.entry(key).or_default().add(
                 CallableSummary::namespace_wrapper(NamespaceWrapperSummary {
                     defining_module: module.clone(),

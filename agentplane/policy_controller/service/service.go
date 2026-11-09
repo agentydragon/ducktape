@@ -31,6 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,7 +50,7 @@ type Service struct {
 	namespace string
 	objects   client.WithWatch
 	sandboxes *sandboxreader.Reader
-	readers   map[auth.Account]struct{}
+	readers   sets.Set[auth.Account]
 	writers   []auth.Account
 }
 
@@ -61,11 +62,7 @@ func New(namespace string, objects client.WithWatch, readers, writers []auth.Acc
 	if err != nil {
 		return nil, err
 	}
-	allowed := make(map[auth.Account]struct{}, len(readers))
-	for _, account := range readers {
-		allowed[account] = struct{}{}
-	}
-	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, readers: allowed, writers: slices.Clone(writers)}, nil
+	return &Service{namespace: namespace, objects: objects, sandboxes: sandboxes, readers: sets.New(readers...), writers: slices.Clone(writers)}, nil
 }
 
 func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) auth.Methods {
@@ -90,7 +87,7 @@ func (s *Service) caller(ctx context.Context) (auth.Account, bool, error) {
 		return auth.Account{}, false, status.Error(codes.Unauthenticated, "incomplete caller")
 	}
 	caller := auth.Account{Namespace: identity.GetAccount().GetNamespace(), Name: identity.GetAccount().GetName()}
-	_, broad := s.readers[caller]
+	broad := s.readers.Has(caller)
 	return caller, broad, nil
 }
 

@@ -116,11 +116,12 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   preconditions rather than declaration-form shortcuts.
 
 - **AR4 — Give execution data, runtime state and orchestration separate owners.**
-  <facts/sync_effects/execution_index.rs> collects syntax and capabilities while
-  nesting the interpreter/runtime modules; <lowering/mod.rs> also prepares
-  whole-program summaries and loads analysis. Extract immutable execution
-  program/index interfaces and make the runtime, transfer kernel and provider
-  adapters peers. Put phase orchestration above those services; finish moving
+  The interpreter no longer nests under <facts/sync_effects/execution_index.rs>
+  (#15073), and the kernel, `world/` and both `adapters/` are peers, but
+  interpreter-read `ExecutionIndex` fields are `pub(super)` rather than an
+  interface. <lowering/mod.rs> also prepares whole-program summaries and loads
+  analysis. Extract immutable execution program/index interfaces. Put phase
+  orchestration above those services; finish moving
   semantic records still owned by `reports/schema.rs` to domain owners, retaining
   <execution_evidence.rs> and report projections. Close when real callers use
   those interfaces without reverse ownership, with unchanged semantic facts,
@@ -208,7 +209,13 @@ to one exact source/spec pair and held to the interactive budget in
 1. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke
    (<plans/excalidraw_live_smoke.md>) so private-corpus debundler issues can be
    reproduced and protected in public CI.
-2. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
+2. **Runtime resource controls.** `url_rebase_test` covers lazy JavaScript and
+   stylesheet reads through `new URL(..., import.meta.url)` under Node. Still
+   uncontrolled: URL search/fragment and encoded path identity, nested CSS asset
+   references, real browser worker/style loading, dynamic consumers of package
+   replacements, and the direct `Worker`-string rewrite (whose browser document
+   base is not the module URL; the resource inventory marks it unresolved).
+3. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
    fixtures for the common anchor-choice cases of the `debundle_stabilize`
    playbook so its guidance is executable rather than only prose.
 

@@ -45,21 +45,9 @@ TokenReview mechanism for the token, but explicitly selects delegated authorizat
 uses standard [gRPC binary metadata](https://grpc.io/docs/guides/metadata/); the gRPC library handles
 its transport encoding.
 
-The initial Action-backed envelope is a messages-only schema under `agentplane/proto/`, package
-`agentplane.proto`. Reuse `ServiceAccount` from [sandboxes.proto](../proto/sandboxes.proto):
-
-```proto
-message ServiceAccountIdentity {
-  ServiceAccount account = 1;
-  string uid = 2;
-}
-
-message Delegation {
-  ServiceAccountIdentity caller = 1;
-  string action_request_id = 2;
-  string action_execution_id = 3;
-}
-```
+The envelope is `Delegation` in [`delegation.proto`](../proto/delegation.proto), a messages-only
+schema in package `agentplane.proto` that reuses `ServiceAccountIdentity` from
+[`identity.proto`](../proto/identity.proto).
 
 All fields are required by this profile's validation: a valid SA reference, nonempty opaque SA UID,
 and valid request/execution UUIDs. Neither the actor nor its credentials appear in this envelope.
