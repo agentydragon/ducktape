@@ -185,7 +185,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Reconciler{
 		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: false, Leases: mgr.GetClient(),
-		RunnerCertificateIssuer: "test-issuer", Now: time.Now,
+		RunnerCertificateIssuer: CertificateIssuer{Name: "test-runner-issuer", Kind: IssuerKindClusterIssuer}, Now: time.Now,
 	}
 	if err := r.SetupWithManager(mgr); err != nil {
 		t.Fatal(err)

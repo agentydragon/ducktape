@@ -3045,6 +3045,7 @@ flowchart LR
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
     WORKLOAD_IDENTITY_LIFECYCLE_DESIGN[Decision, draft under review: shared identity and SVID lifecycle] --> WORKLOAD_AUTH_CUTOVER[Blocked: migrate callers and retire bearer authentication]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC
+    WORKLOAD_CA[In review: dedicated workload CA] --> WORKLOAD_AUTH_CUTOVER
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
@@ -3084,6 +3085,17 @@ of the Sandbox Controller. The Action-box step's edge to `SANDBOX_IDENTITY_SPEC`
 boxes, Haku UI/Anki and future external callers, with no second subject model and no Sandbox
 dependency, preserving ServiceAccount subjects until `IDENTITY_CUTOVER`. **Exit:** the operator
 picks an alternative and the open questions' recommendations.
+
+### `WORKLOAD_CA` — a dedicated workload CA
+
+**In review (PR #15104, 2026-11-09).** Migration step 1 of the
+[workload identity lifecycle](workload_identity_lifecycle.md#migration-and-rollback), which every
+alternative shares: every Agentplane SVID comes from the `agentplane-workload` ClusterIssuer, SVID
+listeners trust its CA alone, and a Certificate admission policy limits its requesters. Its CA,
+trust Bundle and admission reach staging with no live system test. **Exit:** once Flux applies it,
+the proxy and every service start, one Pod Sandbox works through the SVID route, and the proxy
+refuses a `cluster-internal-ca` Certificate carrying that Sandbox's URI; the observation is recorded
+and the node removed.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 

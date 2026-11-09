@@ -46,7 +46,7 @@ not call it.
 journal here, one call per Session. Sandbox Runtime opens end-to-end mTLS through the sidecar
 and central proxy's exact-authority CONNECT passthrough to `rpc.listen_address`.
 History presents `spiffe://agentplane/history-ingress`, verifies the client SVID against the
-trust-manager roots with an explicit clientAuth EKU, and resolves its Sandbox UID and accepted
+Agentplane workload CA with an explicit clientAuth EKU, and resolves its Sandbox UID and accepted
 credential generation from live Sandbox status. The caller remains that Sandbox's controller-owned
 ServiceAccount, including its canonical UID. A deleted Sandbox, stale credential or missing bound
 Pod is refused before the ingress handler. No header selects the caller and the proxy asserts none.

@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.environment_runtime_transport.config import ClientTLS
+
+
+class IssuerKind(StrEnum):
+    ISSUER = "Issuer"
+    CLUSTER_ISSUER = "ClusterIssuer"
+
+
+class CertificateIssuer(BaseModel):
+    """A cert-manager issuer, as a Certificate's `issuerRef` names it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1)
+    kind: IssuerKind
 
 
 class Settings(BaseModel):
@@ -33,7 +48,6 @@ class Settings(BaseModel):
     runner_gateway_token_file: Path = Field(
         description="Projected ServiceAccount token the Runner Gateway accepts from this controller."
     )
-    runner_certificate_issuer: str = Field(
-        min_length=1,
-        description="Namespace-scoped cert-manager Issuer that signs immutable runner workload credentials.",
+    runner_certificate_issuer: CertificateIssuer = Field(
+        description="cert-manager issuer that signs immutable runner workload credentials."
     )

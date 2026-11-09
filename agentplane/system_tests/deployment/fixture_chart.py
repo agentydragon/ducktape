@@ -68,10 +68,10 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
+    workload_ca,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.chart import (
-    RUNNER_CERTIFICATE_ISSUER,
     RUNNER_TRUST_BUNDLE,
     RUNNER_TRUST_BUNDLE_KEY,
     Namespace,
@@ -433,6 +433,14 @@ def build_chart(
     Namespace(chart, "namespace", env)
     _add_runner_root(chart)
     add_runner_certificates(chart, env)
+    workload_ca.add_workload_ca(
+        chart,
+        trust_namespaces={NAMESPACE},
+        sandbox_controllers={ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME)},
+        # The user k3s writes its admin kubeconfig for, which applies these manifests.
+        service_requester="system:admin",
+        cert_manager=ServiceAccountRef(namespace="cert-manager", name="cert-manager"),
+    )
     fixture_database.add_database(chart, env)
     app_database_url = (
         SecretRef(namespace=NAMESPACE, name="postgres-app").key("async-uri").env_value(chart, "app-database-url")
@@ -611,7 +619,7 @@ def build_chart(
         gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
-        runner_certificate_issuer=RUNNER_CERTIFICATE_ISSUER,
+        runner_certificate_issuer=workload_ca.ISSUER,
         placement=None,
         registry_secret_name=None,
         memory_limit=None,

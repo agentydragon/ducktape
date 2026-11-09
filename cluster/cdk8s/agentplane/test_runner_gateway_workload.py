@@ -25,6 +25,8 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     session_dispatcher,
     staging,
+    workload_ca,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from util.settings_contract import env_name
@@ -51,21 +53,14 @@ def _gateway_objects(app: App) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
-def test_environment_provisions_cert_manager_runner_issuer_and_gateway_identity(
+def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    issuer_ca = _resource(staging_manifests, "Certificate", agentplane_chart.RUNNER_CA_SECRET)
-    assert issuer_ca["spec"]["isCA"] is True
-    assert issuer_ca["spec"]["issuerRef"]["kind"] == "ClusterIssuer"
-    assert issuer_ca["spec"]["privateKey"]["rotationPolicy"] == "Always"
-
-    issuer = _resource(staging_manifests, "Issuer", runner_gateway.RUNNER_CERTIFICATE_ISSUER)
-    assert issuer["spec"]["ca"]["secretName"] == agentplane_chart.RUNNER_CA_SECRET
-
+    workload_issuer = {"kind": workload_ca.ISSUER.kind, "name": workload_ca.ISSUER.name}
     gateway_certificate = _resource(staging_manifests, "Certificate", agentplane_chart.RUNNER_GATEWAY_CERTIFICATE)
     spec = gateway_certificate["spec"]
     assert spec["secretName"] == runner_gateway.GATEWAY_TLS_SECRET
-    assert spec["issuerRef"] == {"kind": "Issuer", "name": runner_gateway.RUNNER_CERTIFICATE_ISSUER}
+    assert spec["issuerRef"] == workload_issuer
     assert spec["uris"] == ["spiffe://agentplane/runner-gateway"]
     assert set(spec["usages"]) == {"digital signature", "client auth"}
     assert spec["privateKey"]["rotationPolicy"] == "Always"
@@ -73,7 +68,7 @@ def test_environment_provisions_cert_manager_runner_issuer_and_gateway_identity(
     workload_certificate = _resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-workload")
     workload_spec = workload_certificate["spec"]
     assert workload_spec["secretName"] == f"{runner_gateway.NAME}-workload-tls"
-    assert workload_spec["issuerRef"] == {"kind": "Issuer", "name": runner_gateway.RUNNER_CERTIFICATE_ISSUER}
+    assert workload_spec["issuerRef"] == workload_issuer
     assert workload_spec["uris"] == [SESSION_DISPATCHER_URI]
     assert set(workload_spec["usages"]) == {"digital signature", "server auth"}
     assert workload_spec["privateKey"]["rotationPolicy"] == "Always"
@@ -101,7 +96,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     bearer_auth = one(item for item in settings["rpc"]["auth"] if item["mode"] == "kubernetes_bearer")
     assert set(bearer_auth["audiences"]) == {session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE}
     spiffe_auth = one(item for item in settings["rpc"]["auth"] if item["mode"] == "spiffe")
-    assert spiffe_auth == {"mode": "spiffe", "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt"}
+    assert spiffe_auth == {"mode": "spiffe", "ca_file": workload_tls.CLIENT_TRUST_BUNDLE_FILE}
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
     assert settings["gateway_tls"] == {

@@ -68,8 +68,8 @@ type Reconciler struct {
 	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
 	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
 	Leases client.Reader
-	// The namespace-scoped cert-manager Issuer that provisions each immutable runner credential.
-	RunnerCertificateIssuer string
+	// The cert-manager issuer that provisions each immutable runner credential.
+	RunnerCertificateIssuer CertificateIssuer
 	// The current time, for the liveness of a connection Lease and the idle timers.
 	Now func() time.Time
 	// FirecrackerStatus reads the launcher supervisor through the Kubernetes Pod proxy.

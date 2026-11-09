@@ -16,8 +16,9 @@ Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../r
 `status.quiescedIncarnation`. `runner_gateway_target` and `runner_gateway_token_file` are required settings in the mounted YAML file.
 Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
 
-`runner_certificate_issuer` names the cert-manager Issuer used for per-incarnation `Certificate`
-requests. cert-manager owns key generation and renewal. The controller waits for the matching
+`runner_certificate_issuer` names the cert-manager issuer, by `name` and `kind` (`Issuer` or
+`ClusterIssuer`), used for per-incarnation `Certificate` requests; deployments name the
+`agentplane-workload` ClusterIssuer. cert-manager owns key generation and renewal. The controller waits for the matching
 TLS Secret before starting a runner and binds its credential ID to the current Pod or VMI UID in
 `status.runnerCredential`.
 Replacement workloads get distinct Secret names. trust-manager supplies the trusted roots.

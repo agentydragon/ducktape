@@ -35,11 +35,7 @@ from cdk8s_plus_34 import (
     TaintEffect,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import (
-    CertificateSpecIssuerRef,
-    CertificateSpecPrivateKeyRotationPolicy,
-    CertificateSpecUsages,
-)
+from cert_manager_crds.io.cert_manager import CertificateSpecPrivateKeyRotationPolicy, CertificateSpecUsages
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecSources,
@@ -62,13 +58,12 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.workload_auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway
+from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway, workload_ca
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE as CLUSTER_CA_BUNDLE, BUNDLE_KEY as CLUSTER_CA_BUNDLE_KEY
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
@@ -116,6 +111,8 @@ FORGEJO_PUBLIC_HOST = "git.allegedly.works"
 HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
 # The trust bundles' ConfigMap key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
+# The workload CA, which verifies the forward listener's client SVIDs and the proxy's own SVID.
+_SVID_CA_FILE = f"/etc/agentplane-egress/svid-ca/{workload_ca.BUNDLE_KEY}"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
@@ -561,7 +558,7 @@ class Egress(Construct):
             renew_before="8h",
             private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
             usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
-            issuer_ref=CertificateSpecIssuerRef(name=runner_gateway.RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
+            issuer_ref=workload_ca.ISSUER_REF,
         )
 
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
@@ -583,7 +580,7 @@ class Egress(Construct):
                     key_file=Path("/etc/agentplane-egress/svid/tls.key"),
                 ),
                 auth=[
-                    SPIFFEAuth(ca_file=Path(f"/etc/agentplane-egress/svid-ca/{CLUSTER_CA_BUNDLE_KEY}")),
+                    SPIFFEAuth(ca_file=Path(_SVID_CA_FILE)),
                     # CLEANUP(added 2026-11-09): Remove the bearer mode once no non-Sandbox workload
                     # (Action command/build boxes, Haku UI/Anki) projects a proxy-hop bearer.
                     KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
@@ -744,7 +741,7 @@ class Egress(Construct):
         svid_ca_volume = Volume.from_config_map(
             self,
             "svid-ca-volume",
-            ConfigMap.from_config_map_name(self, "svid-ca-ref", CLUSTER_CA_BUNDLE),
+            ConfigMap.from_config_map_name(self, "svid-ca-ref", workload_ca.BUNDLE),
             name="svid-ca",
         )
 
@@ -773,14 +770,14 @@ class Egress(Construct):
             extra_ports=extra_ports,
             readiness=tls_grpc_probe(
                 port=self.admin.pod_port,
-                ca_file=f"/etc/agentplane-egress/svid-ca/{CLUSTER_CA_BUNDLE_KEY}",
+                ca_file=_SVID_CA_FILE,
                 server_uri=EGRESS_PROXY_URI,
                 initial_delay_seconds=3,
                 period_seconds=10,
             ),
             liveness=tls_grpc_probe(
                 port=self.admin.pod_port,
-                ca_file=f"/etc/agentplane-egress/svid-ca/{CLUSTER_CA_BUNDLE_KEY}",
+                ca_file=_SVID_CA_FILE,
                 server_uri=EGRESS_PROXY_URI,
                 service=_LIVENESS_HEALTH_SERVICE,
                 initial_delay_seconds=30,
@@ -793,7 +790,7 @@ class Egress(Construct):
             termination_grace=Duration.seconds(60),
             startup=tls_grpc_probe(
                 port=self.admin.pod_port,
-                ca_file=f"/etc/agentplane-egress/svid-ca/{CLUSTER_CA_BUNDLE_KEY}",
+                ca_file=_SVID_CA_FILE,
                 server_uri=EGRESS_PROXY_URI,
                 service=_LIVENESS_HEALTH_SERVICE,
                 initial_delay_seconds=0,

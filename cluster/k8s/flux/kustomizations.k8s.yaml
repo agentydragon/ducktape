@@ -4672,12 +4672,19 @@ spec:
       kind: Certificate
       name: notifications-workload
       namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: agentplane-workload-ca
+      namespace: cert-manager
     - apiVersion: trust.cert-manager.io/v1alpha1
       kind: Bundle
       name: agentplane-egress-ca
     - apiVersion: trust.cert-manager.io/v1alpha1
       kind: Bundle
       name: agentplane-staging-egress-upstream-ca
+    - apiVersion: trust.cert-manager.io/v1alpha1
+      kind: Bundle
+      name: agentplane-workload-ca-bundle
     - apiVersion: v1
       kind: ConfigMap
       name: agentplane-egress-ca
@@ -4685,6 +4692,10 @@ spec:
     - apiVersion: v1
       kind: ConfigMap
       name: agentplane-staging-egress-upstream-ca
+      namespace: agentplane-staging
+    - apiVersion: v1
+      kind: ConfigMap
+      name: agentplane-workload-ca-bundle
       namespace: agentplane-staging
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret

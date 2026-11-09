@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,7 +24,7 @@ type config struct {
 	HealthProbeBindAddress  string                                   `yaml:"health_probe_bind_address"`
 	RunnerGatewayTarget     string                                   `yaml:"runner_gateway_target"`
 	RunnerGatewayTokenFile  string                                   `yaml:"runner_gateway_token_file"`
-	RunnerCertificateIssuer string                                   `yaml:"runner_certificate_issuer"`
+	RunnerCertificateIssuer sandboxcontroller.CertificateIssuer      `yaml:"runner_certificate_issuer"`
 }
 
 func defaultConfig() config {
@@ -66,13 +67,15 @@ func (c config) validate() error {
 			return fmt.Errorf("runner_gateway_tls: %w", err)
 		}
 	}
+	if err := c.RunnerCertificateIssuer.Validate(); err != nil {
+		return fmt.Errorf("runner_certificate_issuer: %w", err)
+	}
 	for _, required := range []struct{ name, value string }{
 		{"namespace", c.Namespace},
 		{"metrics_bind_address", c.MetricsBindAddress},
 		{"health_probe_bind_address", c.HealthProbeBindAddress},
 		{"runner_gateway_target", c.RunnerGatewayTarget},
 		{"runner_gateway_token_file", c.RunnerGatewayTokenFile},
-		{"runner_certificate_issuer", c.RunnerCertificateIssuer},
 	} {
 		if strings.TrimSpace(required.value) == "" {
 			return fmt.Errorf("%s is required", required.name)

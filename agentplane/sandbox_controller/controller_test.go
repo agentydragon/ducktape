@@ -132,7 +132,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 		}}).Build()
 	return &Reconciler{
 		Client: c, Objects: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c,
-		RunnerCertificateIssuer: "test-issuer", Now: func() time.Time { return testNow },
+		RunnerCertificateIssuer: testRunnerIssuer, Now: func() time.Time { return testNow },
 	}, c
 }
 
@@ -1161,7 +1161,7 @@ func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T)
 	afterRestart := &fakeQuiescer{result: QuiesceResult{Quiescing: true}}
 	restarted := &Reconciler{
 		Client: c, Objects: c, KubeVirt: true, Quiescer: afterRestart, Leases: c,
-		RunnerCertificateIssuer: "test-issuer", Now: func() time.Time { return now },
+		RunnerCertificateIssuer: testRunnerIssuer, Now: func() time.Time { return now },
 	}
 	// A resume followed by another suspend continues this same runner's quiesce operation; it does not
 	// make a new request intent that reopens the per-incarnation retry budget.

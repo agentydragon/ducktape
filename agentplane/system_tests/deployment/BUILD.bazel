@@ -265,6 +265,7 @@ py_library(
         "//cluster/cdk8s/agentplane:sandbox_controller",
         "//cluster/cdk8s/agentplane:sandbox_pod",
         "//cluster/cdk8s/agentplane:session_dispatcher",
+        "//cluster/cdk8s/agentplane:workload_ca",
         "//cluster/cdk8s/agentplane:workload_tls",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/cert_manager:bundle",

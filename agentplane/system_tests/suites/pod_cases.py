@@ -28,6 +28,7 @@ from agentplane.system_tests.scenarios import (
     storage,
     suspend_resume,
     thread_stream,
+    workload_trust,
 )
 from agentplane.system_tests.suites import pod_runners
 
@@ -218,6 +219,11 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
         )
 
 
+async def a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(resources: Resources) -> None:
+    async with resources.shared() as (_, runners):
+        await workload_trust.a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(resources.cluster, runners.claude)
+
+
 async def a_non_sandbox_command_box_keeps_its_bearer_egress(resources: Resources) -> None:
     async with resources.open() as (_, sandboxes):
         caller = await sandboxes("systest-bearer-caller")
@@ -237,6 +243,7 @@ SCENARIOS = (
     ),
     pytest.param(a_non_sandbox_command_box_keeps_its_bearer_egress),
     pytest.param(two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it),
+    pytest.param(a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused),
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),
     pytest.param(a_policy_granted_after_the_sandbox_is_running_takes_effect, marks=pytest.mark.scripted_model),
     pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),

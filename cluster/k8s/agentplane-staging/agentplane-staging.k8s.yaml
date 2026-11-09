@@ -49,8 +49,8 @@ metadata:
 spec:
   duration: 24h
   issuerRef:
-    kind: Issuer
-    name: agentplane-runner-ca
+    kind: ClusterIssuer
+    name: agentplane-workload
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Always
@@ -1353,6 +1353,9 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
+            - mountPath: /run/agentplane/workload-client-trust
+              name: workload-client-trust
+              readOnly: true
             - mountPath: /etc/agentplane-llm-ingress
               name: configmap-llm-ingress-settings
               readOnly: true
@@ -1390,6 +1393,9 @@ spec:
             name: cluster-internal-ca-bundle
           name: workload-trust
         - configMap:
+            name: agentplane-workload-ca-bundle
+          name: workload-client-trust
+        - configMap:
             name: llm-ingress-settings
           name: configmap-llm-ingress-settings
 ---
@@ -1401,8 +1407,8 @@ metadata:
 spec:
   duration: 24h
   issuerRef:
-    kind: Issuer
-    name: agentplane-runner-ca
+    kind: ClusterIssuer
+    name: agentplane-workload
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Always
@@ -1457,7 +1463,7 @@ data:
         key_file: /run/agentplane/workload-tls/tls.key
       auth:
         - mode: spiffe
-          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
         - mode: kubernetes_bearer
           audiences:
             - agentplane-egress
@@ -1535,8 +1541,8 @@ metadata:
 spec:
   duration: 24h
   issuerRef:
-    kind: Issuer
-    name: agentplane-runner-ca
+    kind: ClusterIssuer
+    name: agentplane-workload
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Always
@@ -1793,7 +1799,7 @@ spec:
           secret:
             secretName: agentplane-egress-proxy-tls
         - configMap:
-            name: cluster-internal-ca-bundle
+            name: agentplane-workload-ca-bundle
           name: svid-ca
         - configMap:
             name: egress-go-settings
@@ -2702,6 +2708,9 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
+            - mountPath: /run/agentplane/workload-client-trust
+              name: workload-client-trust
+              readOnly: true
             - mountPath: /etc/agentplane-history-service
               name: configmap-history-service-config
               readOnly: true
@@ -2731,6 +2740,9 @@ spec:
         - configMap:
             name: cluster-internal-ca-bundle
           name: workload-trust
+        - configMap:
+            name: agentplane-workload-ca-bundle
+          name: workload-client-trust
         - configMap:
             name: history-service-config
           name: configmap-history-service-config
@@ -2772,8 +2784,8 @@ metadata:
 spec:
   duration: 24h
   issuerRef:
-    kind: Issuer
-    name: agentplane-runner-ca
+    kind: ClusterIssuer
+    name: agentplane-workload
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Always
@@ -2835,7 +2847,7 @@ data:
             - agentplane-history-service
             - agentplane-runner-ingress
         - mode: spiffe
-          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
 immutable: false
 ---
 apiVersion: cilium.io/v2
@@ -6216,7 +6228,9 @@ data:
     health_probe_bind_address: :8081
     runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
     runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-    runner_certificate_issuer: agentplane-runner-ca
+    runner_certificate_issuer:
+      name: agentplane-workload
+      kind: ClusterIssuer
 immutable: false
 ---
 apiVersion: v1
@@ -6780,6 +6794,9 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
+            - mountPath: /run/agentplane/workload-client-trust
+              name: workload-client-trust
+              readOnly: true
             - mountPath: /etc/agentplane-actions
               name: configmap-actions-settings
               readOnly: true
@@ -6845,6 +6862,9 @@ spec:
             name: cluster-internal-ca-bundle
           name: workload-trust
         - configMap:
+            name: agentplane-workload-ca-bundle
+          name: workload-client-trust
+        - configMap:
             name: actions-settings
           name: configmap-actions-settings
         - name: peer-tokens
@@ -6896,8 +6916,8 @@ metadata:
 spec:
   duration: 24h
   issuerRef:
-    kind: Issuer
-    name: agentplane-runner-ca
+    kind: ClusterIssuer
+    name: agentplane-workload
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Always
@@ -7529,7 +7549,7 @@ data:
           audiences:
             - agentplane-egress
         - mode: spiffe
-          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -8602,6 +8622,9 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
+            - mountPath: /run/agentplane/workload-client-trust
+              name: workload-client-trust
+              readOnly: true
             - mountPath: /etc/agentplane-notifications
               name: configmap-notifications-settings
               readOnly: true
@@ -8634,6 +8657,9 @@ spec:
         - configMap:
             name: cluster-internal-ca-bundle
           name: workload-trust
+        - configMap:
+            name: agentplane-workload-ca-bundle
+          name: workload-client-trust
         - configMap:
             name: notifications-settings
           name: configmap-notifications-settings
@@ -8698,8 +8724,8 @@ metadata:
 spec:
   duration: 24h
   issuerRef:
-    kind: Issuer
-    name: agentplane-runner-ca
+    kind: ClusterIssuer
+    name: agentplane-workload
   privateKey:
     algorithm: ECDSA
     rotationPolicy: Always
@@ -8766,7 +8792,7 @@ data:
           audiences:
             - agentplane-notifications
         - mode: spiffe
-          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+          ca_file: /run/agentplane/workload-client-trust/ca-certificates.crt
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -8916,6 +8942,103 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentplane-workload-ca
+  namespace: cert-manager
+spec:
+  commonName: agentplane-workload-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Never
+    size: 256
+  renewBefore: 8760h
+  secretName: agentplane-workload-ca
+  usages:
+    - cert sign
+    - crl sign
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: agentplane-workload
+spec:
+  ca:
+    secretName: agentplane-workload-ca
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: agentplane-workload-ca-bundle
+spec:
+  sources:
+    - secret:
+        key: tls.crt
+        name: agentplane-workload-ca
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: The Agentplane workload CA, which client SVID verifiers trust alone
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - agentplane-staging
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agentplane-workload-certificates
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: object.spec.?issuerRef.?name.orValue('') == 'agentplane-workload' && object.spec.?issuerRef.?kind.orValue('Issuer') == 'ClusterIssuer' && object.spec.?issuerRef.?group.orValue('') in ['', 'cert-manager.io']
+      name: workload-issuer
+    - expression: request.operation == 'CREATE' || object.spec != oldObject.spec
+      name: spec-written
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - cert-manager.io
+        apiVersions:
+          - "*"
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - certificates
+          - certificaterequests
+  validations:
+    - expression: variables.certificate || request.userInfo.username == 'system:serviceaccount:cert-manager:cert-manager'
+      message: Only cert-manager creates CertificateRequests for the Agentplane workload issuer.
+    - expression: "!object.spec.?isCA.orValue(false) && !object.spec.?usages.orValue([]).exists(u, u in ['cert sign', 'crl sign'])"
+      message: The Agentplane workload issuer signs no CA.
+    - expression: "!variables.certificate || (size(variables.uris) > 0 && ((request.userInfo.username == 'system:serviceaccount:agentplane-staging:sandbox-controller' && request.namespace == 'agentplane-staging' && variables.uris.all(u, u.matches('^spiffe://agentplane/environment-runtime/agentplane-staging/[^/]+/[^/]+$'))) || (request.userInfo.username == 'system:serviceaccount:flux-system:kustomize-controller' && variables.uris.all(u, u.matches('^spiffe://agentplane/[a-z0-9-]+$')))))"
+      message: Only a Sandbox Controller (Runtime URIs in its namespace) and the manifest applier (one-segment service URIs) request certificates from the Agentplane workload issuer.
+  variables:
+    - expression: request.resource.resource == 'certificates'
+      name: certificate
+    - expression: object.spec.?uris.orValue([])
+      name: uris
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agentplane-workload-certificates
+spec:
+  policyName: agentplane-workload-certificates
+  validationActions:
+    - Deny
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

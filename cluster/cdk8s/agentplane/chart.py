@@ -4,9 +4,9 @@ disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
 
 The caller names the Pod execution environment the chart offers and the image it runs
 (`environment_template_name`, `environment_tools_image`), plus any Secret a runner workload reads as a file
-(`environment_runtime_key_files`). The chart provisions the shared cert-manager Issuer
-and Gateway certificate; the Sandbox Controller provisions a unique leaf Certificate for each
-workload incarnation.
+(`environment_runtime_key_files`). The chart provisions the Gateway certificate from the
+Agentplane workload CA (`workload_ca`); the Sandbox Controller provisions a unique leaf Certificate
+for each workload incarnation from the same CA.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from cluster.cdk8s.agentplane import (
     sandbox_pod,
     session_dispatcher,
     telemetry,
+    workload_ca,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
@@ -54,7 +55,6 @@ from cluster.cdk8s.providers.cert_manager.issuer import Issuer
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 
-RUNNER_CERTIFICATE_ISSUER = runner_gateway.RUNNER_CERTIFICATE_ISSUER
 RUNNER_CA_SECRET = "agentplane-runner-ca"
 RUNNER_GATEWAY_CERTIFICATE = "agentplane-runner-gateway"
 RUNNER_GATEWAY_SECRET = runner_gateway.GATEWAY_TLS_SECRET
@@ -81,7 +81,11 @@ class Namespace(Construct):
 
 
 def add_runner_certificates(scope: Construct, env: Environment) -> None:
-    """Provision the environment CA, Gateway leaf and namespaced Issuer with cert-manager."""
+    """Provision the Gateway leaf, and the legacy environment CA and namespaced Issuer."""
+    # CLEANUP(added 2026-11-09): Remove this CA and Issuer, `runner_gateway.RUNNER_CERTIFICATE_ISSUER`
+    #   and the k3s `cert_manager_reissues_a_deleted_tls_secret` scenario's use of it once the change
+    #   moving every Agentplane certificate to `workload_ca.ISSUER` has rolled out to staging and no
+    #   Certificate's `issuerRef` there names `agentplane-runner-ca`.
     Certificate(
         scope,
         "runner-issuer-ca-certificate",
@@ -98,7 +102,7 @@ def add_runner_certificates(scope: Construct, env: Environment) -> None:
     Issuer(
         scope,
         "runner-issuer",
-        metadata=ApiObjectMetadata(name=RUNNER_CERTIFICATE_ISSUER, namespace=env.namespace),
+        metadata=ApiObjectMetadata(name=runner_gateway.RUNNER_CERTIFICATE_ISSUER, namespace=env.namespace),
         ca=IssuerSpecCa(secret_name=RUNNER_CA_SECRET),
     )
     Certificate(
@@ -111,7 +115,7 @@ def add_runner_certificates(scope: Construct, env: Environment) -> None:
         renew_before="8h",
         private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
         usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.CLIENT_AUTH],
-        issuer_ref=CertificateSpecIssuerRef(name=RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
+        issuer_ref=workload_ca.ISSUER_REF,
     )
 
 
@@ -250,7 +254,7 @@ def environment_chart(
         gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=runner_gateway.control_target(env.namespace),
-        runner_certificate_issuer=RUNNER_CERTIFICATE_ISSUER,
+        runner_certificate_issuer=workload_ca.ISSUER,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

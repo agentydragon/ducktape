@@ -520,7 +520,9 @@ def running_stack(
                     print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
                     logger.info("applied %s objects", len(rest))
                     setup.add_event("manifests applied")
-                certificates.wait_for_issuance(k3s.kubectl, fixture.namespace, "cluster-internal-ca-bundle")
+                certificates.wait_for_issuance(
+                    k3s.kubectl, fixture.namespace, ("cluster-internal-ca-bundle", "agentplane-workload-ca-bundle")
+                )
                 setup.add_event("runner certificates issued and trust distributed")
                 # Guest images serve Sandboxes created after stack readiness, so they can import during apply.
                 guest_import.result()

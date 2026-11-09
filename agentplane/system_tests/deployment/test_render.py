@@ -110,6 +110,18 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert set(gateway_certificate["spec"]["usages"]) == {"digital signature", "client auth"}
     dispatcher_certificate = _resource(docs, "Certificate", "runner-gateway-workload")
     assert dispatcher_certificate["spec"]["dnsNames"] == [f"session-dispatcher.{NAMESPACE}.svc.cluster.local"]
+    workload_issuer = _resource(docs, "ClusterIssuer", "agentplane-workload")
+    workload_ca = one(
+        doc
+        for doc in docs
+        if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == workload_issuer["spec"]["ca"]["secretName"]
+    )
+    assert workload_ca["metadata"]["namespace"] == "cert-manager"
+    assert workload_ca["spec"]["issuerRef"] == {"name": "cluster-internal-ca", "kind": "ClusterIssuer"}
+    workload_trust = _resource(docs, "Bundle", "agentplane-workload-ca-bundle")
+    assert workload_trust["spec"]["sources"] == [
+        {"secret": {"name": workload_ca["spec"]["secretName"], "key": "tls.crt"}}
+    ]
     trust_bundle = _resource(docs, "Bundle", "cluster-internal-ca-bundle")
     root = _resource(docs, "Certificate", "test-runner-root")
     assert trust_bundle["spec"]["sources"] == [{"secret": {"name": root["spec"]["secretName"], "key": "ca.crt"}}]
@@ -158,7 +170,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert proxy_certificate["uris"] == ["spiffe://agentplane/egress-proxy"]
     assert proxy_certificate["dnsNames"] == [f"egress-admin.{NAMESPACE}.svc.cluster.local"]
     assert proxy_certificate["secretName"] == "agentplane-egress-proxy-tls"
-    assert proxy_certificate["issuerRef"] == {"name": "agentplane-runner-ca", "kind": "Issuer"}
+    assert proxy_certificate["issuerRef"] == {"name": "agentplane-workload", "kind": "ClusterIssuer"}
     assert any(mount["name"] == "svid" for mount in proxy["volumeMounts"])
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
     assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]

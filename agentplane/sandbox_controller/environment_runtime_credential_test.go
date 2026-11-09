@@ -21,6 +21,8 @@ import (
 
 const runnerCredentialTestID = "0123456789abcdef0123456789abcdef"
 
+var testRunnerIssuer = CertificateIssuer{Name: "test-runner-issuer", Kind: IssuerKindClusterIssuer}
+
 func runnerCredentialTestScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -42,13 +44,17 @@ func runnerCredentialTestScheme(t *testing.T) *runtime.Scheme {
 
 func TestRunnerCertificateSpecMatchesCertManagerDefaults(t *testing.T) {
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
-	expected, found, err := unstructured.NestedMap(runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID).Object, "spec")
+	expected, found, err := unstructured.NestedMap(runnerCertificateObject(sandbox, testRunnerIssuer, runnerCredentialTestID).Object, "spec")
 	if err != nil || !found {
 		t.Fatalf("expected certificate spec: found=%v err=%v", found, err)
 	}
 	uris, found, err := unstructured.NestedStringSlice(expected, "uris")
 	if err != nil || !found || len(uris) != 1 || uris[0] != "spiffe://agentplane/environment-runtime/sandboxes/sandbox-uid/"+runnerCredentialTestID {
 		t.Fatalf("certificate URI = %v (found=%v, err=%v), want the canonical Environment Runtime identity", uris, found, err)
+	}
+	issuer, _, err := unstructured.NestedStringMap(expected, "issuerRef")
+	if want := map[string]string{"name": "test-runner-issuer", "kind": "ClusterIssuer", "group": "cert-manager.io"}; err != nil || !equality.Semantic.DeepEqual(issuer, want) {
+		t.Fatalf("certificate issuerRef = %v (err=%v), want the configured issuer %v", issuer, err, want)
 	}
 
 	withDefaults := runtime.DeepCopyJSON(expected)
@@ -73,6 +79,11 @@ func TestRunnerCertificateSpecMatchesCertManagerDefaults(t *testing.T) {
 		"issuer": func(spec map[string]interface{}) {
 			spec["issuerRef"].(map[string]interface{})["name"] = "other-issuer"
 		},
+		// A Certificate from a namespaced Issuer of the same name, such as one issued before the
+		// controller moved to a ClusterIssuer.
+		"issuer kind": func(spec map[string]interface{}) {
+			spec["issuerRef"].(map[string]interface{})["kind"] = "Issuer"
+		},
 		"secret name": func(spec map[string]interface{}) { spec["secretName"] = "shared-runner-secret" },
 		"extra usage": func(spec map[string]interface{}) {
 			spec["usages"] = []interface{}{"digital signature", "server auth", "code signing"}
@@ -95,7 +106,7 @@ func TestRunnerCertificateSpecMatchesCertManagerDefaults(t *testing.T) {
 
 func TestEnsureRunnerCertificateAcceptsOnlyReadyMatchingSecret(t *testing.T) {
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
-	certificate := runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID)
+	certificate := runnerCertificateObject(sandbox, testRunnerIssuer, runnerCredentialTestID)
 	certificate.SetUID(types.UID("certificate-uid"))
 	certificate.Object["status"] = map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"type": "Ready", "status": "True"}}}
 	secret := &corev1.Secret{
@@ -112,7 +123,7 @@ func TestEnsureRunnerCertificateAcceptsOnlyReadyMatchingSecret(t *testing.T) {
 		Data: map[string][]byte{"tls.crt": []byte("certificate"), "tls.key": []byte("private key")},
 	}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(certificate, secret).Build()
-	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 	if pending, err := r.ensureRunnerCertificate(context.Background(), sandbox, runnerCredentialTestID); err != nil || pending != nil {
 		t.Fatalf("matching Ready Certificate and Secret: pending=%v err=%v", pending, err)
 	}
@@ -130,14 +141,14 @@ func TestEnsureRunnerCertificateAcceptsOnlyReadyMatchingSecret(t *testing.T) {
 func TestEnsureRunnerCertificateUpgradesOnlyClientAuthUsage(t *testing.T) {
 	ctx := context.Background()
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
-	certificate := runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID)
+	certificate := runnerCertificateObject(sandbox, testRunnerIssuer, runnerCredentialTestID)
 	spec, _, _ := unstructured.NestedMap(certificate.Object, "spec")
 	spec["usages"] = []interface{}{"digital signature", "server auth"}
 	if err := unstructured.SetNestedMap(certificate.Object, spec, "spec"); err != nil {
 		t.Fatal(err)
 	}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, certificate).Build()
-	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 	if pending, err := r.ensureRunnerCertificate(ctx, sandbox, runnerCredentialTestID); err != nil || pending == nil || pending.reason != "CertificatePending" {
 		t.Fatalf("client-auth upgrade = pending %v, err %v; want certificate rotation pending", pending, err)
 	}
@@ -155,7 +166,7 @@ func TestEnsureRunnerCertificateUpgradesOnlyClientAuthUsage(t *testing.T) {
 func TestEnsureRunnerCertificateDoesNotRepairIdentityDriftDuringEKUUpgrade(t *testing.T) {
 	ctx := context.Background()
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
-	certificate := runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID)
+	certificate := runnerCertificateObject(sandbox, testRunnerIssuer, runnerCredentialTestID)
 	spec, _, _ := unstructured.NestedMap(certificate.Object, "spec")
 	spec["usages"] = []interface{}{"digital signature", "server auth"}
 	spec["dnsNames"] = []interface{}{"other.example"}
@@ -163,7 +174,7 @@ func TestEnsureRunnerCertificateDoesNotRepairIdentityDriftDuringEKUUpgrade(t *te
 		t.Fatal(err)
 	}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, certificate).Build()
-	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 	if pending, err := r.ensureRunnerCertificate(ctx, sandbox, runnerCredentialTestID); err != nil || pending == nil || pending.reason != "CertificateIdentityConflict" {
 		t.Fatalf("SAN drift = pending %v, err %v; want an identity conflict", pending, err)
 	}
@@ -302,7 +313,7 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, vm, vmi).Build()
-	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
 	if err != nil {
 		t.Fatal(err)
@@ -366,11 +377,11 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 			sandboxapi.EnvironmentRuntimeCredentialLabel: runnerCredentialTestID,
 		},
 	}}
-	certificate := runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID)
+	certificate := runnerCertificateObject(sandbox, testRunnerIssuer, runnerCredentialTestID)
 	certificate.SetUID(types.UID("certificate-uid"))
 	certificate.Object["status"] = map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"type": "Ready", "status": "True"}}}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, vm, vmi, certificate, runnerCredentialTestSecret(sandbox, runnerCredentialTestID)).Build()
-	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm, vmi: vmi}, true)
 	if err != nil || pending != nil {
 		t.Fatalf("accepted VMI: pending=%v err=%v", pending, err)
@@ -395,7 +406,7 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 		},
 	}, Spec: kubevirtv1.VirtualMachineSpec{RunStrategy: &halted}}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, vm).Build()
-	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 	w, pending, err := r.ensureVMRunnerCredential(ctx, sandbox, workload{vm: vm}, true)
 	if err != nil || pending == nil {
 		t.Fatalf("fresh VM credential should gate restart while cert-manager issues it: pending=%v err=%v", pending, err)
@@ -462,7 +473,7 @@ func TestDeletingVMRetainsOnlyPreviouslyPublishedLauncher(t *testing.T) {
 			}}
 			sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: launcher.Name, UID: "launcher-current"}
 			c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, vm.DeepCopy()).Build()
-			r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+			r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 			w, pending, err := r.ensureVMRunnerCredential(context.Background(), sandbox, workload{vm: vm.DeepCopy(), launcher: launcher}, true)
 			if err != nil || pending != nil {
 				t.Fatalf("deleting VM should not wait on credential mutation: pending=%v err=%v", pending, err)
@@ -497,7 +508,7 @@ func TestPodCredentialMismatchDoesNotPublishReplacementDuringFinalization(t *tes
 		},
 	}}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, pod).Build()
-	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 	w, pending, err := r.ensureRunnerCredential(ctx, sandbox, workload{pod: pod}, true)
 	if err != nil || pending == nil || pending.reason != "RunnerCredentialMismatch" {
 		t.Fatalf("replacement Pod should remain fenced: pending=%v err=%v", pending, err)
@@ -515,7 +526,7 @@ func TestDeleteOldRunnerCertificatesRemovesOnlyManagedStaleGeneration(t *testing
 	ctx := context.Background()
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: "sandboxes", Name: "test", UID: "sandbox-uid"}}
 	oldID := "fedcba9876543210fedcba9876543210"
-	oldCertificate := runnerCertificateObject(sandbox, "runner-issuer", oldID)
+	oldCertificate := runnerCertificateObject(sandbox, testRunnerIssuer, oldID)
 	oldCertificate.SetUID(types.UID("old-certificate-uid"))
 	activeID := runnerCredentialTestID
 	oldSecret := runnerCredentialTestSecret(sandbox, oldID)
@@ -609,7 +620,7 @@ func bindPod(t *testing.T, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) (sandbo
 	t.Helper()
 	ctx := context.Background()
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithStatusSubresource(&sandboxapi.Sandbox{}).WithObjects(sandbox, pod).Build()
-	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: "runner-issuer"}
+	r := &Reconciler{Client: c, Objects: c, RunnerCertificateIssuer: testRunnerIssuer}
 	var current sandboxapi.Sandbox
 	if err := c.Get(ctx, client.ObjectKeyFromObject(sandbox), &current); err != nil {
 		t.Fatal(err)
