@@ -206,6 +206,7 @@ ts_library(
     srcs = ["sandbox_autosuspend.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",

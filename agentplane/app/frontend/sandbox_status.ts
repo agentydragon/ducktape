@@ -1,4 +1,5 @@
 /** Presentation of Kubernetes' raw Sandbox and Pod status objects. */
+import { durationMs } from "@bufbuild/protobuf/wkt";
 import {
   SandboxPhase,
   OperatingMode,
@@ -47,7 +48,7 @@ export function sandboxOperatingMode(sandbox: EnvironmentDescriptor): string | n
 /** Converts a present protobuf Duration to seconds while keeping absent and zero durations distinct. */
 export function sandboxIdleSuspendAfterSeconds(sandbox: EnvironmentDescriptor): number | null {
   const duration = sandbox.configuration?.idleSuspendAfter;
-  return duration === undefined ? null : Number(duration.seconds) + duration.nanos / 1_000_000_000;
+  return duration === undefined ? null : durationMs(duration) / 1000;
 }
 
 export interface RawCondition {
