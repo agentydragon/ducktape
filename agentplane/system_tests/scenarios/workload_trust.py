@@ -17,7 +17,6 @@ import copy
 import json
 import ssl
 import tempfile
-import textwrap
 from collections.abc import Sequence
 from pathlib import Path
 from uuid import uuid4
@@ -218,35 +217,11 @@ async def a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
     )
 
 
-# The impostor runner: a TLS server on the control port that serves the Sandbox's own credential
-# until the Gateway completes one handshake with it, then the mounted cluster-root leaf. Under TLS
-# 1.3 the server's handshake completes only once the client has verified the server certificate, so
-# each line records whether the dialing client accepted what was served.
-_IMPOSTOR_LEAF_PATH = "/run/agentplane/impostor-leaf"
-_IMPOSTOR_SCRIPT = textwrap.dedent(
-    f"""\
-    import json, socket, ssl
-    own = ("/run/agentplane/environment-runtime-tls/tls.crt", "/run/agentplane/environment-runtime-tls/tls.key")
-    impostor = ("{_IMPOSTOR_LEAF_PATH}/tls.crt", "{_IMPOSTOR_LEAF_PATH}/tls.key")
-    serving = "own"
-    listener = socket.create_server(("0.0.0.0", {_RUNNER_CONTROL_PORT}))
-    while True:
-        connection, peer = listener.accept()
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(*(own if serving == "own" else impostor))
-        context.set_alpn_protocols(["h2"])
-        connection.settimeout(30)
-        try:
-            context.wrap_socket(connection, server_side=True).close()
-            outcome = "accepted"
-        except (OSError, ssl.SSLError) as error:
-            outcome = str(error)
-            connection.close()
-        print(json.dumps({{"peer": peer[0], "serving": serving, "outcome": outcome}}), flush=True)
-        if outcome == "accepted":
-            serving = "impostor"
-    """
-)
+# Where the impostor Sandbox's Runtime reads its serving certificate: a Secret volume, which kubelet
+# updates in place and the Runtime reloads on its next handshake.
+_SERVING_LEAF_PATH = "/run/agentplane/impostor-leaf"
+_RUNTIME_CONFIG_VOLUME = "environment-runtime-config"
+_RUNTIME_CONFIG_KEY = "environment-runtime.json"
 
 
 async def _object(cluster: Cluster, kind: str, name: str) -> dict:
@@ -267,35 +242,78 @@ async def _sandbox_status(cluster: Cluster, name: str, *path: str) -> object:
             await asyncio.sleep(1)
 
 
+async def _put_tls_secret(cluster: Cluster, name: str, crt: bytes, key: bytes) -> None:
+    await cluster.kubectl(
+        "apply",
+        "-f",
+        "-",
+        body={
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": name, "namespace": cluster.namespace},
+            "type": "kubernetes.io/tls",
+            "data": {"tls.crt": base64.b64encode(crt).decode(), "tls.key": base64.b64encode(key).decode()},
+        },
+    )
+
+
+async def _gateway_handshake_failures(cluster: Cluster, sandbox: str) -> list[str]:
+    """The errors of the Gateway's failed attempts to observe `sandbox`'s runner."""
+    logs = await cluster.kubectl(
+        "logs", "-l", "app.kubernetes.io/name=runner-gateway", "--tail=-1", "--since=10m", "--prefix=false"
+    )
+    failures = []
+    for line in logs.splitlines():
+        with contextlib.suppress(json.JSONDecodeError):
+            record = json.loads(line)
+            if record.get("msg") == "runner observer reconnecting" and record.get("sandbox") == sandbox:
+                failures.append(record["error"])
+    return failures
+
+
 async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
     cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
 ) -> None:
-    """A Sandbox whose runner container is the impostor server: the Gateway dials its Pod address as
-    it would a runner's, completing a handshake with the Sandbox's own credential and refusing a
-    `cluster-internal-ca` leaf naming the same runner URI, while the real runner `view` stays connected."""
+    """A Sandbox whose own Runtime serves a `cluster-internal-ca` leaf naming its runner URI: the
+    Gateway dials it at the runner's Pod address and fails the TLS handshake, and the Sandbox is not
+    Ready. Swapping the same file to the Sandbox's own credential makes it Ready, so the Gateway was
+    dialing that address and only the issuer differed. The real runner `view` stays connected."""
     name = f"systest-impostor-{uuid4().hex[:8]}"
     base = await _object(cluster, f"sandboxtemplates.{GROUP}", POD_TEMPLATE)
     spec = copy.deepcopy(base["spec"])
     pod = spec["pod"]["spec"]
-    runtime = next(c for c in pod["containers"] if c["name"] == ENVIRONMENT_RUNTIME_CONTAINER)
-    for probe in ("readinessProbe", "livenessProbe", "startupProbe"):
-        runtime.pop(probe, None)
-    runtime |= {
-        "command": ["python3", "-c", _IMPOSTOR_SCRIPT],
-        "args": [],
-        "resources": {"requests": {"cpu": "10m", "memory": "64Mi"}, "limits": {"memory": "256Mi"}},
-        "volumeMounts": [
-            *runtime.get("volumeMounts", []),
-            {"name": "impostor-leaf", "mountPath": _IMPOSTOR_LEAF_PATH, "readOnly": True},
-        ],
+    config_volume = next(v for v in pod["volumes"] if v["name"] == _RUNTIME_CONFIG_VOLUME)
+    base_config = await _object(cluster, "configmap", config_volume["configMap"]["name"])
+    runtime_config = json.loads(base_config["data"][_RUNTIME_CONFIG_KEY])
+    # The cluster bundle still verifies the Runtime's own chain, so it starts with the impostor leaf.
+    runtime_config["control"]["security"]["tls"] |= {
+        "cert_file": f"{_SERVING_LEAF_PATH}/tls.crt",
+        "key_file": f"{_SERVING_LEAF_PATH}/tls.key",
     }
-    pod["containers"] = [runtime]
+    config_volume["configMap"]["name"] = name
+    runtime = next(c for c in pod["containers"] if c["name"] == ENVIRONMENT_RUNTIME_CONTAINER)
+    runtime["volumeMounts"] = [
+        *runtime.get("volumeMounts", []),
+        {"name": "impostor-leaf", "mountPath": _SERVING_LEAF_PATH, "readOnly": True},
+    ]
     # Kubelet holds the Pod until the Secret exists, which needs the URI the controller allocates.
-    pod["volumes"] = [*pod.get("volumes", []), {"name": "impostor-leaf", "secret": {"secretName": name}}]
+    pod["volumes"].append({"name": "impostor-leaf", "secret": {"secretName": name}})
     gateway_settings = yaml.safe_load(
         (await _object(cluster, "configmap", "runner-gateway-settings"))["data"]["settings.yaml"]
     )
     async with contextlib.AsyncExitStack() as cleanup:
+        await cluster.kubectl(
+            "create",
+            "-f",
+            "-",
+            body={
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {"name": name, "namespace": cluster.namespace},
+                "data": {_RUNTIME_CONFIG_KEY: json.dumps(runtime_config)},
+            },
+        )
+        cleanup.push_async_callback(cluster.kubectl, "delete", "configmap", name, "--wait=false")
         await cluster.kubectl(
             "create",
             "-f",
@@ -323,9 +341,8 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
                 },
             },
         )
-        cleanup.push_async_callback(
-            cluster.kubectl, "delete", f"sandboxes.{GROUP}", name, f"--timeout={READY_SECONDS}s"
-        )
+        cleanup.push_async_callback(cluster.kubectl, "delete", "secret", name, "--wait=false")
+        cleanup.push_async_callback(cluster.kubectl, "delete", f"sandboxes.{GROUP}", name, "--timeout=300s")
         credential = await _sandbox_status(cluster, name, "runnerCredential", "id")
         async with asyncio.timeout(READY_SECONDS):
             while True:
@@ -334,40 +351,21 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
                     break
                 await asyncio.sleep(1)
         (uri,) = runtime_certificate["spec"]["uris"]
-        crt, key = await _cluster_ca_leaf(cluster, uri, ("digital signature", "server auth", "client auth"))
-        await cluster.kubectl(
-            "create",
-            "-f",
-            "-",
-            body={
-                "apiVersion": "v1",
-                "kind": "Secret",
-                "metadata": {"name": name, "namespace": cluster.namespace},
-                "type": "kubernetes.io/tls",
-                "data": {"tls.crt": base64.b64encode(crt).decode(), "tls.key": base64.b64encode(key).decode()},
-            },
-        )
-        cleanup.push_async_callback(cluster.kubectl, "delete", "secret", name, "--wait=false")
-        incarnation = await _sandbox_status(cluster, name, "incarnation", "name")
-        gateway_pods = json.loads(
-            await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
-        )["items"]
-        gateway_ips = {pod["status"]["podIP"] for pod in gateway_pods if pod["status"].get("podIP")}
-        outcomes: dict[str, list[str]] = {}
+        impostor = await _cluster_ca_leaf(cluster, uri, ("digital signature", "server auth", "client auth"))
+        await _put_tls_secret(cluster, name, *impostor)
+
         async with asyncio.timeout(READY_SECONDS):
-            while not (outcomes.get("own") and outcomes.get("impostor")):
+            while True:
+                failures = await _gateway_handshake_failures(cluster, name)
+                if any("authentication handshake failed" in error for error in failures):
+                    break
                 await asyncio.sleep(2)
-                with contextlib.suppress(RuntimeError):
-                    logs = await cluster.kubectl("logs", f"pod/{incarnation}", "-c", ENVIRONMENT_RUNTIME_CONTAINER)
-                    outcomes = {}
-                    for line in logs.splitlines():
-                        record = json.loads(line)
-                        if record["peer"] in gateway_ips:
-                            outcomes.setdefault(record["serving"], []).append(record["outcome"])
-        assert outcomes["own"][-1] == "accepted", f"the Gateway refused the Sandbox's own SVID: {outcomes['own']}"
-        assert "accepted" not in outcomes["impostor"], (
-            f"the Gateway accepted a cluster-internal-ca leaf naming {uri}: {outcomes['impostor']}"
-        )
+        sandbox = await _object(cluster, f"sandboxes.{GROUP}", name)
+        ready = next((c for c in sandbox["status"].get("conditions", []) if c["type"] == "Ready"), {})
+        assert ready.get("status") != "True", f"a Sandbox serving a cluster-internal-ca leaf naming {uri} is Ready"
+
+        await _put_tls_secret(cluster, name, *await _secret_pem(cluster, cluster.namespace, f"runner-{credential}"))
+        await cluster.kubectl("wait", f"sandboxes.{GROUP}/{name}", "--for=condition=Ready=True", "--timeout=300s")
     # The Gateway's real runner connection still holds: a Sandbox is Ready only while its runner is connected.
     await cluster.kubectl(
         "wait",
