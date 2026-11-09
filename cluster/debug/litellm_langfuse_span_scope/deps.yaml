@@ -1,0 +1,157 @@
+# Ephemeral Langfuse dependencies for the scratch experiment. Everything uses emptyDir, so
+# deleting the namespace leaves nothing behind (no PVCs on the overcommitted thin pools).
+# Credentials come from the `scratch-secrets` Secret that setup.sh generates.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scratch-langfuse-tracing
+  annotations:
+    description: Scratch LiteLLM + Langfuse for comparing trace export configs; delete when done.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: scratch-langfuse-tracing
+spec:
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      nodeSelector: { topology.kubernetes.io/zone: hil-ovh }
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - { name: POSTGRES_USER, value: langfuse }
+            - { name: POSTGRES_DB, value: langfuse }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: scratch-secrets, key: postgres-password } }
+          ports: [{ containerPort: 5432 }]
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: scratch-langfuse-tracing
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  namespace: scratch-langfuse-tracing
+spec:
+  selector:
+    matchLabels: { app: valkey }
+  template:
+    metadata:
+      labels: { app: valkey }
+    spec:
+      nodeSelector: { topology.kubernetes.io/zone: hil-ovh }
+      containers:
+        - name: valkey
+          image: valkey/valkey:9-alpine
+          args: ["--requirepass", "$(VALKEY_PASSWORD)", "--save", ""]
+          env:
+            - name: VALKEY_PASSWORD
+              valueFrom: { secretKeyRef: { name: scratch-secrets, key: valkey-password } }
+          ports: [{ containerPort: 6379 }]
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  namespace: scratch-langfuse-tracing
+spec:
+  selector: { app: valkey }
+  ports: [{ port: 6379 }]
+---
+# Single non-replicated server, as in Langfuse's docker-compose; the chart runs with
+# clickhouse.cluster.enabled=false so migrations skip ON CLUSTER DDL.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse
+  namespace: scratch-langfuse-tracing
+spec:
+  selector:
+    matchLabels: { app: clickhouse }
+  template:
+    metadata:
+      labels: { app: clickhouse }
+    spec:
+      nodeSelector: { topology.kubernetes.io/zone: hil-ovh }
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:26.8
+          env:
+            - { name: CLICKHOUSE_USER, value: langfuse }
+            - { name: CLICKHOUSE_DB, value: langfuse }
+            - { name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT, value: "1" }
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom: { secretKeyRef: { name: scratch-secrets, key: clickhouse-password } }
+          ports: [{ containerPort: 8123 }, { containerPort: 9000 }]
+          resources:
+            requests: { cpu: 200m, memory: 1Gi }
+            limits: { memory: 3Gi }
+          volumeMounts: [{ name: data, mountPath: /var/lib/clickhouse }]
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: scratch-langfuse-tracing
+spec:
+  selector: { app: clickhouse }
+  ports:
+    - { name: http, port: 8123 }
+    - { name: native, port: 9000 }
+---
+# Single-process SeaweedFS (the image the langfuse chart bundles) with S3 and no identities
+# configured, so it accepts any credentials. setup.sh creates the bucket.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3
+  namespace: scratch-langfuse-tracing
+spec:
+  selector:
+    matchLabels: { app: s3 }
+  template:
+    metadata:
+      labels: { app: s3 }
+    spec:
+      nodeSelector: { topology.kubernetes.io/zone: hil-ovh }
+      containers:
+        - name: seaweedfs
+          image: chrislusf/seaweedfs:3.95
+          args: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-master.volumeSizeLimitMB=64"]
+          ports: [{ containerPort: 8333 }]
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+  namespace: scratch-langfuse-tracing
+spec:
+  selector: { app: s3 }
+  ports: [{ port: 8333 }]

@@ -1,0 +1,4 @@
+LITELLM_OTEL_V2=true
+OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=span_only
+LITELLM_OTEL_LANGFUSE_SPAN_SCOPE=llm_only
+EXPORTERS=[{"kind":"otlp_http","endpoint":"http://langfuse-web:3000/api/public/otel","headers":"@OTLP_HEADERS@","owner":"langfuse_otel"}]
