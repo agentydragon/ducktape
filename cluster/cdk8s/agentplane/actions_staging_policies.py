@@ -757,7 +757,7 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
     )
 
     # haku-ui, Haku's operator UI, shares the Home Assistant and Grocy SF read sets with haku-anki.
-    # Its legacy direct Action route is removed; its sidecar retains the TLS/bearer proxy hop.
+    # Its legacy direct Action route is removed; its sidecar presents its standing SVID to the proxy.
     # haku-anki runs as this account too, for AnkiWeb sync: the one external host it needs (`sync.ankiweb.net`
     # and the `syncNN` shard hosts it redirects accounts to; `*.` never matches the apex, and these are
     # subdomains). It reaches it through an egress sidecar rather than the namespace-wide haku-egress-proxy, so

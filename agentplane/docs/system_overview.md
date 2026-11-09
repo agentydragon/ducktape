@@ -582,7 +582,8 @@ flowchart LR
     workload --> box_sidecar
     runner --> sidecar -->|mTLS Runtime SVID :8888| egress
     guest --> relay -->|mTLS Runtime SVID :8888| egress
-    nonSandbox[Action boxes and Haku sidecars] -->|TLS and Pod-bound bearer :8888| egress
+    nonSandbox[Action boxes] -->|TLS and Pod-bound bearer :8888| egress
+    standing[Haku UI and Anki sidecars] -->|mTLS standing SVID :8888| egress
     app -->|admin API on shared TLS gRPC listener :8081| egress
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|policy-approved requests| other

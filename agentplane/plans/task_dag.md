@@ -3016,7 +3016,7 @@ keep a bearer hop, each marked `CLEANUP(added 2026-11-09)` (`WORKLOAD_AUTH_CUTOV
 
 ```mermaid
 flowchart LR
-    WORKLOAD_AUTH_CUTOVER[In progress: lifecycle steps 3 and 4, then bearer removal]
+    WORKLOAD_AUTH_CUTOVER[In progress: lifecycle step 3, then bearer removal]
     APP_IDENTITIES_UI[In progress: identities in the app]
     WORKLOAD_CA_CLIENT_TRUST[Ready: Firecracker runners' control listener trusts the workload CA alone]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
@@ -3043,14 +3043,13 @@ also passes against the Firecracker template.
 
 ### `WORKLOAD_AUTH_CUTOVER` — migrate workload callers and remove the proxy bearer hop
 
-**In progress (team lead, 2026-11-09): steps 1 and 2 of the
-[workload identity lifecycle](workload_identity_lifecycle.md) landed; step 3, Action boxes, and
-step 4, standing workloads, are in flight as separate changes (step 4's order is in the plan);
-step 5, bearer removal, follows.**
+**In progress (team lead, 2026-11-09): steps 1, 2 and 4 (standing workloads) of the
+[workload identity lifecycle](workload_identity_lifecycle.md) landed; step 3, Action boxes, is in
+flight; step 5, bearer removal, follows.**
 The lifecycle plan holds each step's records, k3s proof and rollback; the issuer and resolver
 contract is in [workload authentication](../docs/workload_authentication.md#workloadcredentials).
-Until step 5, keep the proxy's explicit `kubernetes_bearer` mode and the non-Sandbox sidecars'
-Pod-bound projections; Sandbox templates use SVIDs and do not project the hop bearer. Keep the
+Until step 5, keep the proxy's explicit `kubernetes_bearer` mode and the Action boxes' Pod-bound
+projections; Sandbox templates use SVIDs and do not project the hop bearer. Keep the
 shared TLS listener and service-owned verification, without proxy identity assertions or insecure
 transport fallback. Haku's separate ActionClient migration remains deferred in the
 [task freezer](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client).

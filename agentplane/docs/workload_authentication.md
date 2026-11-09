@@ -69,7 +69,27 @@ The issuer reads the owner reference as data and never reads the owner. Its cont
 - **Subjects** change only together with a new binding, and `spec.pod` only with a new binding
   (CRD transition rules), so a running incarnation is never re-pointed.
 - **Who writes:** the Sandbox Controller and the Action Service may create, update and delete records
-  in their namespace; only the Policy Controller may write `workloadcredentials/status`.
+  in their namespace, and Flux applies standing ones; only the Policy Controller may write
+  `workloadcredentials/status`.
+
+### Standing workloads
+
+A record with no owner and no binding is standing: a workload with replicas, not a controller-owned
+incarnation. cdk8s renders Haku UI's (`haku-ui`, a StatefulSet) and Anki's (`haku-anki`, a
+Deployment) into `haku-sandbox` (`cluster/cdk8s/haku/ui_egress.py`), both with subject `haku-ui`;
+Haku's deployer Role cannot write a record. The issuer keeps its one credential ID and names its
+Secret `svid-<name>`, which `haku-state`'s `k8s/` mounts into that workload's egress sidecar alone.
+Any Pod Haku creates in `haku-sandbox` could mount it, the reach the `haku-ui` ServiceAccount
+already gives.
+
+Every replica presents the same SVID and proves no Pod: the proxy drops any Pod token such a caller
+forwards, and decisions record no source Pod ([egress SPEC](../egress/SPEC.md)). This is weaker
+than a per-incarnation credential. Revocation is deleting the record, which Flux recreates with a
+fresh ID, or a Flux prune.
+
+**Gotcha:** a running sidecar refuses a reloaded SVID whose URI differs from the first it loaded
+(`environment_runtime_transport` pins it), so after a record is recreated the workload regains
+egress only on a rollout restart. Routine renewals keep the URI.
 
 ### How a verifier resolves a peer
 
@@ -209,7 +229,7 @@ metadata header. Its server-held LiteLLM key is never exposed to the runner. See
 
 ## Non-Sandbox and future callers
 
-Action command/build boxes and Haku UI/Anki retain Pod-bound bearer credentials over verified TLS;
+Action command/build boxes retain Pod-bound bearer credentials over verified TLS;
 the relevant listener audience and service method policy still decide whether each call is admitted.
 These configured workload paths remain active while Sandbox traffic uses SVIDs. The independent
 identity and SVID lifecycle for non-Sandbox and future callers remains deferred.
