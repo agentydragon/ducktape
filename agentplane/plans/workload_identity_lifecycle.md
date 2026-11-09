@@ -222,15 +222,15 @@ no Pod is proven. Revocation is a Flux prune. Rotation is a `rotation` bump in c
 
 This is migration step 2 and the size of the reshuffle:
 
-| Today in the Sandbox Controller                                                                                                            | Moves to                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| Minting credential IDs (`newRunnerCredentialID`) and composing the URI (`runnerCertificateURI`)                                            | `issuer`                                    |
-| Building, creating, spec-matching and usage-upgrading `runner-<id>` Certificates (`ensureRunnerCertificate`, `runnerCertificateObject`)    | `issuer`                                    |
-| Waiting for Ready and validating the issued Secret; the `Certificate*` and `CertificateSecret*` conditions                                 | `issuer`, surfaced as request conditions    |
-| Deleting superseded generations' Certificates and Secrets (`deleteOldRunnerCertificates`), and that finalizer step                         | `issuer`; garbage collection of the request |
-| `status.runnerCredential.id` and `acceptedId`                                                                                              | `WorkloadCredential.status`                 |
-| The `runner_certificate_issuer` setting; RBAC for Certificate create and delete and Secret delete                                          | Policy Controller settings and RBAC         |
-| Verifier lookups: `sandboxreader.FindRunnerCredential` and `RunnerCredentialAccount`, and the Sandbox read in `workload_auth/auth/svid.go` | `resolver`; verifiers drop Sandbox reads    |
+| Today in the Sandbox Controller                                                                                                                                                                 | Moves to                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Minting credential IDs (`newRunnerCredentialID`) and composing the URI (`runnerCertificateURI`)                                                                                                 | `issuer`                                    |
+| Building, creating, spec-matching and usage-upgrading `runner-<id>` Certificates (`ensureRunnerCertificate`, `runnerCertificateObject`); the `update` RBAC the upgrade needs is fixed in #15089 | `issuer`                                    |
+| Waiting for Ready and validating the issued Secret; the `Certificate*` and `CertificateSecret*` conditions                                                                                      | `issuer`, surfaced as request conditions    |
+| Deleting superseded generations' Certificates and Secrets (`deleteOldRunnerCertificates`), and that finalizer step                                                                              | `issuer`; garbage collection of the request |
+| `status.runnerCredential.id` and `acceptedId`                                                                                                                                                   | `WorkloadCredential.status`                 |
+| The `runner_certificate_issuer` setting; RBAC for Certificate create and delete and Secret delete                                                                                               | Policy Controller settings and RBAC         |
+| Verifier lookups: `sandboxreader.FindRunnerCredential` and `RunnerCredentialAccount`, and the Sandbox read in `workload_auth/auth/svid.go`                                                      | `resolver`; verifiers drop Sandbox reads    |
 
 What stays with the Sandbox Controller is deciding when an incarnation needs a new generation and
 which Pod or VMI it accepts. It also keeps labelling and mounting: `withRunnerTLS`,
@@ -261,7 +261,8 @@ Step 5 removes the `CLEANUP(added 2026-11-09)` set from #15065:
 - the forward listener's bearer mode and hop verifier (`egress/identity/authentication.go`).
 
 It also deletes or converts `cluster/cdk8s/public_coder/egress.py:63`, which renders both removed
-models. That config is dead: the `public-coder-agent` Deployment is scaled to 0/0. `kubernetes_bearer` stays on service listeners for backend callers.
+models. That config is dead: the `public-coder-agent` Deployment is scaled to 0/0, and #15089
+tombstones it. `kubernetes_bearer` stays on service listeners for backend callers.
 
 **With `IDENTITY_CUTOVER`.** Box creation needs the caller's own ServiceAccount. `stamp` in
 `action_service/sandbox/inventory.go` reads it, runs the box as it, and sets the box's owner
