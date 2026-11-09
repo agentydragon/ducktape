@@ -27,6 +27,7 @@ use super::frame::{
     LocalFrame, LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
 use crate::execution_evidence::OrderedFieldReadRefusal;
+use crate::facts::EffectCell;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use std::collections::BTreeMap;
@@ -1539,7 +1540,10 @@ fn read_field(
             let selection =
                 CallableSelection::observed(&read.values, selection_dependencies.clone());
             frame.ledger.heap_accesses.reads.insert(read.cell);
-            let mut effects = EffectCoverageFragment::lexical_operation();
+            // [[Get]] of a present own data property runs no getter,
+            // prototype lookup, global or host operation; its one heap
+            // effect is the slot cell recorded above.
+            let mut effects = EffectCoverageFragment::no_effects();
             if module_prefix {
                 effects.depend_on(selection_dependencies.as_ref());
             }
@@ -1628,14 +1632,25 @@ fn store_field(
         .property_is_writable(slot.object, property)
         .then(|| context.current_prerequisites());
     frame.ledger.heap_accesses.writes.insert(slot.cell());
+    // Writability is an attribute of the object's shape: a later
+    // redefinition or integrity change must stay ordered after this store.
+    frame
+        .ledger
+        .heap_accesses
+        .reads
+        .insert(EffectCell::ObjectShape(slot.object));
     context.world_mut().literal_heap().write_property(
         slot.object,
         Some(property.to_owned()),
         values,
     );
+    // [[Set]] on an existing writable own data property of an ordinary
+    // object with settled accessors replaces its value: no setter, prototype
+    // lookup, global or host operation runs. The one heap effect is the
+    // slot cell recorded above.
     let effects = match write_dependencies {
         Some(dependencies) => {
-            let mut effects = EffectCoverageFragment::lexical_operation();
+            let mut effects = EffectCoverageFragment::no_effects();
             effects.depend_on(dependencies.as_ref());
             effects
         }

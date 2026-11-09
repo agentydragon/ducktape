@@ -238,9 +238,10 @@ pub(super) struct LocalBody {
     pub(super) bindings: BTreeMap<Id, LocalBinding>,
     pub(super) parameters: Arc<[LocalParameter]>,
     pub(super) operations: Arc<[LocalOperation]>,
-    /// Present only for a root variable initializer lowered from its exact
-    /// canonical source expression. Callable bodies have no root-owner span.
-    initializer_span: Option<Span>,
+    /// Present only for a root variable initializer or top-level expression
+    /// statement lowered from its exact canonical source expression. Callable
+    /// bodies have no root-owner span.
+    root_span: Option<Span>,
     /// Sorted source reads outside this body's parameters and declarations.
     /// Shared across body clones and reused by every invocation/provider query.
     free_reads: Option<Arc<[Id]>>,
@@ -1103,14 +1104,57 @@ fn ordered_primitive_binary(op: BinaryOp) -> bool {
 impl LocalBody {
     pub(super) fn from_initializer(expression: &Expr) -> Option<Self> {
         let mut body = Self::lower_expression_with_binary(std::iter::empty(), expression, false)?;
-        body.initializer_span = Some(expression.span());
+        body.root_span = Some(expression.span());
         Some(body)
+    }
+
+    /// A top-level expression statement as one ordered `Evaluate`: its
+    /// completion value is discarded, so the body has no return.
+    pub(super) fn from_expression_statement(expression: &Expr) -> Option<Self> {
+        let mut body = Self::from_operations(
+            BTreeMap::new(),
+            Vec::new(),
+            vec![LocalOperation::Evaluate(
+                LocalExpression::lower_with_binary(expression, false, false)?,
+            )],
+        );
+        body.root_span = Some(expression.span());
+        Self::without_constructions(body)
+    }
+
+    /// `receiver.property = value` as the whole root statement, where the
+    /// value runs no code and stores nothing: a primitive literal, a binding
+    /// read or a function/arrow creation. The store is the statement's only
+    /// heap operation, so a writable slot found at the prefix is the slot
+    /// the store reaches. Selection only; the kernel's store rule proves it.
+    pub(super) fn root_field_store_statement(&self) -> Option<(&Id, &str)> {
+        self.root_span?;
+        let [
+            LocalOperation::Evaluate(LocalExpression::AssignField {
+                receiver,
+                property,
+                value,
+                ..
+            }),
+        ] = self.operations.as_ref()
+        else {
+            return None;
+        };
+        matches!(
+            value.as_ref(),
+            LocalExpression::PrimitiveLiteral(_)
+                | LocalExpression::Value(ValueExpr::Binding(_))
+                | LocalExpression::Closure(
+                    DeferredCallableCreation::Function(_) | DeferredCallableCreation::Arrow(_)
+                )
+        )
+        .then_some((receiver, property.as_str()))
     }
 
     /// Exact terminal source call, with no other root operation or operand.
     /// This selects ordered execution, never positive effect coverage.
     pub(super) fn single_identifier_call_initializer(&self) -> Option<Span> {
-        self.initializer_span?;
+        self.root_span?;
         match self.operations.as_ref() {
             [
                 LocalOperation::Return(Some(LocalExpression::Call {
@@ -1128,7 +1172,7 @@ impl LocalBody {
     pub(super) fn single_identifier_call_with_function_argument_initializer(
         &self,
     ) -> Option<(&Id, Span)> {
-        self.initializer_span?;
+        self.root_span?;
         match self.operations.as_ref() {
             [
                 LocalOperation::Return(Some(LocalExpression::Call {
@@ -1471,7 +1515,7 @@ impl LocalBody {
             bindings,
             parameters: parameters.into(),
             operations: operations.into(),
-            initializer_span: None,
+            root_span: None,
             free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),
             captured_writes: (!writes.is_empty()).then(|| writes.into_iter().collect()),
             allocation_only_syntax,
@@ -1518,8 +1562,8 @@ impl LocalBody {
         self.free_reads.as_deref().unwrap_or_default()
     }
 
-    pub(super) fn initializer_span(&self) -> Option<Span> {
-        self.initializer_span
+    pub(super) fn root_span(&self) -> Option<Span> {
+        self.root_span
     }
 
     pub(super) fn captured_writes(&self) -> &[Id] {
@@ -1562,7 +1606,7 @@ impl LocalBody {
 
     /// The exact root `new callee(...)` with no other root operation.
     pub(super) fn single_construction_initializer(&self) -> Option<(&Id, Span)> {
-        self.initializer_span?;
+        self.root_span?;
         match self.operations.as_ref() {
             [LocalOperation::Return(Some(LocalExpression::Construct { callee, span, .. }))] => {
                 Some((callee, *span))

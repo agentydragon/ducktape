@@ -6107,6 +6107,9 @@ pub(super) struct ExecutionIndex {
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     pub(super) top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     pub(super) ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
+    /// Top-level expression statements lowered from their exact source
+    /// expression. Lowering selects nothing: `roots/operands` admits one.
+    pub(super) ordered_statements: BTreeMap<SourceUnitOrdinal, LocalBody>,
     /// Canonical owner/binding/initializer identity, independent of the
     /// legacy initializer leaf and allocation admission.
     pub(super) initialization_source_identities:
@@ -6311,6 +6314,7 @@ impl Default for ExecutionIndex {
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
             ordered_initializers: BTreeMap::new(),
+            ordered_statements: BTreeMap::new(),
             initialization_source_identities: BTreeMap::new(),
             noninvoking_initializers: BTreeMap::new(),
             initialization_coverage_refusals: Vec::new(),
@@ -9428,8 +9432,13 @@ impl ExecutionIndex {
                     .iter()
                     .all(|callee| index.class_ids.contains(callee))
             {
-                debug_assert_eq!(body.initializer_span(), Some(expression.span()));
+                debug_assert_eq!(body.root_span(), Some(expression.span()));
                 index.ordered_initializers.insert(owner, body);
+            }
+            if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Expr(statement))) = item
+                && let Some(body) = LocalBody::from_expression_statement(&statement.expr)
+            {
+                index.ordered_statements.insert(owner, body);
             }
             let source_identity = InitializationSourceIdentity::collect(item, owner);
             if let Ok((identity, _)) = &source_identity {
@@ -9487,7 +9496,7 @@ impl ExecutionIndex {
                         && let Pat::Ident(binding) = &declarator.name
                         && let Some(expression) = declarator.init.as_deref()
                         && let Some(body) = LocalBody::from_initializer(expression)
-                        && body.initializer_span() == Some(expression.span())
+                        && body.root_span() == Some(expression.span())
                         && index
                             .initialization_source_identities
                             .get(&owner)

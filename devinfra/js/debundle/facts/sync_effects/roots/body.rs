@@ -4,7 +4,7 @@
 use super::super::effect_coverage::RootInitializerIdentity;
 use super::super::interpreter::{Executor, LocalActivation, Outcome};
 use super::super::kernel::frame::SelectedValue;
-use super::super::value_model::Context;
+use super::super::value_model::{Context, Values};
 use super::operands::RootOperands;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionOperation};
 use std::collections::BTreeSet;
@@ -29,6 +29,7 @@ pub(super) fn execute(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'
         prevalidated_metadata,
         certified_deferred_write,
         ordered_initializer,
+        ordered_statement,
         ref mut top_env,
         ref top_captures,
         ref mut settled_array_elements,
@@ -53,7 +54,7 @@ pub(super) fn execute(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'
             LocalActivation::RootInitializer(RootInitializerIdentity {
                 owner,
                 binding: binding.clone(),
-                initializer_span: body.initializer_span(),
+                initializer_span: body.root_span(),
             }),
         );
         Some(SelectedValue {
@@ -61,9 +62,25 @@ pub(super) fn execute(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'
             selection: outcome.return_selection.take(),
         })
     } else {
+        if let Some(body) = ordered_statement {
+            // The statement's completion value is discarded.
+            outcome = executor.execute_local_body(
+                body,
+                Context::new(),
+                None,
+                owner,
+                LocalActivation::RootStatement,
+            );
+            outcome.returns = Values::new();
+            outcome.return_selection = None;
+        }
         None
     };
-    if ordered_initializer.is_none() {
+    // CLEANUP(added 2026-11-09): delete this flattened lane with L4e. It
+    //   still decides every root owner outside the kernel's admitted roots
+    //   (`ordered_initializer`, and `ordered_statement` through the kernel's
+    //   `store_field` rule), and the legacy gate reads what it computes.
+    if ordered_initializer.is_none() && ordered_statement.is_none() {
         // A source owner is indivisible, but can assign an existing binding
         // before one of its calls, e.g. `(reader = () => later, host())`.
         // Join these possible values before the flattened calls. Keep the

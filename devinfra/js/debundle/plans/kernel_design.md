@@ -29,9 +29,6 @@ the family when every leaf has completed; the contract is in
   (`roots/operands.rs`, the `ordered_initializer` families). Admitting it
   needs a typed loss for an unproved member read at the root instead of the
   remainder summary, or legacy-accepted roots regress.
-- **Field reads under a fork.** An own-data read leaves the initialization
-  domains unknown (`EffectCoverageFragment::lexical_operation`), so a test on
-  a record field forks but its owner is not initialization-covered.
 - **Other fork producers**: optional calls and member access, `if` regions.
   They reuse `LocalSuspension::Fork` and the same join.
 - **The receiver-flow join** in `execution_index.rs` stays a separate

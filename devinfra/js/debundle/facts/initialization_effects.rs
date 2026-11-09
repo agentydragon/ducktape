@@ -90,6 +90,13 @@ pub enum OwnerInitializationCoverageRefusalReason {
     UnsupportedInitializer,
     OwnerBindingMismatch,
     InitializerResultUnproved,
+    /// A root `receiver.property = value` statement whose receiver is not an
+    /// initialized module record with a writable own data slot at its
+    /// prefix: a global publication, a new property or an unproved alias.
+    UnprovedFieldStore,
+    /// An admitted root statement executed normally, but one of its
+    /// operations has no closed effect receipt.
+    UnprovedStatementOperation,
     UnknownCall,
     PrecisionLoss,
     UninitializedRead,
@@ -194,6 +201,16 @@ impl StatementFacts {
         }
         let completed = own_heap.completed_initialization;
         effects.coverage_dependencies = completed.map(|proof| proof.dependencies());
+        if completed.is_some() {
+            // The receipt's general-heap domain is closed: every member write
+            // the owner executed was a modeled store whose exact cell is in
+            // its synchronous heap contents, recorded below. That attributes
+            // what the syntactic member-write bail could not. The bail itself
+            // stays: the legacy S-chain reads only syntactic cells.
+            effects
+                .dataflow_opacity
+                .remove(&DataflowOpacityCause::MemberWriteOrAlias);
+        }
         if completed.is_none() {
             effects.unknown_coverage.extend([
                 UnknownEffectCoverage::GlobalProperties,

@@ -167,6 +167,20 @@ impl CompletedInitialization {
         })
     }
 
+    /// Seal an admitted root expression statement (`roots/operands`) whose
+    /// ordered execution completed normally with every operation covered.
+    /// The statement initializes no binding; its binding reads and rebinds
+    /// stay the owner's syntactic cells.
+    pub(super) fn from_root_statement_effects(
+        owner: SourceUnitOrdinal,
+        effects: &EffectCoverageFragment,
+    ) -> Option<Self> {
+        Some(Self {
+            owner,
+            dependencies: effects.normal_dependencies()?,
+        })
+    }
+
     pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
         self.owner == owner
     }

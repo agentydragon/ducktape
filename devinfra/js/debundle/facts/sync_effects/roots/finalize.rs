@@ -40,6 +40,7 @@ pub(super) fn finalize(
         record_factory_rejection,
         checked_local_constructor_factory,
         provisional_roots,
+        ordered_statement,
         effect_initializer_source,
         ..
     } = root;
@@ -188,6 +189,16 @@ pub(super) fn finalize(
             &outcome.effect_coverage,
         );
     }
+    if outcome.effects.completed_initialization.is_none()
+        && ordered_statement.is_some()
+        && outcome.complete
+        && !outcome.unknown_call
+        && outcome.effects.precision_losses.is_empty()
+        && outcome.effects.uninitialized_reads.is_empty()
+    {
+        outcome.effects.completed_initialization =
+            CompletedInitialization::from_root_statement_effects(owner, &outcome.effect_coverage);
+    }
     // A private declaration whose every operation the ledger covers ran
     // no user code and exposed no capability: its own callables and the
     // bindings it read into its result stay as unpublished as under a
@@ -234,6 +245,8 @@ pub(super) fn finalize(
                 OwnerInitializationCoverageRefusalReason::UninitializedRead
             } else if !outcome.complete {
                 OwnerInitializationCoverageRefusalReason::IncompleteExecution
+            } else if ordered_statement.is_some() {
+                OwnerInitializationCoverageRefusalReason::UnprovedStatementOperation
             } else if initializer_result_unproved {
                 OwnerInitializationCoverageRefusalReason::InitializerResultUnproved
             } else {
