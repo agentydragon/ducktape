@@ -180,3 +180,25 @@ passed in
 These checks validate the diagnostic repair; they do not reproduce or fix the
 original early-kernel stall. The full-suite observer attempt above ran before
 this diagnostic patch and was blocked by the separate tag-length defect.
+
+## Tag repair validation: blocked before VM scenarios
+
+[PR #15144](https://github.com/agentydragon/ducktape/pull/15144) merged at
+2026-11-09T11:33:09Z as `8839602c9048f5b6ac5730078afd8ec0d2ffcc46`. It
+shortens the workload-trust tag, documents the 36-byte limit, validates every
+final virtiofs name before VM creation, and supplies the missing Debian guest
+mount. Controller and guest-layout contract tests passed.
+
+The uncached full-suite check at head `d2e6f15c4a`,
+[`e77e85c9-4306-4e40-8593-6b5e0cb3a54c`](https://app.buildbuddy.io/invocation/e77e85c9-4306-4e40-8593-6b5e0cb3a54c),
+ran physically 11:29:20.318–11:39:37.693 UTC (617.375 seconds), but failed during
+stack setup. The gateway rejected its local certificate chain and the service
+gRPC probes reported an unknown authority with ECDSA verification failure
+against `test-k3s-runner-root`. Five Deployments never became Available. No VM
+scenario executed and there are no guest serial or passive VM observer outputs
+for this attempt. This is an earlier bootstrap boundary; it cannot verify the
+repaired guest boot or explain the original early-kernel console stop.
+
+The retained test log is SHA256
+`37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29`
+(56,213 bytes). Its native URI and source are recorded in the adjacent JSON.
