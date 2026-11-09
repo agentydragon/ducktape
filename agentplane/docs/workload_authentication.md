@@ -36,7 +36,10 @@ intermediate under the cluster root whose key lives in cert-manager's namespace,
 verify against `cluster-internal-ca-bundle` for clients checking a server. Every listener that
 verifies client SVIDs trusts the `agentplane-workload-ca-bundle` Bundle, which carries that
 intermediate alone: a `cluster-internal-ca` leaf naming a live Sandbox's URI does not authenticate,
-so the live Sandbox lookup is no longer the only check. Runtime certificates and their
+so the live Sandbox lookup is no longer the only check. That includes a runner's control listener,
+which refuses a `cluster-internal-ca` leaf naming the Runner Gateway; the Sandbox Controller
+projects the Bundle into runners beside the cluster bundle
+([runner control](runner_control.md#authentication-and-incarnation-binding), except Firecracker runners). Runtime certificates and their
 Secrets carry the owning Sandbox's UID in the `agentplane.allegedly.works/sandbox-uid` label.
 
 A `ValidatingAdmissionPolicy` (`cluster/cdk8s/agentplane/workload_certificate_admission.py`) on cert-manager `Certificate`s and `CertificateRequest`s that name the

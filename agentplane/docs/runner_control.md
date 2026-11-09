@@ -8,7 +8,9 @@ ingress remains a separate outbound platform route.
 Runner configuration requires `control.listen_address` and `control.security.mode`; the Gateway
 requires the matching `runner_security.mode`. Each explicitly selects `mtls` or `insecure`. `mtls`
 requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths, or a local
-`workload_api_socket` Unix URI. Firecracker Runtime selects the Workload API; the Gateway uses
+`workload_api_socket` Unix URI. A file-backed block may add `client_ca_file`, which then alone
+verifies the client certificates this side serves; `ca_file` keeps verifying its own chain and the
+servers it dials. Firecracker Runtime selects the Workload API; the Gateway uses
 projected files. Source forms cannot be mixed. `insecure` rejects a TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
 The service definitions are `runner/environment_runtime.proto` and `env/runtime/execution/executor.proto`;
 `proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
@@ -297,7 +299,12 @@ cert-manager owns leaf renewal through the `agentplane-workload` ClusterIssuer, 
 [Agentplane workload CA](workload_authentication.md#the-workload-ca), an intermediate signed by
 the cluster internal CA. trust-manager distributes the cluster internal root bundle, which runners
 and backend clients verify servers with, and the workload CA alone, which SVID listeners verify
-clients with.
+clients with. A Pod or KubeVirt runner's control listener verifies the Gateway's client SVID
+against the workload CA alone (`client_ca_file`), so a `cluster-internal-ca` leaf naming
+`spiffe://agentplane/runner-gateway` is refused. The Gateway's `runner_security` and the egress
+sidecar only dial, so they verify server SVIDs against the cluster bundle. **Gotcha:** a
+Firecracker runner reads one Workload API bundle per trust domain, the cluster bundle, so its
+control listener still accepts a cluster-root leaf.
 Pods use projected credential files; KubeVirt guests use a mounted Secret filesystem. Firecracker
 launchers stream the same material through the host-initiated vsock Workload API to the root guest
 agent, which serves Runtime through its restricted Unix socket. Runtime retains pinned credential
@@ -365,10 +372,10 @@ same per-incarnation Runner certificate to the proxy's TLS-enabled forward liste
 bearer, bound to the Sandbox's recorded Pod; first-party services verify the SVID themselves through
 opaque tunnels. The Certificate carries server auth for Runtime control and client auth for this hop.
 
-For the standard runner Pod, the controller mounts one projected Secret and the cluster trust bundle
-into the Environment Runtime and egress sidecar; workload and executor containers do not mount it.
+For the standard runner Pod, the controller mounts one projected Secret, the cluster trust bundle
+(`ca.crt`) and the workload CA (`workload-ca.crt`) into the Environment Runtime and egress sidecar; workload and executor containers do not mount it.
 Custom runtime-only templates remain supported and receive the projection only in Runtime. For KubeVirt, the guest Runtime reads the same
-Secret from its existing root-only virtiofs mount, while the launcher relay gets a projection of that
+Secret from its existing root-only virtiofs mount and each bundle from its own virtiofs mount, while the launcher relay gets a projection of that
 Secret into its own sidecar mount. For Firecracker, the launcher and relay receive the projection;
 the guest Runtime receives the streamed Workload API source, and workload programs cannot read
 either the host projection or the root-only guest socket.

@@ -235,6 +235,10 @@ def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
     assert runtime_config["control"]["security"]["tls"]["ca_file"] == (
         f"{vm_guest_contract['environment_runtime_trust']['mount']}/{vm_guest_contract['environment_runtime_trust']['key']}"
     )
+    workload_trust = vm_guest_contract["environment_runtime_workload_trust"]
+    assert runtime_config["control"]["security"]["tls"]["client_ca_file"] == (
+        f"{workload_trust['mount']}/{workload_trust['key']}"
+    )
     assert runtime_config["harness_environment"]["values"]["PATH"].endswith(
         f"{vm_guest_contract['disks']['runtime']['mount']}/bin"
     )
@@ -264,6 +268,7 @@ def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
         vm_guest_contract["disks"]["egress_trust"]["mount"],
         vm_guest_contract["environment_runtime_tls"]["private_mount"],
         vm_guest_contract["environment_runtime_trust"]["mount"],
+        vm_guest_contract["environment_runtime_workload_trust"]["mount"],
     }
 
 

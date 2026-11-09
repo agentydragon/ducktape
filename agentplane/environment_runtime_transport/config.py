@@ -20,9 +20,11 @@ class TLS(BaseModel):
     cert_file: str | None = None
     key_file: str | None = None
     ca_file: str | None = None
+    # Replaces `ca_file` for the client certificates this side verifies as a server.
+    client_ca_file: str | None = None
     workload_api_socket: str | None = None
 
-    @field_validator("cert_file", "key_file", "ca_file")
+    @field_validator("cert_file", "key_file", "ca_file", "client_ca_file")
     @classmethod
     def absolute_path(cls, value: str | None) -> str | None:
         if value is not None and not Path(value).is_absolute():
@@ -50,8 +52,10 @@ class TLS(BaseModel):
     def one_source(self) -> Self:
         files = (self.cert_file, self.key_file, self.ca_file)
         if self.workload_api_socket is not None:
-            if any(path is not None for path in files):
-                raise ValueError("workload_api_socket cannot be combined with cert_file, key_file, or ca_file")
+            if any(path is not None for path in (*files, self.client_ca_file)):
+                raise ValueError(
+                    "workload_api_socket cannot be combined with cert_file, key_file, ca_file, or client_ca_file"
+                )
         elif any(path is None for path in files):
             raise ValueError("cert_file, key_file, and ca_file are all required without workload_api_socket")
         return self

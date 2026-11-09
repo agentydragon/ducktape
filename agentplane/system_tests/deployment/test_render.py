@@ -596,6 +596,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
             "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
             "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
             "ca_file": "/run/agentplane/environment-runtime-trust/ca-certificates.crt",
+            "client_ca_file": "/run/agentplane/environment-runtime-workload-trust/ca-certificates.crt",
         },
     }
 

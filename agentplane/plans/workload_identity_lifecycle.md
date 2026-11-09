@@ -104,9 +104,9 @@ does not wait for the decision.
   every SPIFFE listener: the egress proxy's `SPIFFEAuth` and its `svid-ca` volume
   (`cluster/cdk8s/agentplane/egress.py`), and the services' listeners, which take their CA file from
   `workload_tls.TRUST_BUNDLE_FILE` today. A leaf signed directly by the cluster root is still
-  refused. Clients verifying service SVIDs keep the cluster bundle. Three client-certificate
-  verifiers still trust the cluster root after step 1: the runner control listener, the Gateway's
-  `runner_security`, and the egress sidecar. They are tracked as `WORKLOAD_CA_CLIENT_TRUST`.
+  refused. Clients verifying service SVIDs keep the cluster bundle. Firecracker runners' control
+  listeners still trust the cluster root; see the
+  [task freezer](task_freezer.md#firecracker_client_trust--firecracker-runners-trust-the-workload-ca-for-the-gateway).
 - **Who may request.** A `ValidatingAdmissionPolicy` pairs each requester with the URIs it may put
   in a Certificate that references the workload issuer. CEL compares `request.userInfo` with
   `spec.issuerRef` and each `spec.uris` entry. Until the component exists, the Sandbox Controller
