@@ -137,6 +137,7 @@ proto_library(
     srcs = ["action_service.proto"],
     deps = [
         "//agentplane/proto:identity_proto",
+        "//agentplane/proto:string_list_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:struct_proto",
@@ -167,6 +168,7 @@ go_proto_library(
     proto = ":action_service_proto",
     deps = [
         "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:string_list_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
@@ -178,6 +180,7 @@ ts_proto_library(
     proto = ":action_service_proto",
     deps = [
         "//agentplane/proto:identity_pb",
+        "//agentplane/proto:string_list_pb",
         "//google/api:annotations_pb",
     ],
 )

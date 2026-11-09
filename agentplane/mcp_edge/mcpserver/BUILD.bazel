@@ -20,6 +20,7 @@ go_library(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/docs",
         "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:string_list_go_proto",
         "@com_github_google_uuid//:uuid",
         "@com_github_modelcontextprotocol_go_sdk//auth",
         "@com_github_modelcontextprotocol_go_sdk//jsonrpc",

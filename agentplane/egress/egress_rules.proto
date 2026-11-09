@@ -4,6 +4,7 @@ syntax = "proto3";
 package agentplane.egress;
 
 import "agentplane/proto/identity.proto";
+import "agentplane/proto/string_list.proto";
 
 service EgressRules {
   // The egress rules of the authenticated caller's ServiceAccount, redacted.
@@ -28,16 +29,12 @@ message Policy {
   repeated Rule rules = 2;
 }
 
-message StringList {
-  repeated string values = 1;
-}
-
 message Rule {
   repeated string hosts = 1;
   // Absent admits any method.
-  StringList methods = 2;
+  agentplane.proto.StringList methods = 2;
   // Absent admits any path.
-  StringList paths = 3;
+  agentplane.proto.StringList paths = 3;
   // Present when the proxy substitutes one for this rule.
   Credential credential = 4;
 }

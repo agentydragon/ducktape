@@ -8,6 +8,7 @@ import (
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/proto/stringlistpb"
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -454,7 +455,7 @@ func (d *viewDecoder) ruleView(policy *pb.Policy) any {
 }
 
 // sortedLists is a policy's name lists, each sorted.
-func sortedLists(lists map[string]*pb.StringList) actionLists {
+func sortedLists(lists map[string]*stringlistpb.StringList) actionLists {
 	view := actionLists{}
 	for key, list := range lists {
 		view[key] = slices.Sorted(slices.Values(list.GetValues()))

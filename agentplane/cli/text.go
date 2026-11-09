@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/proto/stringlistpb"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -104,7 +105,7 @@ func policyText(raw json.RawMessage) (string, error) {
 	for _, entry := range policy.GetAutoApproveIf() {
 		var actions []string
 		var policyType string
-		var actionNames map[string]*action_servicepb.StringList
+		var actionNames map[string]*stringlistpb.StringList
 		switch value := entry.GetPolicy().GetKind().(type) {
 		case *action_servicepb.Policy_ExactActions:
 			policyType, actionNames = "exact_actions", value.ExactActions.GetActions()

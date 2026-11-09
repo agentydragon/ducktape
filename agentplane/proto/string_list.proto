@@ -1,0 +1,8 @@
+// A list of strings as a message, so a map value or an optional field can hold one.
+syntax = "proto3";
+
+package agentplane.proto;
+
+message StringList {
+  repeated string values = 1;
+}

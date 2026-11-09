@@ -35,6 +35,27 @@ go_proto_library(
 )
 
 proto_library(
+    name = "string_list_proto",
+    srcs = ["string_list.proto"],
+    visibility = ["//visibility:public"],
+)
+
+ts_proto_library(
+    name = "string_list_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":string_list_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "string_list_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/stringlistpb",
+    proto = ":string_list_proto",
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
     name = "kubernetes_proto",
     srcs = ["kubernetes.proto"],
     visibility = ["//visibility:public"],

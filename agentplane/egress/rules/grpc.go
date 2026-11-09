@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/proto/stringlistpb"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
@@ -97,11 +98,11 @@ func CredentialOf(credential resources.Credential) (*egressrulespb.Credential, e
 }
 
 // stringListOf keeps a nil list absent, which the rules read as "any".
-func stringListOf(values []string) *egressrulespb.StringList {
+func stringListOf(values []string) *stringlistpb.StringList {
 	if values == nil {
 		return nil
 	}
-	return &egressrulespb.StringList{Values: values}
+	return &stringlistpb.StringList{Values: values}
 }
 
 // targetOf carries presentation syntax only: egressapi.Target holds no value and no source.

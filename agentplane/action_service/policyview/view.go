@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/proto/stringlistpb"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -162,10 +163,10 @@ func policy(rule policies.Policy) *action_servicepb.Policy {
 }
 
 // stringLists is each key's names, sorted.
-func stringLists(named map[string]sets.Set[string]) map[string]*action_servicepb.StringList {
-	lists := make(map[string]*action_servicepb.StringList, len(named))
+func stringLists(named map[string]sets.Set[string]) map[string]*stringlistpb.StringList {
+	lists := make(map[string]*stringlistpb.StringList, len(named))
 	for key, names := range named {
-		lists[key] = &action_servicepb.StringList{Values: sets.List(names)}
+		lists[key] = &stringlistpb.StringList{Values: sets.List(names)}
 	}
 	return lists
 }

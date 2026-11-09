@@ -12,6 +12,7 @@ import (
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/proto/stringlistpb"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
@@ -355,7 +356,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 		AutoApproveIf: []*action_servicepb.EffectivePolicy{{
 			Binding: "test-binding", PolicySet: "test-set", Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES, Index: 0,
 			Policy: &action_servicepb.Policy{Kind: &action_servicepb.Policy_ExactActions{ExactActions: &action_servicepb.ExactActionsPolicy{
-				Actions: map[string]*action_servicepb.StringList{testGroup: {Values: []string{testAction}}},
+				Actions: map[string]*stringlistpb.StringList{testGroup: {Values: []string{testAction}}},
 			}}},
 		}},
 		AutoApprovable: []*action_servicepb.ActionIdentity{{Group: testGroup, Name: testAction}},

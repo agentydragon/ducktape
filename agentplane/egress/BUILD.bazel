@@ -224,6 +224,7 @@ proto_library(
     srcs = ["egress_rules.proto"],
     deps = [
         "//agentplane/proto:identity_proto",
+        "//agentplane/proto:string_list_proto",
     ],
 )
 
@@ -266,6 +267,7 @@ go_proto_library(
     proto = ":egress_rules_proto",
     deps = [
         "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:string_list_go_proto",
     ],
 )
 
@@ -277,6 +279,7 @@ ts_proto_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/proto:identity_pb",
+        "//agentplane/proto:string_list_pb",
     ],
 )
 

@@ -10,6 +10,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "agentplane/proto/identity.proto";
+import "agentplane/proto/string_list.proto";
 
 // Callers are workloads and operators, and the bearer says which. A workload's bearer is a Kubernetes token of a
 // ServiceAccount that carries the `agentplane.allegedly.works/use-action-service` label; a Pod binding is optional.
@@ -724,20 +725,16 @@ message Policy {
   }
 }
 
-message StringList {
-  repeated string values = 1;
-}
-
 // Matches a listed Action by name alone.
 message ExactActionsPolicy {
   // Action names by ActionGroup key, sorted.
-  map<string, StringList> actions = 1;
+  map<string, agentplane.proto.StringList> actions = 1;
 }
 
 // Matches a listed Action whose arguments satisfy a JSON Schema. Plain JSON Schema semantics: `properties` alone never
 // implies presence.
 message ArgumentSchemaPolicy {
-  map<string, StringList> actions = 1;
+  map<string, agentplane.proto.StringList> actions = 1;
   google.protobuf.Struct argument_schema = 2;
 }
 
@@ -745,7 +742,7 @@ message ArgumentSchemaPolicy {
 // case-insensitively, a pull-request search with no query-level `repo:` qualifier, a code search with exactly one
 // unquoted `repo:owner/repo` qualifier.
 message GitHubRepositoryPolicy {
-  map<string, StringList> actions = 1;
+  map<string, agentplane.proto.StringList> actions = 1;
   // The GitHub repository owner the call must target.
   string owner = 2;
   // The GitHub repository name the call must target.
@@ -755,14 +752,14 @@ message GitHubRepositoryPolicy {
 // Matches a listed GitHub MCP call whose target repository an unauthenticated GitHub lookup confirms public. A lookup
 // that fails or is unavailable matches nothing, so the request waits for an operator and is never denied for it.
 message GitHubPublicRepositoryPolicy {
-  map<string, StringList> actions = 1;
+  map<string, agentplane.proto.StringList> actions = 1;
 }
 
 // Confines Home Assistant's generic service-call tool to configured entities and the services configured for each:
 // the call must name exactly one configured entity, that entity's own domain and one of its services, and carry no
 // argument the kind has not reviewed and no `data` that retargets it.
 message HomeAssistantEntityControlPolicy {
-  map<string, StringList> actions = 1;
+  map<string, agentplane.proto.StringList> actions = 1;
   // The Home Assistant entity ids a call may target, each with the services it may use, sorted.
-  map<string, StringList> entities = 2;
+  map<string, agentplane.proto.StringList> entities = 2;
 }

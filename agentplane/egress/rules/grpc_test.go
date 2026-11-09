@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/proto/stringlistpb"
 
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
@@ -67,8 +68,8 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 		Policies: []*egressrulespb.Policy{{Name: "github", Rules: []*egressrulespb.Rule{
 			{
 				Hosts:   []string{"api.github.com"},
-				Methods: &egressrulespb.StringList{Values: []string{"GET", "POST"}},
-				Paths:   &egressrulespb.StringList{Values: []string{"/repos/**"}},
+				Methods: &stringlistpb.StringList{Values: []string{"GET", "POST"}},
+				Paths:   &stringlistpb.StringList{Values: []string{"/repos/**"}},
 				Credential: &egressrulespb.Credential{
 					Name: "github-pat", Description: description, Placeholder: "agentplane-credential-github-pat",
 					Targets: []*egressrulespb.Target{
