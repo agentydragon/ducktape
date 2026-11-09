@@ -608,6 +608,18 @@ async def _egress_refusal(cluster: Cluster, pod: str, url: str, *headers: str) -
     return None
 
 
+def _with_secret(volume: dict[str, Any], secret: str) -> dict[str, Any]:
+    """The runner's projected TLS volume with the standing record's Secret as its Secret source. Its
+    ConfigMap sources stay: the sidecar verifies the proxy against `workload-ca.crt`, which no SVID
+    Secret carries."""
+    projected = volume["projected"]
+    sources = [
+        {"secret": {**source["secret"], "name": secret}} if "secret" in source else source
+        for source in projected["sources"]
+    ]
+    return {**volume, "projected": {**projected, "sources": sources}}
+
+
 def _standing_pod_spec(runner: dict[str, Any], box_labels: dict[str, str], secret: str) -> dict[str, Any]:
     """The runner Pod's own egress sidecar, presenting the standing record's Secret in place of the
     incarnation's, beside an idle workload container. Nothing else of the runner is copied."""
@@ -618,7 +630,7 @@ def _standing_pod_spec(runner: dict[str, Any], box_labels: dict[str, str], secre
         m["name"] for m in sidecar["volumeMounts"] if m["mountPath"] == sidecar_config.RUNNER_TLS_MOUNT_PATH
     )
     volumes = [
-        {"name": tls_volume, "secret": {"secretName": secret}} if volume["name"] == tls_volume else volume
+        _with_secret(volume, secret) if volume["name"] == tls_volume else volume
         for volume in spec["volumes"]
         if volume["name"] in mounted
     ]
