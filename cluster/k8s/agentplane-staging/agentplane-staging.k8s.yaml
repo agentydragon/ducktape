@@ -1914,6 +1914,40 @@ subjects:
     name: egress
     namespace: agentplane-staging
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: egress-workload-credentials
+  namespace: haku-sandbox
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: egress-workload-credentials
+  namespace: haku-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: egress-workload-credentials
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: egress
+    namespace: agentplane-staging
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -9081,6 +9115,28 @@ spec:
             - port: "8888"
               protocol: TCP
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: WorkloadCredential
+metadata:
+  annotations:
+    description: The SVID haku-ui's egress sidecar presents to the egress proxy.
+  name: haku-ui
+  namespace: haku-sandbox
+spec:
+  subject:
+    serviceAccount: haku-ui
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: WorkloadCredential
+metadata:
+  annotations:
+    description: The SVID haku-anki's egress sidecar presents to the egress proxy.
+  name: haku-anki
+  namespace: haku-sandbox
+spec:
+  subject:
+    serviceAccount: haku-ui
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -9839,7 +9895,7 @@ spec:
             - name: AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES
               value: agentplane-staging
             - name: AGENTPLANE_POLICY_CONTROLLER_WORKLOAD_NAMESPACES
-              value: agentplane-staging
+              value: agentplane-staging,haku-sandbox
             - name: AGENTPLANE_POLICY_CONTROLLER_READER_ACCOUNTS
               value: agentplane-staging/app
             - name: AGENTPLANE_POLICY_CONTROLLER_WRITER_ACCOUNTS
@@ -10275,6 +10331,67 @@ kind: RoleBinding
 metadata:
   name: policy-controller-workload-credentials
   namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: policy-controller-workload-credentials
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: policy-controller
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: policy-controller-workload-credentials
+  namespace: haku-sandbox
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials/status
+    verbs:
+      - update
+      - patch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - cert-manager.io
+    resources:
+      - certificates
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: policy-controller-workload-credentials
+  namespace: haku-sandbox
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

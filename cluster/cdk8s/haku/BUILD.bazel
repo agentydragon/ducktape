@@ -145,8 +145,10 @@ py_library(
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_policies",
         "//cluster/cdk8s/providers/agentplane:policy_set",
+        "//cluster/cdk8s/providers/agentplane:workload_credential",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )

@@ -701,6 +701,23 @@ class Egress(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
             role=Role.from_role_name(self, "role-ref", NAME.removeprefix("agentplane-")),
         ).add_subjects(service_account)
+        # A standing workload's record and subject live in its own namespace.
+        for namespace in self.env.egress.standing_workload_namespaces:
+            standing = Role(
+                self,
+                f"workload-credentials-role-{namespace}",
+                metadata=ApiObjectMetadata(name=f"{NAME}-workload-credentials", namespace=namespace),
+                rules=[
+                    RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
+                    RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
+                ],
+            )
+            RoleBinding(
+                self,
+                f"workload-credentials-rolebinding-{namespace}",
+                metadata=ApiObjectMetadata(name=f"{NAME}-workload-credentials", namespace=namespace),
+                role=standing,
+            ).add_subjects(service_account)
 
     def _add_certificate_and_bundle(self) -> None:
         # The interception root the proxy issues leaves from, separate from the cluster's
