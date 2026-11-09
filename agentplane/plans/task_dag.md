@@ -3133,9 +3133,7 @@ rule without the other noticing.
 `kubernetesServiceAccount` source (the proxy's own API server; no API server is modelled), the proxy substituting its own bearer
 with `Impersonate-User`, refusing caller `Impersonate-*` headers, the accounts-namespace Role
 granting `impersonate` on `serviceaccounts`, and the impersonated account in decision history. The
-k3s Pod suite shows two Sandboxes acting as one account and one losing its rule. Staging renders
-the Role but not the proxy's `local_api_server` setting until its image reads it (tombstone in
-`cluster/cdk8s/agentplane/chart.py`). The k3s API server keeps no audit log, so the audit entry
+k3s Pod suite shows two Sandboxes acting as one account and one losing its rule. The k3s API server keeps no audit log, so the audit entry
 naming both account and proxy is unverified there; the scenario checks a `SelfSubjectReview` and
 the decision history instead.
 

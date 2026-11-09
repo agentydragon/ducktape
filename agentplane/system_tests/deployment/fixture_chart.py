@@ -478,7 +478,6 @@ def build_chart(
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
-        act_as_kubernetes_accounts=True,
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,

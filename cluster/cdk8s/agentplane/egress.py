@@ -528,7 +528,6 @@ class Egress(Construct):
         database_url: EnvValue,
         runners: Pods,
         admin_grpc_callers: Sequence[ServiceAccountRef],
-        act_as_kubernetes_accounts: bool,
         litellm_host: str | None = None,
         litellm_cluster_internal: bool = True,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
@@ -537,9 +536,7 @@ class Egress(Construct):
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         tls_passthrough_services: Sequence[ServiceRef] = (),
     ) -> None:
-        """`runners` are the runner Pods, which the proxy admits. `act_as_kubernetes_accounts` configures
-        the local API server that kubernetesServiceAccount credentials impersonate on; what the proxy may
-        impersonate there is `kubernetes_accounts.py`'s Role."""
+        """`runners` are the runner Pods, which the proxy admits."""
         super().__init__(scope, id)
         self.env = env
         self.database_url = database_url
@@ -573,6 +570,9 @@ class Egress(Construct):
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
             "projected_token_audiences": [KUBERNETES_AUDIENCE],
+            # Where kubernetesServiceAccount credentials impersonate, with the proxy's own bearer. What
+            # it may impersonate there is kubernetes_accounts.py's Role, not this.
+            "local_api_server": {"host": KUBERNETES_HOST, "port": 443, "token_file": _API_SERVER_TOKEN_FILE},
             "tls_passthrough_targets": [
                 f"{service.fqdn}:{service.port.number}" for service in (self.admin, *tls_passthrough_services)
             ],
@@ -590,8 +590,6 @@ class Egress(Construct):
                 ],
             ).model_dump(mode="json", exclude_none=True),
         }
-        if act_as_kubernetes_accounts:
-            content["local_api_server"] = {"host": KUBERNETES_HOST, "port": 443, "token_file": _API_SERVER_TOKEN_FILE}
         settings = SettingsFile(
             self,
             "settings",

@@ -172,9 +172,6 @@ def environment_chart(
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[app_account],
-        # CLEANUP(added 2026-11-08): set True once the staging egress image pin is a build that reads
-        #   `local_api_server` (the commit adding it); an older proxy refuses the unknown setting.
-        act_as_kubernetes_accounts=False,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
         tls_passthrough_services=[
