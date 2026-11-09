@@ -3,7 +3,7 @@
 The pytest plugin supplies the Firecracker lifecycle adapter to the shared deployment stack.
 It advertises the real KVM device through a dedicated generic-device-plugin, retaining the
 production launcher resource request without KubeVirt, Kyverno or a loop-device provisioner. The fixture keeps the worker's digest-addressed image store between actions, dropping it when the
-last stack did not stop cleanly or free space falls below the scheduled headroom
+last stack did not stop cleanly or free space falls below the room an action needs to import and checkpoint
 (`K3s.image_store_is_retainable`). It puts only the disposable k3s control database on a bounded
 tmpfs and captures guest logs through teardown. Retained executor snapshots are rejected.
 
