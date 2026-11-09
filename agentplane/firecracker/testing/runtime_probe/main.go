@@ -40,6 +40,7 @@ func run() error {
 	tlsDir := flag.String("tls-dir", "", "directory containing Gateway tls.crt, tls.key and ca.crt")
 	namespace := flag.String("namespace", "firecracker-environment-proof", "Sandbox namespace")
 	sandbox := flag.String("sandbox-uid", "proof-sandbox", "Sandbox UID")
+	sandboxName := flag.String("sandbox-name", "proof-sandbox", "Sandbox name, which its WorkloadCredential and Runtime URI take")
 	pod := flag.String("pod-uid", "proof-pod", "unchanged launcher Pod UID")
 	credential := flag.String("credential-id", "proof-credential", "Runtime credential ID")
 	epoch := flag.Uint64("epoch", 1, "strictly increasing connection epoch")
@@ -81,7 +82,7 @@ func run() error {
 	if *processID == "" {
 		return fmt.Errorf("--process-id cannot be empty")
 	}
-	uri, err := transport.EnvironmentRuntimeURI(*namespace, *sandbox, *credential)
+	uri, err := transport.WorkloadID{Namespace: *namespace, Name: *sandboxName, CredentialID: *credential}.URI()
 	if err != nil {
 		return err
 	}

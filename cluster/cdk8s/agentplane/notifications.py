@@ -217,6 +217,8 @@ class Notifications(Construct):
                 # Resolving a destination reads its Sandbox, not the Pod.
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
+                # A caller's SVID names its WorkloadCredential, read live on every request.
+                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
                 # Authorizing a peer send watches the caller's session_inbox_access rules and reports
                 # a set it cannot parse on each binding that names it, as egress and Actions do.
                 RolePolicyRule(

@@ -304,7 +304,7 @@ func TestAFreshIDOnlyWhenTheBindingChanges(t *testing.T) {
 	started := ensureIssued(t, requests, request)
 
 	firstPod := types.UID("11111111-1111-4111-8111-111111111111")
-	request.Binding = requester.Pod{UID: firstPod}
+	request.Binding = requester.Pod{Name: "test-pod", UID: firstPod}
 	accepted := ensureIssued(t, requests, request)
 	if accepted.ID != started.ID || !accepted.Accepted {
 		t.Fatalf("the first binding did not accept the ID it was started with: %+v then %+v", started, accepted)
@@ -346,11 +346,11 @@ func TestAFreshIDOnlyWhenTheBindingChanges(t *testing.T) {
 	}
 
 	// Replacing the binding with another Pod rotates too, and the new Pod accepts the fresh ID.
-	request.Binding = requester.Pod{UID: "22222222-2222-4222-8222-222222222222"}
+	request.Binding = requester.Pod{Name: "test-pod", UID: "22222222-2222-4222-8222-222222222222"}
 	if accepted := ensureIssued(t, requests, request); accepted.ID != restarted.ID || !accepted.Accepted {
 		t.Fatalf("binding after a fresh ID: %+v", accepted)
 	}
-	request.Binding = requester.Pod{UID: "33333333-3333-4333-8333-333333333333"}
+	request.Binding = requester.Pod{Name: "test-pod", UID: "33333333-3333-4333-8333-333333333333"}
 	if _, err := requests.Ensure(ctx, request); err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestRevokingDeletesTheRecordAndItsSecret(t *testing.T) {
 	}
 	issue(t, ca, observed(t, "test-revoked"))
 	ensureIssued(t, requests, request)
-	request.Binding = requester.Pod{UID: "44444444-4444-4444-8444-444444444444"}
+	request.Binding = requester.Pod{Name: "test-pod", UID: "44444444-4444-4444-8444-444444444444"}
 	accepted := ensureIssued(t, requests, request)
 	revokedLeaf := leaf(t, ca, accepted.SecretName)
 	resolves := newResolver(t)

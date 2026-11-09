@@ -733,7 +733,7 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	if err := g.validateRunnerDestination(t.Context(), destination); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("old certificate followed replacement: %v", err)
 	}
-	newURI, err := environment_runtime_transport.EnvironmentRuntimeURI(f.namespace, string(f.sandbox.UID), "test-replacement-credential")
+	newURI, err := environment_runtime_transport.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: "test-replacement-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

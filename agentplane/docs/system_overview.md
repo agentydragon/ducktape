@@ -169,10 +169,11 @@ flowchart LR
     click index href "../x/indexing/app.py" "Git index API"
 ```
 
-Each runner incarnation has one controller-issued `runner-<credential-id>` Secret. The Sandbox
-Controller projects it to Environment Runtime and the egress sidecar only; workload containers have
-no mount. The KubeVirt launcher relay gets that same Secret through the existing Kyverno injection
-after a live Sandbox status check binds the launcher VM and VMI to the accepted credential. Staging
+Each runner incarnation has one Secret, issued by the Policy Controller for the Sandbox's
+`WorkloadCredential`. The Sandbox Controller projects it to Environment Runtime and the egress
+sidecar only; workload containers have no mount. The KubeVirt launcher relay gets that same Secret
+through the existing Kyverno injection after a live check that the record has accepted the
+launcher's VMI for the VM's credential. Staging
 and testing use the SVID hop; TLS mode never falls back to token mode.
 
 Firecracker Sandboxes use a controller-owned launcher Pod, a separate SVID-authenticated relay and a

@@ -14,7 +14,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/lru"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -33,16 +32,15 @@ type ServiceAccountIdentity = identitypb.ServiceAccountIdentity
 
 // Reader reads the Sandboxes of one namespace.
 type Reader struct {
-	namespace   string
-	objects     client.Reader
-	runnerNames *lru.Cache
+	namespace string
+	objects   client.Reader
 }
 
 func New(namespace string, objects client.Reader) (*Reader, error) {
 	if namespace == "" || objects == nil {
 		return nil, fmt.Errorf("Sandbox namespace and Kubernetes client are required")
 	}
-	return &Reader{namespace: namespace, objects: objects, runnerNames: lru.New(4096)}, nil
+	return &Reader{namespace: namespace, objects: objects}, nil
 }
 
 // Get reads the named Sandbox: `NotFound` when there is none, `Unavailable` when what is stored has no usable identity.
@@ -84,112 +82,6 @@ func (r *Reader) Incarnation(ctx context.Context, destination *identitypb.Sandbo
 	return view, nil
 }
 
-// FindRunnerCredential reads the live Sandbox and returns the exact
-// incarnation that currently accepts credentialID. Deletion and stop status
-// alone do not revoke an accepted credential: the controller may need the
-// runner to remain authenticated while it quiesces and seals Sessions. Reader
-// must use an uncached API reader so clearing or replacing the accepted
-// credential, or removing the Sandbox, takes effect immediately.
-func (r *Reader) FindRunnerCredential(ctx context.Context, sandboxUID, credentialID string) (View, bool, error) {
-	if sandboxUID == "" || credentialID == "" {
-		return View{}, false, fmt.Errorf("Sandbox UID and runner credential ID are required")
-	}
-	found, err := r.runner(ctx, sandboxUID)
-	if err != nil {
-		return View{}, false, err
-	}
-	if found == nil || found.Namespace != r.namespace || string(found.UID) != sandboxUID || found.Name == "" {
-		return View{}, false, nil
-	}
-	credential := found.Status.RunnerCredential
-	if credential == nil || credential.ID != credentialID || credential.AcceptedID != credentialID || runnerPodUID(found) == "" {
-		return View{}, false, nil
-	}
-	return View{
-		Identity: &Identity{Namespace: found.Namespace, Name: found.Name, Uid: string(found.UID)},
-		Resource: found,
-	}, true, nil
-}
-
-func (r *Reader) runner(ctx context.Context, uid string) (*sandboxapi.Sandbox, error) {
-	var name string
-	if cached, known := r.runnerNames.Get(uid); known {
-		name = cached.(string)
-	} else {
-		var sandboxes sandboxapi.SandboxList
-		if err := r.objects.List(ctx, &sandboxes, client.InNamespace(r.namespace)); err != nil {
-			return nil, fmt.Errorf("list live Sandboxes: %w", err)
-		}
-		for i := range sandboxes.Items {
-			candidate := &sandboxes.Items[i]
-			if string(candidate.UID) != uid {
-				continue
-			}
-			if name != "" {
-				return nil, fmt.Errorf("multiple Sandboxes have UID %q", uid)
-			}
-			name = candidate.Name
-		}
-		if name == "" {
-			return nil, nil
-		}
-		// The bounded cache locates an object; only the uncached GET below can prove
-		// its current UID, accepted credential, and Pod binding.
-		r.runnerNames.Add(uid, name)
-	}
-	var current sandboxapi.Sandbox
-	if err := r.objects.Get(ctx, types.NamespacedName{Namespace: r.namespace, Name: name}, &current); apierrors.IsNotFound(err) {
-		return nil, nil
-	} else if err != nil {
-		return nil, fmt.Errorf("read live Sandbox credential: %w", err)
-	}
-	return &current, nil
-}
-
-// RunnerPodUID returns the Pod bound to the Sandbox's accepted credential.
-// KubeVirt credentials bind to status.incarnation (the virt-launcher Pod);
-// Pod and Firecracker credentials bind to runnerCredential.podUid.
-func (v View) RunnerPodUID() (string, bool) {
-	_, uid, ok := v.RunnerPod()
-	return uid, ok
-}
-
-// RunnerPod returns the name and UID of the Pod currently bound to the accepted
-// credential. It uses the Sandbox's status incarnation for both backends;
-// Pod and Firecracker credentials must agree with runnerCredential.podUid.
-func (v View) RunnerPod() (name, uid string, ok bool) {
-	if v.Resource == nil || v.Resource.Status.RunnerCredential == nil {
-		return "", "", false
-	}
-	credential := v.Resource.Status.RunnerCredential
-	incarnation := v.Resource.Status.Incarnation
-	if incarnation == nil || incarnation.Name == "" || incarnation.UID == "" {
-		return "", "", false
-	}
-	switch credential.Kind {
-	case sandboxapi.RunnerCredentialKindPod:
-		if credential.PodUID == "" || credential.PodUID != incarnation.UID {
-			return "", "", false
-		}
-	case sandboxapi.RunnerCredentialKindVM:
-		if credential.LastVMIUID == "" {
-			return "", "", false
-		}
-	default:
-		return "", "", false
-	}
-	return incarnation.Name, incarnation.UID, true
-}
-
-func runnerPodUID(sandbox *sandboxapi.Sandbox) string {
-	view := View{Resource: sandbox}
-	_, uid, ok := view.RunnerPod()
-	if !ok {
-		return ""
-	}
-	return uid
-}
-
 // ExecutionAccount reads the live controller-owned ServiceAccount for an exact Sandbox
 // incarnation. Reader must be backed by an uncached API reader for this authorization check.
 // Missing or replaced Sandboxes/accounts return found=false; API errors fail closed.
@@ -211,18 +103,6 @@ func (r *Reader) ExecutionAccount(ctx context.Context, sandbox *Identity) (*Serv
 		return nil, false, nil
 	}
 	return r.ownedExecutionAccount(ctx, &current)
-}
-
-// RunnerCredentialAccount resolves an accepted runner credential and its owning
-// ServiceAccount together. Finalization alone does not revoke the credential:
-// Runtime still needs it to deliver its final History seal.
-func (r *Reader) RunnerCredentialAccount(ctx context.Context, sandboxUID, credentialID string) (View, *ServiceAccountIdentity, bool, error) {
-	view, found, err := r.FindRunnerCredential(ctx, sandboxUID, credentialID)
-	if err != nil || !found {
-		return View{}, nil, false, err
-	}
-	account, found, err := r.ownedExecutionAccount(ctx, view.Resource)
-	return view, account, found, err
 }
 
 func (r *Reader) ownedExecutionAccount(ctx context.Context, current *sandboxapi.Sandbox) (*ServiceAccountIdentity, bool, error) {

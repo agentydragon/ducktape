@@ -35,7 +35,7 @@ func TestHTTPServerTLSExpiryConnStateUsesEarlierLeafExpiry(t *testing.T) {
 func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	localURI := environment_runtime_transport.EgressProxyURI
-	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *t
 func TestConfigureHTTPServerTLSExpiryDisablesSessionResumption(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	localURI := environment_runtime_transport.EgressProxyURI
-	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func establishHTTPExpiryConnection(
 			t.Fatal(err)
 		}
 	} else {
-		runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+		runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 		if err != nil {
 			t.Fatal(err)
 		}

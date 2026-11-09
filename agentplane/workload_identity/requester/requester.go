@@ -49,11 +49,18 @@ func (Identity) isSubject()       {}
 // Binding is the incarnation an owner accepts. A nil Binding is none.
 type Binding interface{ isBinding() }
 
-// Pod binds a Pod incarnation, including a Firecracker launcher Pod.
-type Pod struct{ UID types.UID }
+// Pod binds a Pod incarnation, including a Firecracker launcher Pod; it is also the caller's Pod.
+type Pod struct {
+	Name string
+	UID  types.UID
+}
 
-// VMI binds a KubeVirt VirtualMachineInstance incarnation.
-type VMI struct{ UID types.UID }
+// VMI binds a KubeVirt VirtualMachineInstance incarnation. Launcher, its virt-launcher Pod, is the
+// caller's Pod; it is named once KubeVirt has created it, and stays for the VMI's life.
+type VMI struct {
+	UID      types.UID
+	Launcher *Pod
+}
 
 func (Pod) isBinding() {}
 func (VMI) isBinding() {}
@@ -216,8 +223,12 @@ func specFor(request Request) (workloadapi.WorkloadCredentialSpec, error) {
 	case nil:
 	case Pod:
 		spec.Binding = &workloadapi.Binding{PodUID: binding.UID}
+		spec.Pod = &workloadapi.PodRef{Name: binding.Name, UID: binding.UID}
 	case VMI:
 		spec.Binding = &workloadapi.Binding{VMIUID: binding.UID}
+		if binding.Launcher != nil {
+			spec.Pod = &workloadapi.PodRef{Name: binding.Launcher.Name, UID: binding.Launcher.UID}
+		}
 	default:
 		return workloadapi.WorkloadCredentialSpec{}, fmt.Errorf("unknown binding %T", request.Binding)
 	}

@@ -1,4 +1,4 @@
-package resolver
+package resolver_test
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -114,18 +115,19 @@ func leafFor(t *testing.T, ca *transporttesting.CA, uri string, usages ...x509.E
 	return leaf
 }
 
-func newResolver(t *testing.T, reader client.Reader) *Resolver {
+func newResolver(t *testing.T, reader client.Reader) *resolver.Resolver {
 	t.Helper()
-	resolver, err := New(reader, []string{servedNamespace})
+	resolves, err := resolver.New(reader, []string{servedNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resolver
+	return resolves
 }
 
 func podSpec(uid types.UID) workloadapi.WorkloadCredentialSpec {
 	return workloadapi.WorkloadCredentialSpec{
 		Subject: workloadapi.Subject{ServiceAccount: subjectAccount}, Binding: &workloadapi.Binding{PodUID: uid},
+		Pod: &workloadapi.PodRef{Name: "test-pod", UID: uid},
 	}
 }
 
@@ -138,9 +140,9 @@ func subjectUID(t *testing.T, namespace string) types.UID {
 	return account.UID
 }
 
-func requireRefused(t *testing.T, resolver *Resolver, leaf *x509.Certificate) {
+func requireRefused(t *testing.T, resolves *resolver.Resolver, leaf *x509.Certificate) {
 	t.Helper()
-	if peer, err := resolver.Resolve(t.Context(), leaf); !errors.Is(err, ErrRefused) {
+	if peer, err := resolves.Resolve(t.Context(), leaf); !errors.Is(err, resolver.ErrRefused) {
 		t.Fatalf("resolved %+v, %v; want refused", peer, err)
 	}
 }
@@ -153,7 +155,7 @@ func TestAnAcceptedIncarnationResolvesToItsSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := ServiceAccount{Namespace: servedNamespace, Name: subjectAccount, UID: subjectUID(t, servedNamespace)}
+	want := resolver.ServiceAccount{Namespace: servedNamespace, Name: subjectAccount, UID: subjectUID(t, servedNamespace)}
 	if peer.Subject != want || peer.Binding == nil || peer.Binding.PodUID != pod || peer.Owner == nil || peer.Owner.Kind != "Sandbox" ||
 		peer.Workload != (transport.WorkloadID{Namespace: servedNamespace, Name: "test-accepted", CredentialID: credentialIDs[0]}) {
 		t.Fatalf("resolved %+v", peer)
@@ -175,18 +177,14 @@ func TestRefusals(t *testing.T) {
 	pod := types.UID("22222222-2222-4222-8222-222222222222")
 	other := types.UID("33333333-3333-4333-8333-333333333333")
 	accepted := &workloadapi.Binding{PodUID: pod}
-	resolver := newResolver(t, objects)
+	resolves := newResolver(t, objects)
 	sameURI := func(record issued, usages ...x509.ExtKeyUsage) *x509.Certificate {
 		return leafFor(t, ca, record.record.Status.URI, usages...)
 	}
 
 	for name, leaf := range map[string]func(t *testing.T) *x509.Certificate{
 		"the Sandbox URI form": func(t *testing.T) *x509.Certificate {
-			uri, err := transport.EnvironmentRuntimeURI(servedNamespace, string(pod), credentialIDs[0])
-			if err != nil {
-				t.Fatal(err)
-			}
-			return leafFor(t, ca, uri, x509.ExtKeyUsageClientAuth)
+			return leafFor(t, ca, "spiffe://agentplane/environment-runtime/"+servedNamespace+"/"+string(pod)+"/"+credentialIDs[0], x509.ExtKeyUsageClientAuth)
 		},
 		"a server-only certificate": func(t *testing.T) *x509.Certificate {
 			return sameURI(issue(t, ca, servedNamespace, "test-server-only", sandboxOwner("test-server-only"), podSpec(pod), accepted, credentialIDs[0]), x509.ExtKeyUsageServerAuth)
@@ -250,7 +248,7 @@ func TestRefusals(t *testing.T) {
 			return issue(t, ca, servedNamespace, "test-identity", sandboxOwner("test-identity"), spec, accepted, credentialIDs[0]).leaf
 		},
 	} {
-		t.Run(name, func(t *testing.T) { requireRefused(t, resolver, leaf(t)) })
+		t.Run(name, func(t *testing.T) { requireRefused(t, resolves, leaf(t)) })
 	}
 }
 
@@ -261,17 +259,17 @@ func TestAStaleCredentialIsRefusedAfterNameReuse(t *testing.T) {
 	pod := types.UID("44444444-4444-4444-8444-444444444444")
 	accepted := &workloadapi.Binding{PodUID: pod}
 	first := issue(t, ca, servedNamespace, "test-reused", sandboxOwner("test-reused"), podSpec(pod), accepted, credentialIDs[0])
-	resolver := newResolver(t, objects)
-	if _, err := resolver.Resolve(t.Context(), first.leaf); err != nil {
+	resolves := newResolver(t, objects)
+	if _, err := resolves.Resolve(t.Context(), first.leaf); err != nil {
 		t.Fatal(err)
 	}
 	if err := objects.Delete(t.Context(), first.record); err != nil {
 		t.Fatal(err)
 	}
-	requireRefused(t, resolver, first.leaf)
+	requireRefused(t, resolves, first.leaf)
 	second := issue(t, ca, servedNamespace, "test-reused", sandboxOwner("test-reused"), podSpec(pod), accepted, credentialIDs[1])
-	requireRefused(t, resolver, first.leaf)
-	if _, err := resolver.Resolve(t.Context(), second.leaf); err != nil {
+	requireRefused(t, resolves, first.leaf)
+	if _, err := resolves.Resolve(t.Context(), second.leaf); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -327,27 +325,38 @@ func TestAForwardedPodTokenMustComeFromTheAcceptedPod(t *testing.T) {
 	}
 	accepted := &workloadapi.Binding{PodUID: acceptedPod.UID}
 	record := issue(t, ca, servedNamespace, "test-pod-token", sandboxOwner("test-pod-token"), podSpec(acceptedPod.UID), accepted, credentialIDs[0])
-	resolver := newResolver(t, objects)
-	peer, err := resolver.Resolve(ctx, record.leaf)
+	resolves := newResolver(t, objects)
+	peer, err := resolves.Resolve(ctx, record.leaf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := peer.RequirePod(reviewed(acceptedPod)); err != nil {
 		t.Fatal(err)
 	}
-	if err := peer.RequirePod(reviewed(otherPod)); !errors.Is(err, ErrRefused) {
+	if err := peer.RequirePod(reviewed(otherPod)); !errors.Is(err, resolver.ErrRefused) {
 		t.Fatalf("a token from another Pod passed: %v", err)
 	}
 
-	// A VMI binding names no Pod a token can be bound to.
-	vmi := &workloadapi.Binding{VMIUID: acceptedPod.UID}
+	// A VMI's tokens come from its virt-launcher Pod, once its owner has named it.
+	vmi := &workloadapi.Binding{VMIUID: "77777777-7777-4777-8777-777777777777"}
 	spec := workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: subjectAccount}, Binding: vmi}
-	vm := issue(t, ca, servedNamespace, "test-vmi-token", sandboxOwner("test-vmi-token"), spec, vmi, credentialIDs[0])
-	if peer, err = resolver.Resolve(ctx, vm.leaf); err != nil {
+	unnamed := issue(t, ca, servedNamespace, "test-vmi-unnamed", sandboxOwner("test-vmi-unnamed"), spec, vmi, credentialIDs[0])
+	if peer, err = resolves.Resolve(ctx, unnamed.leaf); err != nil || peer.Pod != nil {
+		t.Fatalf("resolved %+v, %v", peer, err)
+	}
+	if err := peer.RequirePod(reviewed(acceptedPod)); !errors.Is(err, resolver.ErrRefused) {
+		t.Fatalf("a VMI with no launcher named accepted a Pod token: %v", err)
+	}
+	spec.Pod = &workloadapi.PodRef{Name: acceptedPod.Name, UID: acceptedPod.UID}
+	launched := issue(t, ca, servedNamespace, "test-vmi-launched", sandboxOwner("test-vmi-launched"), spec, vmi, credentialIDs[0])
+	if peer, err = resolves.Resolve(ctx, launched.leaf); err != nil || *peer.Pod != *spec.Pod {
+		t.Fatalf("resolved %+v, %v", peer, err)
+	}
+	if err := peer.RequirePod(reviewed(acceptedPod)); err != nil {
 		t.Fatal(err)
 	}
-	if err := peer.RequirePod(reviewed(acceptedPod)); !errors.Is(err, ErrRefused) {
-		t.Fatalf("a VMI credential accepted a Pod token: %v", err)
+	if err := peer.RequirePod(reviewed(otherPod)); !errors.Is(err, resolver.ErrRefused) {
+		t.Fatalf("a token from another Pod passed for a VMI: %v", err)
 	}
 }
 
@@ -360,7 +369,7 @@ func TestAnAPIErrorIsUnavailableNotRefused(t *testing.T) {
 			return errors.New("test API server outage")
 		},
 	})
-	if _, err := newResolver(t, failing).Resolve(t.Context(), record.leaf); !errors.Is(err, ErrUnavailable) {
+	if _, err := newResolver(t, failing).Resolve(t.Context(), record.leaf); !errors.Is(err, resolver.ErrUnavailable) {
 		t.Fatalf("an API error resolved as %v", err)
 	}
 }

@@ -55,6 +55,7 @@ func firecrackerIdleController(t *testing.T) (*Reconciler, client.Client, *time.
 	r.FirecrackerStatus = status
 	r.Suspender = suspender
 	for attempt := 0; attempt < 8 && getPod(t, c) == nil; attempt++ {
+		issueCredential(t, c, sandboxKey)
 		if _, err := r.Reconcile(context.Background(), request); err != nil {
 			t.Fatal(err)
 		}
@@ -146,7 +147,7 @@ func TestFirecrackerLostPrepareReplyRetriesPersistedGenerationAfterControllerRes
 
 	restarted := &Reconciler{
 		Client: r.Client, Objects: r.Objects, KubeVirt: r.KubeVirt,
-		Quiescer: r.Quiescer, Leases: r.Leases, RunnerCertificateIssuer: r.RunnerCertificateIssuer,
+		Quiescer: r.Quiescer, Leases: r.Leases, Credentials: r.Credentials,
 		Now: r.Now, FirecrackerStatus: r.FirecrackerStatus, Suspender: suspender,
 	}
 	reconcileResult(t, restarted)

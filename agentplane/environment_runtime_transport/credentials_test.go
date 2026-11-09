@@ -27,7 +27,7 @@ import (
 
 func TestGatewayClientAuthenticatesEnvironmentRuntimeServer(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "pod-uid")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestGatewayClientAuthenticatesEnvironmentRuntimeServer(t *testing.T) {
 
 func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 
 func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.EnvironmentRuntimeURI("test-ns", "sandbox-uid", "credential-id")
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,11 +194,11 @@ func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
 
 func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherRuntimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "rotated-credential-id")
+	otherRuntimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "rotated-credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,11 +300,11 @@ func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.Con
 
 func TestClientPinsExactPeerURI(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "pod-uid")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherEnvironmentRuntimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "other-pod-uid")
+	otherEnvironmentRuntimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestClientPinsExactPeerURI(t *testing.T) {
 
 func TestEnvironmentRuntimeServerRejectsAnotherRunnerAsClient(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +423,7 @@ func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
 	trustedCA := environmentruntimetransporttesting.NewCA(t)
 	otherCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "pod-uid")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
 func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 	now := time.Now().UTC()
 	validCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 
 func TestServerCredentialsDisableTLS13SessionResumption(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +525,7 @@ func TestServerCredentialsDisableTLS13SessionResumption(t *testing.T) {
 func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	oldCA := environmentruntimetransporttesting.NewCA(t)
 	newCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "pod-uid")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +573,7 @@ func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 
 func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +601,7 @@ func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
 
 func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "workload-credential")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -772,7 +772,7 @@ func TestPeerIdentityRequiresTLSPeerCertificate(t *testing.T) {
 }
 
 func TestPeerIdentityRejectsExpiredLeafOnExistingConnection(t *testing.T) {
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -791,31 +791,6 @@ func TestPeerIdentityRejectsExpiredLeafOnExistingConnection(t *testing.T) {
 	}}})
 	if _, err := environment_runtime_transport.PeerIdentity(ctx); err == nil {
 		t.Fatal("PeerIdentity accepted an expired leaf from an existing TLS connection")
-	}
-}
-
-func TestParseEnvironmentRuntimeURIRejectsNonCanonicalAndMalformedPaths(t *testing.T) {
-	valid, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "pod-uid")
-	if err != nil {
-		t.Fatal(err)
-	}
-	namespace, sandboxUID, workloadUID, err := environment_runtime_transport.ParseEnvironmentRuntimeURI(valid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if namespace != "agent-ns" || sandboxUID != "sandbox-uid" || workloadUID != "pod-uid" {
-		t.Fatalf("parsed identity = (%q, %q, %q)", namespace, sandboxUID, workloadUID)
-	}
-	for _, invalid := range []string{
-		"spiffe://agentplane/env/e2e/agent-ns/sandbox-uid",
-		"spiffe://agentplane/env/e2e/agent-ns/sandbox-uid/pod-uid/extra",
-		"spiffe://agentplane/env/e2e/Agent-ns/sandbox-uid/pod-uid",
-		"spiffe://agentplane/env/e2e/agent-ns/sandbox%2Fuid/pod-uid",
-		"spiffe://other/environment-runtime/agent-ns/sandbox-uid/pod-uid",
-	} {
-		if _, _, _, err := environment_runtime_transport.ParseEnvironmentRuntimeURI(invalid); err == nil {
-			t.Errorf("ParseEnvironmentRuntimeURI accepted %q", invalid)
-		}
 	}
 }
 
@@ -838,7 +813,7 @@ func TestParseWorkloadURIAcceptsOnlyTheCanonicalForm(t *testing.T) {
 		"spiffe://agentplane/Agent-ns/test-agent/0123456789abcdef0123456789abcdef",
 		"spiffe://agentplane/agent-ns/Test-agent/0123456789abcdef0123456789abcdef",
 		"spiffe://agentplane/agent-ns/test-agent/0123456789ABCDEF0123456789abcdef",
-		"spiffe://agentplane/agent-ns/test-agent/credential-id",
+		"spiffe://agentplane/agent-ns/test-agent/credential.id",
 		"spiffe://agentplane/agent-ns/-test-agent/0123456789abcdef0123456789abcdef",
 		"spiffe://other/agent-ns/test-agent/0123456789abcdef0123456789abcdef",
 		"spiffe://agentplane/actions",
@@ -968,7 +943,7 @@ func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 				ca := environmentruntimetransporttesting.NewCA(t)
-				clientURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+				clientURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -90,6 +90,10 @@ class HistoryService(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("agentplane.allegedly.works", "sandboxes")], verbs=["get", "list"]
                 ),
+                # A writer's SVID names its WorkloadCredential, read live on every request.
+                RolePolicyRule(
+                    resources=[custom_resource("agentplane.allegedly.works", "workloadcredentials")], verbs=["get"]
+                ),
             ],
         )
         RoleBinding(

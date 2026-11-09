@@ -11,6 +11,9 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/issuer"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -87,7 +90,7 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 	defer ticker.Stop()
 	for {
 		certificates := &unstructured.UnstructuredList{}
-		certificates.SetGroupVersionKind(runnerCertificateGVK.GroupVersion().WithKind("CertificateList"))
+		certificates.SetGroupVersionKind(issuer.NewCertificate().GroupVersionKind().GroupVersion().WithKind("CertificateList"))
 		if err := objects.List(ctx, certificates, client.InNamespace(namespace)); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -96,7 +99,7 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 		}
 		for i := range certificates.Items {
 			certificate := &certificates.Items[i]
-			if !certificateReady(certificate) {
+			if conditions, _, _ := unstructured.NestedSlice(certificate.Object, "status", "conditions"); len(conditions) == 0 {
 				certificate.Object["status"] = map[string]interface{}{"conditions": []interface{}{map[string]interface{}{
 					"type": "Ready", "status": "True",
 				}}}
@@ -115,7 +118,7 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: certificate.GetNamespace(), Name: certificate.GetName(), Labels: labels,
-					Annotations: map[string]string{runnerCertificateNameAnnotation: certificate.GetName()},
+					Annotations: map[string]string{"cert-manager.io/certificate-name": certificate.GetName()},
 				},
 				Type: corev1.SecretTypeTLS,
 				Data: map[string][]byte{"tls.crt": []byte("test-cert"), "tls.key": []byte("test-key")},
@@ -162,7 +165,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	}
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{
-		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, kubevirtv1.AddToScheme,
+		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, kubevirtv1.AddToScheme, workloadapi.AddToScheme,
 	} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
@@ -187,9 +190,17 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Reconciler{
 		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: false, Leases: mgr.GetClient(),
-		RunnerCertificateIssuer: CertificateIssuer{Name: "test-runner-issuer", Kind: IssuerKindClusterIssuer}, Now: time.Now,
+		Now: time.Now,
+	}
+	r.Credentials, err = requester.New(mgr.GetAPIReader(), mgr.GetClient())
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := r.SetupWithManager(mgr); err != nil {
+		t.Fatal(err)
+	}
+	// The Policy Controller's issuer, which the Sandbox Controller requests its credentials from.
+	if err := (&issuer.Reconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Issuer: "test-runner-issuer"}).SetupWithManager(mgr); err != nil {
 		t.Fatal(err)
 	}
 	if err := objects.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}); err != nil {
@@ -276,7 +287,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	const otherID = "fedcba9876543210fedcba9876543210"
 	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{
 		"metadata": {"annotations": {"agentplane.allegedly.works/environment-runtime-credential": "`+otherID+`"}},
-		"status": {"runnerCredential": {"id": "`+otherID+`", "kind": "Pod"}}
+		"status": {"runnerCredential": {"kind": "VM", "podUid": "`+otherID+`"}}
 	}`))); err != nil {
 		t.Fatal(err)
 	}
@@ -416,11 +427,6 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 			unlabeled client.Object
 			labeled   client.Object
 		}{
-			{
-				"Secret",
-				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "cache-unlabeled-secret", Namespace: ns}},
-				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "cache-labeled-secret", Namespace: ns, Labels: map[string]string{sandboxapi.SandboxLabel: "no-such-sandbox"}}},
-			},
 			{
 				"ConfigMap",
 				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cache-unlabeled-configmap", Namespace: ns}},

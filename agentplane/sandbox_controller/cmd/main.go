@@ -24,6 +24,8 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 )
 
 func main() {
@@ -56,6 +58,9 @@ func run(c config) error {
 		return err
 	}
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
+		return err
+	}
+	if err := workloadapi.AddToScheme(scheme); err != nil {
 		return err
 	}
 	restConfig := ctrl.GetConfigOrDie()
@@ -92,9 +97,13 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
+	credentials, err := requester.New(mgr.GetAPIReader(), mgr.GetClient())
+	if err != nil {
+		return err
+	}
 	reconciler := &sandboxcontroller.Reconciler{
 		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt,
-		Quiescer: quiescer, Leases: mgr.GetClient(), RunnerCertificateIssuer: c.RunnerCertificateIssuer, Now: time.Now,
+		Quiescer: quiescer, Leases: mgr.GetClient(), Credentials: credentials, Now: time.Now,
 		FirecrackerStatus: sandboxcontroller.PodProxyFirecrackerStatusReader{Client: clientset},
 		Suspender:         sandboxcontroller.GatewaySuspender{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS},
 	}

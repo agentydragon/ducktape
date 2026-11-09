@@ -14,6 +14,7 @@ from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
+from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
@@ -74,12 +75,16 @@ class PolicyController(Construct):
                 "health_probe_bind_address": f":{_HEALTH_PORT}",
                 "grpc_bind_address": f":{service(namespace).pod_port}",
                 "grpc_audience": TOKEN_AUDIENCE,
+                "workload_issuer": WORKLOAD_ISSUER.name,
             }.items()
         }
         subject_namespaces = checked_value(Settings, "subject_namespaces", frozenset({namespace}))
+        # It issues the WorkloadCredentials of its own namespace; policy_controller_rbac.py grants the same.
+        workload_namespaces = checked_value(Settings, "workload_namespaces", frozenset({namespace}))
         text = {
             **scalars,
             "subject_namespaces": ",".join(sorted(subject_namespaces)),
+            "workload_namespaces": ",".join(sorted(workload_namespaces)),
             "reader_accounts": f"{namespace}/app",
             # Set only after the server image with this configuration key is deployed and healthy.
             "writer_accounts": f"{namespace}/app",

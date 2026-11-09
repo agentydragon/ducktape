@@ -74,7 +74,7 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 	var uri string
 	if g.config.RunnerSecurity.Mode == environment_runtime_transport.MutualTLS {
 		var err error
-		uri, err = environment_runtime_transport.EnvironmentRuntimeURI(sandbox.Namespace, string(sandbox.UID), credentialID)
+		uri, err = environment_runtime_transport.WorkloadID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: credentialID}.URI()
 		if err != nil {
 			return runnerDestination{}, err
 		}

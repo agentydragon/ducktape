@@ -68,7 +68,6 @@ from cluster.cdk8s.agentplane import (
     policy_controller,
     policy_controller_rbac,
     runner_gateway_workload,
-    sandbox_controller,
     staging_config,
     staging_grants,
     workload_certificate_admission,
@@ -718,7 +717,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     # Cluster-scoped and covering every Agentplane namespace; staging is the only environment.
     workload_certificate_admission.add_workload_certificate_admission(
         chart,
-        sandbox_controllers={ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME)},
         workload_credential_issuers={ServiceAccountRef(namespace=env.namespace, name=policy_controller.NAME)},
         service_requester="system:serviceaccount:flux-system:kustomize-controller",
         cert_manager=ServiceAccountRef(namespace="cert-manager", name="cert-manager"),

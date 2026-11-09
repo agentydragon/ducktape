@@ -177,17 +177,12 @@ const (
 	RunnerCredentialKindVM  RunnerCredentialKind = "VM"
 )
 
-// RunnerCredential is the controller's binding of a runner credential generation, whose Certificate
-// and Secret are `runner-<id>`, to the incarnation started with it.
+// RunnerCredential is the incarnation the controller accepted for the Sandbox's WorkloadCredential,
+// which holds the credential ID, URI and Secret.
 type RunnerCredential struct {
-	// ID is the current credential generation.
-	// +kubebuilder:validation:Pattern=`^[0-9a-f]{32}$`
-	ID   string               `json:"id"`
 	Kind RunnerCredentialKind `json:"kind"`
-	// AcceptedID is the generation of the last incarnation the controller accepted.
-	// +kubebuilder:validation:Pattern=`^[0-9a-f]{32}$`
-	AcceptedID string `json:"acceptedId,omitempty"`
-	// PodUID is the Pod bound to ID; a Pod with ID's label and another UID is a stale replacement.
+	// PodUID is the Pod the controller started and accepted; a Pod of the Sandbox's name with another
+	// UID is a stale replacement.
 	PodUID string `json:"podUid,omitempty"`
 	// LastVMIUID is the last VMI accepted for the Sandbox's VM.
 	LastVMIUID string `json:"lastVmiUid,omitempty"`
@@ -258,8 +253,8 @@ type SandboxStatus struct {
 	QuiescedIncarnation *string `json:"quiescedIncarnation,omitempty"`
 	// The latest Quiesce request, scoped to its runner incarnation, for the controller's retry deadline.
 	QuiesceAttempt *QuiesceAttempt `json:"quiesceAttempt,omitempty"`
-	// RunnerCredential binds the controller-issued runner credential to the incarnation it was issued
-	// for. It lives under status so writers of the Sandbox's spec and metadata cannot rebind it.
+	// RunnerCredential is the incarnation the controller accepted. It lives under status so writers of
+	// the Sandbox's spec and metadata cannot rebind it.
 	RunnerCredential *RunnerCredential `json:"runnerCredential,omitempty"`
 	// OperatingMode is whether the controller runs the Sandbox: the one derivation every reader of
 	// `spec.running` reads instead.

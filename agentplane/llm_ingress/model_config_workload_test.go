@@ -82,17 +82,14 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 			},
 		},
 		{
-			name:                "unaccepted Sandbox credential",
+			name:                "rotated credential",
 			workloadName:        "llm-model-config-unaccepted",
 			wantUnauthenticated: true,
 			prepare: func(t *testing.T, ca *transporttesting.CA, workload workloadauthtesting.Workload) environment_runtime_transport.Config {
 				return ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 			},
 			mutate: func(t *testing.T, workload workloadauthtesting.Workload) {
-				workload.Sandbox.Status.RunnerCredential.ID = "ffffffffffffffffffffffffffffffff"
-				if err := workload.Objects.Status().Update(t.Context(), workload.Sandbox); err != nil {
-					t.Fatal(err)
-				}
+				workload.Issue(t, "ffffffffffffffffffffffffffffffff")
 			},
 		},
 	} {

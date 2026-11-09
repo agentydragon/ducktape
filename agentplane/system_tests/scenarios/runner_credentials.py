@@ -19,7 +19,9 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
-_SANDBOX_LABEL = "agentplane.allegedly.works/sandbox"
+# agentplane/workload_identity/issuer: the labels it stamps on a record's Certificate and Secret.
+_RECORD_UID_LABEL = "agentplane.allegedly.works/workload-credential-uid"
+_CREDENTIAL_ID_LABEL = "agentplane.allegedly.works/workload-credential-id"
 
 
 async def _identity(cluster: Cluster, pod_name: str) -> tuple[str, str]:
@@ -29,23 +31,29 @@ async def _identity(cluster: Cluster, pod_name: str) -> tuple[str, str]:
     return (metadata["uid"], labels[_RUNNER_CREDENTIAL_LABEL])
 
 
-async def _ready_certificate(
-    cluster: Cluster, name: str, sandbox_name: str, sandbox_uid: str, credential_id: str, namespace: str
-) -> None:
+async def _ready_certificate(cluster: Cluster, sandbox_name: str, credential_id: str, namespace: str) -> None:
+    """The Sandbox's WorkloadCredential issued `credential_id`, and cert-manager signed exactly its URI."""
     with tracer.start_as_current_span("system_test.pki.runner_certificate"):
+        record = json.loads(await cluster.kubectl("get", "workloadcredential", sandbox_name, "-o", "json"))
+        status = record["status"]
+        assert status["credentialID"] == credential_id, status
+        assert status["uri"] == f"spiffe://agentplane/{namespace}/{sandbox_name}/{credential_id}", status
+        assert status["acceptedBinding"] == record["spec"]["binding"], record
+        assert any(c["type"] == "Ready" and c["status"] == "True" for c in status["conditions"]), status
+        name = status["secretName"]
         certificate = json.loads(await cluster.kubectl("get", "certificate", name, "-o", "json"))
         spec = certificate["spec"]
-        assert spec["secretName"] == f"runner-{credential_id}"
-        assert spec["uris"] == [f"spiffe://agentplane/environment-runtime/{namespace}/{sandbox_uid}/{credential_id}"]
+        assert spec["secretName"] == name
+        assert spec["uris"] == [status["uri"]]
         assert set(spec["usages"]) == {"digital signature", "server auth", "client auth"}
         assert any(
             condition["type"] == "Ready" and condition["status"] == "True"
             for condition in certificate["status"]["conditions"]
         )
-        secret = json.loads(await cluster.kubectl("get", "secret", f"runner-{credential_id}", "-o", "json"))
+        secret = json.loads(await cluster.kubectl("get", "secret", name, "-o", "json"))
         assert secret["metadata"]["annotations"]["cert-manager.io/certificate-name"] == name
-        assert secret["metadata"]["labels"][_SANDBOX_LABEL] == sandbox_name
-        assert secret["metadata"]["labels"][_RUNNER_CREDENTIAL_LABEL] == credential_id
+        assert secret["metadata"]["labels"][_RECORD_UID_LABEL] == record["metadata"]["uid"]
+        assert secret["metadata"]["labels"][_CREDENTIAL_ID_LABEL] == credential_id
         requests = json.loads(await cluster.kubectl("get", "certificaterequests", "-o", "json"))["items"]
         issued = [
             request
@@ -150,14 +158,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     view = await sandbox(f"systest-runner-pod-{uuid4().hex[:8]}", template=POD_TEMPLATE)
     assert view.kubernetes_diagnostics.HasField("pod")
     old_pod_uid, old_credential_id = await _identity(cluster, view.kubernetes_diagnostics.pod.name)
-    await _ready_certificate(
-        cluster,
-        f"runner-{old_credential_id}",
-        view.target.name,
-        str(view.target.uid),
-        old_credential_id,
-        view.target.namespace,
-    )
+    await _ready_certificate(cluster, view.target.name, old_credential_id, view.target.namespace)
 
     agent = await _open_agent(client, dispatcher, view, harness, offered_model)
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
@@ -182,14 +183,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     new_pod_uid, new_credential_id = await _identity(cluster, resumed.kubernetes_diagnostics.pod.name)
     assert new_pod_uid != old_pod_uid
     assert new_credential_id != old_credential_id
-    await _ready_certificate(
-        cluster,
-        f"runner-{new_credential_id}",
-        resumed.target.name,
-        str(resumed.target.uid),
-        new_credential_id,
-        resumed.target.namespace,
-    )
+    await _ready_certificate(cluster, resumed.target.name, new_credential_id, resumed.target.namespace)
 
     resumed_model = scripted.model(resumed.kubernetes_diagnostics.pod.name, harness)
     turn, history_after, recall = await scripted_turn_with_admission_and_history(
@@ -215,9 +209,7 @@ async def check_vm_runner_certificate(
     assert view.kubernetes_diagnostics.HasField("pod")
     identity = await _identity(cluster, view.kubernetes_diagnostics.pod.name)
     _, credential_id = identity
-    await _ready_certificate(
-        cluster, f"runner-{credential_id}", view.target.name, str(view.target.uid), credential_id, view.target.namespace
-    )
+    await _ready_certificate(cluster, view.target.name, credential_id, view.target.namespace)
     return identity
 
 

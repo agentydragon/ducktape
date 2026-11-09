@@ -567,6 +567,12 @@ rules:
       - get
       - list
   - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
       - coordination.k8s.io
     resources:
       - leases

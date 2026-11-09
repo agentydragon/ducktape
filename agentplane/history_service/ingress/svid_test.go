@@ -151,12 +151,12 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	admitted.send(sealed(1, first.Principal.PodUID))
 	admitted.acknowledged(1, true)
 
-	// Clearing acceptance revokes durable writes on an already-admitted stream.
+	// Clearing the binding revokes durable writes on an already-admitted stream.
 	idleRevocation := connectAt(idleListener.Addr().String(), first).open(t, "")
 	idleRevocation.send(announce(uuid.New(), 0, ""))
 	idleRevocation.acknowledged(0, false)
-	first.Sandbox.Status.RunnerCredential.AcceptedID = ""
-	if err := first.Objects.Status().Update(t.Context(), first.Sandbox); err != nil {
+	first.Record.Spec.Binding, first.Record.Spec.Pod = nil, nil
+	if err := first.Objects.Update(t.Context(), first.Record); err != nil {
 		t.Fatal(err)
 	}
 	if code := idleRevocation.refused(); code != codes.Unauthenticated {
@@ -174,7 +174,8 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 		t.Fatalf("revoked stream committed %v", got)
 	}
 
-	// Removing the Sandbox also revokes an established stream before it can write a seal.
+	// Removing the Sandbox, and with it its record, also revokes an established stream before it
+	// can write a seal.
 	first.Sandbox.Finalizers = nil
 	if err := first.Objects.Update(t.Context(), first.Sandbox); err != nil {
 		t.Fatal(err)
@@ -182,6 +183,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	if err := first.Objects.Get(t.Context(), client.ObjectKeyFromObject(first.Sandbox), first.Sandbox); !apierrors.IsNotFound(err) {
 		t.Fatalf("Sandbox after finalizer removal: %v", err)
 	}
+	first.Revoke(t)
 	sealRevocation.send(sealed(1, first.Principal.PodUID))
 	if code := sealRevocation.refused(); code != codes.Unauthenticated {
 		t.Fatalf("removed Sandbox established seal: %v", code)

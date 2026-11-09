@@ -10,13 +10,14 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -68,8 +69,8 @@ type Reconciler struct {
 	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
 	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
 	Leases client.Reader
-	// The cert-manager issuer that provisions each immutable runner credential.
-	RunnerCertificateIssuer CertificateIssuer
+	// Requests each incarnation's WorkloadCredential, which the Policy Controller issues.
+	Credentials requester.Requester
 	// The current time, for the liveness of a connection Lease and the idle timers.
 	Now func() time.Time
 	// FirecrackerStatus reads the launcher supervisor through the Kubernetes Pod proxy.
@@ -110,10 +111,12 @@ func (u *unready) retryAfterOrZero() time.Duration {
 //
 // +kubebuilder:object:generate=false
 type workload struct {
-	pod                        *corev1.Pod
-	vm                         *kubevirtv1.VirtualMachine
-	vmi                        *kubevirtv1.VirtualMachineInstance
-	launcher                   *corev1.Pod
+	pod      *corev1.Pod
+	vm       *kubevirtv1.VirtualMachine
+	vmi      *kubevirtv1.VirtualMachineInstance
+	launcher *corev1.Pod
+	// credential is the one the current or next incarnation runs with, once issued.
+	credential                 requester.Issued
 	runnerCredentialAccepted   bool
 	runnerIncarnationPublished bool
 }
@@ -330,13 +333,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		// the state PVC after this.
 		return w, &unready{reason: "Deleting", stage: sandboxapi.StopStageDeleting, message: fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
 	}
-	if pending, err := r.deleteOldRunnerCertificates(ctx, sandbox, ""); err != nil || pending != nil {
-		if pending == nil {
-			pending = credentialPending("RunnerCredentialCleanupPending", "runner certificates and Secrets are being removed")
-		}
-		pending.stage = sandboxapi.StopStageDeleting
-		return w, pending, err
-	}
+	// The WorkloadCredential, its Certificates and their Secrets go with the Sandbox.
 	controllerutil.RemoveFinalizer(sandbox, StateVolumeFinalizer)
 	return w, nil, r.Update(ctx, sandbox)
 }
@@ -597,8 +594,10 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		}
 		return w, &unready{reason: "Starting", message: fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
 	}
-	credentialID := runnerCredential(sandbox).ID
-	pod, blocked := render(sandbox, template, credentialID)
+	if !validRunnerCredentialID(w.credential.ID) {
+		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next Pod"}, nil
+	}
+	pod, blocked := render(sandbox, template, w.credential)
 	if blocked != nil {
 		return w, blocked, nil
 	}
@@ -614,11 +613,13 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	}
 	w.pod = pod
 	bound := runnerCredential(sandbox)
-	bound.PodUID, bound.AcceptedID = string(pod.UID), credentialID
+	bound.Kind, bound.PodUID = sandboxapi.RunnerCredentialKindPod, string(pod.UID)
 	if err := r.setRunnerCredential(ctx, sandbox, bound); err != nil {
 		return w, nil, err
 	}
-	return w, nil, nil
+	// Bind the record at once: the first binding after its fresh ID accepts that ID.
+	_, _, err := r.requestCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
+	return w, nil, err
 }
 
 // renderedSpec is the annotation value for a rendered Pod or VM spec.
@@ -632,7 +633,7 @@ func renderedSpec(spec any) string {
 
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
 // state volume filled in.
-func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credentialID string) (*corev1.Pod, *unready) {
+func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued) (*corev1.Pod, *unready) {
 	if blocked := validateStateVolume(template); blocked != nil {
 		return nil, blocked
 	}
@@ -654,7 +655,7 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 	if blocked := withLaunch(sandbox, template, spec); blocked != nil {
 		return nil, blocked
 	}
-	if blocked := withRunnerTLS(sandbox, template, spec, credentialID); blocked != nil {
+	if blocked := withRunnerTLS(template, spec, credential.SecretName); blocked != nil {
 		return nil, blocked
 	}
 	if template.Spec.Firecracker != nil {
@@ -686,7 +687,7 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 		annotations[FirecrackerRunningAnnotation] = "true"
 		labels[EnvironmentBackendLabel] = "firecracker"
 	}
-	labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credentialID
+	labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credential.ID
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        sandbox.Name,
@@ -1064,14 +1065,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 				sandboxlease.FactsChanged(previous.Annotations, current.Annotations) ||
 				leaseRevived(previous, current, r.Now())
 		}}))
-	// A starting workload waits for cert-manager to mark its Certificate Ready and write the leaf
-	// Secret. Both are read uncached, so without these watches that readiness is only noticed on
-	// the runnerCredentialRetry requeue, which the watches now merely back up.
-	runnerCertificate := &unstructured.Unstructured{}
-	runnerCertificate.SetGroupVersionKind(runnerCertificateGVK)
-	setup = setup.
-		Watches(runnerCertificate, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &sandboxapi.Sandbox{})).
-		Watches(&corev1.Secret{}, bySandboxLabel)
+	// A starting workload waits for the Policy Controller to issue its WorkloadCredential. The
+	// requester reads the record uncached, so this watch only spares the runnerCredentialRetry wait.
+	setup = setup.Owns(&workloadapi.WorkloadCredential{})
 	if r.KubeVirt {
 		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
 	}

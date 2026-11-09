@@ -18,12 +18,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,6 +31,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -187,8 +188,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	reader := testSandboxReader(t)
-	workloadAuth, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil, nil), map[string]*sandboxreader.Reader{"test-ns": reader})
+	workloadAuth, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil, nil), testResolver(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		t.Fatalf("Rules with a backend bearer: %v, want Unauthenticated", err)
 	}
 
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("test-ns", "sandbox-uid", runnerCredentialID)
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,25 +283,37 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 
 const runnerCredentialID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-func testSandboxReader(t *testing.T) *sandboxreader.Reader {
+// testResolver holds the record the Sandbox Controller and the issuer would write for an accepted
+// runner Pod, and its subject.
+func testResolver(t *testing.T) *resolver.Resolver {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
 	}
-	resource := &sandboxapi.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-sandbox", UID: types.UID("sandbox-uid")},
-		Status: sandboxapi.SandboxStatus{
-			Incarnation:      &sandboxapi.Incarnation{Name: "runner", UID: "runner-pod-uid"},
-			RunnerCredential: &sandboxapi.RunnerCredential{ID: runnerCredentialID, AcceptedID: runnerCredentialID, Kind: sandboxapi.RunnerCredentialKindPod, PodUID: "runner-pod-uid"},
-		},
-	}
-	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(resource).Build()
-	reader, err := sandboxreader.New("test-ns", objects)
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return reader
+	pod := &workloadapi.Binding{PodUID: "00000000-0000-4000-8000-000000000001"}
+	record := &workloadapi.WorkloadCredential{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-sandbox", OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Sandbox", Name: "test-sandbox", UID: "00000000-0000-4000-8000-000000000002", Controller: new(true),
+		}}},
+		Spec: workloadapi.WorkloadCredentialSpec{
+			Subject: workloadapi.Subject{ServiceAccount: "test-sandbox"}, Binding: pod,
+			Pod: &workloadapi.PodRef{Name: "runner", UID: pod.PodUID},
+		},
+		Status: workloadapi.WorkloadCredentialStatus{CredentialID: runnerCredentialID, URI: uri, AcceptedBinding: pod},
+	}
+	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-sandbox", UID: types.UID("test-account-uid")}}
+	records, err := resolver.New(clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(record, account).Build(), []string{"test-ns"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return records
 }
 
 // Kubernetes' native grpc probes send no bearer, so health is served whether or not the EgressAdmin

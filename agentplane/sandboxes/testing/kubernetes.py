@@ -20,7 +20,7 @@ from agentplane.sandboxes.launch import SandboxIdentity
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes import CustomObjectsClient
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.tls import environment_runtime_identity_uri
+from agentplane.testing.tls import workload_uri
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -28,6 +28,7 @@ SANDBOX = "test-runner"
 _MERGE_PATCH = "application/merge-patch+json"
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
 _RUNNER_CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
+_WORKLOAD_CREDENTIALS_PLURAL = "workloadcredentials"
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,7 @@ class SandboxCluster:
 
     @property
     def environment_runtime_identity_uri(self) -> str:
-        return environment_runtime_identity_uri(self.namespace, self.uid, _RUNNER_CREDENTIAL_ID)
+        return workload_uri(self.namespace, self.name, _RUNNER_CREDENTIAL_ID)
 
     async def pod_token(self, audience: str) -> str:
         """A token bound to the runner Pod, as its runner container holds one."""
@@ -165,6 +166,51 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
         {"status": {"phase": "Running", "podIP": "127.0.0.1", "conditions": [{"type": "Ready", "status": "True"}]}},
     )
     cluster = SandboxCluster(server=server, namespace=namespace, name=name, uid=uid, pod_uid=pod.metadata.uid)
+    # The Sandbox's WorkloadCredential, accepted for its Pod, as the Policy Controller reports it.
+    record = await custom.create_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        namespace,
+        _WORKLOAD_CREDENTIALS_PLURAL,
+        {
+            "apiVersion": f"{GROUP}/{VERSION}",
+            "kind": "WorkloadCredential",
+            "metadata": {
+                "name": name,
+                "ownerReferences": [
+                    {
+                        "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
+                        "kind": sandbox_resource.SANDBOX_KIND,
+                        "name": name,
+                        "uid": uid,
+                        "controller": True,
+                    }
+                ],
+            },
+            "spec": {
+                "subject": {"serviceAccount": name},
+                "binding": {"podUID": pod.metadata.uid},
+                "pod": {"name": name, "uid": pod.metadata.uid},
+            },
+        },
+    )
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        namespace,
+        _WORKLOAD_CREDENTIALS_PLURAL,
+        name,
+        {
+            "status": {
+                "observedGeneration": record["metadata"]["generation"],
+                "credentialID": _RUNNER_CREDENTIAL_ID,
+                "uri": cluster.environment_runtime_identity_uri,
+                "secretName": f"svid-{name}-{_RUNNER_CREDENTIAL_ID}",
+                "acceptedBinding": {"podUID": pod.metadata.uid},
+            }
+        },
+        _content_type=_MERGE_PATCH,
+    )
     await cluster.patch_sandbox_status(
         {
             "status": {

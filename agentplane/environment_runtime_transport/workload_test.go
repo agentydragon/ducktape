@@ -24,13 +24,13 @@ import (
 
 func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "workload-credential")
+	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
 	initial := ca.Issue(t, runnerURI)
 	rotated := ca.Issue(t, runnerURI)
-	otherURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "other-credential")
+	otherURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

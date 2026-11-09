@@ -281,16 +281,18 @@ Public Gateway callers still use their existing workload bearers and per-method 
 Standalone behavior tests can explicitly select insecure transport at both endpoints. It supplies
 plaintext without peer authentication; it never fabricates a certificate identity. Live Sandbox/Pod/VM
 ownership and incarnation validation, boot-ID/epoch fencing and command admission remain enforced.
-The Sandbox Controller always provisions credentials; k3s keeps real cert-manager/trust-manager and
+Every Sandbox incarnation gets a credential; k3s keeps real cert-manager/trust-manager and
 mTLS in every stack. Bad mTLS credentials never trigger an insecure retry.
 
 The Gateway's certificate has URI SAN `spiffe://agentplane/runner-gateway`. Each Environment Runtime
-certificate has exactly one URI SAN, `spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`.
+certificate has exactly one URI SAN, its WorkloadCredential's
+`spiffe://agentplane/<namespace>/<sandbox-name>/<credential-id>`.
 Certificates must chain to the configured trust roots and permit the peer's client/server EKU.
 A CA-valid certificate with the wrong URI is rejected.
 
-The Sandbox Controller allocates a credential ID before each workload incarnation and cert-manager
-issues its certificate into a distinct Secret. The workload carries that ID. Gateway authorization checks the current Sandbox UID, current incarnation Pod, owner
+Before each workload incarnation the Sandbox Controller requests a credential through the
+Sandbox's [WorkloadCredential](workload_authentication.md#workloadcredentials); the Policy
+Controller mints its ID and cert-manager issues its certificate into a distinct Secret. The workload carries that ID. Gateway authorization checks the current Sandbox UID, current incarnation Pod, owner
 chain and credential ID. VM authorization checks the launcher, VMI and Sandbox-owned VM.
 An old credential ID never authorizes a replacement workload. Names and addresses
 are not identity evidence.
@@ -368,7 +370,7 @@ Runner control stays on the Gateway's direct mTLS connection; its private key an
 not pass through HTTP interception. Separately, the egress sidecar relays runner HTTP(S) traffic to
 the central proxy. With TLS transport and SPIFFE authentication selected, the sidecar presents the
 same per-incarnation Runner certificate to the proxy's TLS-enabled forward listener under
-`spiffe://agentplane/environment-runtime/...`. The Kubernetes destination retains its projected
+the Sandbox's WorkloadCredential URI. The Kubernetes destination retains its projected
 bearer, bound to the Sandbox's recorded Pod; first-party services verify the SVID themselves through
 opaque tunnels. The Certificate carries server auth for Runtime control and client auth for this hop.
 

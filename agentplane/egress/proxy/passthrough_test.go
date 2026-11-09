@@ -24,7 +24,7 @@ func TestPassthroughPreservesDestinationTLSWithoutPolicyOrCallerHeaders(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeURI := "spiffe://agentplane/environment-runtime/test/sandbox-uid/credential"
+	runtimeURI := "spiffe://agentplane/test/sandbox-uid/credential"
 	service := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 || r.TLS.PeerCertificates[0].URIs[0].String() != runtimeURI {
 			t.Error("destination did not receive the Runtime's certificate")

@@ -80,7 +80,7 @@ func TestTunneledGRPCPreservesAuthorityAndVerifiesDestinationTLS(t *testing.T) {
 		<-copied
 		finished <- nil
 	}()
-	runtime := ca.Issue(t, "spiffe://agentplane/environment-runtime/test/sandbox/credential")
+	runtime := ca.Issue(t, "spiffe://agentplane/test/sandbox/credential")
 	clientSecurity, err := runtime.ClientCredentials(transport.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)

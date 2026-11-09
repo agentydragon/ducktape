@@ -95,7 +95,8 @@ def _controller(kind: str, api_version: str) -> str:
 
 
 def _context() -> list[ClusterPolicySpecRulesContext]:
-    """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's ServiceAccount, each read live."""
+    """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's WorkloadCredential and ServiceAccount,
+    each read live."""
     return [
         ClusterPolicySpecRulesContext(
             name="vmiOwner",
@@ -137,6 +138,21 @@ def _context() -> list[ClusterPolicySpecRulesContext]:
             ),
         ),
         ClusterPolicySpecRulesContext(
+            name="credential",
+            api_call=ClusterPolicySpecRulesContextApiCall(
+                url_path=(
+                    f"/apis/{_SANDBOX_API_VERSION}/namespaces/{{{{request.namespace}}}}/workloadcredentials/"
+                    "{{sandbox.name || 'missing'}}"
+                )
+            ),
+        ),
+        ClusterPolicySpecRulesContext(
+            name="credentialOwner",
+            variable=ClusterPolicySpecRulesContextVariable(
+                jmes_path=f"credential.{_controller('Sandbox', _SANDBOX_API_VERSION)}", default={}
+            ),
+        ),
+        ClusterPolicySpecRulesContext(
             name="account",
             api_call=ClusterPolicySpecRulesContextApiCall(
                 url_path="/api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}"
@@ -175,22 +191,22 @@ class LauncherRelayPolicy(ClusterPolicy):
             _mismatch("sandboxLive.metadata.uid || ''", "{{sandbox.uid || 'none'}}"),
             _mismatch("sandboxLive.metadata.name || ''", "{{sandbox.name || 'none'}}"),
             _mismatch("sandboxLive.status.runnerCredential.kind || ''", "VM"),
-            _mismatch(
-                "sandboxLive.status.runnerCredential.id || ''",
-                f"{{{{vm.metadata.annotations.\"{RUNNER_CREDENTIAL_ID_ANNOTATION}\" || 'none'}}}}",
-            ),
-            _mismatch(
-                "sandboxLive.status.runnerCredential.acceptedId || ''",
-                f"{{{{vm.metadata.annotations.\"{RUNNER_CREDENTIAL_ID_ANNOTATION}\" || 'none'}}}}",
-            ),
             _mismatch("sandboxLive.status.runnerCredential.lastVmiUid || ''", "{{vmi.metadata.uid || 'none'}}"),
+            # The Sandbox's WorkloadCredential has accepted this VMI, for the credential the VM carries.
+            _mismatch("credentialOwner.uid || ''", "{{sandbox.uid || 'none'}}"),
+            _mismatch("credential.spec.binding.vmiUID || ''", "{{vmi.metadata.uid || 'none'}}"),
+            _mismatch("credential.status.acceptedBinding.vmiUID || ''", "{{vmi.metadata.uid || 'none'}}"),
+            _mismatch(
+                "credential.status.credentialID || ''",
+                f"{{{{vm.metadata.annotations.\"{RUNNER_CREDENTIAL_ID_ANNOTATION}\" || 'none'}}}}",
+            ),
             _mismatch(
                 f"vm.metadata.annotations.\"{RUNNER_CREDENTIAL_VMI_UID_ANNOTATION}\" || ''",
                 "{{vmi.metadata.uid || 'none'}}",
             ),
             _mismatch(
                 f"vmi.metadata.labels.\"{RUNNER_CREDENTIAL_LABEL}\" || ''",
-                "{{sandboxLive.status.runnerCredential.acceptedId || 'none'}}",
+                "{{credential.status.credentialID || 'none'}}",
             ),
         ]
         # A runner Pod sets these Pod-wide; the launcher's own Pod security context is KubeVirt's.
@@ -213,7 +229,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                     "sources": [
                         {
                             "secret": {
-                                "name": "runner-{{ sandboxLive.status.runnerCredential.acceptedId }}",
+                                "name": "{{ credential.status.secretName }}",
                                 "items": [{"key": "tls.crt", "path": "tls.crt"}, {"key": "tls.key", "path": "tls.key"}],
                             }
                         },
@@ -487,13 +503,18 @@ class LauncherRelayPolicy(ClusterPolicy):
                 ),
             ],
         )
-        # The built-in view role does not cover Agentplane's Sandbox CRD. The
-        # injection reads status to name the accepted Secret; it never reads Secrets.
+        # The built-in view role does not cover Agentplane's CRDs. The injection reads the Sandbox's
+        # WorkloadCredential to name the accepted Secret; it never reads Secrets.
         reader = Role(
             self,
             "sandbox-reader",
             metadata=ApiObjectMetadata(name="launcher-relay-sandbox-reader", namespace=namespace),
-            rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])],
+            rules=[
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, "sandboxes"), custom_resource(GROUP, "workloadcredentials")],
+                    verbs=["get"],
+                )
+            ],
         )
         RoleBinding(
             self,

@@ -6,63 +6,40 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
-	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// SVIDResolver resolves an already verified workload leaf to the Sandbox's own
-// ServiceAccount. Its reader must read the API server directly: a certificate
-// never preserves the authority of a deleted Sandbox or an old credential.
+// SVIDResolver resolves an already verified workload leaf to the subject its WorkloadCredential
+// names. Its reader must read the API server directly: a certificate never preserves the authority
+// of a deleted record or a replaced credential ID.
 type SVIDResolver struct {
-	readers map[string]*sandboxreader.Reader
+	records *resolver.Resolver
 }
 
 func NewSVIDResolver(objects client.Reader, namespaces []string) (*SVIDResolver, error) {
-	if objects == nil || len(namespaces) == 0 {
-		return nil, errors.New("Sandbox reader and allowed namespaces are required")
+	records, err := resolver.New(objects, namespaces)
+	if err != nil {
+		return nil, err
 	}
-	readers := make(map[string]*sandboxreader.Reader, len(namespaces))
-	for _, namespace := range namespaces {
-		if namespace == "" {
-			return nil, errors.New("allowed namespace must not be empty")
-		}
-		reader, err := sandboxreader.New(namespace, objects)
-		if err != nil {
-			return nil, err
-		}
-		readers[namespace] = reader
-	}
-	return &SVIDResolver{readers: readers}, nil
+	return &SVIDResolver{records: records}, nil
 }
 
 // NewKubernetesSVIDResolver creates an uncached reader for a service's SVID boundary.
 func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string) (*SVIDResolver, error) {
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		return nil, err
-	}
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		return nil, err
-	}
-	objects, err := client.New(config, client.Options{Scheme: scheme})
+	records, err := resolver.NewKubernetes(config, namespaces)
 	if err != nil {
 		return nil, err
 	}
-	return NewSVIDResolver(objects, namespaces)
+	return &SVIDResolver{records: records}, nil
 }
 
 // Resolve authenticates a gRPC TLS peer. The listener must use the transport
@@ -80,44 +57,26 @@ func (r *SVIDResolver) Resolve(ctx context.Context) (Principal, error) {
 	return principal, svidStatus(ctx, err)
 }
 
-// ResolveVerifiedLeaf takes a leaf whose signature and trust chain the TLS
-// listener has verified. It rechecks validity and the live Sandbox on each call.
-// Headers, metadata and request bodies never select the subject.
+// ResolveVerifiedLeaf takes a leaf whose signature and trust chain the TLS listener has verified.
+// It rechecks validity and the live WorkloadCredential on each call. Headers, metadata and request
+// bodies never select the subject. The accepted incarnation's Pod, when its owner has named one, is
+// the Principal's Pod.
 func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certificate) (Principal, error) {
-	if leaf == nil || time.Now().Before(leaf.NotBefore) || time.Now().After(leaf.NotAfter) {
-		return Principal{}, ErrInvalidBearer
+	resolved, err := r.records.Resolve(ctx, leaf)
+	if errors.Is(err, resolver.ErrUnavailable) {
+		return Principal{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
-	clientUsage := false
-	for _, usage := range leaf.ExtKeyUsage {
-		clientUsage = clientUsage || usage == x509.ExtKeyUsageClientAuth
-	}
-	if !clientUsage {
-		return Principal{}, ErrInvalidBearer
-	}
-	id, err := x509svid.IDFromCert(leaf)
 	if err != nil {
 		return Principal{}, ErrInvalidBearer
 	}
-	namespace, uid, credentialID, err := environment_runtime_transport.ParseEnvironmentRuntimeURI(id.String())
-	if err != nil {
-		return Principal{}, ErrInvalidBearer
+	principal := Principal{
+		Account:           Account{Namespace: resolved.Subject.Namespace, Name: resolved.Subject.Name},
+		ServiceAccountUID: string(resolved.Subject.UID),
 	}
-	reader := r.readers[namespace]
-	if reader == nil {
-		return Principal{}, ErrInvalidBearer
+	if resolved.Pod != nil {
+		principal.PodName, principal.PodUID = resolved.Pod.Name, string(resolved.Pod.UID)
 	}
-	view, account, found, err := reader.RunnerCredentialAccount(ctx, uid, credentialID)
-	if err != nil {
-		return Principal{}, fmt.Errorf("%w: read Sandbox credential: %w", ErrUnavailable, err)
-	}
-	if !found {
-		return Principal{}, ErrInvalidBearer
-	}
-	podName, podUID, bound := view.RunnerPod()
-	if !bound {
-		return Principal{}, ErrInvalidBearer
-	}
-	return Principal{Account: Account{Namespace: namespace, Name: view.Resource.Name}, ServiceAccountUID: account.GetUid(), PodName: podName, PodUID: podUID}, nil
+	return principal, nil
 }
 
 func svidStatus(ctx context.Context, err error) error {
@@ -135,7 +94,7 @@ func svidStatus(ctx context.Context, err error) error {
 
 // WithListenerAuthentication binds this resolver to the explicit authentication modes on one
 // listener. A bearer mode must use this Resolver's audience; certificate authentication requires
-// a live Sandbox resolver. Callers and methods remain the responsibility of the existing Rules.
+// a live WorkloadCredential resolver. Callers and methods remain the responsibility of the existing Rules.
 func (r *Resolver) WithListenerAuthentication(config listener.Config, svid *SVIDResolver) (*Resolver, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("listener authentication: %w", err)

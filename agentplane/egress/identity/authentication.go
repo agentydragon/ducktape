@@ -6,9 +6,9 @@ import (
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -33,25 +33,20 @@ func (Authenticated) GoString() string { return "authenticated{redacted}" }
 type Authenticator struct {
 	policy  listener.Config
 	tokens  *Verifier
-	readers map[string]*sandboxreader.Reader
+	records *resolver.Resolver
 }
 
-func NewAuthenticator(policy listener.Config, tokens *Verifier, readers map[string]*sandboxreader.Reader) (*Authenticator, error) {
+func NewAuthenticator(policy listener.Config, tokens *Verifier, records *resolver.Resolver) (*Authenticator, error) {
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
 	if tokens == nil || policy.Has(listener.KubernetesBearer) && tokens.hop == nil {
 		return nil, errors.New("configured authentication requires its token verifier")
 	}
-	if policy.Has(listener.SPIFFE) && len(readers) == 0 {
-		return nil, errors.New("SPIFFE authentication requires live Sandbox readers")
+	if policy.Has(listener.SPIFFE) && records == nil {
+		return nil, errors.New("SPIFFE authentication requires a live WorkloadCredential resolver")
 	}
-	for namespace, reader := range readers {
-		if namespace == "" || reader == nil {
-			return nil, errors.New("Sandbox readers require nonempty namespaces and readers")
-		}
-	}
-	return &Authenticator{policy: policy, tokens: tokens, readers: readers}, nil
+	return &Authenticator{policy: policy, tokens: tokens, records: records}, nil
 }
 
 // Authenticate uses the actual TLS peer and bearer credential. Presence is
@@ -70,7 +65,7 @@ func (a *Authenticator) Authenticate(ctx context.Context, state *tls.ConnectionS
 		return Authenticated{}, &Rejection{Reason: reason, Detail: "credentials do not select one enabled authentication mode"}
 	}
 	if mode == listener.SPIFFE {
-		principal, err := ResolveSVID(ctx, state, a.readers)
+		principal, err := ResolveSVID(ctx, state, a.records)
 		return Authenticated{Principal: principal, Mode: mode}, err
 	}
 	token, ok := BearerToken(bearer)

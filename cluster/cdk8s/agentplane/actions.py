@@ -465,6 +465,10 @@ class Actions(Construct):
             rules_by_namespace[caller_namespace].append(
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"])
             )
+            # A caller's SVID names its WorkloadCredential, read live on every request.
+            rules_by_namespace[caller_namespace].append(
+                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"])
+            )
 
         # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
         # their callers and owned by the caller's ServiceAccount, and runs commands in them. This is namespace-wide and cannot

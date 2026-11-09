@@ -53,11 +53,11 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kuberne
 from agentplane.testing.tls import (
     CertificateAuthority,
     client_tls_context,
-    environment_runtime_identity_uri,
     issue_leaf,
     issue_workload_leaf,
     make_ca,
     server_tls_context,
+    workload_uri,
     write_ca,
 )
 from agentplane.workload_auth import listener
@@ -72,6 +72,7 @@ UPSTREAM_HOST = "localhost"
 SANDBOX_A = "sb-a"
 SANDBOX_B = "sb-b"
 RUNNER_CREDENTIAL_ID = "a" * 32
+WORKLOAD_CREDENTIALS_PLURAL = "workloadcredentials"
 ROTATED_RUNNER_CREDENTIAL_ID = "b" * 32
 PROJECTED_AUDIENCE = "agentplane-egress-test-projected"
 BINDING_B = f"{SANDBOX_B}-private-policy"
@@ -321,24 +322,80 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
         SANDBOX_NAMESPACE,
         "sandboxes",
         SANDBOX_A,
-        {
-            "status": {
-                "incarnation": {"name": SANDBOX_A, "uid": pod.metadata.uid},
-                "runnerCredential": {
-                    "id": RUNNER_CREDENTIAL_ID,
-                    "acceptedId": RUNNER_CREDENTIAL_ID,
-                    "kind": "Pod",
-                    "podUid": pod.metadata.uid,
-                },
-            }
-        },
+        {"status": {"incarnation": {"name": SANDBOX_A, "uid": pod.metadata.uid}}},
         _content_type="application/merge-patch+json",
     )
+    await issue_record(custom, sandbox["metadata"]["uid"], pod.metadata.name, pod.metadata.uid, RUNNER_CREDENTIAL_ID)
     return SeededSandbox(
         projected_token=await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [PROJECTED_AUDIENCE]),
         sandbox_uid=sandbox["metadata"]["uid"],
         pod_uid=pod.metadata.uid,
         mismatched_pod_token=await server.pod_token(SANDBOX_NAMESPACE, f"{SANDBOX_A}-other-pod", [PROJECTED_AUDIENCE]),
+    )
+
+
+def _record_status(credential_id: str, pod_uid: str) -> dict[str, Any]:
+    return {
+        "observedGeneration": 1,
+        "credentialID": credential_id,
+        "uri": workload_uri(SANDBOX_NAMESPACE, SANDBOX_A, credential_id),
+        "secretName": f"svid-{SANDBOX_A}-{credential_id}",
+        "acceptedBinding": {"podUID": pod_uid},
+    }
+
+
+async def issue_record(
+    custom: CustomObjectsClient, sandbox_uid: str, pod_name: str, pod_uid: str, credential_id: str
+) -> None:
+    """Write sandbox A's WorkloadCredential as the Sandbox Controller requests it and the issuer accepts it."""
+    await custom.create_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        WORKLOAD_CREDENTIALS_PLURAL,
+        {
+            "apiVersion": _API_VERSION,
+            "kind": "WorkloadCredential",
+            "metadata": {
+                "name": SANDBOX_A,
+                "ownerReferences": [
+                    {
+                        "apiVersion": _API_VERSION,
+                        "kind": "Sandbox",
+                        "name": SANDBOX_A,
+                        "uid": sandbox_uid,
+                        "controller": True,
+                    }
+                ],
+            },
+            "spec": {
+                "subject": {"serviceAccount": SANDBOX_A},
+                "binding": {"podUID": pod_uid},
+                "pod": {"name": pod_name, "uid": pod_uid},
+            },
+        },
+    )
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        WORKLOAD_CREDENTIALS_PLURAL,
+        SANDBOX_A,
+        {"status": _record_status(credential_id, pod_uid)},
+        _content_type="application/merge-patch+json",
+    )
+
+
+async def rotate_record(custom: CustomObjectsClient, pod_uid: str) -> None:
+    """Issue sandbox A's record a fresh credential ID, as the issuer does when the binding moves."""
+    await custom.patch_namespaced_custom_object_status(
+        GROUP,
+        VERSION,
+        SANDBOX_NAMESPACE,
+        WORKLOAD_CREDENTIALS_PLURAL,
+        SANDBOX_A,
+        {"status": _record_status(ROTATED_RUNNER_CREDENTIAL_ID, pod_uid)},
+        _content_type="application/merge-patch+json",
     )
 
 
@@ -394,9 +451,7 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
         client_directory = tmp_path / "runner-client"
         client_directory.mkdir()
         client_certificate = issue_workload_leaf(
-            runtime_ca,
-            environment_runtime_identity_uri(SANDBOX_NAMESPACE, seeded.sandbox_uid, RUNNER_CREDENTIAL_ID),
-            client_directory,
+            runtime_ca, workload_uri(SANDBOX_NAMESPACE, SANDBOX_A, RUNNER_CREDENTIAL_ID), client_directory
         )
         client_tls = ssl.create_default_context(cadata=(runtime_ca.cert_pem + interception_ca.cert_pem).decode())
         client_tls.load_cert_chain(*(str(path) for path in client_certificate))
@@ -436,7 +491,7 @@ def issue_runner_svid(
     directory.mkdir()
     return issue_workload_leaf(
         egress.runtime_ca,
-        environment_runtime_identity_uri(SANDBOX_NAMESPACE, egress.sandbox_uid, credential_id),
+        workload_uri(SANDBOX_NAMESPACE, SANDBOX_A, credential_id),
         directory,
         dns_name="localhost",
         valid_for=valid_for,
@@ -493,17 +548,7 @@ async def test_rules_grpc_resolves_its_own_svid_and_returns_the_credential_descr
         with pytest.raises(grpc.aio.AioRpcError) as failure:
             await client.GetRules(request, metadata=(("authorization", "Bearer forged"),), timeout=5)
         assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
-        await cast(
-            CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api)
-        ).patch_namespaced_custom_object_status(
-            GROUP,
-            VERSION,
-            SANDBOX_NAMESPACE,
-            "sandboxes",
-            SANDBOX_A,
-            {"status": {"runnerCredential": {"acceptedId": ROTATED_RUNNER_CREDENTIAL_ID}}},
-            _content_type="application/merge-patch+json",
-        )
+        await rotate_record(cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api)), egress.pod_uid)
         with pytest.raises(grpc.aio.AioRpcError) as failure:
             await client.GetRules(request, timeout=5)
         assert failure.value.code() == grpc.StatusCode.UNAUTHENTICATED
@@ -549,7 +594,7 @@ async def test_rules_grpc_sidecar_presents_its_svid_and_discards_caller_credenti
 
 
 async def test_rules_grpc_refuses_forged_and_expired_clients(egress: Egress) -> None:
-    uri = environment_runtime_identity_uri(SANDBOX_NAMESPACE, egress.sandbox_uid, RUNNER_CREDENTIAL_ID)
+    uri = workload_uri(SANDBOX_NAMESPACE, SANDBOX_A, RUNNER_CREDENTIAL_ID)
     forged_directory = egress.tmp_path / "forged-rules-client"
     forged_directory.mkdir()
     forged = issue_workload_leaf(make_ca("untrusted-runner-ca"), uri, forged_directory)
@@ -652,24 +697,22 @@ async def test_svid_listener_maps_live_sandbox_and_ignores_forged_subject_header
     assert [path for _, path, _ in egress.upstream.requests] == ["/public/svid"]
 
 
-@pytest.mark.parametrize(
-    "runner_credential",
-    [None, {"id": ROTATED_RUNNER_CREDENTIAL_ID, "acceptedId": ROTATED_RUNNER_CREDENTIAL_ID}],
-    ids=["cleared", "rotated"],
-)
-async def test_svid_listener_rejects_a_revoked_runner_credential(
-    egress: Egress, runner_credential: dict[str, str] | None
-) -> None:
+@pytest.mark.parametrize("revocation", ["cleared", "rotated"])
+async def test_svid_listener_rejects_a_revoked_runner_credential(egress: Egress, revocation: str) -> None:
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
-    await custom.patch_namespaced_custom_object_status(
-        GROUP,
-        VERSION,
-        SANDBOX_NAMESPACE,
-        "sandboxes",
-        SANDBOX_A,
-        {"status": {"runnerCredential": runner_credential}},
-        _content_type="application/merge-patch+json",
-    )
+    if revocation == "rotated":
+        await rotate_record(custom, egress.pod_uid)
+    else:
+        # The owner clearing its binding revokes before the issuer rotates the ID.
+        await custom.patch_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            SANDBOX_NAMESPACE,
+            WORKLOAD_CREDENTIALS_PLURAL,
+            SANDBOX_A,
+            {"spec": {"binding": None, "pod": None}},
+            _content_type="application/merge-patch+json",
+        )
     proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "svid-client"))
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/revoked")
@@ -678,7 +721,10 @@ async def test_svid_listener_rejects_a_revoked_runner_credential(
     assert not egress.upstream.requests
 
 
-async def test_svid_listener_keeps_deleting_quiescing_sandbox_until_removed(egress: Egress) -> None:
+async def test_svid_listener_keeps_a_deleting_sandboxs_credential_until_its_record_goes(egress: Egress) -> None:
+    """Runtime seals history while its Sandbox finalizes: the record outlives the Sandbox's deletion,
+    and only its removal, by the garbage collector here played by the test, revokes. A Sandbox that
+    reuses the name gets a new record and a fresh credential ID, which the old certificate does not carry."""
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
     certificate = issue_runner_svid(egress, egress.tmp_path / "svid-client")
     proxy_tls = proxy_svid_client_context(egress, certificate)
@@ -691,19 +737,6 @@ async def test_svid_listener_keeps_deleting_quiescing_sandbox_until_removed(egre
         status, headers = await svid_request(client, egress, proxy_tls, "/public/deleting")
     assert status == 200, headers
 
-    await custom.patch_namespaced_custom_object_status(
-        GROUP,
-        VERSION,
-        SANDBOX_NAMESPACE,
-        "sandboxes",
-        SANDBOX_A,
-        {"status": {"stopStage": "Quiescing"}},
-        _content_type="application/merge-patch+json",
-    )
-    async with aiohttp.ClientSession() as client:
-        status, headers = await svid_request(client, egress, proxy_tls, "/public/quiescing")
-    assert status == 200, headers
-
     await custom.patch_namespaced_custom_object(
         GROUP,
         VERSION,
@@ -713,21 +746,15 @@ async def test_svid_listener_keeps_deleting_quiescing_sandbox_until_removed(egre
         {"metadata": {"finalizers": []}},
         _content_type="application/merge-patch+json",
     )
-
-    async def replacement_ready() -> None:
-        async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
-            with attempt:
-                with pytest.raises(k8s_client.ApiException) as error:
-                    await custom.get_namespaced_custom_object(GROUP, VERSION, SANDBOX_NAMESPACE, "sandboxes", SANDBOX_A)
-                assert error.value.status == 404
-
-    await replacement_ready()
+    await custom.delete_namespaced_custom_object(
+        GROUP, VERSION, SANDBOX_NAMESPACE, WORKLOAD_CREDENTIALS_PLURAL, SANDBOX_A, body=k8s_client.V1DeleteOptions()
+    )
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/removed")
     assert status == 403, headers
     assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
 
-    await custom.create_namespaced_custom_object(
+    replacement = await custom.create_namespaced_custom_object(
         GROUP,
         VERSION,
         SANDBOX_NAMESPACE,
@@ -735,36 +762,17 @@ async def test_svid_listener_keeps_deleting_quiescing_sandbox_until_removed(egre
         {
             "apiVersion": _API_VERSION,
             "kind": "Sandbox",
-            "metadata": {"name": SANDBOX_A, "finalizers": ["agentplane-egress-test/hold"]},
+            "metadata": {"name": SANDBOX_A},
             "spec": {"template": "test", "running": True},
         },
     )
-    replacement = await custom.get_namespaced_custom_object(GROUP, VERSION, SANDBOX_NAMESPACE, "sandboxes", SANDBOX_A)
     assert replacement["metadata"]["uid"] != egress.sandbox_uid
-    await custom.patch_namespaced_custom_object_status(
-        GROUP,
-        VERSION,
-        SANDBOX_NAMESPACE,
-        "sandboxes",
-        SANDBOX_A,
-        {
-            "status": {
-                "incarnation": {"name": SANDBOX_A, "uid": egress.pod_uid},
-                "runnerCredential": {
-                    "id": RUNNER_CREDENTIAL_ID,
-                    "acceptedId": RUNNER_CREDENTIAL_ID,
-                    "kind": "Pod",
-                    "podUid": egress.pod_uid,
-                },
-            }
-        },
-        _content_type="application/merge-patch+json",
-    )
+    await issue_record(custom, replacement["metadata"]["uid"], SANDBOX_A, egress.pod_uid, ROTATED_RUNNER_CREDENTIAL_ID)
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/replaced")
     assert status == 403, headers
     assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
-    assert [path for _, path, _ in egress.upstream.requests] == ["/public/deleting", "/public/quiescing"]
+    assert [path for _, path, _ in egress.upstream.requests] == ["/public/deleting"]
 
 
 async def test_svid_projected_token_must_match_sandbox_pod_uid(egress: Egress) -> None:
@@ -974,7 +982,7 @@ async def revocable_kubeconfig(server: KubernetesApiServer, path: Path, via: Sev
                         POLICY_SETS_PLURAL,
                         POLICY_BINDINGS_PLURAL,
                         "identities",
-                        "sandboxes",
+                        WORKLOAD_CREDENTIALS_PLURAL,
                     ],
                     verbs=["get", "list", "watch"],
                 ),
@@ -1018,13 +1026,11 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         server_directory.mkdir()
         server_certificate = issue_workload_leaf(ca, EGRESS_PROXY_URI, server_directory, dns_name="localhost")
         client_contexts = []
-        for index, workload in enumerate(seeded):
+        for index in range(len(seeded)):
             directory = tmp_path / f"replica-client-{index}"
             directory.mkdir()
             certificate = issue_workload_leaf(
-                ca,
-                environment_runtime_identity_uri(SANDBOX_NAMESPACE, workload.sandbox_uid, RUNNER_CREDENTIAL_ID),
-                directory,
+                ca, workload_uri(SANDBOX_NAMESPACE, SANDBOX_A, RUNNER_CREDENTIAL_ID), directory
             )
             context = client_tls_context(ca)
             context.load_cert_chain(*(str(path) for path in certificate))

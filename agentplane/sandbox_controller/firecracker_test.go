@@ -10,6 +10,7 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -45,7 +46,7 @@ func firecrackerTemplate() *sandboxapi.SandboxTemplate {
 func TestFirecrackerRenderAndLayout(t *testing.T) {
 	template := firecrackerTemplate()
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: sandboxName, Namespace: namespace, UID: "uid-sandbox"}}
-	pod, blocked := render(sandbox, template, "0123456789abcdef0123456789abcdef")
+	pod, blocked := render(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runnerCredentialTestSecret})
 	if blocked != nil {
 		t.Fatalf("render blocked: %v", blocked)
 	}
@@ -146,6 +147,7 @@ func TestFirecrackerReconcileSuspendsWithoutQuiescingOrDeletingPod(t *testing.T)
 	status := &testFirecrackerStatus{state: FirecrackerState{PodUID: "uid-pod", Phase: "running"}}
 	r.FirecrackerStatus = status
 	for attempt := 0; attempt < 8 && getPod(t, c) == nil; attempt++ {
+		issueCredential(t, c, sandboxKey)
 		if _, err := r.Reconcile(context.Background(), request); err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +196,7 @@ func TestFirecrackerReconcileSuspendsWithoutQuiescingOrDeletingPod(t *testing.T)
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
 		t.Fatalf("suspend/resume quiesced runner %d times", calls)
 	}
-	credential := getSandbox(t, c).Status.RunnerCredential.ID
+	credential := *getSandbox(t, c).Status.RunnerCredential
 	current := getPod(t, c)
 	if err := c.Delete(context.Background(), current); err != nil {
 		t.Fatal(err)
@@ -206,7 +208,7 @@ func TestFirecrackerReconcileSuspendsWithoutQuiescingOrDeletingPod(t *testing.T)
 		t.Fatal("lost launcher was cold booted on retained state")
 	}
 	stopped := getSandbox(t, c)
-	if stopped.Status.RunnerCredential.ID != credential || runningReason(t, c) != "FirecrackerLauncherLost" {
+	if *stopped.Status.RunnerCredential != credential || runningReason(t, c) != "FirecrackerLauncherLost" {
 		t.Fatalf("lost launcher changed credential or escaped recovery hold: %s", runningReason(t, c))
 	}
 }

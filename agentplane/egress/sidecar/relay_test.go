@@ -402,7 +402,7 @@ func TestMTLSHopRemovesCallerHeaderAndProjectsDestinationBearer(t *testing.T) {
 
 func TestMTLSFailureDoesNotRetryAsToken(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,7 +538,7 @@ func TestMTLSDoesNotRequireDestinationBearer(t *testing.T) {
 	proxy.StartTLS()
 	t.Cleanup(proxy.Close)
 
-	runtimeURI, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	runtimeURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

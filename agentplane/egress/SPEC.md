@@ -26,26 +26,24 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   non-Sandbox callers; a leaf of the cluster's internal CA naming a Runtime URI does not
   authenticate. It presents `spiffe://agentplane/egress-proxy`, issued by the workload CA
   with serverAuth. Clients require clientAuth and the canonical URI
-  `spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`.
+  `spiffe://agentplane/<namespace>/<name>/<credential-id>` of a `WorkloadCredential`.
   Plaintext is refused. Presenting both a certificate and bearer is refused; an invalid credential
   never falls back to another authentication method. A bearer is reviewed for the configured audience
   and allowed namespace, and its ServiceAccount is the unchanged policy subject.
 - Each SVID-authenticated request, including requests inherited through a CONNECT tunnel, checks
-  the leaf's validity and EKU again and reads the named Sandbox through an uncached API client.
-  The live object must still have the URI's UID, a current runner credential whose `id` and
-  `acceptedId` both match the URI, and a usable runner binding. A deletion timestamp or stop stage
-  does not revoke an otherwise accepted credential: the runner may need to stay authenticated while
-  it quiesces and seals final Session history. Revocation takes effect when the Sandbox is removed,
-  the credential is cleared or no longer accepted, or its runner binding changes. For Pod and
-  Firecracker runners, `runnerCredential.podUid` must match `status.incarnation.uid`; for KubeVirt,
-  the current `status.incarnation.uid` is the projected-token Pod binding and the accepted VM
-  credential must still carry its VMI UID. Replaced or stale credentials fail before policy
-  evaluation. There is no indefinitely cached Sandbox identity.
-- The resulting policy subject is exactly the Sandbox-owned ServiceAccount at
-  `Sandbox.namespace/Sandbox.name`. Neither a certificate subject DN nor a caller-supplied header
-  selects the subject, and the proxy does not read Pods or ServiceAccounts. The Sandbox
-  reader permission in the proxy's own namespace grants only `get`, `list` and `watch` on Sandboxes.
-  A Sandbox name no binding names reaches no rule.
+  the leaf's validity and EKU again and resolves it through the shared resolver
+  ([how a verifier resolves a peer](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)):
+  one uncached GET of the named `WorkloadCredential`, whose current credential ID and URI must
+  match, and for an owned record an accepted binding equal to its current one. A Sandbox's deletion
+  timestamp or stop stage does not revoke an otherwise accepted credential: the runner may need to
+  stay authenticated while it quiesces and seals final Session history. Revocation takes effect when
+  the record is removed, with its Sandbox or on stop, or its binding is cleared or replaced.
+  Replaced or stale credentials fail before policy evaluation. There is no cached identity.
+- The resulting policy subject is exactly the record's subject ServiceAccount, for a Sandbox its own
+  at `Sandbox.namespace/Sandbox.name`, read live for its UID. Neither a certificate subject DN nor a
+  caller-supplied header selects the subject, and the proxy does not read Pods or Sandboxes for it. A
+  forwarded projected token must be bound to the record's `spec.pod`. A ServiceAccount no binding
+  names reaches no rule.
 - A request authenticated with SPIFFE does not need a hop bearer and must not carry one. A sidecar's
   separately projected Kubernetes token is forwarded under `X-Agentplane-Workload-Token` for a
   `projectedWorkloadToken` credential. The proxy keeps it only when TokenReview proves the same

@@ -29,17 +29,14 @@ import (
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	"k8s.io/apimachinery/pkg/runtime"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -228,22 +225,10 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	if err != nil {
 		return err
 	}
-	sandboxReaders := map[string]*sandboxreader.Reader{}
+	var records *resolver.Resolver
 	if c.Forward.Has(listener.SPIFFE) {
-		scheme := runtime.NewScheme()
-		if err := sandboxapi.AddToScheme(scheme); err != nil {
-			return fmt.Errorf("register Sandbox API: %w", err)
-		}
-		objects, err := client.New(base, client.Options{Scheme: scheme})
-		if err != nil {
-			return fmt.Errorf("create live Sandbox reader: %w", err)
-		}
-		for _, namespace := range c.AllowedServiceAccountNamespaces {
-			reader, err := sandboxreader.New(namespace, objects)
-			if err != nil {
-				return fmt.Errorf("configure Sandbox reader for %q: %w", namespace, err)
-			}
-			sandboxReaders[namespace] = reader
+		if records, err = resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces); err != nil {
+			return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
 		}
 	}
 	ca, err := tls.LoadX509KeyPair(c.CACert, c.CAKey)
@@ -287,7 +272,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return err
 	}
 
-	authentication, err := identity.NewAuthenticator(c.Forward, verifier, sandboxReaders)
+	authentication, err := identity.NewAuthenticator(c.Forward, verifier, records)
 	if err != nil {
 		return err
 	}

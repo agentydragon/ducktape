@@ -437,7 +437,6 @@ def build_chart(
     add_workload_ca(chart)
     workload_certificate_admission.add_workload_certificate_admission(
         chart,
-        sandbox_controllers={ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME)},
         workload_credential_issuers={ServiceAccountRef(namespace=NAMESPACE, name=policy_controller.NAME)},
         # The user k3s writes its admin kubeconfig for, which applies these manifests.
         service_requester="system:admin",

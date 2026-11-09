@@ -117,12 +117,12 @@ func TestARequestIsPendingUntilIssuedForItsCurrentSpec(t *testing.T) {
 	}
 
 	// Binding the incarnation is a new generation: the old status no longer answers.
-	request.Binding = Pod{UID: firstPod}
+	request.Binding = Pod{Name: "test-first-pod", UID: firstPod}
 	if _, ok := ensure(t, requester, request).(Pending); !ok {
 		t.Fatal("a new binding answered with the previous generation's status")
 	}
 	bound := record(t, "test-lifecycle")
-	if bound.Spec.Binding == nil || bound.Spec.Binding.PodUID != firstPod {
+	if bound.Spec.Binding == nil || bound.Spec.Binding.PodUID != firstPod || *bound.Spec.Pod != (workloadapi.PodRef{Name: "test-first-pod", UID: firstPod}) {
 		t.Fatalf("binding not written: %+v", bound.Spec)
 	}
 	if _, ok := ensure(t, requester, request).(Pending); !ok {
@@ -139,7 +139,7 @@ func TestARequestIsPendingUntilIssuedForItsCurrentSpec(t *testing.T) {
 	if _, err := requester.Ensure(t.Context(), request); !apierrors.IsInvalid(err) {
 		t.Fatalf("re-pointing a running incarnation: %v", err)
 	}
-	request.Binding = Pod{UID: "22222222-2222-4222-8222-222222222222"}
+	request.Binding = Pod{Name: "test-second-pod", UID: "22222222-2222-4222-8222-222222222222"}
 	if _, ok := ensure(t, requester, request).(Pending); !ok {
 		t.Fatal("a new incarnation answered before issuance")
 	}

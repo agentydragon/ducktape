@@ -15,7 +15,7 @@ import (
 
 func TestProxyTLSConnectionExpiresAndReloadsTheSameRuntimeIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.EnvironmentRuntimeURI("agent-ns", "sandbox-uid", "credential-id")
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

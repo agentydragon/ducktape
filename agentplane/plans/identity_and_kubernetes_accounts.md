@@ -171,8 +171,8 @@ today, and never adopts one on name alone. No finalizer, for the reason the Poli
 ## Workload authentication
 
 **First slice, selected 2026-11-05:** ship SVID authentication independently of the identity and
-Kubernetes-account cutover. Resolve the verified SPIFFE path to the live Sandbox UID and its
-accepted `status.runnerCredential` generation. The subject remains exactly the Sandbox's own
+Kubernetes-account cutover. Resolve the verified SPIFFE path to the live `WorkloadCredential` it
+names and its accepted binding ([workload authentication](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)). The subject remains exactly the Sandbox's own
 ServiceAccount; services retain its canonical UID and existing authorization. This slice adds no
 identity reference or new account resource. One runner TLS Secret has two readers: Runtime and the
 sidecar or relay. The workload container never mounts it. Require explicit clientAuth EKU and use
@@ -181,7 +181,7 @@ the shared transport's verified trust-manager roots and rotation behavior.
 The shared TLS proxy listener accepts explicit `spiffe` and `kubernetes_bearer` modes. Sandbox
 sidecars select SPIFFE; existing Action command/build boxes and Haku UI/Anki retain Pod-bound
 bearers over verified TLS. Their credential files stay in the sidecar. Per-audience tokens offered
-by an SVID caller must match the bound Pod UID in Sandbox status; a bearer caller's projected
+by an SVID caller must match the Pod its WorkloadCredential names; a bearer caller's projected
 tokens must match its TokenReview principal. History, Notification, Dispatcher, Action and LLM
 verify callers at their own service boundary, with opaque TLS through the proxy. Workload and
 backend RPCs share one TLS listener per service with method-specific authorization. Backend clients
@@ -198,14 +198,13 @@ The identity-subject behavior below belongs to the later cutover. Its Sandbox-co
 lookup is provisional until the shared lifecycle design selects identity/SVID management
 independently of Sandboxes:
 
-The SVIDs already exist: the Sandbox Controller requests one cert-manager `Certificate` per
-incarnation with URI SAN `spiffe://agentplane/environment-runtime/<ns>/<sandbox-uid>/<credential-id>`
-([Sandbox Controller SPEC](../sandbox_controller/SPEC.md)), and Environment Runtime presents it on the
-control connection. Firecracker launcher delivery over the Workload API remains part of the launcher
+The SVIDs already exist: the Sandbox Controller requests one per incarnation through the Sandbox's
+`WorkloadCredential`, with URI SAN `spiffe://agentplane/<ns>/<sandbox-name>/<credential-id>`
+([workload authentication](../docs/workload_authentication.md#workloadcredentials)), and
+Environment Runtime presents it on the control connection. Firecracker launcher delivery over the Workload API remains part of the launcher
 integration. The egress sidecar or relay presents the same SVID on its hop to the central proxy in
 place of the proxy-audience projected token; the proxy verifies it with the Gateway's transport package
-(`environment_runtime_transport`) and resolves the Sandbox UID in the path to the Sandbox's
-`Identity`. No SPIRE, Cilium mutual authentication or mesh is involved.
+(`environment_runtime_transport`) and resolves the record the path names to its subject. No SPIRE, Cilium mutual authentication or mesh is involved.
 
 Rules then key on the identity. Everything the egress SPEC says about a subject holds with
 "ServiceAccount" read as "Identity": a subject no binding names reaches no rule, and the connection
