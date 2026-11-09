@@ -708,6 +708,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     workload_certificate_admission.add_workload_certificate_admission(
         chart,
         sandbox_controllers={ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME)},
+        workload_credential_issuers={ServiceAccountRef(namespace=env.namespace, name=policy_controller.NAME)},
         service_requester="system:serviceaccount:flux-system:kustomize-controller",
         cert_manager=ServiceAccountRef(namespace="cert-manager", name="cert-manager"),
     )
@@ -801,6 +802,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         account=controller.account,
         assignable_grants=[grant for grants in assignable_sets.values() for grant in grants],
         accounts_namespace=kubernetes_accounts_namespace(env.namespace),
+        workload_namespaces={env.namespace},
     )
     reader = ServiceAccount(
         chart,

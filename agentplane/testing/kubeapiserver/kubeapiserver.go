@@ -61,6 +61,13 @@ func WithUserAudiences(audiences ...string) Option {
 	return WithAPIServerFlag("api-audiences", audiences...)
 }
 
+// WithCRDs also installs the CRDs at paths, files or directories, such as cert-manager's.
+func WithCRDs(paths ...string) Option {
+	return func(environment *envtest.Environment) {
+		environment.CRDDirectoryPaths = append(environment.CRDDirectoryPaths, paths...)
+	}
+}
+
 // Start runs a control plane until Stop.
 func Start(options ...Option) (*Server, error) {
 	assets, err := runfiles.Rlocation(envtestRlocation)

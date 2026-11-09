@@ -5,6 +5,8 @@ Issues and resolves the SVIDs Agentplane workloads present, per
 
 - `api/v1alpha1`: the `WorkloadCredential` kind. Its owner writes `spec`; only the issuer writes
   `status`. A record's subject changes only together with a new binding (a CRD transition rule).
+- `issuer`: the reconciler the Policy Controller hosts
+  ([its contract](../policy_controller/SPEC.md#workload-credentials)).
 - `requester`: how a Go owner asks for a credential (`Requester.Ensure`, `Requester.Revoke`). It
   reads records uncached, and reports a credential only once `status.observedGeneration` has caught
   up with the spec it wrote.

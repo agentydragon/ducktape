@@ -29,6 +29,8 @@ import (
 	policyservice "github.com/agentydragon/ducktape/agentplane/policy_controller/service"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/issuer"
 )
 
 func main() {
@@ -73,6 +75,25 @@ func run(c config) error {
 	}
 	// The cache holds only what the controller reads: its own namespace's policy objects, the
 	// subject and accounts namespaces' ServiceAccounts, and the native bindings carrying its label.
+	byObject := map[client.Object]cache.ByObject{
+		&policyapi.PolicySet{}:             {Namespaces: only(c.PolicyNamespace)},
+		&policyapi.PolicyBinding{}:         {Namespaces: only(c.PolicyNamespace)},
+		&policyapi.KubernetesRoleSet{}:     {Namespaces: only(c.PolicyNamespace)},
+		&policyapi.ServiceAccountGrant{}:   {Namespaces: only(c.PolicyNamespace)},
+		&policyapi.ManagedServiceAccount{}: {Namespaces: only(c.PolicyNamespace)},
+		&corev1.ServiceAccount{}:           {Namespaces: only(append(slices.Clone(c.SubjectNamespaces), c.AccountsNamespace)...)},
+		&rbacv1.RoleBinding{}:              {Label: ours},
+		&rbacv1.ClusterRoleBinding{}:       {Label: ours},
+	}
+	issuesWorkloadCredentials := c.WorkloadIssuer != ""
+	if issuesWorkloadCredentials {
+		if err := workloadapi.AddToScheme(scheme); err != nil {
+			return err
+		}
+		// Its records and the Certificates it creates for them, in the namespaces it issues for.
+		byObject[&workloadapi.WorkloadCredential{}] = cache.ByObject{Namespaces: only(c.WorkloadNamespaces...)}
+		byObject[issuer.NewCertificate()] = cache.ByObject{Namespaces: only(c.WorkloadNamespaces...)}
+	}
 	config := ctrl.GetConfigOrDie()
 	config.WrapTransport = observability.WrapHTTPTransport(config.WrapTransport)
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
@@ -83,16 +104,7 @@ func run(c config) error {
 		LeaderElection:          true,
 		LeaderElectionID:        "agentplane-policy-controller",
 		LeaderElectionNamespace: c.PolicyNamespace,
-		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&policyapi.PolicySet{}:             {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.PolicyBinding{}:         {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.KubernetesRoleSet{}:     {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.ServiceAccountGrant{}:   {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.ManagedServiceAccount{}: {Namespaces: only(c.PolicyNamespace)},
-			&corev1.ServiceAccount{}:           {Namespaces: only(append(slices.Clone(c.SubjectNamespaces), c.AccountsNamespace)...)},
-			&rbacv1.RoleBinding{}:              {Label: ours},
-			&rbacv1.ClusterRoleBinding{}:       {Label: ours},
-		}},
+		Cache:                   cache.Options{ByObject: byObject},
 	})
 	if err != nil {
 		return err
@@ -163,6 +175,12 @@ func run(c config) error {
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err
+	}
+	if issuesWorkloadCredentials {
+		workloadCredentials := &issuer.Reconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Issuer: c.WorkloadIssuer}
+		if err := workloadCredentials.SetupWithManager(mgr); err != nil {
+			return err
+		}
 	}
 	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {
 		return err

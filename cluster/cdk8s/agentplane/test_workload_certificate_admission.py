@@ -26,7 +26,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
-from cluster.cdk8s.agentplane import sandbox_controller, staging, workload_certificate_admission
+from cluster.cdk8s.agentplane import policy_controller, sandbox_controller, staging, workload_certificate_admission
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 
 Body = dict[str, Any]
@@ -37,6 +37,8 @@ VERSION = "v1"
 NAMESPACE = "test-workload-sandboxes"
 OTHER_NAMESPACE = "test-workload-other"
 SANDBOX_CONTROLLER = ServiceAccountRef(namespace=NAMESPACE, name="test-sandbox-controller")
+RECORD_ISSUER = ServiceAccountRef(namespace=NAMESPACE, name="test-policy-controller")
+CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
 OTHER_ACCOUNT = f"system:serviceaccount:{NAMESPACE}:test-other-account"
 APPLIER = "test-manifest-applier"
 CERT_MANAGER = ServiceAccountRef(namespace="test-cert-manager", name="test-cert-manager")
@@ -50,6 +52,10 @@ def _username(account: ServiceAccountRef) -> str:
 
 def _runtime_uri(namespace: str) -> str:
     return f"spiffe://agentplane/environment-runtime/{namespace}/3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1/test-credential"
+
+
+def _record_uri(namespace: str, name: str = "test-agent") -> str:
+    return f"spiffe://agentplane/{namespace}/{name}/{CREDENTIAL_ID}"
 
 
 def _certificate(*, uris: list[str], namespace: str = NAMESPACE, issuer: Body = ISSUER_REF) -> Body:
@@ -155,12 +161,18 @@ async def _await_policy(admitted: Admits, user: str, refused: Body) -> None:
 
 async def test_only_named_requesters_get_workload_certificates(scratch_chart: Chart) -> None:
     workload_certificate_admission.add_workload_certificate_admission(
-        scratch_chart, sandbox_controllers={SANDBOX_CONTROLLER}, service_requester=APPLIER, cert_manager=CERT_MANAGER
+        scratch_chart,
+        sandbox_controllers={SANDBOX_CONTROLLER},
+        workload_credential_issuers={RECORD_ISSUER},
+        service_requester=APPLIER,
+        cert_manager=CERT_MANAGER,
     )
     documents = cast(list[Body], cdk8s.Testing.synth(scratch_chart))
     controller = _username(SANDBOX_CONTROLLER)
     runner = _certificate(uris=[_runtime_uri(NAMESPACE)])
     service = _certificate(uris=["spiffe://agentplane/test-service"])
+    record_issuer = _username(RECORD_ISSUER)
+    record = _certificate(uris=[_record_uri(NAMESPACE)])
     async with (
         kubernetes_apiserver() as server,
         _admission(server, documents, {NAMESPACE, OTHER_NAMESPACE}) as admitted,
@@ -170,6 +182,11 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
         # cdk8s renders an issuerRef without a group; cert-manager defaults it.
         assert await admitted(controller, _with_spec(runner, issuerRef={k: ISSUER_REF[k] for k in ("name", "kind")}))
         assert await admitted(APPLIER, service)
+        assert await admitted(record_issuer, record)
+        assert await admitted(
+            record_issuer, _certificate(uris=[_record_uri(OTHER_NAMESPACE)], namespace=OTHER_NAMESPACE)
+        )
+        assert await admitted(record_issuer, _with_spec(record, uris=[_record_uri(NAMESPACE, "test-box.scratch")]))
         assert await admitted(_username(CERT_MANAGER), _certificate_request(ISSUER_REF))
 
         refused = {
@@ -206,6 +223,21 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
             "a CA": (controller, _with_spec(runner, isCA=True)),
             "a certificate-signing usage": (APPLIER, _with_spec(service, usages=["digital signature", "cert sign"])),
             "a CertificateRequest from the Sandbox Controller": (controller, _certificate_request(ISSUER_REF)),
+            "a record URI from the Sandbox Controller": (controller, record),
+            "a record URI from the applier": (APPLIER, record),
+            "a record URI from another account": (OTHER_ACCOUNT, record),
+            "another namespace's record URI": (record_issuer, _with_spec(record, uris=[_record_uri(OTHER_NAMESPACE)])),
+            "a record URI without a credential ID": (
+                record_issuer,
+                _with_spec(record, uris=[f"spiffe://agentplane/{NAMESPACE}/test-agent/test-credential"]),
+            ),
+            "a Runtime URI from the issuer": (record_issuer, runner),
+            "a service URI from the issuer": (record_issuer, service),
+            "a record URI beside a service URI": (
+                record_issuer,
+                _with_spec(record, uris=[_record_uri(NAMESPACE), "spiffe://agentplane/actions"]),
+            ),
+            "a CertificateRequest from the issuer": (record_issuer, _certificate_request(ISSUER_REF)),
         }
         for case, (user, body) in refused.items():
             assert not await admitted(user, body), case
@@ -267,8 +299,8 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
 
 
 async def test_staging_requesters_get_the_certificates_staging_renders(staging_manifests: list[Body]) -> None:
-    """Flux's applier may write every workload Certificate staging renders, and the Sandbox Controller
-    may write a runner Certificate; neither may write the other's."""
+    """Flux's applier may write every workload Certificate staging renders, the Sandbox Controller a
+    runner Certificate and the Policy Controller a record's; none may write another's."""
     workload = [
         doc
         for doc in staging_manifests
@@ -279,11 +311,15 @@ async def test_staging_requesters_get_the_certificates_staging_renders(staging_m
     assert workload, "staging renders no workload Certificate"
     applier = "system:serviceaccount:flux-system:kustomize-controller"
     controller = f"system:serviceaccount:{staging.ENV.namespace}:{sandbox_controller.NAME}"
+    record_issuer = f"system:serviceaccount:{staging.ENV.namespace}:{policy_controller.NAME}"
     runner = _certificate(uris=[_runtime_uri(staging.ENV.namespace)], namespace=staging.ENV.namespace)
+    record = _certificate(uris=[_record_uri(staging.ENV.namespace)], namespace=staging.ENV.namespace)
     namespaces = {doc["metadata"]["namespace"] for doc in workload} | {staging.ENV.namespace}
     async with kubernetes_apiserver() as server, _admission(server, staging_manifests, namespaces) as admitted:
         await _await_policy(admitted, applier, runner)
         assert await admitted(controller, runner)
+        assert await admitted(record_issuer, record)
+        assert not await admitted(controller, record)
         for certificate in workload:
             assert await admitted(applier, certificate), certificate["metadata"]["name"]
             assert not await admitted(controller, certificate), certificate["metadata"]["name"]

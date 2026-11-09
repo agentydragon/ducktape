@@ -1,0 +1,55 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "issuer",
+    srcs = [
+        "certificate.go",
+        "issuer.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/workload_identity/issuer",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/workload_identity/api/v1alpha1",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/equality",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/api/meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/labels",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/selection",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//:controller-runtime",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+    ],
+)
+
+go_test(
+    name = "issuer_test",
+    srcs = ["issuer_test.go"],
+    data = ["@cert_manager_certificate_crd//file"],
+    embed = [":issuer"],
+    env = {"CERT_MANAGER_CERTIFICATE_CRD": "$(rlocationpath @cert_manager_certificate_crd//file)"},
+    deps = [
+        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/testing/kubeapiserver",
+        "//agentplane/workload_identity/api/v1alpha1",
+        "//agentplane/workload_identity/requester",
+        "//agentplane/workload_identity/resolver",
+        "@com_github_go_logr_logr//:logr",
+        "@io_bazel_rules_go//go/runfiles",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//:controller-runtime",
+        "@io_k8s_sigs_controller_runtime//pkg/cache",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
+    ],
+)

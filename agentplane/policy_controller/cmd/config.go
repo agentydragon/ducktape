@@ -22,6 +22,8 @@ type config struct {
 	GRPCAudience           string   `mapstructure:"grpc_audience"`
 	ReaderAccounts         []string `mapstructure:"reader_accounts"`
 	WriterAccounts         []string `mapstructure:"writer_accounts"`
+	WorkloadIssuer         string   `mapstructure:"workload_issuer"`
+	WorkloadNamespaces     []string `mapstructure:"workload_namespaces"`
 }
 
 func defaultConfig() config {
@@ -56,6 +58,14 @@ func (c config) validate() error {
 			if len(validation.IsDNS1123Label(namespace)) > 0 {
 				return fmt.Errorf("%s holds an invalid namespace name", setting.name)
 			}
+		}
+	}
+	if (c.WorkloadIssuer == "") != (len(c.WorkloadNamespaces) == 0) {
+		return errors.New("workload_issuer and workload_namespaces are set together")
+	}
+	for _, namespace := range c.WorkloadNamespaces {
+		if len(validation.IsDNS1123Label(namespace)) > 0 {
+			return errors.New("workload_namespaces holds an invalid namespace name")
 		}
 	}
 	for _, name := range append(append([]string(nil), c.ReaderAccounts...), c.WriterAccounts...) {

@@ -74,3 +74,28 @@ func TestANamespaceNameThatCannotExistIsRefused(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkloadIssuanceIsConfiguredWhole(t *testing.T) {
+	for name, environment := range map[string]map[string]string{
+		"an issuer without namespaces": {"WORKLOAD_ISSUER": "test-workload-issuer"},
+		"namespaces without an issuer": {"WORKLOAD_NAMESPACES": "agents"},
+		"an invalid namespace":         {"WORKLOAD_ISSUER": "test-workload-issuer", "WORKLOAD_NAMESPACES": "Agents"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setEnvironment(t, required)
+			setEnvironment(t, environment)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("started with partial workload issuance settings")
+			}
+		})
+	}
+	setEnvironment(t, required)
+	setEnvironment(t, map[string]string{"WORKLOAD_ISSUER": "test-workload-issuer", "WORKLOAD_NAMESPACES": "agents,tools"})
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.WorkloadIssuer != "test-workload-issuer" || !slices.Equal(c.WorkloadNamespaces, []string{"agents", "tools"}) {
+		t.Fatalf("workload issuance settings were not read: %+v", c)
+	}
+}
