@@ -508,9 +508,7 @@ apply migrations. Goose's session lock serializes concurrent starts; every schem
 remain compatible with the old and new service versions during that overlap. A database with historical
 versions 1–6 retains its rollback path to a typed-storage-compatible version 6 image. A fresh
 version 8 database requires a rollback image that understands the version 8 schema, or a
-coordinated database restore. See the
-[version 6 cutover evidence](debug/2026_10_28_native_storage_cutover.md) and
-[version 7 baseline verification](debug/2026_10_28_final_schema_baseline.md).
+coordinated database restore.
 
 ## MCP executor transports
 

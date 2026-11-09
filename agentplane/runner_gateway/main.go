@@ -63,6 +63,8 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Zero keeps client-go's 5 QPS / burst 10 limiter, which once queued Dispatcher ownership Lease
+	// acquisitions for seconds each; the deployment sets -1 to disable it.
 	kubeConfig.QPS = c.KubernetesClientQPS
 	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	return kubeConfig, nil
