@@ -148,17 +148,6 @@ impl RealizabilityVerdict {
     pub fn is_realizable(&self) -> bool {
         self.unrealizable_sccs.is_empty() && self.cross_rebinds.is_empty()
     }
-
-    /// Modules participating in any unrealizable SCC.
-    pub fn modules_in_unrealizable_sccs(&self) -> BTreeSet<ModuleId> {
-        let mut out = BTreeSet::new();
-        for scc in &self.unrealizable_sccs {
-            for &m in &scc.core.modules {
-                out.insert(m);
-            }
-        }
-        out
-    }
 }
 
 /// Entry imports every emitted module and evaluates last. A constraining edge
@@ -613,18 +602,6 @@ impl RealizabilityIndex {
             );
         }
         decision
-    }
-
-    /// Boolean form of
-    /// [`Self::ladder_decision_after_moving_source_units_touching`].
-    pub fn would_remain_realizable_after_moving_source_units_touching(
-        &self,
-        dependency_graph: &DependencyGraph,
-        source_units: &[SourceUnitId],
-        to: ModuleId,
-    ) -> bool {
-        self.ladder_decision_after_moving_source_units_touching(dependency_graph, source_units, to)
-            .accepts()
     }
 
     /// `O(α)` DSU probe against the tier-1 condensation order: are

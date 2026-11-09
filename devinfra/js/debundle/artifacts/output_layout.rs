@@ -109,10 +109,6 @@ impl DebundleOutputLayout {
     pub fn vendor_swaps_report(&self) -> PathBuf {
         self.reports_root().join(VENDOR_SWAPS_REPORT)
     }
-
-    pub fn gate_rejected_marker(&self) -> PathBuf {
-        self.root.join(GATE_REJECTED_MARKER)
-    }
 }
 
 pub fn report_path_for_file(tree_root: &Path, app_relative_path: &str) -> PathBuf {
