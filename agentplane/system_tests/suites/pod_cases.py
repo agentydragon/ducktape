@@ -264,9 +264,9 @@ SCENARIOS = (
     pytest.param(a_non_sandbox_command_box_keeps_its_bearer_egress),
     pytest.param(a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes),
     pytest.param(two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it),
-    pytest.param(a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused),
-    pytest.param(a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner),
-    pytest.param(a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway),
+    # The node holds five Sandboxes beside the stack, and the runner pool keeps every pair it creates
+    # until the suite ends. The messaging case's four Sandboxes fit only before the first `shared` case;
+    # two `shared` cases running together leave room for one, so adjacent `shared` cases go last.
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),
     pytest.param(a_policy_granted_after_the_sandbox_is_running_takes_effect, marks=pytest.mark.scripted_model),
     pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),
@@ -284,6 +284,9 @@ SCENARIOS = (
     pytest.param(codex_standing_instructions_after_suspend_and_compact, marks=pytest.mark.scripted_model),
     pytest.param(two_harness_threads_keep_their_context_after_sandbox_suspend_resume, marks=pytest.mark.scripted_model),
     pytest.param(an_unknown_thread_is_not_found),
+    pytest.param(a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused),
+    pytest.param(a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner),
+    pytest.param(a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway),
     pytest.param(
         every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event, marks=pytest.mark.scripted_model
     ),
