@@ -1,7 +1,7 @@
 /** Browser adapters for ConnectionService's generated HTTP/JSON facade. */
 import { create, fromJson, fromJsonString, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 
-import { fetchWithLogin, HttpError } from "../client";
+import { fetchText } from "../client";
 import {
   DecideConnectionEnrollmentRequestSchema,
   DecideConnectionEnrollmentResponseSchema,
@@ -69,14 +69,6 @@ function readJsonObject(value: JsonValue, label: string): JsonObject {
   return value;
 }
 
-function parseJsonOrText(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
 async function callFacade(method: FacadeMethod, path: string, body?: JsonValue): Promise<string> {
   const headers = new Headers({ Accept: "application/json" });
   const init: RequestInit = { method, headers };
@@ -84,10 +76,7 @@ async function callFacade(method: FacadeMethod, path: string, body?: JsonValue):
     headers.set("Content-Type", "application/json");
     init.body = JSON.stringify(body);
   }
-  const response = await fetchWithLogin(path, init);
-  const text = await response.text();
-  if (!response.ok) throw new HttpError(response, parseJsonOrText(text));
-  return text;
+  return fetchText(path, init);
 }
 
 function withoutPathField(body: JsonObject, field: string): JsonObject {

@@ -241,7 +241,9 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":operator_login",
+        ":parsed_json",
         ":schema",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
     ],
 )
@@ -580,6 +582,7 @@ ts_library(
         ":format_time",
         ":schema",
         ":status_mark",
+        "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/environments/v1:environment_service_pb",
     ],
