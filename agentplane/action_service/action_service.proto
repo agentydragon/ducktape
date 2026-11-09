@@ -724,20 +724,32 @@ message Policy {
   }
 }
 
-message StringList {
-  repeated string values = 1;
+// The Actions of one ActionGroup a policy lists.
+message GroupActions {
+  // The ActionGroup's key.
+  string group = 1;
+  // Action names within the group, sorted.
+  repeated string names = 2;
 }
 
-// Matches a listed Action by name alone.
+// What a Home Assistant entity control policy lets a call do to one entity.
+message EntityPermission {
+  // The Home Assistant entity id, such as `light.kitchen`.
+  string entity_id = 1;
+  // The services a call may use on the entity, sorted.
+  repeated string services = 2;
+}
+
+// Matches a listed Action by name alone. Every policy kind lists its Actions the same way: each group once, in
+// group order.
 message ExactActionsPolicy {
-  // Action names by ActionGroup key, sorted.
-  map<string, StringList> actions = 1;
+  repeated GroupActions actions = 1;
 }
 
 // Matches a listed Action whose arguments satisfy a JSON Schema. Plain JSON Schema semantics: `properties` alone never
 // implies presence.
 message ArgumentSchemaPolicy {
-  map<string, StringList> actions = 1;
+  repeated GroupActions actions = 1;
   google.protobuf.Struct argument_schema = 2;
 }
 
@@ -745,7 +757,7 @@ message ArgumentSchemaPolicy {
 // case-insensitively, a pull-request search with no query-level `repo:` qualifier, a code search with exactly one
 // unquoted `repo:owner/repo` qualifier.
 message GitHubRepositoryPolicy {
-  map<string, StringList> actions = 1;
+  repeated GroupActions actions = 1;
   // The GitHub repository owner the call must target.
   string owner = 2;
   // The GitHub repository name the call must target.
@@ -755,14 +767,14 @@ message GitHubRepositoryPolicy {
 // Matches a listed GitHub MCP call whose target repository an unauthenticated GitHub lookup confirms public. A lookup
 // that fails or is unavailable matches nothing, so the request waits for an operator and is never denied for it.
 message GitHubPublicRepositoryPolicy {
-  map<string, StringList> actions = 1;
+  repeated GroupActions actions = 1;
 }
 
 // Confines Home Assistant's generic service-call tool to configured entities and the services configured for each:
 // the call must name exactly one configured entity, that entity's own domain and one of its services, and carry no
 // argument the kind has not reviewed and no `data` that retargets it.
 message HomeAssistantEntityControlPolicy {
-  map<string, StringList> actions = 1;
-  // The Home Assistant entity ids a call may target, each with the services it may use, sorted.
-  map<string, StringList> entities = 2;
+  repeated GroupActions actions = 1;
+  // The entities a call may target, in entity id order, each once.
+  repeated EntityPermission entities = 2;
 }

@@ -135,11 +135,12 @@
             "index": 0,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-a", "test-read"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-read"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-reads",
@@ -312,11 +313,12 @@
             "index": 0,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-a", "test-read"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-read"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-reads",
@@ -363,11 +365,12 @@
             "index": 0,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-a", "test-read"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-read"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-reads",
@@ -378,11 +381,12 @@
             "index": 0,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-a", "test-read"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-read"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-reads",
@@ -493,11 +497,12 @@
             "index": 0,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-a", "test-read"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-read"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-reads",
@@ -508,11 +513,12 @@
             "index": 0,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-a", "test-read"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-read"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-reads",
@@ -733,11 +739,12 @@
             "index": 0,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-a", "test-read"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-read"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-reads",
@@ -748,14 +755,16 @@
             "index": 1,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-another-group": {
-                    "values": ["test-c"]
+                "actions": [
+                  {
+                    "group": "test-another-group",
+                    "names": ["test-c"]
                   },
-                  "test-group": {
-                    "values": ["test-a", "test-b"]
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-b"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -766,11 +775,12 @@
             "index": 2,
             "policy": {
               "argumentSchema": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-echo"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-echo"]
                   }
-                },
+                ],
                 "argumentSchema": {
                   "additionalProperties": false,
                   "properties": {
@@ -795,11 +805,12 @@
             "index": 3,
             "policy": {
               "githubRepository": {
-                "actions": {
-                  "test-github": {
-                    "values": ["get_file_contents", "search_code"]
+                "actions": [
+                  {
+                    "group": "test-github",
+                    "names": ["get_file_contents", "search_code"]
                   }
-                },
+                ],
                 "owner": "test-owner",
                 "repository": "test-repo"
               }
@@ -812,11 +823,12 @@
             "index": 4,
             "policy": {
               "githubPublicRepository": {
-                "actions": {
-                  "test-github": {
-                    "values": ["get_file_contents"]
+                "actions": [
+                  {
+                    "group": "test-github",
+                    "names": ["get_file_contents"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -827,19 +839,22 @@
             "index": 5,
             "policy": {
               "homeAssistantEntityControl": {
-                "actions": {
-                  "test-home-assistant": {
-                    "values": ["ha_call_service"]
+                "actions": [
+                  {
+                    "group": "test-home-assistant",
+                    "names": ["ha_call_service"]
                   }
-                },
-                "entities": {
-                  "fan.test_fan": {
-                    "values": ["turn_off"]
+                ],
+                "entities": [
+                  {
+                    "entityId": "fan.test_fan",
+                    "services": ["turn_off"]
                   },
-                  "light.test_lamp": {
-                    "values": ["toggle", "turn_on"]
+                  {
+                    "entityId": "light.test_lamp",
+                    "services": ["toggle", "turn_on"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1101,11 +1116,12 @@
             "index": 0,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-a", "test-read"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-read"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-reads",
@@ -1116,14 +1132,16 @@
             "index": 1,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-another-group": {
-                    "values": ["test-c"]
+                "actions": [
+                  {
+                    "group": "test-another-group",
+                    "names": ["test-c"]
                   },
-                  "test-group": {
-                    "values": ["test-a", "test-b"]
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-b"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1134,11 +1152,12 @@
             "index": 2,
             "policy": {
               "argumentSchema": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-echo"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-echo"]
                   }
-                },
+                ],
                 "argumentSchema": {
                   "additionalProperties": false,
                   "properties": {
@@ -1163,11 +1182,12 @@
             "index": 3,
             "policy": {
               "githubRepository": {
-                "actions": {
-                  "test-github": {
-                    "values": ["get_file_contents", "search_code"]
+                "actions": [
+                  {
+                    "group": "test-github",
+                    "names": ["get_file_contents", "search_code"]
                   }
-                },
+                ],
                 "owner": "test-owner",
                 "repository": "test-repo"
               }
@@ -1180,11 +1200,12 @@
             "index": 4,
             "policy": {
               "githubPublicRepository": {
-                "actions": {
-                  "test-github": {
-                    "values": ["get_file_contents"]
+                "actions": [
+                  {
+                    "group": "test-github",
+                    "names": ["get_file_contents"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1195,19 +1216,22 @@
             "index": 5,
             "policy": {
               "homeAssistantEntityControl": {
-                "actions": {
-                  "test-home-assistant": {
-                    "values": ["ha_call_service"]
+                "actions": [
+                  {
+                    "group": "test-home-assistant",
+                    "names": ["ha_call_service"]
                   }
-                },
-                "entities": {
-                  "fan.test_fan": {
-                    "values": ["turn_off"]
+                ],
+                "entities": [
+                  {
+                    "entityId": "fan.test_fan",
+                    "services": ["turn_off"]
                   },
-                  "light.test_lamp": {
-                    "values": ["toggle", "turn_on"]
+                  {
+                    "entityId": "light.test_lamp",
+                    "services": ["toggle", "turn_on"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1280,14 +1304,16 @@
             "index": 1,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-another-group": {
-                    "values": ["test-c"]
+                "actions": [
+                  {
+                    "group": "test-another-group",
+                    "names": ["test-c"]
                   },
-                  "test-group": {
-                    "values": ["test-a", "test-b"]
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-b"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1298,11 +1324,12 @@
             "index": 2,
             "policy": {
               "argumentSchema": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-echo"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-echo"]
                   }
-                },
+                ],
                 "argumentSchema": {
                   "additionalProperties": false,
                   "properties": {
@@ -1327,11 +1354,12 @@
             "index": 3,
             "policy": {
               "githubRepository": {
-                "actions": {
-                  "test-github": {
-                    "values": ["get_file_contents", "search_code"]
+                "actions": [
+                  {
+                    "group": "test-github",
+                    "names": ["get_file_contents", "search_code"]
                   }
-                },
+                ],
                 "owner": "test-owner",
                 "repository": "test-repo"
               }
@@ -1344,11 +1372,12 @@
             "index": 4,
             "policy": {
               "githubPublicRepository": {
-                "actions": {
-                  "test-github": {
-                    "values": ["get_file_contents"]
+                "actions": [
+                  {
+                    "group": "test-github",
+                    "names": ["get_file_contents"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1359,19 +1388,22 @@
             "index": 5,
             "policy": {
               "homeAssistantEntityControl": {
-                "actions": {
-                  "test-home-assistant": {
-                    "values": ["ha_call_service"]
+                "actions": [
+                  {
+                    "group": "test-home-assistant",
+                    "names": ["ha_call_service"]
                   }
-                },
-                "entities": {
-                  "fan.test_fan": {
-                    "values": ["turn_off"]
+                ],
+                "entities": [
+                  {
+                    "entityId": "fan.test_fan",
+                    "services": ["turn_off"]
                   },
-                  "light.test_lamp": {
-                    "values": ["toggle", "turn_on"]
+                  {
+                    "entityId": "light.test_lamp",
+                    "services": ["toggle", "turn_on"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1543,14 +1575,16 @@
             "index": 1,
             "policy": {
               "exactActions": {
-                "actions": {
-                  "test-another-group": {
-                    "values": ["test-c"]
+                "actions": [
+                  {
+                    "group": "test-another-group",
+                    "names": ["test-c"]
                   },
-                  "test-group": {
-                    "values": ["test-a", "test-b"]
+                  {
+                    "group": "test-group",
+                    "names": ["test-a", "test-b"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1561,11 +1595,12 @@
             "index": 2,
             "policy": {
               "argumentSchema": {
-                "actions": {
-                  "test-group": {
-                    "values": ["test-echo"]
+                "actions": [
+                  {
+                    "group": "test-group",
+                    "names": ["test-echo"]
                   }
-                },
+                ],
                 "argumentSchema": {
                   "additionalProperties": false,
                   "properties": {
@@ -1590,11 +1625,12 @@
             "index": 3,
             "policy": {
               "githubRepository": {
-                "actions": {
-                  "test-github": {
-                    "values": ["get_file_contents", "search_code"]
+                "actions": [
+                  {
+                    "group": "test-github",
+                    "names": ["get_file_contents", "search_code"]
                   }
-                },
+                ],
                 "owner": "test-owner",
                 "repository": "test-repo"
               }
@@ -1607,11 +1643,12 @@
             "index": 4,
             "policy": {
               "githubPublicRepository": {
-                "actions": {
-                  "test-github": {
-                    "values": ["get_file_contents"]
+                "actions": [
+                  {
+                    "group": "test-github",
+                    "names": ["get_file_contents"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",
@@ -1622,19 +1659,22 @@
             "index": 5,
             "policy": {
               "homeAssistantEntityControl": {
-                "actions": {
-                  "test-home-assistant": {
-                    "values": ["ha_call_service"]
+                "actions": [
+                  {
+                    "group": "test-home-assistant",
+                    "names": ["ha_call_service"]
                   }
-                },
-                "entities": {
-                  "fan.test_fan": {
-                    "values": ["turn_off"]
+                ],
+                "entities": [
+                  {
+                    "entityId": "fan.test_fan",
+                    "services": ["turn_off"]
                   },
-                  "light.test_lamp": {
-                    "values": ["toggle", "turn_on"]
+                  {
+                    "entityId": "light.test_lamp",
+                    "services": ["toggle", "turn_on"]
                   }
-                }
+                ]
               }
             },
             "policySet": "test-every-kind",

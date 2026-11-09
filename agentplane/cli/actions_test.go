@@ -44,7 +44,7 @@ func TestActionTextUsesGeneratedProtoJSON(t *testing.T) {
 		t.Fatalf("action detail = %q, error %v", action, err)
 	}
 
-	policy, err := policyText(json.RawMessage(`{"subject":{"namespace":"test","name":"agent"},"synced":true,"bindings":[{"name":"binding","expiresAt":"2026-01-02T03:04:05Z","policySets":[{"name":"set","generation":"1"}]}],"autoApproveIf":[{"binding":"binding","policySet":"set","source":"POLICY_SOURCE_RULES","index":0,"policy":{"exactActions":{"actions":{"test-group":{"values":["echo"]}}}}}]}`))
+	policy, err := policyText(json.RawMessage(`{"subject":{"namespace":"test","name":"agent"},"synced":true,"bindings":[{"name":"binding","expiresAt":"2026-01-02T03:04:05Z","policySets":[{"name":"set","generation":"1"}]}],"autoApproveIf":[{"binding":"binding","policySet":"set","source":"POLICY_SOURCE_RULES","index":0,"policy":{"exactActions":{"actions":[{"group":"test-group","names":["echo"]}]}}}]}`))
 	wantPolicy := "subject test/agent  synced true\nbinding binding  sets set  expires 2026-01-02T03:04:05Z\nauto-approve set#0  exact_actions  test-group/echo"
 	if err != nil || policy != wantPolicy {
 		t.Fatalf("policy text = %q, error %v; want %q", policy, err, wantPolicy)

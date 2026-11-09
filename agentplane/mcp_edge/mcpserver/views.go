@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -425,27 +424,27 @@ func (d *viewDecoder) policyView(policy *pb.CallerActionPolicy, fields []string)
 func (d *viewDecoder) ruleView(policy *pb.Policy) any {
 	switch kind := policy.GetKind().(type) {
 	case *pb.Policy_ExactActions:
-		return actionsRule{Type: "exact_actions", Actions: sortedLists(kind.ExactActions.GetActions())}
+		return actionsRule{Type: "exact_actions", Actions: d.actionLists(kind.ExactActions.GetActions())}
 	case *pb.Policy_ArgumentSchema:
 		return argumentSchemaRule{
 			Type:           "argument_schema",
-			Actions:        sortedLists(kind.ArgumentSchema.GetActions()),
+			Actions:        d.actionLists(kind.ArgumentSchema.GetActions()),
 			ArgumentSchema: object(kind.ArgumentSchema.GetArgumentSchema()),
 		}
 	case *pb.Policy_GithubRepository:
 		return githubRepositoryRule{
 			Type:       "github_repository",
-			Actions:    sortedLists(kind.GithubRepository.GetActions()),
+			Actions:    d.actionLists(kind.GithubRepository.GetActions()),
 			Owner:      kind.GithubRepository.GetOwner(),
 			Repository: kind.GithubRepository.GetRepository(),
 		}
 	case *pb.Policy_GithubPublicRepository:
-		return actionsRule{Type: "github_public_repository", Actions: sortedLists(kind.GithubPublicRepository.GetActions())}
+		return actionsRule{Type: "github_public_repository", Actions: d.actionLists(kind.GithubPublicRepository.GetActions())}
 	case *pb.Policy_HomeAssistantEntityControl:
 		return homeAssistantEntityControlRule{
 			Type:     "home_assistant_entity_control",
-			Actions:  sortedLists(kind.HomeAssistantEntityControl.GetActions()),
-			Entities: sortedLists(kind.HomeAssistantEntityControl.GetEntities()),
+			Actions:  d.actionLists(kind.HomeAssistantEntityControl.GetActions()),
+			Entities: d.entityLists(kind.HomeAssistantEntityControl.GetEntities()),
 		}
 	default:
 		d.fail("core answered policy %T, outside the contract", kind)
@@ -453,11 +452,26 @@ func (d *viewDecoder) ruleView(policy *pb.Policy) any {
 	}
 }
 
-// sortedLists is a policy's name lists, each sorted.
-func sortedLists(lists map[string]*pb.StringList) actionLists {
+// actionLists is a policy's Actions as the PolicySet spells them, by group.
+func (d *viewDecoder) actionLists(groups []*pb.GroupActions) actionLists {
 	view := actionLists{}
-	for key, list := range lists {
-		view[key] = slices.Sorted(slices.Values(list.GetValues()))
+	for _, group := range groups {
+		if _, ok := view[group.GetGroup()]; ok {
+			d.fail("core listed group %q twice in one policy", group.GetGroup())
+		}
+		view[group.GetGroup()] = group.GetNames()
+	}
+	return view
+}
+
+// entityLists is a policy's entities as the PolicySet spells them, by entity id.
+func (d *viewDecoder) entityLists(entities []*pb.EntityPermission) actionLists {
+	view := actionLists{}
+	for _, entity := range entities {
+		if _, ok := view[entity.GetEntityId()]; ok {
+			d.fail("core listed entity %q twice in one policy", entity.GetEntityId())
+		}
+		view[entity.GetEntityId()] = entity.GetServices()
 	}
 	return view
 }
