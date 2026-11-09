@@ -222,7 +222,10 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 			out.SetURL(h.baseURL)
 			dropUntrustedRequestHeaders(out.Out.Header, h.attribution)
 			maps.Copy(out.Out.Header, verified)
-			if h.logBody {
+			// A bodyless request has a nil or NoBody Body. Wrapping nil makes the transport's body
+			// probe dereference it on its own goroutine, outside the handler's recovery, and the
+			// whole process exits.
+			if h.logBody && out.Out.Body != nil && out.Out.Body != http.NoBody {
 				requestBody = &boundedCapture{ReadCloser: out.Out.Body, limit: maxLoggedRequestBody}
 				out.Out.Body = requestBody
 			}
