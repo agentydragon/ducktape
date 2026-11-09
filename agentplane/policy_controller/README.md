@@ -3,7 +3,8 @@
 Deletes `PolicyBinding`s, `ServiceAccountGrant`s and `ManagedServiceAccount`s past their
 `expiresAt`; keeps the native RoleBindings and ClusterRoleBindings that bindings' Kubernetes rules
 and grants' `KubernetesRoleSet`s expand to; and keeps the ServiceAccount each
-`ManagedServiceAccount` stands for. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
+`ManagedServiceAccount` stands for, with the `EgressCredential` and use `PolicySet` that let a
+binding act as it. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel).
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
@@ -20,6 +21,8 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   role sets in place of `PolicySet`s.
 - [`accounts.go`](accounts.go): one reconcile per `ManagedServiceAccount`, creating its
   ServiceAccount and pruning those whose account is gone.
+- [`account_use.go`](account_use.go): the account's `EgressCredential` and use `PolicySet`, owned
+  by it.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to what the controller reads.
 
 ## Running
@@ -43,7 +46,9 @@ PolicySets, PolicyBindings, KubernetesRoleSets, ServiceAccountGrants, ManagedSer
 ServiceAccounts, delete PolicyBindings, grants and managed accounts, apply their status, read the
 referenced Roles and ClusterRoles, list and watch RoleBindings and ClusterRoleBindings
 cluster-wide, and create, patch and delete them where sets grant, with `bind` on each referenced
-role. In the accounts namespace alone it also creates and deletes ServiceAccounts. It
+role. In the accounts namespace alone it also creates and deletes ServiceAccounts, and in the
+policy namespace it lists, watches, creates and patches EgressCredentials and PolicySets, narrowed
+by an admission policy to managed accounts' use. It
 serves metrics on `:8080` and `/healthz`/`/readyz` on `:8081`, and replicas elect a leader by a
 Lease in the policy namespace.
 

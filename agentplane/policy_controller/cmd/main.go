@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
@@ -62,6 +63,9 @@ func run(c config) error {
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		return err
 	}
+	if err := egressapi.AddToScheme(scheme); err != nil {
+		return err
+	}
 	ours := labels.SelectorFromSet(labels.Set{
 		policycontroller.ManagedByLabel:     policycontroller.FieldManager,
 		policycontroller.PolicyNamespaceLbl: c.PolicyNamespace,
@@ -73,14 +77,16 @@ func run(c config) error {
 		}
 		return out
 	}
-	// The cache holds only what the controller reads: its own namespace's policy objects, the
-	// subject and accounts namespaces' ServiceAccounts, and the native bindings carrying its label.
+	// The cache holds only what the controller reads: its own namespace's policy objects and
+	// EgressCredentials, the subject and accounts namespaces' ServiceAccounts, and the native bindings
+	// carrying its label.
 	byObject := map[client.Object]cache.ByObject{
 		&policyapi.PolicySet{}:             {Namespaces: only(c.PolicyNamespace)},
 		&policyapi.PolicyBinding{}:         {Namespaces: only(c.PolicyNamespace)},
 		&policyapi.KubernetesRoleSet{}:     {Namespaces: only(c.PolicyNamespace)},
 		&policyapi.ServiceAccountGrant{}:   {Namespaces: only(c.PolicyNamespace)},
 		&policyapi.ManagedServiceAccount{}: {Namespaces: only(c.PolicyNamespace)},
+		&egressapi.EgressCredential{}:      {Namespaces: only(c.PolicyNamespace)},
 		&corev1.ServiceAccount{}:           {Namespaces: only(append(slices.Clone(c.SubjectNamespaces), c.AccountsNamespace)...)},
 		&rbacv1.RoleBinding{}:              {Label: ours},
 		&rbacv1.ClusterRoleBinding{}:       {Label: ours},

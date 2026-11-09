@@ -10,6 +10,10 @@ from dataclasses import dataclass
 
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 
+# Must equal accountCredentialPrefix in agentplane/policy_controller/account_use.go, which names a
+# ManagedServiceAccount's use objects the same way.
+CREDENTIAL_PREFIX = "k8s-account-"
+
 
 @dataclass(frozen=True)
 class KubernetesAccountRef:
@@ -21,7 +25,7 @@ class KubernetesAccountRef:
     @property
     def credential_name(self) -> str:
         """The name of the account's `EgressCredential` and of the one-rule `PolicySet` using it."""
-        return f"k8s-account-{self.name}"
+        return CREDENTIAL_PREFIX + self.name
 
 
 def account(namespace: str, name: str) -> KubernetesAccountRef:

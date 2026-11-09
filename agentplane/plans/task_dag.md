@@ -3014,15 +3014,13 @@ keep a bearer hop, each marked `CLEANUP(added 2026-11-09)` (`WORKLOAD_AUTH_CUTOV
 
 ```mermaid
 flowchart LR
-    MANAGED_ACCOUNT_CREDENTIALS[In progress: managed accounts' credential and use set]
     WORKLOAD_AUTH_CUTOVER[In progress: lifecycle steps 3 and 4, then bearer removal]
     APP_IDENTITIES_UI[In progress: identities in the app]
     WORKLOAD_CA_CLIENT_TRUST[Ready: Firecracker runners' control listener trusts the workload CA alone]
     WORKLOAD_AUTH_CUTOVER -->|Action-box step| SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     SANDBOX_IDENTITY_SPEC -->|identity source| EGRESS_IDENTITY_RULES[Blocked: identity rules at the proxy]
     SANDBOX_IDENTITY_SPEC -->|identity source| SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
-    MANAGED_ACCOUNT_CREDENTIALS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
-    EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
+    EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
@@ -3059,19 +3057,6 @@ unused sidecar token transport together, at the `CLEANUP(added 2026-11-09)` site
 lists. Backend bearer/delegation policies and the sampler's delegated path keep their own
 authorization contracts, and `kubernetes_bearer` stays on service listeners for them. The staging PR
 states rollback and verifies callers after image/config convergence.
-
-### `MANAGED_ACCOUNT_CREDENTIALS` — a managed account's credential and use set
-
-**In progress (team lead, 2026-11-09).** The grant, role-set and managed-ServiceAccount reconciler
-landed in #15076 ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-serviceaccounts)) and
-the `kubernetesServiceAccount` credential source in #15075. What remains: the controller emits each
-`ManagedServiceAccount`'s `EgressCredential` and one-rule `PolicySet`, owned by the account (the two
-objects `cluster/cdk8s/agentplane/kubernetes_accounts.py` renders for a static account), so a
-temporary account's grants, use bindings, credential and set all go with its one clock. That is new
-authority for the controller; the plan's admission question for controller-written policy limits it
-to the one-rule shape naming the account's own ServiceAccount and apiserver host. The test apiserver
-has no garbage collector, so owned objects going with their account is left to
-`IDENTITY_SYSTEM_TESTS`. **Exit:** both objects are emitted, owned by the account.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
@@ -3147,14 +3132,15 @@ identities they stamp an origin marker on each, which `identities/origin.ts` the
 
 ### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
 
-**Blocked on `MANAGED_ACCOUNT_CREDENTIALS`, `EGRESS_IDENTITY_RULES`,
-`SERVICES_IDENTITY_PRINCIPAL` and `SANDBOX_IDENTITY_SPEC`.** k3s scenarios on the identity catalog
+**Blocked on `EGRESS_IDENTITY_RULES`, `SERVICES_IDENTITY_PRINCIPAL` and
+`SANDBOX_IDENTITY_SPEC`.** k3s scenarios on the identity catalog
 rendering for the plan's exit checks: an SVID-authenticated egress hop and one platform route; a
 Sandbox with no Kubernetes use rule has no ServiceAccount and `kubectl` fails closed at the proxy;
 two identities act as one shared account and one loses it alone; a temporary account expires and
 its SA, RoleBindings, grant, credential, set and use binding are gone with no controller restart;
 deleting an identity removes everything it owned; a Firecracker guest's relay authenticates with the
-SVID. **Exit:** the scenarios pass on the new rendering in CI; they are the gate the cutover PR cites.
+SVID. The Policy Controller's envtests run no garbage collector, so these scenarios are the first to
+show account-owned objects going with their account. **Exit:** the scenarios pass on the new rendering in CI; they are the gate the cutover PR cites.
 
 ### `IDENTITY_CUTOVER` — the staging cutover
 

@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
     "//agentplane/system_tests/deployment:__pkg__",
@@ -244,7 +244,9 @@ py_library(
     srcs = ["policy_controller_rbac.py"],
     deps = [
         ":environment",
+        ":managed_account_admission",
         ":policy_controller",
+        "//agentplane:subjects",
         "//agentplane/sandboxes:kubernetes_grants",
         "//cluster/cdk8s:api_resource",
         "@pypi//cdk8s",
@@ -1262,6 +1264,74 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "managed_account_admission",
+    srcs = ["managed_account_admission.py"],
+    deps = [
+        ":egress",
+        ":kubernetes_account_ref",
+        "//agentplane:subjects",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "render_managed_account_admission",
+    testonly = True,
+    srcs = ["render_managed_account_admission.py"],
+    deps = [
+        ":managed_account_admission",
+        "//agentplane:subjects",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_binary(
+    name = "render_managed_account_admission_bin",
+    testonly = True,
+    main_module = "cluster.cdk8s.agentplane.render_managed_account_admission",
+    deps = [":render_managed_account_admission"],
+)
+
+# The names are the Policy Controller envtest's (agentplane/policy_controller/controller_test.go).
+genrule(
+    name = "managed_account_admission_envtest",
+    testonly = True,
+    outs = ["managed_account_admission_envtest.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) $(execpath :render_managed_account_admission_bin)" +
+          " --namespace=test-policies --controller=test-policy-controller --accounts-namespace=test-accounts $@",
+    tools = [
+        ":render_managed_account_admission_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/policy_controller:__pkg__"],
+)
+
+py_test(
+    name = "test_managed_account_admission",
+    # Starts an API server and synthesizes a chart.
+    size = "medium",
+    srcs = ["test_managed_account_admission.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":kubernetes_account_ref",
+        ":kubernetes_accounts",
+        ":managed_account_admission",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 

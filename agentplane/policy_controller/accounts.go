@@ -22,7 +22,8 @@ import (
 )
 
 // ReconcileManagedServiceAccount keeps the ServiceAccount a ManagedServiceAccount stands for, named
-// like it in the accounts namespace, and the status naming that incarnation. It deletes the account
+// like it in the accounts namespace, the EgressCredential and use PolicySet that make it usable, and
+// the status naming that incarnation. It deletes the account
 // at its expiresAt, and deletes the ServiceAccounts it created for an account that is gone,
 // recognizing them by UID label: the ServiceAccount is in another namespace, so no ownerReference
 // reaches it.
@@ -53,9 +54,16 @@ func (r *Reconciler) ReconcileManagedServiceAccount(ctx context.Context, req rec
 		return ctrl.Result{}, err
 	}
 	created, err := r.ensureServiceAccount(ctx, &account)
-	condition := metav1.Condition{Type: KubernetesReady, Status: metav1.ConditionTrue, Reason: "Created", Message: "ServiceAccount created"}
+	if err == nil {
+		// Never for a ServiceAccount that is not this account's: the credential would act as it.
+		err = r.ensureAccountUse(ctx, &account, created)
+	}
+	condition := metav1.Condition{Type: KubernetesReady, Status: metav1.ConditionTrue, Reason: "Created", Message: "ServiceAccount, EgressCredential and PolicySet created"}
+	var foreignUse *errForeignAccountUse
 	if errors.Is(err, errForeignServiceAccount) {
 		condition = metav1.Condition{Type: KubernetesReady, Status: metav1.ConditionFalse, Reason: "ServiceAccountConflict", Message: err.Error()}
+	} else if errors.As(err, &foreignUse) {
+		condition = metav1.Condition{Type: KubernetesReady, Status: metav1.ConditionFalse, Reason: foreignUse.reason, Message: err.Error()}
 	} else if err == nil {
 		conflicting, listErr := r.conflictingOwned(ctx, &account)
 		if listErr != nil {
