@@ -119,6 +119,23 @@ Systemd removes the owner's lifetime directory before restarting its service. A 
 queued on an old connection then fails its invocation condition if it arrives after replacement,
 including after the replacement's inventory scan. A skipped condition never counts as native exec.
 
+The marker is what distinguishes invocations; simpler systemd mechanisms do not (checked against
+the v257.9 and v260.5 `systemd.unit`/`systemd.exec` man pages):
+
+- `BindsTo=` and `After=` on the stable Runtime service name bind a late old request to the
+  successor. The VM fixture's `held_old_invocation_is_fenced_after_successor_inventory` case keeps a
+  no-condition control showing this.
+- `ConditionEnvironment=INVOCATION_ID=...` reads the manager's environment, not the sender's
+  invocation.
+- `RuntimeDirectoryPreserve=no` recreates the same directory for the successor; only the
+  invocation-named marker inside it differs.
+
+A per-invocation owner unit name would give systemd a distinct dependency identity but replaces the
+stable Runtime service ownership. The probe holds a start request on a live sender; it does not prove
+delivery after the sender dies. The fixture's owner keeps its RuntimeDirectory under
+`/run/agentplane/execution-service` because the Runtime unit's `ProtectSystem=strict` makes the rest of
+`/run` read-only.
+
 ## Pods and tests
 
 ### Why there is no per-process supervisor

@@ -192,6 +192,8 @@ py_test(
     env = NATIVE_RUNNER_DOCKER_ENV | {"OTEL_SDK_DISABLED": "true"},
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES | POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
+    # The recovery cases run serially within a shard. Measured 2026-11-03: four shards cut the
+    # slowest action about a third against two, for about a quarter more test CPU.
     shard_count = 4,
     target_compatible_with = [
         # keep: the pinned native harnesses are Linux/x86_64 only.
