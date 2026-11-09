@@ -248,6 +248,9 @@ fn safe_field_value(
     match value.unwrap_parens() {
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
         | Expr::Arrow(_) => true,
+        // An empty array literal only allocates fresh storage: it evaluates no
+        // elements, global Array binding, or iterator protocol.
+        Expr::Array(array) if array.elems.is_empty() => true,
         // Unary `void` evaluates its operand first, so admit only the inert
         // numeric literal form used to spell an absent field value.
         Expr::Unary(unary)

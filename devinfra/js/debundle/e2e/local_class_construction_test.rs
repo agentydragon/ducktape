@@ -144,6 +144,46 @@ fn inferred_implicit_class_construction_breaks_an_array_free_sequenced_cycle() {
 }
 
 #[test]
+fn empty_array_fields_do_not_invoke_deferred_methods_during_construction() {
+    for (field, size, prelude) in [
+        ("items = [];", "this.items.length", ""),
+        ("#items = [];", "this.#items.length", ""),
+        (
+            "items = [];",
+            "this.items.length",
+            "function Array() { throw new Error('must not run'); }",
+        ),
+    ] {
+        let source = format!(
+            r#"globalThis.events = [];
+{prelude}
+const a = (() => 1)();
+class Registry {{
+  limit = 0;
+  {field}
+  get size() {{ return {size}; }}
+  clear() {{ globalThis.events.push("clear"); }}
+}}
+const b = new Registry();
+const c = b.size + a;
+b.clear();
+console.log(c, globalThis.events.join(","));
+export {{ a, b, c, Registry }};
+"#
+        );
+        let fixture = assert_pure_cycle_break(
+            &source,
+            registry_modules(),
+            "registry",
+            &["class Registry", "const b = new Registry"],
+            &["const a"],
+            "1 clear\n",
+        );
+        assert_preserved_entry_output(&fixture, "1 clear\n");
+    }
+}
+
+#[test]
 fn void_zero_field_does_not_fabricate_callback_reentry() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const saved = () => later;
@@ -224,6 +264,16 @@ fn void_effectful_and_property_operands_keep_callback_reentry() {
         "class Checker { result = void receiver[key]; }",
         r#"const receiver = { value: 1 };
 const key = { [Symbol.toPrimitive]() { globalThis.saved(); return "value"; } };"#,
+    );
+}
+
+#[test]
+fn array_field_elements_and_spreads_keep_callback_reentry() {
+    expect_callback_reentry_for_class("class Checker { items = [globalThis.saved()]; }", "");
+    expect_callback_reentry_for_class("class Checker { #items = [globalThis.saved()]; }", "");
+    expect_callback_reentry_for_class(
+        "class Checker { items = [...globalThis.values]; }",
+        "globalThis.values = { [Symbol.iterator]() { globalThis.saved(); return [][Symbol.iterator](); } };",
     );
 }
 
@@ -445,7 +495,12 @@ fn certified_class_shape_keeps_earlier_binding_initialization_observations() {
 fn certified_construction_retains_deferred_field_and_getter_captures() {
     for (member, access) in [
         ("read = () => later;", "registry.read()"),
+        ("items = []; read = () => later;", "registry.read()"),
         ("get current() { return later; }", "registry.current"),
+        (
+            "items = []; get current() { return later + this.items.length; }",
+            "registry.current",
+        ),
     ] {
         let source = format!(
             "const values = [];\nclass Registry {{ {member} }}\nconst registry = new Registry();\nfunction probe() {{ try {{ return {access}; }} catch (error) {{ return error.name; }} }}\nconst before = probe();\nconst later = 42;\nconsole.log(before, values.length);\n"
@@ -472,6 +527,46 @@ fn certified_construction_retains_deferred_field_and_getter_captures() {
         let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "ReferenceError 0\n");
     }
+}
+
+#[test]
+fn empty_array_fields_retain_callbacks_stored_after_construction() {
+    let source = r#"class Registry {
+  items = [];
+  run() { return this.items[0](); }
+}
+const registry = new Registry();
+registry.items.push(() => later);
+function probe() {
+  try { return registry.run(); }
+  catch (error) { return error.name; }
+}
+const before = probe();
+const later = 42;
+console.log(before);
+"#;
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "reader",
+                    &[
+                        Member::new("Registry"),
+                        Member::new("registry"),
+                        Member::new("probe"),
+                        Member::new("before"),
+                    ],
+                    &["registry.items.push(() => later);"],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["reader", "value"],
+        &[],
+    );
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError\n");
 }
 
 const CAPTURE_PROVIDER: &str = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nexport const ready = true;\n";
