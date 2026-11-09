@@ -66,6 +66,10 @@ in
   # Swap-based kills require both RAM and swap use to exceed this limit.
   systemd.oomd.settings.OOM.SwapUsedLimit = "75%";
   systemd.slices.user.sliceConfig.ManagedOOMSwap = "kill";
+  # Apply oomd.conf changes on a switch instead of waiting for a restart.
+  systemd.services.systemd-oomd.reloadTriggers = [
+    config.environment.etc."systemd/oomd.conf".source
+  ];
 
   # Idle Bazel servers on this shared box stack up: Bazel's 3h default kept 10 of them,
   # ~22 GiB RSS, on 2026-10-24. Measured 2026-10-24 on devel 7976adcd, cold server and
