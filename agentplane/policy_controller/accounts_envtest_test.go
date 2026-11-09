@@ -138,6 +138,54 @@ func TestManagedServiceAccountIsNeverAdoptedByName(t *testing.T) {
 	}
 }
 
+// The reconcile that expires an account also deletes every native binding on its ServiceAccount:
+// with no grant reconcile in between, none survives that one pass.
+func TestExpiredManagedAccountRevokesInOnePass(t *testing.T) {
+	ctx := context.Background()
+	api, cached, r := startPolicyAPIServer(t, false)
+	setUpGrantCluster(t, api)
+	account := testManagedAccount("test-expiring-account")
+	set := testRoleSet("test-diagnostics", roleBindingRule(namespaceReader, teamNamespace), clusterRoleBindingRule(nodeReader))
+	create(t, api, account, set)
+	grant := testGrant("test-owned-grant", accountsNamespace, account.Name, set.Name)
+	grant.OwnerReferences = []metav1.OwnerReference{ownedBy(account)}
+	create(t, api, grant)
+	waitForCachedAccount(t, cached, account)
+	request := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(account)}
+	if _, err := r.ReconcileManagedServiceAccount(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	serviceAccount := readServiceAccount(t, api, account.Name)
+	waitForCached(t, cached, &corev1.ServiceAccount{}, client.ObjectKeyFromObject(serviceAccount))
+	waitForCached(t, cached, &policyapi.KubernetesRoleSet{}, client.ObjectKeyFromObject(set))
+	waitForCached(t, cached, &policyapi.KubernetesAccountGrant{}, client.ObjectKeyFromObject(grant))
+	if _, err := r.ReconcileGrant(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(grant)}); err != nil {
+		t.Fatal(err)
+	}
+	if natives := grantNatives(t, api, grant.Name); len(natives) != 2 || !allBind(natives, serviceAccount) {
+		t.Fatalf("the grant's native bindings: %s", describe(natives))
+	}
+
+	current := readManagedAccount(t, api, account.Name)
+	current.Spec.ExpiresAt = &metav1.Time{Time: time.Now().Add(-time.Second)}
+	if err := api.Update(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the expiry in the cache", func() (bool, string) {
+		var cachedAccount policyapi.ManagedServiceAccount
+		err := cached.Get(ctx, client.ObjectKeyFromObject(account), &cachedAccount)
+		return err == nil && cachedAccount.Spec.ExpiresAt != nil, fmt.Sprint(err)
+	})
+	if _, err := r.ReconcileManagedServiceAccount(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	accountErr := api.Get(ctx, client.ObjectKeyFromObject(account), &policyapi.ManagedServiceAccount{})
+	serviceAccountErr := api.Get(ctx, client.ObjectKeyFromObject(serviceAccount), &corev1.ServiceAccount{})
+	if natives := grantNatives(t, api, grant.Name); len(natives) != 0 || !apierrors.IsNotFound(accountErr) || !apierrors.IsNotFound(serviceAccountErr) {
+		t.Fatalf("after the expiring reconcile: account %v, ServiceAccount %v, natives %s", accountErr, serviceAccountErr, describe(natives))
+	}
+}
+
 // A grant that a ManagedServiceAccount owns and that sets its own expiresAt grants nothing and is
 // not expired, until the conflict is removed.
 func TestOwnedGrantWithItsOwnExpiryConflicts(t *testing.T) {

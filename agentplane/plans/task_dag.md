@@ -3119,9 +3119,9 @@ account's full lifecycle including expiry with no restart, a same-name SA recrea
 grant is live, and an account-owned grant with its own `expiresAt` reporting `ConflictingExpiry`.
 The test apiserver has no garbage collector, so owned grants and bindings going with their account
 is left to `IDENTITY_SYSTEM_TESTS`. The controller's RBAC gains SA create, delete and reads in the accounts namespace
-only, plus reads, expiry deletes and status patches on the new kinds. **Merge hold:** the staging
-Role lives in `agentplane-staging-k8s-accounts`, which #15075 renders; this merges after that
-namespace is on devel. **Remaining:** emitting each managed account's
+only, plus reads, expiry deletes and status patches on the new kinds; the staging accounts namespace
+(`agentplane-staging-k8s-accounts`) is rendered here, for #15075 to reuse. An account's expiry
+deletes its ServiceAccount and every native binding on it in one pass. **Remaining:** emitting each managed account's
 `EgressCredential` and one-rule `PolicySet` owned by it waits on the `kubernetesServiceAccount`
 credential source, not on devel at 2026-11-08, together with open question 11's admission rule.
 **Exit:** those two objects are emitted, owned by the account.
@@ -3186,7 +3186,9 @@ the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the acco
 (`claude-ai`, `haku-agent`) and the standing workload caller `haku-ui` in place of their ServiceAccounts, the `shared-diagnostics` SA with its
 grant, credential and one-rule set, every Kubernetes rule as a `KubernetesRoleSet`, every binding on
 an identity, the `basic` set carrying the shared account's use rule, the accounts namespace, and the
-proxy's and controller's new Roles; the MCP edge binds a Connection to an identity. Rendering is
+proxy's and controller's new Roles; the MCP edge binds a Connection to an identity. The controller's
+RBAC carries `bind` on every role a Flux-authored `KubernetesRoleSet` names, since the apiserver
+refuses a binding to a role the controller cannot bind. Rendering is
 behind the same staging switch as the rest, so `devel` keeps rendering today's objects until the
 cutover. **Exit:** `test_generate_manifests` and the egress and policy manifest tests pass on both
 renderings, and no `PolicySet` in the new rendering carries a Kubernetes rule.

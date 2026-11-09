@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -31,8 +32,12 @@ func (r *Reconciler) ReconcileManagedServiceAccount(ctx context.Context, req rec
 		return ctrl.Result{}, err
 	}
 	requeue, expired, err := r.expire(ctx, &account, account.Spec.ExpiresAt)
-	if expired || err != nil {
+	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if expired {
+		// Revoke in this pass rather than the NotFound reconcile the deletion triggers.
+		return ctrl.Result{}, r.pruneServiceAccounts(ctx, account.Name, "")
 	}
 	defer func() {
 		if err == nil {
@@ -56,7 +61,7 @@ func (r *Reconciler) ReconcileManagedServiceAccount(ctx context.Context, req rec
 }
 
 // pruneServiceAccounts deletes the ServiceAccounts created for ManagedServiceAccounts named name,
-// except the one carrying keep's UID label.
+// except the one carrying keep's UID label, and every native binding granting each of them.
 func (r *Reconciler) pruneServiceAccounts(ctx context.Context, name string, keep types.UID) error {
 	var accounts corev1.ServiceAccountList
 	if err := r.List(ctx, &accounts, client.InNamespace(r.AccountsNamespace),
@@ -72,6 +77,42 @@ func (r *Reconciler) pruneServiceAccounts(ctx context.Context, name string, keep
 		}
 		uid := account.UID
 		if err := client.IgnoreNotFound(r.Delete(ctx, account, client.Preconditions{UID: &uid})); err != nil {
+			return err
+		}
+		if err := r.pruneNativesFor(ctx, uid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pruneNativesFor deletes the native bindings of every binding and grant that grant the ServiceAccount
+// incarnation uid. Under impersonation these, not the ServiceAccount, are the authority, and RBAC
+// matches by name, so they go in the same pass instead of waiting for each grant's own reconcile.
+// Listed uncached, so one created a moment ago is not missed; a grant reconcile racing this one sees
+// the ServiceAccount gone and prunes anything it recreated.
+func (r *Reconciler) pruneNativesFor(ctx context.Context, uid types.UID) error {
+	labels := client.MatchingLabels{ManagedByLabel: FieldManager, PolicyNamespaceLbl: r.PolicyNamespace}
+	var roleBindings rbacv1.RoleBindingList
+	var clusterBindings rbacv1.ClusterRoleBindingList
+	if err := r.APIReader.List(ctx, &roleBindings, labels); err != nil {
+		return err
+	}
+	if err := r.APIReader.List(ctx, &clusterBindings, labels); err != nil {
+		return err
+	}
+	var natives []client.Object
+	for i := range roleBindings.Items {
+		natives = append(natives, &roleBindings.Items[i])
+	}
+	for i := range clusterBindings.Items {
+		natives = append(natives, &clusterBindings.Items[i])
+	}
+	for _, native := range natives {
+		if native.GetAnnotations()[SubjectUIDAnn] != string(uid) {
+			continue
+		}
+		if err := r.deleteNative(ctx, native); err != nil {
 			return err
 		}
 	}

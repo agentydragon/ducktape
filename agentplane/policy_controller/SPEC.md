@@ -70,6 +70,10 @@ precondition prevents deleting a binding edited or replaced after its read.
   every change; never adopted on name alone; a recreated ServiceAccount bound afresh. A grant's
   native bindings carry its name and UID in place of a binding's, so a grant and a binding never
   share or prune each other's.
+- A grant binds whatever ServiceAccount currently has its name; only `ManagedServiceAccount` refuses
+  a foreign account of the same name.
+- A role set naming a role the controller has no `bind` permission for reports `ApplyFailed`: the
+  apiserver refuses the native binding.
 - The account may live in a subject namespace or the accounts namespace. Only the `local` apiserver,
   the one the controller runs in, is reached; a grant naming another reports
   `APIServerNotConfigured` and keeps no native bindings.
@@ -86,13 +90,14 @@ precondition prevents deleting a binding edited or replaced after its read.
   fails and `status.serviceAccount` stays unset until the name is free. One created for an earlier
   account of the same name is deleted and replaced.
 - Once the account is gone, through expiry, its owner's deletion or by hand, the controller deletes
-  the ServiceAccounts labeled with its UID. No ownerReference reaches across namespaces, and no
-  finalizer holds the account.
+  the ServiceAccounts labeled with its UID and, in the same pass, every native binding on each of
+  them, whichever binding or grant keeps it. No ownerReference reaches across namespaces, and no
+  finalizer holds the account. Grants and bindings the account owns go by garbage collection.
 - An account on another apiserver gets nothing; its status has no condition, so the controller
   logs it.
-- Deleting the ServiceAccount is not revocation: RBAC matches by name. Revocation is the grants
-  going, and the native bindings of a grant whose ServiceAccount is missing are deleted
-  (`SubjectMissing`).
+- Deleting the ServiceAccount is not revocation by itself: RBAC matches by name, and impersonation
+  needs no ServiceAccount object. The native bindings are the authority, which is why they go in
+  the same pass; a grant whose ServiceAccount is missing keeps none (`SubjectMissing`).
 
 ## Revocation timing
 
