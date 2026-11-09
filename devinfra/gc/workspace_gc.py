@@ -702,16 +702,27 @@ def run_all(
 
     print()
 
-    def rescan() -> WorkspaceScan:
+    def rescan_branches() -> list[BranchClassification]:
+        pg = git_repo.open_repo(repo)
         with progress:
-            return _scan(repo, prs=prs, output_user_root=None, session_bases=(), progress=progress, workers=workers)
+            return workspace_scan.scan_branches(
+                repo,
+                worktrees=scan.worktrees,
+                main=git_repo.main_ref(pg),
+                default_branch=git_repo.default_branch_name(pg),
+                pr_states=prs,
+                workers=workers,
+                progress=progress,
+            )
 
     # Remove worktrees first so branches they hold are freed and their bases orphan, and bases
-    # before the repo cache so entries only they referenced become unreferenced. Every step
-    # runs regardless of an earlier one's failures — each domain is independent — and the
-    # combined outcome decides the process exit status once, at the end.
-    worktrees_ok = _apply_worktree_removals(repo, rescan().worktrees)
-    branches_ok = _apply_branch_deletions(repo, rescan().branches)
+    # before the repo cache so entries only they referenced become unreferenced. Worktrees reuse
+    # the scan above (`git worktree remove` itself refuses a tree that turned dirty); branches
+    # are re-classified because the removals change who holds them. Every step runs regardless
+    # of an earlier one's failures — each domain is independent — and the combined outcome
+    # decides the process exit status once, at the end.
+    worktrees_ok = _apply_worktree_removals(repo, scan.worktrees)
+    branches_ok = _apply_branch_deletions(repo, rescan_branches())
     bases_ok = _apply_base_deletions(output_user_root, session_bases)
     repo_cache_ok = _apply_repo_cache_deletions(output_user_root, session_bases, verbose=verbose)
     foreign_ok = True

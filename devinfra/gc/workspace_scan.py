@@ -294,6 +294,50 @@ def annotate_bases(
     return [_annotate_base(base, prunable) for base in bases]
 
 
+def scan_branches(
+    repo: Path,
+    *,
+    worktrees: list[Classification],
+    main: str,
+    default_branch: str,
+    pr_states: dict[str, PrInfo],
+    workers: int,
+    progress: ProgressSink,
+) -> list[BranchClassification]:
+    """Classify local branches against `worktrees` (linked worktrees' classifications).
+
+    Branch holders are read fresh from git, so a caller that removed worktrees since
+    classifying them can pass the original list: a branch whose holder is gone reads as unheld,
+    and the surviving worktrees' classifications are unchanged.
+    """
+    main_path = git_repo.main_worktree(repo)
+    holders = branch_gc.branch_holders(repo)
+    holder_by_path = {item.worktree.path: item for item in worktrees}
+
+    def holder_for(name: str) -> Holder:
+        holder_path = holders.get(name)
+        if holder_path is None:
+            return None
+        if holder_path == main_path:
+            return MainCheckout()
+        return holder_by_path.get(holder_path)
+
+    names = branch_gc.local_branches(git_repo.open_repo(main_path))
+    logger.info("Scanning %d local branches", len(names))
+    branches = _classify_branches(
+        main_path,
+        names,
+        main=main,
+        default_branch=default_branch,
+        pr_states=pr_states,
+        holder_for=holder_for,
+        workers=workers,
+        progress=progress,
+    )
+    logger.info("Branch scan complete: %d local branches", len(branches))
+    return branches
+
+
 def scan_workspace(
     repo: Path,
     *,
@@ -312,7 +356,6 @@ def scan_workspace(
     """`session_bases` (see `output_base_gc.session_env_output_bases`) are scanned with the
     root's bases; both are skipped when `output_user_root` is None."""
     main_path = git_repo.main_worktree(repo)
-    pg = git_repo.open_repo(main_path)
 
     linked = [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path]
     logger.info("Scanning %d linked worktrees", len(linked))
@@ -340,30 +383,15 @@ def scan_workspace(
     )
     logger.info("Worktree scan complete: %d linked worktrees", len(linked))
 
-    holders = branch_gc.branch_holders(repo)
-    holder_by_path = {item.worktree.path: item for item in worktrees}
-
-    def holder_for(name: str) -> Holder:
-        holder_path = holders.get(name)
-        if holder_path is None:
-            return None
-        if holder_path == main_path:
-            return MainCheckout()
-        return holder_by_path.get(holder_path)
-
-    names = branch_gc.local_branches(pg)
-    logger.info("Scanning %d local branches", len(names))
-    branches = _classify_branches(
-        main_path,
-        names,
+    branches = scan_branches(
+        repo,
+        worktrees=worktrees,
         main=main,
         default_branch=default_branch,
         pr_states=pr_states,
-        holder_for=holder_for,
         workers=workers,
         progress=progress,
     )
-    logger.info("Branch scan complete: %d local branches", len(branches))
 
     bases: list[Inspection] = []
     if output_user_root is not None:
