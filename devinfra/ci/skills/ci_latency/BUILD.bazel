@@ -26,6 +26,10 @@ skill_package(
             preserve_paths = True,
         ),
         skill_mapping(
+            srcs = ["//devinfra/ci/skills/shared:reporting.md"],
+            prefix = "references",
+        ),
+        skill_mapping(
             srcs = ["//devinfra/ci/reports:publish.py"],
             prefix = "scripts",
         ),

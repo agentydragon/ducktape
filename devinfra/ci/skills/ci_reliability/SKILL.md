@@ -290,30 +290,13 @@ monitoring unless a schedule was actually configured.
 
 ## Publish the reliability snapshot
 
-Write a standalone, readable HTML report with frequencies, evidence links, diagnoses,
-fragile-pattern hypotheses, recommendations, and coverage limitations. Make the
-observation window and source SHA easy to find. Use semantic sections/tables and
-purposeful charts; do not wrap a Markdown report in a preformatted block. Visually
-inspect desktop/mobile rendering and exercise any filters before publication.
+Apply the shared [reporting and publication contract](references/reporting.md)
+when authoring or publishing this report. Include failure frequencies, evidence
+links, diagnoses, fragile-pattern hypotheses, prioritized recommendations and
+coverage limits. Exercise any report filters before publication.
 
-Follow the existing site's presentation convention before choosing a framework:
-read the canonical `gh-pages` root `README.md`, shared assets and sibling pages.
-Reuse the site's version-pinned CDN framework and shared shell across reports;
-do not independently select another framework or build a bespoke design system.
-The current convention is Mantine with React, `MantineProvider`
-`defaultColorScheme="auto"`, and the shared `report.js` / `report.css` shell.
-Use Mantine's typography provider for authored HTML and keep custom CSS limited
-to report layout, charts and small adjustments. Preserve report controls when
-mounting the shell. Verify actual CDN loading, readable desktop/mobile layouts,
-both initial themes and a live OS/browser preference change before publication.
-Keep styling-only updates distinct from refreshed measurements and source checks.
-
-Keep compact reviewed measurements and provenance in `evidence.json`. Full API
-payloads, logs, credentials, and profiles stay local. Preserve still-relevant prior
-findings with commit-pinned links rather than copying every historical report.
-
-Both skills package `devinfra/ci/reports/publish.py` as `scripts/publish.py`. From the
-inspected source checkout, with the reports worktree at `$HISTORY`, run:
+Set `$SKILL_DIR` to this installed skill's directory. From the inspected
+source checkout, with the reports worktree at `$HISTORY`, run:
 
 ```bash
 python3 "$SKILL_DIR/scripts/publish.py" --kind reliability --source "$DEVEL_SHA" \
@@ -321,18 +304,5 @@ python3 "$SKILL_DIR/scripts/publish.py" --kind reliability --source "$DEVEL_SHA"
   --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY"
 ```
 
-Set `$SKILL_DIR` to this installed skill's directory. The publisher copies reviewed
-HTML; it does not generate or validate the analysis. Keep exactly one snapshot in
-`reliability/`: `index.html`, `evidence.json`, `manifest.json`, and optional
-`attribution.json`. Omit attribution unless actually measured. Publication removes
-stale attribution only in this directory. Preserve `latency/`, root navigation,
-and `.gitattributes` (which marks evidence JSON as generated).
-
-Open the report PR against `gh-pages`, never `devel`. Fetch the branch again before
-publishing; compare windows within `reliability/` and do not replace a newer snapshot
-with an older one. Integrate concurrent latency changes without overwriting them.
-Git history holds previous snapshots; do not add dated run trees or force-push
-history. Skill/tool changes belong in a separate source PR to devel. GitHub Pages
-serves the branch at <https://agentydragon.github.io/ducktape/reliability/>; link
-that page and note it redeploys only when the PR merges. State what remains unknown
-and the next observation that could resolve it.
+This skill owns `reliability/` and keeps the remaining unknowns and the next
+useful observation in its report.
