@@ -162,7 +162,7 @@ def _database(scope: Construct) -> None:
         # Leave room for the old and replacement cache databases to coexist during migration.
         size="16Gi",
         resize_in_use_volumes=True,
-        instances=3,
+        instances=2,
         initdb=cluster.same_owner_initdb("attic"),
         # Cache metadata is rebuildable, so this cluster is not backed up.
         wal_archive=False,

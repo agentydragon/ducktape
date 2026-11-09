@@ -60,7 +60,7 @@ def _databases(chart: Chart) -> None:
         profile=cluster.OVH_PIRAEUS_SSD,
         size="25Gi",
         resize_in_use_volumes=False,
-        instances=3,
+        instances=2,
         image_name="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
         initdb=cluster.same_owner_initdb(app.GITLAB_DATABASE),
         managed=ClusterSpecManaged(

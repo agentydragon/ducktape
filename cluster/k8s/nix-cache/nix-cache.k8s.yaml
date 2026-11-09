@@ -45,7 +45,7 @@ spec:
     initdb:
       database: attic
       owner: attic
-  instances: 3
+  instances: 2
   monitoring:
     enablePodMonitor: true
   postgresql:
