@@ -302,8 +302,9 @@ the two source units are order-independent during initialization.
    draft is already grouped under that key) and write the `note` with the
    reason the pair commutes. Drop the rest.
 4. **Validate.** Run `debundle run` (or `spec validate`): the gate rejects an
-   entry that contradicts a source fact or inerts nothing, and the rejection
-   report shows what the accepted entries bought (`inert_commuting_edges`).
+   entry that contradicts a source fact and warns about one that inerts
+   nothing, and the rejection report shows what the accepted entries bought
+   (`inert_commuting_edges`).
 
 ## Workflow: applying a reviewed source-unit assignment
 

@@ -182,7 +182,7 @@ consulted only when that pair swaps and the sweep finds a conflict.
 - **"Unused"** (`commuting_statements_diagnostics`) means today "inerts no
   edge". Under TV, judge it against the effect sets: a premise whose pair has
   no conflict is unused. It must not be judged against the order, or a
-  placement edit elsewhere would turn a valid premise into an error.
+  placement edit elsewhere would flag a valid premise as unused.
 
 ## Diagnostics
 
