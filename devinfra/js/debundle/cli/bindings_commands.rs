@@ -257,7 +257,7 @@ fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &
         let readable = entry.label.readable_name.as_deref().unwrap_or("-");
         out.push_str(&format!(
             "  {}  {}  [{}]  {}\n",
-            entry.label.identity.display(),
+            entry.label.identity,
             entry.module,
             readable,
             flags.join(",")
@@ -309,7 +309,7 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
                 .old_readable
                 .as_deref()
                 .map(str::to_string)
-                .unwrap_or_else(|| out.identity.display());
+                .unwrap_or_else(|| out.identity.to_string());
             println!(
                 "{}: {} -> {}{file}",
                 out.outcome.action, previous_name, out.new_readable,

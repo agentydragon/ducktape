@@ -1,9 +1,6 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
-use crate::binding::{
-    CandidateEffectAssessmentContext, SourceUnitAssignment, SourceUnitRefineOptions,
-    run_source_unit_refine,
-};
+use crate::binding::CandidateEffectAssessmentContext;
 use crate::candidate_assessment::CandidateEffectAssessmentExistingTreeArgs;
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
@@ -11,6 +8,9 @@ use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
+use crate::source_unit_refine::{
+    SourceUnitAssignment, SourceUnitRefineOptions, run_source_unit_refine,
+};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::VerifiedGraphSourceContext;

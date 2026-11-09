@@ -977,9 +977,6 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
             .collect::<Vec<_>>()
             .join(", ")
     ));
-    // Home module path per binding (CLI_DOGFOOD #6): the JSON carries
-    // `binding_homes[].path`, but the text view previously dropped it,
-    // leaving no way to see where a binding lives without `--format json`.
     if !report.binding_homes.is_empty() {
         out.push_str("  homes:\n");
         for home in &report.binding_homes {
