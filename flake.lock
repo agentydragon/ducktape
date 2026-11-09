@@ -32,6 +32,27 @@
         "type": "github"
       }
     },
+    "flake-parts": {
+      "inputs": {
+        "nixpkgs-lib": [
+          "nix-fast-build",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1778716662,
+        "narHash": "sha256-m1Yf0wZ8j1OHjTc2UwHwyQRSnNeSgLJOd7q5Y45hzi4=",
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "rev": "f7c1a2d347e4c52d5fb8d10cb4d94b5884e546fb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -147,6 +168,29 @@
       "original": {
         "owner": "Misterio77",
         "repo": "nix-colors",
+        "type": "github"
+      }
+    },
+    "nix-fast-build": {
+      "inputs": {
+        "flake-parts": "flake-parts",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "treefmt-nix": "treefmt-nix"
+      },
+      "locked": {
+        "lastModified": 1781073171,
+        "narHash": "sha256-PMBbenLBvn/0pSFOhwPVn171Vw7kU5YmBUNDhxllZ7c=",
+        "owner": "Mic92",
+        "repo": "nix-fast-build",
+        "rev": "a28921953d962c6c2527108a6be4062eb6dc2f51",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Mic92",
+        "ref": "1.6.0",
+        "repo": "nix-fast-build",
         "type": "github"
       }
     },
@@ -445,6 +489,7 @@
         "claude-plugins-official": "claude-plugins-official",
         "home-manager": "home-manager",
         "nix-colors": "nix-colors",
+        "nix-fast-build": "nix-fast-build",
         "nix-on-droid": "nix-on-droid",
         "nix-openclaw": "nix-openclaw",
         "nixGL": "nixGL",
@@ -534,6 +579,27 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "treefmt-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nix-fast-build",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780220602,
+        "narHash": "sha256-eynAfOmbmxJnkp7YewvCEbShNnnYJ9gLLqkzsYtBPeM=",
+        "owner": "numtide",
+        "repo": "treefmt-nix",
+        "rev": "db947814a175b7ca6ded66e21383d938df01c227",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "treefmt-nix",
         "type": "github"
       }
     }

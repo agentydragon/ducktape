@@ -57,7 +57,7 @@ jobs:
       - name: Install Attic client + nix-fast-build
         # nix-fast-build (+ nix-eval-jobs) drives the parallel eval/build/push in
         # devinfra/ci/nix_attic_build_and_push.sh.
-        run: nix profile install nixpkgs#attic-client nixpkgs#nix-fast-build nixpkgs#nix-eval-jobs
+        run: nix profile install nixpkgs#attic-client .#nix-fast-build nixpkgs#nix-eval-jobs
 
       - name: Configure Attic cache
         run: attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
