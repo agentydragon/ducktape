@@ -164,6 +164,11 @@ pub struct ForeignCallSummary {
     /// remain unknown; later use must retain opaque foreign capabilities.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub retained_provider_captures: BTreeSet<String>,
+    /// Every source-private provider var cell the body reads. A summary with
+    /// any is no receipt for the call's effects: the cell's writers are
+    /// outside what the summary proves.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub provider_cell_reads: BTreeSet<String>,
     /// Census families the body constructs from (`new WeakMap()`); their
     /// integrity premise is in `dependencies`.
     pub native_constructions: BTreeSet<NativeIntrinsic>,

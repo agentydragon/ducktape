@@ -85,8 +85,36 @@ Every divergence outside the "both refuse" rows:
 
 ## Unsafe legacy acceptance
 
-None found. All 394 runnable legacy-accepted / effect-`incomplete` e2e
-fixtures produce the same Node output and exit code as their source.
+None found in the first pass: all 394 runnable legacy-accepted /
+effect-`incomplete` e2e fixtures produce the same Node output and exit code
+as their source.
+
+One found since (Wave 3 slice 3 PR 1, not yet checked on a tree without that
+PR): a reader of a provider module cell moved before its writer.
+
+```js
+// static/peer.js
+let count = 0;
+export function next() {
+  return ++count;
+}
+export function peek() {
+  return count;
+}
+// static/app.js
+import { next, peek } from "./peer.js";
+const first = next();
+const second = peek();
+console.log(first, second);
+```
+
+With `second` in a logical module and the rest inline, the legacy gate
+accepts, the effect verdict is `incomplete` (uncovered havoc), and Node
+prints `1 0` for the emitted entry against `1 1` for the source. Neither
+callee has a foreign call summary. Fixture:
+`provider_summary_effect_test::provider_cell_reader_moved_before_its_writer_has_no_effect_receipt`.
+Next action: find which legacy rule treats the imported reader as
+order-free, and whether the canonical inputs depend on it.
 
 ## Defects
 

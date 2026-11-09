@@ -304,6 +304,23 @@ pub(super) fn prepare<'source>(
         inputs.initializer_call_effect_input(owner, binding, callee, span)
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
+    // Every call of the root is a direct call of an imported binding that
+    // carries a published foreign call summary. The ordered lane substitutes
+    // each summary, so it runs no provider or application code.
+    let provider_root_calls = {
+        let mut calls = calls
+            .iter()
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+            .peekable();
+        calls.peek().is_some()
+            && calls.all(|call| {
+                call.kind == CallKind::Call
+                    && !call.has_spread
+                    && executor
+                        .foreign_call_summary(call.kind, &call.callee)
+                        .is_some()
+            })
+    };
     let root_construction = index
         .ordered_initializers
         .get(&owner)
@@ -332,6 +349,7 @@ pub(super) fn prepare<'source>(
             && body.captured_writes().is_empty()
             && (executor.ordered_root_calls_are_local(calls)
                 || native_root_calls
+                || provider_root_calls
                 || selected_audited_initializer.is_some())
             && (calls
                 .iter()
@@ -361,6 +379,7 @@ pub(super) fn prepare<'source>(
                     call.kind == CallKind::ArraySpread && call.caller.is_none()
                 })
                 || native_root_calls
+                || provider_root_calls
                 || root_construction
                 || calls.iter().any(|call| {
                     call.kind == CallKind::LocalMemberRead

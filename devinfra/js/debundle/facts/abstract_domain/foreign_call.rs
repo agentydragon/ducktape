@@ -12,6 +12,8 @@ pub(crate) struct DerivedForeignCall {
     pub(crate) returns: BTreeSet<ForeignReturn>,
     pub(crate) retained_arguments: BTreeSet<usize>,
     pub(crate) retained_provider_captures: BTreeSet<String>,
+    /// Every private provider var cell the body reads, retained or not.
+    pub(crate) provider_cell_reads: BTreeSet<String>,
     pub(crate) native_constructions: BTreeSet<NativeIntrinsic>,
     pub(crate) dependencies: ProofDependencies,
     /// Set for a parameterless call that always returns one fresh record.
