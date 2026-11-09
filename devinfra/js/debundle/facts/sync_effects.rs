@@ -1,5 +1,6 @@
 //! Synchronous call-effect analysis.
 
+mod adapters;
 mod allocation_transfer;
 mod array_transfer;
 mod callable_body_facts;
