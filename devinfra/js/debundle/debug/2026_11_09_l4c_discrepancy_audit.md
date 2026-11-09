@@ -234,6 +234,44 @@ per product:
   Canonical guards (`typeof X<"u"&&…`) show up in Claude Web and Tana
   Desktop examples.
 
+## Re-running
+
+The scripts are heuristic one-offs, kept outside the repository at
+`/var/cache/agentydragon/l4c/scripts/`, with a copy in
+`~/code/ducktape-scratch/l4c/`. The baseline records for this pass are
+`/var/cache/agentydragon/l4c/e2e_records_fa49ae5ed1.jsonl`. The pattern
+rules are in `rules.py`.
+
+Record schema, per target under `bazel-testlogs/<target>/test.outputs/`:
+
+- `debundle_tv_audit/<pid>-<n>.json` has `argv`, `chunk_id`,
+  `translation_validation` (edge-TV report), `candidate`
+  (`CandidateRelocationAssessmentReport`) and `effect`
+  (`EffectTranslationValidationReport`).
+- `debundle_tv_audit/<pid>-<n>.conflicts.jsonl` holds one
+  `EffectConflictDiagnosticRow` per inverted conflicting pair.
+- `debundle_tv_audit/<pid>.sources.json` maps each source path to its text.
+- `debundle_node_parity/<pid>-<n>.json` has `test`, `kind`
+  (`accepted`/`rejected`), `source` and `emitted` (`{code, stdout, error}`),
+  and `effect` (`{legacy_gate_accepts, status, swapped_pairs,
+emitted_order}`) for the run that emitted the tree.
+
+Steps:
+
+```sh
+bazelisk test //devinfra/js/debundle/e2e/... --test_env=DEBUNDLE_TV_AUDIT=1 --keep_going
+S=/var/cache/agentydragon/l4c/scripts
+TL=$(readlink -f bazel-testlogs)/devinfra/js/debundle/e2e
+python3 $S/collect.py $TL records.jsonl   # one line per evaluation
+python3 $S/final.py records.jsonl         # class totals, owner and rule counts
+python3 $S/classify.py records.jsonl      # owner combinations; writes per_eval.json, statements.txt
+python3 $S/cumul.py                       # cumulative recovery from per_eval.json
+python3 $S/parity2.py $TL                 # Node parity by verdict, and divergences
+# Canonical: build the five targets with --remote_download_toplevel, then
+python3 $S/canon.py <product>.out ...           # per-chunk verdicts
+python3 $S/canon_examples.py <gaffer-root> <product>.out ...   # bounded examples with source text
+```
+
 ## What remains
 
 - Full conflict export (`--effect-conflicts-jsonl`) for the canonical chunks
