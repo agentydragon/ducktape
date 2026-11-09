@@ -3282,7 +3282,8 @@ Sandbox-created SAs and bindings, the proxy-audience and Kubernetes-audience pro
 kubeconfig mount), deletes the old objects, and states the rollback: revert the Flux pins and delete
 the objects of the new kinds. The MCP edge's `connection_identities` setting is set and read here:
 stored Connections move from their bound ServiceAccount to an Identity, consent offers those
-Identities, and the edge's rule that OAuth needs `mintable_accounts` changes with what it then mints.
+Identities, and the edge's rule that OAuth needs `mintable_accounts` changes with how it then proves
+an Identity to the Action Service ([open question 21](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).
 Running Sandboxes are replaced, not patched. Expected downtime: every
 running Sandbox loses egress and platform routes until its sidecar image carries the SVID hop.
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
