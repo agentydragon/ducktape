@@ -4,7 +4,7 @@ Migration issue [#6956](https://github.com/agentydragon/ducktape/issues/6956) cl
 
 ## Recovery material
 
-The original legacy observations/traces remain intact. Backup `langfuse-before-v4-67-20261022` completed at `05:46:57 UTC` through the existing CNPG barman-cloud integration.
+The legacy `observations`/`traces` tables were truncated on 2026-11-08 (#15017). Every legacy observation and trace, with its input and output, was first verified present in `events_full`, which is now the only copy. Backup `langfuse-before-v4-67-20261022` completed at `05:46:57 UTC` through the existing CNPG barman-cloud integration.
 
 The following local ClickHouse `FREEZE` snapshots on pod `clickhouse/chi-clickhouse-default-0-0-0` (namespace/pod) were deleted with operator approval on 2026-10-22. Both directories were verified absent afterward; filesystem available space increased by 107,017,990,144 bytes (99.7 GiB).
 
