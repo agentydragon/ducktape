@@ -11,28 +11,24 @@ use analysis_projection::AnalysisSpec;
 use artifact::EmissionFiles;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use emit_harness::emit_browser_harness;
-use gate::CandidateRelocationAssessmentReport;
+use gate::{CandidateRelocationAssessmentReport, UnmatchedSpecClaim};
 use graph_provenance::{
     CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots, VerifiedGraphSourceContext,
 };
 use lowering::ownership_subset::OwnershipSubset;
 use lowering::{
-    AnalysisMode, FullReportKind, GateRejectionPolicy, GraphReportSelection,
-    MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized, ReportEmission,
-    materialize_logical_modules, naturalize_cross_chunk_imports,
+    AnalysisMode, CandidateEmissionDraft, FullReportKind, GateRejectionPolicy,
+    GraphReportSelection, MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized,
+    ReportEmission, materialize_logical_modules,
 };
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
-use prune_dead_imports::prune_dead_import_specifiers;
-use prune_module_exports::prune_unimported_module_exports;
-use reconstruction::{
-    EmittablePlan, ReconstructionPlan, RejectedPlan, UnmatchedSpecClaim, VendorManifestOutput,
-};
+use reconstruction::{EmittablePlan, ReconstructionPlan, RejectedPlan, VendorManifestOutput};
 use spec::{ChunkExportPurity, LogicalModule, TransformSpec};
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, graph_module_roots};
 use vendor::{
-    VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, apply_emission_rewrites_in_place,
-    build_partial_swap_resolutions, build_vendor_resolution_plan,
+    VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, build_partial_swap_resolutions,
+    build_vendor_resolution_plan,
 };
 use write_tree::{RejectedArtifacts, WriteTreeInput, write_gate_rejected_marker, write_js_tree};
 
@@ -620,7 +616,6 @@ fn run_prepared_transform(
     // wire-facing resolutions are projections of the plan.
     vendor_report.full = vendor_plan.full_swap_resolutions();
 
-    let processed_chunk_names: BTreeSet<String> = materialise_chunk_ids.iter().cloned().collect();
     let mut module_count: usize = 0;
     let mut selected_lowerings: Vec<artifact::reports::SelectedModuleLowering> = Vec::new();
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
@@ -630,15 +625,9 @@ fn run_prepared_transform(
     // final validation boundary so the user sees the full list without
     // mistaking partial reconstruction for accepted output.
     let mut unmatched_spec_claims: Vec<UnmatchedSpecClaim> = Vec::new();
-    // Vendor rewrites lowering applied at construction time inside
-    // materialized module bodies, keyed by (swapped chunk, chunk
-    // export); folded into the partial-swap manifests below so
-    // `references_rewritten` keeps counting emitted references across
-    // both application sites.
-    let mut vendor_lowering_rewrites: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
     // Chunks the gate rejected but lowered anyway (`RunOutput::EmitOnRejection`).
     let mut gate_rejections = Vec::new();
-    let mut emission_files = if !materialise_chunk_ids.is_empty() {
+    let candidate_draft = if !materialise_chunk_ids.is_empty() {
         let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
         let report_out_dir = options
             .artifacts
@@ -700,83 +689,24 @@ fn run_prepared_transform(
         selected_lowerings = materialize_result.selected_lowerings;
         unmatched_spec_claims = materialize_result.unmatched_spec_claims;
         gate_rejections = materialize_result.gate_rejections;
-        vendor_lowering_rewrites = materialize_result.vendor_reference_rewrites;
-        let outputs = materialize_result.output;
-        decomposition_by_chunk = outputs.decomposition_by_chunk;
-        outputs.files
+        decomposition_by_chunk = materialize_result.decomposition_by_chunk;
+        materialize_result.output
     } else {
-        artifact::EmissionFiles::from_prepared(source_program)
+        CandidateEmissionDraft::pass_through(source_program, Arc::clone(&vendor_plan))
     };
 
-    // Cross-chunk import naturalization runs first, before the following
-    // emission rewrites canonicalize source specifiers. The two operations
-    // change AST bodies without changing the indexed output file set.
-    // Emission rewrites, one artifact pass over two disjoint file sets:
-    //
-    // * the unified pass-through directive rewrite over files emitted
-    //   without lowering in non-vendor chunks — specifier
-    //   canonicalization (the old always-on stage 0), boundary-rename
-    //   name mapping, and partial-swap consumer surgery from the
-    //   vendor plan (materialized module bodies were constructed from
-    //   the same plan during lowering; suppress-marked chunks are
-    //   skipped wholesale per open question 3; excluded full-swap
-    //   chunks are never rewritten);
-    // * the vendor residual computation for each partially-swapped
-    //   chunk — the canonicalize → self-rewrite → strip composition as
-    //   one function body, so the former stage ordering is structural
-    //   instead of a pipeline concern.
-    //
-    // Runs after materialize so the per-symbol consumer rewrite cannot
-    // erase binding names spec selectors matched on.
-    let mut vendor_rewrite_counts = vendor_lowering_rewrites;
-    let emission_references;
-    (emission_files, emission_references) =
-        emission_files.rewrite_bodies(|artifact, indexes| {
-            naturalize_cross_chunk_imports(
-                artifact,
-                indexes,
-                &selected_lowerings,
-                &processed_chunk_names,
-            )?;
-            apply_emission_rewrites_in_place(artifact, &vendor_plan, indexes)
-        })?;
-    merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
-
+    // The draft runs naturalization, vendor emission rewrites, and both
+    // prune passes in their fixed order; its finalized files are immutable.
+    let candidate = candidate_draft.finalize()?;
     (vendor_report.partial, vendor_report.bundled_partial) =
-        build_partial_swap_resolutions(&vendor_plan, &vendor_rewrite_counts)?;
-
-    // Trim dead named import specifiers across the whole bundle (entry
-    // included): the lowerer over-imports residual/hub bindings the
-    // importing file never references. Runs immediately before the
-    // export prune so that dropping a dead import — which the
-    // name-based export prune would otherwise treat as a live consumer —
-    // cascades into dropping the now-unimported module exports. See
-    // prune_dead_imports.rs for the soundness argument.
-    // Drop dead named exports from emitted logical-module files: a
-    // module-owned binding referenced nowhere outside its own module
-    // (the esbuild decorator scaffolding is the dominant case) is
-    // module-internal, so it should not appear in the module's
-    // `export { ... }`. Runs over the final bundle so it sees every
-    // import/re-export; entry files (the chunk public surface) are
-    // never touched. See prune_module_exports.rs for the soundness
-    // argument.
-    (emission_files, ()) = emission_files.rewrite_bodies(|files, _| {
-        prune_dead_import_specifiers(files);
-        prune_unimported_module_exports(files);
-        Ok(())
-    })?;
+        build_partial_swap_resolutions(&vendor_plan, candidate.references_by_symbol())?;
 
     // A gate-rejected program never reaches final program validation (as
     // without the flag, where the gate already failed the run): freeze it for
     // the marked reading-only tree, write that tree, and fail the run with the
     // gate's own diagnostic.
     if !gate_rejections.is_empty() {
-        let rejected_plan = RejectedPlan::new(
-            emission_files,
-            &vendor_plan,
-            gate_rejections,
-            &unmatched_spec_claims,
-        )?;
+        let rejected_plan = RejectedPlan::new(candidate, gate_rejections, &unmatched_spec_claims)?;
         // Where an accepted run writes its modules: the tree, else the harness.
         let tree_dir = spec
             .write_js_tree
@@ -806,8 +736,7 @@ fn run_prepared_transform(
     // Freeze the exact final syntax and replacement decisions before any
     // accepted-program output is written. Diagnostic reports may already exist.
     let validated_plan = ReconstructionPlan::new(
-        emission_files,
-        vendor_plan,
+        candidate,
         unmatched_spec_claims,
         spec.emit_browser_harness.as_ref(),
         VendorManifestOutput::prepare(swap_cfg.output_manifest_path.as_deref(), vendor_report),
@@ -1100,15 +1029,6 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
 
 /// Fold one application site's per-symbol rewrite counts into the
 /// merged map `build_partial_swap_resolutions` projects from.
-fn merge_rewrite_counts(
-    merged: &mut BTreeMap<(ChunkId, String), usize>,
-    counts: BTreeMap<(ChunkId, String), usize>,
-) {
-    for (key, count) in counts {
-        *merged.entry(key).or_insert(0) += count;
-    }
-}
-
 fn preflight_output_roots(spec: &TransformSpec) -> Result<()> {
     let mut roots = Vec::<PathBuf>::new();
     if let Some(cfg) = &spec.write_js_tree {

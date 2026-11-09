@@ -131,38 +131,106 @@ impl RejectedAssignment<'_> {
     }
 }
 
-/// The authoritative assignment gate and both diagnostic projections of the
-/// same concrete candidate. Assessment always runs; report selection controls
-/// only serialization. Effect coverage remains diagnostic until all required
-/// owner domains can discharge the relocation obligations.
+/// Pre-effect evidence for one exact immutable assignment: the legacy
+/// realizability validation, the candidate's emitted ESM order, and its
+/// structural placement. Each is computed once here and consumed by
+/// [`CandidatePreflight::evaluate`], so the realizability verdict that decides
+/// acceptance travels with the candidate instead of being recomputed.
+pub struct CandidatePreflight<'a> {
+    assignment_analysis: &'a AssignmentAnalysis,
+    legacy_validation: AssignmentValidation,
+    emitted_order: CandidateEmittedOrder,
+    placement: StructuralPlacementAssessment,
+}
+
+impl<'a> CandidatePreflight<'a> {
+    /// The projection must be for this immutable assignment.
+    pub fn prepare(
+        assignment_analysis: &'a AssignmentAnalysis,
+        projection: &analysis::PlacementProjection<'_>,
+    ) -> Self {
+        assert!(
+            std::ptr::eq(&assignment_analysis.assignment, projection.assignment()),
+            "candidate placement projection must belong to this immutable assignment"
+        );
+        let legacy_validation = assignment_analysis.validate_with_verdict();
+        let emitted_order = assignment_analysis.candidate_emitted_order();
+        let placement = structural_placement_assessment(
+            assignment_analysis.inputs.dependency_graph(),
+            &legacy_validation,
+            projection,
+        );
+        Self {
+            assignment_analysis,
+            legacy_validation,
+            emitted_order,
+            placement,
+        }
+    }
+
+    /// The authoritative gate decision, known before any effect sweep runs.
+    pub fn is_rejected(&self) -> bool {
+        legacy_gate_rejects(&self.legacy_validation)
+    }
+
+    /// Run legacy translation validation and the candidate effect sweep over
+    /// the retained emitted order and placement. The visitors stream complete
+    /// evidence without retaining a second copy of its rows.
+    pub fn evaluate<E>(
+        self,
+        facts: &[analysis::facts::StatementFacts],
+        translation_validation_visitor: Option<
+            &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
+        >,
+        effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
+    ) -> Result<CandidateEvaluation<'a>, E> {
+        let translation_validation = self.assignment_analysis.translation_validation(
+            &self.legacy_validation,
+            &self.emitted_order,
+            translation_validation_visitor,
+        )?;
+        let effect = self.assignment_analysis.effect_assessment(
+            facts,
+            &translation_validation,
+            &self.emitted_order,
+            effect_visitor,
+        )?;
+        Ok(CandidateEvaluation {
+            assignment_analysis: self.assignment_analysis,
+            legacy_validation: self.legacy_validation,
+            translation_validation,
+            candidate_assessment: CandidateRelocationAssessment {
+                placement: self.placement,
+                effect,
+            },
+        })
+    }
+}
+
+/// The authoritative legacy gate verdict beside both diagnostic projections
+/// of the same concrete candidate. Assessment always runs; report selection
+/// controls only serialization. Effect coverage remains diagnostic until all
+/// required owner domains can discharge the relocation obligations.
 #[derive(Debug)]
 pub struct CandidateEvaluation<'a> {
-    validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
+    assignment_analysis: &'a AssignmentAnalysis,
+    legacy_validation: AssignmentValidation,
     translation_validation: TranslationValidationResult,
     candidate_assessment: CandidateRelocationAssessment,
 }
 
 impl<'a> CandidateEvaluation<'a> {
-    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
-        match &self.validation {
-            Ok(validated) => validated.assignment_analysis(),
-            Err(rejected) => rejected.assignment_analysis(),
-        }
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
+        self.assignment_analysis
     }
 
-    pub fn validation(&self) -> &Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
-        &self.validation
-    }
-
+    /// Decided by the legacy realizability verdict alone.
     pub fn is_rejected(&self) -> bool {
-        self.validation.is_err()
+        legacy_gate_rejects(&self.legacy_validation)
     }
 
     pub fn report(&self) -> &AssignmentReport {
-        match &self.validation {
-            Ok(validated) => validated.report(),
-            Err(rejected) => rejected.report(),
-        }
+        &self.legacy_validation.report
     }
 
     pub fn translation_validation(&self) -> &TranslationValidationResult {
@@ -174,49 +242,24 @@ impl<'a> CandidateEvaluation<'a> {
     }
 
     pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
-        self.validation
+        if self.is_rejected() {
+            Err(RejectedAssignment {
+                assignment_analysis: self.assignment_analysis,
+                validation: Box::new(self.legacy_validation),
+            })
+        } else {
+            Ok(ValidatedAssignment {
+                assignment_analysis: self.assignment_analysis,
+                validation: self.legacy_validation,
+            })
+        }
     }
+}
 
-    /// Evaluate legacy translation validation and candidate effects/placement
-    /// against the same accepted or rejected assignment. The visitors stream
-    /// complete evidence without retaining a second copy of its rows.
-    pub fn evaluate<E>(
-        validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
-        facts: &[analysis::facts::StatementFacts],
-        projection: &analysis::PlacementProjection<'_>,
-        translation_validation_visitor: Option<
-            &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
-        >,
-        effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
-    ) -> Result<Self, E> {
-        let assignment_analysis = match &validation {
-            Ok(assignment) => assignment.assignment_analysis,
-            Err(rejected) => rejected.assignment_analysis,
-        };
-        let assignment_validation = match &validation {
-            Ok(assignment) => &assignment.validation,
-            Err(rejected) => rejected.validation.as_ref(),
-        };
-        let emitted_order = assignment_analysis.candidate_emitted_order();
-        let translation_validation = assignment_analysis.translation_validation(
-            assignment_validation,
-            &emitted_order,
-            translation_validation_visitor,
-        )?;
-        let candidate_assessment = assignment_analysis.candidate_relocation_assessment(
-            assignment_validation,
-            facts,
-            &translation_validation,
-            &emitted_order,
-            projection,
-            effect_visitor,
-        )?;
-        Ok(Self {
-            validation,
-            translation_validation,
-            candidate_assessment,
-        })
-    }
+fn legacy_gate_rejects(validation: &AssignmentValidation) -> bool {
+    !validation.verdict.is_realizable()
+        || !validation.report.atomic_group_conflicts.is_empty()
+        || !validation.report.cycles.is_empty()
 }
 
 /// The reason a split atomic group is surfaced to the placement pass. Pure
@@ -674,24 +717,16 @@ impl AssignmentAnalysis {
         })
     }
 
-    /// Assess structural placement and candidate-order effects together for
-    /// this exact assignment/import order. The effect report and typed effect
-    /// assessment come from one sweep; placement consumes the already-computed
-    /// canonical validation instead of rerunning realizability.
-    fn candidate_relocation_assessment<E>(
+    /// Assess candidate-order effects for this exact assignment/import order.
+    /// The effect report and typed effect assessment come from one sweep.
+    fn effect_assessment<E>(
         &self,
-        validation: &AssignmentValidation,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationResult,
         emitted_order: &CandidateEmittedOrder,
-        projection: &analysis::PlacementProjection<'_>,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
-    ) -> Result<CandidateRelocationAssessment, E> {
-        assert!(
-            std::ptr::eq(&self.assignment, projection.assignment()),
-            "candidate placement projection must belong to this immutable assignment"
-        );
-        let effect = effect_translation_assess(
+    ) -> Result<EffectTranslationValidationResult, E> {
+        effect_translation_assess(
             EffectTranslationValidationInputs {
                 graph: self.inputs.dependency_graph(),
                 assignment: &self.assignment,
@@ -701,32 +736,7 @@ impl AssignmentAnalysis {
                 module_path: &|id| self.module_path(id),
             },
             visitor,
-        )?;
-        Ok(CandidateRelocationAssessment {
-            placement: structural_placement_assessment(
-                self.inputs.dependency_graph(),
-                validation,
-                projection,
-            ),
-            effect,
-        })
-    }
-
-    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, RejectedAssignment<'_>> {
-        let validation = self.validate_with_verdict();
-        if !validation.verdict.is_realizable()
-            || !validation.report.atomic_group_conflicts.is_empty()
-            || !validation.report.cycles.is_empty()
-        {
-            return Err(RejectedAssignment {
-                assignment_analysis: self,
-                validation: Box::new(validation),
-            });
-        }
-        Ok(ValidatedAssignment {
-            assignment_analysis: self,
-            validation,
-        })
+        )
     }
 
     /// High-fidelity node-link view of the fine dependency graph plus

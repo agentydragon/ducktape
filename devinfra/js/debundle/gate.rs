@@ -9,6 +9,11 @@
 //! both the gate's simulator and the emitter lives in
 //! `esm_import_order`.
 
+use std::fmt;
+use std::path::PathBuf;
+
+use serde::Serialize;
+
 mod assignment_analysis;
 mod assignment_inputs;
 mod counted_digraph;
@@ -19,8 +24,8 @@ mod validation;
 
 pub use assignment_analysis::{
     AssignmentAnalysis, AssignmentAnalysisBuildError, AtomicGroupPlacementClass,
-    AtomicGroupPlacementObligation, CandidateEvaluation, CandidateRelocationAssessment,
-    CandidateRelocationAssessmentReport, CandidateRelocationStatus,
+    AtomicGroupPlacementObligation, CandidateEvaluation, CandidatePreflight,
+    CandidateRelocationAssessment, CandidateRelocationAssessmentReport, CandidateRelocationStatus,
     CrossDestinationRebindObligation, RejectedAssignment, SemanticOrderSccObligation,
     StructuralPlacementAssessment, StructuralPlacementCoverage, StructuralPlacementStatus,
     ValidatedAssignment,
@@ -43,6 +48,68 @@ pub use validation::{
     render_atomic_group_conflict_summary, render_cycle_summary, render_explanations,
     validate_assignment, validate_assignment_with_verdict,
 };
+
+/// A `define_logical_module` member whose `binding.name` did not
+/// resolve to a top-level declaration in the chunk. Collected across chunks
+/// and rejected at final validation before accepted output is written.
+#[derive(Debug, Clone, Serialize)]
+pub struct UnmatchedSpecClaim {
+    pub chunk_id: String,
+    /// Claiming module, by canonical [`spec::ModulePath`].
+    pub module_path: spec::ModulePath,
+    pub binding_name: String,
+    pub export_name: String,
+}
+
+/// Which realizability-gate check rejected a chunk's assignment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GateVerdict {
+    /// Members of one atomic group were claimed by different modules.
+    AtomicGroupConflicts { count: usize },
+    /// Module-quotient SCCs with at-init / side-effect edges between members.
+    UnrealizableCycles { count: usize },
+}
+
+impl fmt::Display for GateVerdict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AtomicGroupConflicts { count } => {
+                write!(f, "{count} atomic-group conflict(s)")
+            }
+            Self::UnrealizableCycles { count } => {
+                write!(f, "{count} unrealizable module SCC(s)")
+            }
+        }
+    }
+}
+
+/// A chunk the realizability gate rejected but lowering continued for, under
+/// `debundle run --emit-on-rejection`. Its files are readable, not runnable.
+#[derive(Debug, Clone)]
+pub struct ChunkGateRejection {
+    pub chunk_id: String,
+    pub verdict: GateVerdict,
+    /// `cycles.json` / `atomic_group_conflicts.json`, when the run has a
+    /// report directory.
+    pub evidence_report: Option<PathBuf>,
+    pub dependency_graph_report: Option<PathBuf>,
+    /// The rendered rejection the run fails with.
+    pub diagnostic: String,
+}
+
+impl ChunkGateRejection {
+    pub fn summary_line(&self) -> String {
+        let evidence = match &self.evidence_report {
+            Some(path) => format!("evidence: {}", path.display()),
+            None => "no report directory configured; see the run's stderr".to_string(),
+        };
+        format!(
+            "chunk {chunk}: {verdict}; {evidence}",
+            chunk = self.chunk_id,
+            verdict = self.verdict,
+        )
+    }
+}
 
 #[cfg(test)]
 mod analysis_tests;

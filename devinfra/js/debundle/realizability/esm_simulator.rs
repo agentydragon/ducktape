@@ -22,12 +22,12 @@ use crate::esm_import_order::EsmImportOrder;
 ///     emitted logical module — binding imports for binding-owning
 ///     plans, side-effect-only imports for binding-less plans — in
 ///     `EsmImportOrder::sort_entry_imports` order (Lemma 2's
-///     source-import order). See `lowering::lower_chunk`.
+///     source-import order). See `lowering::lower::prepare_candidate_emission_plan`.
 ///   - every other module's intra-chunk imports (cross-module
 ///     binding imports, phantom side-effect imports, entry-binding
 ///     import — one merged list) follow
 ///     `EsmImportOrder::sort_module_imports` (dependency-first
-///     linker order). See `lowering::lower_chunk::lower_single_plan`.
+///     linker order). See `lowering::module_output::prepare_module_emission`.
 ///
 /// It then walks DFS from entry, records the post-order
 /// evaluation index per module, and verifies every cross-module
@@ -134,7 +134,7 @@ impl EsmEvaluationSimulator {
 ///   - Elsewhere: that module's I-successors in
 ///     `sort_module_imports` order (dependency-first; mirrors the
 ///     merged cross/phantom/entry-binding import list the emitter
-///     renders in `lowering::lower_chunk::lower_single_plan`).
+///     renders in `lowering::module_output::prepare_module_emission`).
 ///
 /// Cycle no-op: a back-edge to a module already on the link-DFS
 /// stack is skipped. petgraph's `DfsPostOrder` filters neighbors

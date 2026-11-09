@@ -47,7 +47,7 @@ impl<'a> EmissionPlacement<'a> {
         })
     }
 
-    pub(super) fn assignment_analysis(&self) -> &AssignmentAnalysis {
+    pub(super) fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
         self.assignment_analysis
     }
 
