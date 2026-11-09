@@ -83,13 +83,15 @@ Agentplane URI and client auth, requested in any namespace, passes TLS, and the 
 only check left. Every alternative needs verifiers to stop trusting the cluster root, so this step
 does not wait for the decision.
 
-- **Issuer.** A dedicated Agentplane workload CA behind an `agentplane-workload` ClusterIssuer, with
-  its key in cert-manager's namespace. It replaces the namespaced `agentplane-runner-ca` Issuer. A
+- **Issuer.** A dedicated Agentplane workload CA, not chained to the cluster root, made of three
+  cert-manager objects. A self-signed ClusterIssuer bootstraps a CA `Certificate` (`isCA: true`)
+  in cert-manager's namespace. The `agentplane-workload` ClusterIssuer, of type `ca:`, signs with
+  that Certificate's Secret. A trust-manager `Bundle` publishes the CA certificate. It replaces the namespaced `agentplane-runner-ca` Issuer. A
   namespaced Issuer would do for Sandboxes alone, but standing workloads in `haku-sandbox` need a
   cross-namespace issuer. Putting a CA key in `haku-sandbox` would let any Pod Haku authors mount
   it. Choosing the ClusterIssuer now avoids a second `issuerRef` move. The Sandbox Controller's
   `runner_certificate_issuer` setting gains the issuer kind, which is a constant `Issuer` today.
-- **Trust.** A trust-manager Bundle carries that CA alone. It becomes the client-trust file of every
+- **Trust.** That `Bundle` carries the workload CA alone. It becomes the client-trust file of every
   SPIFFE listener: the egress proxy's `SPIFFEAuth` and its `svid-ca` volume
   (`cluster/cdk8s/agentplane/egress.py`), and the services' listeners, which take their CA file from
   `workload_tls.TRUST_BUNDLE_FILE` today. Clients verifying service SVIDs may keep the cluster bundle.
@@ -121,7 +123,8 @@ resolver package and the object. Moving the reconciler to its own binary later m
 `main.go`, a Deployment and moving its RBAC rules, with no change visible to a requester or a
 verifier.
 
-Host it in the Policy Controller. That process already owns identity-scoped authority: binding
+**Decided 2026-11-09 (operator):** host it in the Policy Controller for the time being;
+responsibilities may be recut later. That process already owns identity-scoped authority: binding
 expiry, and the planned grants, managed ServiceAccounts and identity-owned objects. It already
 reaches the subject namespaces (`subject_namespaces`) and creates RoleBindings there with `bind` on
 the referenced roles. Certificate create on the workload issuer adds no new class of trust to that
@@ -361,7 +364,8 @@ is proven. Revocation is deleting the record, which Flux recreates with a fresh 
 
 ### What moves out of the Sandbox Controller
 
-This is migration step 2 and the size of the reshuffle:
+This is migration step 2 and the size of the reshuffle. **Decided 2026-11-09 (operator):** the
+Sandbox Controller loses Certificate create, and this table stands.
 
 | Today in the Sandbox Controller                                                                                                                                                                 | Moves to                                    |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
@@ -406,7 +410,8 @@ It also deletes or converts `cluster/cdk8s/public_coder/egress.py:63`, which ren
 models. That config is dead: the `public-coder-agent` Deployment is scaled to 0/0, and #15089
 tombstones it. `kubernetes_bearer` stays on service listeners for backend callers.
 
-**With `IDENTITY_CUTOVER`.** Box creation needs the caller's own ServiceAccount. `stamp` in
+**With `IDENTITY_CUTOVER`; the ordering edge and the owner switch were decided by the operator on
+2026-11-09.** Box creation needs the caller's own ServiceAccount. `stamp` in
 `action_service/sandbox/inventory.go` reads it, runs the box as it, and sets the box's owner
 reference to it. `SANDBOX_IDENTITY_SPEC` stops creating that account, so step 3 is a technical
 prerequisite of that node, recorded in the DAG. In the same change, the box's owner becomes the
@@ -419,21 +424,31 @@ and 5 may land on either side.
 
 1. **Running Sandboxes during steps 1 and 2: decided 2026-11-09.** None will run, so there is no
    replacement procedure (see the shared step).
-2. **Secrets of deleted Certificates.** cert-manager does not own its Secrets here
-   (`--enable-certificate-owner-ref` is off). Recommendation: the issuer deletes them by label, as
-   the Sandbox Controller does today. A leftover is inert, because its request is gone.
-3. **Pod provenance for standing replicas.** Recommendation: none. Decision history and LLM ingress
-   metadata name the request and credential ID.
-4. **Anki's identity.** Recommendation: its own request now, with subject `haku-ui`. Split the
-   identity when its grants diverge.
+2. **Secrets of deleted Certificates: decided 2026-11-09.** The issuer stamps the owning record's
+   UID into `Certificate.spec.secretTemplate.labels`. cert-manager copies the label onto the
+   Secret, and the issuer deletes Secrets by it. `--enable-certificate-owner-ref` was rejected,
+   because it changes behaviour for every Certificate in the cluster. A leftover Secret is inert,
+   because its record is gone.
+3. **Pod provenance for standing replicas: decided for now, 2026-11-09.** None. Decision history
+   and LLM ingress metadata name the record and its credential ID.
+4. **Anki's identity: decided for now, 2026-11-09.** Its own record, with subject `haku-ui`. Split
+   the identity when its grants diverge.
+
+   Standing workloads share one non-rotating credential with no Pod provenance, which is weaker
+   than the per-incarnation credentials of Sandboxes and boxes. To revisit: bring standing workloads
+   up to per-incarnation credentials, or accept the weaker guarantee everywhere.
+
 5. **Admission mechanism.** Recommendation: a `ValidatingAdmissionPolicy` for the Certificate
    gate, and CRD validation rules for the record, since the apiserver evaluates both and envtest
    covers both. Kyverno stays only for the existing launcher-relay admission. approver-policy would need the cluster's default
    approver disabled.
-6. **`Identity.status.workloadCredentials`.** The requests are that list, keyed the other way.
-   Recommendation: `IDENTITY_KINDS` omits the field.
-7. **Off-cluster callers.** A Secret mount does not reach them. Recommendation: design delivery when
-   one exists. The request and the resolver stay as here.
+6. **`Identity.status.workloadCredentials`: decided.** The records are that list, keyed the other
+   way, and #15072 merged without the field.
+7. **Off-cluster workloads presenting SVIDs.** A Secret mount does not reach them. Recommendation:
+   design delivery when one exists. The record and the resolver stay as here. The MCP edge path for
+   off-cluster agents is out of this design's scope and unchanged: an OAuth Connection, forwarded to
+   the Action Service with the edge's backend credential. Only its Connection-to-Identity binding
+   changes, at `IDENTITY_CUTOVER`.
 8. **Re-owning a Sandbox: decided 2026-11-09.** The identity changes only while nothing runs, and
    the next start is a new incarnation. Its binding changes, so the credential rotates anyway, and
    the audit boundary of the identity plan's
