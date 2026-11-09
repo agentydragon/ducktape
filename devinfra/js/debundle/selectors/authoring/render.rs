@@ -59,7 +59,7 @@ pub(crate) fn anything_expr() -> Expr {
     Expr::Ident(ident_node(ANYTHING_HOLE_KEYWORD))
 }
 
-fn stmt_list_stmt() -> Stmt {
+pub(crate) fn stmt_list_stmt() -> Stmt {
     Stmt::Expr(ExprStmt {
         span: DUMMY_SP,
         expr: Box::new(Expr::Ident(ident_node(STMT_LIST_HOLE_KEYWORD))),
@@ -68,13 +68,13 @@ fn stmt_list_stmt() -> Stmt {
 
 /// An object-property run-absorber hole, emitted as a bare `ANYTHING` shorthand
 /// property — the only spelling the matcher accepts in this position.
-fn object_props_prop() -> PropOrSpread {
+pub(crate) fn object_props_prop() -> PropOrSpread {
     PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(ANYTHING_HOLE_KEYWORD))))
 }
 
 /// An `ARGS` argument-list hole that absorbs a run of dropped (non-anchor)
 /// call/`new` arguments (the argument analog of [`object_props_prop`]).
-fn args_hole() -> ExprOrSpread {
+pub(crate) fn args_hole() -> ExprOrSpread {
     ExprOrSpread {
         spread: None,
         expr: Box::new(Expr::Ident(ident_node(ARGS_HOLE_KEYWORD))),

@@ -11,12 +11,14 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::finish_minimized_selector;
-use crate::render::{anything_expr, emit_selector, hole_object_padded, ident_node, named_pat};
+use crate::render::{
+    anything_expr, args_hole, emit_selector, hole_object_padded, ident_node, named_pat,
+};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
 };
 
-use source_match_holes::{ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD};
+use source_match_holes::ANYTHING_HOLE_KEYWORD;
 
 fn single_object_initializer(item: &ModuleItem) -> Option<(&VarDecl, &ObjectLit)> {
     let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) = item else {
@@ -91,13 +93,6 @@ pub(crate) fn call_use_bindings(item: &ModuleItem) -> BTreeSet<String> {
             _ => None,
         })
         .collect()
-}
-
-fn args_hole() -> ExprOrSpread {
-    ExprOrSpread {
-        spread: None,
-        expr: Box::new(Expr::Ident(ident_node(ARGS_HOLE_KEYWORD))),
-    }
 }
 
 /// Select a declaration by a direct call argument next to a string marker.
