@@ -31,11 +31,19 @@ func ConditionApply(binding *policyapi.PolicyBinding, condition metav1.Condition
 	), changed
 }
 
-// GrantConditionApply is ConditionApply for a KubernetesAccountGrant.
-func GrantConditionApply(grant *policyapi.KubernetesAccountGrant, condition metav1.Condition) (*policyapplyv1.KubernetesAccountGrantApplyConfiguration, bool) {
+// GrantConditionApply is ConditionApply for a ServiceAccountGrant.
+func GrantConditionApply(grant *policyapi.ServiceAccountGrant, condition metav1.Condition) (*policyapplyv1.ServiceAccountGrantApplyConfiguration, bool) {
 	configuration, changed := conditionConfiguration(grant.Status.Conditions, grant.Generation, condition)
-	return policyapplyv1.KubernetesAccountGrant(grant.Name, grant.Namespace).WithStatus(
-		policyapplyv1.KubernetesAccountGrantStatus().WithConditions(configuration),
+	return policyapplyv1.ServiceAccountGrant(grant.Name, grant.Namespace).WithStatus(
+		policyapplyv1.ServiceAccountGrantStatus().WithConditions(configuration),
+	), changed
+}
+
+// ManagedServiceAccountConditionApply is ConditionApply for a ManagedServiceAccount.
+func ManagedServiceAccountConditionApply(account *policyapi.ManagedServiceAccount, condition metav1.Condition) (*policyapplyv1.ManagedServiceAccountApplyConfiguration, bool) {
+	configuration, changed := conditionConfiguration(account.Status.Conditions, account.Generation, condition)
+	return policyapplyv1.ManagedServiceAccount(account.Name, account.Namespace).WithStatus(
+		policyapplyv1.ManagedServiceAccountStatus().WithConditions(configuration),
 	), changed
 }
 

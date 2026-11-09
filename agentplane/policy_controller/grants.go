@@ -21,10 +21,10 @@ import (
 // does not exist.
 const RoleSetUnavailable = "RoleSetUnavailable"
 
-// ReconcileGrant converges one KubernetesAccountGrant exactly as Reconcile does a PolicyBinding: its
+// ReconcileGrant converges one ServiceAccountGrant exactly as Reconcile does a PolicyBinding: its
 // native bindings, its KubernetesReady condition and missingRoles, and its expiry.
 func (r *Reconciler) ReconcileGrant(ctx context.Context, req reconcile.Request) (result ctrl.Result, err error) {
-	var grant policyapi.KubernetesAccountGrant
+	var grant policyapi.ServiceAccountGrant
 	if err := r.Get(ctx, req.NamespacedName, &grant); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, r.converge(ctx, grantOwner, req.Name, nil)
@@ -60,12 +60,9 @@ func (r *Reconciler) ReconcileGrant(ctx context.Context, req reconcile.Request) 
 	return ctrl.Result{}, r.applyGrantStatus(ctx, &grant, e)
 }
 
-func (r *Reconciler) expandGrant(ctx context.Context, grant *policyapi.KubernetesAccountGrant) (expansion, error) {
+func (r *Reconciler) expandGrant(ctx context.Context, grant *policyapi.ServiceAccountGrant) (expansion, error) {
 	spec := grant.Spec
-	if spec.Account.APIServer != LocalAPIServer {
-		return expansion{reason: "APIServerNotConfigured", message: fmt.Sprintf("apiServer %s is not one this controller reaches; it reaches only %s", spec.Account.APIServer, LocalAPIServer)}, nil
-	}
-	account, e, err := r.subject(ctx, spec.Account.Namespace, spec.Account.Name, r.grantNamespaces())
+	account, e, err := r.subject(ctx, spec.ServiceAccount.Namespace, spec.ServiceAccount.Name, r.grantNamespaces())
 	if account == nil {
 		return e, err
 	}
@@ -116,7 +113,7 @@ func roleSetScopes(rule policyapi.KubernetesRule) ([]native, error) {
 }
 
 // applyGrantStatus is applyStatus for a grant.
-func (r *Reconciler) applyGrantStatus(ctx context.Context, grant *policyapi.KubernetesAccountGrant, e expansion) error {
+func (r *Reconciler) applyGrantStatus(ctx context.Context, grant *policyapi.ServiceAccountGrant, e expansion) error {
 	configuration, changed := policyapply.GrantConditionApply(grant, e.condition())
 	if !changed && slices.Equal(grant.Status.MissingRoles, e.missingRoles) {
 		return nil

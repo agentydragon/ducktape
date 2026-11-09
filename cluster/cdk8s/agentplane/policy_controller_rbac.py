@@ -65,14 +65,14 @@ class PolicyControllerRbac(Construct):
                 # Deleting is how a grant or a managed account expires.
                 RolePolicyRule(
                     resources=[
-                        custom_resource(_GROUP, "kubernetesaccountgrants"),
+                        custom_resource(_GROUP, "serviceaccountgrants"),
                         custom_resource(_GROUP, "managedserviceaccounts"),
                     ],
                     verbs=["get", "list", "watch", "delete"],
                 ),
                 RolePolicyRule(
                     resources=[
-                        custom_resource(_GROUP, "kubernetesaccountgrants/status"),
+                        custom_resource(_GROUP, "serviceaccountgrants/status"),
                         custom_resource(_GROUP, "managedserviceaccounts/status"),
                     ],
                     verbs=["patch"],

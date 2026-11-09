@@ -1204,6 +1204,7 @@ py_test(
         "//cluster/cdk8s:conftest",
         "//util:settings_contract",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

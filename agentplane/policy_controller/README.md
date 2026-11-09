@@ -1,6 +1,6 @@
 # Policy Controller
 
-Deletes `PolicyBinding`s, `KubernetesAccountGrant`s and `ManagedServiceAccount`s past their
+Deletes `PolicyBinding`s, `ServiceAccountGrant`s and `ManagedServiceAccount`s past their
 `expiresAt`; keeps the native RoleBindings and ClusterRoleBindings that bindings' Kubernetes rules
 and grants' `KubernetesRoleSet`s expand to; and keeps the ServiceAccount each
 `ManagedServiceAccount` stands for. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
@@ -16,7 +16,7 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   machinery and watches all three controllers share. Sets, subject accounts and the labeled native
   bindings map back to the objects they affect, through field indexes and the native bindings'
   owner annotation; `RequeueAfter` runs an object again at its `expiresAt`, when it is deleted.
-- [`grants.go`](grants.go): one reconcile per `KubernetesAccountGrant`, the same as a binding's with
+- [`grants.go`](grants.go): one reconcile per `ServiceAccountGrant`, the same as a binding's with
   role sets in place of `PolicySet`s.
 - [`accounts.go`](accounts.go): one reconcile per `ManagedServiceAccount`, creating its
   ServiceAccount and pruning those whose account is gone.
@@ -39,7 +39,7 @@ AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE=agentplane-staging \
 ```
 
 It uses the in-cluster config or `KUBECONFIG`. Its ServiceAccount needs to list and watch
-PolicySets, PolicyBindings, KubernetesRoleSets, KubernetesAccountGrants, ManagedServiceAccounts and
+PolicySets, PolicyBindings, KubernetesRoleSets, ServiceAccountGrants, ManagedServiceAccounts and
 ServiceAccounts, delete PolicyBindings, grants and managed accounts, apply their status, read the
 referenced Roles and ClusterRoles, list and watch RoleBindings and ClusterRoleBindings
 cluster-wide, and create, patch and delete them where sets grant, with `bind` on each referenced

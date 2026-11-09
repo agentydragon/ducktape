@@ -84,14 +84,14 @@ func run(c config) error {
 		LeaderElectionID:        "agentplane-policy-controller",
 		LeaderElectionNamespace: c.PolicyNamespace,
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&policyapi.PolicySet{}:              {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.PolicyBinding{}:          {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.KubernetesRoleSet{}:      {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.KubernetesAccountGrant{}: {Namespaces: only(c.PolicyNamespace)},
-			&policyapi.ManagedServiceAccount{}:  {Namespaces: only(c.PolicyNamespace)},
-			&corev1.ServiceAccount{}:            {Namespaces: only(append(slices.Clone(c.SubjectNamespaces), c.AccountsNamespace)...)},
-			&rbacv1.RoleBinding{}:               {Label: ours},
-			&rbacv1.ClusterRoleBinding{}:        {Label: ours},
+			&policyapi.PolicySet{}:             {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.PolicyBinding{}:         {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.KubernetesRoleSet{}:     {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.ServiceAccountGrant{}:   {Namespaces: only(c.PolicyNamespace)},
+			&policyapi.ManagedServiceAccount{}: {Namespaces: only(c.PolicyNamespace)},
+			&corev1.ServiceAccount{}:           {Namespaces: only(append(slices.Clone(c.SubjectNamespaces), c.AccountsNamespace)...)},
+			&rbacv1.RoleBinding{}:              {Label: ours},
+			&rbacv1.ClusterRoleBinding{}:       {Label: ours},
 		}},
 	})
 	if err != nil {

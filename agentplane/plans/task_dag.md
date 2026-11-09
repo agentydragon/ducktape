@@ -3058,7 +3058,7 @@ flowchart LR
 
 **In review (PR from `claude/identity-kinds`, 2026-11-08).** Go types, controller-gen output,
 `crds/generate.py` manifests, generated clients, policy protobuf and admission tests for
-`Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant` and `ManagedServiceAccount`, and an
+`Identity`, `KubernetesRoleSet`, `ServiceAccountGrant` and `ManagedServiceAccount`, and an
 additive `PolicyBinding.spec.subject.identity` beside the ServiceAccount subject (exactly one), so
 identity readers can be built before the cutover. Flux applies CRDs to staging ahead of any reader,
 so nothing here removes or narrows a deployed field: `IDENTITY_CUTOVER` removes the ServiceAccount
@@ -3107,24 +3107,22 @@ The staging PR states rollback and verifies callers after image/config convergen
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
-**In review (PR from `claude/policy-grants`, stacked on `IDENTITY_KINDS`, 2026-11-08).** The Policy
-Controller reads `KubernetesAccountGrant` and `KubernetesRoleSet` beside the `PolicyBinding`
+**In review (PR #15076 from `claude/policy-grants`, stacked on `IDENTITY_KINDS`, 2026-11-09).** The
+Policy Controller reads `ServiceAccountGrant` and `KubernetesRoleSet` beside the `PolicyBinding`
 Kubernetes rules (those leave at `IDENTITY_CUTOVER`), keeping native RoleBindings per grant, role
-and namespace through the same additive, pruned, never-adopt-on-name machinery; expiry extends to
-grants and managed accounts; `ManagedServiceAccount` creates the SA in the accounts namespace (the
-controller's `accounts_namespace` setting) with a UID label and prunes it on reconcile once the
-account is gone. Local apiserver only; remote targets are a settings entry added when one exists.
-Envtest covers a grant on a Flux SA, two grants on one account revoked independently, a temporary
-account's full lifecycle including expiry with no restart, a same-name SA recreated while a
-grant is live, and an account-owned grant with its own `expiresAt` reporting `ConflictingExpiry`.
-The test apiserver has no garbage collector, so owned grants and bindings going with their account
-is left to `IDENTITY_SYSTEM_TESTS`. The controller's RBAC gains SA create, delete and reads in the accounts namespace
-only, plus reads, expiry deletes and status patches on the new kinds; the staging accounts namespace
-(`agentplane-staging-k8s-accounts`) is rendered here, for #15075 to reuse. An account's expiry
-deletes its ServiceAccount and every native binding on it in one pass. **Remaining:** emitting each managed account's
-`EgressCredential` and one-rule `PolicySet` owned by it waits on the `kubernetesServiceAccount`
-credential source, not on devel at 2026-11-08, together with open question 11's admission rule.
-**Exit:** those two objects are emitted, owned by the account.
+and namespace through the same additive, pruned, never-adopt-on-name machinery. Expiry covers
+bindings, grants and managed accounts through one helper; an expired object is absent to the shared
+reader and the controller before its deletion, and an account-owned object setting its own
+`expiresAt` reports `ConflictingExpiry`. `ManagedServiceAccount` creates the SA in the
+environment's accounts namespace (`<namespace>-k8s-accounts`, rendered here and by #15075) with a
+UID label, reports `KubernetesReady`, and on expiry or deletion removes the SA and every native
+binding on it in one pass. The controller's RBAC gains SA create, delete and reads in the accounts
+namespace only, plus reads, expiry deletes and status patches on the new kinds. The test apiserver
+has no garbage collector, so owned grants and bindings going with their account is left to
+`IDENTITY_SYSTEM_TESTS`. **Remaining:** emitting each managed account's `EgressCredential` and
+one-rule `PolicySet` owned by it waits on the `kubernetesServiceAccount` credential source, not on
+devel at 2026-11-09, together with open question 11's admission rule. **Exit:** those two objects
+are emitted, owned by the account.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 

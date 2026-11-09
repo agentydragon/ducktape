@@ -3,12 +3,12 @@
 Grants ServiceAccounts access by named, reusable sets, so a person chooses "basic cluster
 diagnostics" rather than hundreds of per-namespace RoleBindings. It owns `PolicyBinding` expiry for
 every rule type, and is the reader of the Kubernetes rule types of `PolicySet`
-(`agentplane/crds/manifests/crd-policysets.yaml`), of `KubernetesAccountGrant` and
+(`agentplane/crds/manifests/crd-policysets.yaml`), of `ServiceAccountGrant` and
 `KubernetesRoleSet`, and of `ManagedServiceAccount`.
 
 ## Expiry
 
-The controller deletes a `PolicyBinding`, `KubernetesAccountGrant` or `ManagedServiceAccount` once
+The controller deletes a `PolicyBinding`, `ServiceAccountGrant` or `ManagedServiceAccount` once
 its `expiresAt` passes, and is the only deleter. The pass that deletes one also treats it as gone,
 removing what it kept in the same pass. Until it is deleted, an expired object is absent to
 readers too: the shared reader (`agentplane/policy/reader`) skips a `PolicyBinding` past its
@@ -63,10 +63,10 @@ name-based ServiceAccount grant before cleanup or owner-reference garbage collec
 prevents that binding from belonging to a later Sandbox incarnation. Revoke's resourceVersion
 precondition prevents deleting a binding edited or replaced after its read.
 
-## Kubernetes account grants
+## ServiceAccount grants
 
-- A `KubernetesAccountGrant` in the policy namespace attaches `KubernetesRoleSet`s in its own
-  namespace to one ServiceAccount, named by apiserver, namespace and name. Its role sets'
+- A `ServiceAccountGrant` in the policy namespace attaches `KubernetesRoleSet`s in its own
+  namespace to one ServiceAccount, named by namespace and name. Its role sets'
   `role_binding` and `cluster_role_binding` rules mean what the `PolicySet` Kubernetes rule types
   mean, and the controller keeps their native bindings exactly as it keeps a binding's: one per
   grant, role and namespace; additive across grants and bindings on one account; converged on
@@ -77,27 +77,26 @@ precondition prevents deleting a binding edited or replaced after its read.
   a foreign account of the same name.
 - A role set naming a role the controller has no `bind` permission for reports `ApplyFailed`: the
   apiserver refuses the native binding.
-- The account may live in a subject namespace or the accounts namespace. Only the `local` apiserver,
-  the one the controller runs in, is reached; a grant naming another reports
-  `APIServerNotConfigured` and keeps no native bindings.
+- The ServiceAccount may live in a subject namespace or the accounts namespace, in the cluster the
+  controller runs in.
 - Its status is a binding's: `KubernetesReady` with reasons `Applied`, `SubjectNotWatched`,
-  `SubjectMissing`, `RoleMissing`, `RoleSetUnavailable`, `APIServerNotConfigured`,
-  `ConflictingExpiry` or `ApplyFailed`, and `status.missingRoles`.
+  `SubjectMissing`, `RoleMissing`, `RoleSetUnavailable`, `ConflictingExpiry` or `ApplyFailed`, and
+  `status.missingRoles`.
 
 ## Managed ServiceAccounts
 
-- For a `ManagedServiceAccount` on the `local` apiserver, the controller creates a ServiceAccount
-  of the same name in the accounts namespace, labeled with the account's UID, and records that
+- For a `ManagedServiceAccount`, the controller creates a ServiceAccount of the same name in the accounts namespace, labeled with the account's UID, and records that
   incarnation in `status.serviceAccount`. One deleted by hand is recreated.
 - A ServiceAccount at that name without this account's UID label is never adopted: the reconcile
-  fails and `status.serviceAccount` stays unset until the name is free. One created for an earlier
+  fails, `status.serviceAccount` stays unset and `KubernetesReady` is `False` with reason
+  `ServiceAccountConflict` until the name is free. One created for an earlier
   account of the same name is deleted and replaced.
 - Once the account is gone, through expiry, its owner's deletion or by hand, the controller deletes
   the ServiceAccounts labeled with its UID and, in the same pass, every native binding on each of
   them, whichever binding or grant keeps it. No ownerReference reaches across namespaces, and no
   finalizer holds the account. Grants and bindings the account owns go by garbage collection.
-- An account on another apiserver gets nothing; its status has no condition, so the controller
-  logs it.
+- Its `KubernetesReady` condition is `Created`, `ServiceAccountConflict`, or `ConflictingExpiry`
+  naming each binding or grant it owns that sets its own `expiresAt`.
 - Deleting the ServiceAccount is not revocation by itself: RBAC matches by name, and impersonation
   needs no ServiceAccount object. The native bindings are the authority, which is why they go in
   the same pass; a grant whose ServiceAccount is missing keeps none (`SubjectMissing`).

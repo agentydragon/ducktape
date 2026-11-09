@@ -349,14 +349,14 @@ func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.
 		HealthProbeBindAddress: "0",
 		WebhookServer:          webhook.NewServer(webhook.Options{Port: 0}),
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&policyapi.PolicySet{}:              {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&policyapi.PolicyBinding{}:          {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&policyapi.KubernetesRoleSet{}:      {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&policyapi.KubernetesAccountGrant{}: {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&policyapi.ManagedServiceAccount{}:  {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&corev1.ServiceAccount{}:            {Namespaces: map[string]cache.Config{subjectNamespace: {}, accountsNamespace: {}}},
-			&rbacv1.RoleBinding{}:               {Label: managed},
-			&rbacv1.ClusterRoleBinding{}:        {Label: managed},
+			&policyapi.PolicySet{}:             {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.PolicyBinding{}:         {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.KubernetesRoleSet{}:     {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.ServiceAccountGrant{}:   {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.ManagedServiceAccount{}: {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&corev1.ServiceAccount{}:           {Namespaces: map[string]cache.Config{subjectNamespace: {}, accountsNamespace: {}}},
+			&rbacv1.RoleBinding{}:              {Label: managed},
+			&rbacv1.ClusterRoleBinding{}:       {Label: managed},
 		}},
 	})
 	if err != nil {

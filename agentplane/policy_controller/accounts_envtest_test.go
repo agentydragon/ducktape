@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,8 +92,8 @@ func TestManagedServiceAccountIsNeverAdoptedByName(t *testing.T) {
 	if untouched.UID != foreign.UID || len(untouched.Labels) != 0 || len(untouched.Annotations) != 0 {
 		t.Fatalf("the foreign ServiceAccount was changed: %+v", untouched.ObjectMeta)
 	}
-	if status := readManagedAccount(t, api, account.Name).Status; status.ServiceAccount != nil {
-		t.Fatalf("status names a ServiceAccount the controller did not create: %+v", status)
+	if status := readManagedAccount(t, api, account.Name).Status; status.ServiceAccount != nil || accountReason(status) != "ServiceAccountConflict" {
+		t.Fatalf("status after a collision: %+v", status)
 	}
 
 	if err := api.Delete(ctx, foreign); err != nil {
@@ -103,7 +104,8 @@ func TestManagedServiceAccountIsNeverAdoptedByName(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := readServiceAccount(t, api, foreign.Name)
-	if created.Labels[ManagedAccountUIDLabel] != string(account.UID) || readManagedAccount(t, api, account.Name).Status.ServiceAccount.UID != created.UID {
+	if status := readManagedAccount(t, api, account.Name).Status; created.Labels[ManagedAccountUIDLabel] != string(account.UID) ||
+		status.ServiceAccount.UID != created.UID || accountReason(status) != "Created" {
 		t.Fatalf("created ServiceAccount %+v for account uid=%s", created.ObjectMeta, account.UID)
 	}
 
@@ -158,7 +160,7 @@ func TestExpiredManagedAccountRevokesInOnePass(t *testing.T) {
 	serviceAccount := readServiceAccount(t, api, account.Name)
 	waitForCached(t, cached, &corev1.ServiceAccount{}, client.ObjectKeyFromObject(serviceAccount))
 	waitForCached(t, cached, &policyapi.KubernetesRoleSet{}, client.ObjectKeyFromObject(set))
-	waitForCached(t, cached, &policyapi.KubernetesAccountGrant{}, client.ObjectKeyFromObject(grant))
+	waitForCached(t, cached, &policyapi.ServiceAccountGrant{}, client.ObjectKeyFromObject(grant))
 	if _, err := r.ReconcileGrant(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(grant)}); err != nil {
 		t.Fatal(err)
 	}
@@ -199,8 +201,9 @@ func TestOwnedGrantWithItsOwnExpiryConflicts(t *testing.T) {
 	grant.OwnerReferences = []metav1.OwnerReference{ownedBy(account)}
 	grant.Spec.ExpiresAt = &metav1.Time{Time: time.Now().Add(-time.Minute)}
 	create(t, api, grant)
-	eventually(t, "the conflicting grant's condition", func() (bool, string) {
-		return grantReady(t, api, grant.Name, ConflictingExpiry), ""
+	eventually(t, "the conflict on the grant and its owning account", func() (bool, string) {
+		status := readManagedAccount(t, api, account.Name).Status
+		return grantReady(t, api, grant.Name, ConflictingExpiry) && accountReason(status) == ConflictingExpiry, fmt.Sprintf("%+v", status.Conditions)
 	})
 	// Still there despite its past expiresAt, and binding nothing, though its account exists.
 	waitForManagedServiceAccount(t, api, account, "")
@@ -213,9 +216,10 @@ func TestOwnedGrantWithItsOwnExpiryConflicts(t *testing.T) {
 	if err := api.Update(ctx, current); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the grant to bind once the conflict is removed", func() (bool, string) {
+	eventually(t, "the grant to bind and the account to clear once the conflict is removed", func() (bool, string) {
 		natives := grantNatives(t, api, grant.Name)
-		return grantReady(t, api, grant.Name, "Applied") && len(natives) == 1, describe(natives)
+		return grantReady(t, api, grant.Name, "Applied") && len(natives) == 1 &&
+			accountReason(readManagedAccount(t, api, account.Name).Status) == "Created", describe(natives)
 	})
 }
 
@@ -228,9 +232,17 @@ func ownedBy(account *policyapi.ManagedServiceAccount) metav1.OwnerReference {
 	}
 }
 
-func readGrant(t *testing.T, api client.Client, name string) *policyapi.KubernetesAccountGrant {
+// accountReason is the reason of the account's KubernetesReady condition, or "" without one.
+func accountReason(status policyapi.ManagedServiceAccountStatus) string {
+	if condition := meta.FindStatusCondition(status.Conditions, KubernetesReady); condition != nil {
+		return condition.Reason
+	}
+	return ""
+}
+
+func readGrant(t *testing.T, api client.Client, name string) *policyapi.ServiceAccountGrant {
 	t.Helper()
-	var grant policyapi.KubernetesAccountGrant
+	var grant policyapi.ServiceAccountGrant
 	if err := api.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: name}, &grant); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +252,8 @@ func readGrant(t *testing.T, api client.Client, name string) *policyapi.Kubernet
 func testManagedAccount(name string) *policyapi.ManagedServiceAccount {
 	return &policyapi.ManagedServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
-		Spec:       policyapi.ManagedServiceAccountSpec{APIServer: LocalAPIServer},
+		// CLEANUP(added 2026-11-09): drop APIServer with the identity-kinds commit removing it.
+		Spec: policyapi.ManagedServiceAccountSpec{APIServer: "local"},
 	}
 }
 

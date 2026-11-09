@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -15,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policyapply "github.com/agentydragon/ducktape/agentplane/policy/client/apply"
 	policyapplyv1 "github.com/agentydragon/ducktape/agentplane/policy/client/applyconfigurations/api/v1alpha1"
 )
 
@@ -44,20 +47,62 @@ func (r *Reconciler) ReconcileManagedServiceAccount(ctx context.Context, req rec
 			result.RequeueAfter = requeue
 		}
 	}()
-	if account.Spec.APIServer != LocalAPIServer {
-		// The status has no condition to report this on. Nothing is created, and a local
-		// ServiceAccount left from an earlier spec is removed.
-		ctrl.LoggerFrom(ctx).Info("ManagedServiceAccount names an apiserver this controller does not reach",
-			"apiServer", account.Spec.APIServer)
-		return ctrl.Result{}, errors.Join(r.pruneServiceAccounts(ctx, account.Name, ""), r.applyAccountStatus(ctx, &account, nil))
-	}
 	// A previous incarnation's ServiceAccount at the same name goes first, so this one's can be
 	// created in its place.
 	if err := r.pruneServiceAccounts(ctx, account.Name, account.UID); err != nil {
 		return ctrl.Result{}, err
 	}
 	created, err := r.ensureServiceAccount(ctx, &account)
-	return ctrl.Result{}, errors.Join(err, r.applyAccountStatus(ctx, &account, created))
+	condition := metav1.Condition{Type: KubernetesReady, Status: metav1.ConditionTrue, Reason: "Created", Message: "ServiceAccount created"}
+	if errors.Is(err, errForeignServiceAccount) {
+		condition = metav1.Condition{Type: KubernetesReady, Status: metav1.ConditionFalse, Reason: "ServiceAccountConflict", Message: err.Error()}
+	} else if err == nil {
+		conflicting, listErr := r.conflictingOwned(ctx, &account)
+		if listErr != nil {
+			return ctrl.Result{}, listErr
+		}
+		if len(conflicting) > 0 {
+			condition = metav1.Condition{
+				Type: KubernetesReady, Status: metav1.ConditionFalse, Reason: ConflictingExpiry,
+				Message: "owned objects set their own expiresAt and grant nothing: " + strings.Join(conflicting, ", "),
+			}
+		}
+	} else {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, errors.Join(err, r.applyAccountStatus(ctx, &account, created, condition))
+}
+
+// errForeignServiceAccount marks a ServiceAccount at a managed account's name that was not created
+// for it.
+var errForeignServiceAccount = errors.New("ServiceAccount was not created for this ManagedServiceAccount")
+
+// conflictingOwned names the bindings and grants the account owns that set their own expiresAt.
+func (r *Reconciler) conflictingOwned(ctx context.Context, account *policyapi.ManagedServiceAccount) ([]string, error) {
+	var bindings policyapi.PolicyBindingList
+	var grants policyapi.ServiceAccountGrantList
+	if err := r.List(ctx, &bindings, client.InNamespace(r.PolicyNamespace)); err != nil {
+		return nil, err
+	}
+	if err := r.List(ctx, &grants, client.InNamespace(r.PolicyNamespace)); err != nil {
+		return nil, err
+	}
+	var out []string
+	owned := func(obj metav1.Object) bool {
+		return slices.ContainsFunc(obj.GetOwnerReferences(), func(ref metav1.OwnerReference) bool { return ref.UID == account.UID })
+	}
+	for i := range bindings.Items {
+		if b := &bindings.Items[i]; owned(b) && conflictingExpiry(b, b.Spec.ExpiresAt) {
+			out = append(out, "PolicyBinding "+b.Name)
+		}
+	}
+	for i := range grants.Items {
+		if g := &grants.Items[i]; owned(g) && conflictingExpiry(g, g.Spec.ExpiresAt) {
+			out = append(out, "ServiceAccountGrant "+g.Name)
+		}
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 // pruneServiceAccounts deletes the ServiceAccounts created for ManagedServiceAccounts named name,
@@ -130,7 +175,7 @@ func (r *Reconciler) ensureServiceAccount(ctx context.Context, account *policyap
 		labels := existing.Labels
 		if labels[ManagedByLabel] != FieldManager || labels[PolicyNamespaceLbl] != r.PolicyNamespace ||
 			labels[ManagedAccountUIDLabel] != string(account.UID) {
-			return nil, fmt.Errorf("refusing to adopt ServiceAccount %s, which was not created for ManagedServiceAccount %s uid=%s", key, account.Name, account.UID)
+			return nil, fmt.Errorf("refusing to adopt ServiceAccount %s for ManagedServiceAccount %s uid=%s: %w", key, account.Name, account.UID, errForeignServiceAccount)
 		}
 		return &existing, nil
 	}
@@ -158,22 +203,22 @@ func (r *Reconciler) ensureServiceAccount(ctx context.Context, account *policyap
 	return created, nil
 }
 
-// applyAccountStatus records the ServiceAccount incarnation created for account, or none.
-func (r *Reconciler) applyAccountStatus(ctx context.Context, account *policyapi.ManagedServiceAccount, created *corev1.ServiceAccount) error {
+// applyAccountStatus records the ServiceAccount incarnation created for account, or none, and the
+// account's KubernetesReady condition, in one configuration so other writers' conditions stay.
+func (r *Reconciler) applyAccountStatus(ctx context.Context, account *policyapi.ManagedServiceAccount, created *corev1.ServiceAccount, condition metav1.Condition) error {
 	var want *policyapi.CreatedServiceAccount
 	if created != nil {
 		want = &policyapi.CreatedServiceAccount{Namespace: created.Namespace, Name: created.Name, UID: created.UID}
 	}
+	configuration, changed := policyapply.ManagedServiceAccountConditionApply(account, condition)
 	current := account.Status.ServiceAccount
-	if (current == nil && want == nil) || (current != nil && want != nil && *current == *want) {
+	if !changed && ((current == nil && want == nil) || (current != nil && want != nil && *current == *want)) {
 		return nil
 	}
-	status := policyapplyv1.ManagedServiceAccountStatus()
 	if want != nil {
-		status.WithServiceAccount(policyapplyv1.CreatedServiceAccount().WithNamespace(want.Namespace).WithName(want.Name).WithUID(want.UID))
+		configuration.Status.WithServiceAccount(policyapplyv1.CreatedServiceAccount().WithNamespace(want.Namespace).WithName(want.Name).WithUID(want.UID))
 	}
-	return r.Status().Apply(ctx, policyapplyv1.ManagedServiceAccount(account.Name, account.Namespace).WithStatus(status),
-		client.FieldOwner(FieldManager), client.ForceOwnership)
+	return r.Status().Apply(ctx, configuration, client.FieldOwner(FieldManager), client.ForceOwnership)
 }
 
 // toManagedAccount maps a ServiceAccount the controller created back to its ManagedServiceAccount.

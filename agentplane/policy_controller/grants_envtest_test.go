@@ -28,21 +28,13 @@ func TestGrantOnFluxAccountBindsUntilRevoked(t *testing.T) {
 	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: accountsNamespace, Name: "test-flux-account"}}
 	set := testRoleSet("test-diagnostics", roleBindingRule(namespaceReader, teamNamespace), clusterRoleBindingRule(nodeReader))
 	grant := testGrant("test-flux-grant", accountsNamespace, account.Name, set.Name)
-	remote := testGrant("test-remote-grant", accountsNamespace, account.Name, set.Name)
-	remote.Spec.Account.APIServer = "test-remote-apiserver"
-	create(t, api, account, set, grant, remote)
+	create(t, api, account, set, grant)
 
 	eventually(t, "the grant's native bindings", func() (bool, string) {
 		natives := grantNatives(t, api, grant.Name)
 		return grantReady(t, api, grant.Name, "Applied") && scopesOf(natives) == fmt.Sprintf("[%s/%s %s]", teamNamespace, namespaceReader, nodeReader) &&
 			allBind(natives, account), describe(natives)
 	})
-	eventually(t, "the remote grant's condition", func() (bool, string) {
-		return grantReady(t, api, remote.Name, "APIServerNotConfigured"), ""
-	})
-	if natives := grantNatives(t, api, remote.Name); len(natives) != 0 {
-		t.Fatalf("a grant on a remote apiserver bound locally: %s", describe(natives))
-	}
 	var current corev1.ServiceAccount
 	if err := api.Get(ctx, client.ObjectKeyFromObject(account), &current); err != nil {
 		t.Fatal(err)
@@ -141,7 +133,7 @@ func TestExpiredGrantRevokesInOnePass(t *testing.T) {
 	create(t, api, account, set, grant)
 	waitForCached(t, cached, &corev1.ServiceAccount{}, client.ObjectKeyFromObject(account))
 	waitForCached(t, cached, &policyapi.KubernetesRoleSet{}, client.ObjectKeyFromObject(set))
-	waitForCached(t, cached, &policyapi.KubernetesAccountGrant{}, client.ObjectKeyFromObject(grant))
+	waitForCached(t, cached, &policyapi.ServiceAccountGrant{}, client.ObjectKeyFromObject(grant))
 	request := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(grant)}
 	if _, err := r.ReconcileGrant(ctx, request); err != nil {
 		t.Fatal(err)
@@ -156,14 +148,14 @@ func TestExpiredGrantRevokesInOnePass(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the expiry in the cache", func() (bool, string) {
-		var cachedGrant policyapi.KubernetesAccountGrant
+		var cachedGrant policyapi.ServiceAccountGrant
 		err := cached.Get(ctx, client.ObjectKeyFromObject(grant), &cachedGrant)
 		return err == nil && cachedGrant.Spec.ExpiresAt != nil, fmt.Sprint(err)
 	})
 	if _, err := r.ReconcileGrant(ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	grantErr := api.Get(ctx, client.ObjectKeyFromObject(grant), &policyapi.KubernetesAccountGrant{})
+	grantErr := api.Get(ctx, client.ObjectKeyFromObject(grant), &policyapi.ServiceAccountGrant{})
 	if natives := grantNatives(t, api, grant.Name); len(natives) != 0 || !apierrors.IsNotFound(grantErr) {
 		t.Fatalf("after the expiring reconcile: grant %v, natives %s", grantErr, describe(natives))
 	}
@@ -203,12 +195,13 @@ func clusterRoleBindingRule(clusterRole string) policyapi.KubernetesRule {
 	return policyapi.KubernetesRule{Type: "cluster_role_binding", ClusterRole: clusterRole}
 }
 
-func testGrant(name, namespace, account string, roleSets ...string) *policyapi.KubernetesAccountGrant {
-	return &policyapi.KubernetesAccountGrant{
+func testGrant(name, namespace, account string, roleSets ...string) *policyapi.ServiceAccountGrant {
+	return &policyapi.ServiceAccountGrant{
 		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
-		Spec: policyapi.KubernetesAccountGrantSpec{
-			Account:  policyapi.KubernetesAccount{APIServer: LocalAPIServer, Namespace: namespace, Name: account},
-			RoleSets: roleSets,
+		Spec: policyapi.ServiceAccountGrantSpec{
+			// CLEANUP(added 2026-11-09): drop APIServer with the identity-kinds commit removing it.
+			ServiceAccount: policyapi.ServiceAccountTarget{APIServer: "local", Namespace: namespace, Name: account},
+			RoleSets:       roleSets,
 		},
 	}
 }
@@ -231,7 +224,7 @@ func eventually(t *testing.T, what string, check func() (bool, string)) {
 // grantReady reports whether the grant's KubernetesReady condition has reason.
 func grantReady(t *testing.T, api client.Client, name, reason string) bool {
 	t.Helper()
-	var grant policyapi.KubernetesAccountGrant
+	var grant policyapi.ServiceAccountGrant
 	if err := api.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: name}, &grant); err != nil {
 		t.Fatal(err)
 	}

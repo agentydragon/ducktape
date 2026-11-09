@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     accounts_namespace: str = Field(
         min_length=1,
         description=(
-            "Namespace where ManagedServiceAccounts' ServiceAccounts are created; KubernetesAccountGrants may name "
+            "Namespace where ManagedServiceAccounts' ServiceAccounts are created; ServiceAccountGrants may name "
             "accounts here as well as in subject_namespaces."
         ),
     )

@@ -1,7 +1,10 @@
-"""The Policy Controller may create and delete ServiceAccounts only in the namespace it creates managed accounts in."""
+"""The Policy Controller's RBAC matches what it writes: ServiceAccounts only in its accounts namespace, and the
+status of every policy kind it reports on."""
 
+from collections.abc import Iterator
 from typing import Any
 
+import pytest
 import pytest_bazel
 from more_itertools import one
 
@@ -10,7 +13,7 @@ from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from util.settings_contract import env_name
 
-_WRITES = {"create", "delete", "*"}
+_GROUP = "agentplane.allegedly.works"
 
 
 def _role(documents: list[dict[str, Any]], kind: str, name: str, namespace: str | None) -> dict[str, Any]:
@@ -21,10 +24,9 @@ def _role(documents: list[dict[str, Any]], kind: str, name: str, namespace: str 
     )
 
 
-def _service_account_writes(documents: list[dict[str, Any]]) -> set[str | None]:
-    """The namespaces where the controller's bindings let it create or delete ServiceAccounts; None is cluster-wide."""
+def _bound_rules(documents: list[dict[str, Any]]) -> Iterator[tuple[str | None, dict[str, Any]]]:
+    """Each rule bound to the controller's ServiceAccount, with the namespace it applies in; None is cluster-wide."""
     subject = ("ServiceAccount", policy_controller.NAME, STAGING_NAMESPACE)
-    out: set[str | None] = set()
     for binding in documents:
         if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"} or subject not in {
             (s["kind"], s["name"], s.get("namespace")) for s in binding.get("subjects", [])
@@ -32,29 +34,43 @@ def _service_account_writes(documents: list[dict[str, Any]]) -> set[str | None]:
             continue
         namespace = binding["metadata"].get("namespace")
         ref = binding["roleRef"]
-        role = _role(documents, ref["kind"], ref["name"], namespace if ref["kind"] == "Role" else None)
-        for rule in role["rules"]:
-            if (
-                set(rule.get("apiGroups", [])) & {"", "*"}
-                and set(rule["resources"]) & {"serviceaccounts", "*"}
-                and set(rule["verbs"]) & _WRITES
-            ):
-                out.add(namespace)
-    return out
+        for rule in _role(documents, ref["kind"], ref["name"], namespace if ref["kind"] == "Role" else None)["rules"]:
+            yield namespace, rule
+
+
+def _allowed(documents: list[dict[str, Any]], group: str, resource: str, verbs: set[str]) -> set[str | None]:
+    """The namespaces where the controller may use any of verbs on group's resource."""
+    return {
+        namespace
+        for namespace, rule in _bound_rules(documents)
+        if set(rule.get("apiGroups", [])) & {group, "*"}
+        and set(rule["resources"]) & {resource, "*"}
+        and set(rule["verbs"]) & (verbs | {"*"})
+    }
+
+
+def _settings(documents: list[dict[str, Any]]) -> dict[str, str]:
+    deployment = one(
+        doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == policy_controller.NAME
+    )
+    return {
+        entry["name"]: entry.get("value") for entry in one(deployment["spec"]["template"]["spec"]["containers"])["env"]
+    }
 
 
 def test_service_account_writes_are_scoped_to_the_accounts_namespace(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == policy_controller.NAME
-    )
-    env = {
-        entry["name"]: entry.get("value") for entry in one(deployment["spec"]["template"]["spec"]["containers"])["env"]
-    }
-    accounts_namespace = env[env_name(Settings, "accounts_namespace")]
+    accounts_namespace = _settings(staging_manifests)[env_name(Settings, "accounts_namespace")]
     assert accounts_namespace != STAGING_NAMESPACE
-    assert _service_account_writes(staging_manifests) == {accounts_namespace}
+    assert _allowed(staging_manifests, "", "serviceaccounts", {"create", "delete"}) == {accounts_namespace}
+
+
+@pytest.mark.parametrize(
+    "status", ["policybindings/status", "serviceaccountgrants/status", "managedserviceaccounts/status"]
+)
+def test_controller_may_apply_the_status_it_reports(staging_manifests: list[dict[str, Any]], status: str) -> None:
+    policy_namespace = _settings(staging_manifests)[env_name(Settings, "policy_namespace")]
+    # Server-side apply of a status subresource is a patch.
+    assert policy_namespace in _allowed(staging_manifests, _GROUP, status, {"patch"})
 
 
 if __name__ == "__main__":

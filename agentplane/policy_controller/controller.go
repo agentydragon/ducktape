@@ -37,19 +37,17 @@ const (
 	BindingAnnotation  = "policy.agentplane.allegedly.works/binding"
 	BindingUIDAnn      = "policy.agentplane.allegedly.works/binding-uid"
 	SubjectUIDAnn      = "policy.agentplane.allegedly.works/subject-uid"
-	GrantAnnotation    = "policy.agentplane.allegedly.works/account-grant"
-	GrantUIDAnn        = "policy.agentplane.allegedly.works/account-grant-uid"
+	GrantAnnotation    = "policy.agentplane.allegedly.works/service-account-grant"
+	GrantUIDAnn        = "policy.agentplane.allegedly.works/service-account-grant-uid"
 	// On a ServiceAccount the controller created: the ManagedServiceAccount it was created for, and
 	// that account's UID, which is the ownership proof.
 	ManagedAccountAnnotation = "policy.agentplane.allegedly.works/managed-service-account"
 	ManagedAccountUIDLabel   = "policy.agentplane.allegedly.works/managed-service-account-uid"
-	// LocalAPIServer names the cluster the controller runs in, the only apiserver it reaches.
-	LocalAPIServer = "local"
 
 	setsIndex          = "spec.policySets"
 	subjectIndex       = "spec.subject"
 	roleSetsIndex      = "spec.roleSets"
-	accountIndex       = "spec.account"
+	accountIndex       = "spec.serviceAccount"
 	nativeBindingIndex = "metadata.annotations[" + BindingAnnotation + "]"
 	nativeGrantIndex   = "metadata.annotations[" + GrantAnnotation + "]"
 	managedAccountIdx  = "metadata.annotations[" + ManagedAccountAnnotation + "]"
@@ -65,10 +63,10 @@ type owner struct{ nameAnn, uidAnn, index, prefix string }
 
 var (
 	bindingOwner = owner{nameAnn: BindingAnnotation, uidAnn: BindingUIDAnn, index: nativeBindingIndex, prefix: "pb"}
-	grantOwner   = owner{nameAnn: GrantAnnotation, uidAnn: GrantUIDAnn, index: nativeGrantIndex, prefix: "kag"}
+	grantOwner   = owner{nameAnn: GrantAnnotation, uidAnn: GrantUIDAnn, index: nativeGrantIndex, prefix: "sag"}
 )
 
-// Reconciler converges one PolicyBinding or KubernetesAccountGrant at a time: its native
+// Reconciler converges one PolicyBinding or ServiceAccountGrant at a time: its native
 // RoleBindings and ClusterRoleBindings, and its KubernetesReady condition. It also keeps each
 // ManagedServiceAccount's ServiceAccount.
 //
@@ -581,18 +579,15 @@ func (r *Reconciler) IndexFields(ctx context.Context, indexer client.FieldIndexe
 		{&policyapi.PolicyBinding{}, missingRoleIndex, func(obj client.Object) []string {
 			return missingRoles(obj.(*policyapi.PolicyBinding).Status.MissingRoles)
 		}},
-		{&policyapi.KubernetesAccountGrant{}, roleSetsIndex, func(obj client.Object) []string {
-			return obj.(*policyapi.KubernetesAccountGrant).Spec.RoleSets
+		{&policyapi.ServiceAccountGrant{}, roleSetsIndex, func(obj client.Object) []string {
+			return obj.(*policyapi.ServiceAccountGrant).Spec.RoleSets
 		}},
-		{&policyapi.KubernetesAccountGrant{}, accountIndex, func(obj client.Object) []string {
-			account := obj.(*policyapi.KubernetesAccountGrant).Spec.Account
-			if account.APIServer != LocalAPIServer {
-				return nil
-			}
+		{&policyapi.ServiceAccountGrant{}, accountIndex, func(obj client.Object) []string {
+			account := obj.(*policyapi.ServiceAccountGrant).Spec.ServiceAccount
 			return []string{account.Namespace + "/" + account.Name}
 		}},
-		{&policyapi.KubernetesAccountGrant{}, missingRoleIndex, func(obj client.Object) []string {
-			return missingRoles(obj.(*policyapi.KubernetesAccountGrant).Status.MissingRoles)
+		{&policyapi.ServiceAccountGrant{}, missingRoleIndex, func(obj client.Object) []string {
+			return missingRoles(obj.(*policyapi.ServiceAccountGrant).Status.MissingRoles)
 		}},
 	} {
 		if err := indexer.IndexField(ctx, index.obj, index.field, index.value); err != nil {
@@ -649,7 +644,7 @@ func clusterRoleKey(obj client.Object) string {
 	return missingRoleKey(policyapi.MissingRole{Kind: "ClusterRole", Name: obj.GetName()})
 }
 
-// SetupWithManager wires three controllers: PolicyBindings, KubernetesAccountGrants and
+// SetupWithManager wires three controllers: PolicyBindings, ServiceAccountGrants and
 // ManagedServiceAccounts, each with whatever it reads mapped back to it.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := r.IndexFields(context.Background(), mgr.GetFieldIndexer()); err != nil {
@@ -668,18 +663,22 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 	if err := ctrl.NewControllerManagedBy(mgr).
-		For(&policyapi.KubernetesAccountGrant{}).
-		Watches(&policyapi.KubernetesRoleSet{}, enqueueByIndex[policyapi.KubernetesAccountGrantList](r, roleSetsIndex, client.Object.GetName)).
-		Watches(&corev1.ServiceAccount{}, enqueueByIndex[policyapi.KubernetesAccountGrantList](r, accountIndex, accountKey)).
+		For(&policyapi.ServiceAccountGrant{}).
+		Watches(&policyapi.KubernetesRoleSet{}, enqueueByIndex[policyapi.ServiceAccountGrantList](r, roleSetsIndex, client.Object.GetName)).
+		Watches(&corev1.ServiceAccount{}, enqueueByIndex[policyapi.ServiceAccountGrantList](r, accountIndex, accountKey)).
 		Watches(&rbacv1.RoleBinding{}, r.toOwner(grantOwner)).
 		Watches(&rbacv1.ClusterRoleBinding{}, r.toOwner(grantOwner)).
-		WatchesMetadata(&rbacv1.Role{}, enqueueByIndex[policyapi.KubernetesAccountGrantList](r, missingRoleIndex, roleKey)).
-		WatchesMetadata(&rbacv1.ClusterRole{}, enqueueByIndex[policyapi.KubernetesAccountGrantList](r, missingRoleIndex, clusterRoleKey)).
+		WatchesMetadata(&rbacv1.Role{}, enqueueByIndex[policyapi.ServiceAccountGrantList](r, missingRoleIndex, roleKey)).
+		WatchesMetadata(&rbacv1.ClusterRole{}, enqueueByIndex[policyapi.ServiceAccountGrantList](r, missingRoleIndex, clusterRoleKey)).
 		Complete(reconcile.Func(r.ReconcileGrant)); err != nil {
 		return err
 	}
+	// A conflicting expiry on an owned binding or grant shows on its account too.
+	toOwningAccount := handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &policyapi.ManagedServiceAccount{})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&policyapi.ManagedServiceAccount{}).
 		Watches(&corev1.ServiceAccount{}, handler.EnqueueRequestsFromMapFunc(r.toManagedAccount)).
+		Watches(&policyapi.PolicyBinding{}, toOwningAccount).
+		Watches(&policyapi.ServiceAccountGrant{}, toOwningAccount).
 		Complete(reconcile.Func(r.ReconcileManagedServiceAccount))
 }

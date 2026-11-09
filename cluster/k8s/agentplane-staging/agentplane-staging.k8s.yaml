@@ -9957,7 +9957,7 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - kubernetesaccountgrants
+      - serviceaccountgrants
     verbs:
       - get
       - list
@@ -9975,7 +9975,7 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - kubernetesaccountgrants/status
+      - serviceaccountgrants/status
     verbs:
       - patch
   - apiGroups:
