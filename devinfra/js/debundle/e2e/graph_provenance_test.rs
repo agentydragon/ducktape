@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, TreeFixture, debundler_path, run_fixture, run_tree_graph_fixture,
+    FixtureOpts, TreeFixture, debundler_path, run_fixture, run_tree_graph_fixture, tree_spec_args,
 };
 use tempfile::TempDir;
 
@@ -65,14 +65,7 @@ impl AliasGraphFixture {
         let output = Command::new(debundler_path())
             .arg("run")
             .arg("--graphs")
-            .arg("--tree-config")
-            .arg(&config)
-            .arg("--tree-modules")
-            .arg(root.path().join("modules"))
-            .arg("--tree-vendor-marks")
-            .arg(vendor_marks)
-            .arg("--tree-source-root")
-            .arg(root.path())
+            .args(tree_spec_args(root.path()))
             .arg("--out-root")
             .arg(&out_root)
             .output()

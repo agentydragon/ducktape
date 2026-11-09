@@ -3,7 +3,7 @@
 
 use debundle_e2e_support::{
     TreeFixture, TreeRun, assert_module_exports, assert_module_source, debundler_path,
-    read_chunk_selector_outcomes, run_tree_fixture,
+    read_chunk_selector_outcomes, run_tree_fixture, tree_spec_args,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -41,14 +41,8 @@ fn assert_failed(run: &TreeRun) {
 fn rerun_tree(run: &TreeRun, output_dir: &str) -> std::process::Output {
     let root = run.root();
     Command::new(debundler_path())
-        .args(["run", "--tree-config"])
-        .arg(root.join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(root.join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(root.join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(root)
+        .args(["run"])
+        .args(tree_spec_args(root))
         .arg("--out-root")
         .arg(root.join(output_dir))
         .output()

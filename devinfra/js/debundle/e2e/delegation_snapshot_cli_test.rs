@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_graph_fixture};
+use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_graph_fixture, tree_spec_args};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -162,14 +162,8 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
     let original_output_parent = TempDir::new().unwrap();
     let original_out = original_output_parent.path().join("outside output");
     let original = Command::new(debundler_path())
-        .args(["run", "--graphs", "--tree-config"])
-        .arg(fixture.root().join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(fixture.root().join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(fixture.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(fixture.root())
+        .args(["run", "--graphs"])
+        .args(tree_spec_args(fixture.root()))
         .arg("--out-root")
         .arg(&original_out)
         .output()
@@ -346,14 +340,8 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
 
     fs::remove_dir_all(&fixture.out_root).unwrap();
     let original = Command::new(debundler_path())
-        .args(["run", "--graphs", "--tree-config"])
-        .arg(fixture.root().join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(fixture.root().join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(fixture.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(fixture.root())
+        .args(["run", "--graphs"])
+        .args(tree_spec_args(fixture.root()))
         .arg("--package-root")
         .arg(format!("fixture-package={}", package.path().display()))
         .arg("--package-root")
@@ -535,14 +523,8 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     .unwrap();
     fs::remove_dir_all(&fixture.out_root).unwrap();
     let original = Command::new(debundler_path())
-        .args(["run", "--graphs", "--tree-config"])
-        .arg(config)
-        .arg("--tree-modules")
-        .arg(fixture.root().join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(fixture.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(fixture.root())
+        .args(["run", "--graphs"])
+        .args(tree_spec_args(fixture.root()))
         .arg("--out-root")
         .arg(&fixture.out_root)
         .output()

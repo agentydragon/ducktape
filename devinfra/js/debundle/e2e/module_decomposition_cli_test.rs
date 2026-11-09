@@ -1,6 +1,7 @@
 //! Read-only module decomposition from gated same-module seed fragments.
 
 use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::tree_spec_args;
 use serde_json::{Value, json};
 use std::fs;
 use std::process::Command;
@@ -15,14 +16,7 @@ fn assert_emitted_layout_and_output(
     let output_root = tempfile::tempdir_in(root).unwrap();
     let output = Command::new(debundle_e2e_support::debundler_path())
         .arg("run")
-        .arg("--tree-config")
-        .arg(root.join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(root.join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(root.join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(root)
+        .args(tree_spec_args(root))
         .arg("--out-root")
         .arg(output_root.path())
         .output()
