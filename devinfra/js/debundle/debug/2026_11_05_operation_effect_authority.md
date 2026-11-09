@@ -1,6 +1,6 @@
 # Compositional operation authority: bounded returned-callable control
 
-The neutral CLI control in `effect_translation_validation_test.rs` creates a
+The neutral CLI control in `e2e/effect_tv_initializer_coverage_test.rs` creates a
 returned callable with `function make() { return () => 3; }`, calls it between
 two lexical writes to `marker`, and assigns the writes together
 separately from the callable/result.
@@ -29,7 +29,7 @@ The live dataflow S-chain emitter previously read raw classifier havoc directly;
 it now consumes the same residual-opacity projection as initialization-effect
 diagnostics. Raw classifier provenance remains stored.
 
-`effect_translation_validation_test.rs` checks nested creation/invocation,
+`e2e/effect_tv_initializer_coverage_test.rs` checks nested creation/invocation,
 exact source-only dependency sets, an exact nonempty native-input dependency
 through enclosing calls and root owners, and unknown/getter/reentry controls.
 The imported primitive-return equivalent remains conservatively uncovered;

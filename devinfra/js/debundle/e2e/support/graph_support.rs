@@ -1,5 +1,6 @@
 //! Typed readers and assertions for graph-producing E2E fixtures.
 
+pub mod effect_validation;
 mod graph_fixture;
 pub use graph_fixture::GraphFixture;
 

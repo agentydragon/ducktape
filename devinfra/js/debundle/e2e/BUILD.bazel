@@ -92,7 +92,25 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "staged_analysis_test",
+    name = "saved_analysis_parity_test",
+    data = [
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+    ],
+    env = {
+        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
+        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+    },
+    deps = [
+        "@crates//:rmp-serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:sha2",
+    ],
+)
+
+debundle_e2e_test(
+    name = "saved_analysis_identity_test",
     data = [
         "//devinfra/js/debundle:debundle_analyze",
         "//devinfra/js/debundle:debundle_project_analysis",
@@ -105,13 +123,89 @@ debundle_e2e_test(
         ":graph_support",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle:staged_analysis",
+        "@crates//:rmp-serde",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "saved_analysis_resolved_member_test",
+    data = [
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+    ],
+    env = {
+        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
+        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+    },
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "saved_analysis_reports_test",
+    data = [
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+    ],
+    env = {
+        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
+        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+    },
+    deps = [
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "bindings_candidate_assessment_test",
+    data = [
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+    ],
+    env = {
+        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
+        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+    },
+    deps = [
         "//devinfra/js/debundle:staged_analysis",
         "@crates//:rmp-serde",
         "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "modules_candidate_assessment_test",
+    data = [
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+    ],
+    env = {
+        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
+        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+    },
+    deps = [
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "initializer_source_only_test",
+    data = [
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+    ],
+    env = {
+        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
+        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+    },
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
         "@crates//:serde_yaml",
-        "@crates//:sha2",
-        "@crates//:tempfile",
     ],
 )
 
@@ -124,14 +218,71 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "effect_translation_validation_test",
+    name = "effect_tv_global_provenance_test",
     data = ["@debundle_bun_1_3_10//:bun"],
     env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
     deps = [
         ":graph_support",
         "@crates//:serde_json",
-        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_bounded_reports_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_local_call_receipts_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
         "@crates//:sha2",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_local_declarations_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_initializer_coverage_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_native_owners_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_class_owners_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        "@crates//:serde_json",
     ],
 )
 
@@ -207,6 +358,7 @@ rust_library(
         "support/ast_assertions.rs",
         "support/fixture_spec.rs",
         "support/mod.rs",
+        "support/saved_analysis.rs",
     ],
     crate_name = "debundle_e2e_support",
     crate_root = "support/mod.rs",
@@ -221,6 +373,7 @@ rust_library(
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
+        "@crates//:sha2",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_parser",
@@ -232,6 +385,7 @@ rust_library(
 rust_library(
     name = "graph_support",
     srcs = [
+        "support/effect_validation.rs",
         "support/graph_fixture.rs",
         "support/graph_support.rs",
     ],
@@ -244,6 +398,7 @@ rust_library(
         "//devinfra/js/debundle:graph_provenance",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
+        "@crates//:sha2",
         "@crates//:tempfile",
     ],
 )
