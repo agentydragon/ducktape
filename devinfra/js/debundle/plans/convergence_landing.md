@@ -190,6 +190,15 @@ the #14552 code to port by reference.
 **Wave 2: the kernel.** Large by nature; the interfaces (five context traits,
 `World` and its join, the one driver, the completion ledger as sole coverage
 authority) are specified in <kernel_design.md>, which the slices implement.
+`World` is the per-prefix execution state the interpreter already carries
+(today one 44-field struct plus the strict provider's private copy), not a
+new analysis; precision stays bounded by the existing finite-height widening
+and budgets. Each Wave 2 slice adds a cost gate to its canonical-spec check:
+Tana Web (`//tana/re/web/78d928dca7:debundle_passing`) analysis wall time and
+peak RSS from the override build, branch versus base. The reference head's
+cold Tana analysis was about 320 seconds; a slice that regresses wall time or
+RSS by more than 10 percent is profiled with `perf` before it lands, and a
+persistent regression means the structure, not a budget knob, is wrong.
 
 - L2a. Narrow context traits and `kernel/continuation.rs` +
   `local_transfer::execute` + the strict-provider driver as the one provider
